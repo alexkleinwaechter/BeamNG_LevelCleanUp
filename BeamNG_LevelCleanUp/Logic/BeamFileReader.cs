@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace BeamNG_LevelCleanUp
+namespace BeamNG_LevelCleanUp.Logic
 {
     internal class BeamFileReader
     {
@@ -28,10 +28,10 @@ namespace BeamNG_LevelCleanUp
             }
         }
 
-        static void WalkDirectoryTree(System.IO.DirectoryInfo root)
+        static void WalkDirectoryTree(DirectoryInfo root)
         {
-            System.IO.FileInfo[] files = null;
-            System.IO.DirectoryInfo[] subDirs = null;
+            FileInfo[] files = null;
+            DirectoryInfo[] subDirs = null;
 
             // First, process all the files directly under this folder
             try
@@ -48,27 +48,29 @@ namespace BeamNG_LevelCleanUp
                 log.Add(e.Message);
             }
 
-            catch (System.IO.DirectoryNotFoundException e)
+            catch (DirectoryNotFoundException e)
             {
                 Console.WriteLine(e.Message);
             }
 
             if (files != null)
             {
-                foreach (System.IO.FileInfo fi in files)
+                foreach (FileInfo fi in files)
                 {
                     // In this example, we only access the existing FileInfo object. If we
                     // want to open, delete or modify the file, then
                     // a try-catch block is required here to handle the case
                     // where the file has been deleted since the call to TraverseTree().
-                    Console.WriteLine(fi.FullName);
+                    //Console.WriteLine(fi.FullName);
                     //von hie Klassen aufrufen, die file inhalt bearbeiten
+                    var materialScanner = new MissionGroupScanner(fi.FullName);
+                    materialScanner.scanMissionGroupFile();
                 }
 
                 // Now find all the subdirectories under this directory.
                 subDirs = root.GetDirectories();
 
-                foreach (System.IO.DirectoryInfo dirInfo in subDirs)
+                foreach (DirectoryInfo dirInfo in subDirs)
                 {
                     // Resursive call for each subdirectory.
                     WalkDirectoryTree(dirInfo);
