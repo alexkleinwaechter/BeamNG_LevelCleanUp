@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BeamNG_LevelCleanUp.Objects;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,7 +10,8 @@ namespace BeamNG_LevelCleanUp.Logic
     internal class BeamFileReader
     {
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
-        private string _path { get; set; }
+        private static string _path { get; set; }
+        public static List<Asset> Assets { get; set; } = new List<Asset>();
         internal BeamFileReader(string path)
         {
             _path = path;
@@ -63,7 +65,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     // where the file has been deleted since the call to TraverseTree().
                     //Console.WriteLine(fi.FullName);
                     //von hie Klassen aufrufen, die file inhalt bearbeiten
-                    var materialScanner = new MissionGroupScanner(fi.FullName);
+                    var materialScanner = new MissionGroupScanner(fi.FullName, _path, Assets);
                     materialScanner.scanMissionGroupFile();
                 }
 
