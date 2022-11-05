@@ -32,17 +32,26 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     foreach (var child in jsonObject.EnumerateObject())
                     {
-                        var materials = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
+                        try
+                        {
+                            var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
+                            _materials.Add(material);
+                        }
+                        catch (Exception ex)
+                        {
+                            throw;
+                        }
                     }
                     //if (!string.IsNullOrEmpty(asset?.ShapeName))
                     //{
                     //    var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
                     //    asset.MaterialsDae = daeScanner.GetMaterials();
                     //}
-                    //_materials.Add(asset);
+
                 }
                 catch (Exception ex)
                 {
+                    throw;
                 }
             }
         }

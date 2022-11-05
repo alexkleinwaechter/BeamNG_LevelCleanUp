@@ -14,6 +14,7 @@ namespace BeamNG_LevelCleanUp
             return new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
+                AllowTrailingCommas = true,
             };
         }
     }
