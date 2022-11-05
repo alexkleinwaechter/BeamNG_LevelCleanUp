@@ -14,19 +14,23 @@ namespace BeamNG_LevelCleanUp.Logic
         string _daePath;
         string _resolvedDaePath;
 
-        public DaeScanner(string levelPath, string daePath)
+        public DaeScanner(string levelPath, string daePath, bool fullDaePathProvided = false)
         {
             _daePath = daePath.Replace("/", "\\");
             _levelPath = levelPath;
-            _resolvedDaePath = ResolvePath();
+            _resolvedDaePath = fullDaePathProvided ? _daePath : ResolvePath();
         }
         private string ResolvePath()
         {
+            char toReplaceDelim = '/';
             char delim = '\\';
-            return string.Join(
-                new string(delim, 1),
-                _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-                .Replace("\\\\", "\\");
+            return Path.Join(_levelPath, _daePath.Replace(toReplaceDelim, delim));
+
+            //char delim = '\\';
+            //return string.Join(
+            //    new string(delim, 1),
+            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
+            //    .Replace("\\\\", "\\");
         }
         public bool Exists() {
             var fileInfo = new FileInfo(_resolvedDaePath);

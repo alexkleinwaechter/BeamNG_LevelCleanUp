@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -80,6 +81,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
+            var exclude = new List<string> { "art\\shapes\\groundcover", "art\\shapes\\trees", "art\\shapes\\rocks", "art\\shapes\\driver_training" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 
@@ -107,6 +109,8 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (FileInfo fi in files)
                 {
+                    if (exclude.Any(fi.FullName.ToLowerInvariant().Contains)) continue;
+
                     // In this example, we only access the existing FileInfo object. If we
                     // want to open, delete or modify the file, then
                     // a try-catch block is required here to handle the case

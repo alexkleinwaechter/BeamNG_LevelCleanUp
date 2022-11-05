@@ -36,7 +36,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var materialsInUnusedDae = new List<MaterialsDae>();
             foreach (var file in unusedDae)
             {
-                var daeScanner = new DaeScanner(_levelPath, file.FullName);
+                var daeScanner = new DaeScanner(_levelPath, file.FullName, true);
                 materialsInUnusedDae.AddRange(daeScanner.GetMaterials());
             }
             var materialNamesInUnusedDae = materialsInUnusedDae.Select(x => x.MaterialName).Distinct().ToList();
@@ -49,7 +49,8 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     materialNamesInUsedAssets.Add(item.Material);
                 }
-                if (item.MaterialsDae.Count > 0) {
+                if (item.MaterialsDae.Count > 0)
+                {
                     materialNamesInUsedAssets.AddRange(item.MaterialsDae.Select(x => x.MaterialName));
                 }
             }
@@ -63,15 +64,18 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 var mat = _materials
                     .Where(m => !string.IsNullOrEmpty(m.Name) && m.Name.Equals(item, StringComparison.InvariantCultureIgnoreCase)).ToList();
-                if (mat.Count > 0) {
-                    foreach (var m in mat) {
+                if (mat.Count > 0)
+                {
+                    foreach (var m in mat)
+                    {
                         foreach (var file in m.MaterialFiles)
                         {
                             var fileInOtherMaterial = _materials
                                 .Where(x => materialNamesInUsedAssets.Contains(x.Name))
                                 .Where(x => !string.IsNullOrEmpty(x.Name) && x.Name != m.Name && x.MaterialFiles != null)
                                 .SelectMany(x => x.MaterialFiles).Any(y => y.File.FullName.Equals(file.File.FullName, StringComparison.InvariantCultureIgnoreCase));
-                            if (!fileInOtherMaterial) {
+                            if (!fileInOtherMaterial)
+                            {
                                 filePathsToRemove.Add(file.File.FullName);
                             }
                         }

@@ -23,10 +23,12 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             char toReplaceDelim = '/';
             char delim = '\\';
-            return string.Join(
-                new string(delim, 1),
-                _levelPath.Split(delim).Concat(materialFilePath.Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
-                .Replace("\\\\", "\\");
+            return Path.Join(_levelPath, materialFilePath.Replace(toReplaceDelim, delim));
+
+            //return string.Join(
+            //    new string(delim, 1),
+            //    _levelPath.Split(delim).Concat(materialFilePath.Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
+            //    .Replace("\\\\", "\\");
         }
 
         public List<MaterialFile> GetMaterialFiles()
@@ -46,7 +48,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         if (val.Count(c => c == '/') == 0)
                         {
-                            val = Path.Combine(Path.GetDirectoryName(_matJsonPath), val);
+                            val = Path.Join(Path.GetDirectoryName(_matJsonPath), val);
                         }
                         var filePath = ResolvePath(val);
                         var fileInfo = new FileInfo(filePath);
