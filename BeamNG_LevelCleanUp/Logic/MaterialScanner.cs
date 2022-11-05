@@ -9,39 +9,40 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
-    internal class MissionGroupScanner
+    internal class MaterialScanner
     {
         private string _missiongroupPath { get; set; }
         private string _levelPath { get; set; }
-        private List<Asset> _assets = new List<Asset>();
-        internal MissionGroupScanner(string missiongroupPath, string levelPath, List<Asset> assets)
+        private List<MaterialJson> _materials = new List<MaterialJson>();
+        internal MaterialScanner(string missiongroupPath, string levelPath, List<MaterialJson> materials)
         {
             _missiongroupPath = missiongroupPath;
-            _assets = assets;
+            _materials = materials;
             _levelPath = levelPath;
         }
 
 
-        internal void scanMissionGroupFile()
+        internal async void ScanMaterialsJsonFile()
         {
-            foreach (string line in File.ReadLines(_missiongroupPath))
+            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            var jsonObject = JsonDocument.Parse(File.ReadAllText(_missiongroupPath), docOptions).RootElement;
+            if (jsonObject.ValueKind != JsonValueKind.Undefined)
             {
-                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                var jsonObject = JsonDocument.Parse(line, docOptions).RootElement;
-                if (jsonObject.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
+                try
                 {
-                    try
+                    foreach (var child in jsonObject.EnumerateObject())
                     {
-                        var asset = jsonObject.Deserialize<Asset>(BeamJsonOptions.Get());
-                        if (!string.IsNullOrEmpty(asset?.ShapeName)) {
-                            var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
-                            asset.MaterialsDae = daeScanner.GetMaterials();
-                        }
-                        _assets.Add(asset);
+                        var materials = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
                     }
-                    catch (Exception ex)
-                    {
-                    }
+                    //if (!string.IsNullOrEmpty(asset?.ShapeName))
+                    //{
+                    //    var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
+                    //    asset.MaterialsDae = daeScanner.GetMaterials();
+                    //}
+                    //_materials.Add(asset);
+                }
+                catch (Exception ex)
+                {
                 }
             }
         }

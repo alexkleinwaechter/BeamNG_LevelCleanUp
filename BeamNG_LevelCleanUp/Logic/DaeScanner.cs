@@ -48,7 +48,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 if (elem.HasAttribute("name"))
                 {
-                    matDae.MaterialId = elem.GetAttribute("name");
+                    matDae.MaterialName = elem.GetAttribute("name");
                 }
                 if (!string.IsNullOrEmpty(matDae.MaterialId))
                 {

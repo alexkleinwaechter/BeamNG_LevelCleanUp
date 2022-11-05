@@ -9,9 +9,15 @@ namespace BeamNG_LevelCleanUp.Logic
 {
     internal class BeamFileReader
     {
+        private enum ReadTypeEnum
+        {
+            MissionGroup = 0,
+            MaterialsJson = 1
+        }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _path { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
+        public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         internal BeamFileReader(string path)
         {
             _path = path;
@@ -21,7 +27,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo);
+                WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.MissionGroup);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -30,7 +36,21 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        static void WalkDirectoryTree(DirectoryInfo root)
+        internal void ReadMaterialsJson()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "main.materials.json", ReadTypeEnum.MaterialsJson);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
@@ -38,7 +58,7 @@ namespace BeamNG_LevelCleanUp.Logic
             // First, process all the files directly under this folder
             try
             {
-                files = root.GetFiles("items.level.json");
+                files = root.GetFiles(filePattern);
             }
             // This is thrown if even one of the files requires permissions greater
             // than the application provides.
@@ -65,8 +85,19 @@ namespace BeamNG_LevelCleanUp.Logic
                     // where the file has been deleted since the call to TraverseTree().
                     //Console.WriteLine(fi.FullName);
                     //von hie Klassen aufrufen, die file inhalt bearbeiten
-                    var materialScanner = new MissionGroupScanner(fi.FullName, _path, Assets);
-                    materialScanner.scanMissionGroupFile();
+                    switch (readTypeEnum)
+                    {
+                        case ReadTypeEnum.MissionGroup:
+                            var missionGroupScanner = new MissionGroupScanner(fi.FullName, _path, Assets);
+                            missionGroupScanner.ScanMissionGroupFile();
+                            break;
+                        case ReadTypeEnum.MaterialsJson:
+                            var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson);
+                            materialScanner.ScanMaterialsJsonFile();
+                            break;
+                        default:
+                            break;
+                    }
                 }
 
                 // Now find all the subdirectories under this directory.
@@ -75,7 +106,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (DirectoryInfo dirInfo in subDirs)
                 {
                     // Resursive call for each subdirectory.
-                    WalkDirectoryTree(dirInfo);
+                    WalkDirectoryTree(dirInfo, filePattern, readTypeEnum);
                 }
             }
         }

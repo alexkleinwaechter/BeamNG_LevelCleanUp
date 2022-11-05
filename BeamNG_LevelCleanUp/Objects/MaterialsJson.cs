@@ -6,10 +6,11 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Objects
 {
-    public class MaterialsJson
+    public class MaterialJson
     {
         public string Name { get; set; }
+        public string Class { get; set; }
         public string MapTo { get; set; }
-        public List <FileInfo> Files { get; set; }
+        public List <FileInfo>? Files { get; set; }
     }
 }
