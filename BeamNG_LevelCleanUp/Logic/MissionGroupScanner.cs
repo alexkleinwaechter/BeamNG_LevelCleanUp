@@ -35,7 +35,12 @@ namespace BeamNG_LevelCleanUp.Logic
                         var asset = jsonObject.Deserialize<Asset>(BeamJsonOptions.Get());
                         if (!string.IsNullOrEmpty(asset?.ShapeName)) {
                             var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
-                            asset.MaterialsDae = daeScanner.GetMaterials();
+                            asset.DaeExists = daeScanner.Exists();
+                            if (asset.DaeExists.HasValue && asset.DaeExists.Value == true)
+                            {
+                                asset.DaePath = daeScanner.ResolvedPath();
+                                asset.MaterialsDae = daeScanner.GetMaterials();
+                            }
                         }
                         _assets.Add(asset);
                     }

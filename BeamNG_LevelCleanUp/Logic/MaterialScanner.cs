@@ -11,12 +11,12 @@ namespace BeamNG_LevelCleanUp.Logic
 {
     internal class MaterialScanner
     {
-        private string _missiongroupPath { get; set; }
+        private string _matJsonPath { get; set; }
         private string _levelPath { get; set; }
         private List<MaterialJson> _materials = new List<MaterialJson>();
-        internal MaterialScanner(string missiongroupPath, string levelPath, List<MaterialJson> materials)
+        internal MaterialScanner(string matJsonPath, string levelPath, List<MaterialJson> materials)
         {
-            _missiongroupPath = missiongroupPath;
+            _matJsonPath = matJsonPath;
             _materials = materials;
             _levelPath = levelPath;
         }
@@ -25,7 +25,7 @@ namespace BeamNG_LevelCleanUp.Logic
         internal async void ScanMaterialsJsonFile()
         {
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            var jsonObject = JsonDocument.Parse(File.ReadAllText(_missiongroupPath), docOptions).RootElement;
+            var jsonObject = JsonDocument.Parse(File.ReadAllText(_matJsonPath), docOptions).RootElement;
             if (jsonObject.ValueKind != JsonValueKind.Undefined)
             {
                 try
@@ -35,6 +35,10 @@ namespace BeamNG_LevelCleanUp.Logic
                         try
                         {
                             var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
+                            if (material?.Stages != null) {
+                                var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
+                                material.MaterialFiles = fileScanner.GetMaterialFiles();
+                            }
                             _materials.Add(material);
                         }
                         catch (Exception ex)

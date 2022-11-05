@@ -28,6 +28,14 @@ namespace BeamNG_LevelCleanUp.Logic
                 _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
                 .Replace("\\\\", "\\");
         }
+        public bool Exists() {
+            var fileInfo = new FileInfo(_resolvedDaePath);
+            return fileInfo.Exists;
+        }
+        public string ResolvedPath()
+        {
+            return _resolvedDaePath;
+        }
         public List<MaterialsDae> GetMaterials()
         {
             var retVal = new List<MaterialsDae>();

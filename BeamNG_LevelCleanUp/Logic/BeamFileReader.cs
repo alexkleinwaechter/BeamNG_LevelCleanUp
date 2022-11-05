@@ -12,18 +12,22 @@ namespace BeamNG_LevelCleanUp.Logic
         private enum ReadTypeEnum
         {
             MissionGroup = 0,
-            MaterialsJson = 1
+            MaterialsJson = 1,
+            AllDae = 2
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _path { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
         public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
+        public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
         internal BeamFileReader(string path)
         {
             _path = path;
         }
         internal void ReadMissionGroup()
         {
+            Assets = new List<Asset>();
+            MaterialsJson = new List<MaterialJson>();
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
@@ -41,12 +45,36 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "main.materials.json", ReadTypeEnum.MaterialsJson);
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
                     Console.WriteLine(s);
                 }
+            }
+        }
+
+        internal void ReadAllDae()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.AllDae);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        internal void ResolveObsoleteFiles()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path);
+                resolver.ResolveUnusedAssets();
             }
         }
 
@@ -94,6 +122,9 @@ namespace BeamNG_LevelCleanUp.Logic
                         case ReadTypeEnum.MaterialsJson:
                             var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson);
                             materialScanner.ScanMaterialsJsonFile();
+                            break;
+                        case ReadTypeEnum.AllDae:
+                            AllDaeList.Add(fi);
                             break;
                         default:
                             break;

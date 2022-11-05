@@ -46,8 +46,10 @@ namespace BeamNG_LevelCleanUp
         private void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
             var reader = new BeamFileReader(this.textBox1.Text);
-            //reader.ReadMissionGroup();
+            reader.ReadMissionGroup();
             reader.ReadMaterialsJson();
+            reader.ReadAllDae();
+            reader.ResolveObsoleteFiles();
         }
     }
 }

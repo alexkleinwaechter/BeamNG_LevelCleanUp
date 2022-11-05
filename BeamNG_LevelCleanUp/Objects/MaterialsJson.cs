@@ -12,6 +12,6 @@ namespace BeamNG_LevelCleanUp.Objects
         public string Class { get; set; }
         public string MapTo { get; set; }
         public List<MaterialStage> Stages { get; set; }
-        public List<FileInfo>? Files { get; set; }
+        public List<MaterialFile>? MaterialFiles { get; set; }
     }
 }
