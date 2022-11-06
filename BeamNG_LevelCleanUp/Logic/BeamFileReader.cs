@@ -14,7 +14,9 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             MissionGroup = 0,
             MaterialsJson = 1,
-            AllDae = 2
+            AllDae = 2,
+            MainDecalsJson = 3,
+            ManagedDecalData = 4
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _path { get; set; }
@@ -47,6 +49,25 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        private static List<FileInfo> _mainDecalsJson { get; set; } = new List<FileInfo>();
+        private static List<FileInfo> _managedDecalData { get; set; } = new List<FileInfo>();
+        internal void ReadDecals()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.MainDecalsJson);
+                WalkDirectoryTree(dirInfo, "managedDecalData.cs", ReadTypeEnum.ManagedDecalData);
+                var decalScanner = new DecalScanner(Assets, _mainDecalsJson, _managedDecalData);
+                decalScanner.ScanDecals();
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -129,6 +150,12 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.AllDae:
                             AllDaeList.Add(fi);
+                            break;
+                        case ReadTypeEnum.MainDecalsJson:
+                            _mainDecalsJson.Add(fi);
+                            break;
+                        case ReadTypeEnum.ManagedDecalData:
+                            _managedDecalData.Add(fi);
                             break;
                         default:
                             break;

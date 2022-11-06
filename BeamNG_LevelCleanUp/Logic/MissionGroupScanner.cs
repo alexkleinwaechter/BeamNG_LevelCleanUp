@@ -1,6 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -33,6 +34,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     try
                     {
                         var asset = jsonObject.Deserialize<Asset>(BeamJsonOptions.Get());
+                        if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/ellern_map/art/shapes/custom/gas_station_petronas_c/gas_station_petronas.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
                         if (!string.IsNullOrEmpty(asset?.ShapeName)) {
                             var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
                             asset.DaeExists = daeScanner.Exists();

@@ -60,7 +60,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 if (elem.HasAttribute("name"))
                 {
-                    matDae.MaterialName = elem.GetAttribute("name");
+                    var nameParts = elem.GetAttribute("name").Split(" ");
+                    matDae.MaterialName = nameParts.FirstOrDefault();
+
                 }
                 if (!string.IsNullOrEmpty(matDae.MaterialId))
                 {

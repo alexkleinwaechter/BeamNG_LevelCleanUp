@@ -39,7 +39,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (var prop in stage.GetType().GetProperties())
                 {
                     var val = (string)prop.GetValue(stage, null);
-                    if (val == "/levels/ellern_map/art/shapes/custom/smallhouses_c/Haus_2_Dach_Grau_Wand_Gelb/Haus_2_Dach_Grau_Wand_Gelb")
+                    if (val == "/levels/ellern_map/art/shapes/custom/gasstation_german_c/Gas_Station_Type_1_Col.color.png")
                     {
                         //Bei zwei gleichen Path Segmenten scheitert Resolve!
                         var x = 1;

@@ -47,6 +47,7 @@ namespace BeamNG_LevelCleanUp
         {
             var reader = new BeamFileReader(this.textBox1.Text);
             reader.ReadMissionGroup();
+            reader.ReadDecals();
             reader.ReadMaterialsJson();
             reader.ReadAllDae();
             reader.ResolveObsoleteFiles();

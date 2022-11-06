@@ -1,6 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
@@ -41,13 +42,29 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             var materialNamesInUnusedDae = materialsInUnusedDae.Select(x => x.MaterialName).Distinct().ToList();
             var usedAssetsWithMaterials = _usedAssets
-                .Where(x => !string.IsNullOrEmpty(x.Material) || x.MaterialsDae.Count > 0);
+                .Where(x => !string.IsNullOrEmpty(x.Material)
+                || !string.IsNullOrEmpty(x.SideMaterial)
+                || !string.IsNullOrEmpty(x.TopMaterial)
+                || !string.IsNullOrEmpty(x.BottomMaterial)
+                || x.MaterialsDae.Count > 0);
             var materialNamesInUsedAssets = new List<string>();
             foreach (var item in usedAssetsWithMaterials)
             {
                 if (!string.IsNullOrEmpty(item.Material))
                 {
                     materialNamesInUsedAssets.Add(item.Material);
+                }
+                if (!string.IsNullOrEmpty(item.SideMaterial))
+                {
+                    materialNamesInUsedAssets.Add(item.SideMaterial);
+                }
+                if (!string.IsNullOrEmpty(item.TopMaterial))
+                {
+                    materialNamesInUsedAssets.Add(item.TopMaterial);
+                }
+                if (!string.IsNullOrEmpty(item.BottomMaterial))
+                {
+                    materialNamesInUsedAssets.Add(item.BottomMaterial);
                 }
                 if (item.MaterialsDae.Count > 0)
                 {
@@ -56,10 +73,32 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             materialNamesInUsedAssets = materialNamesInUsedAssets.Distinct().ToList();
             var materialsToRemove = materialNamesInUnusedDae.Where(x => !materialNamesInUsedAssets.Contains(x)).ToList();
-
+            var allMaterialsNotused = _materials.Where(x => !materialNamesInUsedAssets.Contains(x.Name)).Select(x => x.Name).ToList();
+            materialsToRemove = materialsToRemove.Concat(allMaterialsNotused).Distinct().ToList();
             var filePathsToRemove = new List<string>();
             filePathsToRemove.AddRange(unusedDae.Select(x => x.FullName));
             filePathsToRemove.AddRange(unusedDae.Select(x => Path.ChangeExtension(x.FullName, ".cdae")));
+            bool stopFlag = true;
+            var iterationCounter = 0;
+            while (stopFlag)
+            {
+                var before = filePathsToRemove.Count;
+                MarkUnusedMaterials(materialNamesInUsedAssets, materialsToRemove, filePathsToRemove);
+                iterationCounter++;
+                var after = filePathsToRemove.Count;
+                if (after == before) stopFlag = false;
+            }
+
+            foreach (var file in filePathsToRemove)
+            {
+                var info = new FileInfo(file);
+                if (info.Exists)
+                    File.Delete(file);
+            }
+        }
+
+        private void MarkUnusedMaterials(List<string> materialNamesInUsedAssets, List<string> materialsToRemove, List<string> filePathsToRemove)
+        {
             foreach (var item in materialsToRemove)
             {
                 var mat = _materials
@@ -68,25 +107,25 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     foreach (var m in mat)
                     {
+                        if (m.Name.Equals("gas", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
+                        m.NotUsed = true;
                         foreach (var file in m.MaterialFiles)
                         {
                             var fileInOtherMaterial = _materials
                                 .Where(x => materialNamesInUsedAssets.Contains(x.Name))
                                 .Where(x => !string.IsNullOrEmpty(x.Name) && x.Name != m.Name && x.MaterialFiles != null)
+                                .Where(x => x.NotUsed == false)
                                 .SelectMany(x => x.MaterialFiles).Any(y => y.File.FullName.Equals(file.File.FullName, StringComparison.InvariantCultureIgnoreCase));
                             if (!fileInOtherMaterial)
                             {
-                                filePathsToRemove.Add(file.File.FullName);
+                                if (!filePathsToRemove.Contains(file.File.FullName))
+                                {
+                                    filePathsToRemove.Add(file.File.FullName);
+                                }
                             }
                         }
                     }
                 }
-            }
-            foreach (var file in filePathsToRemove)
-            {
-                var info = new FileInfo(file);
-                if (info.Exists)
-                    File.Delete(file);
             }
         }
     }

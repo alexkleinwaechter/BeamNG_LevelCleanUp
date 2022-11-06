@@ -16,6 +16,10 @@ namespace BeamNG_LevelCleanUp.Objects
         public string ShapePath { get; set; }
         public FileInfo File { get; set; }
         public string Material { get; set; }
+        public string SideMaterial { get; set; }
+        public string TopMaterial { get; set; }
+        public string BottomMaterial { get; set; }
+
         //public List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         public List<MaterialsDae> MaterialsDae { get; set; } = new List<MaterialsDae>();
         public bool? DaeExists { get; set; }
