@@ -89,12 +89,17 @@ namespace BeamNG_LevelCleanUp.Logic
                 if (after == before) stopFlag = false;
             }
 
+            var textLines = new List<string>();
             foreach (var file in filePathsToRemove)
             {
                 var info = new FileInfo(file);
                 if (info.Exists)
+                {
                     File.Delete(file);
+                    textLines.Add(info.FullName);
+                }
             }
+            File.WriteAllLines(Path.Join(_levelPath, "DeletedFiles.txt"), textLines);
         }
 
         private void MarkUnusedMaterials(List<string> materialNamesInUsedAssets, List<string> materialsToRemove, List<string> filePathsToRemove)
