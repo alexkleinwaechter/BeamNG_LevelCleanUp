@@ -16,7 +16,9 @@ namespace BeamNG_LevelCleanUp.Logic
             MaterialsJson = 1,
             AllDae = 2,
             MainDecalsJson = 3,
-            ManagedDecalData = 4
+            ManagedDecalData = 4,
+            ForestJsonFiles = 5,
+            ManagedItemData = 6
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _path { get; set; }
@@ -76,6 +78,25 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        private static List<FileInfo> _forestJsonFiles { get; set; } = new List<FileInfo>();
+        private static List<FileInfo> _managedItemData { get; set; } = new List<FileInfo>();
+        internal void ReadForest()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ForestJsonFiles);
+                WalkDirectoryTree(dirInfo, "managedItemData.cs", ReadTypeEnum.ManagedItemData);
+                var forestScanner = new ForestScanner(Assets, _forestJsonFiles, _managedItemData, _path);
+                forestScanner.ScanForest();
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
         internal void ReadAllDae()
         {
             var dirInfo = new DirectoryInfo(_path);
@@ -102,7 +123,8 @@ namespace BeamNG_LevelCleanUp.Logic
 
         static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
-            var exclude = new List<string> { "art\\shapes\\groundcover", "art\\shapes\\trees", "art\\shapes\\rocks", "art\\shapes\\driver_training" };
+            var exclude = new List<string>();
+            //var exclude = new List<string> { "art\\shapes\\groundcover", "art\\shapes\\trees", "art\\shapes\\rocks", "art\\shapes\\driver_training" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 
@@ -156,6 +178,12 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.ManagedDecalData:
                             _managedDecalData.Add(fi);
+                            break;
+                        case ReadTypeEnum.ForestJsonFiles:
+                            _forestJsonFiles.Add(fi);
+                            break;
+                        case ReadTypeEnum.ManagedItemData:
+                            _managedItemData.Add(fi);
                             break;
                         default:
                             break;

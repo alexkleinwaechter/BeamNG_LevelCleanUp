@@ -1,6 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -39,11 +40,8 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (var prop in stage.GetType().GetProperties())
                 {
                     var val = (string)prop.GetValue(stage, null);
-                    if (val == "/levels/ellern_map/art/shapes/custom/gasstation_german_c/Gas_Station_Type_1_Col.color.png")
-                    {
-                        //Bei zwei gleichen Path Segmenten scheitert Resolve!
-                        var x = 1;
-                    }
+                    //if (val == "/levels/ellern_map/art/shapes/custom/gasstation_german_c/Gas_Station_Type_1_Col.color.png") Debugger.Break();
+                    if (val == "levels/ellern_map/art/shapes/rocks/moss_rocks_01_a_d.dds") Debugger.Break();
                     if (!string.IsNullOrEmpty(val))
                     {
                         if (val.Count(c => c == '/') == 0)

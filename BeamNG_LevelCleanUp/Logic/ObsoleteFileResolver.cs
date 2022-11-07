@@ -73,7 +73,8 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             materialNamesInUsedAssets = materialNamesInUsedAssets.Distinct().ToList();
             var materialsToRemove = materialNamesInUnusedDae.Where(x => !materialNamesInUsedAssets.Contains(x)).ToList();
-            var allMaterialsNotused = _materials.Where(x => !materialNamesInUsedAssets.Contains(x.Name)).Select(x => x.Name).ToList();
+            var allMaterialsNotused = _materials.Where(x => !materialNamesInUsedAssets.Contains(x.MapTo)).Select(x => x.MapTo)
+                .ToList();
             materialsToRemove = materialsToRemove.Concat(allMaterialsNotused).Distinct().ToList();
             var filePathsToRemove = new List<string>();
             filePathsToRemove.AddRange(unusedDae.Select(x => x.FullName));

@@ -14,6 +14,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public string ShapeFullName { get; set; }
         public string ShapeName { get; set; }
         public string ShapePath { get; set; }
+        public string Filename { get; set; }
         public FileInfo File { get; set; }
         public string Material { get; set; }
         public string SideMaterial { get; set; }
