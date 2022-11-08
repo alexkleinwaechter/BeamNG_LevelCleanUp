@@ -34,6 +34,21 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             _path = path;
         }
+
+        internal void Reset()
+        {
+            Assets = new List<Asset>();
+            MaterialsJson = new List<MaterialJson>();
+            AllDaeList = new List<FileInfo>();
+            ExcludeFiles = new List<string>();
+            UnusedAssetFiles = new List<string>();
+            _mainDecalsJson = new List<FileInfo>();
+            _managedDecalData = new List<FileInfo>();
+            _managedItemData = new List<FileInfo>();
+            _forestJsonFiles = new List<FileInfo>();
+            _allImageFiles = new List<FileInfo>();
+            _imageFilesToRemove = new List<FileInfo>();
+        }
         internal void ReadInfoJson()
         {
             var dirInfo = new DirectoryInfo(_path);
@@ -229,7 +244,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             missionGroupScanner.ScanMissionGroupFile();
                             break;
                         case ReadTypeEnum.MaterialsJson:
-                            var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson, ExcludeFiles);
+                            var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson, Assets, ExcludeFiles);
                             materialScanner.ScanMaterialsJsonFile();
                             break;
                         case ReadTypeEnum.TerrainFile:

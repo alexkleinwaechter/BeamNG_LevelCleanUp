@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -15,13 +16,15 @@ namespace BeamNG_LevelCleanUp.Logic
         private string _matJsonPath { get; set; }
         private string _levelPath { get; set; }
         private List<MaterialJson> _materials = new List<MaterialJson>();
+        private List<Asset> _assets = new List<Asset>();
         private List<string> _excludeFiles = new List<string>();
-        internal MaterialScanner(string matJsonPath, string levelPath, List<MaterialJson> materials, List<string> excludeFiles)
+        internal MaterialScanner(string matJsonPath, string levelPath, List<MaterialJson> materials, List<Asset> assets, List<string> excludeFiles)
         {
             _matJsonPath = matJsonPath;
             _materials = materials;
             _levelPath = levelPath;
             _excludeFiles = excludeFiles;
+            _assets = assets;
         }
 
         private string ResolvePath(string resourcePath)
@@ -67,6 +70,14 @@ namespace BeamNG_LevelCleanUp.Logic
                                         Missing = !fi.Exists
                                     });
                                 }
+                            }
+                            if (!string.IsNullOrEmpty(material.Cubemap))
+                            {
+                                _assets.Add(new Asset
+                                {
+                                    Class = "Decal",
+                                    Material = material.Cubemap,
+                                });
                             }
                             if (!string.IsNullOrEmpty(material.InternalName) && string.IsNullOrEmpty(material.MapTo))
                             {

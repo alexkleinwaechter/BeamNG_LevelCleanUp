@@ -22,10 +22,16 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         private string ResolvePath(string materialFilePath)
         {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, materialFilePath.Replace(toReplaceDelim, delim));
-
+            if (Path.IsPathRooted(materialFilePath) && Path.IsPathFullyQualified(materialFilePath))
+            {
+                return materialFilePath;
+            }
+            else
+            {
+                char toReplaceDelim = '/';
+                char delim = '\\';
+                return Path.Join(_levelPath, materialFilePath.Replace(toReplaceDelim, delim));
+            }
             //return string.Join(
             //    new string(delim, 1),
             //    _levelPath.Split(delim).Concat(materialFilePath.Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
@@ -41,7 +47,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     var val = (string)prop.GetValue(stage, null);
                     //if (val == "/levels/ellern_map/art/shapes/custom/gasstation_german_c/Gas_Station_Type_1_Col.color.png") Debugger.Break();
-                    //if (val == "/levels/ellern_map/art/shapes/groundcover/t_undergrowth_01_o.data.png") Debugger.Break();
+                    //if (val == "containers_01_a_d.dds") Debugger.Break();
                     if (!string.IsNullOrEmpty(val))
                     {
                         if (val.Count(c => c == '/') == 0)
