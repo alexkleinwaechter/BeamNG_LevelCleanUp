@@ -41,7 +41,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     var val = (string)prop.GetValue(stage, null);
                     //if (val == "/levels/ellern_map/art/shapes/custom/gasstation_german_c/Gas_Station_Type_1_Col.color.png") Debugger.Break();
-                    if (val == "levels/ellern_map/art/shapes/rocks/moss_rocks_01_a_d.dds") Debugger.Break();
+                    //if (val == "/levels/ellern_map/art/shapes/groundcover/t_undergrowth_01_o.data.png") Debugger.Break();
                     if (!string.IsNullOrEmpty(val))
                     {
                         if (val.Count(c => c == '/') == 0)

@@ -45,7 +45,14 @@ namespace BeamNG_LevelCleanUp.Logic
             var retVal = new List<MaterialsDae>();
             //Create the XmlDocument.
             XmlDocument doc = new XmlDocument();
-            doc.Load(_resolvedDaePath);
+            try
+            {
+                doc.Load(_resolvedDaePath);
+            }
+            catch (Exception)
+            {
+                //Add collada logger
+            }
 
             //Display all the book titles.
             XmlNodeList elemList = doc.GetElementsByTagName("material");

@@ -15,11 +15,13 @@ namespace BeamNG_LevelCleanUp.Logic
         private string _missiongroupPath { get; set; }
         private string _levelPath { get; set; }
         private List<Asset> _assets = new List<Asset>();
-        internal MissionGroupScanner(string missiongroupPath, string levelPath, List<Asset> assets)
+        private List<string> _excludeFiles = new List<string>();
+        internal MissionGroupScanner(string missiongroupPath, string levelPath, List<Asset> assets, List<string> excludeFiles)
         {
             _missiongroupPath = missiongroupPath;
             _assets = assets;
             _levelPath = levelPath;
+            _excludeFiles = excludeFiles;
         }
 
         private string ResolvePath(string resourcePath)
@@ -51,6 +53,30 @@ namespace BeamNG_LevelCleanUp.Logic
                             AddPrefabDaeFiles(asset);
                             continue;
                         }
+                        if (!string.IsNullOrEmpty(asset.GlobalEnviromentMap))
+                        {
+                            asset.Material = asset.GlobalEnviromentMap;
+                        }
+                        if (!string.IsNullOrEmpty(asset.Texture))
+                        {
+                            _excludeFiles.Add(ResolvePath(asset.Texture));
+                        }
+                        if (!string.IsNullOrEmpty(asset.Cubemap))
+                        {
+                            asset.Material = asset.Cubemap;
+                        }
+                        if (!string.IsNullOrEmpty(asset.FoamTex))
+                        {
+                            _excludeFiles.Add(ResolvePath(asset.FoamTex));
+                        }
+                        if (!string.IsNullOrEmpty(asset.RippleTex))
+                        {
+                            _excludeFiles.Add(ResolvePath(asset.RippleTex));
+                        }
+                        if (!string.IsNullOrEmpty(asset.DepthGradientTex))
+                        {
+                            _excludeFiles.Add(ResolvePath(asset.DepthGradientTex));
+                        }
                         AddAsset(asset);
                     }
                     catch (Exception ex)
@@ -62,7 +88,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private void AddAsset(Asset? asset)
         {
-            if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/ellern_map/art/shapes/custom/gas_station_petronas_c/gas_station_petronas.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
+            //if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/ellern_map/art/shapes/custom/gas_station_petronas_c/gas_station_petronas.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
             {
                 var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
@@ -86,10 +112,11 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (var shapeName in shapeNames)
                 {
                     counter++;
-                    var asset = new Asset { 
-                    Name = $"{file.Name}_{counter}",
-                    Class= "TSStatic",
-                    ShapeName = shapeName
+                    var asset = new Asset
+                    {
+                        Name = $"{file.Name}_{counter}",
+                        Class = "TSStatic",
+                        ShapeName = shapeName
                     };
                     AddAsset(asset);
                 }

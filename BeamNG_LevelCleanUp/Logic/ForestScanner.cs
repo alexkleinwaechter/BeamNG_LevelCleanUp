@@ -44,7 +44,7 @@ namespace BeamNG_LevelCleanUp.Logic
         private void AddAsset(Asset? asset)
         {
             //if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/ellern_map/art/shapes/custom/gas_station_petronas_c/gas_station_petronas.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
-            if (asset.ShapeName != null && asset.ShapeName.Equals("levels/ellern_map/art/shapes/rocks/rock_01_a_small_a.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
+            //if (asset.ShapeName != null && asset.ShapeName.Equals("levels/ellern_map/art/shapes/rocks/rock_01_a_small_a.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
             {
                 var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);

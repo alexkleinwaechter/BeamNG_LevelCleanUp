@@ -20,6 +20,12 @@ namespace BeamNG_LevelCleanUp.Objects
         public string SideMaterial { get; set; }
         public string TopMaterial { get; set; }
         public string BottomMaterial { get; set; }
+        public string GlobalEnviromentMap { get; set; }
+        public string Texture { get; set; }
+        public string Cubemap { get; set; }
+        public string FoamTex { get; set; }
+        public string RippleTex { get; set; }
+        public string DepthGradientTex { get; set; }
 
         //public List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         public List<MaterialsDae> MaterialsDae { get; set; } = new List<MaterialsDae>();

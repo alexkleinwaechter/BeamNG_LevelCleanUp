@@ -18,17 +18,36 @@ namespace BeamNG_LevelCleanUp.Logic
             MainDecalsJson = 3,
             ManagedDecalData = 4,
             ForestJsonFiles = 5,
-            ManagedItemData = 6
+            ManagedItemData = 6,
+            InfoJson = 7,
+            ImageFile = 8,
+            TerrainFile = 9,
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _path { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
         public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
+        public static List<string> ExcludeFiles { get; set; } = new List<string>();
+        public static List<string> UnusedAssetFiles = new List<string>();
         internal BeamFileReader(string path)
         {
             _path = path;
         }
+        internal void ReadInfoJson()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
         internal void ReadMissionGroup()
         {
             Assets = new List<Asset>();
@@ -51,6 +70,20 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        internal void ReadTerrainJson()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.terrain.json", ReadTypeEnum.TerrainFile);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -111,13 +144,42 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ResolveObsoleteFiles()
+        internal void ResolveUnusedAssetFiles()
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
                 var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path);
-                resolver.ResolveUnusedAssets();
+                UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
+                var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles");
+                deleter.Delete();
+            }
+        }
+
+        private static List<FileInfo> _allImageFiles { get; set; } = new List<FileInfo>();
+        private static List<FileInfo> _imageFilesToRemove { get; set; } = new List<FileInfo>();
+        internal void ResolveOrphanedFiles()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.dds", ReadTypeEnum.ImageFile);
+                WalkDirectoryTree(dirInfo, "*.png", ReadTypeEnum.ImageFile);
+                WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile);
+                WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile);
+                WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile);
+                var materials = MaterialsJson
+                    .SelectMany(x => x.MaterialFiles)
+                    .Select(x => x.File.FullName.ToLowerInvariant())
+                    .ToList();
+                _imageFilesToRemove = _allImageFiles.Where(x => !materials.Contains(x.FullName.ToLowerInvariant())).ToList();
+                var deleter = new FileDeleter(_imageFilesToRemove.Select(x => x.FullName).ToList(), _path, "DeletedOrphanedFiles");
+                deleter.Delete();
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
             }
         }
 
@@ -163,12 +225,16 @@ namespace BeamNG_LevelCleanUp.Logic
                     switch (readTypeEnum)
                     {
                         case ReadTypeEnum.MissionGroup:
-                            var missionGroupScanner = new MissionGroupScanner(fi.FullName, _path, Assets);
+                            var missionGroupScanner = new MissionGroupScanner(fi.FullName, _path, Assets, ExcludeFiles);
                             missionGroupScanner.ScanMissionGroupFile();
                             break;
                         case ReadTypeEnum.MaterialsJson:
-                            var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson);
+                            var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson, ExcludeFiles);
                             materialScanner.ScanMaterialsJsonFile();
+                            break;
+                        case ReadTypeEnum.TerrainFile:
+                            var terrainScanner = new TerrainScanner(fi.FullName, _path, Assets, MaterialsJson, ExcludeFiles);
+                            terrainScanner.ScanTerrain();
                             break;
                         case ReadTypeEnum.AllDae:
                             AllDaeList.Add(fi);
@@ -184,6 +250,16 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.ManagedItemData:
                             _managedItemData.Add(fi);
+                            break;
+                        case ReadTypeEnum.ImageFile:
+                            if (!ExcludeFiles.Contains(fi.FullName))
+                            {
+                                _allImageFiles.Add(fi);
+                            }
+                            break;
+                        case ReadTypeEnum.InfoJson:
+                            var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);
+                            ExcludeFiles.AddRange(infoJsonScanner.GetExcludeFiles());
                             break;
                         default:
                             break;

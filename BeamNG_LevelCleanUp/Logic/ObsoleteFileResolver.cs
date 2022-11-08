@@ -26,7 +26,7 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = levelPath;
         }
 
-        public void ResolveUnusedAssets()
+        public List<string> ReturnUnusedAssetFiles()
         {
             var usedPaths = _usedAssets
                 .Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
@@ -73,8 +73,12 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             materialNamesInUsedAssets = materialNamesInUsedAssets.Distinct().ToList();
             var materialsToRemove = materialNamesInUnusedDae.Where(x => !materialNamesInUsedAssets.Contains(x)).ToList();
-            var allMaterialsNotused = _materials.Where(x => !materialNamesInUsedAssets.Contains(x.MapTo)).Select(x => x.MapTo)
+            
+            
+            var allMaterialsNotusedMapTo = _materials.Where(x => !materialNamesInUsedAssets.Contains(x.MapTo)).Select(x => x.MapTo)
                 .ToList();
+            var allMaterialsNotused = allMaterialsNotusedMapTo
+                .Distinct().ToList();
             materialsToRemove = materialsToRemove.Concat(allMaterialsNotused).Distinct().ToList();
             var filePathsToRemove = new List<string>();
             filePathsToRemove.AddRange(unusedDae.Select(x => x.FullName));
@@ -89,18 +93,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 var after = filePathsToRemove.Count;
                 if (after == before) stopFlag = false;
             }
-
-            var textLines = new List<string>();
-            foreach (var file in filePathsToRemove)
-            {
-                var info = new FileInfo(file);
-                if (info.Exists)
-                {
-                    File.Delete(file);
-                    textLines.Add(info.FullName);
-                }
-            }
-            File.WriteAllLines(Path.Join(_levelPath, "DeletedFiles.txt"), textLines);
+            return filePathsToRemove;
         }
 
         private void MarkUnusedMaterials(List<string> materialNamesInUsedAssets, List<string> materialsToRemove, List<string> filePathsToRemove)
