@@ -32,10 +32,15 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
+        public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
         internal BeamFileReader(string path, bool dryRun)
         {
             _path = path;
             _dryRun = dryRun;
+        }
+
+        internal BeamFileReader()
+        {
         }
 
         internal void Reset()
@@ -51,6 +56,11 @@ namespace BeamNG_LevelCleanUp.Logic
             _forestJsonFiles = new List<FileInfo>();
             _allImageFiles = new List<FileInfo>();
             _imageFilesToRemove = new List<FileInfo>();
+        }
+
+        internal List<FileInfo> GetDeleteList()
+        {
+            return DeleteList.OrderBy(x => x.FullName).ToList();
         }
         internal void ReadInfoJson()
         {
@@ -191,8 +201,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path, ExcludeFiles);
                 UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
                 UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
-                var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
-                deleter.Delete();
+                DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
+                //var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
+                //deleter.Delete();
             }
         }
 
@@ -214,17 +225,24 @@ namespace BeamNG_LevelCleanUp.Logic
                     .ToList();
                 _imageFilesToRemove = _allImageFiles.Where(x => !materials.Contains(x.FullName.ToLowerInvariant())).ToList();
                 _imageFilesToRemove = _imageFilesToRemove.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.FullName.ToLowerInvariant())).ToList();
-                var deleter = new FileDeleter(_imageFilesToRemove.Select(x => x.FullName).ToList(), _path, "DeletedOrphanedFiles", _dryRun);
-                deleter.Delete();
+                DeleteList.AddRange(_imageFilesToRemove);
+                //var deleter = new FileDeleter(_imageFilesToRemove.Select(x => x.FullName).ToList(), _path, "DeletedOrphanedFiles", _dryRun);
+                //deleter.Delete();
                 //output exclude files alwasy drytrun true!
-                deleter = new FileDeleter(ExcludeFiles, _path, "ExcludedFiles", true);
-                deleter.Delete();
+                //deleter = new FileDeleter(ExcludeFiles, _path, "ExcludedFiles", true);
+                //deleter.Delete();
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
                     Console.WriteLine(s);
                 }
             }
+        }
+
+        internal void DeleteFilesAndDeploy(List<FileInfo> deleteList)
+        {
+            var deleter = new FileDeleter(deleteList, _path, "DeletedAssetFiles", _dryRun);
+            deleter.Delete();
         }
 
         static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
@@ -300,7 +318,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             _managedItemData.Add(fi);
                             break;
                         case ReadTypeEnum.ImageFile:
-                            if (!ExcludeFiles.Select(x => x.ToLowerInvariant()) .Contains(fi.FullName.ToLowerInvariant()))
+                            if (!ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(fi.FullName.ToLowerInvariant()))
                             {
                                 _allImageFiles.Add(fi);
                             }

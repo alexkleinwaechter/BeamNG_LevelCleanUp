@@ -49,9 +49,9 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 doc.Load(_resolvedDaePath);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                //Add collada logger
+                throw;
             }
 
             //Display all the book titles.

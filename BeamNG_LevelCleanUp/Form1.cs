@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Logic;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -13,6 +14,9 @@ namespace BeamNG_LevelCleanUp
 {
     public partial class Form1 : Form
     {
+        private BindingSource bindingSourceDeleteList = new BindingSource();
+        private List<GridFileListItem> SelectedFilesForDeletion { get; set; } = new List<GridFileListItem>();
+        private BeamFileReader Reader { get; set; }
         public Form1()
         {
             InitializeComponent();
@@ -25,12 +29,11 @@ namespace BeamNG_LevelCleanUp
 
             // Default to the My Documents folder.
             this.folderBrowserDialog1.RootFolder = Environment.SpecialFolder.Personal;
+            labelFileSummary.Text = String.Empty;
+            labelProgress.Text = String.Empty;
+            CheckVisibility();
         }
 
-        private void label1_Click(object sender, EventArgs e)
-        {
-
-        }
 
         private void btn_openLevelFolder_Click(object sender, EventArgs e)
         {
@@ -39,24 +42,190 @@ namespace BeamNG_LevelCleanUp
             if (result == DialogResult.OK)
             {
                 this.textBox1.Text = folderBrowserDialog1.SelectedPath;
-
+                CheckVisibility();
             }
+            CheckVisibility();
         }
 
         private void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
-            var reader = new BeamFileReader(this.textBox1.Text, this.chkDryRun.Checked);
-            reader.Reset();
-            reader.ReadInfoJson();
-            reader.ReadMissionGroup();
-            reader.ReadForest();
-            reader.ReadDecals();
-            reader.ReadTerrainJson();
-            reader.ReadMaterialsJson();
-            reader.ReadAllDae();
-            reader.ReadCsFilesForGenericExclude();
-            reader.ResolveUnusedAssetFiles();
-            reader.ResolveOrphanedFiles();
+            SelectedFilesForDeletion = new List<GridFileListItem>();
+            try
+            {
+                richTextBoxErrors.Clear();
+                Reader = new BeamFileReader(this.textBox1.Text, this.chkDryRun.Checked);
+                Reader.Reset();
+                labelProgress.Text = "Read info.json";
+                Application.DoEvents();
+                Reader.ReadInfoJson();
+                labelProgress.Text = "Read Missiongroups";
+                Application.DoEvents();
+                Reader.ReadMissionGroup();
+                labelProgress.Text = "Read Forestfiles";
+                Application.DoEvents();
+                Reader.ReadForest();
+                labelProgress.Text = "Read Decals";
+                Application.DoEvents();
+                Reader.ReadDecals();
+                labelProgress.Text = "Read terrain.json";
+                Application.DoEvents();
+                Reader.ReadTerrainJson();
+                labelProgress.Text = "Read materials.json";
+                Application.DoEvents();
+                Reader.ReadMaterialsJson();
+                labelProgress.Text = "Read all Dae files";
+                Application.DoEvents();
+                Reader.ReadAllDae();
+                labelProgress.Text = "Read Cs files";
+                Application.DoEvents();
+                Reader.ReadCsFilesForGenericExclude();
+                labelProgress.Text = "Resolve unused managed asset files";
+                Application.DoEvents();
+                Reader.ResolveUnusedAssetFiles();
+                labelProgress.Text = "Resolve orphaned unmanaged asset files";
+                Application.DoEvents();
+                Reader.ResolveOrphanedFiles();
+                labelProgress.Text = "Analyzing done";
+                Application.DoEvents();
+            }
+            catch (Exception ex)
+            {
+                richTextBoxErrors.Text += Environment.NewLine + labelProgress.Text + ":";
+                richTextBoxErrors.Text += Environment.NewLine + ex.Message;
+                if (ex.InnerException != null) {
+                    richTextBoxErrors.Text += Environment.NewLine + ex.InnerException.Message;
+                }
+                richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+                this.tabControl1.SelectedTab = tabPage2;
+            }
+            BuildGridDeleteFiles();
+            FillDeleteList();
+        }
+
+        private void FillDeleteList()
+        {
+            SelectedFilesForDeletion = new List<GridFileListItem>();
+            foreach (var file in Reader.GetDeleteList())
+            {
+                var item = new GridFileListItem
+                {
+                    FileInfo = file,
+                    Selected = this.cbAllNone.Checked,
+                    SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
+                };
+                SelectedFilesForDeletion.Add(item);
+                bindingSourceDeleteList.Add(item);
+            }
+
+            dataGridViewDeleteList.DataSource = bindingSourceDeleteList;
+            UpdateLabel();
+            CheckVisibility();
+        }
+
+        private void BuildGridDeleteFiles()
+        {
+            dataGridViewDeleteList.AutoGenerateColumns = false;
+            dataGridViewDeleteList.AutoSize = true;
+
+            DataGridViewCheckBoxColumn col1 = new DataGridViewCheckBoxColumn();
+            col1.DataPropertyName = "Selected";
+            col1.Name = "Delete";
+            dataGridViewDeleteList.Columns.Add(col1);
+
+            DataGridViewColumn col2 = new DataGridViewTextBoxColumn();
+            col2.DataPropertyName = "FileInfo";
+            col2.Name = "Filename";
+            dataGridViewDeleteList.Columns.Add(col2);
+            DataGridViewColumn col3 = new DataGridViewTextBoxColumn();
+            col3.DataPropertyName = "SizeMb";
+            col3.Name = "Filesize Megabytes";
+            dataGridViewDeleteList.Columns.Add(col3);
+            dataGridViewDeleteList.DataBindingComplete += (o, _) =>
+            {
+                var dataGridView = o as DataGridView;
+                if (dataGridView != null)
+                {
+                    dataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+                    dataGridView.Columns[dataGridView.ColumnCount - 1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                }
+            };
+        }
+
+        private void dataGridViewDeleteList_CellContentClick(object sender,
+            DataGridViewCellEventArgs e)
+        {
+            dataGridViewDeleteList.CommitEdit(DataGridViewDataErrorContexts.Commit);
+        }
+
+        /// <summary>
+        /// Works with the above.
+        /// </summary>
+        private void dataGridViewDeleteList_CellValueChanged(object sender,
+            DataGridViewCellEventArgs e)
+        {
+            dataGridViewDeleteList.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            var item = (GridFileListItem)dataGridViewDeleteList.Rows[e.RowIndex].DataBoundItem;
+            var listItem = SelectedFilesForDeletion.FirstOrDefault(x => x.FileInfo.FullName == item.FileInfo.FullName);
+            if (listItem != null)
+            {
+                listItem.Selected = item.Selected;
+            }
+            UpdateLabel();
+            CheckVisibility();
+        }
+
+        private void dataGridViewDeleteList_CurrentCellDirtyStateChanged(object sender, EventArgs e)
+        {
+            if (dataGridViewDeleteList.IsCurrentCellDirty == true && dataGridViewDeleteList.CurrentCell is DataGridViewCheckBoxCell)
+            {
+                // use BeginInvoke with (MethodInvoker) to run the code after the event is finished
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    dataGridViewDeleteList.EndEdit(DataGridViewDataErrorContexts.Commit);
+
+                });
+            }
+        }
+
+        private void btn_deleteFiles_Click(object sender, EventArgs e)
+        {
+            var selected = SelectedFilesForDeletion
+                .Where(x => x.Selected)
+                .Select(x => x.FileInfo)
+                 .ToList();
+            Reader.DeleteFilesAndDeploy(selected);
+        }
+
+        private void UpdateLabel()
+        {
+            var text = $"Files: {SelectedFilesForDeletion.Count()}, Selected: {SelectedFilesForDeletion.Where(x => x.Selected == true).Count()}, Sum Filesize MB: {Math.Round(SelectedFilesForDeletion.Where(x => x.Selected == true).Sum(x => x.SizeMb), 2)}";
+            this.labelFileSummary.Text = text;
+        }
+
+        private void cbAllNone_CheckedChanged(object sender, EventArgs e)
+        {
+            bindingSourceDeleteList.Clear();
+            FillDeleteList();
+        }
+
+        private void CheckVisibility()
+        {
+            if (string.IsNullOrEmpty(this.textBox1.Text))
+            {
+                this.btn_AnalyzeLevel.Enabled = false;
+            }
+            else
+            {
+                this.btn_AnalyzeLevel.Enabled = true;
+            }
+            if (this.SelectedFilesForDeletion.Where(x => x.Selected).Count() > 0)
+            {
+                this.btn_deleteFiles.Enabled = true;
+            }
+            else
+            {
+                this.btn_deleteFiles.Enabled = false;
+            }
         }
     }
 }

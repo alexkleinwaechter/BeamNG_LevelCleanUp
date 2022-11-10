@@ -93,6 +93,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 material.MapTo = material.Name;
                             }
+                            if (string.IsNullOrEmpty(material.Name)) {
+                                material.Name = material.MapTo;
+                            }
                             _materials.Add(material);
 
                             var temp = child.Value.EnumerateObject().ToList();
