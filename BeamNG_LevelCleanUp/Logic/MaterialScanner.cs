@@ -1,6 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -53,6 +54,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         try
                         {
                             var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
+                            //if (material.Name == "shawn2") Debugger.Break();
                             if (material?.Stages != null)
                             {
                                 var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
@@ -63,6 +65,10 @@ namespace BeamNG_LevelCleanUp.Logic
                                 foreach (var cf in material.CubeFace)
                                 {
                                     var fi = new FileInfo(ResolvePath(cf));
+                                    if (!fi.Exists)
+                                    {
+                                        fi = CheckMissingExtensions(fi);
+                                    }
                                     material.MaterialFiles.Add(new MaterialFile
                                     {
                                         File = fi,
@@ -109,6 +115,32 @@ namespace BeamNG_LevelCleanUp.Logic
                     throw;
                 }
             }
+        }
+
+        internal FileInfo CheckMissingExtensions(FileInfo fileInfo)
+        {
+
+            if (!fileInfo.Exists)
+            {
+                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".dds");
+                fileInfo = new FileInfo(ddsPath);
+            }
+            if (!fileInfo.Exists)
+            {
+                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".png");
+                fileInfo = new FileInfo(ddsPath);
+            }
+            if (!fileInfo.Exists)
+            {
+                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".jpg");
+                fileInfo = new FileInfo(ddsPath);
+            }
+            if (!fileInfo.Exists)
+            {
+                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".jpeg");
+                fileInfo = new FileInfo(ddsPath);
+            }
+            return fileInfo;
         }
     }
 }

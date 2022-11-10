@@ -22,17 +22,20 @@ namespace BeamNG_LevelCleanUp.Logic
             InfoJson = 7,
             ImageFile = 8,
             TerrainFile = 9,
+            ExcludeCsFiles = 10
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _path { get; set; }
+        private static bool _dryRun { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
         public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
-        internal BeamFileReader(string path)
+        internal BeamFileReader(string path, bool dryRun)
         {
             _path = path;
+            _dryRun = dryRun;
         }
 
         internal void Reset()
@@ -85,6 +88,7 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.MaterialsJson);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -159,14 +163,35 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        internal void ReadCsFilesForGenericExclude()
+        {
+            var dirInfo = new DirectoryInfo(_path);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "materials.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "managedDatablocks.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "managedParticleData.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "particles.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "sounds.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "lights.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "audioProfiles.cs", ReadTypeEnum.ExcludeCsFiles);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
         internal void ResolveUnusedAssetFiles()
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path);
+                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path, ExcludeFiles);
                 UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
-                var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles");
+                UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
+                var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
                 deleter.Delete();
             }
         }
@@ -188,7 +213,11 @@ namespace BeamNG_LevelCleanUp.Logic
                     .Select(x => x.File.FullName.ToLowerInvariant())
                     .ToList();
                 _imageFilesToRemove = _allImageFiles.Where(x => !materials.Contains(x.FullName.ToLowerInvariant())).ToList();
-                var deleter = new FileDeleter(_imageFilesToRemove.Select(x => x.FullName).ToList(), _path, "DeletedOrphanedFiles");
+                _imageFilesToRemove = _imageFilesToRemove.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.FullName.ToLowerInvariant())).ToList();
+                var deleter = new FileDeleter(_imageFilesToRemove.Select(x => x.FullName).ToList(), _path, "DeletedOrphanedFiles", _dryRun);
+                deleter.Delete();
+                //output exclude files alwasy drytrun true!
+                deleter = new FileDeleter(ExcludeFiles, _path, "ExcludedFiles", true);
                 deleter.Delete();
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
@@ -251,6 +280,10 @@ namespace BeamNG_LevelCleanUp.Logic
                             var terrainScanner = new TerrainScanner(fi.FullName, _path, Assets, MaterialsJson, ExcludeFiles);
                             terrainScanner.ScanTerrain();
                             break;
+                        case ReadTypeEnum.ExcludeCsFiles:
+                            var csScanner = new GenericCsFileScanner(fi, _path, ExcludeFiles);
+                            csScanner.ScanForFilesToExclude();
+                            break;
                         case ReadTypeEnum.AllDae:
                             AllDaeList.Add(fi);
                             break;
@@ -267,7 +300,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             _managedItemData.Add(fi);
                             break;
                         case ReadTypeEnum.ImageFile:
-                            if (!ExcludeFiles.Contains(fi.FullName))
+                            if (!ExcludeFiles.Select(x => x.ToLowerInvariant()) .Contains(fi.FullName.ToLowerInvariant()))
                             {
                                 _allImageFiles.Add(fi);
                             }

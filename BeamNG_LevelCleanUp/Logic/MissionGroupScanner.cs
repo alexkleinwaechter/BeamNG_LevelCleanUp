@@ -88,7 +88,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private void AddAsset(Asset? asset)
         {
-            //if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/ellern_map/art/shapes/custom/gas_station_petronas_c/gas_station_petronas.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
+            //if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/east_coast_rework/art/shapes/rails/track_straight_long.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
             {
                 var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
@@ -128,7 +128,7 @@ namespace BeamNG_LevelCleanUp.Logic
             List<string> shapeNames = new List<string>();
             foreach (string line in File.ReadLines(file.FullName))
             {
-                if (line.Contains("shapeName ="))
+                if (line.ToLowerInvariant().Contains("shapename ="))
                 {
                     var nameParts = line.Split('"');
                     if (nameParts.Length > 1)

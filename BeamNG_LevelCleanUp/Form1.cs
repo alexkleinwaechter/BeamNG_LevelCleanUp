@@ -45,7 +45,7 @@ namespace BeamNG_LevelCleanUp
 
         private void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
-            var reader = new BeamFileReader(this.textBox1.Text);
+            var reader = new BeamFileReader(this.textBox1.Text, this.chkDryRun.Checked);
             reader.Reset();
             reader.ReadInfoJson();
             reader.ReadMissionGroup();
@@ -54,6 +54,7 @@ namespace BeamNG_LevelCleanUp
             reader.ReadTerrainJson();
             reader.ReadMaterialsJson();
             reader.ReadAllDae();
+            reader.ReadCsFilesForGenericExclude();
             reader.ResolveUnusedAssetFiles();
             reader.ResolveOrphanedFiles();
         }

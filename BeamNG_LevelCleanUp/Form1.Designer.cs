@@ -33,6 +33,7 @@
             this.btn_openLevelFolder = new System.Windows.Forms.Button();
             this.btn_AnalyzeLevel = new System.Windows.Forms.Button();
             this.folderBrowserDialog1 = new System.Windows.Forms.FolderBrowserDialog();
+            this.chkDryRun = new System.Windows.Forms.CheckBox();
             this.SuspendLayout();
             // 
             // label1
@@ -64,7 +65,7 @@
             // 
             // btn_AnalyzeLevel
             // 
-            this.btn_AnalyzeLevel.Location = new System.Drawing.Point(14, 83);
+            this.btn_AnalyzeLevel.Location = new System.Drawing.Point(12, 120);
             this.btn_AnalyzeLevel.Name = "btn_AnalyzeLevel";
             this.btn_AnalyzeLevel.Size = new System.Drawing.Size(142, 29);
             this.btn_AnalyzeLevel.TabIndex = 3;
@@ -72,11 +73,24 @@
             this.btn_AnalyzeLevel.UseVisualStyleBackColor = true;
             this.btn_AnalyzeLevel.Click += new System.EventHandler(this.btn_AnalyzeLevel_Click);
             // 
+            // chkDryRun
+            // 
+            this.chkDryRun.AutoSize = true;
+            this.chkDryRun.Checked = true;
+            this.chkDryRun.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkDryRun.Location = new System.Drawing.Point(17, 79);
+            this.chkDryRun.Name = "chkDryRun";
+            this.chkDryRun.Size = new System.Drawing.Size(198, 24);
+            this.chkDryRun.TabIndex = 4;
+            this.chkDryRun.Text = "Dry Run without Deletion";
+            this.chkDryRun.UseVisualStyleBackColor = true;
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1071, 713);
+            this.Controls.Add(this.chkDryRun);
             this.Controls.Add(this.btn_AnalyzeLevel);
             this.Controls.Add(this.btn_openLevelFolder);
             this.Controls.Add(this.textBox1);
@@ -95,5 +109,6 @@
         private Button btn_openLevelFolder;
         private Button btn_AnalyzeLevel;
         private FolderBrowserDialog folderBrowserDialog1;
+        private CheckBox chkDryRun;
     }
 }

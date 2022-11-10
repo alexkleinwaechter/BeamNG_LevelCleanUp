@@ -11,23 +11,37 @@ namespace BeamNG_LevelCleanUp.Logic
         private List<string> _filePaths;
         private string _levelPath;
         private string _summaryFileName;
-        internal FileDeleter(List<string> filePaths, string levelPath, string summaryFileName) { 
+        private bool _dryRun { get; set; }
+        internal FileDeleter(List<string> filePaths, string levelPath, string summaryFileName, bool dryRun) { 
             _filePaths = filePaths;
             _levelPath = levelPath;
             _summaryFileName = summaryFileName;
+            _dryRun = dryRun;
         }
         public void Delete() {
             var textLines = new List<string>();
+            var textLinesNotFound = new List<string>();
             foreach (var file in _filePaths)
             {
                 var info = new FileInfo(file);
                 if (info.Exists)
                 {
-                    File.Delete(file);
+                    if (!_dryRun)
+                    {
+                        File.Delete(file);
+                    }
                     textLines.Add(info.FullName);
                 }
+                else
+                {
+                    textLinesNotFound.Add(info.FullName);
+                }
             }
-            File.WriteAllLines(Path.Join(_levelPath, $"{_summaryFileName}.txt"), textLines);
+            var dryrunText = _dryRun ? "_dry_run_not_deleted" : string.Empty;
+            File.WriteAllLines(Path.Join(_levelPath, $"{_summaryFileName}{dryrunText}.txt"), textLines);
+            if (textLinesNotFound.Count > 0) {
+                File.WriteAllLines(Path.Join(_levelPath, $"{_summaryFileName}_files_not_found.txt"), textLinesNotFound);
+            }
         }
     }
 }
