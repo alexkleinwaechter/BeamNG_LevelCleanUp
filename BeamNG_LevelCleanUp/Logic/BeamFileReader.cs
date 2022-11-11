@@ -245,6 +245,12 @@ namespace BeamNG_LevelCleanUp.Logic
             deleter.Delete();
         }
 
+        internal List<string> GetMissingFilesFromBeamLog(string fileName)
+        {
+            var logReader = new BeamLogReader(fileName, _path);
+            return logReader.ScanForMissingFiles();
+        }
+
         static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
             var exclude = new List<string>();

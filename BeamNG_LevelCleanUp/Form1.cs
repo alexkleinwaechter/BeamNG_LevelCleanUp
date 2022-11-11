@@ -17,18 +17,23 @@ namespace BeamNG_LevelCleanUp
         private BindingSource bindingSourceDeleteList = new BindingSource();
         private List<GridFileListItem> SelectedFilesForDeletion { get; set; } = new List<GridFileListItem>();
         private BeamFileReader Reader { get; set; }
+        private List<string> _missingFiles { get; set; } = new List<string>();
         public Form1()
         {
             InitializeComponent();
             // Set the help text description for the FolderBrowserDialog.
-            this.folderBrowserDialog1.Description =
+            this.folderBrowserDialogLevel.Description =
                 "Select the directory of your unzipped level.";
 
             // Do not allow the user to create new files via the FolderBrowserDialog.
-            this.folderBrowserDialog1.ShowNewFolderButton = false;
+            this.folderBrowserDialogLevel.ShowNewFolderButton = false;
 
             // Default to the My Documents folder.
-            this.folderBrowserDialog1.RootFolder = Environment.SpecialFolder.Personal;
+            this.folderBrowserDialogLevel.RootFolder = Environment.SpecialFolder.Personal;
+
+            this.openFileDialogLog.Filter = "Logfiles (*.log)|*.log";
+            this.openFileDialogLog.FileName = "beamng.log";
+
             labelFileSummary.Text = String.Empty;
             labelProgress.Text = String.Empty;
             CheckVisibility();
@@ -38,10 +43,10 @@ namespace BeamNG_LevelCleanUp
         private void btn_openLevelFolder_Click(object sender, EventArgs e)
         {
             // Show the FolderBrowserDialog.
-            DialogResult result = folderBrowserDialog1.ShowDialog();
+            DialogResult result = folderBrowserDialogLevel.ShowDialog();
             if (result == DialogResult.OK)
             {
-                this.textBox1.Text = folderBrowserDialog1.SelectedPath;
+                this.textBox1.Text = folderBrowserDialogLevel.SelectedPath;
                 CheckVisibility();
             }
             CheckVisibility();
@@ -85,6 +90,12 @@ namespace BeamNG_LevelCleanUp
                 labelProgress.Text = "Resolve orphaned unmanaged asset files";
                 Application.DoEvents();
                 Reader.ResolveOrphanedFiles();
+                if (!string.IsNullOrEmpty(this.textBox2.Text))
+                {
+                    labelProgress.Text = "Analyzing done";
+                    Application.DoEvents();
+                    _missingFiles = Reader.GetMissingFilesFromBeamLog(this.textBox2.Text);
+                }
                 labelProgress.Text = "Analyzing done";
                 Application.DoEvents();
             }
@@ -110,7 +121,7 @@ namespace BeamNG_LevelCleanUp
                 var item = new GridFileListItem
                 {
                     FileInfo = file,
-                    Selected = this.cbAllNone.Checked,
+                    Selected = _missingFiles.Any(x => x.Equals(file.FullName,StringComparison.InvariantCultureIgnoreCase)) ? false : this.cbAllNone.Checked,
                     SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
                 };
                 SelectedFilesForDeletion.Add(item);
@@ -225,6 +236,15 @@ namespace BeamNG_LevelCleanUp
             else
             {
                 this.btn_deleteFiles.Enabled = false;
+            }
+        }
+
+        private void btnOpenLog_Click(object sender, EventArgs e)
+        {
+            DialogResult result = openFileDialogLog.ShowDialog();
+            if (result == DialogResult.OK)
+            {
+                this.textBox2.Text = openFileDialogLog.FileName;
             }
         }
     }

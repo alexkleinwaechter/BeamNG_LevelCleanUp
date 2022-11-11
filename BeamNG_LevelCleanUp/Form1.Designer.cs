@@ -31,6 +31,11 @@
             this.tabControl1 = new System.Windows.Forms.TabControl();
             this.tabPage1 = new System.Windows.Forms.TabPage();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
+            this.labelFileSummary = new System.Windows.Forms.Label();
+            this.cbAllNone = new System.Windows.Forms.CheckBox();
+            this.btnOpenLog = new System.Windows.Forms.Button();
+            this.textBox2 = new System.Windows.Forms.TextBox();
+            this.label2 = new System.Windows.Forms.Label();
             this.labelProgress = new System.Windows.Forms.Label();
             this.btn_deleteFiles = new System.Windows.Forms.Button();
             this.chkDryRun = new System.Windows.Forms.CheckBox();
@@ -38,12 +43,11 @@
             this.btn_openLevelFolder = new System.Windows.Forms.Button();
             this.textBox1 = new System.Windows.Forms.TextBox();
             this.label1 = new System.Windows.Forms.Label();
-            this.labelFileSummary = new System.Windows.Forms.Label();
-            this.cbAllNone = new System.Windows.Forms.CheckBox();
             this.dataGridViewDeleteList = new System.Windows.Forms.DataGridView();
             this.tabPage2 = new System.Windows.Forms.TabPage();
             this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
-            this.folderBrowserDialog1 = new System.Windows.Forms.FolderBrowserDialog();
+            this.folderBrowserDialogLevel = new System.Windows.Forms.FolderBrowserDialog();
+            this.openFileDialogLog = new System.Windows.Forms.OpenFileDialog();
             this.tabControl1.SuspendLayout();
             this.tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
@@ -85,6 +89,11 @@
             // 
             // splitContainer1.Panel1
             // 
+            this.splitContainer1.Panel1.Controls.Add(this.labelFileSummary);
+            this.splitContainer1.Panel1.Controls.Add(this.cbAllNone);
+            this.splitContainer1.Panel1.Controls.Add(this.btnOpenLog);
+            this.splitContainer1.Panel1.Controls.Add(this.textBox2);
+            this.splitContainer1.Panel1.Controls.Add(this.label2);
             this.splitContainer1.Panel1.Controls.Add(this.labelProgress);
             this.splitContainer1.Panel1.Controls.Add(this.btn_deleteFiles);
             this.splitContainer1.Panel1.Controls.Add(this.chkDryRun);
@@ -95,17 +104,64 @@
             // 
             // splitContainer1.Panel2
             // 
-            this.splitContainer1.Panel2.Controls.Add(this.labelFileSummary);
-            this.splitContainer1.Panel2.Controls.Add(this.cbAllNone);
             this.splitContainer1.Panel2.Controls.Add(this.dataGridViewDeleteList);
             this.splitContainer1.Size = new System.Drawing.Size(1057, 674);
-            this.splitContainer1.SplitterDistance = 175;
+            this.splitContainer1.SplitterDistance = 259;
             this.splitContainer1.TabIndex = 14;
+            // 
+            // labelFileSummary
+            // 
+            this.labelFileSummary.AutoSize = true;
+            this.labelFileSummary.Dock = System.Windows.Forms.DockStyle.Right;
+            this.labelFileSummary.Location = new System.Drawing.Point(1007, 0);
+            this.labelFileSummary.Name = "labelFileSummary";
+            this.labelFileSummary.Size = new System.Drawing.Size(50, 20);
+            this.labelFileSummary.TabIndex = 24;
+            this.labelFileSummary.Text = "label2";
+            // 
+            // cbAllNone
+            // 
+            this.cbAllNone.AutoSize = true;
+            this.cbAllNone.Checked = true;
+            this.cbAllNone.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.cbAllNone.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.cbAllNone.Location = new System.Drawing.Point(0, 235);
+            this.cbAllNone.Name = "cbAllNone";
+            this.cbAllNone.Size = new System.Drawing.Size(1057, 24);
+            this.cbAllNone.TabIndex = 23;
+            this.cbAllNone.Text = "Selection All / None";
+            this.cbAllNone.UseVisualStyleBackColor = true;
+            // 
+            // btnOpenLog
+            // 
+            this.btnOpenLog.Location = new System.Drawing.Point(589, 96);
+            this.btnOpenLog.Name = "btnOpenLog";
+            this.btnOpenLog.Size = new System.Drawing.Size(178, 29);
+            this.btnOpenLog.TabIndex = 22;
+            this.btnOpenLog.Text = "Select BeamNg.log";
+            this.btnOpenLog.UseVisualStyleBackColor = true;
+            this.btnOpenLog.Click += new System.EventHandler(this.btnOpenLog_Click);
+            // 
+            // textBox2
+            // 
+            this.textBox2.Location = new System.Drawing.Point(19, 98);
+            this.textBox2.Name = "textBox2";
+            this.textBox2.Size = new System.Drawing.Size(564, 27);
+            this.textBox2.TabIndex = 21;
+            // 
+            // label2
+            // 
+            this.label2.AutoSize = true;
+            this.label2.Location = new System.Drawing.Point(19, 75);
+            this.label2.Name = "label2";
+            this.label2.Size = new System.Drawing.Size(295, 20);
+            this.label2.TabIndex = 20;
+            this.label2.Text = "BeamNg.log for excluding Errors in 2nd run";
             // 
             // labelProgress
             // 
             this.labelProgress.AutoSize = true;
-            this.labelProgress.Location = new System.Drawing.Point(20, 146);
+            this.labelProgress.Location = new System.Drawing.Point(20, 196);
             this.labelProgress.Name = "labelProgress";
             this.labelProgress.Size = new System.Drawing.Size(98, 20);
             this.labelProgress.TabIndex = 19;
@@ -113,7 +169,7 @@
             // 
             // btn_deleteFiles
             // 
-            this.btn_deleteFiles.Location = new System.Drawing.Point(197, 111);
+            this.btn_deleteFiles.Location = new System.Drawing.Point(197, 161);
             this.btn_deleteFiles.Name = "btn_deleteFiles";
             this.btn_deleteFiles.Size = new System.Drawing.Size(94, 29);
             this.btn_deleteFiles.TabIndex = 18;
@@ -127,7 +183,7 @@
             this.chkDryRun.AutoSize = true;
             this.chkDryRun.Checked = true;
             this.chkDryRun.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.chkDryRun.Location = new System.Drawing.Point(22, 81);
+            this.chkDryRun.Location = new System.Drawing.Point(22, 131);
             this.chkDryRun.Name = "chkDryRun";
             this.chkDryRun.Size = new System.Drawing.Size(198, 24);
             this.chkDryRun.TabIndex = 17;
@@ -136,7 +192,7 @@
             // 
             // btn_AnalyzeLevel
             // 
-            this.btn_AnalyzeLevel.Location = new System.Drawing.Point(19, 111);
+            this.btn_AnalyzeLevel.Location = new System.Drawing.Point(19, 161);
             this.btn_AnalyzeLevel.Name = "btn_AnalyzeLevel";
             this.btn_AnalyzeLevel.Size = new System.Drawing.Size(142, 29);
             this.btn_AnalyzeLevel.TabIndex = 16;
@@ -170,30 +226,6 @@
             this.label1.TabIndex = 13;
             this.label1.Text = "Level Folder";
             // 
-            // labelFileSummary
-            // 
-            this.labelFileSummary.AutoSize = true;
-            this.labelFileSummary.Dock = System.Windows.Forms.DockStyle.Right;
-            this.labelFileSummary.Location = new System.Drawing.Point(1007, 24);
-            this.labelFileSummary.Name = "labelFileSummary";
-            this.labelFileSummary.Size = new System.Drawing.Size(50, 20);
-            this.labelFileSummary.TabIndex = 20;
-            this.labelFileSummary.Text = "label2";
-            // 
-            // cbAllNone
-            // 
-            this.cbAllNone.AutoSize = true;
-            this.cbAllNone.Checked = true;
-            this.cbAllNone.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbAllNone.Dock = System.Windows.Forms.DockStyle.Top;
-            this.cbAllNone.Location = new System.Drawing.Point(0, 0);
-            this.cbAllNone.Name = "cbAllNone";
-            this.cbAllNone.Size = new System.Drawing.Size(1057, 24);
-            this.cbAllNone.TabIndex = 19;
-            this.cbAllNone.Text = "Selection All / None";
-            this.cbAllNone.UseVisualStyleBackColor = true;
-            this.cbAllNone.CheckedChanged += new System.EventHandler(this.cbAllNone_CheckedChanged);
-            // 
             // dataGridViewDeleteList
             // 
             this.dataGridViewDeleteList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
@@ -203,7 +235,7 @@
             this.dataGridViewDeleteList.Name = "dataGridViewDeleteList";
             this.dataGridViewDeleteList.RowHeadersWidth = 51;
             this.dataGridViewDeleteList.RowTemplate.Height = 29;
-            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1057, 495);
+            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1057, 411);
             this.dataGridViewDeleteList.TabIndex = 0;
             this.dataGridViewDeleteList.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellContentClick);
             this.dataGridViewDeleteList.CellValueChanged += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellValueChanged);
@@ -229,6 +261,10 @@
             this.richTextBoxErrors.TabIndex = 0;
             this.richTextBoxErrors.Text = "";
             // 
+            // openFileDialogLog
+            // 
+            this.openFileDialogLog.FileName = "openFileDialogLog";
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
@@ -242,7 +278,6 @@
             this.splitContainer1.Panel1.ResumeLayout(false);
             this.splitContainer1.Panel1.PerformLayout();
             this.splitContainer1.Panel2.ResumeLayout(false);
-            this.splitContainer1.Panel2.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).EndInit();
             this.splitContainer1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.dataGridViewDeleteList)).EndInit();
@@ -263,11 +298,15 @@
         private Label label1;
         private DataGridView dataGridViewDeleteList;
         private TabPage tabPage2;
-        private FolderBrowserDialog folderBrowserDialog1;
+        private FolderBrowserDialog folderBrowserDialogLevel;
         private Button btn_deleteFiles;
-        private CheckBox cbAllNone;
-        private Label labelFileSummary;
         private RichTextBox richTextBoxErrors;
         private Label labelProgress;
+        private OpenFileDialog openFileDialogLog;
+        private Button btnOpenLog;
+        private TextBox textBox2;
+        private Label label2;
+        private Label labelFileSummary;
+        private CheckBox cbAllNone;
     }
 }
