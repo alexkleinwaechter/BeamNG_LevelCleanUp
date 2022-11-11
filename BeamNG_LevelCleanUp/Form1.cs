@@ -21,7 +21,15 @@ namespace BeamNG_LevelCleanUp
         public Form1()
         {
             InitializeComponent();
+        }
+
+        public Task InitializeAsync()
+        {
+            //use this to test the exception handling
+            //throw new NotImplementedException();
+
             // Set the help text description for the FolderBrowserDialog.
+
             this.folderBrowserDialogLevel.Description =
                 "Select the directory of your unzipped level.";
 
@@ -37,6 +45,13 @@ namespace BeamNG_LevelCleanUp
             labelFileSummary.Text = String.Empty;
             labelProgress.Text = String.Empty;
             CheckVisibility();
+
+            return Task.Delay(TimeSpan.FromSeconds(2));
+        }
+
+        public void Initialize()
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(5));
         }
 
 
