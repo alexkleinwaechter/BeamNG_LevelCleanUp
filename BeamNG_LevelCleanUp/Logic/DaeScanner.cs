@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,7 +52,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             catch (Exception ex)
             {
-                throw;
+                PubSubChannel.SendMessage(true, $"Collada format error in {_resolvedDaePath}. Exception:{ex.Message}");
             }
 
             //Display all the book titles.

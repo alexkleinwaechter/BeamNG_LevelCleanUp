@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -27,9 +28,9 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = levelPath;
         }
 
-        public void ScanForest()
+        public async Task ScanForest(CancellationToken token)
         {
-            RetrieveUsedForestTypes();
+            await RetrieveUsedForestTypes(token);
             GetShapNames();
             foreach (var shapeName in _shapeNames.Distinct())
             {
@@ -57,19 +58,22 @@ namespace BeamNG_LevelCleanUp.Logic
             _assets.Add(asset);
         }
 
-        private void RetrieveUsedForestTypes()
+        private async Task RetrieveUsedForestTypes(CancellationToken token)
         {
             foreach (var file in _forestJsonFiles)
             {
-                foreach (string line in File.ReadLines(file.FullName))
+                foreach (string line in await File.ReadAllLinesAsync(file.FullName, token))
                 {
                     JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                    var jsonObject = JsonDocument.Parse(line, docOptions).RootElement;
-                    if (jsonObject.ValueKind != JsonValueKind.Undefined)
+                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                     {
-                        var asset = jsonObject.Deserialize<Forest>(BeamJsonOptions.Get());
+                        var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.Get());
                         if (!string.IsNullOrEmpty(asset.Type))
+                        {
+                            PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
                             _forestTypeNames.Add(asset.Type);
+                        }
                     }
                 }
             }

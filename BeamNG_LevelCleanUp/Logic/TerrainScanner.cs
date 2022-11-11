@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,14 +38,15 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        public void ScanTerrain() {
+        public async Task ScanTerrain(CancellationToken token) {
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            var jsonObject = JsonDocument.Parse(File.ReadAllText(_terrainPath), docOptions).RootElement;
-            if (jsonObject.ValueKind != JsonValueKind.Undefined)
+            PubSubChannel.SendMessage(false, $"Scan Terrainfile {_terrainPath}");
+            using JsonDocument jsonObject = JsonDocument.Parse(await File.ReadAllTextAsync(_terrainPath, token), docOptions);
+            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
             {
                 try
                 {
-                    if (jsonObject.TryGetProperty("materials", out JsonElement materials))
+                    if (jsonObject.RootElement.TryGetProperty("materials", out JsonElement materials))
                     {
                         var materialList = materials.Deserialize<List<string>>(BeamJsonOptions.Get());
                         if (materialList != null)
@@ -68,7 +70,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             }
                         }
                     }
-                    if (jsonObject.TryGetProperty("datafile", out JsonElement dataFile))
+                    if (jsonObject.RootElement.TryGetProperty("datafile", out JsonElement dataFile))
                     {
                         var result = dataFile.Deserialize<string>(BeamJsonOptions.Get());
                         if (result != null)
@@ -76,7 +78,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             _excludeFiles.Add(ResolvePath(result));
                         }
                     }
-                    if (jsonObject.TryGetProperty("heightmapImage", out JsonElement heightmapImage))
+                    if (jsonObject.RootElement.TryGetProperty("heightmapImage", out JsonElement heightmapImage))
                     {
                         var result = heightmapImage.Deserialize<string>(BeamJsonOptions.Get());
                         if (result != null)

@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,22 +34,24 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        internal List<string> GetExcludeFiles()
+        internal async Task<List<string>> GetExcludeFiles(CancellationToken token)
         {
+            PubSubChannel.SendMessage(false, $"Read info.json");
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            var jsonObject = JsonDocument.Parse(File.ReadAllText(_infoJsonPath), docOptions).RootElement;
-            if (jsonObject.ValueKind != JsonValueKind.Undefined)
+            using JsonDocument jsonObject = await JsonDocument.ParseAsync(File.OpenRead(_infoJsonPath), docOptions, token);
+            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
             {
                 try
                 {
-                    if (jsonObject.TryGetProperty("previews", out JsonElement previews))
+                    if (jsonObject.RootElement.TryGetProperty("previews", out JsonElement previews))
                     {
                         var previewList = previews.Deserialize<List<string>>(BeamJsonOptions.Get());
-                        if (previewList != null) {
+                        if (previewList != null)
+                        {
                             _exludeFiles.AddRange(previewList.Select(x => ResolvePath(x)));
                         }
                     }
-                    if (jsonObject.TryGetProperty("spawnPoints", out JsonElement spawnpoints))
+                    if (jsonObject.RootElement.TryGetProperty("spawnPoints", out JsonElement spawnpoints))
                     {
                         var spawnpointlist = spawnpoints.Deserialize<List<SpawnPoints>>(BeamJsonOptions.Get());
                         if (spawnpointlist != null)

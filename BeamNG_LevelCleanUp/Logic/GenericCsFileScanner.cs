@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -44,9 +45,10 @@ namespace BeamNG_LevelCleanUp.Logic
                 .Replace("\\\\", "\\");
         }
 
-        internal void ScanForFilesToExclude()
+        internal async Task ScanForFilesToExclude(CancellationToken token)
         {
-            foreach (string line in File.ReadLines(_csFile.FullName))
+            PubSubChannel.SendMessage(false, $"Scan CS file {_csFile.Name}", true);
+            foreach (string line in await File.ReadAllLinesAsync(_csFile.FullName, token))
             {
                 var nameParts = line.Split('"');
                 if (nameParts.Length > 1)

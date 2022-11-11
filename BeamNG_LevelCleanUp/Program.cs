@@ -12,6 +12,7 @@ namespace BeamNG_LevelCleanUp
         [STAThread]
         static void Main()
         {
+            var cancelSource = new CancellationTokenSource();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
@@ -19,7 +20,7 @@ namespace BeamNG_LevelCleanUp
             Program6 p = new Program6();
             p.ExitRequested += p_ExitRequested;
 
-            Task programStart = p.StartAsync();
+            Task programStart = p.StartAsync(cancelSource.Token);
             HandleExceptions(programStart);
 
             Application.Run();
@@ -55,7 +56,7 @@ namespace BeamNG_LevelCleanUp
             m_mainForm.FormClosed += m_mainForm_FormClosed;
         }
 
-        public async Task StartAsync()
+        public async Task StartAsync(CancellationToken token)
         {
             using (SplashScreen splashScreen = new SplashScreen())
             {
@@ -64,7 +65,7 @@ namespace BeamNG_LevelCleanUp
                 splashScreen.FormClosed += m_mainForm_FormClosed;
                 splashScreen.Show();
 
-                await m_mainForm.InitializeAsync();
+                await m_mainForm.InitializeAsync(token);
 
                 //this ensures the activation works,
                 //so when the splash screen goes away, the main form is activated

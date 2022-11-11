@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -37,17 +38,18 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        internal void ScanMissionGroupFile()
+        internal async Task ScanMissionGroupFile(CancellationToken token)
         {
-            foreach (string line in File.ReadLines(_missiongroupPath))
+            foreach (string line in await File.ReadAllLinesAsync(_missiongroupPath, token))
             {
                 JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                var jsonObject = JsonDocument.Parse(line, docOptions).RootElement;
-                if (jsonObject.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
+                using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                 {
                     try
                     {
-                        var asset = jsonObject.Deserialize<Asset>(BeamJsonOptions.Get());
+                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
+                        PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {
                             AddPrefabDaeFiles(asset);

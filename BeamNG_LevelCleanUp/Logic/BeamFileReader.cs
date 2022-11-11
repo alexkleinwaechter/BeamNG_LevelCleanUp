@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -62,12 +63,12 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             return DeleteList.OrderBy(x => x.FullName).ToList();
         }
-        internal void ReadInfoJson()
+        internal async Task ReadInfoJson(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson);
+                await WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson, token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -76,14 +77,14 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadMissionGroup()
+        internal async Task ReadMissionGroup(CancellationToken token)
         {
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.MissionGroup);
+                await WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.MissionGroup, token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -92,13 +93,13 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadMaterialsJson()
+        internal async Task ReadMaterialsJson(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson);
-                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.MaterialsJson);
+                await WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson, token);
+                await WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.MaterialsJson, token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -107,12 +108,12 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadTerrainJson()
+        internal async Task ReadTerrainJson(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.terrain.json", ReadTypeEnum.TerrainFile);
+                await WalkDirectoryTree(dirInfo, "*.terrain.json", ReadTypeEnum.TerrainFile, token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -123,15 +124,15 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static List<FileInfo> _mainDecalsJson { get; set; } = new List<FileInfo>();
         private static List<FileInfo> _managedDecalData { get; set; } = new List<FileInfo>();
-        internal void ReadDecals()
+        internal async Task ReadDecals(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.MainDecalsJson);
-                WalkDirectoryTree(dirInfo, "managedDecalData.cs", ReadTypeEnum.ManagedDecalData);
+                await WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.MainDecalsJson, token);
+                await WalkDirectoryTree(dirInfo, "managedDecalData.cs", ReadTypeEnum.ManagedDecalData, token);
                 var decalScanner = new DecalScanner(Assets, _mainDecalsJson, _managedDecalData);
-                decalScanner.ScanDecals();
+                await decalScanner.ScanDecals(token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -142,15 +143,15 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static List<FileInfo> _forestJsonFiles { get; set; } = new List<FileInfo>();
         private static List<FileInfo> _managedItemData { get; set; } = new List<FileInfo>();
-        internal void ReadForest()
+        internal async Task ReadForest(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ForestJsonFiles);
-                WalkDirectoryTree(dirInfo, "managedItemData.cs", ReadTypeEnum.ManagedItemData);
+                await WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ForestJsonFiles, token);
+                await WalkDirectoryTree(dirInfo, "managedItemData.cs", ReadTypeEnum.ManagedItemData, token);
                 var forestScanner = new ForestScanner(Assets, _forestJsonFiles, _managedItemData, _path);
-                forestScanner.ScanForest();
+                await forestScanner.ScanForest(token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -159,12 +160,13 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadAllDae()
+        internal async Task ReadAllDae(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.AllDae);
+                PubSubChannel.SendMessage(false, $"Read Collada Assets");
+                await WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.AllDae, token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -173,18 +175,18 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadCsFilesForGenericExclude()
+        internal async Task ReadCsFilesForGenericExclude(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "materials.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "managedDatablocks.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "managedParticleData.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "particles.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "sounds.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "lights.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "audioProfiles.cs", ReadTypeEnum.ExcludeCsFiles);
+                await WalkDirectoryTree(dirInfo, "materials.cs", ReadTypeEnum.ExcludeCsFiles, token);
+                await WalkDirectoryTree(dirInfo, "managedDatablocks.cs", ReadTypeEnum.ExcludeCsFiles, token);
+                await WalkDirectoryTree(dirInfo, "managedParticleData.cs", ReadTypeEnum.ExcludeCsFiles, token);
+                await WalkDirectoryTree(dirInfo, "particles.cs", ReadTypeEnum.ExcludeCsFiles, token);
+                await WalkDirectoryTree(dirInfo, "sounds.cs", ReadTypeEnum.ExcludeCsFiles, token);
+                await WalkDirectoryTree(dirInfo, "lights.cs", ReadTypeEnum.ExcludeCsFiles, token);
+                await WalkDirectoryTree(dirInfo, "audioProfiles.cs", ReadTypeEnum.ExcludeCsFiles, token);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -193,32 +195,37 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ResolveUnusedAssetFiles()
+        internal async Task ResolveUnusedAssetFiles(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path, ExcludeFiles);
-                UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
-                UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
-                DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
-                //var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
-                //deleter.Delete();
+                await Task.Run(() =>
+                {
+                    PubSubChannel.SendMessage(false, $"Resolve unused managed asset files");
+                    var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path, ExcludeFiles);
+                    UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
+                    UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
+                    DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
+                    //var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
+                    //deleter.Delete();
+                });
             }
         }
 
         private static List<FileInfo> _allImageFiles { get; set; } = new List<FileInfo>();
         private static List<FileInfo> _imageFilesToRemove { get; set; } = new List<FileInfo>();
-        internal void ResolveOrphanedFiles()
+        internal async Task ResolveOrphanedFiles(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.dds", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.png", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile);
+                PubSubChannel.SendMessage(false, $"Resolve orphaned unmanaged files");
+                await WalkDirectoryTree(dirInfo, "*.dds", ReadTypeEnum.ImageFile, token);
+                await WalkDirectoryTree(dirInfo, "*.png", ReadTypeEnum.ImageFile, token);
+                await WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile, token);
+                await WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile, token);
+                await WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile, token);
                 var materials = MaterialsJson
                     .SelectMany(x => x.MaterialFiles)
                     .Select(x => x.File.FullName.ToLowerInvariant())
@@ -241,6 +248,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void DeleteFilesAndDeploy(List<FileInfo> deleteList)
         {
+            PubSubChannel.SendMessage(false, $"Delete files");
             var deleter = new FileDeleter(deleteList, _path, "DeletedAssetFiles", _dryRun);
             deleter.Delete();
         }
@@ -251,7 +259,7 @@ namespace BeamNG_LevelCleanUp.Logic
             return logReader.ScanForMissingFiles();
         }
 
-        static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
+        static async Task WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum, CancellationToken token)
         {
             var exclude = new List<string>();
             //var exclude = new List<string> { "art\\shapes\\groundcover", "art\\shapes\\trees", "art\\shapes\\rocks", "art\\shapes\\driver_training" };
@@ -294,19 +302,19 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         case ReadTypeEnum.MissionGroup:
                             var missionGroupScanner = new MissionGroupScanner(fi.FullName, _path, Assets, ExcludeFiles);
-                            missionGroupScanner.ScanMissionGroupFile();
+                            await missionGroupScanner.ScanMissionGroupFile(token);
                             break;
                         case ReadTypeEnum.MaterialsJson:
                             var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson, Assets, ExcludeFiles);
-                            materialScanner.ScanMaterialsJsonFile();
+                            await materialScanner.ScanMaterialsJsonFile(token);
                             break;
                         case ReadTypeEnum.TerrainFile:
                             var terrainScanner = new TerrainScanner(fi.FullName, _path, Assets, MaterialsJson, ExcludeFiles);
-                            terrainScanner.ScanTerrain();
+                            await terrainScanner.ScanTerrain(token);
                             break;
                         case ReadTypeEnum.ExcludeCsFiles:
                             var csScanner = new GenericCsFileScanner(fi, _path, ExcludeFiles);
-                            csScanner.ScanForFilesToExclude();
+                            await csScanner.ScanForFilesToExclude(token);
                             break;
                         case ReadTypeEnum.AllDae:
                             AllDaeList.Add(fi);
@@ -331,7 +339,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.InfoJson:
                             var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);
-                            ExcludeFiles.AddRange(infoJsonScanner.GetExcludeFiles());
+                            ExcludeFiles.AddRange(await infoJsonScanner.GetExcludeFiles(token));
                             break;
                         default:
                             break;
@@ -344,7 +352,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (DirectoryInfo dirInfo in subDirs)
                 {
                     // Resursive call for each subdirectory.
-                    WalkDirectoryTree(dirInfo, filePattern, readTypeEnum);
+                    WalkDirectoryTree(dirInfo, filePattern, readTypeEnum, token);
                 }
             }
         }

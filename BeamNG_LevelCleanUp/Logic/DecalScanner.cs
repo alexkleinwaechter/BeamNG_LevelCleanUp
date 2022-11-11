@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,10 +26,10 @@ namespace BeamNG_LevelCleanUp.Logic
             _managedDecalData = managedDecalData;
         }
 
-        public void ScanDecals()
+        public async Task ScanDecals(CancellationToken token)
         {
-            RetrieveUsedDecalNames();
-            SetMaterials();
+            await RetrieveUsedDecalNames(token);
+            await SetMaterials(token);
             foreach (var name in _materialNames.Distinct())
             {
                 _assets.Add(new Asset
@@ -39,15 +40,16 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        private void RetrieveUsedDecalNames()
+        private async Task RetrieveUsedDecalNames(CancellationToken token)
         {
             foreach (var file in _mainDecalsJson)
             {
+                PubSubChannel.SendMessage(false, $"Scan Decalfile {file.Name}", true);
                 JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                var jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions).RootElement;
-                if (jsonObject.ValueKind != JsonValueKind.Undefined)
+                using JsonDocument jsonObject = JsonDocument.Parse(await File.ReadAllTextAsync(file.FullName, token), docOptions);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
-                    JsonElement instances = jsonObject.GetProperty("instances");
+                    JsonElement instances = jsonObject.RootElement.GetProperty("instances");
                     var x = instances.EnumerateObject();
                     foreach (var instance in x)
                     {
@@ -57,14 +59,14 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        private void SetMaterials()
+        private async Task SetMaterials(CancellationToken token)
         {
             foreach (var file in _managedDecalData)
             {
                 foreach (var decalName in _decalNames.Distinct())
                 {
                     var hit = false;
-                    foreach (string line in File.ReadLines(file.FullName))
+                    foreach (string line in await File.ReadAllLinesAsync(file.FullName, token))
                     {
                         var search = $"({decalName})";
                         if (line.ToLowerInvariant().Contains(search.ToLowerInvariant()))

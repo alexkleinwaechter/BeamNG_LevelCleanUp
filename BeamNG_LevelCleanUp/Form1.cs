@@ -1,9 +1,11 @@
-﻿using BeamNG_LevelCleanUp.Logic;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Text;
@@ -18,13 +20,17 @@ namespace BeamNG_LevelCleanUp
         private List<GridFileListItem> SelectedFilesForDeletion { get; set; } = new List<GridFileListItem>();
         private BeamFileReader Reader { get; set; }
         private List<string> _missingFiles { get; set; } = new List<string>();
+        private Progress<string> _progress = new Progress<string>();
+        private CancellationToken _token { get; set; }
+
         public Form1()
         {
             InitializeComponent();
         }
 
-        public Task InitializeAsync()
+        public Task InitializeAsync(CancellationToken token)
         {
+            _token = token;
             //use this to test the exception handling
             //throw new NotImplementedException();
 
@@ -43,8 +49,33 @@ namespace BeamNG_LevelCleanUp
             this.openFileDialogLog.FileName = "beamng.log";
 
             labelFileSummary.Text = String.Empty;
-            labelProgress.Text = String.Empty;
+            tbProgress.Text = String.Empty;
             CheckVisibility();
+
+            _progress.ProgressChanged += (s, message) =>
+            {
+                if (!tbProgress.IsDisposed)
+                {
+                    tbProgress.Text = message;
+                }
+            };
+
+            var consumer = Task.Run(async () =>
+            {
+                while (await PubSubChannel.ch.Reader.WaitToReadAsync())
+                {
+                    var msg = await PubSubChannel.ch.Reader.ReadAsync();
+                    if (!msg.IsError)
+                    {
+                        SendProgressMessage(msg.Message);
+                    }
+                    else
+                    {
+                        richTextBoxErrors.Text += Environment.NewLine + msg.Message;
+                        richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+                    }
+                }
+            });
 
             return Task.Delay(TimeSpan.FromSeconds(2));
         }
@@ -67,7 +98,7 @@ namespace BeamNG_LevelCleanUp
             CheckVisibility();
         }
 
-        private void btn_AnalyzeLevel_Click(object sender, EventArgs e)
+        private async void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
             SelectedFilesForDeletion = new List<GridFileListItem>();
             try
@@ -75,50 +106,27 @@ namespace BeamNG_LevelCleanUp
                 richTextBoxErrors.Clear();
                 Reader = new BeamFileReader(this.textBox1.Text, this.chkDryRun.Checked);
                 Reader.Reset();
-                labelProgress.Text = "Read info.json";
-                Application.DoEvents();
-                Reader.ReadInfoJson();
-                labelProgress.Text = "Read Missiongroups";
-                Application.DoEvents();
-                Reader.ReadMissionGroup();
-                labelProgress.Text = "Read Forestfiles";
-                Application.DoEvents();
-                Reader.ReadForest();
-                labelProgress.Text = "Read Decals";
-                Application.DoEvents();
-                Reader.ReadDecals();
-                labelProgress.Text = "Read terrain.json";
-                Application.DoEvents();
-                Reader.ReadTerrainJson();
-                labelProgress.Text = "Read materials.json";
-                Application.DoEvents();
-                Reader.ReadMaterialsJson();
-                labelProgress.Text = "Read all Dae files";
-                Application.DoEvents();
-                Reader.ReadAllDae();
-                labelProgress.Text = "Read Cs files";
-                Application.DoEvents();
-                Reader.ReadCsFilesForGenericExclude();
-                labelProgress.Text = "Resolve unused managed asset files";
-                Application.DoEvents();
-                Reader.ResolveUnusedAssetFiles();
-                labelProgress.Text = "Resolve orphaned unmanaged asset files";
-                Application.DoEvents();
-                Reader.ResolveOrphanedFiles();
+                await Reader.ReadInfoJson(_token);
+                await Reader.ReadMissionGroup(_token);
+                await Reader.ReadForest(_token);
+                await Reader.ReadDecals(_token);
+                await Reader.ReadTerrainJson(_token);
+                await Reader.ReadMaterialsJson(_token);
+                await Reader.ReadAllDae(_token);
+                await Reader.ReadCsFilesForGenericExclude(_token);
+                await Reader.ResolveUnusedAssetFiles(_token);
+                await Reader.ResolveOrphanedFiles(_token);
                 if (!string.IsNullOrEmpty(this.textBox2.Text))
                 {
-                    labelProgress.Text = "Analyzing done";
-                    Application.DoEvents();
                     _missingFiles = Reader.GetMissingFilesFromBeamLog(this.textBox2.Text);
                 }
-                labelProgress.Text = "Analyzing done";
-                Application.DoEvents();
+                SendProgressMessage("Analyzing done");
             }
             catch (Exception ex)
             {
-                richTextBoxErrors.Text += Environment.NewLine + labelProgress.Text + ":";
                 richTextBoxErrors.Text += Environment.NewLine + ex.Message;
-                if (ex.InnerException != null) {
+                if (ex.InnerException != null)
+                {
                     richTextBoxErrors.Text += Environment.NewLine + ex.InnerException.Message;
                 }
                 richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
@@ -136,7 +144,7 @@ namespace BeamNG_LevelCleanUp
                 var item = new GridFileListItem
                 {
                     FileInfo = file,
-                    Selected = _missingFiles.Any(x => x.Equals(file.FullName,StringComparison.InvariantCultureIgnoreCase)) ? false : this.cbAllNone.Checked,
+                    Selected = _missingFiles.Any(x => x.Equals(file.FullName, StringComparison.InvariantCultureIgnoreCase)) ? false : this.cbAllNone.Checked,
                     SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
                 };
                 SelectedFilesForDeletion.Add(item);
@@ -261,6 +269,16 @@ namespace BeamNG_LevelCleanUp
             {
                 this.textBox2.Text = openFileDialogLog.FileName;
             }
+        }
+
+        private void textBox1_TextChanged(object sender, EventArgs e)
+        {
+            CheckVisibility();
+        }
+
+        private void SendProgressMessage(string text)
+        {
+            ((IProgress<string>)_progress).Report($"{text}");
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
+﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -41,15 +42,15 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        internal void ScanMaterialsJsonFile()
+        internal async Task ScanMaterialsJsonFile(CancellationToken token)
         {
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            var jsonObject = JsonDocument.Parse(File.ReadAllText(_matJsonPath), docOptions).RootElement;
-            if (jsonObject.ValueKind != JsonValueKind.Undefined)
+            using JsonDocument jsonObject = JsonDocument.Parse(await File.ReadAllTextAsync(_matJsonPath, token), docOptions);
+            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
             {
                 try
                 {
-                    foreach (var child in jsonObject.EnumerateObject())
+                    foreach (var child in jsonObject.RootElement.EnumerateObject())
                     {
                         try
                         {
@@ -96,6 +97,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             if (string.IsNullOrEmpty(material.Name)) {
                                 material.Name = material.MapTo;
                             }
+                            PubSubChannel.SendMessage(false, $"Read Material {material.MapTo}", true);
                             _materials.Add(material);
 
                             var temp = child.Value.EnumerateObject().ToList();
