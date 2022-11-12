@@ -11,6 +11,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace BeamNG_LevelCleanUp
 {
@@ -51,10 +52,18 @@ namespace BeamNG_LevelCleanUp
             labelFileSummary.Text = String.Empty;
             tbProgress.Text = String.Empty;
             CheckVisibility();
+            BuildGridDeleteFiles();
 
             _progress.ProgressChanged += (s, message) =>
             {
-                if (!tbProgress.IsDisposed)
+                if (tbProgress.InvokeRequired)
+                {
+                    tbProgress.Invoke(new MethodInvoker(() =>
+                    {
+                        tbProgress.Text = message;
+                    }));
+                }
+                else if (!tbProgress.IsDisposed)
                 {
                     tbProgress.Text = message;
                 }
@@ -100,27 +109,22 @@ namespace BeamNG_LevelCleanUp
 
         private async void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
-            SelectedFilesForDeletion = new List<GridFileListItem>();
+            bindingSourceDeleteList.Clear();
+            btn_AnalyzeLevel.Enabled = false;
+            var context = TaskScheduler.FromCurrentSynchronizationContext();
             try
             {
-                richTextBoxErrors.Clear();
-                Reader = new BeamFileReader(this.textBox1.Text, this.chkDryRun.Checked);
-                Reader.Reset();
-                await Reader.ReadInfoJson(_token);
-                await Reader.ReadMissionGroup(_token);
-                await Reader.ReadForest(_token);
-                await Reader.ReadDecals(_token);
-                await Reader.ReadTerrainJson(_token);
-                await Reader.ReadMaterialsJson(_token);
-                await Reader.ReadAllDae(_token);
-                await Reader.ReadCsFilesForGenericExclude(_token);
-                await Reader.ResolveUnusedAssetFiles(_token);
-                await Reader.ResolveOrphanedFiles(_token);
-                if (!string.IsNullOrEmpty(this.textBox2.Text))
+                Task t = Task.Run((async () =>
                 {
-                    _missingFiles = Reader.GetMissingFilesFromBeamLog(this.textBox2.Text);
-                }
-                SendProgressMessage("Analyzing done");
+                    Reader = new BeamFileReader(this.textBox1.Text, this.textBox2.Text);
+                    await Reader.ReadAll(_token).ConfigureAwait(true);
+                    _missingFiles = Reader.GetMissingFilesFromBeamLog();
+                }));
+                await t.ContinueWith((t1) =>
+                {
+                    FillDeleteList();
+                    btn_AnalyzeLevel.Enabled = true;
+                }, context);
             }
             catch (Exception ex)
             {
@@ -131,9 +135,8 @@ namespace BeamNG_LevelCleanUp
                 }
                 richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
                 this.tabControl1.SelectedTab = tabPage2;
+                btn_AnalyzeLevel.Enabled = true;
             }
-            BuildGridDeleteFiles();
-            FillDeleteList();
         }
 
         private void FillDeleteList()
@@ -227,7 +230,7 @@ namespace BeamNG_LevelCleanUp
                 .Where(x => x.Selected)
                 .Select(x => x.FileInfo)
                  .ToList();
-            Reader.DeleteFilesAndDeploy(selected);
+            Reader.DeleteFilesAndDeploy(selected, chkDryRun.Checked);
         }
 
         private void UpdateLabel()

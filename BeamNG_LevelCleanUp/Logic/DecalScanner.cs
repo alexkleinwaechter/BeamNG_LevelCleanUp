@@ -44,7 +44,6 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             foreach (var file in _mainDecalsJson)
             {
-                PubSubChannel.SendMessage(false, $"Scan Decalfile {file.Name}", true);
                 JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
                 using JsonDocument jsonObject = JsonDocument.Parse(await File.ReadAllTextAsync(file.FullName, token), docOptions);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
@@ -53,6 +52,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     var x = instances.EnumerateObject();
                     foreach (var instance in x)
                     {
+                        PubSubChannel.SendMessage(false, $"Scan Decal {instance.Name}", true);
                         _decalNames.Add(instance.Name);
                     }
                 }

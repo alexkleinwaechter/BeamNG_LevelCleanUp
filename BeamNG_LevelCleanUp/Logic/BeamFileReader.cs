@@ -27,6 +27,7 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _path { get; set; }
+        private static string _beamLogPath { get; set; }
         private static bool _dryRun { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
         public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
@@ -34,10 +35,11 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
-        internal BeamFileReader(string path, bool dryRun)
+        internal BeamFileReader(string path, string beamLogPath)
         {
             _path = path;
-            _dryRun = dryRun;
+            _beamLogPath = beamLogPath;
+
         }
 
         internal BeamFileReader()
@@ -46,6 +48,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void Reset()
         {
+            _beamLogPath = null;
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
             AllDaeList = new List<FileInfo>();
@@ -63,6 +66,23 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             return DeleteList.OrderBy(x => x.FullName).ToList();
         }
+
+        internal async Task ReadAll(CancellationToken token)
+        {
+            this.Reset();
+            await this.ReadInfoJson(token);
+            await this.ReadMissionGroup(token);
+            await this.ReadForest(token);
+            await this.ReadDecals(token);
+            await this.ReadTerrainJson(token);
+            await this.ReadMaterialsJson(token);
+            await this.ReadAllDae(token);
+            await this.ReadCsFilesForGenericExclude(token);
+            this.ResolveUnusedAssetFiles();
+            await this.ResolveOrphanedFiles(token);
+            PubSubChannel.SendMessage(false, "Analyzing finished");
+        }
+
         internal async Task ReadInfoJson(CancellationToken token)
         {
             var dirInfo = new DirectoryInfo(_path);
@@ -195,21 +215,18 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal async Task ResolveUnusedAssetFiles(CancellationToken token)
+        internal void ResolveUnusedAssetFiles()
         {
             var dirInfo = new DirectoryInfo(_path);
             if (dirInfo != null)
             {
-                await Task.Run(() =>
-                {
-                    PubSubChannel.SendMessage(false, $"Resolve unused managed asset files");
-                    var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path, ExcludeFiles);
-                    UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
-                    UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
-                    DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
-                    //var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
-                    //deleter.Delete();
-                });
+                PubSubChannel.SendMessage(false, $"Resolve unused managed asset files");
+                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path, ExcludeFiles);
+                UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
+                UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
+                DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
+                //var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
+                //deleter.Delete();
             }
         }
 
@@ -246,17 +263,25 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void DeleteFilesAndDeploy(List<FileInfo> deleteList)
+        internal void DeleteFilesAndDeploy(List<FileInfo> deleteList, bool dryRun)
         {
+            _dryRun = dryRun;
             PubSubChannel.SendMessage(false, $"Delete files");
             var deleter = new FileDeleter(deleteList, _path, "DeletedAssetFiles", _dryRun);
             deleter.Delete();
         }
 
-        internal List<string> GetMissingFilesFromBeamLog(string fileName)
+        internal List<string> GetMissingFilesFromBeamLog()
         {
-            var logReader = new BeamLogReader(fileName, _path);
-            return logReader.ScanForMissingFiles();
+            if (!string.IsNullOrEmpty(_beamLogPath))
+            {
+                var logReader = new BeamLogReader(_beamLogPath, _path);
+                return logReader.ScanForMissingFiles();
+            }
+            else
+            {
+                return new List<string>();
+            }
         }
 
         static async Task WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum, CancellationToken token)
