@@ -42,10 +42,10 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        internal async Task ScanMaterialsJsonFile(CancellationToken token)
+        internal void ScanMaterialsJsonFile()
         {
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            using JsonDocument jsonObject = JsonDocument.Parse(await File.ReadAllTextAsync(_matJsonPath, token), docOptions);
+            using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_matJsonPath), docOptions);
             if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
             {
                 try

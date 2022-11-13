@@ -28,9 +28,9 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = levelPath;
         }
 
-        public async Task ScanForest(CancellationToken token)
+        public void ScanForest()
         {
-            await RetrieveUsedForestTypes(token);
+            RetrieveUsedForestTypes();
             GetShapNames();
             foreach (var shapeName in _shapeNames.Distinct())
             {
@@ -58,11 +58,11 @@ namespace BeamNG_LevelCleanUp.Logic
             _assets.Add(asset);
         }
 
-        private async Task RetrieveUsedForestTypes(CancellationToken token)
+        private void RetrieveUsedForestTypes()
         {
             foreach (var file in _forestJsonFiles)
             {
-                foreach (string line in await File.ReadAllLinesAsync(file.FullName, token))
+                foreach (string line in File.ReadAllLines(file.FullName))
                 {
                     JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
                     using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);

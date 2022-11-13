@@ -26,10 +26,10 @@ namespace BeamNG_LevelCleanUp.Logic
             _managedDecalData = managedDecalData;
         }
 
-        public async Task ScanDecals(CancellationToken token)
+        public void ScanDecals()
         {
-            await RetrieveUsedDecalNames(token);
-            await SetMaterials(token);
+            RetrieveUsedDecalNames();
+            SetMaterials();
             foreach (var name in _materialNames.Distinct())
             {
                 _assets.Add(new Asset
@@ -40,12 +40,12 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        private async Task RetrieveUsedDecalNames(CancellationToken token)
+        private void RetrieveUsedDecalNames()
         {
             foreach (var file in _mainDecalsJson)
             {
                 JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                using JsonDocument jsonObject = JsonDocument.Parse(await File.ReadAllTextAsync(file.FullName, token), docOptions);
+                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     JsonElement instances = jsonObject.RootElement.GetProperty("instances");
@@ -59,14 +59,14 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        private async Task SetMaterials(CancellationToken token)
+        private void SetMaterials()
         {
             foreach (var file in _managedDecalData)
             {
                 foreach (var decalName in _decalNames.Distinct())
                 {
                     var hit = false;
-                    foreach (string line in await File.ReadAllLinesAsync(file.FullName, token))
+                    foreach (string line in File.ReadAllLines(file.FullName))
                     {
                         var search = $"({decalName})";
                         if (line.ToLowerInvariant().Contains(search.ToLowerInvariant()))

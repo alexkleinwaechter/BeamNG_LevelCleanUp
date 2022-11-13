@@ -44,9 +44,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 .Replace("\\\\", "\\");
         }
 
-        internal async Task ScanForFilesToExclude(CancellationToken token)
+        internal void ScanForFilesToExclude()
         {
-            foreach (string line in await File.ReadAllLinesAsync(_csFile.FullName))
+            foreach (string line in File.ReadLines(_csFile.FullName))
             {
                 var nameParts = line.Split('"');
                 if (nameParts.Length > 1)

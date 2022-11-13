@@ -38,10 +38,10 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        public async Task ScanTerrain(CancellationToken token) {
+        public void ScanTerrain() {
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
             PubSubChannel.SendMessage(false, $"Scan Terrainfile {_terrainPath}");
-            using JsonDocument jsonObject = JsonDocument.Parse(await File.ReadAllTextAsync(_terrainPath, token), docOptions);
+            using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_terrainPath), docOptions);
             if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
             {
                 try

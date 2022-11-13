@@ -114,17 +114,16 @@ namespace BeamNG_LevelCleanUp
             var context = TaskScheduler.FromCurrentSynchronizationContext();
             try
             {
-                Task t = Task.Run((async () =>
+                await Task.Run(() =>
                 {
                     Reader = new BeamFileReader(this.textBox1.Text, this.textBox2.Text);
-                    await Reader.ReadAll(_token).ConfigureAwait(true);
+                    Reader.ReadAll();
                     _missingFiles = Reader.GetMissingFilesFromBeamLog();
-                }));
-                await t.ContinueWith((t1) =>
-                {
-                    FillDeleteList();
-                    btn_AnalyzeLevel.Enabled = true;
-                }, context);
+                });
+
+                FillDeleteList();
+                btn_AnalyzeLevel.Enabled = true;
+
             }
             catch (Exception ex)
             {

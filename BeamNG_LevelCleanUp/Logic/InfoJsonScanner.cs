@@ -34,11 +34,11 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        internal async Task<List<string>> GetExcludeFiles(CancellationToken token)
+        internal List<string> GetExcludeFiles()
         {
             PubSubChannel.SendMessage(false, $"Read info.json");
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            using JsonDocument jsonObject = await JsonDocument.ParseAsync(File.OpenRead(_infoJsonPath), docOptions, token);
+            using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_infoJsonPath), docOptions);
             if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
             {
                 try

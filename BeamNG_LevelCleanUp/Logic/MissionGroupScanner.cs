@@ -38,9 +38,9 @@ namespace BeamNG_LevelCleanUp.Logic
             //    .Replace("\\\\", "\\");
         }
 
-        internal async Task ScanMissionGroupFile(CancellationToken token)
+        internal void ScanMissionGroupFile()
         {
-            foreach (string line in await File.ReadAllLinesAsync(_missiongroupPath, token))
+            foreach (string line in File.ReadAllLines(_missiongroupPath))
             {
                 JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
                 using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
