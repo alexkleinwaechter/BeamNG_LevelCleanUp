@@ -37,6 +37,12 @@ namespace BeamNG_LevelCleanUp.Logic
             var fileInfo = new FileInfo(_resolvedDaePath);
             return fileInfo.Exists;
         }
+
+        public bool IsCdae()
+        {
+            var fileInfo = new FileInfo(_resolvedDaePath);
+            return fileInfo.Extension.Equals(".cdae", StringComparison.InvariantCultureIgnoreCase);
+        }
         public string ResolvedPath()
         {
             return _resolvedDaePath;
