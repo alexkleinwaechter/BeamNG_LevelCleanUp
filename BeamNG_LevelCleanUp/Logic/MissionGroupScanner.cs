@@ -25,28 +25,15 @@ namespace BeamNG_LevelCleanUp.Logic
             _excludeFiles = excludeFiles;
         }
 
-        private string ResolvePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, resourcePath.Replace(toReplaceDelim, delim));
-
-            //char delim = '\\';
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
-        }
-
         internal void ScanMissionGroupFile()
         {
             foreach (string line in File.ReadAllLines(_missiongroupPath))
             {
                 JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
-                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
+                try
                 {
-                    try
+                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
                         PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
@@ -61,7 +48,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         }
                         if (!string.IsNullOrEmpty(asset.Texture))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.Texture));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.Texture, false));
                         }
                         if (!string.IsNullOrEmpty(asset.Cubemap))
                         {
@@ -69,21 +56,23 @@ namespace BeamNG_LevelCleanUp.Logic
                         }
                         if (!string.IsNullOrEmpty(asset.FoamTex))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.FoamTex));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.FoamTex, false));
                         }
                         if (!string.IsNullOrEmpty(asset.RippleTex))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.RippleTex));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.RippleTex, false));
                         }
                         if (!string.IsNullOrEmpty(asset.DepthGradientTex))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.DepthGradientTex));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.DepthGradientTex, false));
                         }
                         AddAsset(asset);
                     }
-                    catch (Exception ex)
-                    {
-                    }
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(true, $"Error {_missiongroupPath}. {ex.Message}. jsonLine:{line}");
+
                 }
             }
         }
@@ -106,10 +95,11 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private void AddPrefabDaeFiles(Asset currentPrefabMissionGroupAsset)
         {
-            var file = new FileInfo(ResolvePath(currentPrefabMissionGroupAsset.Filename));
+            var shapeNames = new List<string>();
+            var file = new FileInfo(PathResolver.ResolvePath(_levelPath, currentPrefabMissionGroupAsset.Filename, false));
             if (file.Exists)
             {
-                var shapeNames = GetShapeNames(file);
+                shapeNames = file.Extension.Equals(".json", StringComparison.InvariantCultureIgnoreCase) ? GetShapeNamesJson(file) : GetShapeNamesCs(file);
                 var counter = 0;
                 foreach (var shapeName in shapeNames)
                 {
@@ -121,11 +111,12 @@ namespace BeamNG_LevelCleanUp.Logic
                         ShapeName = shapeName
                     };
                     AddAsset(asset);
+                    PubSubChannel.SendMessage(false, $"Read Prefab asset {asset.Name}", true);
                 }
             }
         }
 
-        private List<string> GetShapeNames(FileInfo file)
+        private List<string> GetShapeNamesCs(FileInfo file)
         {
             List<string> shapeNames = new List<string>();
             foreach (string line in File.ReadLines(file.FullName))
@@ -137,6 +128,32 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         shapeNames.Add(nameParts[1]);
                     }
+                }
+            }
+            return shapeNames;
+        }
+
+        private List<string> GetShapeNamesJson(FileInfo file)
+        {
+            List<string> shapeNames = new List<string>();
+            foreach (string line in File.ReadAllLines(file.FullName))
+            {
+                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                try
+                {
+                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
+                    {
+                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
+                        if (!string.IsNullOrEmpty(asset.ShapeName))
+                        {
+                            shapeNames.Add(asset.ShapeName);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(true, $"Error {file.FullName}. {ex.Message}.");
                 }
             }
             return shapeNames;

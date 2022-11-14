@@ -17,31 +17,22 @@ namespace BeamNG_LevelCleanUp.Logic
             _fileName = fileName;
             _levelPath = levelPath;
         }
-
-        private string ResolvePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return string.Join(
-                new string(delim, 1),
-                _levelPath.Split(delim).Select(x => x.ToLowerInvariant()).Concat(resourcePath.ToLowerInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
-                .Replace("\\\\", "\\");
-        }
-
         internal List<string> ScanForMissingFiles()
         {
+            string[] divider = { "failed to load texture", "missing source texture" };
             foreach (string line in File.ReadLines(_fileName))
             {
-                if (line.Contains("Missing source texture"))
+                if (divider.Select(x => x.ToLowerInvariant()).Any(y => y.Contains(y, StringComparison.InvariantCultureIgnoreCase)))
                 {
-                    var nameParts = line.Split("Missing source texture");
-                    var name = nameParts[1].Trim();
+                    var nameParts = line.ToLowerInvariant().Split(divider, StringSplitOptions.RemoveEmptyEntries);
+                    if (nameParts.Length < 2) continue;
+                    var name = nameParts[1].Replace("'","").Trim();
                     if (name.StartsWith("."))
                     {
                         name = name.Remove(0, 1);
                     }
                     //if (name.Contains("slabs_huge_d")) Debugger.Break();
-                    var toCheck = ResolvePath(name);
+                    var toCheck = PathResolver.ResolvePath(_levelPath, name, true);
                     var checkForFile = new FileInfo(toCheck);
                     if (!checkForFile.Exists)
                     {

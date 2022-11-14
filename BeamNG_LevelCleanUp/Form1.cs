@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -49,6 +50,9 @@ namespace BeamNG_LevelCleanUp
             this.openFileDialogLog.Filter = "Logfiles (*.log)|*.log";
             this.openFileDialogLog.FileName = "beamng.log";
 
+            this.openFileDialogZip.Filter = "Zipfiles (*.zip)|*.zip";
+            this.openFileDialogZip.FileName = String.Empty;
+
             labelFileSummary.Text = String.Empty;
             tbProgress.Text = String.Empty;
             CheckVisibility();
@@ -80,8 +84,20 @@ namespace BeamNG_LevelCleanUp
                     }
                     else
                     {
-                        richTextBoxErrors.Text += Environment.NewLine + msg.Message;
-                        richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+                        if (richTextBoxErrors.InvokeRequired)
+                        {
+                            richTextBoxErrors.Invoke(new MethodInvoker(() =>
+                            {
+                                richTextBoxErrors.Text += Environment.NewLine + msg.Message;
+                                richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+
+                            }));
+                        }
+                        else if (!richTextBoxErrors.IsDisposed)
+                        {
+                            richTextBoxErrors.Text += Environment.NewLine + msg.Message;
+                            richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+                        }
                     }
                 }
             });
@@ -101,7 +117,7 @@ namespace BeamNG_LevelCleanUp
             DialogResult result = folderBrowserDialogLevel.ShowDialog();
             if (result == DialogResult.OK)
             {
-                this.textBox1.Text = folderBrowserDialogLevel.SelectedPath;
+                this.tbLevelPath.Text = folderBrowserDialogLevel.SelectedPath;
                 CheckVisibility();
             }
             CheckVisibility();
@@ -116,7 +132,7 @@ namespace BeamNG_LevelCleanUp
             {
                 await Task.Run(() =>
                 {
-                    Reader = new BeamFileReader(this.textBox1.Text, this.textBox2.Text);
+                    Reader = new BeamFileReader(this.tbLevelPath.Text, this.tbBeamLogPath.Text);
                     Reader.ReadAll();
                     _missingFiles = Reader.GetMissingFilesFromBeamLog();
                 });
@@ -127,15 +143,20 @@ namespace BeamNG_LevelCleanUp
             }
             catch (Exception ex)
             {
-                richTextBoxErrors.Text += Environment.NewLine + ex.Message;
-                if (ex.InnerException != null)
-                {
-                    richTextBoxErrors.Text += Environment.NewLine + ex.InnerException.Message;
-                }
-                richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
-                this.tabControl1.SelectedTab = tabPage2;
+                ShowException(ex);
                 btn_AnalyzeLevel.Enabled = true;
             }
+        }
+
+        private void ShowException(Exception ex)
+        {
+            richTextBoxErrors.Text += Environment.NewLine + ex.Message;
+            if (ex.InnerException != null)
+            {
+                richTextBoxErrors.Text += Environment.NewLine + ex.InnerException.Message;
+            }
+            richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+            this.tabControl1.SelectedTab = tabPage2;
         }
 
         private void FillDeleteList()
@@ -246,7 +267,7 @@ namespace BeamNG_LevelCleanUp
 
         private void CheckVisibility()
         {
-            if (string.IsNullOrEmpty(this.textBox1.Text))
+            if (string.IsNullOrEmpty(this.tbLevelPath.Text))
             {
                 this.btn_AnalyzeLevel.Enabled = false;
             }
@@ -269,7 +290,7 @@ namespace BeamNG_LevelCleanUp
             DialogResult result = openFileDialogLog.ShowDialog();
             if (result == DialogResult.OK)
             {
-                this.textBox2.Text = openFileDialogLog.FileName;
+                this.tbBeamLogPath.Text = openFileDialogLog.FileName;
             }
         }
 
@@ -281,6 +302,28 @@ namespace BeamNG_LevelCleanUp
         private void SendProgressMessage(string text)
         {
             ((IProgress<string>)_progress).Report($"{text}");
+        }
+
+        private async void btnLoadLevelZipFile_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var path = string.Empty;
+                DialogResult result = openFileDialogZip.ShowDialog();
+                if (result == DialogResult.OK)
+                {
+                    tbLevelZipFile.Text = openFileDialogZip.FileName;
+                    await Task.Run(() =>
+                    {
+                        path = ZipFileHandler.ExtractToDirectory(openFileDialogZip.FileName);
+                    });
+                    tbLevelPath.Text = path;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
         }
     }
 }

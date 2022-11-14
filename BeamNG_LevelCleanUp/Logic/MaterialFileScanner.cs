@@ -20,24 +20,6 @@ namespace BeamNG_LevelCleanUp.Logic
             _stages = stages;
             _matJsonPath = matJsonPath;
         }
-        private string ResolvePath(string materialFilePath)
-        {
-            if (Path.IsPathRooted(materialFilePath) && Path.IsPathFullyQualified(materialFilePath))
-            {
-                return materialFilePath;
-            }
-            else
-            {
-                char toReplaceDelim = '/';
-                char delim = '\\';
-                return Path.Join(_levelPath, materialFilePath.Replace(toReplaceDelim, delim));
-            }
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(materialFilePath.Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
-        }
-
         public List<MaterialFile> GetMaterialFiles()
         {
             var retVal = new List<MaterialFile>();
@@ -54,7 +36,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         {
                             val = Path.Join(Path.GetDirectoryName(_matJsonPath), val);
                         }
-                        var filePath = ResolvePath(val);
+                        var filePath = PathResolver.ResolvePath(_levelPath, val, false);
                         var fileInfo = new FileInfo(filePath);
                         if (!fileInfo.Exists)
                         {

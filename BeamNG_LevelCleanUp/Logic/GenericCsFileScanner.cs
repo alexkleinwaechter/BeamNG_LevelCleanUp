@@ -20,30 +20,6 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = levelPath;
             _excludeFiles = excludeFiles;
         }
-
-        private string ResolvePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, resourcePath.Replace(toReplaceDelim, delim));
-
-            //char delim = '\\';
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
-        }
-
-        private string ResolvePathBasedOnCsFilePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return string.Join(
-                new string(delim, 1),
-                _csFile.DirectoryName.Split(delim).Select(x => x.ToLowerInvariant()).Concat(resourcePath.ToLowerInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
-                .Replace("\\\\", "\\");
-        }
-
         internal void ScanForFilesToExclude()
         {
             foreach (string line in File.ReadLines(_csFile.FullName))
@@ -57,7 +33,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         name = name.Remove(0, 1);
                     }
                     //if (name.Contains("slabs_huge_d")) Debugger.Break();
-                    var toCheck = ResolvePath(name);
+                    var toCheck = PathResolver.ResolvePath(_levelPath, name, false);
                     var checkForFile = new FileInfo(toCheck);
                     if (!checkForFile.Exists)
                     {
@@ -69,7 +45,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     }
                     else
                     {
-                        toCheck = ResolvePathBasedOnCsFilePath(name);
+                        toCheck = PathResolver.ResolvePathBasedOnCsFilePath(_csFile, name);
                         checkForFile = new FileInfo(toCheck);
                         if (!checkForFile.Exists)
                         {
