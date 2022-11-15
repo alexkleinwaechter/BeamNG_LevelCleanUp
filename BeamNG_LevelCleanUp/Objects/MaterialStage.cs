@@ -27,5 +27,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public string EmissiveMap { get; set; }
         public string ClearCoatMap { get; set; }
         public string ClearCoatBottomNormalMap { get; set; }
+        public string DiffuseMap { get; set; }
+        public string MacroMap { get; set; }
     }
 }

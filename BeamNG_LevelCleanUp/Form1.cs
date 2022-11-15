@@ -7,11 +7,13 @@ using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using static System.Net.Mime.MediaTypeNames;
+using Application = System.Windows.Forms.Application;
 
 namespace BeamNG_LevelCleanUp
 {
@@ -23,6 +25,7 @@ namespace BeamNG_LevelCleanUp
         private List<string> _missingFiles { get; set; } = new List<string>();
         private Progress<string> _progress = new Progress<string>();
         private CancellationToken _token { get; set; }
+        private static string _levelName { get; set; }
 
         public Form1()
         {
@@ -48,6 +51,9 @@ namespace BeamNG_LevelCleanUp
 
             this.openFileDialogLog.Filter = "Logfiles (*.log)|*.log";
             this.openFileDialogLog.FileName = "beamng.log";
+
+            this.openFileDialogZip.Filter = "Zipfiles (*.zip)|*.zip";
+            this.openFileDialogZip.FileName = String.Empty;
 
             labelFileSummary.Text = String.Empty;
             tbProgress.Text = String.Empty;
@@ -80,8 +86,20 @@ namespace BeamNG_LevelCleanUp
                     }
                     else
                     {
-                        richTextBoxErrors.Text += Environment.NewLine + msg.Message;
-                        richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+                        if (richTextBoxErrors.InvokeRequired)
+                        {
+                            richTextBoxErrors.Invoke(new MethodInvoker(() =>
+                            {
+                                richTextBoxErrors.Text += Environment.NewLine + msg.Message;
+                                richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+
+                            }));
+                        }
+                        else if (!richTextBoxErrors.IsDisposed)
+                        {
+                            richTextBoxErrors.Text += Environment.NewLine + msg.Message;
+                            richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+                        }
                     }
                 }
             });
@@ -101,7 +119,7 @@ namespace BeamNG_LevelCleanUp
             DialogResult result = folderBrowserDialogLevel.ShowDialog();
             if (result == DialogResult.OK)
             {
-                this.textBox1.Text = folderBrowserDialogLevel.SelectedPath;
+                this.tbLevelPath.Text = folderBrowserDialogLevel.SelectedPath;
                 CheckVisibility();
             }
             CheckVisibility();
@@ -109,38 +127,46 @@ namespace BeamNG_LevelCleanUp
 
         private async void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
-            bindingSourceDeleteList.Clear();
+            SelectedFilesForDeletion = new List<GridFileListItem>();
+            bindingSourceDeleteList.DataSource = null;
+            labelFileSummary.Text = String.Empty;
             btn_AnalyzeLevel.Enabled = false;
+            Application.DoEvents();
             var context = TaskScheduler.FromCurrentSynchronizationContext();
             try
             {
                 await Task.Run(() =>
                 {
-                    Reader = new BeamFileReader(this.textBox1.Text, this.textBox2.Text);
+                    Reader = new BeamFileReader(this.tbLevelPath.Text, this.tbBeamLogPath.Text);
                     Reader.ReadAll();
                     _missingFiles = Reader.GetMissingFilesFromBeamLog();
+                    _levelName = Reader.GetLevelName();
                 });
-
+                tb_rename_current_name.Text = _levelName;
                 FillDeleteList();
                 btn_AnalyzeLevel.Enabled = true;
 
             }
             catch (Exception ex)
             {
-                richTextBoxErrors.Text += Environment.NewLine + ex.Message;
-                if (ex.InnerException != null)
-                {
-                    richTextBoxErrors.Text += Environment.NewLine + ex.InnerException.Message;
-                }
-                richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
-                this.tabControl1.SelectedTab = tabPage2;
+                ShowException(ex);
                 btn_AnalyzeLevel.Enabled = true;
             }
         }
 
+        private void ShowException(Exception ex)
+        {
+            richTextBoxErrors.Text += Environment.NewLine + ex.Message;
+            if (ex.InnerException != null)
+            {
+                richTextBoxErrors.Text += Environment.NewLine + ex.InnerException.Message;
+            }
+            richTextBoxErrors.Text += Environment.NewLine + "________________________________________";
+            this.tabControl1.SelectedTab = tabPage2;
+        }
+
         private void FillDeleteList()
         {
-            SelectedFilesForDeletion = new List<GridFileListItem>();
             foreach (var file in Reader.GetDeleteList())
             {
                 var item = new GridFileListItem
@@ -246,7 +272,7 @@ namespace BeamNG_LevelCleanUp
 
         private void CheckVisibility()
         {
-            if (string.IsNullOrEmpty(this.textBox1.Text))
+            if (string.IsNullOrEmpty(this.tbLevelPath.Text))
             {
                 this.btn_AnalyzeLevel.Enabled = false;
             }
@@ -269,7 +295,7 @@ namespace BeamNG_LevelCleanUp
             DialogResult result = openFileDialogLog.ShowDialog();
             if (result == DialogResult.OK)
             {
-                this.textBox2.Text = openFileDialogLog.FileName;
+                this.tbBeamLogPath.Text = openFileDialogLog.FileName;
             }
         }
 
@@ -282,5 +308,100 @@ namespace BeamNG_LevelCleanUp
         {
             ((IProgress<string>)_progress).Report($"{text}");
         }
+
+        private async void btnLoadLevelZipFile_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var path = string.Empty;
+                DialogResult result = openFileDialogZip.ShowDialog();
+                if (result == DialogResult.OK)
+                {
+                    tbLevelZipFile.Text = openFileDialogZip.FileName;
+                    await Task.Run(() =>
+                    {
+                        path = ZipFileHandler.ExtractToDirectory(openFileDialogZip.FileName);
+                    });
+                    tbLevelPath.Text = path;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        }
+
+        private async void btnZipDeployment_Click(object sender, EventArgs e)
+        {
+            await ZipDeploymentFile();
+        }
+
+        private async void btnZipDeployment2_Click(object sender, EventArgs e)
+        {
+            await ZipDeploymentFile();
+        }
+
+        private async Task ZipDeploymentFile()
+        {
+            try
+            {
+                var path = string.Empty;
+                if (!string.IsNullOrEmpty(tbLevelZipFile.Text))
+                {
+                    path = ZipFileHandler.GetLastUnpackedPath();
+                    await Task.Run(() =>
+                    {
+                        ZipFileHandler.BuildDeploymentFile(path, _levelName);
+                    });
+                }
+                else if (!string.IsNullOrEmpty(tbLevelPath.Text))
+                {
+                    path = tbLevelPath.Text;
+                    await Task.Run(() =>
+                    {
+                        ZipFileHandler.BuildDeploymentFile(path, _levelName, true);
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        }
+
+        private async void BtnGetCurrentName_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                await Task.Run(() =>
+                {
+                    Reader = new BeamFileReader(this.tbLevelPath.Text, this.tbBeamLogPath.Text);
+                    _levelName = Reader.GetLevelName();
+                });
+                tb_rename_current_name.Text = _levelName;
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        }
+
+        private async void Btn_RenameLevel_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                await Task.Run(() =>
+                {
+                    Reader = new BeamFileReader(this.tbLevelPath.Text, this.tbBeamLogPath.Text);
+                    Reader.RenameLevel(tb_rename_new_name_path.Text.Replace(" ", "").Trim(), tb_rename_new_name_title.Text);
+                    _levelName = Reader.GetLevelName();
+                });
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        }
+
     }
 }

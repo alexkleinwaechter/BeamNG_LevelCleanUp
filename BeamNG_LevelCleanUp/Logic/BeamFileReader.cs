@@ -23,10 +23,15 @@ namespace BeamNG_LevelCleanUp.Logic
             InfoJson = 7,
             ImageFile = 8,
             TerrainFile = 9,
-            ExcludeCsFiles = 10
+            ExcludeCsFiles = 10,
+            ScanExtraPrefabs = 11,
+            ExcludeAllFiles = 12,
+            LevelRename = 13
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
-        private static string _path { get; set; }
+        private static string _levelPath { get; set; }
+        private static string _levelName { get; set; }
+        private static string _namePath { get; set; }
         private static string _beamLogPath { get; set; }
         private static bool _dryRun { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
@@ -34,21 +39,35 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
+        private static string _newName;
+
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
         internal BeamFileReader(string path, string beamLogPath)
         {
-            _path = path;
+            _levelPath = path;
             _beamLogPath = beamLogPath;
-
+            SanitizePath();
         }
 
         internal BeamFileReader()
         {
         }
 
+        internal void SanitizePath()
+        {
+            _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
+            _namePath = ZipFileHandler.GetNamePath(_levelPath);
+            _levelName = new DirectoryInfo(_namePath).Name;
+        }
+
+        internal string GetLevelName()
+        {
+            return _levelName;
+        }
+
         internal void Reset()
         {
-            _beamLogPath = null;
+            DeleteList = new List<FileInfo>();
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
             AllDaeList = new List<FileInfo>();
@@ -78,6 +97,7 @@ namespace BeamNG_LevelCleanUp.Logic
             ReadMaterialsJson();
             ReadAllDae();
             ReadCsFilesForGenericExclude();
+            ReadLevelExtras();
             this.ResolveUnusedAssetFiles();
             ResolveOrphanedFiles();
             PubSubChannel.SendMessage(false, "Analyzing finished");
@@ -85,7 +105,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ReadInfoJson()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson);
@@ -101,7 +121,7 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.MissionGroup);
@@ -115,7 +135,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ReadMaterialsJson()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson);
@@ -130,7 +150,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ReadTerrainJson()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.terrain.json", ReadTypeEnum.TerrainFile);
@@ -146,7 +166,7 @@ namespace BeamNG_LevelCleanUp.Logic
         private static List<FileInfo> _managedDecalData { get; set; } = new List<FileInfo>();
         internal void ReadDecals()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.MainDecalsJson);
@@ -165,12 +185,12 @@ namespace BeamNG_LevelCleanUp.Logic
         private static List<FileInfo> _managedItemData { get; set; } = new List<FileInfo>();
         internal void ReadForest()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ForestJsonFiles);
                 WalkDirectoryTree(dirInfo, "managedItemData.cs", ReadTypeEnum.ManagedItemData);
-                var forestScanner = new ForestScanner(Assets, _forestJsonFiles, _managedItemData, _path);
+                var forestScanner = new ForestScanner(Assets, _forestJsonFiles, _managedItemData, _levelPath);
                 forestScanner.ScanForest();
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
@@ -182,7 +202,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ReadAllDae()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(false, $"Read Collada Assets");
@@ -195,9 +215,29 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        internal void ReadLevelExtras()
+        {
+            var extras = new List<string> { "scenarios", "quickrace", "buslines" };
+            foreach (var extra in extras)
+            {
+                var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));
+                if (dirInfo != null)
+                {
+                    PubSubChannel.SendMessage(false, $"Read Level {extra}");
+                    WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs);
+                    WalkDirectoryTree(dirInfo, "*.*", ReadTypeEnum.ExcludeAllFiles);
+                    Console.WriteLine("Files with restricted access:");
+                    foreach (string s in log)
+                    {
+                        Console.WriteLine(s);
+                    }
+                }
+            }
+        }
+
         internal void ReadCsFilesForGenericExclude()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "materials.cs", ReadTypeEnum.ExcludeCsFiles);
@@ -217,11 +257,11 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ResolveUnusedAssetFiles()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(false, $"Resolve unused managed asset files");
-                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _path, ExcludeFiles);
+                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _levelPath, ExcludeFiles);
                 UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
                 UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
                 DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
@@ -234,7 +274,7 @@ namespace BeamNG_LevelCleanUp.Logic
         private static List<FileInfo> _imageFilesToRemove { get; set; } = new List<FileInfo>();
         internal void ResolveOrphanedFiles()
         {
-            var dirInfo = new DirectoryInfo(_path);
+            var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(false, $"Resolve orphaned unmanaged files");
@@ -267,7 +307,7 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             _dryRun = dryRun;
             PubSubChannel.SendMessage(false, $"Delete files");
-            var deleter = new FileDeleter(deleteList, _path, "DeletedAssetFiles", _dryRun);
+            var deleter = new FileDeleter(deleteList, _levelPath, "DeletedAssetFiles", _dryRun);
             deleter.Delete();
         }
 
@@ -275,7 +315,7 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             if (!string.IsNullOrEmpty(_beamLogPath))
             {
-                var logReader = new BeamLogReader(_beamLogPath, _path);
+                var logReader = new BeamLogReader(_beamLogPath, _levelPath);
                 return logReader.ScanForMissingFiles();
             }
             else
@@ -283,11 +323,42 @@ namespace BeamNG_LevelCleanUp.Logic
                 return new List<string>();
             }
         }
-
-        static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
+        private static LevelRenamer _levelRenamer { get; set; }
+        internal void RenameLevel(string nameForPath, string nameForTitle)
         {
-            var exclude = new List<string>();
-            //var exclude = new List<string> { "art\\shapes\\groundcover", "art\\shapes\\trees", "art\\shapes\\rocks", "art\\shapes\\driver_training" };
+            _newName = nameForPath;
+            _levelRenamer = new LevelRenamer();
+            var dirInfo = new DirectoryInfo(_levelPath);
+            if (dirInfo != null)
+            {
+                _levelRenamer.EditInfoJson(_namePath, nameForTitle);
+                WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
+                WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
+                WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+
+            var dirInfoOld = new DirectoryInfo(_namePath);
+            var targetDir = Path.Join(dirInfoOld.Parent.FullName, nameForPath);
+            Directory.Move(dirInfoOld.FullName, targetDir);
+
+            // checking directory has
+            // been renamed or not
+            if (Directory.Exists(targetDir))
+            {
+                Console.WriteLine("The directory was renamed to " + targetDir);
+            }
+            PubSubChannel.SendMessage(false, "Renaming level done!");
+        }
+
+
+        private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
+        {
+            var exclude = new List<string> { ".depth.", ".imposter" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 
@@ -315,7 +386,10 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (FileInfo fi in files)
                 {
-                    if (exclude.Any(fi.FullName.ToLowerInvariant().Contains)) continue;
+                    if (exclude.Select(x => Path.Join(_namePath, x).ToLowerInvariant()).Any(fi.FullName.ToLowerInvariant().Contains))
+                    {
+                        continue;
+                    }
 
                     // In this example, we only access the existing FileInfo object. If we
                     // want to open, delete or modify the file, then
@@ -326,20 +400,27 @@ namespace BeamNG_LevelCleanUp.Logic
                     switch (readTypeEnum)
                     {
                         case ReadTypeEnum.MissionGroup:
-                            var missionGroupScanner = new MissionGroupScanner(fi.FullName, _path, Assets, ExcludeFiles);
+                            var missionGroupScanner = new MissionGroupScanner(fi.FullName, _levelPath, Assets, ExcludeFiles);
                             missionGroupScanner.ScanMissionGroupFile();
                             break;
                         case ReadTypeEnum.MaterialsJson:
-                            var materialScanner = new MaterialScanner(fi.FullName, _path, MaterialsJson, Assets, ExcludeFiles);
+                            var materialScanner = new MaterialScanner(fi.FullName, _levelPath, MaterialsJson, Assets, ExcludeFiles);
                             materialScanner.ScanMaterialsJsonFile();
                             break;
                         case ReadTypeEnum.TerrainFile:
-                            var terrainScanner = new TerrainScanner(fi.FullName, _path, Assets, MaterialsJson, ExcludeFiles);
+                            var terrainScanner = new TerrainScanner(fi.FullName, _levelPath, Assets, MaterialsJson, ExcludeFiles);
                             terrainScanner.ScanTerrain();
                             break;
                         case ReadTypeEnum.ExcludeCsFiles:
-                            var csScanner = new GenericCsFileScanner(fi, _path, ExcludeFiles);
+                            var csScanner = new GenericCsFileScanner(fi, _levelPath, ExcludeFiles);
                             csScanner.ScanForFilesToExclude();
+                            break;
+                        case ReadTypeEnum.ExcludeAllFiles:
+                            ExcludeFiles.Add(fi.FullName);
+                            break;
+                        case ReadTypeEnum.ScanExtraPrefabs:
+                            var prefabScanner = new PrefabScanner(Assets, _levelPath);
+                            prefabScanner.AddPrefabDaeFiles(fi);
                             break;
                         case ReadTypeEnum.AllDae:
                             AllDaeList.Add(fi);
@@ -365,6 +446,10 @@ namespace BeamNG_LevelCleanUp.Logic
                         case ReadTypeEnum.InfoJson:
                             var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);
                             ExcludeFiles.AddRange(infoJsonScanner.GetExcludeFiles());
+                            break;
+                        case ReadTypeEnum.LevelRename:
+                            PubSubChannel.SendMessage(false, $"Renaming in file {fi.FullName}", true);
+                            _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                             break;
                         default:
                             break;

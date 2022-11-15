@@ -2,6 +2,7 @@
 using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -14,34 +15,22 @@ namespace BeamNG_LevelCleanUp.Logic
         string _levelPath;
         string _daePath;
         string _resolvedDaePath;
+        FileInfo _resolvedDaeFile;
 
         public DaeScanner(string levelPath, string daePath, bool fullDaePathProvided = false)
         {
             _daePath = daePath.Replace("/", "\\");
             _levelPath = levelPath;
-            _resolvedDaePath = fullDaePathProvided ? _daePath : ResolvePath();
-        }
-        private string ResolvePath()
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, _daePath.Replace(toReplaceDelim, delim));
-
-            //char delim = '\\';
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
+            _resolvedDaePath = fullDaePathProvided ? _daePath : PathResolver.ResolvePath(_levelPath, _daePath, false);
+            _resolvedDaeFile = new FileInfo(_resolvedDaePath);
         }
         public bool Exists() {
-            var fileInfo = new FileInfo(_resolvedDaePath);
-            return fileInfo.Exists;
+            return _resolvedDaeFile.Exists;
         }
 
         public bool IsCdae()
         {
-            var fileInfo = new FileInfo(_resolvedDaePath);
-            return fileInfo.Extension.Equals(".cdae", StringComparison.InvariantCultureIgnoreCase);
+            return _resolvedDaeFile.Extension.Equals(".cdae", StringComparison.InvariantCultureIgnoreCase);
         }
         public string ResolvedPath()
         {
@@ -49,16 +38,22 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         public List<MaterialsDae> GetMaterials()
         {
+            var path = IsCdae() ? Path.ChangeExtension(_resolvedDaePath, ".dae") : _resolvedDaePath;
+
             var retVal = new List<MaterialsDae>();
             //Create the XmlDocument.
             XmlDocument doc = new XmlDocument();
             try
             {
-                doc.Load(_resolvedDaePath);
+                if (!new FileInfo(path).Exists)
+                {
+                    throw new Exception($"File not found and cdae can't be scanned: {path}");
+                }
+                doc.Load(path);
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(true, $"Collada format error in {_resolvedDaePath}. Exception:{ex.Message}");
+                PubSubChannel.SendMessage(true, $"Collada format error in {_resolvedDaeFile}. Exception:{ex.Message}");
             }
 
             //Display all the book titles.

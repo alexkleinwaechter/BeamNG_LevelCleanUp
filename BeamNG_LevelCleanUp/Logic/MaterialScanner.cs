@@ -28,27 +28,13 @@ namespace BeamNG_LevelCleanUp.Logic
             _excludeFiles = excludeFiles;
             _assets = assets;
         }
-
-        private string ResolvePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, resourcePath.Replace(toReplaceDelim, delim));
-
-            //char delim = '\\';
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
-        }
-
         internal void ScanMaterialsJsonFile()
         {
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_matJsonPath), docOptions);
-            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+            try
             {
-                try
+                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_matJsonPath), docOptions);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     foreach (var child in jsonObject.RootElement.EnumerateObject())
                     {
@@ -61,11 +47,22 @@ namespace BeamNG_LevelCleanUp.Logic
                                 var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
                                 material.MaterialFiles = fileScanner.GetMaterialFiles();
                             }
+                            else
+                            {
+                                var stage = child.Value.Deserialize<MaterialStage>(BeamJsonOptions.Get());
+                                if (stage != null)
+                                {
+                                    material.Stages = new List<MaterialStage>();
+                                    material.Stages.Add(stage);
+                                    var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
+                                    material.MaterialFiles = fileScanner.GetMaterialFiles();
+                                }
+                            }
                             if (material?.CubeFace != null && material?.CubeFace.Count > 0)
                             {
                                 foreach (var cf in material.CubeFace)
                                 {
-                                    var fi = new FileInfo(ResolvePath(cf));
+                                    var fi = new FileInfo(PathResolver.ResolvePath(_levelPath, cf, false));
                                     if (!fi.Exists)
                                     {
                                         fi = CheckMissingExtensions(fi);
@@ -94,7 +91,8 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 material.MapTo = material.Name;
                             }
-                            if (string.IsNullOrEmpty(material.Name)) {
+                            if (string.IsNullOrEmpty(material.Name))
+                            {
                                 material.Name = material.MapTo;
                             }
                             PubSubChannel.SendMessage(false, $"Read Material {material.MapTo}", true);
@@ -103,8 +101,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             var temp = child.Value.EnumerateObject().ToList();
                             foreach (var item in temp)
                             {
-                                if (item.Name.EndsWith("Tex")) {
-                                    _excludeFiles.Add(ResolvePath(item.Value.GetString()));
+                                if (item.Name.EndsWith("Tex"))
+                                {
+                                    _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, item.Value.GetString(), false));
                                 }
                             }
 
@@ -115,10 +114,10 @@ namespace BeamNG_LevelCleanUp.Logic
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    throw;
-                }
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(true, $"Error {_matJsonPath}. {ex.Message}");
             }
         }
 

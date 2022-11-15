@@ -17,39 +17,34 @@ namespace BeamNG_LevelCleanUp.Logic
             _fileName = fileName;
             _levelPath = levelPath;
         }
-
-        private string ResolvePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return string.Join(
-                new string(delim, 1),
-                _levelPath.Split(delim).Select(x => x.ToLowerInvariant()).Concat(resourcePath.ToLowerInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
-                .Replace("\\\\", "\\");
-        }
-
         internal List<string> ScanForMissingFiles()
         {
+            List<string> baseDivider = new List<string> { "|", "'" };
+            List<string> errorDivider = new List<string> { "failed to load texture", "missing source texture", "failed to load" };
+            baseDivider = baseDivider.Concat(errorDivider).ToList();
             foreach (string line in File.ReadLines(_fileName))
             {
-                if (line.Contains("Missing source texture"))
+                if (errorDivider.Select(x => x.ToLowerInvariant()).Any(y => line.Contains(y, StringComparison.InvariantCultureIgnoreCase)))
                 {
-                    var nameParts = line.Split("Missing source texture");
-                    var name = nameParts[1].Trim();
-                    if (name.StartsWith("."))
+                    var nameParts = line.ToLowerInvariant().Split(baseDivider.ToArray(), StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var part in nameParts)
                     {
-                        name = name.Remove(0, 1);
-                    }
-                    //if (name.Contains("slabs_huge_d")) Debugger.Break();
-                    var toCheck = ResolvePath(name);
-                    var checkForFile = new FileInfo(toCheck);
-                    if (!checkForFile.Exists)
-                    {
-                        checkForFile = CheckMissingExtensions(checkForFile);
-                    }
-                    if (checkForFile.Exists)
-                    {
-                        _excludeFiles.Add(checkForFile.FullName);
+                        var name = part.Trim();
+                        if (name.StartsWith("."))
+                        {
+                            name = name.Remove(0, 1);
+                        }
+                        //if (name.Contains("slabs_huge_d")) Debugger.Break();
+                        var toCheck = PathResolver.ResolvePath(_levelPath, name, true);
+                        var checkForFile = new FileInfo(toCheck);
+                        if (!checkForFile.Exists)
+                        {
+                            checkForFile = CheckMissingExtensions(checkForFile);
+                        }
+                        if (checkForFile.Exists)
+                        {
+                            _excludeFiles.Add(checkForFile.FullName);
+                        }
                     }
                 }
             }

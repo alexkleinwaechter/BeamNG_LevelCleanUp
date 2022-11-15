@@ -16,7 +16,8 @@ namespace BeamNG_LevelCleanUp.Logic
         private List<Asset> _assets = new List<Asset>();
         private List<MaterialJson> _materialJson = new List<MaterialJson>();
         private List<string> _excludeFiles = new List<string>();
-        internal TerrainScanner(string terrainPath, string levelPath, List<Asset> assets, List<MaterialJson> materialJson, List<string> excludeFiles) {
+        internal TerrainScanner(string terrainPath, string levelPath, List<Asset> assets, List<MaterialJson> materialJson, List<string> excludeFiles)
+        {
 
             _terrainPath = terrainPath;
             _assets = assets;
@@ -24,27 +25,14 @@ namespace BeamNG_LevelCleanUp.Logic
             _excludeFiles = excludeFiles;
             _materialJson = materialJson;
         }
-
-        private string ResolvePath(string resourcePath)
+        public void ScanTerrain()
         {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, resourcePath.Replace(toReplaceDelim, delim));
-
-            //char delim = '\\';
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
-        }
-
-        public void ScanTerrain() {
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
             PubSubChannel.SendMessage(false, $"Scan Terrainfile {_terrainPath}");
-            using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_terrainPath), docOptions);
-            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+            try
             {
-                try
+                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_terrainPath), docOptions);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     if (jsonObject.RootElement.TryGetProperty("materials", out JsonElement materials))
                     {
@@ -75,7 +63,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         var result = dataFile.Deserialize<string>(BeamJsonOptions.Get());
                         if (result != null)
                         {
-                            _excludeFiles.Add(ResolvePath(result));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));
                         }
                     }
                     if (jsonObject.RootElement.TryGetProperty("heightmapImage", out JsonElement heightmapImage))
@@ -83,15 +71,15 @@ namespace BeamNG_LevelCleanUp.Logic
                         var result = heightmapImage.Deserialize<string>(BeamJsonOptions.Get());
                         if (result != null)
                         {
-                            _excludeFiles.Add(ResolvePath(result));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));
                         }
                     }
 
                 }
-                catch (Exception ex)
-                {
-                    throw;
-                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Stopped! Error {_terrainPath}. {ex.Message}");
             }
         }
     }

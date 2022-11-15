@@ -25,34 +25,23 @@ namespace BeamNG_LevelCleanUp.Logic
             _excludeFiles = excludeFiles;
         }
 
-        private string ResolvePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, resourcePath.Replace(toReplaceDelim, delim));
-
-            //char delim = '\\';
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
-        }
-
         internal void ScanMissionGroupFile()
         {
             foreach (string line in File.ReadAllLines(_missiongroupPath))
             {
                 JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
-                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
+                try
                 {
-                    try
+                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
                         PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {
-                            AddPrefabDaeFiles(asset);
+                            //if (asset.Filename.Contains("ut_chevron_signs.prefab.json")) Debugger.Break();
+                            var prefabScanner = new PrefabScanner(_assets, _levelPath);
+                            prefabScanner.AddPrefabDaeFiles(asset.Filename);
                             continue;
                         }
                         if (!string.IsNullOrEmpty(asset.GlobalEnviromentMap))
@@ -61,7 +50,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         }
                         if (!string.IsNullOrEmpty(asset.Texture))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.Texture));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.Texture, false));
                         }
                         if (!string.IsNullOrEmpty(asset.Cubemap))
                         {
@@ -69,21 +58,23 @@ namespace BeamNG_LevelCleanUp.Logic
                         }
                         if (!string.IsNullOrEmpty(asset.FoamTex))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.FoamTex));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.FoamTex, false));
                         }
                         if (!string.IsNullOrEmpty(asset.RippleTex))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.RippleTex));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.RippleTex, false));
                         }
                         if (!string.IsNullOrEmpty(asset.DepthGradientTex))
                         {
-                            _excludeFiles.Add(ResolvePath(asset.DepthGradientTex));
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.DepthGradientTex, false));
                         }
                         AddAsset(asset);
                     }
-                    catch (Exception ex)
-                    {
-                    }
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(true, $"Error {_missiongroupPath}. {ex.Message}. jsonLine:{line}");
+
                 }
             }
         }
@@ -102,44 +93,6 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
             }
             _assets.Add(asset);
-        }
-
-        private void AddPrefabDaeFiles(Asset currentPrefabMissionGroupAsset)
-        {
-            var file = new FileInfo(ResolvePath(currentPrefabMissionGroupAsset.Filename));
-            if (file.Exists)
-            {
-                var shapeNames = GetShapeNames(file);
-                var counter = 0;
-                foreach (var shapeName in shapeNames)
-                {
-                    counter++;
-                    var asset = new Asset
-                    {
-                        Name = $"{file.Name}_{counter}",
-                        Class = "TSStatic",
-                        ShapeName = shapeName
-                    };
-                    AddAsset(asset);
-                }
-            }
-        }
-
-        private List<string> GetShapeNames(FileInfo file)
-        {
-            List<string> shapeNames = new List<string>();
-            foreach (string line in File.ReadLines(file.FullName))
-            {
-                if (line.ToLowerInvariant().Contains("shapename ="))
-                {
-                    var nameParts = line.Split('"');
-                    if (nameParts.Length > 1)
-                    {
-                        shapeNames.Add(nameParts[1]);
-                    }
-                }
-            }
-            return shapeNames;
         }
     }
 }

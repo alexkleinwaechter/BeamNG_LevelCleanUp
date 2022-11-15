@@ -20,35 +20,21 @@ namespace BeamNG_LevelCleanUp.Logic
             _infoJsonPath = infoJsonPath;
             _levelPath = levelPath;
         }
-
-        private string ResolvePath(string resourcePath)
-        {
-            char toReplaceDelim = '/';
-            char delim = '\\';
-            return Path.Join(_levelPath, resourcePath.Replace(toReplaceDelim, delim));
-
-            //char delim = '\\';
-            //return string.Join(
-            //    new string(delim, 1),
-            //    _levelPath.Split(delim).Concat(_daePath.Split(delim)).Distinct().ToArray())
-            //    .Replace("\\\\", "\\");
-        }
-
         internal List<string> GetExcludeFiles()
         {
             PubSubChannel.SendMessage(false, $"Read info.json");
             JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_infoJsonPath), docOptions);
-            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+            try
             {
-                try
+                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_infoJsonPath), docOptions);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     if (jsonObject.RootElement.TryGetProperty("previews", out JsonElement previews))
                     {
                         var previewList = previews.Deserialize<List<string>>(BeamJsonOptions.Get());
                         if (previewList != null)
                         {
-                            _exludeFiles.AddRange(previewList.Select(x => ResolvePath(x)));
+                            _exludeFiles.AddRange(previewList.Select(x => PathResolver.ResolvePath(_levelPath, x, false)));
                         }
                     }
                     if (jsonObject.RootElement.TryGetProperty("spawnPoints", out JsonElement spawnpoints))
@@ -56,14 +42,14 @@ namespace BeamNG_LevelCleanUp.Logic
                         var spawnpointlist = spawnpoints.Deserialize<List<SpawnPoints>>(BeamJsonOptions.Get());
                         if (spawnpointlist != null)
                         {
-                            _exludeFiles.AddRange(spawnpointlist.Select(x => ResolvePath(x.Preview)));
+                            _exludeFiles.AddRange(spawnpointlist.Select(x => PathResolver.ResolvePath(_levelPath, x.Preview, false)));
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    throw;
-                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Stopped! Error {_infoJsonPath}. {ex.Message}");
             }
             return _exludeFiles;
         }
