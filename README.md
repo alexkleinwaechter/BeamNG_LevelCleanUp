@@ -12,6 +12,8 @@ Watch the tutorial video:
 Open the [latest release](https://github.com/alexkleinwaechter/BeamNG_LevelCleanUp/releases/) on this page and download the *.exe file. It is not signed yet. Windows will ask you to allow execution. Why so big? 
 The tool is coded in Microsoft .Net and the download contains all necessary framework files to run without having to install .Net on your computer.
 
+## Warning
+Never use this tool on your working project files. Always make a copy and use it with this tool. It is meant to delete things. 
 ## Roadmap
 - Copy assets from other maps to your project
 
