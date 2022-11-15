@@ -41,7 +41,9 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal static string DirectorySanitizer(string path)
         {
-            return path.Replace(@"levels\levels", "levels");
+            return path
+                .Replace(@"levels\levels", "levels")
+                .Replace(@"levels\game:levels", "levels");
         }
     }
 }

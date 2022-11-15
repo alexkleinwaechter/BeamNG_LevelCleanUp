@@ -39,7 +39,9 @@ namespace BeamNG_LevelCleanUp.Logic
                         PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {
-                            AddPrefabDaeFiles(asset);
+                            //if (asset.Filename.Contains("ut_chevron_signs.prefab.json")) Debugger.Break();
+                            var prefabScanner = new PrefabScanner(_assets, _levelPath);
+                            prefabScanner.AddPrefabDaeFiles(asset.Filename);
                             continue;
                         }
                         if (!string.IsNullOrEmpty(asset.GlobalEnviromentMap))
@@ -91,72 +93,6 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
             }
             _assets.Add(asset);
-        }
-
-        private void AddPrefabDaeFiles(Asset currentPrefabMissionGroupAsset)
-        {
-            var shapeNames = new List<string>();
-            var file = new FileInfo(PathResolver.ResolvePath(_levelPath, currentPrefabMissionGroupAsset.Filename, false));
-            if (file.Exists)
-            {
-                shapeNames = file.Extension.Equals(".json", StringComparison.InvariantCultureIgnoreCase) ? GetShapeNamesJson(file) : GetShapeNamesCs(file);
-                var counter = 0;
-                foreach (var shapeName in shapeNames)
-                {
-                    counter++;
-                    var asset = new Asset
-                    {
-                        Name = $"{file.Name}_{counter}",
-                        Class = "TSStatic",
-                        ShapeName = shapeName
-                    };
-                    AddAsset(asset);
-                    PubSubChannel.SendMessage(false, $"Read Prefab asset {asset.Name}", true);
-                }
-            }
-        }
-
-        private List<string> GetShapeNamesCs(FileInfo file)
-        {
-            List<string> shapeNames = new List<string>();
-            foreach (string line in File.ReadLines(file.FullName))
-            {
-                if (line.ToLowerInvariant().Contains("shapename ="))
-                {
-                    var nameParts = line.Split('"');
-                    if (nameParts.Length > 1)
-                    {
-                        shapeNames.Add(nameParts[1]);
-                    }
-                }
-            }
-            return shapeNames;
-        }
-
-        private List<string> GetShapeNamesJson(FileInfo file)
-        {
-            List<string> shapeNames = new List<string>();
-            foreach (string line in File.ReadAllLines(file.FullName))
-            {
-                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-                try
-                {
-                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
-                    if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
-                    {
-                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
-                        if (!string.IsNullOrEmpty(asset.ShapeName))
-                        {
-                            shapeNames.Add(asset.ShapeName);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    PubSubChannel.SendMessage(true, $"Error {file.FullName}. {ex.Message}.");
-                }
-            }
-            return shapeNames;
         }
     }
 }

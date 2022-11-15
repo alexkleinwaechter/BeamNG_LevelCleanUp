@@ -23,10 +23,14 @@ namespace BeamNG_LevelCleanUp.Logic
             InfoJson = 7,
             ImageFile = 8,
             TerrainFile = 9,
-            ExcludeCsFiles = 10
+            ExcludeCsFiles = 10,
+            ScanExtraPrefabs = 11,
+            ExcludeAllFiles = 12,
+            LevelRename = 13
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
+        private static string _levelName { get; set; }
         private static string _namePath { get; set; }
         private static string _beamLogPath { get; set; }
         private static bool _dryRun { get; set; }
@@ -35,6 +39,8 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
+        private static string _newName;
+
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
         internal BeamFileReader(string path, string beamLogPath)
         {
@@ -51,10 +57,17 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
             _namePath = ZipFileHandler.GetNamePath(_levelPath);
+            _levelName = new DirectoryInfo(_namePath).Name;
+        }
+
+        internal string GetLevelName()
+        {
+            return _levelName;
         }
 
         internal void Reset()
         {
+            DeleteList = new List<FileInfo>();
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
             AllDaeList = new List<FileInfo>();
@@ -84,6 +97,7 @@ namespace BeamNG_LevelCleanUp.Logic
             ReadMaterialsJson();
             ReadAllDae();
             ReadCsFilesForGenericExclude();
+            ReadLevelExtras();
             this.ResolveUnusedAssetFiles();
             ResolveOrphanedFiles();
             PubSubChannel.SendMessage(false, "Analyzing finished");
@@ -201,6 +215,26 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        internal void ReadLevelExtras()
+        {
+            var extras = new List<string> { "scenarios", "quickrace", "buslines" };
+            foreach (var extra in extras)
+            {
+                var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));
+                if (dirInfo != null)
+                {
+                    PubSubChannel.SendMessage(false, $"Read Level {extra}");
+                    WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs);
+                    WalkDirectoryTree(dirInfo, "*.*", ReadTypeEnum.ExcludeAllFiles);
+                    Console.WriteLine("Files with restricted access:");
+                    foreach (string s in log)
+                    {
+                        Console.WriteLine(s);
+                    }
+                }
+            }
+        }
+
         internal void ReadCsFilesForGenericExclude()
         {
             var dirInfo = new DirectoryInfo(_levelPath);
@@ -289,10 +323,42 @@ namespace BeamNG_LevelCleanUp.Logic
                 return new List<string>();
             }
         }
-
-        static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
+        private static LevelRenamer _levelRenamer { get; set; }
+        internal void RenameLevel(string nameForPath, string nameForTitle)
         {
-            var exclude = new List<string> { "scenarios", "quickrace" };
+            _newName = nameForPath;
+            _levelRenamer = new LevelRenamer();
+            var dirInfo = new DirectoryInfo(_levelPath);
+            if (dirInfo != null)
+            {
+                _levelRenamer.EditInfoJson(_namePath, nameForTitle);
+                WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
+                WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
+                WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+
+            var dirInfoOld = new DirectoryInfo(_namePath);
+            var targetDir = Path.Join(dirInfoOld.Parent.FullName, nameForPath);
+            Directory.Move(dirInfoOld.FullName, targetDir);
+
+            // checking directory has
+            // been renamed or not
+            if (Directory.Exists(targetDir))
+            {
+                Console.WriteLine("The directory was renamed to " + targetDir);
+            }
+            PubSubChannel.SendMessage(false, "Renaming level done!");
+        }
+
+
+        private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
+        {
+            var exclude = new List<string> { ".depth.", ".imposter" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 
@@ -349,6 +415,13 @@ namespace BeamNG_LevelCleanUp.Logic
                             var csScanner = new GenericCsFileScanner(fi, _levelPath, ExcludeFiles);
                             csScanner.ScanForFilesToExclude();
                             break;
+                        case ReadTypeEnum.ExcludeAllFiles:
+                            ExcludeFiles.Add(fi.FullName);
+                            break;
+                        case ReadTypeEnum.ScanExtraPrefabs:
+                            var prefabScanner = new PrefabScanner(Assets, _levelPath);
+                            prefabScanner.AddPrefabDaeFiles(fi);
+                            break;
                         case ReadTypeEnum.AllDae:
                             AllDaeList.Add(fi);
                             break;
@@ -373,6 +446,10 @@ namespace BeamNG_LevelCleanUp.Logic
                         case ReadTypeEnum.InfoJson:
                             var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);
                             ExcludeFiles.AddRange(infoJsonScanner.GetExcludeFiles());
+                            break;
+                        case ReadTypeEnum.LevelRename:
+                            PubSubChannel.SendMessage(false, $"Renaming in file {fi.FullName}", true);
+                            _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                             break;
                         default:
                             break;

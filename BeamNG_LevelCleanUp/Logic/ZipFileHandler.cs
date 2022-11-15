@@ -15,6 +15,7 @@ namespace BeamNG_LevelCleanUp.Logic
     {
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         static string _nameLevelPath { get; set; }
+        static string _lastUnpackedPath { get; set; }
         internal enum JobTypeEnum
         {
             FindLevelRoot = 0
@@ -26,6 +27,7 @@ namespace BeamNG_LevelCleanUp.Logic
             if (fi.Exists)
             {
                 retVal = Path.Join(fi.Directory.FullName, "_unpacked");
+                _lastUnpackedPath = retVal;
                 var deleteDir = new DirectoryInfo(retVal);
                 if (deleteDir.Exists)
                 {
@@ -41,6 +43,21 @@ namespace BeamNG_LevelCleanUp.Logic
                 throw new Exception($"Error unzipping: no file {filePath}.");
             }
             return retVal;
+        }
+
+        internal static string GetLastUnpackedPath()
+        {
+            return _lastUnpackedPath;
+        }
+
+        internal static void BuildDeploymentFile(string filePath, string levelName, bool searchLevelParent = false)
+        {
+            var fileName = $"{levelName}_deploy_{DateTime.Now.ToString("yyMMdd")}.zip";
+            var targetDir = new DirectoryInfo(filePath).Parent.FullName;
+            var targetPath = Path.Join(targetDir, fileName);
+            PubSubChannel.SendMessage(false, $"Compressing Deploymentfile at {targetPath}");
+            ZipFile.CreateFromDirectory(filePath, targetPath);
+            PubSubChannel.SendMessage(false, $"Deploymentfile created at {targetPath}");
         }
 
         internal static string GetLevelPath(string path)
