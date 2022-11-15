@@ -6,5 +6,5 @@ Clean your map level from unused files before deployment
 - Copy another map and rename it, then you can use it as a basemap for your new project
 
 ## Download
-Open the latest release on this page and download the *.exe file. It is not signed yet. Windows will ask you to allow execution. Why so big? 
+Open the [latest release](https://github.com/alexkleinwaechter/BeamNG_LevelCleanUp/releases/) on this page and download the *.exe file. It is not signed yet. Windows will ask you to allow execution. Why so big? 
 The tool is coded in Microsoft .Net and the download contains all necessary framework files to run without having to install .Net on your computer.
