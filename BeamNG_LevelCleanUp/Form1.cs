@@ -333,6 +333,16 @@ namespace BeamNG_LevelCleanUp
 
         private async void btnZipDeployment_Click(object sender, EventArgs e)
         {
+            await ZipDeploymentFile();
+        }
+
+        private async void btnZipDeployment2_Click(object sender, EventArgs e)
+        {
+            await ZipDeploymentFile();
+        }
+
+        private async Task ZipDeploymentFile()
+        {
             try
             {
                 var path = string.Empty;
@@ -392,5 +402,6 @@ namespace BeamNG_LevelCleanUp
                 ShowException(ex);
             }
         }
+
     }
 }

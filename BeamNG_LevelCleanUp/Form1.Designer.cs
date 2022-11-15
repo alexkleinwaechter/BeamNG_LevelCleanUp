@@ -44,6 +44,7 @@
             this.tabPage2 = new System.Windows.Forms.TabPage();
             this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
             this.tabPage3 = new System.Windows.Forms.TabPage();
+            this.btnZipDeployment2 = new System.Windows.Forms.Button();
             this.label6 = new System.Windows.Forms.Label();
             this.tb_rename_new_name_title = new System.Windows.Forms.TextBox();
             this.Btn_RenameLevel = new System.Windows.Forms.Button();
@@ -82,8 +83,8 @@
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.tabControl1.Controls.Add(this.tabPage1);
-            this.tabControl1.Controls.Add(this.tabPage2);
             this.tabControl1.Controls.Add(this.tabPage3);
+            this.tabControl1.Controls.Add(this.tabPage2);
             this.tabControl1.Location = new System.Drawing.Point(0, 140);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
@@ -98,7 +99,7 @@
             this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
             this.tabPage1.Size = new System.Drawing.Size(1063, 736);
             this.tabPage1.TabIndex = 0;
-            this.tabPage1.Text = "Shrink Deployment";
+            this.tabPage1.Text = "Shrink Deploymentfile";
             this.tabPage1.UseVisualStyleBackColor = true;
             // 
             // splitContainer1
@@ -131,7 +132,7 @@
             // 
             this.btnZipDeployment.Location = new System.Drawing.Point(337, 125);
             this.btnZipDeployment.Name = "btnZipDeployment";
-            this.btnZipDeployment.Size = new System.Drawing.Size(158, 29);
+            this.btnZipDeployment.Size = new System.Drawing.Size(146, 29);
             this.btnZipDeployment.TabIndex = 29;
             this.btnZipDeployment.Text = "3. Zip Deployment";
             this.btnZipDeployment.TextImageRelation = System.Windows.Forms.TextImageRelation.TextAboveImage;
@@ -257,6 +258,7 @@
             // 
             // tabPage3
             // 
+            this.tabPage3.Controls.Add(this.btnZipDeployment2);
             this.tabPage3.Controls.Add(this.label6);
             this.tabPage3.Controls.Add(this.tb_rename_new_name_title);
             this.tabPage3.Controls.Add(this.Btn_RenameLevel);
@@ -270,8 +272,18 @@
             this.tabPage3.Padding = new System.Windows.Forms.Padding(3);
             this.tabPage3.Size = new System.Drawing.Size(1063, 736);
             this.tabPage3.TabIndex = 2;
-            this.tabPage3.Text = "Rename Level";
+            this.tabPage3.Text = "Copy Map with new name";
             this.tabPage3.UseVisualStyleBackColor = true;
+            // 
+            // btnZipDeployment2
+            // 
+            this.btnZipDeployment2.Location = new System.Drawing.Point(192, 252);
+            this.btnZipDeployment2.Name = "btnZipDeployment2";
+            this.btnZipDeployment2.Size = new System.Drawing.Size(153, 29);
+            this.btnZipDeployment2.TabIndex = 8;
+            this.btnZipDeployment2.Text = "2. Zip Deployment";
+            this.btnZipDeployment2.UseVisualStyleBackColor = true;
+            this.btnZipDeployment2.Click += new System.EventHandler(this.btnZipDeployment2_Click);
             // 
             // label6
             // 
@@ -295,7 +307,7 @@
             this.Btn_RenameLevel.Name = "Btn_RenameLevel";
             this.Btn_RenameLevel.Size = new System.Drawing.Size(153, 29);
             this.Btn_RenameLevel.TabIndex = 5;
-            this.Btn_RenameLevel.Text = "Rename Level";
+            this.Btn_RenameLevel.Text = "1. Rename Level";
             this.Btn_RenameLevel.UseVisualStyleBackColor = true;
             this.Btn_RenameLevel.Click += new System.EventHandler(this.Btn_RenameLevel_Click);
             // 
@@ -427,7 +439,7 @@
             this.Controls.Add(this.tabControl1);
             this.Controls.Add(this.panel1);
             this.Name = "Form1";
-            this.Text = "BeamNG Level Cleanup";
+            this.Text = "BeamNG Tools for Mapbuilders";
             this.tabControl1.ResumeLayout(false);
             this.tabPage1.ResumeLayout(false);
             this.splitContainer1.Panel1.ResumeLayout(false);
@@ -483,5 +495,6 @@
         private Button Btn_RenameLevel;
         private Label label6;
         private TextBox tb_rename_new_name_title;
+        private Button btnZipDeployment2;
     }
 }

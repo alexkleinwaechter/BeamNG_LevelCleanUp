@@ -22,7 +22,8 @@ namespace BeamNG_LevelCleanUp.Logic
             PubSubChannel.SendMessage(false, $"Read info.json");
             try
             {
-                var jsonNode = JsonNode.Parse(File.ReadAllText(_infoJsonPath));
+                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                var jsonNode = JsonNode.Parse(File.ReadAllText(_infoJsonPath), null, docOptions);
                 jsonNode["title"] = newName;
                 File.WriteAllText(_infoJsonPath, jsonNode.ToJsonString()); 
             }
