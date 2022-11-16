@@ -58,6 +58,7 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
             _namePath = ZipFileHandler.GetNamePath(_levelPath);
             _levelName = new DirectoryInfo(_namePath).Name;
+            PathResolver.LevelPath = _levelPath;
         }
 
         internal string GetLevelName()
