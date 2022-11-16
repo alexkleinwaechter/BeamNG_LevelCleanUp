@@ -19,3 +19,5 @@ Never use this tool on your working project files. Always make a copy and use it
 
 ## Not working
 - Maps linking to cdae files instead of dae files. Since I can't disassemble cdae files it is not possible to get the materiallist out of them. Tokyo's Shuto Expressway will fail in a great way bcause of that. As long as you provide the dae file along the cdae file in the same directory the tool will work and delete the dae files later on.
+
+-----
