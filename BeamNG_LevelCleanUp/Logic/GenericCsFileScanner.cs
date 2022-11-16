@@ -28,11 +28,15 @@ namespace BeamNG_LevelCleanUp.Logic
                 if (nameParts.Length > 1)
                 {
                     var name = nameParts[1];
+                    //if (name.Contains("slabs_huge_d")) Debugger.Break();
                     if (name.StartsWith("."))
                     {
                         name = name.Remove(0, 1);
                     }
-                    //if (name.Contains("slabs_huge_d")) Debugger.Break();
+                    if (name.Count(c => c == '/') == 0)
+                    {
+                        name = Path.Join(_csFile.Directory.FullName, name);
+                    }
                     var toCheck = PathResolver.ResolvePath(_levelPath, name, false);
                     var checkForFile = new FileInfo(toCheck);
                     if (!checkForFile.Exists)
