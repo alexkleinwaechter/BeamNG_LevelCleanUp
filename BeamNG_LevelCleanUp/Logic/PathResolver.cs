@@ -15,7 +15,7 @@ namespace BeamNG_LevelCleanUp.Logic
             string retVal = null;
             char toReplaceDelim = '/';
             char delim = '\\';
-            if (resourcePath.Contains("D:\\Temp\\Test_Cleanup\\_unpacked\\levels\\TSH\\ART\\road\\asphaltroad_laned_centerline_n.dds")) Debugger.Break();
+            //if (resourcePath.Contains("D:\\Temp\\Test_Cleanup\\_unpacked\\levels\\TSH\\ART\\road\\asphaltroad_laned_centerline_n.dds")) Debugger.Break();
             if (Path.IsPathRooted(resourcePath) && Path.IsPathFullyQualified(resourcePath))
             {
                 retVal = resourcePath;
@@ -40,7 +40,7 @@ namespace BeamNG_LevelCleanUp.Logic
             string retVal = null;
             char toReplaceDelim = '/';
             char delim = '\\';
-            if (resourcePath.Contains("D:\\Temp\\Test_Cleanup\\_unpacked\\levels\\TSH\\ART\\road\\asphaltroad_laned_centerline_n.dds")) Debugger.Break();
+            //if (resourcePath.Contains("D:\\Temp\\Test_Cleanup\\_unpacked\\levels\\TSH\\ART\\road\\asphaltroad_laned_centerline_n.dds")) Debugger.Break();
             retVal = DirectorySanitizer(string.Join(
                 new string(delim, 1),
                 csFile.DirectoryName.Split(delim).Select(x => x.ToLowerInvariant()).Concat(resourcePath.ToLowerInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())

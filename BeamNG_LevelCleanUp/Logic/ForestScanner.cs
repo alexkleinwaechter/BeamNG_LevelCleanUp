@@ -98,7 +98,12 @@ namespace BeamNG_LevelCleanUp.Logic
                             var nameParts = line.Split('"');
                             if (nameParts.Length > 1)
                             {
-                                _shapeNames.Add(nameParts[1]);
+                                var name = nameParts[1];
+                                if (name.Count(c => c == '/') == 0)
+                                {
+                                    name = Path.Join(Path.GetDirectoryName(file.FullName), name);
+                                }
+                                _shapeNames.Add(name);
                                 hit = false;
                             }
                         }

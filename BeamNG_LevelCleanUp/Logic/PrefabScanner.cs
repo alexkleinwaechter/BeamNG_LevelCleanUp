@@ -57,7 +57,12 @@ namespace BeamNG_LevelCleanUp.Logic
                     var nameParts = line.Split('"');
                     if (nameParts.Length > 1)
                     {
-                        shapeNames.Add(nameParts[1]);
+                        var name = nameParts[1];
+                        if (name.Count(c => c == '/') == 0)
+                        {
+                            name = Path.Join(file.Directory.FullName, name);
+                        }
+                        shapeNames.Add(name);
                     }
                 }
                 if (line.ToLowerInvariant().Contains("material ="))
