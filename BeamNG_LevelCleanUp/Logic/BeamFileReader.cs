@@ -222,7 +222,7 @@ namespace BeamNG_LevelCleanUp.Logic
             foreach (var extra in extras)
             {
                 var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));
-                if (dirInfo != null)
+                if (dirInfo != null && dirInfo.Exists)
                 {
                     PubSubChannel.SendMessage(false, $"Read Level {extra}");
                     WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs);
