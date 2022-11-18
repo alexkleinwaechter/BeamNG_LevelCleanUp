@@ -27,7 +27,6 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = levelPath;
             _excludeFiles = excludeFiles;
         }
-
         public List<string> ReturnUnusedAssetFiles()
         {
             var usedPaths = _usedAssets

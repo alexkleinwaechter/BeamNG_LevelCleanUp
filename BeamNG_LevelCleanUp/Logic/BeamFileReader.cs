@@ -284,6 +284,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile);
+                FillDaeMaterialsWithoutDefinition(_allImageFiles);
                 var materials = MaterialsJson
                     .SelectMany(x => x.MaterialFiles)
                     .Select(x => x.File.FullName.ToLowerInvariant())
@@ -301,6 +302,23 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     Console.WriteLine(s);
                 }
+            }
+        }
+
+        private void FillDaeMaterialsWithoutDefinition(List<FileInfo> removeList)
+        {
+            var usedDaeMaterials = Assets.Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
+                         .SelectMany(x => x.MaterialsDae)
+                         .ToList();
+
+            var filteredFiles = removeList
+            .Where(x => usedDaeMaterials
+                .Any(y => y.MaterialName.Equals(Path.GetFileNameWithoutExtension(x.Name), StringComparison.OrdinalIgnoreCase)
+                            && Path.GetDirectoryName(y.DaeLocation).Equals(x.DirectoryName, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+            foreach (var item in filteredFiles)
+            {
+                removeList.Remove(item);
             }
         }
 
