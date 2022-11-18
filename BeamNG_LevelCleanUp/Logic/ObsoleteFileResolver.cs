@@ -127,6 +127,10 @@ namespace BeamNG_LevelCleanUp.Logic
                                     filePathsToRemove.Add(file.File.FullName);
                                 }
                             }
+                            else
+                            {
+                                m.NotUsed = false;
+                            }
                         }
                     }
                 }

@@ -100,6 +100,10 @@ namespace BeamNG_LevelCleanUp.Logic
                             if (nameParts.Length > 1)
                             {
                                 var name = nameParts[1];
+                                if (name.StartsWith("./"))
+                                {
+                                    name = name.Remove(0, 2);
+                                }
                                 if (name.Count(c => c == '/') == 0)
                                 {
                                     name = Path.Join(Path.GetDirectoryName(file.FullName), name);

@@ -241,13 +241,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "materials.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "managedDatablocks.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "managedParticleData.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "particles.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "sounds.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "lights.cs", ReadTypeEnum.ExcludeCsFiles);
-                WalkDirectoryTree(dirInfo, "audioProfiles.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.ExcludeCsFiles);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -431,7 +425,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             terrainScanner.ScanTerrain();
                             break;
                         case ReadTypeEnum.ExcludeCsFiles:
-                            var csScanner = new GenericCsFileScanner(fi, _levelPath, ExcludeFiles);
+                            var csScanner = new GenericCsFileScanner(fi, _levelPath, ExcludeFiles, Assets);
                             csScanner.ScanForFilesToExclude();
                             break;
                         case ReadTypeEnum.ExcludeAllFiles:
