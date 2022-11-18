@@ -27,14 +27,6 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = levelPath;
             _excludeFiles = excludeFiles;
         }
-
-        //Todo!
-        //private void FillMaterialsWithoutFiles() {
-        //    var assets = _usedAssets.Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
-        //                 .Where(x => x.MaterialsDae.Any())
-        //                 .Where(x => x.Mater.);
-        //}
-        
         public List<string> ReturnUnusedAssetFiles()
         {
             var usedPaths = _usedAssets
