@@ -371,7 +371,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (FileInfo fi in files)
                 {
-                    if (exclude.Select(x => Path.Join(_namePath, x).ToUpperInvariant()).Any(fi.FullName.ToUpperInvariant().Contains))
+                    if (exclude.Any(x => fi.Name.ToUpperInvariant().Contains(x, StringComparison.OrdinalIgnoreCase)))
                     {
                         continue;
                     }

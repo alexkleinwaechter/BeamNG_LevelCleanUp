@@ -439,7 +439,7 @@
             this.Controls.Add(this.tabControl1);
             this.Controls.Add(this.panel1);
             this.Name = "Form1";
-            this.Text = "BeamNG Tools for Mapbuilders - version 0.82";
+            this.Text = "BeamNG Tools for Mapbuilders - version 0.83";
             this.tabControl1.ResumeLayout(false);
             this.tabPage1.ResumeLayout(false);
             this.splitContainer1.Panel1.ResumeLayout(false);
