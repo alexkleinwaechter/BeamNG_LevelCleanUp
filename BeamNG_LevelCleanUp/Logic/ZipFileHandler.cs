@@ -56,6 +56,10 @@ namespace BeamNG_LevelCleanUp.Logic
             var targetDir = new DirectoryInfo(filePath).Parent.FullName;
             var targetPath = Path.Join(targetDir, fileName);
             PubSubChannel.SendMessage(false, $"Compressing Deploymentfile at {targetPath}");
+            if (File.Exists(targetPath))
+            {
+                File.Delete(targetPath);
+            }
             ZipFile.CreateFromDirectory(filePath, targetPath);
             PubSubChannel.SendMessage(false, $"Deploymentfile created at {targetPath}");
         }
@@ -72,7 +76,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 var nameDir = new DirectoryInfo(_nameLevelPath);
                 var levelsDir = Directory.GetParent(_nameLevelPath);
-                if (!levelsDir.Name.Equals("levels", StringComparison.InvariantCultureIgnoreCase))
+                if (!levelsDir.Name.Equals("levels", StringComparison.OrdinalIgnoreCase))
                 {
                     levelsDir = Directory.CreateDirectory(Path.Join(path, "levels"));
                     Directory.Move(nameDir.FullName, Path.Join(levelsDir.FullName, nameDir.Name));
@@ -128,7 +132,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (FileInfo fi in files)
                 {
-                    if (exclude.Any(fi.FullName.ToLowerInvariant().Contains)) continue;
+                    if (exclude.Any(fi.FullName.ToUpperInvariant().Contains)) continue;
 
                     // In this example, we only access the existing FileInfo object. If we
                     // want to open, delete or modify the file, then

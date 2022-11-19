@@ -13,12 +13,14 @@ namespace BeamNG_LevelCleanUp.Logic
         private FileInfo _csFile { get; set; }
         private string _levelPath { get; set; }
         private List<string> _excludeFiles = new List<string>();
+        private List<Asset> _assets = new List<Asset>();
 
-        internal GenericCsFileScanner(FileInfo csFile, string levelPath, List<string> excludeFiles)
+        internal GenericCsFileScanner(FileInfo csFile, string levelPath, List<string> excludeFiles, List<Asset> assets)
         {
             _csFile = csFile;
             _levelPath = levelPath;
             _excludeFiles = excludeFiles;
+            _assets = assets;
         }
         internal void ScanForFilesToExclude()
         {
@@ -29,9 +31,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     var name = nameParts[1];
                     //if (name.Contains("slabs_huge_d")) Debugger.Break();
-                    if (name.StartsWith("."))
+                    if (name.StartsWith("./"))
                     {
-                        name = name.Remove(0, 1);
+                        name = name.Remove(0, 2);
                     }
                     if (name.Count(c => c == '/') == 0)
                     {
@@ -46,6 +48,14 @@ namespace BeamNG_LevelCleanUp.Logic
                     if (checkForFile.Exists)
                     {
                         _excludeFiles.Add(checkForFile.FullName);
+                        // Should run with compatibility switch for quirky projects
+                        if (checkForFile.Extension.Equals(".DAE", StringComparison.OrdinalIgnoreCase)) {
+                            AddAsset(new Asset
+                            {
+                                Class = "TSStatic",
+                                ShapeName = checkForFile.FullName,
+                            });
+                        }
                     }
                     else
                     {
@@ -88,6 +98,22 @@ namespace BeamNG_LevelCleanUp.Logic
                 fileInfo = new FileInfo(ddsPath);
             }
             return fileInfo;
+        }
+
+        private void AddAsset(Asset? asset)
+        {
+            //if (asset.ShapeName != null && asset.ShapeName.ToUpperInvariant().Contains("FranklinDouglasTower15flr_var2".ToUpperInvariant())) Debugger.Break();
+            if (!string.IsNullOrEmpty(asset?.ShapeName))
+            {
+                var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
+                asset.DaeExists = daeScanner.Exists();
+                if (asset.DaeExists.HasValue && asset.DaeExists.Value == true)
+                {
+                    asset.DaePath = daeScanner.ResolvedPath();
+                    asset.MaterialsDae = daeScanner.GetMaterials();
+                }
+            }
+            _assets.Add(asset);
         }
     }
 }

@@ -30,7 +30,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var shapeNames = new List<string>();
             if (file.Exists)
             {
-                shapeNames = file.Extension.Equals(".json", StringComparison.InvariantCultureIgnoreCase) ? GetShapeNamesJson(file) : GetShapeNamesCs(file);
+                shapeNames = file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ? GetShapeNamesJson(file) : GetShapeNamesCs(file);
                 var counter = 0;
                 foreach (var shapeName in shapeNames)
                 {
@@ -52,12 +52,16 @@ namespace BeamNG_LevelCleanUp.Logic
             List<string> shapeNames = new List<string>();
             foreach (string line in File.ReadLines(file.FullName))
             {
-                if (line.ToLowerInvariant().Contains("shapename ="))
+                if (line.ToUpperInvariant().Contains("shapename ="))
                 {
                     var nameParts = line.Split('"');
                     if (nameParts.Length > 1)
                     {
                         var name = nameParts[1];
+                        if (name.StartsWith("./"))
+                        {
+                            name = name.Remove(0, 2);
+                        }
                         if (name.Count(c => c == '/') == 0)
                         {
                             name = Path.Join(file.Directory.FullName, name);
@@ -65,7 +69,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         shapeNames.Add(name);
                     }
                 }
-                if (line.ToLowerInvariant().Contains("material ="))
+                if (line.ToUpperInvariant().Contains("material ="))
                 {
                     var nameParts = line.Split('"');
                     if (nameParts.Length > 1)
@@ -112,7 +116,7 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         private void AddAsset(Asset? asset)
         {
-            //if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/east_coast_rework/art/shapes/rails/track_straight_long.dae", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
+            //if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/east_coast_rework/art/shapes/rails/track_straight_long.dae", StringComparison.OrdinalIgnoreCase)) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
             {
                 var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);

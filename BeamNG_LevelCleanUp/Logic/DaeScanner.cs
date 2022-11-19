@@ -30,7 +30,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         public bool IsCdae()
         {
-            return _resolvedDaeFile.Extension.Equals(".cdae", StringComparison.InvariantCultureIgnoreCase);
+            return _resolvedDaeFile.Extension.Equals(".cdae", StringComparison.OrdinalIgnoreCase);
         }
         public string ResolvedPath()
         {

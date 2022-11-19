@@ -145,7 +145,7 @@ namespace BeamNG_LevelCleanUp
                 tb_rename_current_name.Text = _levelName;
                 FillDeleteList();
                 btn_AnalyzeLevel.Enabled = true;
-
+                PubSubChannel.SendMessage(false, "Done! Analyzing finished. Please check files for deletion.");
             }
             catch (Exception ex)
             {
@@ -172,7 +172,7 @@ namespace BeamNG_LevelCleanUp
                 var item = new GridFileListItem
                 {
                     FileInfo = file,
-                    Selected = _missingFiles.Any(x => x.Equals(file.FullName, StringComparison.InvariantCultureIgnoreCase)) ? false : this.cbAllNone.Checked,
+                    Selected = _missingFiles.Any(x => x.Equals(file.FullName, StringComparison.OrdinalIgnoreCase)) ? false : this.cbAllNone.Checked,
                     SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
                 };
                 SelectedFilesForDeletion.Add(item);

@@ -44,7 +44,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private void AddAsset(Asset? asset)
         {
-            //if (asset.ShapeName != null && asset.ShapeName.ToLowerInvariant().Contains("FranklinDouglasTower15flr_var2".ToLowerInvariant())) Debugger.Break();
+            //if (asset.ShapeName != null && asset.ShapeName.ToUpperInvariant().Contains("FranklinDouglasTower15flr_var2".ToUpperInvariant())) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
             {
                 var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
@@ -89,17 +89,21 @@ namespace BeamNG_LevelCleanUp.Logic
                     foreach (string line in File.ReadLines(file.FullName))
                     {
                         var search = $"({typeName})";
-                        if (line.ToLowerInvariant().Contains(search.ToLowerInvariant()))
+                        if (line.ToUpperInvariant().Contains(search.ToUpperInvariant()))
                         {
-                            //if (line.Contains("FranklinDouglasTower15flr_var2", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
+                            //if (line.Contains("FranklinDouglasTower15flr_var2", StringComparison.OrdinalIgnoreCase)) Debugger.Break();
                             hit = true;
                         }
-                        if (hit && line.ToLowerInvariant().Contains("shapefile ="))
+                        if (hit && line.ToUpperInvariant().Contains("shapefile ="))
                         {
                             var nameParts = line.Split('"');
                             if (nameParts.Length > 1)
                             {
                                 var name = nameParts[1];
+                                if (name.StartsWith("./"))
+                                {
+                                    name = name.Remove(0, 2);
+                                }
                                 if (name.Count(c => c == '/') == 0)
                                 {
                                     name = Path.Join(Path.GetDirectoryName(file.FullName), name);

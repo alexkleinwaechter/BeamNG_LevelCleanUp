@@ -8,13 +8,13 @@ namespace BeamNG_LevelCleanUp.Objects
 {
     public class MaterialJson
     {
-        public string Name { get; set; }
-        public string InternalName { get; set; }
-        public string Class { get; set; }
-        public string MapTo { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string InternalName { get; set; } = string.Empty;
+        public string Class { get; set; } = string.Empty;
+        public string MapTo { get; set; } = string.Empty;
         public List<MaterialStage> Stages { get; set; }
         public List<string> CubeFace { get; set; }
-        public string Cubemap { get; set; }
+        public string Cubemap { get; set; } = string.Empty;
         public List<MaterialFile> MaterialFiles { get; set; } = new List<MaterialFile>();
         public bool NotUsed { get; set; }
     }

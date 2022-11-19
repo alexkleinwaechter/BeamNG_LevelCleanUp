@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -32,6 +33,10 @@ namespace BeamNG_LevelCleanUp.Logic
                     //if (val == "containers_01_a_d.dds") Debugger.Break();
                     if (!string.IsNullOrEmpty(val))
                     {
+                        if (val.StartsWith("./"))
+                        {
+                            val = val.Remove(0, 2);
+                        }
                         if (val.Count(c => c == '/') == 0)
                         {
                             val = Path.Join(Path.GetDirectoryName(_matJsonPath), val);

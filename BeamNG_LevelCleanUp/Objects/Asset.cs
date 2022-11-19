@@ -15,7 +15,6 @@ namespace BeamNG_LevelCleanUp.Objects
         public string ShapeName { get; set; }
         public string ShapePath { get; set; }
         public string Filename { get; set; }
-        public FileInfo File { get; set; }
         public string Material { get; set; }
         public string SideMaterial { get; set; }
         public string TopMaterial { get; set; }
@@ -34,5 +33,30 @@ namespace BeamNG_LevelCleanUp.Objects
         //public List<decimal>? RotationMatrix { get; set; }
         public bool Hidden { get; set; }
         public string DaePath { get; set; }
+
+        public List<string> GetAllMaterialNames() {
+            var retVal = new List<string>();
+            if (!string.IsNullOrEmpty(this.Material))
+            {
+                retVal.Add(this.Material.ToUpperInvariant());
+            }
+            if (!string.IsNullOrEmpty(this.SideMaterial))
+            {
+                retVal.Add(this.SideMaterial.ToUpperInvariant());
+            }
+            if (!string.IsNullOrEmpty(this.TopMaterial))
+            {
+                retVal.Add(this.TopMaterial.ToUpperInvariant());
+            }
+            if (!string.IsNullOrEmpty(this.BottomMaterial))
+            {
+                retVal.Add(this.BottomMaterial.ToUpperInvariant());
+            }
+            if (this.MaterialsDae.Count > 0)
+            {
+                retVal.AddRange(this.MaterialsDae.Where(i => !string.IsNullOrEmpty(i.MaterialName)).Select(x => x.MaterialName.ToUpperInvariant()));
+            }
+            return retVal.Select(x => x.ToUpperInvariant()).ToList();
+        }
     }
 }
