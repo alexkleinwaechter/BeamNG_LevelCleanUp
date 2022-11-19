@@ -78,8 +78,6 @@ namespace BeamNG_LevelCleanUp.Logic
             _managedDecalData = new List<FileInfo>();
             _managedItemData = new List<FileInfo>();
             _forestJsonFiles = new List<FileInfo>();
-            _allImageFiles = new List<FileInfo>();
-            _imageFilesToRemove = new List<FileInfo>();
         }
 
         internal List<FileInfo> GetDeleteList()
@@ -262,9 +260,6 @@ namespace BeamNG_LevelCleanUp.Logic
                 //DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
             }
         }
-
-        private static List<FileInfo> _allImageFiles { get; set; } = new List<FileInfo>();
-        private static List<FileInfo> _imageFilesToRemove { get; set; } = new List<FileInfo>();
         internal void ResolveOrphanedFiles()
         {
             var dirInfo = new DirectoryInfo(_levelPath);
@@ -279,37 +274,12 @@ namespace BeamNG_LevelCleanUp.Logic
                 WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile);
 
-                //ToDo improve logic for old cs files
-                FillDaeMaterialsWithoutDefinition(_allImageFiles);
-                var materials = MaterialsJson
-                    .SelectMany(x => x.MaterialFiles)
-                    .Select(x => x.File.FullName.ToUpperInvariant())
-                    .ToList();
-                _imageFilesToRemove = _allImageFiles.Where(x => !materials.Contains(x.FullName.ToUpperInvariant())).ToList();
-                _imageFilesToRemove = _imageFilesToRemove.Where(x => !ExcludeFiles.Select(x => x.ToUpperInvariant()).Contains(x.FullName.ToUpperInvariant())).ToList();
-                DeleteList.AddRange(_imageFilesToRemove);
+                DeleteList = DeleteList.Where(x => !ExcludeFiles.Select(x => x.ToUpperInvariant()).Contains(x.FullName.ToUpperInvariant())).ToList();
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
                     Console.WriteLine(s);
                 }
-            }
-        }
-
-        private void FillDaeMaterialsWithoutDefinition(List<FileInfo> removeList)
-        {
-            var usedDaeMaterials = Assets.Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
-                         .SelectMany(x => x.MaterialsDae)
-                         .ToList();
-
-            var filteredFiles = removeList
-            .Where(x => usedDaeMaterials
-                .Any(y => y.MaterialName.Equals(Path.GetFileNameWithoutExtension(x.Name), StringComparison.OrdinalIgnoreCase)
-                            && Path.GetDirectoryName(y.DaeLocation).Equals(x.DirectoryName, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-            foreach (var item in filteredFiles)
-            {
-                removeList.Remove(item);
             }
         }
 
@@ -453,7 +423,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             _managedItemData.Add(fi);
                             break;
                         case ReadTypeEnum.ImageFile:
-                            _allImageFiles.Add(fi);
+                            DeleteList.Add(fi);
 
                             break;
                         case ReadTypeEnum.InfoJson:

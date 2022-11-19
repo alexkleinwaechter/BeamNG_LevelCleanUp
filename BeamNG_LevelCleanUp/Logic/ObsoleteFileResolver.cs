@@ -83,6 +83,9 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ExcludeUsedAssetFiles()
         {
+            //ToDo improve logic for old cs files
+            FillDaeMaterialsWithoutDefinition();
+
             var usedDaePaths = _usedAssets
                 .Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
                 .Select(x => x.DaePath.ToUpperInvariant())
@@ -93,7 +96,9 @@ namespace BeamNG_LevelCleanUp.Logic
 
             var usedMaterials = _usedAssets
                 .Where(x => x.GetAllMaterialNames().Count > 0)
-                .SelectMany(y => y.GetAllMaterialNames());
+                .SelectMany(y => y.GetAllMaterialNames())
+                .Distinct()
+                .ToList();
 
             var usedMaterialFiles = _materials
                 .Where(x => usedMaterials.Any(y => x.Name.ToUpperInvariant().Equals(y) || x.MapTo.ToUpperInvariant().Equals(y) || x.InternalName.ToUpperInvariant().Equals(y)))
@@ -104,6 +109,23 @@ namespace BeamNG_LevelCleanUp.Logic
             _excludeFiles.AddRange(usedDaePaths);
             _excludeFiles.AddRange(usedCdaePaths);
             _excludeFiles.AddRange(usedMaterialFiles);
+        }
+
+        private void FillDaeMaterialsWithoutDefinition()
+        {
+            var usedDaeMaterials = _usedAssets.Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
+                         .SelectMany(x => x.MaterialsDae)
+                         .ToList();
+
+            var filteredFiles = _excludeFiles.Select(x => new FileInfo(x))
+            .Where(x => usedDaeMaterials
+                .Any(y => y.MaterialName.Equals(Path.GetFileNameWithoutExtension(x.Name), StringComparison.OrdinalIgnoreCase)
+                            && Path.GetDirectoryName(y.DaeLocation).Equals(x.DirectoryName, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+            foreach (var item in filteredFiles)
+            {
+                _excludeFiles.Add(item.FullName);
+            }
         }
 
         private void MarkUnusedMaterials(List<string> materialNamesInUsedAssets, List<string> materialsToRemove, List<string> filePathsToRemove)
