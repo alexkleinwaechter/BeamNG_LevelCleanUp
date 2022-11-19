@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BeamNG_LevelCleanUp.Communication;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,14 +20,15 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         internal List<string> ScanForMissingFiles()
         {
+            PubSubChannel.SendMessage(false, $"Analyzing Errors in BeamNG logfile: {_fileName}");
             List<string> baseDivider = new List<string> { "|", "'" };
             List<string> errorDivider = new List<string> { "failed to load texture", "missing source texture", "failed to load" };
             baseDivider = baseDivider.Concat(errorDivider).ToList();
             foreach (string line in File.ReadLines(_fileName))
             {
-                if (errorDivider.Select(x => x.ToLowerInvariant()).Any(y => line.Contains(y, StringComparison.InvariantCultureIgnoreCase)))
+                if (errorDivider.Select(x => x.ToUpperInvariant()).Any(y => line.Contains(y, StringComparison.OrdinalIgnoreCase)))
                 {
-                    var nameParts = line.ToLowerInvariant().Split(baseDivider.ToArray(), StringSplitOptions.RemoveEmptyEntries);
+                    var nameParts = line.ToUpperInvariant().Split(baseDivider.ToArray(), StringSplitOptions.RemoveEmptyEntries);
                     foreach (var part in nameParts)
                     {
                         var name = part.Trim();
@@ -48,7 +50,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     }
                 }
             }
-            return _excludeFiles;
+            return _excludeFiles.Distinct().ToList();
         }
 
         internal FileInfo CheckMissingExtensions(FileInfo fileInfo)

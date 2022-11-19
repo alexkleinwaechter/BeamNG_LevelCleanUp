@@ -102,7 +102,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private void AddAsset(Asset? asset)
         {
-            //if (asset.ShapeName != null && asset.ShapeName.ToLowerInvariant().Contains("FranklinDouglasTower15flr_var2".ToLowerInvariant())) Debugger.Break();
+            //if (asset.ShapeName != null && asset.ShapeName.ToUpperInvariant().Contains("FranklinDouglasTower15flr_var2".ToUpperInvariant())) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
             {
                 var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);

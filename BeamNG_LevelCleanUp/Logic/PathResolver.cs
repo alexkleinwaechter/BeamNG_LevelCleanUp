@@ -24,7 +24,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 retVal = DirectorySanitizer(string.Join(
                     new string(delim, 1),
-                    levelPath.Split(delim).Select(x => x.ToLowerInvariant()).Concat(resourcePath.ToLowerInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
+                    levelPath.Split(delim).Select(x => x.ToUpperInvariant()).Concat(resourcePath.ToUpperInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
                     .Replace("\\\\", "\\"));
             }
             else
@@ -43,7 +43,7 @@ namespace BeamNG_LevelCleanUp.Logic
             //if (resourcePath.Contains("D:\\Temp\\Test_Cleanup\\_unpacked\\levels\\TSH\\ART\\road\\asphaltroad_laned_centerline_n.dds")) Debugger.Break();
             retVal = DirectorySanitizer(string.Join(
                 new string(delim, 1),
-                csFile.DirectoryName.Split(delim).Select(x => x.ToLowerInvariant()).Concat(resourcePath.ToLowerInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
+                csFile.DirectoryName.Split(delim).Select(x => x.ToUpperInvariant()).Concat(resourcePath.ToUpperInvariant().Replace(toReplaceDelim, delim).Split(delim)).Distinct().ToArray())
                 .Replace("\\\\", "\\"));
             WriteToLog(retVal);
             return retVal;

@@ -257,11 +257,9 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 PubSubChannel.SendMessage(false, $"Resolve unused managed asset files");
                 var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _levelPath, ExcludeFiles);
-                UnusedAssetFiles = resolver.ReturnUnusedAssetFiles();
-                UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.ToLowerInvariant())).ToList();
-                DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
-                //var deleter = new FileDeleter(UnusedAssetFiles, _path, "DeletedAssetFiles", _dryRun);
-                //deleter.Delete();
+                resolver.ExcludeUsedAssetFiles();
+                //UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToUpperInvariant()).Contains(x.ToUpperInvariant())).ToList();
+                //DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
             }
         }
 
@@ -273,24 +271,23 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(false, $"Resolve orphaned unmanaged files");
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.ImageFile);
+                WalkDirectoryTree(dirInfo, "*.cdae", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.dds", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.png", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile);
+
+                //ToDo improve logic for old cs files
                 FillDaeMaterialsWithoutDefinition(_allImageFiles);
                 var materials = MaterialsJson
                     .SelectMany(x => x.MaterialFiles)
-                    .Select(x => x.File.FullName.ToLowerInvariant())
+                    .Select(x => x.File.FullName.ToUpperInvariant())
                     .ToList();
-                _imageFilesToRemove = _allImageFiles.Where(x => !materials.Contains(x.FullName.ToLowerInvariant())).ToList();
-                _imageFilesToRemove = _imageFilesToRemove.Where(x => !ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(x.FullName.ToLowerInvariant())).ToList();
+                _imageFilesToRemove = _allImageFiles.Where(x => !materials.Contains(x.FullName.ToUpperInvariant())).ToList();
+                _imageFilesToRemove = _imageFilesToRemove.Where(x => !ExcludeFiles.Select(x => x.ToUpperInvariant()).Contains(x.FullName.ToUpperInvariant())).ToList();
                 DeleteList.AddRange(_imageFilesToRemove);
-                //var deleter = new FileDeleter(_imageFilesToRemove.Select(x => x.FullName).ToList(), _path, "DeletedOrphanedFiles", _dryRun);
-                //deleter.Delete();
-                //output exclude files alwasy drytrun true!
-                //deleter = new FileDeleter(ExcludeFiles, _path, "ExcludedFiles", true);
-                //deleter.Delete();
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -329,7 +326,12 @@ namespace BeamNG_LevelCleanUp.Logic
             if (!string.IsNullOrEmpty(_beamLogPath))
             {
                 var logReader = new BeamLogReader(_beamLogPath, _levelPath);
-                return logReader.ScanForMissingFiles();
+                var missingFiles = logReader.ScanForMissingFiles();
+                if (missingFiles.Any())
+                {
+                    File.WriteAllLines(Path.Join(_levelPath, $"MissingFilesFromBeamNgLog.txt"), missingFiles);
+                }
+                return missingFiles;
             }
             else
             {
@@ -399,7 +401,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (FileInfo fi in files)
                 {
-                    if (exclude.Select(x => Path.Join(_namePath, x).ToLowerInvariant()).Any(fi.FullName.ToLowerInvariant().Contains))
+                    if (exclude.Select(x => Path.Join(_namePath, x).ToUpperInvariant()).Any(fi.FullName.ToUpperInvariant().Contains))
                     {
                         continue;
                     }
@@ -451,10 +453,8 @@ namespace BeamNG_LevelCleanUp.Logic
                             _managedItemData.Add(fi);
                             break;
                         case ReadTypeEnum.ImageFile:
-                            if (!ExcludeFiles.Select(x => x.ToLowerInvariant()).Contains(fi.FullName.ToLowerInvariant()))
-                            {
-                                _allImageFiles.Add(fi);
-                            }
+                            _allImageFiles.Add(fi);
+
                             break;
                         case ReadTypeEnum.InfoJson:
                             var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);

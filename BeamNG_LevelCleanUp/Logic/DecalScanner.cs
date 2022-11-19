@@ -69,11 +69,11 @@ namespace BeamNG_LevelCleanUp.Logic
                     foreach (string line in File.ReadAllLines(file.FullName))
                     {
                         var search = $"({decalName})";
-                        if (line.ToLowerInvariant().Contains(search.ToLowerInvariant()))
+                        if (line.ToUpperInvariant().Contains(search.ToUpperInvariant()))
                         {
                             hit = true;
                         }
-                        if (hit && line.ToLowerInvariant().Contains("material ="))
+                        if (hit && line.ToUpperInvariant().Contains("material ="))
                         {
                             var nameParts = line.Split('"');
                             if (nameParts.Length > 1)

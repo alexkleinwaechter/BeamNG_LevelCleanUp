@@ -29,22 +29,22 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         public List<string> ReturnUnusedAssetFiles()
         {
-            var usedPaths = _usedAssets
+            var usedDaePaths = _usedAssets
                 .Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
-                .Select(x => x.DaePath.ToLowerInvariant())
+                .Select(x => x.DaePath.ToUpperInvariant())
                 .Distinct()
                 .ToList();
-            var unusedDae = _allDaeList
-                .Where(x => !usedPaths.Contains(x.FullName.ToLowerInvariant()))
-                //.Where(x => !_excludeFiles.Select(y => y.ToLowerInvariant()).Contains(x.FullName.ToLowerInvariant()))
+            var unusedDaeFiles = _allDaeList
+                .Where(x => !usedDaePaths.Contains(x.FullName.ToUpperInvariant()))
+                //.Where(x => !_excludeFiles.Select(y => y.ToUpperInvariant()).Contains(x.FullName.ToUpperInvariant()))
                 .ToList();
             var materialsInUnusedDae = new List<MaterialsDae>();
-            foreach (var file in unusedDae)
+            foreach (var file in unusedDaeFiles)
             {
                 var daeScanner = new DaeScanner(_levelPath, file.FullName, true);
                 materialsInUnusedDae.AddRange(daeScanner.GetMaterials());
             }
-            var materialNamesInUnusedDae = materialsInUnusedDae.Select(x => x.MaterialName).Distinct().ToList();
+            var materialNamesInUnusedDae = materialsInUnusedDae.Select(x => x.MaterialName.ToUpperInvariant()).Distinct().ToList();
             var usedAssetsWithMaterials = _usedAssets
                 .Where(x => !string.IsNullOrEmpty(x.Material)
                 || !string.IsNullOrEmpty(x.SideMaterial)
@@ -54,40 +54,20 @@ namespace BeamNG_LevelCleanUp.Logic
             var materialNamesInUsedAssets = new List<string>();
             foreach (var item in usedAssetsWithMaterials)
             {
-                if (!string.IsNullOrEmpty(item.Material))
-                {
-                    materialNamesInUsedAssets.Add(item.Material.ToLowerInvariant());
-                }
-                if (!string.IsNullOrEmpty(item.SideMaterial))
-                {
-                    materialNamesInUsedAssets.Add(item.SideMaterial.ToLowerInvariant());
-                }
-                if (!string.IsNullOrEmpty(item.TopMaterial))
-                {
-                    materialNamesInUsedAssets.Add(item.TopMaterial.ToLowerInvariant());
-                }
-                if (!string.IsNullOrEmpty(item.BottomMaterial))
-                {
-                    materialNamesInUsedAssets.Add(item.BottomMaterial.ToLowerInvariant());
-                }
-                if (item.MaterialsDae.Count > 0)
-                {
-                    //if (item.ShapeName != null && item.ShapeName.ToLowerInvariant().Contains("jri_airhangar")) Debugger.Break();
-                    materialNamesInUsedAssets.AddRange(item.MaterialsDae.Where(i => !string.IsNullOrEmpty(i.MaterialName)).Select(x => x.MaterialName.ToLowerInvariant()));
-                }
+                materialNamesInUsedAssets.AddRange(item.GetAllMaterialNames());
             }
             materialNamesInUsedAssets = materialNamesInUsedAssets.Distinct().ToList();
-            var materialsToRemove = materialNamesInUnusedDae.Where(x => !materialNamesInUsedAssets.Contains(x.ToLowerInvariant())).ToList();
-            
+            var materialsToRemoveFromUnusedDae = materialNamesInUnusedDae.Where(x => !materialNamesInUsedAssets.Contains(x.ToUpperInvariant())).ToList();
+
             var allMaterialsNotused = _materials
-                .Select(x => x.MapTo.ToLowerInvariant())
+                .Select(x => x.MapTo.ToUpperInvariant())
                 .Distinct()
                 .Where(x => !materialNamesInUsedAssets.Contains(x))
                 .ToList();
-            materialsToRemove = materialsToRemove.Concat(allMaterialsNotused).Distinct().ToList();
+            var materialsToRemove = materialsToRemoveFromUnusedDae.Concat(allMaterialsNotused).Distinct().ToList();
             var filePathsToRemove = new List<string>();
-            filePathsToRemove.AddRange(unusedDae.Select(x => x.FullName));
-            filePathsToRemove.AddRange(unusedDae.Select(x => Path.ChangeExtension(x.FullName, ".cdae")));
+            filePathsToRemove.AddRange(unusedDaeFiles.Select(x => x.FullName));
+            filePathsToRemove.AddRange(unusedDaeFiles.Select(x => Path.ChangeExtension(x.FullName, ".cdae")));
             bool stopFlag = true;
             var iterationCounter = 0;
             while (stopFlag)
@@ -101,35 +81,56 @@ namespace BeamNG_LevelCleanUp.Logic
             return filePathsToRemove;
         }
 
+        internal void ExcludeUsedAssetFiles()
+        {
+            var usedDaePaths = _usedAssets
+                .Where(x => x.DaeExists.HasValue && x.DaeExists.Value == true)
+                .Select(x => x.DaePath.ToUpperInvariant())
+                .Distinct()
+                .ToList();
+
+            var usedCdaePaths = usedDaePaths.Select(x => Path.ChangeExtension(x, ".CDAE"));
+
+            var usedMaterials = _usedAssets
+                .Where(x => x.GetAllMaterialNames().Count > 0)
+                .SelectMany(y => y.GetAllMaterialNames());
+
+            var usedMaterialFiles = _materials
+                .Where(x => usedMaterials.Any(y => x.Name.ToUpperInvariant().Equals(y) || x.MapTo.ToUpperInvariant().Equals(y) || x.InternalName.ToUpperInvariant().Equals(y)))
+                .SelectMany(f => f.MaterialFiles.Select(x => x.File.FullName))
+                .Distinct()
+                .ToList();
+
+            _excludeFiles.AddRange(usedDaePaths);
+            _excludeFiles.AddRange(usedCdaePaths);
+            _excludeFiles.AddRange(usedMaterialFiles);
+        }
+
         private void MarkUnusedMaterials(List<string> materialNamesInUsedAssets, List<string> materialsToRemove, List<string> filePathsToRemove)
         {
             foreach (var item in materialsToRemove)
             {
                 var mat = _materials
-                    .Where(m => !string.IsNullOrEmpty(m.Name) && m.Name.Equals(item, StringComparison.InvariantCultureIgnoreCase)).ToList();
+                    .Where(m => !string.IsNullOrEmpty(m.Name) && m.Name.Equals(item, StringComparison.OrdinalIgnoreCase)).ToList();
                 if (mat.Count > 0)
                 {
                     foreach (var m in mat)
                     {
-                        //if (m.Name.Equals("gas", StringComparison.InvariantCultureIgnoreCase)) Debugger.Break();
+                        //if (m.Name.Equals("gridmaterial_curbfacedupe", StringComparison.OrdinalIgnoreCase)) Debugger.Break();
                         m.NotUsed = true;
                         foreach (var file in m.MaterialFiles)
                         {
                             var fileInOtherMaterial = _materials
-                                .Where(x => materialNamesInUsedAssets.Contains(x.Name.ToLowerInvariant()))
-                                .Where(x => !string.IsNullOrEmpty(x.Name) && x.Name.ToLowerInvariant() != m.Name.ToLowerInvariant() && x.MaterialFiles != null)
+                                .Where(x => materialNamesInUsedAssets.Contains(x.Name.ToUpperInvariant()))
+                                .Where(x => !string.IsNullOrEmpty(x.Name) && x.Name.ToUpperInvariant() != m.Name.ToUpperInvariant() && x.MaterialFiles != null)
                                 .Where(x => x.NotUsed == false)
-                                .SelectMany(x => x.MaterialFiles).Any(y => y.File.FullName.Equals(file.File.FullName, StringComparison.InvariantCultureIgnoreCase));
+                                .SelectMany(x => x.MaterialFiles).Any(y => y.File.FullName.Equals(file.File.FullName, StringComparison.OrdinalIgnoreCase));
                             if (!fileInOtherMaterial)
                             {
                                 if (!filePathsToRemove.Contains(file.File.FullName))
                                 {
                                     filePathsToRemove.Add(file.File.FullName);
                                 }
-                            }
-                            else
-                            {
-                                m.NotUsed = false;
                             }
                         }
                     }
