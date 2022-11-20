@@ -33,7 +33,6 @@
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.btnZipDeployment = new System.Windows.Forms.Button();
             this.labelFileSummary = new System.Windows.Forms.Label();
-            this.cbAllNone = new System.Windows.Forms.CheckBox();
             this.btnOpenLog = new System.Windows.Forms.Button();
             this.tbBeamLogPath = new System.Windows.Forms.TextBox();
             this.label2 = new System.Windows.Forms.Label();
@@ -41,6 +40,8 @@
             this.chkDryRun = new System.Windows.Forms.CheckBox();
             this.btn_AnalyzeLevel = new System.Windows.Forms.Button();
             this.dataGridViewDeleteList = new System.Windows.Forms.DataGridView();
+            this.cbAllNone = new System.Windows.Forms.CheckBox();
+            this.tbFilterGrid = new System.Windows.Forms.TextBox();
             this.tabPage3 = new System.Windows.Forms.TabPage();
             this.btnZipDeployment2 = new System.Windows.Forms.Button();
             this.label6 = new System.Windows.Forms.Label();
@@ -88,7 +89,7 @@
             this.tabControl1.Location = new System.Drawing.Point(0, 140);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
-            this.tabControl1.Size = new System.Drawing.Size(1071, 769);
+            this.tabControl1.Size = new System.Drawing.Size(1327, 763);
             this.tabControl1.TabIndex = 0;
             // 
             // tabPage1
@@ -97,7 +98,7 @@
             this.tabPage1.Location = new System.Drawing.Point(4, 29);
             this.tabPage1.Name = "tabPage1";
             this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage1.Size = new System.Drawing.Size(1063, 736);
+            this.tabPage1.Size = new System.Drawing.Size(1319, 730);
             this.tabPage1.TabIndex = 0;
             this.tabPage1.Text = "Shrink Deploymentfile";
             this.tabPage1.UseVisualStyleBackColor = true;
@@ -113,19 +114,22 @@
             // 
             this.splitContainer1.Panel1.Controls.Add(this.btnZipDeployment);
             this.splitContainer1.Panel1.Controls.Add(this.labelFileSummary);
-            this.splitContainer1.Panel1.Controls.Add(this.cbAllNone);
             this.splitContainer1.Panel1.Controls.Add(this.btnOpenLog);
             this.splitContainer1.Panel1.Controls.Add(this.tbBeamLogPath);
             this.splitContainer1.Panel1.Controls.Add(this.label2);
             this.splitContainer1.Panel1.Controls.Add(this.btn_deleteFiles);
             this.splitContainer1.Panel1.Controls.Add(this.chkDryRun);
             this.splitContainer1.Panel1.Controls.Add(this.btn_AnalyzeLevel);
+            this.splitContainer1.Panel1MinSize = 150;
             // 
             // splitContainer1.Panel2
             // 
             this.splitContainer1.Panel2.Controls.Add(this.dataGridViewDeleteList);
-            this.splitContainer1.Size = new System.Drawing.Size(1057, 730);
-            this.splitContainer1.SplitterDistance = 277;
+            this.splitContainer1.Panel2.Controls.Add(this.cbAllNone);
+            this.splitContainer1.Panel2.Controls.Add(this.tbFilterGrid);
+            this.splitContainer1.Panel2MinSize = 300;
+            this.splitContainer1.Size = new System.Drawing.Size(1313, 724);
+            this.splitContainer1.SplitterDistance = 163;
             this.splitContainer1.TabIndex = 14;
             // 
             // btnZipDeployment
@@ -143,24 +147,11 @@
             // 
             this.labelFileSummary.AutoSize = true;
             this.labelFileSummary.Dock = System.Windows.Forms.DockStyle.Right;
-            this.labelFileSummary.Location = new System.Drawing.Point(1007, 0);
+            this.labelFileSummary.Location = new System.Drawing.Point(1263, 0);
             this.labelFileSummary.Name = "labelFileSummary";
             this.labelFileSummary.Size = new System.Drawing.Size(50, 20);
             this.labelFileSummary.TabIndex = 24;
             this.labelFileSummary.Text = "label2";
-            // 
-            // cbAllNone
-            // 
-            this.cbAllNone.AutoSize = true;
-            this.cbAllNone.Checked = true;
-            this.cbAllNone.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbAllNone.Dock = System.Windows.Forms.DockStyle.Bottom;
-            this.cbAllNone.Location = new System.Drawing.Point(0, 253);
-            this.cbAllNone.Name = "cbAllNone";
-            this.cbAllNone.Size = new System.Drawing.Size(1057, 24);
-            this.cbAllNone.TabIndex = 23;
-            this.cbAllNone.Text = "Selection All / None";
-            this.cbAllNone.UseVisualStyleBackColor = true;
             // 
             // btnOpenLog
             // 
@@ -225,16 +216,38 @@
             // 
             this.dataGridViewDeleteList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
             this.dataGridViewDeleteList.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            this.dataGridViewDeleteList.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.dataGridViewDeleteList.Location = new System.Drawing.Point(0, 0);
+            this.dataGridViewDeleteList.Dock = System.Windows.Forms.DockStyle.Top;
+            this.dataGridViewDeleteList.Location = new System.Drawing.Point(0, 51);
             this.dataGridViewDeleteList.Name = "dataGridViewDeleteList";
             this.dataGridViewDeleteList.RowHeadersWidth = 51;
             this.dataGridViewDeleteList.RowTemplate.Height = 29;
-            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1057, 449);
+            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1313, 425);
             this.dataGridViewDeleteList.TabIndex = 0;
             this.dataGridViewDeleteList.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellContentClick);
             this.dataGridViewDeleteList.CellValueChanged += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellValueChanged);
             this.dataGridViewDeleteList.CurrentCellDirtyStateChanged += new System.EventHandler(this.dataGridViewDeleteList_CurrentCellDirtyStateChanged);
+            // 
+            // cbAllNone
+            // 
+            this.cbAllNone.Checked = true;
+            this.cbAllNone.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.cbAllNone.Dock = System.Windows.Forms.DockStyle.Top;
+            this.cbAllNone.Location = new System.Drawing.Point(0, 27);
+            this.cbAllNone.Name = "cbAllNone";
+            this.cbAllNone.Size = new System.Drawing.Size(1313, 24);
+            this.cbAllNone.TabIndex = 23;
+            this.cbAllNone.Text = "Selection All / None";
+            this.cbAllNone.UseVisualStyleBackColor = true;
+            // 
+            // tbFilterGrid
+            // 
+            this.tbFilterGrid.Dock = System.Windows.Forms.DockStyle.Top;
+            this.tbFilterGrid.Location = new System.Drawing.Point(0, 0);
+            this.tbFilterGrid.Name = "tbFilterGrid";
+            this.tbFilterGrid.PlaceholderText = "Search...";
+            this.tbFilterGrid.Size = new System.Drawing.Size(1313, 27);
+            this.tbFilterGrid.TabIndex = 24;
+            this.tbFilterGrid.TextChanged += new System.EventHandler(this.tbFilterGrid_TextChanged);
             // 
             // tabPage3
             // 
@@ -250,7 +263,7 @@
             this.tabPage3.Location = new System.Drawing.Point(4, 29);
             this.tabPage3.Name = "tabPage3";
             this.tabPage3.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage3.Size = new System.Drawing.Size(1063, 736);
+            this.tabPage3.Size = new System.Drawing.Size(1319, 730);
             this.tabPage3.TabIndex = 2;
             this.tabPage3.Text = "Copy Map with new name";
             this.tabPage3.UseVisualStyleBackColor = true;
@@ -340,7 +353,7 @@
             this.tabPage2.Location = new System.Drawing.Point(4, 29);
             this.tabPage2.Name = "tabPage2";
             this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage2.Size = new System.Drawing.Size(1063, 736);
+            this.tabPage2.Size = new System.Drawing.Size(1319, 730);
             this.tabPage2.TabIndex = 1;
             this.tabPage2.Text = "Errors";
             this.tabPage2.UseVisualStyleBackColor = true;
@@ -350,7 +363,7 @@
             this.richTextBoxErrors.Dock = System.Windows.Forms.DockStyle.Fill;
             this.richTextBoxErrors.Location = new System.Drawing.Point(3, 3);
             this.richTextBoxErrors.Name = "richTextBoxErrors";
-            this.richTextBoxErrors.Size = new System.Drawing.Size(1057, 730);
+            this.richTextBoxErrors.Size = new System.Drawing.Size(1313, 724);
             this.richTextBoxErrors.TabIndex = 0;
             this.richTextBoxErrors.Text = "";
             // 
@@ -428,14 +441,14 @@
             this.panel1.Dock = System.Windows.Forms.DockStyle.Top;
             this.panel1.Location = new System.Drawing.Point(0, 0);
             this.panel1.Name = "panel1";
-            this.panel1.Size = new System.Drawing.Size(1071, 140);
+            this.panel1.Size = new System.Drawing.Size(1327, 140);
             this.panel1.TabIndex = 1;
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1071, 921);
+            this.ClientSize = new System.Drawing.Size(1327, 915);
             this.Controls.Add(this.tabControl1);
             this.Controls.Add(this.panel1);
             this.Name = "Form1";
@@ -445,6 +458,7 @@
             this.splitContainer1.Panel1.ResumeLayout(false);
             this.splitContainer1.Panel1.PerformLayout();
             this.splitContainer1.Panel2.ResumeLayout(false);
+            this.splitContainer1.Panel2.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).EndInit();
             this.splitContainer1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.dataGridViewDeleteList)).EndInit();
@@ -496,5 +510,6 @@
         private Label label6;
         private TextBox tb_rename_new_name_title;
         private Button btnZipDeployment2;
+        private TextBox tbFilterGrid;
     }
 }
