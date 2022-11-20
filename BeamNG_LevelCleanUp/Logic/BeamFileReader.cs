@@ -66,6 +66,11 @@ namespace BeamNG_LevelCleanUp.Logic
             return _levelName;
         }
 
+        internal string GetLevelPath()
+        {
+            return _levelPath;
+        }
+
         internal void Reset()
         {
             DeleteList = new List<FileInfo>();

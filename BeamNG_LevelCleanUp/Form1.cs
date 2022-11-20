@@ -146,7 +146,7 @@ namespace BeamNG_LevelCleanUp
                 tb_rename_current_name.Text = _levelName;
                 FillDeleteList();
                 btn_AnalyzeLevel.Enabled = true;
-                PubSubChannel.SendMessage(false, "Done! Analyzing finished. Please check files for deletion.");
+                PubSubChannel.SendMessage(false, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
             }
             catch (Exception ex)
             {
