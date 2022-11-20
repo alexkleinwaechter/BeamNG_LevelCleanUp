@@ -30,16 +30,18 @@
         {
             this.tabControl1 = new System.Windows.Forms.TabControl();
             this.tabPage1 = new System.Windows.Forms.TabPage();
-            this.splitContainer1 = new System.Windows.Forms.SplitContainer();
+            this.splitContainerShrink = new System.Windows.Forms.SplitContainer();
             this.btnZipDeployment = new System.Windows.Forms.Button();
             this.labelFileSummary = new System.Windows.Forms.Label();
-            this.cbAllNone = new System.Windows.Forms.CheckBox();
             this.btnOpenLog = new System.Windows.Forms.Button();
             this.tbBeamLogPath = new System.Windows.Forms.TextBox();
             this.label2 = new System.Windows.Forms.Label();
             this.btn_deleteFiles = new System.Windows.Forms.Button();
             this.chkDryRun = new System.Windows.Forms.CheckBox();
             this.btn_AnalyzeLevel = new System.Windows.Forms.Button();
+            this.splitContainer_grid = new System.Windows.Forms.SplitContainer();
+            this.cbAllNone = new System.Windows.Forms.CheckBox();
+            this.tbFilterGrid = new System.Windows.Forms.TextBox();
             this.dataGridViewDeleteList = new System.Windows.Forms.DataGridView();
             this.tabPage3 = new System.Windows.Forms.TabPage();
             this.btnZipDeployment2 = new System.Windows.Forms.Button();
@@ -67,10 +69,14 @@
             this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             this.tabControl1.SuspendLayout();
             this.tabPage1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
-            this.splitContainer1.Panel1.SuspendLayout();
-            this.splitContainer1.Panel2.SuspendLayout();
-            this.splitContainer1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.splitContainerShrink)).BeginInit();
+            this.splitContainerShrink.Panel1.SuspendLayout();
+            this.splitContainerShrink.Panel2.SuspendLayout();
+            this.splitContainerShrink.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.splitContainer_grid)).BeginInit();
+            this.splitContainer_grid.Panel1.SuspendLayout();
+            this.splitContainer_grid.Panel2.SuspendLayout();
+            this.splitContainer_grid.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridViewDeleteList)).BeginInit();
             this.tabPage3.SuspendLayout();
             this.tabPage2.SuspendLayout();
@@ -88,45 +94,50 @@
             this.tabControl1.Location = new System.Drawing.Point(0, 140);
             this.tabControl1.Name = "tabControl1";
             this.tabControl1.SelectedIndex = 0;
-            this.tabControl1.Size = new System.Drawing.Size(1071, 769);
+            this.tabControl1.Size = new System.Drawing.Size(1327, 763);
             this.tabControl1.TabIndex = 0;
             // 
             // tabPage1
             // 
-            this.tabPage1.Controls.Add(this.splitContainer1);
+            this.tabPage1.Controls.Add(this.splitContainerShrink);
             this.tabPage1.Location = new System.Drawing.Point(4, 29);
             this.tabPage1.Name = "tabPage1";
             this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage1.Size = new System.Drawing.Size(1063, 736);
+            this.tabPage1.Size = new System.Drawing.Size(1319, 730);
             this.tabPage1.TabIndex = 0;
             this.tabPage1.Text = "Shrink Deploymentfile";
             this.tabPage1.UseVisualStyleBackColor = true;
             // 
-            // splitContainer1
+            // splitContainerShrink
             // 
-            this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splitContainer1.Location = new System.Drawing.Point(3, 3);
-            this.splitContainer1.Name = "splitContainer1";
-            this.splitContainer1.Orientation = System.Windows.Forms.Orientation.Horizontal;
+            this.splitContainerShrink.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.splitContainerShrink.FixedPanel = System.Windows.Forms.FixedPanel.Panel1;
+            this.splitContainerShrink.Location = new System.Drawing.Point(3, 3);
+            this.splitContainerShrink.Name = "splitContainerShrink";
+            this.splitContainerShrink.Orientation = System.Windows.Forms.Orientation.Horizontal;
             // 
-            // splitContainer1.Panel1
+            // splitContainerShrink.Panel1
             // 
-            this.splitContainer1.Panel1.Controls.Add(this.btnZipDeployment);
-            this.splitContainer1.Panel1.Controls.Add(this.labelFileSummary);
-            this.splitContainer1.Panel1.Controls.Add(this.cbAllNone);
-            this.splitContainer1.Panel1.Controls.Add(this.btnOpenLog);
-            this.splitContainer1.Panel1.Controls.Add(this.tbBeamLogPath);
-            this.splitContainer1.Panel1.Controls.Add(this.label2);
-            this.splitContainer1.Panel1.Controls.Add(this.btn_deleteFiles);
-            this.splitContainer1.Panel1.Controls.Add(this.chkDryRun);
-            this.splitContainer1.Panel1.Controls.Add(this.btn_AnalyzeLevel);
+            this.splitContainerShrink.Panel1.Controls.Add(this.btnZipDeployment);
+            this.splitContainerShrink.Panel1.Controls.Add(this.labelFileSummary);
+            this.splitContainerShrink.Panel1.Controls.Add(this.btnOpenLog);
+            this.splitContainerShrink.Panel1.Controls.Add(this.tbBeamLogPath);
+            this.splitContainerShrink.Panel1.Controls.Add(this.label2);
+            this.splitContainerShrink.Panel1.Controls.Add(this.btn_deleteFiles);
+            this.splitContainerShrink.Panel1.Controls.Add(this.chkDryRun);
+            this.splitContainerShrink.Panel1.Controls.Add(this.btn_AnalyzeLevel);
+            this.splitContainerShrink.Panel1.Padding = new System.Windows.Forms.Padding(10);
+            this.splitContainerShrink.Panel1MinSize = 100;
             // 
-            // splitContainer1.Panel2
+            // splitContainerShrink.Panel2
             // 
-            this.splitContainer1.Panel2.Controls.Add(this.dataGridViewDeleteList);
-            this.splitContainer1.Size = new System.Drawing.Size(1057, 730);
-            this.splitContainer1.SplitterDistance = 277;
-            this.splitContainer1.TabIndex = 14;
+            this.splitContainerShrink.Panel2.AutoScroll = true;
+            this.splitContainerShrink.Panel2.Controls.Add(this.splitContainer_grid);
+            this.splitContainerShrink.Panel2.Padding = new System.Windows.Forms.Padding(10);
+            this.splitContainerShrink.Panel2MinSize = 300;
+            this.splitContainerShrink.Size = new System.Drawing.Size(1313, 724);
+            this.splitContainerShrink.SplitterDistance = 170;
+            this.splitContainerShrink.TabIndex = 14;
             // 
             // btnZipDeployment
             // 
@@ -143,24 +154,11 @@
             // 
             this.labelFileSummary.AutoSize = true;
             this.labelFileSummary.Dock = System.Windows.Forms.DockStyle.Right;
-            this.labelFileSummary.Location = new System.Drawing.Point(1007, 0);
+            this.labelFileSummary.Location = new System.Drawing.Point(1253, 10);
             this.labelFileSummary.Name = "labelFileSummary";
             this.labelFileSummary.Size = new System.Drawing.Size(50, 20);
             this.labelFileSummary.TabIndex = 24;
             this.labelFileSummary.Text = "label2";
-            // 
-            // cbAllNone
-            // 
-            this.cbAllNone.AutoSize = true;
-            this.cbAllNone.Checked = true;
-            this.cbAllNone.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbAllNone.Dock = System.Windows.Forms.DockStyle.Bottom;
-            this.cbAllNone.Location = new System.Drawing.Point(0, 253);
-            this.cbAllNone.Name = "cbAllNone";
-            this.cbAllNone.Size = new System.Drawing.Size(1057, 24);
-            this.cbAllNone.TabIndex = 23;
-            this.cbAllNone.Text = "Selection All / None";
-            this.cbAllNone.UseVisualStyleBackColor = true;
             // 
             // btnOpenLog
             // 
@@ -182,7 +180,7 @@
             // label2
             // 
             this.label2.AutoSize = true;
-            this.label2.Location = new System.Drawing.Point(8, 17);
+            this.label2.Location = new System.Drawing.Point(18, 27);
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(295, 20);
             this.label2.TabIndex = 20;
@@ -204,7 +202,7 @@
             this.chkDryRun.AutoSize = true;
             this.chkDryRun.Checked = true;
             this.chkDryRun.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.chkDryRun.Location = new System.Drawing.Point(10, 95);
+            this.chkDryRun.Location = new System.Drawing.Point(10, 83);
             this.chkDryRun.Name = "chkDryRun";
             this.chkDryRun.Size = new System.Drawing.Size(198, 24);
             this.chkDryRun.TabIndex = 17;
@@ -221,16 +219,61 @@
             this.btn_AnalyzeLevel.UseVisualStyleBackColor = true;
             this.btn_AnalyzeLevel.Click += new System.EventHandler(this.btn_AnalyzeLevel_Click);
             // 
+            // splitContainer_grid
+            // 
+            this.splitContainer_grid.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.splitContainer_grid.FixedPanel = System.Windows.Forms.FixedPanel.Panel1;
+            this.splitContainer_grid.Location = new System.Drawing.Point(10, 10);
+            this.splitContainer_grid.Name = "splitContainer_grid";
+            this.splitContainer_grid.Orientation = System.Windows.Forms.Orientation.Horizontal;
+            // 
+            // splitContainer_grid.Panel1
+            // 
+            this.splitContainer_grid.Panel1.Controls.Add(this.cbAllNone);
+            this.splitContainer_grid.Panel1.Controls.Add(this.tbFilterGrid);
+            this.splitContainer_grid.Panel1MinSize = 50;
+            // 
+            // splitContainer_grid.Panel2
+            // 
+            this.splitContainer_grid.Panel2.Controls.Add(this.dataGridViewDeleteList);
+            this.splitContainer_grid.Panel2MinSize = 300;
+            this.splitContainer_grid.Size = new System.Drawing.Size(1293, 530);
+            this.splitContainer_grid.SplitterDistance = 51;
+            this.splitContainer_grid.TabIndex = 25;
+            // 
+            // cbAllNone
+            // 
+            this.cbAllNone.Checked = true;
+            this.cbAllNone.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.cbAllNone.Dock = System.Windows.Forms.DockStyle.Top;
+            this.cbAllNone.Location = new System.Drawing.Point(0, 27);
+            this.cbAllNone.Name = "cbAllNone";
+            this.cbAllNone.Size = new System.Drawing.Size(1293, 24);
+            this.cbAllNone.TabIndex = 23;
+            this.cbAllNone.Text = "Selection All / None";
+            this.cbAllNone.UseVisualStyleBackColor = true;
+            this.cbAllNone.CheckedChanged += new System.EventHandler(this.cbAllNone_CheckedChanged);
+            // 
+            // tbFilterGrid
+            // 
+            this.tbFilterGrid.Dock = System.Windows.Forms.DockStyle.Top;
+            this.tbFilterGrid.Location = new System.Drawing.Point(0, 0);
+            this.tbFilterGrid.Name = "tbFilterGrid";
+            this.tbFilterGrid.PlaceholderText = "Search...";
+            this.tbFilterGrid.Size = new System.Drawing.Size(1293, 27);
+            this.tbFilterGrid.TabIndex = 24;
+            this.tbFilterGrid.TextChanged += new System.EventHandler(this.tbFilterGrid_TextChanged);
+            // 
             // dataGridViewDeleteList
             // 
-            this.dataGridViewDeleteList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
+            this.dataGridViewDeleteList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.DisplayedCells;
             this.dataGridViewDeleteList.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.dataGridViewDeleteList.Dock = System.Windows.Forms.DockStyle.Fill;
             this.dataGridViewDeleteList.Location = new System.Drawing.Point(0, 0);
             this.dataGridViewDeleteList.Name = "dataGridViewDeleteList";
             this.dataGridViewDeleteList.RowHeadersWidth = 51;
             this.dataGridViewDeleteList.RowTemplate.Height = 29;
-            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1057, 449);
+            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1293, 475);
             this.dataGridViewDeleteList.TabIndex = 0;
             this.dataGridViewDeleteList.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellContentClick);
             this.dataGridViewDeleteList.CellValueChanged += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellValueChanged);
@@ -250,7 +293,7 @@
             this.tabPage3.Location = new System.Drawing.Point(4, 29);
             this.tabPage3.Name = "tabPage3";
             this.tabPage3.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage3.Size = new System.Drawing.Size(1063, 736);
+            this.tabPage3.Size = new System.Drawing.Size(1319, 730);
             this.tabPage3.TabIndex = 2;
             this.tabPage3.Text = "Copy Map with new name";
             this.tabPage3.UseVisualStyleBackColor = true;
@@ -340,7 +383,7 @@
             this.tabPage2.Location = new System.Drawing.Point(4, 29);
             this.tabPage2.Name = "tabPage2";
             this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage2.Size = new System.Drawing.Size(1063, 736);
+            this.tabPage2.Size = new System.Drawing.Size(1319, 730);
             this.tabPage2.TabIndex = 1;
             this.tabPage2.Text = "Errors";
             this.tabPage2.UseVisualStyleBackColor = true;
@@ -350,7 +393,7 @@
             this.richTextBoxErrors.Dock = System.Windows.Forms.DockStyle.Fill;
             this.richTextBoxErrors.Location = new System.Drawing.Point(3, 3);
             this.richTextBoxErrors.Name = "richTextBoxErrors";
-            this.richTextBoxErrors.Size = new System.Drawing.Size(1057, 730);
+            this.richTextBoxErrors.Size = new System.Drawing.Size(1313, 724);
             this.richTextBoxErrors.TabIndex = 0;
             this.richTextBoxErrors.Text = "";
             // 
@@ -428,25 +471,30 @@
             this.panel1.Dock = System.Windows.Forms.DockStyle.Top;
             this.panel1.Location = new System.Drawing.Point(0, 0);
             this.panel1.Name = "panel1";
-            this.panel1.Size = new System.Drawing.Size(1071, 140);
+            this.panel1.Size = new System.Drawing.Size(1327, 140);
             this.panel1.TabIndex = 1;
             // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1071, 921);
+            this.ClientSize = new System.Drawing.Size(1327, 915);
             this.Controls.Add(this.tabControl1);
             this.Controls.Add(this.panel1);
             this.Name = "Form1";
-            this.Text = "BeamNG Tools for Mapbuilders - version 0.83";
+            this.Text = "BeamNG Tools for Mapbuilders - version 0.84";
             this.tabControl1.ResumeLayout(false);
             this.tabPage1.ResumeLayout(false);
-            this.splitContainer1.Panel1.ResumeLayout(false);
-            this.splitContainer1.Panel1.PerformLayout();
-            this.splitContainer1.Panel2.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).EndInit();
-            this.splitContainer1.ResumeLayout(false);
+            this.splitContainerShrink.Panel1.ResumeLayout(false);
+            this.splitContainerShrink.Panel1.PerformLayout();
+            this.splitContainerShrink.Panel2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.splitContainerShrink)).EndInit();
+            this.splitContainerShrink.ResumeLayout(false);
+            this.splitContainer_grid.Panel1.ResumeLayout(false);
+            this.splitContainer_grid.Panel1.PerformLayout();
+            this.splitContainer_grid.Panel2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.splitContainer_grid)).EndInit();
+            this.splitContainer_grid.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.dataGridViewDeleteList)).EndInit();
             this.tabPage3.ResumeLayout(false);
             this.tabPage3.PerformLayout();
@@ -461,7 +509,7 @@
 
         private TabControl tabControl1;
         private TabPage tabPage1;
-        private SplitContainer splitContainer1;
+        private SplitContainer splitContainerShrink;
         private CheckBox chkDryRun;
         private Button btn_AnalyzeLevel;
         private Button btn_openLevelFolder;
@@ -496,5 +544,7 @@
         private Label label6;
         private TextBox tb_rename_new_name_title;
         private Button btnZipDeployment2;
+        private TextBox tbFilterGrid;
+        private SplitContainer splitContainer_grid;
     }
 }

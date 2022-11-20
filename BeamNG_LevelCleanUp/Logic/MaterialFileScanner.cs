@@ -21,7 +21,7 @@ namespace BeamNG_LevelCleanUp.Logic
             _stages = stages;
             _matJsonPath = matJsonPath;
         }
-        public List<MaterialFile> GetMaterialFiles()
+        public List<MaterialFile> GetMaterialFiles(string materialName)
         {
             var retVal = new List<MaterialFile>();
             foreach (var stage in _stages)
@@ -29,7 +29,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (var prop in stage.GetType().GetProperties())
                 {
                     var val = (string)prop.GetValue(stage, null);
-                    //if (val == "/levels/east_coast_rework/art/shapes/rails/shawn2.dds") Debugger.Break();
+                    //if (val == "/levels/LosInjurus/ART/shapes/Buildings/MetroCity/commercial/concrete_008_d.dds") Debugger.Break();
                     //if (val == "containers_01_a_d.dds") Debugger.Break();
                     if (!string.IsNullOrEmpty(val))
                     {
@@ -43,28 +43,33 @@ namespace BeamNG_LevelCleanUp.Logic
                         }
                         var filePath = PathResolver.ResolvePath(_levelPath, val, false);
                         var fileInfo = new FileInfo(filePath);
-                        if (!fileInfo.Exists)
+                        var fileToCheck = new FileInfo(filePath);
+                        if (!fileToCheck.Exists)
                         {
                             var ddsPath = Path.ChangeExtension(filePath, ".dds");
-                            fileInfo = new FileInfo(ddsPath);
+                            fileToCheck = new FileInfo(ddsPath);
                         }
-                        if (!fileInfo.Exists)
+                        if (!fileToCheck.Exists)
                         {
                             var ddsPath = Path.ChangeExtension(filePath, ".png");
-                            fileInfo = new FileInfo(ddsPath);
+                            fileToCheck = new FileInfo(ddsPath);
                         }
-                        if (!fileInfo.Exists)
+                        if (!fileToCheck.Exists)
                         {
                             var ddsPath = Path.ChangeExtension(filePath, ".jpg");
-                            fileInfo = new FileInfo(ddsPath);
+                            fileToCheck = new FileInfo(ddsPath);
                         }
-                        if (!fileInfo.Exists)
+                        if (!fileToCheck.Exists)
                         {
                             var ddsPath = Path.ChangeExtension(filePath, ".jpeg");
-                            fileInfo = new FileInfo(ddsPath);
+                            fileToCheck = new FileInfo(ddsPath);
+                        }
+                        if (fileToCheck.Exists) {
+                            fileInfo = fileToCheck;
                         }
                         retVal.Add(new MaterialFile
                         {
+                            MaterialName = materialName,
                             Missing = !fileInfo.Exists,
                             File = fileInfo,
                             MapType = prop.Name

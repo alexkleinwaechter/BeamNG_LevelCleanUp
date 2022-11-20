@@ -52,7 +52,7 @@ namespace BeamNG_LevelCleanUp.Logic
             List<string> shapeNames = new List<string>();
             foreach (string line in File.ReadLines(file.FullName))
             {
-                if (line.ToUpperInvariant().Contains("shapename ="))
+                if (line.ToUpperInvariant().Contains("shapename =", StringComparison.OrdinalIgnoreCase))
                 {
                     var nameParts = line.Split('"');
                     if (nameParts.Length > 1)
@@ -69,7 +69,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         shapeNames.Add(name);
                     }
                 }
-                if (line.ToUpperInvariant().Contains("material ="))
+                if (line.ToUpperInvariant().Contains("material =", StringComparison.OrdinalIgnoreCase))
                 {
                     var nameParts = line.Split('"');
                     if (nameParts.Length > 1)

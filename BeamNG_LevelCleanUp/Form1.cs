@@ -19,8 +19,9 @@ namespace BeamNG_LevelCleanUp
 {
     public partial class Form1 : Form
     {
-        private BindingSource bindingSourceDeleteList = new BindingSource();
+        private BindingSource BindingSourceDelete = new BindingSource();
         private List<GridFileListItem> SelectedFilesForDeletion { get; set; } = new List<GridFileListItem>();
+        private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
         private BeamFileReader Reader { get; set; }
         private List<string> _missingFiles { get; set; } = new List<string>();
         private Progress<string> _progress = new Progress<string>();
@@ -128,7 +129,7 @@ namespace BeamNG_LevelCleanUp
         private async void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
             SelectedFilesForDeletion = new List<GridFileListItem>();
-            bindingSourceDeleteList.DataSource = null;
+            BindingSourceDelete.DataSource = null;
             labelFileSummary.Text = String.Empty;
             btn_AnalyzeLevel.Enabled = false;
             Application.DoEvents();
@@ -145,7 +146,7 @@ namespace BeamNG_LevelCleanUp
                 tb_rename_current_name.Text = _levelName;
                 FillDeleteList();
                 btn_AnalyzeLevel.Enabled = true;
-                PubSubChannel.SendMessage(false, "Done! Analyzing finished. Please check files for deletion.");
+                PubSubChannel.SendMessage(false, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
             }
             catch (Exception ex)
             {
@@ -171,15 +172,16 @@ namespace BeamNG_LevelCleanUp
             {
                 var item = new GridFileListItem
                 {
-                    FileInfo = file,
+                    FullName = file.FullName,
                     Selected = _missingFiles.Any(x => x.Equals(file.FullName, StringComparison.OrdinalIgnoreCase)) ? false : this.cbAllNone.Checked,
                     SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
                 };
                 SelectedFilesForDeletion.Add(item);
-                bindingSourceDeleteList.Add(item);
+                BindingListDelete.Add(item);
             }
 
-            dataGridViewDeleteList.DataSource = bindingSourceDeleteList;
+            BindingSourceDelete.DataSource = BindingListDelete;
+            dataGridViewDeleteList.DataSource = BindingSourceDelete;
             UpdateLabel();
             CheckVisibility();
         }
@@ -187,7 +189,7 @@ namespace BeamNG_LevelCleanUp
         private void BuildGridDeleteFiles()
         {
             dataGridViewDeleteList.AutoGenerateColumns = false;
-            dataGridViewDeleteList.AutoSize = true;
+            //dataGridViewDeleteList.AutoSize = true;
 
             DataGridViewCheckBoxColumn col1 = new DataGridViewCheckBoxColumn();
             col1.DataPropertyName = "Selected";
@@ -195,7 +197,7 @@ namespace BeamNG_LevelCleanUp
             dataGridViewDeleteList.Columns.Add(col1);
 
             DataGridViewColumn col2 = new DataGridViewTextBoxColumn();
-            col2.DataPropertyName = "FileInfo";
+            col2.DataPropertyName = "FullName";
             col2.Name = "Filename";
             dataGridViewDeleteList.Columns.Add(col2);
             DataGridViewColumn col3 = new DataGridViewTextBoxColumn();
@@ -207,8 +209,9 @@ namespace BeamNG_LevelCleanUp
                 var dataGridView = o as DataGridView;
                 if (dataGridView != null)
                 {
-                    dataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-                    dataGridView.Columns[dataGridView.ColumnCount - 1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                    dataGridView.Dock = DockStyle.Fill;
+                    dataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells;
+                    dataGridView.Columns[dataGridView.ColumnCount - 1].AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
                 }
             };
         }
@@ -227,7 +230,7 @@ namespace BeamNG_LevelCleanUp
         {
             dataGridViewDeleteList.CommitEdit(DataGridViewDataErrorContexts.Commit);
             var item = (GridFileListItem)dataGridViewDeleteList.Rows[e.RowIndex].DataBoundItem;
-            var listItem = SelectedFilesForDeletion.FirstOrDefault(x => x.FileInfo.FullName == item.FileInfo.FullName);
+            var listItem = SelectedFilesForDeletion.FirstOrDefault(x => x.FullName == item.FullName);
             if (listItem != null)
             {
                 listItem.Selected = item.Selected;
@@ -253,7 +256,7 @@ namespace BeamNG_LevelCleanUp
         {
             var selected = SelectedFilesForDeletion
                 .Where(x => x.Selected)
-                .Select(x => x.FileInfo)
+                .Select(x => new FileInfo(x.FullName))
                  .ToList();
             Reader.DeleteFilesAndDeploy(selected, chkDryRun.Checked);
         }
@@ -266,8 +269,20 @@ namespace BeamNG_LevelCleanUp
 
         private void cbAllNone_CheckedChanged(object sender, EventArgs e)
         {
-            bindingSourceDeleteList.Clear();
-            FillDeleteList();
+            var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGrid.Text.ToUpperInvariant())).ToList());
+            foreach (var item in filteredBindingList)
+            {
+                item.Selected = cbAllNone.Checked;
+                var selectedListItem = SelectedFilesForDeletion.SingleOrDefault(x => x.FullName.Equals(item.FullName));
+                if (selectedListItem != null)
+                {
+                    selectedListItem.Selected = cbAllNone.Checked;
+                }
+            }
+
+            BindingSourceDelete.DataSource = filteredBindingList;
+            dataGridViewDeleteList.DataSource = BindingSourceDelete;
+            UpdateLabel();
         }
 
         private void CheckVisibility()
@@ -403,5 +418,11 @@ namespace BeamNG_LevelCleanUp
             }
         }
 
+        private void tbFilterGrid_TextChanged(object sender, EventArgs e)
+        {
+            var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGrid.Text.ToUpperInvariant())).ToList());
+            BindingSourceDelete.DataSource = filteredBindingList;
+            dataGridViewDeleteList.DataSource = BindingSourceDelete;
+        }
     }
 }

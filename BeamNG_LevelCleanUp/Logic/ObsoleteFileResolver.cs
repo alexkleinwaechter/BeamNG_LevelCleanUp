@@ -109,6 +109,7 @@ namespace BeamNG_LevelCleanUp.Logic
             _excludeFiles.AddRange(usedDaePaths);
             _excludeFiles.AddRange(usedCdaePaths);
             _excludeFiles.AddRange(usedMaterialFiles);
+            WriteMaterialFilesNotExistingLog();
         }
 
         private void FillDaeMaterialsWithoutDefinition()
@@ -125,6 +126,31 @@ namespace BeamNG_LevelCleanUp.Logic
             foreach (var item in filteredFiles)
             {
                 _excludeFiles.Add(item.FullName);
+            }
+            WriteMaterialFilesConventionExcludedLog(filteredFiles.Select(x => x.FullName).ToList());
+        }
+
+        private void WriteMaterialFilesNotExistingLog() {
+            string decimalSeparator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+            string listSeparator = CultureInfo.CurrentCulture.TextInfo.ListSeparator;
+
+            var files = _materials
+                .SelectMany(x => x.MaterialFiles).Where(x => x.Missing == true)
+                .Select(x => $"{x.MaterialName}{listSeparator}{x.File}")
+                .ToList();
+            if (files.Any())
+            {
+                files.Insert(0, $"Materialname{listSeparator}File");
+                File.WriteAllLines(Path.Join(_levelPath, $"MaterialFilesNotFound.txt"), files);
+            }
+        }
+
+        private void WriteMaterialFilesConventionExcludedLog(List<string> files)
+        {
+            if (files.Any())
+            {
+                files.Insert(0, "Materialfiles not defined in materials.json or materials.cs, but have the same name as materials in dae file.");
+                File.WriteAllLines(Path.Join(_levelPath, $"MaterialFilesNotDeletedByConvention.txt"), files);
             }
         }
 

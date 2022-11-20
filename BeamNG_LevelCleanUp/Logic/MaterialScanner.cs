@@ -45,7 +45,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             if (material?.Stages != null)
                             {
                                 var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
-                                material.MaterialFiles = fileScanner.GetMaterialFiles();
+                                material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
                             }
                             else
                             {
@@ -55,7 +55,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                     material.Stages = new List<MaterialStage>();
                                     material.Stages.Add(stage);
                                     var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
-                                    material.MaterialFiles = fileScanner.GetMaterialFiles();
+                                    material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
                                 }
                             }
                             if (material?.CubeFace != null && material?.CubeFace.Count > 0)
@@ -83,19 +83,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                     Material = material.Cubemap,
                                 });
                             }
-                            if (!string.IsNullOrEmpty(material.InternalName) && string.IsNullOrEmpty(material.MapTo))
-                            {
-                                material.MapTo = material.InternalName;
-                            }
-                            else if (!string.IsNullOrEmpty(material.Name) && string.IsNullOrEmpty(material.MapTo))
-                            {
-                                material.MapTo = material.Name;
-                            }
-                            if (string.IsNullOrEmpty(material.Name))
-                            {
-                                material.Name = material.MapTo;
-                            }
-                            PubSubChannel.SendMessage(false, $"Read Material {material.MapTo}", true);
+                            PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
                             _materials.Add(material);
 
                             var temp = child.Value.EnumerateObject().ToList();
