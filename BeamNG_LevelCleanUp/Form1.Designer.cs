@@ -238,6 +238,7 @@
             this.splitContainer_grid.Panel2.Controls.Add(this.dataGridViewDeleteList);
             this.splitContainer_grid.Panel2MinSize = 300;
             this.splitContainer_grid.Size = new System.Drawing.Size(1293, 530);
+            this.splitContainer_grid.SplitterDistance = 51;
             this.splitContainer_grid.TabIndex = 25;
             // 
             // cbAllNone
@@ -272,7 +273,7 @@
             this.dataGridViewDeleteList.Name = "dataGridViewDeleteList";
             this.dataGridViewDeleteList.RowHeadersWidth = 51;
             this.dataGridViewDeleteList.RowTemplate.Height = 29;
-            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1293, 476);
+            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1293, 475);
             this.dataGridViewDeleteList.TabIndex = 0;
             this.dataGridViewDeleteList.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellContentClick);
             this.dataGridViewDeleteList.CellValueChanged += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellValueChanged);
