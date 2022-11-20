@@ -189,7 +189,7 @@ namespace BeamNG_LevelCleanUp
         private void BuildGridDeleteFiles()
         {
             dataGridViewDeleteList.AutoGenerateColumns = false;
-            dataGridViewDeleteList.AutoSize = true;
+            //dataGridViewDeleteList.AutoSize = true;
 
             DataGridViewCheckBoxColumn col1 = new DataGridViewCheckBoxColumn();
             col1.DataPropertyName = "Selected";
@@ -209,8 +209,9 @@ namespace BeamNG_LevelCleanUp
                 var dataGridView = o as DataGridView;
                 if (dataGridView != null)
                 {
-                    dataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-                    dataGridView.Columns[dataGridView.ColumnCount - 1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                    dataGridView.Dock = DockStyle.Fill;
+                    dataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells;
+                    dataGridView.Columns[dataGridView.ColumnCount - 1].AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
                 }
             };
         }
@@ -268,8 +269,20 @@ namespace BeamNG_LevelCleanUp
 
         private void cbAllNone_CheckedChanged(object sender, EventArgs e)
         {
-            BindingSourceDelete.Clear();
-            FillDeleteList();
+            var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGrid.Text.ToUpperInvariant())).ToList());
+            foreach (var item in filteredBindingList)
+            {
+                item.Selected = cbAllNone.Checked;
+                var selectedListItem = SelectedFilesForDeletion.SingleOrDefault(x => x.FullName.Equals(item.FullName));
+                if (selectedListItem != null)
+                {
+                    selectedListItem.Selected = cbAllNone.Checked;
+                }
+            }
+
+            BindingSourceDelete.DataSource = filteredBindingList;
+            dataGridViewDeleteList.DataSource = BindingSourceDelete;
+            UpdateLabel();
         }
 
         private void CheckVisibility()
