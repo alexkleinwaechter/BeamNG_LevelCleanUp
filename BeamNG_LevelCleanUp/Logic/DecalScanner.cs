@@ -73,7 +73,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         {
                             hit = true;
                         }
-                        if (hit && line.ToUpperInvariant().Contains("material ="))
+                        if (hit && line.ToUpperInvariant().Contains("material =", StringComparison.OrdinalIgnoreCase))
                         {
                             var nameParts = line.Split('"');
                             if (nameParts.Length > 1)

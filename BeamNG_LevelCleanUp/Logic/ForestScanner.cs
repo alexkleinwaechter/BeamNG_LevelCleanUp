@@ -94,7 +94,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             //if (line.Contains("FranklinDouglasTower15flr_var2", StringComparison.OrdinalIgnoreCase)) Debugger.Break();
                             hit = true;
                         }
-                        if (hit && line.ToUpperInvariant().Contains("shapefile ="))
+                        if (hit && line.ToUpperInvariant().Contains("shapefile =", StringComparison.OrdinalIgnoreCase))
                         {
                             var nameParts = line.Split('"');
                             if (nameParts.Length > 1)

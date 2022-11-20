@@ -39,7 +39,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {
-                            //if (asset.Filename.Contains("ut_chevron_signs.prefab.json")) Debugger.Break();
+                            //if (asset.Filename.Contains("turbine_blades")) Debugger.Break();
                             var prefabScanner = new PrefabScanner(_assets, _levelPath);
                             prefabScanner.AddPrefabDaeFiles(asset.Filename);
                             continue;
