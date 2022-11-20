@@ -8,6 +8,14 @@ Watch the tutorial video:
 - Analyze your map and delete all unused files.
 - Copy another map and rename it, then you can use it as a basemap for your new project
 
+## Performance Example
+
+Extreme Example: 
+East Coast Reworked | v2.5
+The tool shrinks out almost 4.7 GB of data
+Zipsize before: 3.1 GB
+Zipsize after: 1.1 GB
+
 ## Download
 Open the [latest release](https://github.com/alexkleinwaechter/BeamNG_LevelCleanUp/releases/) on this page and download the *.exe file. It is not signed yet. Windows will ask you to allow execution. Why so big? 
 The tool is coded in Microsoft .Net and the download contains all necessary framework files to run without having to install .Net on your computer.
