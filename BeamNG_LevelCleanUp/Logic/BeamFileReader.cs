@@ -348,7 +348,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
-            var exclude = new List<string> { ".depth.", ".imposter" };
+            var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 

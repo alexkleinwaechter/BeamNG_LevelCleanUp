@@ -55,6 +55,7 @@
             this.tb_rename_current_name = new System.Windows.Forms.TextBox();
             this.tabPage2 = new System.Windows.Forms.TabPage();
             this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
+            this.coboCompressionLevel1 = new System.Windows.Forms.ComboBox();
             this.tbProgress = new System.Windows.Forms.TextBox();
             this.btnLoadLevelZipFile = new System.Windows.Forms.Button();
             this.tbLevelZipFile = new System.Windows.Forms.TextBox();
@@ -66,6 +67,7 @@
             this.openFileDialogLog = new System.Windows.Forms.OpenFileDialog();
             this.openFileDialogZip = new System.Windows.Forms.OpenFileDialog();
             this.panel1 = new System.Windows.Forms.Panel();
+            this.label7 = new System.Windows.Forms.Label();
             this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
             this.tabControl1.SuspendLayout();
             this.tabPage1.SuspendLayout();
@@ -141,7 +143,7 @@
             // 
             // btnZipDeployment
             // 
-            this.btnZipDeployment.Location = new System.Drawing.Point(337, 125);
+            this.btnZipDeployment.Location = new System.Drawing.Point(342, 125);
             this.btnZipDeployment.Name = "btnZipDeployment";
             this.btnZipDeployment.Size = new System.Drawing.Size(146, 29);
             this.btnZipDeployment.TabIndex = 29;
@@ -397,6 +399,15 @@
             this.richTextBoxErrors.TabIndex = 0;
             this.richTextBoxErrors.Text = "";
             // 
+            // coboCompressionLevel1
+            // 
+            this.coboCompressionLevel1.FormattingEnabled = true;
+            this.coboCompressionLevel1.Location = new System.Drawing.Point(824, 22);
+            this.coboCompressionLevel1.Name = "coboCompressionLevel1";
+            this.coboCompressionLevel1.Size = new System.Drawing.Size(165, 28);
+            this.coboCompressionLevel1.TabIndex = 30;
+            this.coboCompressionLevel1.SelectedIndexChanged += new System.EventHandler(this.coboCompressionLevel1_SelectedIndexChanged);
+            // 
             // tbProgress
             // 
             this.tbProgress.Location = new System.Drawing.Point(10, 109);
@@ -461,6 +472,8 @@
             // 
             // panel1
             // 
+            this.panel1.Controls.Add(this.label7);
+            this.panel1.Controls.Add(this.coboCompressionLevel1);
             this.panel1.Controls.Add(this.tbLevelZipFile);
             this.panel1.Controls.Add(this.tbProgress);
             this.panel1.Controls.Add(this.btnLoadLevelZipFile);
@@ -474,6 +487,15 @@
             this.panel1.Size = new System.Drawing.Size(1327, 140);
             this.panel1.TabIndex = 1;
             // 
+            // label7
+            // 
+            this.label7.AutoSize = true;
+            this.label7.Location = new System.Drawing.Point(824, 1);
+            this.label7.Name = "label7";
+            this.label7.Size = new System.Drawing.Size(341, 20);
+            this.label7.TabIndex = 31;
+            this.label7.Text = "Compression Level for deployment file generation";
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
@@ -482,7 +504,6 @@
             this.Controls.Add(this.tabControl1);
             this.Controls.Add(this.panel1);
             this.Name = "Form1";
-            this.Text = "BeamNG Tools for Mapbuilders - version 0.86";
             this.tabControl1.ResumeLayout(false);
             this.tabPage1.ResumeLayout(false);
             this.splitContainerShrink.Panel1.ResumeLayout(false);
@@ -546,5 +567,7 @@
         private Button btnZipDeployment2;
         private TextBox tbFilterGrid;
         private SplitContainer splitContainer_grid;
+        private ComboBox coboCompressionLevel1;
+        private Label label7;
     }
 }

@@ -50,7 +50,7 @@ namespace BeamNG_LevelCleanUp.Logic
             return _lastUnpackedPath;
         }
 
-        internal static void BuildDeploymentFile(string filePath, string levelName, bool searchLevelParent = false)
+        internal static void BuildDeploymentFile(string filePath, string levelName, CompressionLevel compressionLevel, bool searchLevelParent = false)
         {
             var fileName = $"{levelName}_deploy_{DateTime.Now.ToString("yyMMdd")}.zip";
             var targetDir = new DirectoryInfo(filePath).Parent.FullName;
@@ -60,7 +60,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 File.Delete(targetPath);
             }
-            ZipFile.CreateFromDirectory(filePath, targetPath);
+            ZipFile.CreateFromDirectory(filePath, targetPath, compressionLevel, false);
             PubSubChannel.SendMessage(false, $"Deploymentfile created at {targetPath}");
         }
 
