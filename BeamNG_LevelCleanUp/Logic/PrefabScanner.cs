@@ -22,28 +22,40 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void AddPrefabDaeFiles(string prefabFileName)
         {
+            var prefabFileNames = new List<string>();
             var file = new FileInfo(PathResolver.ResolvePath(_levelPath, prefabFileName, false));
-            AddPrefabDaeFiles(file);
+            if (file.Exists)
+            {
+                prefabFileNames = file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ? GetPrefabFilesJson(file) : GetPrefabFilesCs(file);
+                var prefabFileInfos = prefabFileNames.Select(x =>  new FileInfo(PathResolver.ResolvePath(_levelPath, x, false))).ToList();
+                AddPrefabDaeFiles(file);
+                if (prefabFileInfos.Any()) {
+                    foreach (var item in prefabFileInfos)
+                    {
+                        if (item.Exists)
+                        {
+                            AddPrefabDaeFiles(item);
+                        }
+                    }
+                }
+            }
         }
         internal void AddPrefabDaeFiles(FileInfo file)
         {
             var shapeNames = new List<string>();
-            if (file.Exists)
+            shapeNames = file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ? GetShapeNamesJson(file) : GetShapeNamesCs(file);
+            var counter = 0;
+            foreach (var shapeName in shapeNames)
             {
-                shapeNames = file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ? GetShapeNamesJson(file) : GetShapeNamesCs(file);
-                var counter = 0;
-                foreach (var shapeName in shapeNames)
+                counter++;
+                var asset = new Asset
                 {
-                    counter++;
-                    var asset = new Asset
-                    {
-                        Name = $"{file.Name}_{counter}",
-                        Class = "TSStatic",
-                        ShapeName = shapeName
-                    };
-                    AddAsset(asset);
-                    PubSubChannel.SendMessage(false, $"Read Prefab asset {asset.Name}", true);
-                }
+                    Name = $"{file.Name}_{counter}",
+                    Class = "TSStatic",
+                    ShapeName = shapeName
+                };
+                AddAsset(asset);
+                PubSubChannel.SendMessage(false, $"Read Prefab asset {asset.Name}", true);
             }
         }
 
@@ -85,6 +97,32 @@ namespace BeamNG_LevelCleanUp.Logic
             return shapeNames;
         }
 
+        private List<string> GetPrefabFilesCs(FileInfo file)
+        {
+            List<string> prefabFileNames = new List<string>();
+            foreach (string line in File.ReadLines(file.FullName))
+            {
+                if (line.ToUpperInvariant().Contains("filename =", StringComparison.OrdinalIgnoreCase))
+                {
+                    var nameParts = line.Split('"');
+                    if (nameParts.Length > 1)
+                    {
+                        var name = nameParts[1];
+                        if (name.StartsWith("./"))
+                        {
+                            name = name.Remove(0, 2);
+                        }
+                        if (name.Count(c => c == '/') == 0)
+                        {
+                            name = Path.Join(file.Directory.FullName, name);
+                        }
+                        prefabFileNames.Add(name);
+                    }
+                }
+            }
+            return prefabFileNames;
+        }
+
         private List<string> GetShapeNamesJson(FileInfo file)
         {
             List<string> shapeNames = new List<string>();
@@ -113,6 +151,32 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
             }
             return shapeNames;
+        }
+
+        private List<string> GetPrefabFilesJson(FileInfo file)
+        {
+            List<string> prefabFileNames = new List<string>();
+            foreach (string line in File.ReadAllLines(file.FullName))
+            {
+                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                try
+                {
+                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
+                    {
+                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
+                        if (!string.IsNullOrEmpty(asset.Filename))
+                        {
+                            prefabFileNames.Add(asset.Filename);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(true, $"Error {file.FullName}. {ex.Message}.");
+                }
+            }
+            return prefabFileNames;
         }
         private void AddAsset(Asset? asset)
         {
