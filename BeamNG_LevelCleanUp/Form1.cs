@@ -3,6 +3,8 @@ using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using System.ComponentModel;
 using System.Data;
+using System.IO.Compression;
+using System.Reflection;
 using Application = System.Windows.Forms.Application;
 
 namespace BeamNG_LevelCleanUp
@@ -26,10 +28,10 @@ namespace BeamNG_LevelCleanUp
         public Task InitializeAsync(CancellationToken token)
         {
             _token = token;
-            //use this to test the exception handling
-            //throw new NotImplementedException();
 
-            // Set the help text description for the FolderBrowserDialog.
+            Version version = Assembly.GetExecutingAssembly().GetName().Version;
+            Text = "BeamNG Tools for Mapbuilders - version";
+            Text = $"{Text} {version.Major}.{version.Minor}.{version.Build}";
 
             this.folderBrowserDialogLevel.Description =
                 "Select the directory of your unzipped level.";
@@ -48,6 +50,9 @@ namespace BeamNG_LevelCleanUp
 
             labelFileSummary.Text = String.Empty;
             tbProgress.Text = String.Empty;
+
+            coboCompressionLevel1.DataSource = Enum.GetValues(typeof(CompressionLevel));
+
             CheckVisibility();
             BuildGridDeleteFiles();
 
@@ -348,6 +353,8 @@ namespace BeamNG_LevelCleanUp
 
         private async Task ZipDeploymentFile()
         {
+            Enum.TryParse(coboCompressionLevel1.Text, out CompressionLevel compressionLevel);
+
             try
             {
                 var path = string.Empty;
@@ -356,7 +363,7 @@ namespace BeamNG_LevelCleanUp
                     path = ZipFileHandler.GetLastUnpackedPath();
                     await Task.Run(() =>
                     {
-                        ZipFileHandler.BuildDeploymentFile(path, _levelName);
+                        ZipFileHandler.BuildDeploymentFile(path, _levelName, compressionLevel);
                     });
                 }
                 else if (!string.IsNullOrEmpty(tbLevelPath.Text))
@@ -364,7 +371,7 @@ namespace BeamNG_LevelCleanUp
                     path = tbLevelPath.Text;
                     await Task.Run(() =>
                     {
-                        ZipFileHandler.BuildDeploymentFile(path, _levelName, true);
+                        ZipFileHandler.BuildDeploymentFile(path, _levelName, compressionLevel, true);
                     });
                 }
             }
@@ -401,6 +408,7 @@ namespace BeamNG_LevelCleanUp
                     Reader.RenameLevel(tb_rename_new_name_path.Text.Replace(" ", "").Trim(), tb_rename_new_name_title.Text);
                     _levelName = Reader.GetLevelName();
                 });
+                tb_rename_current_name.Text = _levelName;
             }
             catch (Exception ex)
             {
@@ -413,6 +421,11 @@ namespace BeamNG_LevelCleanUp
             var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGrid.Text.ToUpperInvariant())).ToList());
             BindingSourceDelete.DataSource = filteredBindingList;
             dataGridViewDeleteList.DataSource = BindingSourceDelete;
+        }
+
+        private void coboCompressionLevel1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+
         }
     }
 }
