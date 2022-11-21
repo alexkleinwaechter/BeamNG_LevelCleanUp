@@ -1,18 +1,9 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
-using System.Diagnostics;
-using System.Drawing;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using static System.Net.Mime.MediaTypeNames;
+using AutoUpdaterDotNET;
 using Application = System.Windows.Forms.Application;
 
 namespace BeamNG_LevelCleanUp
@@ -35,6 +26,7 @@ namespace BeamNG_LevelCleanUp
 
         public Task InitializeAsync(CancellationToken token)
         {
+            AutoUpdater.Start("https://raw.githubusercontent.com/alexkleinwaechter/BeamNG_LevelCleanUp/master/BeamNG_LevelCleanUp/AutoUpdater.xml");
             _token = token;
             //use this to test the exception handling
             //throw new NotImplementedException();
