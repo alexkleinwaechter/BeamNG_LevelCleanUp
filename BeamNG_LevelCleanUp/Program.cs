@@ -1,3 +1,4 @@
+using AutoUpdaterDotNET;
 namespace BeamNG_LevelCleanUp
 {
     /// <summary>
@@ -76,6 +77,8 @@ namespace BeamNG_LevelCleanUp
 
                 splashScreen.FormClosed -= m_mainForm_FormClosed;
                 splashScreen.Close();
+                
+                AutoUpdater.Start("https://raw.githubusercontent.com/alexkleinwaechter/BeamNG_LevelCleanUp/master/BeamNG_LevelCleanUp/AutoUpdater.xml");
             }
         }
 
