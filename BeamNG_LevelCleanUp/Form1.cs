@@ -19,6 +19,8 @@ namespace BeamNG_LevelCleanUp
         private Progress<string> _progress = new Progress<string>();
         private CancellationToken _token { get; set; }
         private static string _levelName { get; set; }
+        private static string _levelNameCopyFrom { get; set; }
+        private static string _levelPathCopyFrom { get; set; }
 
         public Form1()
         {
@@ -330,7 +332,7 @@ namespace BeamNG_LevelCleanUp
                     tbLevelZipFile.Text = openFileDialogZip.FileName;
                     await Task.Run(() =>
                     {
-                        path = ZipFileHandler.ExtractToDirectory(openFileDialogZip.FileName);
+                        path = ZipFileHandler.ExtractToDirectory(openFileDialogZip.FileName, "_unpacked");
                     });
                     tbLevelPath.Text = path;
                 }
@@ -423,9 +425,31 @@ namespace BeamNG_LevelCleanUp
             dataGridViewDeleteList.DataSource = BindingSourceDelete;
         }
 
-        private void coboCompressionLevel1_SelectedIndexChanged(object sender, EventArgs e)
+        private async void BtnCopyFromZipLevel_Click(object sender, EventArgs e)
         {
-
+            try
+            {
+                var path = string.Empty;
+                DialogResult result = openFileDialogZip.ShowDialog();
+                if (result == DialogResult.OK)
+                {
+                    tbCopyFromLevel.Text = openFileDialogZip.FileName;
+                    await Task.Run(() =>
+                    {
+                        _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(openFileDialogZip.FileName, "_copyFrom");
+                    });
+                    await Task.Run(() =>
+                    {
+                        Reader = new BeamFileReader(_levelPathCopyFrom, null);
+                        _levelNameCopyFrom = Reader.GetLevelName();
+                    });
+                    lbLevelNameCopyFrom.Text = _levelNameCopyFrom;
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
         }
     }
 }

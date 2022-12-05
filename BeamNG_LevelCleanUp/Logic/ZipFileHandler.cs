@@ -20,13 +20,13 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             FindLevelRoot = 0
         }
-        internal static string ExtractToDirectory(string filePath)
+        internal static string ExtractToDirectory(string filePath, string relativeTarget)
         {
             var retVal = string.Empty;
             var fi = new FileInfo(filePath);
             if (fi.Exists)
             {
-                retVal = Path.Join(fi.Directory.FullName, "_unpacked");
+                retVal = Path.Join(fi.Directory.FullName, relativeTarget);
                 _lastUnpackedPath = retVal;
                 var deleteDir = new DirectoryInfo(retVal);
                 if (deleteDir.Exists)
