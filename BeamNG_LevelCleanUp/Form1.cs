@@ -451,5 +451,14 @@ namespace BeamNG_LevelCleanUp
                 ShowException(ex);
             }
         }
+
+        private async void BtnScanAssets_Click(object sender, EventArgs e)
+        {
+            await Task.Run(() =>
+            {
+                Reader = new BeamFileReader(this.tbLevelPath.Text, this.tbBeamLogPath.Text, _levelPathCopyFrom);
+                Reader.ReadAllForCopy();
+            });
+        }
     }
 }

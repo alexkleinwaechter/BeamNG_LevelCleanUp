@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
@@ -26,12 +27,16 @@ namespace BeamNG_LevelCleanUp.Logic
             ExcludeCsFiles = 10,
             ScanExtraPrefabs = 11,
             ExcludeAllFiles = 12,
-            LevelRename = 13
+            LevelRename = 13,
+            CopyAssetRoad = 14
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
         private static string _levelName { get; set; }
         private static string _namePath { get; set; }
+        private static string _levelPathCopyFrom { get; set; }
+        private static string _levelNameCopyFrom { get; set; }
+        private static string _namePathCopyFrom { get; set; }
         private static string _beamLogPath { get; set; }
         private static bool _dryRun { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
@@ -39,13 +44,18 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
+        public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
+
         private static string _newName;
 
+        const string routeRoad = @"art\road";
+
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
-        internal BeamFileReader(string path, string beamLogPath)
+        internal BeamFileReader(string levelpath, string beamLogPath, string levelPathCopyFrom = null)
         {
-            _levelPath = path;
+            _levelPath = levelpath;
             _beamLogPath = beamLogPath;
+            _levelPathCopyFrom = levelPathCopyFrom;
             SanitizePath();
         }
 
@@ -58,7 +68,11 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
             _namePath = ZipFileHandler.GetNamePath(_levelPath);
             _levelName = new DirectoryInfo(_namePath).Name;
+            _levelPathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetLevelPath(_levelPathCopyFrom) : null;
+            _namePathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetNamePath(_levelPathCopyFrom) : null;
+            _levelNameCopyFrom = _namePathCopyFrom != null ? new DirectoryInfo(_namePathCopyFrom).Name : null;
             PathResolver.LevelPath = _levelPath;
+            PathResolver.LevelPathCopyFrom = _levelPathCopyFrom;
         }
 
         internal string GetLevelName()
@@ -105,6 +119,12 @@ namespace BeamNG_LevelCleanUp.Logic
             this.ResolveUnusedAssetFiles();
             ResolveOrphanedFiles();
             PubSubChannel.SendMessage(false, "Analyzing finished");
+        }
+
+        internal void ReadAllForCopy()
+        {
+            CopyAssetRoad();
+            PubSubChannel.SendMessage(false, "Fetching Assets finished");
         }
 
         internal void ReadInfoJson()
@@ -345,7 +365,20 @@ namespace BeamNG_LevelCleanUp.Logic
             PubSubChannel.SendMessage(false, "Renaming level done!");
         }
 
-
+        internal void CopyAssetRoad()
+        {
+            var dirInfo = new DirectoryInfo(Path.Join(_namePathCopyFrom, routeRoad));
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetRoad);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetRoad);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
             var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple" };
@@ -429,7 +462,6 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.ImageFile:
                             DeleteList.Add(fi);
-
                             break;
                         case ReadTypeEnum.InfoJson:
                             var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);
@@ -438,6 +470,20 @@ namespace BeamNG_LevelCleanUp.Logic
                         case ReadTypeEnum.LevelRename:
                             PubSubChannel.SendMessage(false, $"Renaming in file {fi.FullName}", true);
                             _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
+                            break;
+                        case ReadTypeEnum.CopyAssetRoad:
+                            var materialListRoad = new List<MaterialJson>();
+                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, materialListRoad, new List<Asset>(), new List<string>());
+                            materialCopyScanner.ScanMaterialsJsonFile();
+                            CopyAssets.Add(new CopyAsset
+                            {
+                                AssetType = AssetType.Road,
+                                Materials = materialListRoad,
+                                SourceMaterialJsonPath = fi.FullName,
+                                TargetPath = Path.Join(_namePath, routeRoad, _levelNameCopyFrom)
+                            });
+                            //var roadCopyScanner = new RoadCopyScanner(_levelNameCopyFrom, _levelNameCopyFrom, _levelPath);
+                            //roadCopyScanner.ScanMaterialsJsonFile();
                             break;
                         default:
                             break;

@@ -56,6 +56,7 @@
             this.tabPage2 = new System.Windows.Forms.TabPage();
             this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
             this.tabPage4 = new System.Windows.Forms.TabPage();
+            this.BtnScanAssets = new System.Windows.Forms.Button();
             this.lbLevelNameCopyFrom = new System.Windows.Forms.Label();
             this.label9 = new System.Windows.Forms.Label();
             this.tbCopyFromLevel = new System.Windows.Forms.TextBox();
@@ -409,6 +410,7 @@
             // 
             // tabPage4
             // 
+            this.tabPage4.Controls.Add(this.BtnScanAssets);
             this.tabPage4.Controls.Add(this.lbLevelNameCopyFrom);
             this.tabPage4.Controls.Add(this.label9);
             this.tabPage4.Controls.Add(this.tbCopyFromLevel);
@@ -421,6 +423,16 @@
             this.tabPage4.TabIndex = 3;
             this.tabPage4.Text = "Copy Assets";
             this.tabPage4.UseVisualStyleBackColor = true;
+            // 
+            // BtnScanAssets
+            // 
+            this.BtnScanAssets.Location = new System.Drawing.Point(6, 121);
+            this.BtnScanAssets.Name = "BtnScanAssets";
+            this.BtnScanAssets.Size = new System.Drawing.Size(153, 29);
+            this.BtnScanAssets.TabIndex = 34;
+            this.BtnScanAssets.Text = "1. Scan Assets";
+            this.BtnScanAssets.UseVisualStyleBackColor = true;
+            this.BtnScanAssets.Click += new System.EventHandler(this.BtnScanAssets_Click);
             // 
             // lbLevelNameCopyFrom
             // 
@@ -642,5 +654,6 @@
         private Label label8;
         private Label lbLevelNameCopyFrom;
         private Label label9;
+        private Button BtnScanAssets;
     }
 }
