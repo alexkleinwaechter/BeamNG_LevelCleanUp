@@ -123,6 +123,8 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ReadAllForCopy()
         {
+            Reset();
+            ReadMaterialsJson();
             CopyAssetRoad();
             PubSubChannel.SendMessage(false, "Fetching Assets finished");
         }

@@ -41,6 +41,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         try
                         {
                             var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
+                            material.MatJsonFileLocation = _matJsonPath;
                             //if (material.Name == "shawn2") Debugger.Break();
                             if (material?.Stages != null)
                             {
@@ -106,6 +107,18 @@ namespace BeamNG_LevelCleanUp.Logic
             catch (Exception ex)
             {
                 PubSubChannel.SendMessage(true, $"Error {_matJsonPath}. {ex.Message}");
+            }
+        }
+        internal void CheckDuplicates(List<MaterialJson> sourceMaterials)
+        {
+            foreach (var item in _materials)
+            {
+                var duplicates = sourceMaterials.Where(x => x.Name.Equals(item.Name));
+                if (duplicates.Any())
+                {
+                    item.IsDuplicate = true;
+                    item.DuplicateFoundLocation.Add(item.MatJsonFileLocation);
+                }
             }
         }
 

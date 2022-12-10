@@ -17,5 +17,8 @@ namespace BeamNG_LevelCleanUp.Objects
         public string Cubemap { get; set; } = string.Empty;
         public List<MaterialFile> MaterialFiles { get; set; } = new List<MaterialFile>();
         public bool NotUsed { get; set; }
+        public bool IsDuplicate { get; set; }
+        public List<string> DuplicateFoundLocation { get; set; } = new List<string>();
+        public string MatJsonFileLocation { get; set; }
     }
 }

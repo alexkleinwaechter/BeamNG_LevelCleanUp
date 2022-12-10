@@ -56,12 +56,6 @@
             this.tabPage2 = new System.Windows.Forms.TabPage();
             this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
             this.tabPage4 = new System.Windows.Forms.TabPage();
-            this.BtnScanAssets = new System.Windows.Forms.Button();
-            this.lbLevelNameCopyFrom = new System.Windows.Forms.Label();
-            this.label9 = new System.Windows.Forms.Label();
-            this.tbCopyFromLevel = new System.Windows.Forms.TextBox();
-            this.BtnCopyFromZipLevel = new System.Windows.Forms.Button();
-            this.label8 = new System.Windows.Forms.Label();
             this.coboCompressionLevel1 = new System.Windows.Forms.ComboBox();
             this.tbProgress = new System.Windows.Forms.TextBox();
             this.btnLoadLevelZipFile = new System.Windows.Forms.Button();
@@ -76,6 +70,13 @@
             this.panel1 = new System.Windows.Forms.Panel();
             this.label7 = new System.Windows.Forms.Label();
             this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
+            this.splitContainerCopyAssets = new System.Windows.Forms.SplitContainer();
+            this.label8 = new System.Windows.Forms.Label();
+            this.BtnCopyFromZipLevel = new System.Windows.Forms.Button();
+            this.tbCopyFromLevel = new System.Windows.Forms.TextBox();
+            this.label9 = new System.Windows.Forms.Label();
+            this.lbLevelNameCopyFrom = new System.Windows.Forms.Label();
+            this.BtnScanAssets = new System.Windows.Forms.Button();
             this.tabControl1.SuspendLayout();
             this.tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainerShrink)).BeginInit();
@@ -91,6 +92,9 @@
             this.tabPage2.SuspendLayout();
             this.tabPage4.SuspendLayout();
             this.panel1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.splitContainerCopyAssets)).BeginInit();
+            this.splitContainerCopyAssets.Panel1.SuspendLayout();
+            this.splitContainerCopyAssets.SuspendLayout();
             this.SuspendLayout();
             // 
             // tabControl1
@@ -410,12 +414,7 @@
             // 
             // tabPage4
             // 
-            this.tabPage4.Controls.Add(this.BtnScanAssets);
-            this.tabPage4.Controls.Add(this.lbLevelNameCopyFrom);
-            this.tabPage4.Controls.Add(this.label9);
-            this.tabPage4.Controls.Add(this.tbCopyFromLevel);
-            this.tabPage4.Controls.Add(this.BtnCopyFromZipLevel);
-            this.tabPage4.Controls.Add(this.label8);
+            this.tabPage4.Controls.Add(this.splitContainerCopyAssets);
             this.tabPage4.Location = new System.Drawing.Point(4, 29);
             this.tabPage4.Name = "tabPage4";
             this.tabPage4.Padding = new System.Windows.Forms.Padding(3);
@@ -423,59 +422,6 @@
             this.tabPage4.TabIndex = 3;
             this.tabPage4.Text = "Copy Assets";
             this.tabPage4.UseVisualStyleBackColor = true;
-            // 
-            // BtnScanAssets
-            // 
-            this.BtnScanAssets.Location = new System.Drawing.Point(6, 121);
-            this.BtnScanAssets.Name = "BtnScanAssets";
-            this.BtnScanAssets.Size = new System.Drawing.Size(153, 29);
-            this.BtnScanAssets.TabIndex = 34;
-            this.BtnScanAssets.Text = "1. Scan Assets";
-            this.BtnScanAssets.UseVisualStyleBackColor = true;
-            this.BtnScanAssets.Click += new System.EventHandler(this.BtnScanAssets_Click);
-            // 
-            // lbLevelNameCopyFrom
-            // 
-            this.lbLevelNameCopyFrom.AutoSize = true;
-            this.lbLevelNameCopyFrom.Location = new System.Drawing.Point(97, 85);
-            this.lbLevelNameCopyFrom.Name = "lbLevelNameCopyFrom";
-            this.lbLevelNameCopyFrom.Size = new System.Drawing.Size(0, 20);
-            this.lbLevelNameCopyFrom.TabIndex = 33;
-            // 
-            // label9
-            // 
-            this.label9.AutoSize = true;
-            this.label9.Location = new System.Drawing.Point(8, 85);
-            this.label9.Name = "label9";
-            this.label9.Size = new System.Drawing.Size(83, 20);
-            this.label9.TabIndex = 32;
-            this.label9.Text = "Levelname:";
-            // 
-            // tbCopyFromLevel
-            // 
-            this.tbCopyFromLevel.Location = new System.Drawing.Point(6, 40);
-            this.tbCopyFromLevel.Name = "tbCopyFromLevel";
-            this.tbCopyFromLevel.Size = new System.Drawing.Size(564, 27);
-            this.tbCopyFromLevel.TabIndex = 30;
-            // 
-            // BtnCopyFromZipLevel
-            // 
-            this.BtnCopyFromZipLevel.Location = new System.Drawing.Point(576, 38);
-            this.BtnCopyFromZipLevel.Name = "BtnCopyFromZipLevel";
-            this.BtnCopyFromZipLevel.Size = new System.Drawing.Size(178, 29);
-            this.BtnCopyFromZipLevel.TabIndex = 31;
-            this.BtnCopyFromZipLevel.Text = "Select zip file";
-            this.BtnCopyFromZipLevel.UseVisualStyleBackColor = true;
-            this.BtnCopyFromZipLevel.Click += new System.EventHandler(this.BtnCopyFromZipLevel_Click);
-            // 
-            // label8
-            // 
-            this.label8.AutoSize = true;
-            this.label8.Location = new System.Drawing.Point(6, 17);
-            this.label8.Name = "label8";
-            this.label8.Size = new System.Drawing.Size(331, 20);
-            this.label8.TabIndex = 29;
-            this.label8.Text = "The zipped map level file you want to copy from";
             // 
             // coboCompressionLevel1
             // 
@@ -573,6 +519,81 @@
             this.label7.TabIndex = 31;
             this.label7.Text = "Compression Level for deployment file generation";
             // 
+            // splitContainerCopyAssets
+            // 
+            this.splitContainerCopyAssets.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.splitContainerCopyAssets.FixedPanel = System.Windows.Forms.FixedPanel.Panel1;
+            this.splitContainerCopyAssets.Location = new System.Drawing.Point(3, 3);
+            this.splitContainerCopyAssets.Name = "splitContainerCopyAssets";
+            this.splitContainerCopyAssets.Orientation = System.Windows.Forms.Orientation.Horizontal;
+            // 
+            // splitContainerCopyAssets.Panel1
+            // 
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.label8);
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnScanAssets);
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnCopyFromZipLevel);
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.lbLevelNameCopyFrom);
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.tbCopyFromLevel);
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.label9);
+            this.splitContainerCopyAssets.Panel1MinSize = 100;
+            this.splitContainerCopyAssets.Panel2MinSize = 300;
+            this.splitContainerCopyAssets.Size = new System.Drawing.Size(1313, 724);
+            this.splitContainerCopyAssets.SplitterDistance = 170;
+            this.splitContainerCopyAssets.TabIndex = 35;
+            // 
+            // label8
+            // 
+            this.label8.AutoSize = true;
+            this.label8.Location = new System.Drawing.Point(5, 14);
+            this.label8.Name = "label8";
+            this.label8.Size = new System.Drawing.Size(331, 20);
+            this.label8.TabIndex = 29;
+            this.label8.Text = "The zipped map level file you want to copy from";
+            // 
+            // BtnCopyFromZipLevel
+            // 
+            this.BtnCopyFromZipLevel.Location = new System.Drawing.Point(575, 35);
+            this.BtnCopyFromZipLevel.Name = "BtnCopyFromZipLevel";
+            this.BtnCopyFromZipLevel.Size = new System.Drawing.Size(178, 29);
+            this.BtnCopyFromZipLevel.TabIndex = 31;
+            this.BtnCopyFromZipLevel.Text = "Select zip file";
+            this.BtnCopyFromZipLevel.UseVisualStyleBackColor = true;
+            this.BtnCopyFromZipLevel.Click += new System.EventHandler(this.BtnCopyFromZipLevel_Click);
+            // 
+            // tbCopyFromLevel
+            // 
+            this.tbCopyFromLevel.Location = new System.Drawing.Point(5, 37);
+            this.tbCopyFromLevel.Name = "tbCopyFromLevel";
+            this.tbCopyFromLevel.Size = new System.Drawing.Size(564, 27);
+            this.tbCopyFromLevel.TabIndex = 30;
+            // 
+            // label9
+            // 
+            this.label9.AutoSize = true;
+            this.label9.Location = new System.Drawing.Point(7, 82);
+            this.label9.Name = "label9";
+            this.label9.Size = new System.Drawing.Size(83, 20);
+            this.label9.TabIndex = 32;
+            this.label9.Text = "Levelname:";
+            // 
+            // lbLevelNameCopyFrom
+            // 
+            this.lbLevelNameCopyFrom.AutoSize = true;
+            this.lbLevelNameCopyFrom.Location = new System.Drawing.Point(96, 82);
+            this.lbLevelNameCopyFrom.Name = "lbLevelNameCopyFrom";
+            this.lbLevelNameCopyFrom.Size = new System.Drawing.Size(0, 20);
+            this.lbLevelNameCopyFrom.TabIndex = 33;
+            // 
+            // BtnScanAssets
+            // 
+            this.BtnScanAssets.Location = new System.Drawing.Point(5, 118);
+            this.BtnScanAssets.Name = "BtnScanAssets";
+            this.BtnScanAssets.Size = new System.Drawing.Size(153, 29);
+            this.BtnScanAssets.TabIndex = 34;
+            this.BtnScanAssets.Text = "1. Scan Assets";
+            this.BtnScanAssets.UseVisualStyleBackColor = true;
+            this.BtnScanAssets.Click += new System.EventHandler(this.BtnScanAssets_Click);
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
@@ -598,9 +619,12 @@
             this.tabPage3.PerformLayout();
             this.tabPage2.ResumeLayout(false);
             this.tabPage4.ResumeLayout(false);
-            this.tabPage4.PerformLayout();
             this.panel1.ResumeLayout(false);
             this.panel1.PerformLayout();
+            this.splitContainerCopyAssets.Panel1.ResumeLayout(false);
+            this.splitContainerCopyAssets.Panel1.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.splitContainerCopyAssets)).EndInit();
+            this.splitContainerCopyAssets.ResumeLayout(false);
             this.ResumeLayout(false);
 
         }
@@ -649,11 +673,12 @@
         private ComboBox coboCompressionLevel1;
         private Label label7;
         private TabPage tabPage4;
-        private TextBox tbCopyFromLevel;
-        private Button BtnCopyFromZipLevel;
+        private SplitContainer splitContainerCopyAssets;
         private Label label8;
-        private Label lbLevelNameCopyFrom;
-        private Label label9;
         private Button BtnScanAssets;
+        private Button BtnCopyFromZipLevel;
+        private Label lbLevelNameCopyFrom;
+        private TextBox tbCopyFromLevel;
+        private Label label9;
     }
 }
