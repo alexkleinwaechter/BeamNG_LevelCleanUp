@@ -260,7 +260,7 @@ namespace BeamNG_LevelCleanUp
                     AssetType = asset.AssetType.ToString(),
                     FullName = asset.Name,
                     Selected = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? false : this.cbAllNoneCopyList.Checked,
-                    SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Length) / 1024f) / 1024f, 2),
+                    SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length: 0) / 1024f) / 1024f, 2),
                     Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false,
                     DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty,
                 };

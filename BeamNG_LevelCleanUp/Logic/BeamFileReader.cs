@@ -136,7 +136,8 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void DoCopyAssets(List<Guid> identifiers)
         {
-            var assetCopy = new AssetCopy(identifiers, CopyAssets);
+            var assetCopy = new AssetCopy(identifiers, CopyAssets, _namePath, _levelName, _levelNameCopyFrom);
+            assetCopy.Copy();
         }
 
         internal void ReadInfoJson()
@@ -496,7 +497,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                     Name = item.Name,
                                     Materials = new List<MaterialJson> { item },
                                     SourceMaterialJsonPath = fi.FullName,
-                                    TargetPath = Path.Join(_namePath, routeRoad, _levelNameCopyFrom)
+                                    TargetPath = Path.Join(_namePath, routeRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
                                 });
                             }
                             //var roadCopyScanner = new RoadCopyScanner(_levelNameCopyFrom, _levelNameCopyFrom, _levelPath);
