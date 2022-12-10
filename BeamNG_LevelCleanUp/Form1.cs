@@ -12,7 +12,6 @@ namespace BeamNG_LevelCleanUp
     public partial class Form1 : Form
     {
         private BindingSource BindingSourceDelete = new BindingSource();
-        private List<GridFileListItem> SelectedFilesForDeletion { get; set; } = new List<GridFileListItem>();
         private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
         private BeamFileReader Reader { get; set; }
         private List<string> _missingFiles { get; set; } = new List<string>();
@@ -125,7 +124,6 @@ namespace BeamNG_LevelCleanUp
 
         private async void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
-            SelectedFilesForDeletion = new List<GridFileListItem>();
             BindingSourceDelete.DataSource = null;
             labelFileSummary.Text = String.Empty;
             btn_AnalyzeLevel.Enabled = false;
@@ -173,7 +171,6 @@ namespace BeamNG_LevelCleanUp
                     Selected = _missingFiles.Any(x => x.Equals(file.FullName, StringComparison.OrdinalIgnoreCase)) ? false : this.cbAllNoneDeleteList.Checked,
                     SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
                 };
-                SelectedFilesForDeletion.Add(item);
                 BindingListDelete.Add(item);
             }
 
@@ -227,7 +224,7 @@ namespace BeamNG_LevelCleanUp
         {
             dataGridViewDeleteList.CommitEdit(DataGridViewDataErrorContexts.Commit);
             var item = (GridFileListItem)dataGridViewDeleteList.Rows[e.RowIndex].DataBoundItem;
-            var listItem = SelectedFilesForDeletion.FirstOrDefault(x => x.FullName == item.FullName);
+            var listItem = BindingListDelete.FirstOrDefault(x => x.FullName == item.FullName);
             if (listItem != null)
             {
                 listItem.Selected = item.Selected;
@@ -251,7 +248,7 @@ namespace BeamNG_LevelCleanUp
 
         private void btn_deleteFiles_Click(object sender, EventArgs e)
         {
-            var selected = SelectedFilesForDeletion
+            var selected = BindingListDelete
                 .Where(x => x.Selected)
                 .Select(x => new FileInfo(x.FullName))
                  .ToList();
@@ -260,7 +257,7 @@ namespace BeamNG_LevelCleanUp
 
         private void UpdateLabel()
         {
-            var text = $"Files: {SelectedFilesForDeletion.Count()}, Selected: {SelectedFilesForDeletion.Where(x => x.Selected == true).Count()}, Sum Filesize MB: {Math.Round(SelectedFilesForDeletion.Where(x => x.Selected == true).Sum(x => x.SizeMb), 2)}";
+            var text = $"Files: {BindingListDelete.Count()}, Selected: {BindingListDelete.Where(x => x.Selected == true).Count()}, Sum Filesize MB: {Math.Round(BindingListDelete.Where(x => x.Selected == true).Sum(x => x.SizeMb), 2)}";
             this.labelFileSummary.Text = text;
         }
 
@@ -270,7 +267,7 @@ namespace BeamNG_LevelCleanUp
             foreach (var item in filteredBindingList)
             {
                 item.Selected = cbAllNoneDeleteList.Checked;
-                var selectedListItem = SelectedFilesForDeletion.SingleOrDefault(x => x.FullName.Equals(item.FullName));
+                var selectedListItem = BindingListDelete.SingleOrDefault(x => x.FullName.Equals(item.FullName));
                 if (selectedListItem != null)
                 {
                     selectedListItem.Selected = cbAllNoneDeleteList.Checked;
@@ -292,7 +289,7 @@ namespace BeamNG_LevelCleanUp
             {
                 this.btn_AnalyzeLevel.Enabled = true;
             }
-            if (this.SelectedFilesForDeletion.Where(x => x.Selected).Count() > 0)
+            if (this.BindingListDelete.Where(x => x.Selected).Count() > 0)
             {
                 this.btn_deleteFiles.Enabled = true;
             }
