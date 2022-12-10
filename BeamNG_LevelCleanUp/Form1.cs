@@ -170,7 +170,7 @@ namespace BeamNG_LevelCleanUp
                 var item = new GridFileListItem
                 {
                     FullName = file.FullName,
-                    Selected = _missingFiles.Any(x => x.Equals(file.FullName, StringComparison.OrdinalIgnoreCase)) ? false : this.cbAllNone.Checked,
+                    Selected = _missingFiles.Any(x => x.Equals(file.FullName, StringComparison.OrdinalIgnoreCase)) ? false : this.cbAllNoneDeleteList.Checked,
                     SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
                 };
                 SelectedFilesForDeletion.Add(item);
@@ -264,16 +264,16 @@ namespace BeamNG_LevelCleanUp
             this.labelFileSummary.Text = text;
         }
 
-        private void cbAllNone_CheckedChanged(object sender, EventArgs e)
+        private void cbAllNoneDeleteList_CheckedChanged(object sender, EventArgs e)
         {
-            var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGrid.Text.ToUpperInvariant())).ToList());
+            var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGridDeleteList.Text.ToUpperInvariant())).ToList());
             foreach (var item in filteredBindingList)
             {
-                item.Selected = cbAllNone.Checked;
+                item.Selected = cbAllNoneDeleteList.Checked;
                 var selectedListItem = SelectedFilesForDeletion.SingleOrDefault(x => x.FullName.Equals(item.FullName));
                 if (selectedListItem != null)
                 {
-                    selectedListItem.Selected = cbAllNone.Checked;
+                    selectedListItem.Selected = cbAllNoneDeleteList.Checked;
                 }
             }
 
@@ -418,9 +418,9 @@ namespace BeamNG_LevelCleanUp
             }
         }
 
-        private void tbFilterGrid_TextChanged(object sender, EventArgs e)
+        private void tbFilterGridDeleteList_TextChanged(object sender, EventArgs e)
         {
-            var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGrid.Text.ToUpperInvariant())).ToList());
+            var filteredBindingList = new BindingList<GridFileListItem>(BindingListDelete.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGridDeleteList.Text.ToUpperInvariant())).ToList());
             BindingSourceDelete.DataSource = filteredBindingList;
             dataGridViewDeleteList.DataSource = BindingSourceDelete;
         }
