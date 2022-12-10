@@ -12,6 +12,7 @@ namespace BeamNG_LevelCleanUp.Objects
     }
     internal class CopyAsset
     {
+        public Guid Identifier { get; set; } = Guid.NewGuid();
         public AssetType AssetType { get; set; }
         public string Name { get; set; }
         public List<MaterialJson> Materials = new List<MaterialJson>();

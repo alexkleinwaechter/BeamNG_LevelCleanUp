@@ -7,21 +7,20 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets
 {
-    internal class RoadCopyScanner
+    internal class AssetCopy
     {
-        string _sourceLevelPath;
-        string _sourceLevelName;
-        string _targetLevelPath;
-        List<CopyAsset> AssetsToCopy = new List<CopyAsset>();
-        
-        internal RoadCopyScanner(string sourceLevelPath, string sourceLevelName, string targetLevelPath) { 
-            _sourceLevelPath = sourceLevelPath;
-            _sourceLevelName= sourceLevelName;
-            _targetLevelPath= targetLevelPath; 
+        private List<Guid> _identifier { get; set; }
+        private List<CopyAsset> _assetsToCopy = new List<CopyAsset>();
+
+        internal AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
+        {
+            _identifier = identifier;
+            _assetsToCopy = copyAssetList.Where(x => identifier.Contains(x.Identifier)).ToList();
         }
 
-        internal void ReadRoadMaterials() { 
-        
+        internal void Copy()
+        {
+
         }
     }
 }

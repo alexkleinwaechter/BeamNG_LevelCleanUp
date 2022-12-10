@@ -104,6 +104,11 @@ namespace BeamNG_LevelCleanUp.Logic
             return DeleteList.OrderBy(x => x.FullName).ToList();
         }
 
+        internal List<CopyAsset> GetCopyList()
+        {
+            return CopyAssets.OrderBy(x => x.AssetType).ThenBy(x => x.Name).ToList();
+        }
+
         internal void ReadAll()
         {
             this.Reset();
@@ -127,6 +132,11 @@ namespace BeamNG_LevelCleanUp.Logic
             ReadMaterialsJson();
             CopyAssetRoad();
             PubSubChannel.SendMessage(false, "Fetching Assets finished");
+        }
+
+        internal void DoCopyAssets(List<Guid> identifiers)
+        {
+            var assetCopy = new AssetCopy(identifiers, CopyAssets);
         }
 
         internal void ReadInfoJson()
@@ -477,13 +487,18 @@ namespace BeamNG_LevelCleanUp.Logic
                             var materialListRoad = new List<MaterialJson>();
                             var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, materialListRoad, new List<Asset>(), new List<string>());
                             materialCopyScanner.ScanMaterialsJsonFile();
-                            CopyAssets.Add(new CopyAsset
+                            materialCopyScanner.CheckDuplicates(MaterialsJson);
+                            foreach (var item in materialListRoad)
                             {
-                                AssetType = AssetType.Road,
-                                Materials = materialListRoad,
-                                SourceMaterialJsonPath = fi.FullName,
-                                TargetPath = Path.Join(_namePath, routeRoad, _levelNameCopyFrom)
-                            });
+                                CopyAssets.Add(new CopyAsset
+                                {
+                                    AssetType = AssetType.Road,
+                                    Name = item.Name,
+                                    Materials = new List<MaterialJson> { item },
+                                    SourceMaterialJsonPath = fi.FullName,
+                                    TargetPath = Path.Join(_namePath, routeRoad, _levelNameCopyFrom)
+                                });
+                            }
                             //var roadCopyScanner = new RoadCopyScanner(_levelNameCopyFrom, _levelNameCopyFrom, _levelPath);
                             //roadCopyScanner.ScanMaterialsJsonFile();
                             break;

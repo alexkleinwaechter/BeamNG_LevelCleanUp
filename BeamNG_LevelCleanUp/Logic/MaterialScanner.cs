@@ -117,7 +117,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 if (duplicates.Any())
                 {
                     item.IsDuplicate = true;
-                    item.DuplicateFoundLocation.Add(item.MatJsonFileLocation);
+                    item.DuplicateFoundLocation.AddRange(duplicates.Select(x => x.MatJsonFileLocation));
                 }
             }
         }

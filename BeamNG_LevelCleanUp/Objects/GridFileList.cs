@@ -12,6 +12,8 @@ namespace BeamNG_LevelCleanUp.Objects
     {
         public object? this[int index] { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
+        public Guid Identifier { get; set; }
+        public string AssetType { get; set; }
         public string FullName { get; set; }
         public bool Selected { get; set; }
         public bool Duplicate { get; set; }

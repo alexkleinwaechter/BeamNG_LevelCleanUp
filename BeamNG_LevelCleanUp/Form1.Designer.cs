@@ -57,6 +57,7 @@
             this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
             this.tabPage4 = new System.Windows.Forms.TabPage();
             this.splitContainerCopyAssets = new System.Windows.Forms.SplitContainer();
+            this.BtnCopyAssets = new System.Windows.Forms.Button();
             this.label8 = new System.Windows.Forms.Label();
             this.BtnScanAssets = new System.Windows.Forms.Button();
             this.BtnCopyFromZipLevel = new System.Windows.Forms.Button();
@@ -438,13 +439,14 @@
             // 
             // splitContainerCopyAssets.Panel1
             // 
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnCopyAssets);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.label8);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnScanAssets);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnCopyFromZipLevel);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.lbLevelNameCopyFrom);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.tbCopyFromLevel);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.label9);
-            this.splitContainerCopyAssets.Panel1MinSize = 100;
+            this.splitContainerCopyAssets.Panel1MinSize = 110;
             // 
             // splitContainerCopyAssets.Panel2
             // 
@@ -455,6 +457,16 @@
             this.splitContainerCopyAssets.Size = new System.Drawing.Size(1313, 724);
             this.splitContainerCopyAssets.SplitterDistance = 170;
             this.splitContainerCopyAssets.TabIndex = 35;
+            // 
+            // BtnCopyAssets
+            // 
+            this.BtnCopyAssets.Location = new System.Drawing.Point(183, 118);
+            this.BtnCopyAssets.Name = "BtnCopyAssets";
+            this.BtnCopyAssets.Size = new System.Drawing.Size(153, 29);
+            this.BtnCopyAssets.TabIndex = 35;
+            this.BtnCopyAssets.Text = "2. Copy Assets";
+            this.BtnCopyAssets.UseVisualStyleBackColor = true;
+            this.BtnCopyAssets.Click += new System.EventHandler(this.BtnCopyAssets_Click);
             // 
             // label8
             // 
@@ -532,6 +544,7 @@
             this.cbAllNoneCopyList.TabIndex = 26;
             this.cbAllNoneCopyList.Text = "Selection All / None";
             this.cbAllNoneCopyList.UseVisualStyleBackColor = true;
+            this.cbAllNoneCopyList.CheckedChanged += new System.EventHandler(this.cbAllNoneCopyList_CheckedChanged);
             // 
             // tbFilterGridCopyList
             // 
@@ -541,6 +554,7 @@
             this.tbFilterGridCopyList.PlaceholderText = "Search...";
             this.tbFilterGridCopyList.Size = new System.Drawing.Size(1313, 27);
             this.tbFilterGridCopyList.TabIndex = 27;
+            this.tbFilterGridCopyList.TextChanged += new System.EventHandler(this.tbFilterGridCopyList_TextChanged);
             // 
             // coboCompressionLevel1
             // 
@@ -730,5 +744,6 @@
         private DataGridView dataGridViewCopyList;
         private CheckBox cbAllNoneCopyList;
         private TextBox tbFilterGridCopyList;
+        private Button BtnCopyAssets;
     }
 }

@@ -13,6 +13,8 @@ namespace BeamNG_LevelCleanUp
     {
         private BindingSource BindingSourceDelete = new BindingSource();
         private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
+        private BindingSource BindingSourceCopy = new BindingSource();
+        private List<GridFileListItem> BindingListCopy { get; set; } = new List<GridFileListItem>();
         private BeamFileReader Reader { get; set; }
         private List<string> _missingFiles { get; set; } = new List<string>();
         private Progress<string> _progress = new Progress<string>();
@@ -56,6 +58,7 @@ namespace BeamNG_LevelCleanUp
 
             CheckVisibility();
             BuildGridDeleteFiles();
+            BuildGridCopyFiles();
 
             _progress.ProgressChanged += (s, message) =>
             {
@@ -246,13 +249,133 @@ namespace BeamNG_LevelCleanUp
             }
         }
 
+        private void FillCopyList()
+        {
+            foreach (var asset in Reader.GetCopyList())
+            {
+                //switch type
+                var item = new GridFileListItem
+                {
+                    Identifier = asset.Identifier,
+                    AssetType = asset.AssetType.ToString(),
+                    FullName = asset.Name,
+                    Selected = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? false : this.cbAllNoneCopyList.Checked,
+                    SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Length) / 1024f) / 1024f, 2),
+                    Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false,
+                    DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty,
+                };
+                BindingListCopy.Add(item);
+            }
+
+            BindingSourceCopy.DataSource = BindingListCopy;
+            dataGridViewCopyList.DataSource = BindingSourceCopy;
+            UpdateLabel();
+            CheckVisibility();
+        }
+
+        private void BuildGridCopyFiles()
+        {
+            dataGridViewCopyList.AutoGenerateColumns = false;
+            //dataGridViewCopyList.AutoSize = true;
+
+            DataGridViewCheckBoxColumn colSelected = new DataGridViewCheckBoxColumn();
+            colSelected.DataPropertyName = "Selected";
+            colSelected.Name = "Copy";
+            dataGridViewCopyList.Columns.Add(colSelected);
+
+            DataGridViewColumn colType = new DataGridViewTextBoxColumn();
+            colType.DataPropertyName = "AssetType";
+            colType.Name = "Asset Type";
+            colType.ReadOnly = true;
+            dataGridViewCopyList.Columns.Add(colType);
+
+            DataGridViewColumn colName = new DataGridViewTextBoxColumn();
+            colName.DataPropertyName = "FullName";
+            colName.Name = "Filename";
+            colName.ReadOnly = true;
+            dataGridViewCopyList.Columns.Add(colName);
+
+            DataGridViewCheckBoxColumn colDuplicate = new DataGridViewCheckBoxColumn();
+            colDuplicate.DataPropertyName = "Duplicate";
+            colDuplicate.Name = "Duplicate";
+            colDuplicate.ReadOnly = true;
+            dataGridViewCopyList.Columns.Add(colDuplicate);
+
+            DataGridViewColumn colDuplicateFrom = new DataGridViewTextBoxColumn();
+            colDuplicateFrom.DataPropertyName = "DuplicateFrom";
+            colDuplicateFrom.Name = "Duplicate found in";
+            colDuplicateFrom.ReadOnly = true;
+            dataGridViewCopyList.Columns.Add(colDuplicateFrom);
+
+            DataGridViewColumn colSize = new DataGridViewTextBoxColumn();
+            colSize.DataPropertyName = "SizeMb";
+            colSize.Name = "Filesize Megabytes";
+            dataGridViewCopyList.Columns.Add(colSize);
+            dataGridViewCopyList.DataBindingComplete += (o, _) =>
+            {
+                var dataGridView = o as DataGridView;
+                if (dataGridView != null)
+                {
+                    dataGridView.Dock = DockStyle.Fill;
+                    dataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells;
+                    dataGridView.Columns[dataGridView.ColumnCount - 1].AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+                }
+            };
+        }
+
+        private void dataGridViewCopyList_CellContentClick(object sender,
+            DataGridViewCellEventArgs e)
+        {
+            dataGridViewCopyList.CommitEdit(DataGridViewDataErrorContexts.Commit);
+        }
+
+        /// <summary>
+        /// Works with the above.
+        /// </summary>
+        private void dataGridViewCopyList_CellValueChanged(object sender,
+            DataGridViewCellEventArgs e)
+        {
+            dataGridViewCopyList.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            var item = (GridFileListItem)dataGridViewCopyList.Rows[e.RowIndex].DataBoundItem;
+            var listItem = BindingListCopy.FirstOrDefault(x => x.FullName == item.FullName);
+            if (listItem != null)
+            {
+                listItem.Selected = item.Selected;
+            }
+            UpdateLabel();
+            CheckVisibility();
+        }
+
+        private void dataGridViewCopyList_CurrentCellDirtyStateChanged(object sender, EventArgs e)
+        {
+            if (dataGridViewCopyList.IsCurrentCellDirty == true && dataGridViewCopyList.CurrentCell is DataGridViewCheckBoxCell)
+            {
+                // use BeginInvoke with (MethodInvoker) to run the code after the event is finished
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    dataGridViewCopyList.EndEdit(DataGridViewDataErrorContexts.Commit);
+
+                });
+            }
+        }
+
         private void btn_deleteFiles_Click(object sender, EventArgs e)
         {
-            var selected = BindingListDelete
-                .Where(x => x.Selected)
-                .Select(x => new FileInfo(x.FullName))
-                 .ToList();
-            Reader.DeleteFilesAndDeploy(selected, chkDryRun.Checked);
+            var dryrun = "You are in dry run mode. No files will be deleted. Do you want to proceed?";
+            var realrun = "You are NOT in dry run mode. Are you sure that you are working on a copy of your project? The selected files will be deleted.";
+            DialogResult dialogResult = MessageBox.Show(chkDryRun.Checked ? dryrun : realrun, "Delete Confirmation", MessageBoxButtons.YesNo);
+            if (dialogResult == DialogResult.Yes)
+            {
+                var selected = BindingListDelete
+                    .Where(x => x.Selected)
+                    .Select(x => new FileInfo(x.FullName))
+                     .ToList();
+                Reader.DeleteFilesAndDeploy(selected, chkDryRun.Checked);
+            }
+            else if (dialogResult == DialogResult.No)
+            {
+                //do something else
+            }
         }
 
         private void UpdateLabel()
@@ -277,6 +400,24 @@ namespace BeamNG_LevelCleanUp
             BindingSourceDelete.DataSource = filteredBindingList;
             dataGridViewDeleteList.DataSource = BindingSourceDelete;
             UpdateLabel();
+        }
+
+        private void cbAllNoneCopyList_CheckedChanged(object sender, EventArgs e)
+        {
+            var filteredBindingList = new BindingList<GridFileListItem>(BindingListCopy.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGridCopyList.Text.ToUpperInvariant())
+                || x.AssetType.ToUpperInvariant().Contains(tbFilterGridCopyList.Text.ToUpperInvariant())).ToList());
+            foreach (var item in filteredBindingList)
+            {
+                item.Selected = cbAllNoneCopyList.Checked;
+                var selectedListItem = BindingListCopy.SingleOrDefault(x => x.FullName.Equals(item.FullName));
+                if (selectedListItem != null)
+                {
+                    selectedListItem.Selected = cbAllNoneCopyList.Checked;
+                }
+            }
+
+            BindingSourceCopy.DataSource = filteredBindingList;
+            dataGridViewCopyList.DataSource = BindingSourceCopy;
         }
 
         private void CheckVisibility()
@@ -422,6 +563,14 @@ namespace BeamNG_LevelCleanUp
             dataGridViewDeleteList.DataSource = BindingSourceDelete;
         }
 
+        private void tbFilterGridCopyList_TextChanged(object sender, EventArgs e)
+        {
+            var filteredBindingList = new BindingList<GridFileListItem>(BindingListCopy.Where(x => x.FullName.ToUpperInvariant().Contains(tbFilterGridCopyList.Text.ToUpperInvariant())
+                || x.AssetType.ToUpperInvariant().Contains(tbFilterGridCopyList.Text.ToUpperInvariant())).ToList());
+            BindingSourceCopy.DataSource = filteredBindingList;
+            dataGridViewCopyList.DataSource = BindingSourceCopy;
+        }
+
         private async void BtnCopyFromZipLevel_Click(object sender, EventArgs e)
         {
             try
@@ -451,11 +600,31 @@ namespace BeamNG_LevelCleanUp
 
         private async void BtnScanAssets_Click(object sender, EventArgs e)
         {
-            await Task.Run(() =>
+            BindingSourceCopy.DataSource = null;
+            //labelFileSummary.Text = String.Empty;
+            BtnScanAssets.Enabled = false;
+            Application.DoEvents();
+            try
             {
-                Reader = new BeamFileReader(this.tbLevelPath.Text, this.tbBeamLogPath.Text, _levelPathCopyFrom);
-                Reader.ReadAllForCopy();
-            });
+                await Task.Run(() =>
+                {
+                    Reader = new BeamFileReader(this.tbLevelPath.Text, this.tbBeamLogPath.Text, _levelPathCopyFrom);
+                    Reader.ReadAllForCopy();
+                });
+                FillCopyList();
+                BtnScanAssets.Enabled = true;
+                PubSubChannel.SendMessage(false, $"Done! Scanning Assets finished. Please selects assets to copy.");
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+                BtnScanAssets.Enabled = true;
+            }
+        }
+
+        private void BtnCopyAssets_Click(object sender, EventArgs e)
+        {
+            Reader.DoCopyAssets(BindingListCopy.Where(x => x.Selected).Select(y => y.Identifier).ToList());
         }
     }
 }
