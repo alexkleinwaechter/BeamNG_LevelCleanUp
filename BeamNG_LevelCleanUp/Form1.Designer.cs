@@ -63,6 +63,9 @@
             this.lbLevelNameCopyFrom = new System.Windows.Forms.Label();
             this.tbCopyFromLevel = new System.Windows.Forms.TextBox();
             this.label9 = new System.Windows.Forms.Label();
+            this.dataGridViewCopyList = new System.Windows.Forms.DataGridView();
+            this.cbAllNoneCopyList = new System.Windows.Forms.CheckBox();
+            this.tbFilterGridCopyList = new System.Windows.Forms.TextBox();
             this.coboCompressionLevel1 = new System.Windows.Forms.ComboBox();
             this.tbProgress = new System.Windows.Forms.TextBox();
             this.btnLoadLevelZipFile = new System.Windows.Forms.Button();
@@ -77,9 +80,6 @@
             this.panel1 = new System.Windows.Forms.Panel();
             this.label7 = new System.Windows.Forms.Label();
             this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
-            this.dataGridViewCopyList = new System.Windows.Forms.DataGridView();
-            this.cbAllNoneCopyList = new System.Windows.Forms.CheckBox();
-            this.tbFilterGridCopyList = new System.Windows.Forms.TextBox();
             this.tabControl1.SuspendLayout();
             this.tabPage1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainerShrink)).BeginInit();
@@ -98,8 +98,8 @@
             this.splitContainerCopyAssets.Panel1.SuspendLayout();
             this.splitContainerCopyAssets.Panel2.SuspendLayout();
             this.splitContainerCopyAssets.SuspendLayout();
-            this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridViewCopyList)).BeginInit();
+            this.panel1.SuspendLayout();
             this.SuspendLayout();
             // 
             // tabControl1
@@ -509,6 +509,39 @@
             this.label9.TabIndex = 32;
             this.label9.Text = "Levelname:";
             // 
+            // dataGridViewCopyList
+            // 
+            this.dataGridViewCopyList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.DisplayedCells;
+            this.dataGridViewCopyList.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            this.dataGridViewCopyList.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.dataGridViewCopyList.Location = new System.Drawing.Point(0, 51);
+            this.dataGridViewCopyList.Name = "dataGridViewCopyList";
+            this.dataGridViewCopyList.RowHeadersWidth = 51;
+            this.dataGridViewCopyList.RowTemplate.Height = 29;
+            this.dataGridViewCopyList.Size = new System.Drawing.Size(1313, 499);
+            this.dataGridViewCopyList.TabIndex = 25;
+            // 
+            // cbAllNoneCopyList
+            // 
+            this.cbAllNoneCopyList.Checked = true;
+            this.cbAllNoneCopyList.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.cbAllNoneCopyList.Dock = System.Windows.Forms.DockStyle.Top;
+            this.cbAllNoneCopyList.Location = new System.Drawing.Point(0, 27);
+            this.cbAllNoneCopyList.Name = "cbAllNoneCopyList";
+            this.cbAllNoneCopyList.Size = new System.Drawing.Size(1313, 24);
+            this.cbAllNoneCopyList.TabIndex = 26;
+            this.cbAllNoneCopyList.Text = "Selection All / None";
+            this.cbAllNoneCopyList.UseVisualStyleBackColor = true;
+            // 
+            // tbFilterGridCopyList
+            // 
+            this.tbFilterGridCopyList.Dock = System.Windows.Forms.DockStyle.Top;
+            this.tbFilterGridCopyList.Location = new System.Drawing.Point(0, 0);
+            this.tbFilterGridCopyList.Name = "tbFilterGridCopyList";
+            this.tbFilterGridCopyList.PlaceholderText = "Search...";
+            this.tbFilterGridCopyList.Size = new System.Drawing.Size(1313, 27);
+            this.tbFilterGridCopyList.TabIndex = 27;
+            // 
             // coboCompressionLevel1
             // 
             this.coboCompressionLevel1.FormattingEnabled = true;
@@ -605,39 +638,6 @@
             this.label7.TabIndex = 31;
             this.label7.Text = "Compression Level for deployment file generation";
             // 
-            // dataGridViewCopyList
-            // 
-            this.dataGridViewCopyList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.DisplayedCells;
-            this.dataGridViewCopyList.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            this.dataGridViewCopyList.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.dataGridViewCopyList.Location = new System.Drawing.Point(0, 51);
-            this.dataGridViewCopyList.Name = "dataGridViewCopyList";
-            this.dataGridViewCopyList.RowHeadersWidth = 51;
-            this.dataGridViewCopyList.RowTemplate.Height = 29;
-            this.dataGridViewCopyList.Size = new System.Drawing.Size(1313, 499);
-            this.dataGridViewCopyList.TabIndex = 25;
-            // 
-            // cbAllNoneCopyList
-            // 
-            this.cbAllNoneCopyList.Checked = true;
-            this.cbAllNoneCopyList.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbAllNoneCopyList.Dock = System.Windows.Forms.DockStyle.Top;
-            this.cbAllNoneCopyList.Location = new System.Drawing.Point(0, 27);
-            this.cbAllNoneCopyList.Name = "cbAllNoneCopyList";
-            this.cbAllNoneCopyList.Size = new System.Drawing.Size(1313, 24);
-            this.cbAllNoneCopyList.TabIndex = 26;
-            this.cbAllNoneCopyList.Text = "Selection All / None";
-            this.cbAllNoneCopyList.UseVisualStyleBackColor = true;
-            // 
-            // tbFilterGridCopyList
-            // 
-            this.tbFilterGridCopyList.Dock = System.Windows.Forms.DockStyle.Top;
-            this.tbFilterGridCopyList.Location = new System.Drawing.Point(0, 0);
-            this.tbFilterGridCopyList.Name = "tbFilterGridCopyList";
-            this.tbFilterGridCopyList.PlaceholderText = "Search...";
-            this.tbFilterGridCopyList.Size = new System.Drawing.Size(1313, 27);
-            this.tbFilterGridCopyList.TabIndex = 27;
-            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
@@ -669,9 +669,9 @@
             this.splitContainerCopyAssets.Panel2.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainerCopyAssets)).EndInit();
             this.splitContainerCopyAssets.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewCopyList)).EndInit();
             this.panel1.ResumeLayout(false);
             this.panel1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewCopyList)).EndInit();
             this.ResumeLayout(false);
 
         }

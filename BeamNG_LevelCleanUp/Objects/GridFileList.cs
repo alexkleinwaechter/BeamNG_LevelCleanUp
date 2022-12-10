@@ -14,6 +14,8 @@ namespace BeamNG_LevelCleanUp.Objects
 
         public string FullName { get; set; }
         public bool Selected { get; set; }
+        public bool Duplicate { get; set; }
+        public string DuplicateFrom { get; set; }
         public double SizeMb { get; set; }
         public string? Filter { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
