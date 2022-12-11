@@ -32,7 +32,7 @@
             this.tabPage1 = new System.Windows.Forms.TabPage();
             this.splitContainerShrink = new System.Windows.Forms.SplitContainer();
             this.btnZipDeployment = new System.Windows.Forms.Button();
-            this.labelFileSummary = new System.Windows.Forms.Label();
+            this.labelFileSummaryShrink = new System.Windows.Forms.Label();
             this.btnOpenLog = new System.Windows.Forms.Button();
             this.tbBeamLogPath = new System.Windows.Forms.TextBox();
             this.label2 = new System.Windows.Forms.Label();
@@ -57,6 +57,7 @@
             this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
             this.tabPage4 = new System.Windows.Forms.TabPage();
             this.splitContainerCopyAssets = new System.Windows.Forms.SplitContainer();
+            this.labelFileSummaryCopy = new System.Windows.Forms.Label();
             this.BtnCopyAssets = new System.Windows.Forms.Button();
             this.label8 = new System.Windows.Forms.Label();
             this.BtnScanAssets = new System.Windows.Forms.Button();
@@ -140,7 +141,7 @@
             // splitContainerShrink.Panel1
             // 
             this.splitContainerShrink.Panel1.Controls.Add(this.btnZipDeployment);
-            this.splitContainerShrink.Panel1.Controls.Add(this.labelFileSummary);
+            this.splitContainerShrink.Panel1.Controls.Add(this.labelFileSummaryShrink);
             this.splitContainerShrink.Panel1.Controls.Add(this.btnOpenLog);
             this.splitContainerShrink.Panel1.Controls.Add(this.tbBeamLogPath);
             this.splitContainerShrink.Panel1.Controls.Add(this.label2);
@@ -171,15 +172,15 @@
             this.btnZipDeployment.UseVisualStyleBackColor = true;
             this.btnZipDeployment.Click += new System.EventHandler(this.btnZipDeployment_Click);
             // 
-            // labelFileSummary
+            // labelFileSummaryShrink
             // 
-            this.labelFileSummary.AutoSize = true;
-            this.labelFileSummary.Dock = System.Windows.Forms.DockStyle.Right;
-            this.labelFileSummary.Location = new System.Drawing.Point(1253, 10);
-            this.labelFileSummary.Name = "labelFileSummary";
-            this.labelFileSummary.Size = new System.Drawing.Size(50, 20);
-            this.labelFileSummary.TabIndex = 24;
-            this.labelFileSummary.Text = "label2";
+            this.labelFileSummaryShrink.AutoSize = true;
+            this.labelFileSummaryShrink.Dock = System.Windows.Forms.DockStyle.Right;
+            this.labelFileSummaryShrink.Location = new System.Drawing.Point(1253, 10);
+            this.labelFileSummaryShrink.Name = "labelFileSummaryShrink";
+            this.labelFileSummaryShrink.Size = new System.Drawing.Size(50, 20);
+            this.labelFileSummaryShrink.TabIndex = 24;
+            this.labelFileSummaryShrink.Text = "label2";
             // 
             // btnOpenLog
             // 
@@ -439,6 +440,7 @@
             // 
             // splitContainerCopyAssets.Panel1
             // 
+            this.splitContainerCopyAssets.Panel1.Controls.Add(this.labelFileSummaryCopy);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnCopyAssets);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.label8);
             this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnScanAssets);
@@ -457,6 +459,16 @@
             this.splitContainerCopyAssets.Size = new System.Drawing.Size(1313, 724);
             this.splitContainerCopyAssets.SplitterDistance = 170;
             this.splitContainerCopyAssets.TabIndex = 35;
+            // 
+            // labelFileSummaryCopy
+            // 
+            this.labelFileSummaryCopy.AutoSize = true;
+            this.labelFileSummaryCopy.Location = new System.Drawing.Point(1250, 6);
+            this.labelFileSummaryCopy.Name = "labelFileSummaryCopy";
+            this.labelFileSummaryCopy.Size = new System.Drawing.Size(58, 20);
+            this.labelFileSummaryCopy.TabIndex = 36;
+            this.labelFileSummaryCopy.Text = "label10";
+            this.labelFileSummaryCopy.TextAlign = System.Drawing.ContentAlignment.TopRight;
             // 
             // BtnCopyAssets
             // 
@@ -532,6 +544,8 @@
             this.dataGridViewCopyList.RowTemplate.Height = 29;
             this.dataGridViewCopyList.Size = new System.Drawing.Size(1313, 499);
             this.dataGridViewCopyList.TabIndex = 25;
+            this.dataGridViewCopyList.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewCopyList_CellContentClick);
+            this.dataGridViewCopyList.CellValueChanged += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewCopyList_CellValueChanged);
             // 
             // cbAllNoneCopyList
             // 
@@ -709,7 +723,7 @@
         private Button btnOpenLog;
         private TextBox tbBeamLogPath;
         private Label label2;
-        private Label labelFileSummary;
+        private Label labelFileSummaryShrink;
         private CheckBox cbAllNoneDeleteList;
         private TextBox tbProgress;
         private Button btnLoadLevelZipFile;
@@ -745,5 +759,6 @@
         private CheckBox cbAllNoneCopyList;
         private TextBox tbFilterGridCopyList;
         private Button BtnCopyAssets;
+        private Label labelFileSummaryCopy;
     }
 }

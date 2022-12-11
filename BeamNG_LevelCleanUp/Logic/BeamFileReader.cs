@@ -97,6 +97,7 @@ namespace BeamNG_LevelCleanUp.Logic
             _managedDecalData = new List<FileInfo>();
             _managedItemData = new List<FileInfo>();
             _forestJsonFiles = new List<FileInfo>();
+            CopyAssets = new List<CopyAsset>();
         }
 
         internal List<FileInfo> GetDeleteList()

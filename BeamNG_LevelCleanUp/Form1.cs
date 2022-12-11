@@ -51,12 +51,14 @@ namespace BeamNG_LevelCleanUp
             this.openFileDialogZip.Filter = "Zipfiles (*.zip)|*.zip";
             this.openFileDialogZip.FileName = String.Empty;
 
-            labelFileSummary.Text = String.Empty;
+            labelFileSummaryShrink.Text = String.Empty;
+            labelFileSummaryCopy.Text = String.Empty;
             tbProgress.Text = String.Empty;
 
             coboCompressionLevel1.DataSource = Enum.GetValues(typeof(CompressionLevel));
 
-            CheckVisibility();
+            CheckVisibilityShrink();
+            CheckVisibilityCopy();
             BuildGridDeleteFiles();
             BuildGridCopyFiles();
 
@@ -120,15 +122,15 @@ namespace BeamNG_LevelCleanUp
             if (result == DialogResult.OK)
             {
                 this.tbLevelPath.Text = folderBrowserDialogLevel.SelectedPath;
-                CheckVisibility();
             }
-            CheckVisibility();
+            CheckVisibilityShrink();
+            CheckVisibilityCopy();
         }
 
         private async void btn_AnalyzeLevel_Click(object sender, EventArgs e)
         {
             BindingSourceDelete.DataSource = null;
-            labelFileSummary.Text = String.Empty;
+            labelFileSummaryShrink.Text = String.Empty;
             btn_AnalyzeLevel.Enabled = false;
             Application.DoEvents();
             var context = TaskScheduler.FromCurrentSynchronizationContext();
@@ -179,8 +181,8 @@ namespace BeamNG_LevelCleanUp
 
             BindingSourceDelete.DataSource = BindingListDelete;
             dataGridViewDeleteList.DataSource = BindingSourceDelete;
-            UpdateLabel();
-            CheckVisibility();
+            UpdateLabelShrink();
+            CheckVisibilityShrink();
         }
 
         private void BuildGridDeleteFiles()
@@ -232,8 +234,8 @@ namespace BeamNG_LevelCleanUp
             {
                 listItem.Selected = item.Selected;
             }
-            UpdateLabel();
-            CheckVisibility();
+            UpdateLabelShrink();
+            CheckVisibilityShrink();
         }
 
         private void dataGridViewDeleteList_CurrentCellDirtyStateChanged(object sender, EventArgs e)
@@ -269,8 +271,8 @@ namespace BeamNG_LevelCleanUp
 
             BindingSourceCopy.DataSource = BindingListCopy;
             dataGridViewCopyList.DataSource = BindingSourceCopy;
-            UpdateLabel();
-            CheckVisibility();
+            UpdateLabelCopy();
+            CheckVisibilityCopy();
         }
 
         private void BuildGridCopyFiles()
@@ -342,8 +344,8 @@ namespace BeamNG_LevelCleanUp
             {
                 listItem.Selected = item.Selected;
             }
-            UpdateLabel();
-            CheckVisibility();
+            UpdateLabelCopy();
+            CheckVisibilityCopy();
         }
 
         private void dataGridViewCopyList_CurrentCellDirtyStateChanged(object sender, EventArgs e)
@@ -378,10 +380,16 @@ namespace BeamNG_LevelCleanUp
             }
         }
 
-        private void UpdateLabel()
+        private void UpdateLabelShrink()
         {
             var text = $"Files: {BindingListDelete.Count()}, Selected: {BindingListDelete.Where(x => x.Selected == true).Count()}, Sum Filesize MB: {Math.Round(BindingListDelete.Where(x => x.Selected == true).Sum(x => x.SizeMb), 2)}";
-            this.labelFileSummary.Text = text;
+            this.labelFileSummaryShrink.Text = text;
+        }
+
+        private void UpdateLabelCopy()
+        {
+            var text = $"Assets: {BindingListCopy.Count()}, Selected: {BindingListCopy.Where(x => x.Selected == true).Count()}, Sum Filesize MB: {Math.Round(BindingListCopy.Where(x => x.Selected == true).Sum(x => x.SizeMb), 2)}";
+            this.labelFileSummaryCopy.Text = text;
         }
 
         private void cbAllNoneDeleteList_CheckedChanged(object sender, EventArgs e)
@@ -399,7 +407,8 @@ namespace BeamNG_LevelCleanUp
 
             BindingSourceDelete.DataSource = filteredBindingList;
             dataGridViewDeleteList.DataSource = BindingSourceDelete;
-            UpdateLabel();
+            UpdateLabelShrink();
+            CheckVisibilityShrink();
         }
 
         private void cbAllNoneCopyList_CheckedChanged(object sender, EventArgs e)
@@ -418,17 +427,21 @@ namespace BeamNG_LevelCleanUp
 
             BindingSourceCopy.DataSource = filteredBindingList;
             dataGridViewCopyList.DataSource = BindingSourceCopy;
+            UpdateLabelCopy();
+            CheckVisibilityCopy();
         }
 
-        private void CheckVisibility()
+        private void CheckVisibilityShrink()
         {
             if (string.IsNullOrEmpty(this.tbLevelPath.Text))
             {
                 this.btn_AnalyzeLevel.Enabled = false;
+                btnZipDeployment.Enabled = false;
             }
             else
             {
                 this.btn_AnalyzeLevel.Enabled = true;
+                btnZipDeployment.Enabled = true;
             }
             if (this.BindingListDelete.Where(x => x.Selected).Count() > 0)
             {
@@ -437,6 +450,28 @@ namespace BeamNG_LevelCleanUp
             else
             {
                 this.btn_deleteFiles.Enabled = false;
+            }
+        }
+
+        private void CheckVisibilityCopy()
+        {
+            if (string.IsNullOrEmpty(this.tbLevelPath.Text) || string.IsNullOrEmpty(tbCopyFromLevel.Text))
+            {
+                this.BtnScanAssets.Enabled = false;
+                //btnZipDeployment.Enabled = false;
+            }
+            else
+            {
+                this.BtnScanAssets.Enabled = true;
+                //btnZipDeployment.Enabled = true;
+            }
+            if (this.BindingListCopy.Where(x => x.Selected).Count() > 0)
+            {
+                this.BtnCopyAssets.Enabled = true;
+            }
+            else
+            {
+                this.BtnCopyAssets.Enabled = false;
             }
         }
 
@@ -451,7 +486,8 @@ namespace BeamNG_LevelCleanUp
 
         private void textBox1_TextChanged(object sender, EventArgs e)
         {
-            CheckVisibility();
+            CheckVisibilityShrink();
+            CheckVisibilityCopy();
         }
 
         private void SendProgressMessage(string text)
@@ -591,6 +627,7 @@ namespace BeamNG_LevelCleanUp
                     });
                     lbLevelNameCopyFrom.Text = _levelNameCopyFrom;
                 }
+                CheckVisibilityCopy();
             }
             catch (Exception ex)
             {
@@ -626,5 +663,6 @@ namespace BeamNG_LevelCleanUp
         {
             Reader.DoCopyAssets(BindingListCopy.Where(x => x.Selected).Select(y => y.Identifier).ToList());
         }
+
     }
 }

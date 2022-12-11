@@ -68,8 +68,16 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 foreach (var matFile in material.MaterialFiles)
                 {
                     var targetFullName = GetTargetFileName(matFile.File.FullName);
-                    Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
-                    File.Copy(matFile.File.FullName, targetFullName, true);
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
+                        File.Copy(matFile.File.FullName, targetFullName, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        PubSubChannel.SendMessage(true, $"Filepath error for material {material.Name}. Exception:{ex.Message}");
+                    }
+                    
                     toText = toText.Replace(GetBeamNgJsonFileName(matFile.File.FullName), GetBeamNgJsonFileName(targetFullName), StringComparison.OrdinalIgnoreCase);
                 }
                 if (!targetJsonFile.Exists)
