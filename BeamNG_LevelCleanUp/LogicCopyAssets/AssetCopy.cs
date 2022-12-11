@@ -52,6 +52,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         break;
                 }
             }
+
+            PubSubChannel.SendMessage(false, $"Done! Assets copied.");
         }
 
         private void CopyRoad(CopyAsset item)

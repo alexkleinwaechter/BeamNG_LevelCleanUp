@@ -463,7 +463,8 @@
             // labelFileSummaryCopy
             // 
             this.labelFileSummaryCopy.AutoSize = true;
-            this.labelFileSummaryCopy.Location = new System.Drawing.Point(1250, 6);
+            this.labelFileSummaryCopy.Dock = System.Windows.Forms.DockStyle.Right;
+            this.labelFileSummaryCopy.Location = new System.Drawing.Point(1255, 0);
             this.labelFileSummaryCopy.Name = "labelFileSummaryCopy";
             this.labelFileSummaryCopy.Size = new System.Drawing.Size(58, 20);
             this.labelFileSummaryCopy.TabIndex = 36;
