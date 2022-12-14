@@ -45,6 +45,14 @@ namespace BeamNG_LevelCleanUp.Logic
                             _exludeFiles.AddRange(spawnpointlist.Select(x => PathResolver.ResolvePath(_levelPath, x.Preview, false)));
                         }
                     }
+                    if (jsonObject.RootElement.TryGetProperty("gasStationPoints", out JsonElement gasStationPoints))
+                    {
+                        var gasStationPointList = gasStationPoints.Deserialize<List<SpawnPoints>>(BeamJsonOptions.Get());
+                        if (gasStationPointList != null)
+                        {
+                            _exludeFiles.AddRange(gasStationPointList.Select(x => PathResolver.ResolvePath(_levelPath, x.Preview, false)));
+                        }
+                    }
                 }
             }
             catch (Exception ex)

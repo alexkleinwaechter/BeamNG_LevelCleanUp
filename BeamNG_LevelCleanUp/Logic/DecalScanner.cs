@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Windows.Media.Media3D;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -29,7 +30,17 @@ namespace BeamNG_LevelCleanUp.Logic
         public void ScanDecals()
         {
             RetrieveUsedDecalNames();
-            SetMaterials();
+            foreach (var file in _managedDecalData)
+            {
+                if (file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    SetMaterialsJson(file);
+                }
+                else
+                {
+                    SetMaterialsCs(file);
+                }
+            }
             foreach (var name in _materialNames.Distinct())
             {
                 _assets.Add(new Asset
@@ -59,28 +70,53 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        private void SetMaterials()
+        internal void SetMaterialsJson(FileInfo file)
         {
-            foreach (var file in _managedDecalData)
+            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            try
             {
-                foreach (var decalName in _decalNames.Distinct())
+                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
-                    var hit = false;
-                    foreach (string line in File.ReadAllLines(file.FullName))
+                    foreach (var managedDecalData in jsonObject.RootElement.EnumerateObject())
                     {
-                        var search = $"({decalName})";
-                        if (line.ToUpperInvariant().Contains(search.ToUpperInvariant()))
+                        try
                         {
-                            hit = true;
+                            var decalData = managedDecalData.Value.Deserialize<ManagedDecalData>(BeamJsonOptions.Get());
+                            _materialNames.Add(decalData.Material);
                         }
-                        if (hit && line.ToUpperInvariant().Contains("material =", StringComparison.OrdinalIgnoreCase))
+                        catch (Exception ex)
                         {
-                            var nameParts = line.Split('"');
-                            if (nameParts.Length > 1)
-                            {
-                                _materialNames.Add(nameParts[1]);
-                                break;
-                            }
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(true, $"Error DecalScanner {file.FullName}. {ex.Message}");
+            }
+        }
+
+        private void SetMaterialsCs(FileInfo file)
+        {
+            foreach (var decalName in _decalNames.Distinct())
+            {
+                var hit = false;
+                foreach (string line in File.ReadAllLines(file.FullName))
+                {
+                    var search = $"({decalName})";
+                    if (line.ToUpperInvariant().Contains(search.ToUpperInvariant()))
+                    {
+                        hit = true;
+                    }
+                    if (hit && line.ToUpperInvariant().Contains("material =", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var nameParts = line.Split('"');
+                        if (nameParts.Length > 1)
+                        {
+                            _materialNames.Add(nameParts[1]);
+                            break;
                         }
                     }
                 }
