@@ -53,8 +53,10 @@ namespace BeamNG_LevelCleanUp.Logic
                                 var stage = child.Value.Deserialize<MaterialStage>(BeamJsonOptions.Get());
                                 if (stage != null)
                                 {
-                                    material.Stages = new List<MaterialStage>();
-                                    material.Stages.Add(stage);
+                                    material.Stages = new List<MaterialStage>
+                                    {
+                                        stage
+                                    };
                                     var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
                                     material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
                                 }
@@ -81,7 +83,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                 _assets.Add(new Asset
                                 {
                                     Class = "Decal",
-                                    Material = material.Cubemap,
+                                    Cubemap = material.Cubemap,
                                 });
                             }
                             PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);

@@ -208,7 +208,7 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.MainDecalsJson);
-                WalkDirectoryTree(dirInfo, "managedDecalData.cs", ReadTypeEnum.ManagedDecalData);
+                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.ManagedDecalData);
                 var decalScanner = new DecalScanner(Assets, _mainDecalsJson, _managedDecalData);
                 decalScanner.ScanDecals();
                 Console.WriteLine("Files with restricted access:");
@@ -227,7 +227,7 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ForestJsonFiles);
-                WalkDirectoryTree(dirInfo, "managedItemData.cs", ReadTypeEnum.ManagedItemData);
+                WalkDirectoryTree(dirInfo, "managedItemData.*", ReadTypeEnum.ManagedItemData);
                 var forestScanner = new ForestScanner(Assets, _forestJsonFiles, _managedItemData, _levelPath);
                 forestScanner.ScanForest();
                 Console.WriteLine("Files with restricted access:");
