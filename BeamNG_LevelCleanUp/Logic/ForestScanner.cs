@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -31,7 +32,17 @@ namespace BeamNG_LevelCleanUp.Logic
         public void ScanForest()
         {
             RetrieveUsedForestTypes();
-            GetShapNames();
+            foreach (var file in _managedItemData)
+            {
+                if (file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    GetShapNamesJson(file);
+                }
+                else
+                {
+                    GetShapNamesCs(file);
+                }
+            }
             foreach (var shapeName in _shapeNames.Distinct())
             {
                 AddAsset(new Asset
@@ -79,38 +90,71 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        private void GetShapNames()
+        internal void GetShapNamesJson(FileInfo file)
         {
-            foreach (var file in _managedItemData)
+            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            try
             {
-                foreach (var typeName in _forestTypeNames.Distinct())
+                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
-                    var hit = false;
-                    foreach (string line in File.ReadLines(file.FullName))
+                    foreach (var managedForestData in jsonObject.RootElement.EnumerateObject())
                     {
-                        var search = $"({typeName})";
-                        if (line.ToUpperInvariant().Contains(search.ToUpperInvariant()))
+                        try
                         {
-                            //if (line.Contains("FranklinDouglasTower15flr_var2", StringComparison.OrdinalIgnoreCase)) Debugger.Break();
-                            hit = true;
-                        }
-                        if (hit && line.ToUpperInvariant().Contains("shapefile =", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var nameParts = line.Split('"');
-                            if (nameParts.Length > 1)
+                            var forestData = managedForestData.Value.Deserialize<ManagedForestData>(BeamJsonOptions.Get());
+                            var name = forestData.ShapeFile;
+                            if (name.StartsWith("./"))
                             {
-                                var name = nameParts[1];
-                                if (name.StartsWith("./"))
-                                {
-                                    name = name.Remove(0, 2);
-                                }
-                                if (name.Count(c => c == '/') == 0)
-                                {
-                                    name = Path.Join(Path.GetDirectoryName(file.FullName), name);
-                                }
-                                _shapeNames.Add(name);
-                                hit = false;
+                                name = name.Remove(0, 2);
                             }
+                            if (name.Count(c => c == '/') == 0)
+                            {
+                                name = Path.Join(Path.GetDirectoryName(file.FullName), name);
+                            }
+                            _shapeNames.Add(name);
+                        }
+                        catch (Exception ex)
+                        {
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(true, $"Error DecalScanner {file.FullName}. {ex.Message}");
+            }
+        }
+        private void GetShapNamesCs(FileInfo file)
+        {
+            foreach (var typeName in _forestTypeNames.Distinct())
+            {
+                var hit = false;
+                foreach (string line in File.ReadLines(file.FullName))
+                {
+                    var search = $"({typeName})";
+                    if (line.ToUpperInvariant().Contains(search.ToUpperInvariant()))
+                    {
+                        //if (line.Contains("FranklinDouglasTower15flr_var2", StringComparison.OrdinalIgnoreCase)) Debugger.Break();
+                        hit = true;
+                    }
+                    if (hit && line.ToUpperInvariant().Contains("shapefile =", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var nameParts = line.Split('"');
+                        if (nameParts.Length > 1)
+                        {
+                            var name = nameParts[1];
+                            if (name.StartsWith("./"))
+                            {
+                                name = name.Remove(0, 2);
+                            }
+                            if (name.Count(c => c == '/') == 0)
+                            {
+                                name = Path.Join(Path.GetDirectoryName(file.FullName), name);
+                            }
+                            _shapeNames.Add(name);
+                            hit = false;
                         }
                     }
                 }

@@ -44,17 +44,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             prefabScanner.AddPrefabDaeFiles(asset.Filename);
                             continue;
                         }
-                        if (!string.IsNullOrEmpty(asset.GlobalEnviromentMap))
-                        {
-                            asset.Material = asset.GlobalEnviromentMap;
-                        }
                         if (!string.IsNullOrEmpty(asset.Texture))
                         {
                             _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.Texture, false));
-                        }
-                        if (!string.IsNullOrEmpty(asset.Cubemap))
-                        {
-                            asset.Material = asset.Cubemap;
                         }
                         if (!string.IsNullOrEmpty(asset.FoamTex))
                         {
@@ -67,6 +59,30 @@ namespace BeamNG_LevelCleanUp.Logic
                         if (!string.IsNullOrEmpty(asset.DepthGradientTex))
                         {
                             _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.DepthGradientTex, false));
+                        }
+                        if (!string.IsNullOrEmpty(asset.ColorizeGradientFile))
+                        {
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.ColorizeGradientFile, false));
+                        }
+                        if (!string.IsNullOrEmpty(asset.AmbientScaleGradientFile))
+                        {
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.AmbientScaleGradientFile, false));
+                        }
+                        if (!string.IsNullOrEmpty(asset.FogScaleGradientFile))
+                        {
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.FogScaleGradientFile, false));
+                        }
+                        if (!string.IsNullOrEmpty(asset.NightFogGradientFile))
+                        {
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.NightFogGradientFile, false));
+                        }
+                        if (!string.IsNullOrEmpty(asset.NightGradientFile))
+                        {
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.NightGradientFile, false));
+                        }
+                        if (!string.IsNullOrEmpty(asset.SunScaleGradientFile))
+                        {
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.SunScaleGradientFile, false));
                         }
                         AddAsset(asset);
                     }
@@ -81,18 +97,33 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private void AddAsset(Asset? asset)
         {
-            //if (asset.ShapeName != null && asset.ShapeName.Equals("/levels/east_coast_rework/art/shapes/rails/track_straight_long.dae", StringComparison.OrdinalIgnoreCase)) Debugger.Break();
+            //if (asset.Types.Any()) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
             {
-                var daeScanner = new DaeScanner(_levelPath, asset.ShapeName);
-                asset.DaeExists = daeScanner.Exists();
-                if (asset.DaeExists.HasValue && asset.DaeExists.Value == true)
+                ScanDae(asset, asset?.ShapeName);
+            }
+            foreach (var assetType in asset?.Types)
+            {
+                if (!string.IsNullOrEmpty(assetType.ShapeFilename))
                 {
-                    asset.DaePath = daeScanner.ResolvedPath();
-                    asset.MaterialsDae = daeScanner.GetMaterials();
+                    var newAsset = new Asset();
+                    newAsset.Name = "AssetType";
+                    ScanDae(newAsset, assetType.ShapeFilename);
+                    _assets.Add(newAsset);
                 }
             }
             _assets.Add(asset);
+        }
+
+        private void ScanDae(Asset? asset, string shapeName)
+        {
+            var daeScanner = new DaeScanner(_levelPath, shapeName);
+            asset.DaeExists = daeScanner.Exists();
+            if (asset.DaeExists.HasValue && asset.DaeExists.Value == true)
+            {
+                asset.DaePath = daeScanner.ResolvedPath();
+                asset.MaterialsDae = daeScanner.GetMaterials();
+            }
         }
     }
 }
