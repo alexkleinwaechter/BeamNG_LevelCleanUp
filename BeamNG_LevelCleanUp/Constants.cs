@@ -8,6 +8,7 @@ namespace BeamNG_LevelCleanUp
 {
     internal static class Constants
     {
+        internal const string RouteRoad = @"art\road";
         internal const string MappingToolsPrefix = "MT_";
     }
 }

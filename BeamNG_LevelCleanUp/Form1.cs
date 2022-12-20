@@ -259,7 +259,7 @@ namespace BeamNG_LevelCleanUp
                 var item = new GridFileListItem
                 {
                     Identifier = asset.Identifier,
-                    AssetType = asset.AssetType.ToString(),
+                    AssetType = asset.CopyAssetType.ToString(),
                     FullName = asset.Name,
                     Selected = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? false : this.cbAllNoneCopyList.Checked,
                     SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length: 0) / 1024f) / 1024f, 2),

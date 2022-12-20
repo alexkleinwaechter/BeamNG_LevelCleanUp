@@ -6,14 +6,14 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Objects
 {
-    internal enum AssetType
+    internal enum CopyAssetType
     {
         Road = 0
     }
     internal class CopyAsset
     {
         public Guid Identifier { get; set; } = Guid.NewGuid();
-        public AssetType AssetType { get; set; }
+        public CopyAssetType CopyAssetType { get; set; }
         public string Name { get; set; }
         public List<MaterialJson> Materials = new List<MaterialJson>();
         public string TargetPath { get; set; }

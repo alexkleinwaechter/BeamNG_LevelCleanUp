@@ -41,14 +41,13 @@ namespace BeamNG_LevelCleanUp.Logic
         private static bool _dryRun { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
         public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
+        public static List<MaterialJson> MaterialsJsonCopy { get; set; } = new List<MaterialJson>();
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
         public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
 
         private static string _newName;
-
-        const string routeRoad = @"art\road";
 
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
         internal BeamFileReader(string levelpath, string beamLogPath, string levelPathCopyFrom = null)
@@ -90,6 +89,7 @@ namespace BeamNG_LevelCleanUp.Logic
             DeleteList = new List<FileInfo>();
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
+            MaterialsJsonCopy = new List<MaterialJson>();
             AllDaeList = new List<FileInfo>();
             ExcludeFiles = new List<string>();
             UnusedAssetFiles = new List<string>();
@@ -107,7 +107,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal List<CopyAsset> GetCopyList()
         {
-            return CopyAssets.OrderBy(x => x.AssetType).ThenBy(x => x.Name).ToList();
+            return CopyAssets.OrderBy(x => x.CopyAssetType).ThenBy(x => x.Name).ToList();
         }
 
         internal void ReadAll()
@@ -381,7 +381,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void CopyAssetRoad()
         {
-            var dirInfo = new DirectoryInfo(Path.Join(_namePathCopyFrom, routeRoad));
+            var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetRoad);
@@ -486,23 +486,23 @@ namespace BeamNG_LevelCleanUp.Logic
                             _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                             break;
                         case ReadTypeEnum.CopyAssetRoad:
-                            var materialListRoad = new List<MaterialJson>();
-                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, materialListRoad, new List<Asset>(), new List<string>());
+                            var materialsRoadCopy = new List<MaterialJson>();
+                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, materialsRoadCopy, new List<Asset>(), new List<string>());
                             materialCopyScanner.ScanMaterialsJsonFile();
                             materialCopyScanner.CheckDuplicates(MaterialsJson);
-                            foreach (var item in materialListRoad)
+
+                            foreach (var item in materialsRoadCopy.Where(x => x.IsRoadAndPath))
                             {
                                 CopyAssets.Add(new CopyAsset
                                 {
-                                    AssetType = AssetType.Road,
+                                    CopyAssetType = CopyAssetType.Road,
                                     Name = item.Name,
                                     Materials = new List<MaterialJson> { item },
                                     SourceMaterialJsonPath = fi.FullName,
-                                    TargetPath = Path.Join(_namePath, routeRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                                    TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
                                 });
                             }
-                            //var roadCopyScanner = new RoadCopyScanner(_levelNameCopyFrom, _levelNameCopyFrom, _levelPath);
-                            //roadCopyScanner.ScanMaterialsJsonFile();
+                            MaterialsJsonCopy.AddRange(materialsRoadCopy);
                             break;
                         default:
                             break;

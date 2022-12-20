@@ -15,7 +15,8 @@ namespace BeamNG_LevelCleanUp
             {
                 PropertyNameCaseInsensitive = true,
                 AllowTrailingCommas = true,
-                IncludeFields = true
+                IncludeFields = true,
+                WriteIndented = true
             };
         }
     }

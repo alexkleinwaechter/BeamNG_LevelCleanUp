@@ -43,9 +43,9 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         {
             foreach (var item in _assetsToCopy)
             {
-                switch (item.AssetType)
+                switch (item.CopyAssetType)
                 {
-                    case AssetType.Road:
+                    case CopyAssetType.Road:
                         CopyRoad(item);
                         break;
                     default:
