@@ -6,11 +6,11 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Objects
 {
-    internal enum CopyAssetType
+    public enum CopyAssetType
     {
         Road = 0
     }
-    internal class CopyAsset
+    public class CopyAsset
     {
         public Guid Identifier { get; set; } = Guid.NewGuid();
         public CopyAssetType CopyAssetType { get; set; }

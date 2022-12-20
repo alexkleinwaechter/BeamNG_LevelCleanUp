@@ -28,7 +28,8 @@ namespace BeamNG_LevelCleanUp.Logic
             ScanExtraPrefabs = 11,
             ExcludeAllFiles = 12,
             LevelRename = 13,
-            CopyAssetRoad = 14
+            CopyAssetRoad = 14,
+            CopyAssetDecal = 15
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -132,6 +133,7 @@ namespace BeamNG_LevelCleanUp.Logic
             Reset();
             ReadMaterialsJson();
             CopyAssetRoad();
+            CopyAssetDecal();
             PubSubChannel.SendMessage(false, "Fetching Assets finished");
         }
 
@@ -393,6 +395,21 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
             }
         }
+
+        internal void CopyAssetDecal()
+        {
+            var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.CopyAssetDecal);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
             var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple" };
@@ -490,7 +507,6 @@ namespace BeamNG_LevelCleanUp.Logic
                             var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, materialsRoadCopy, new List<Asset>(), new List<string>());
                             materialCopyScanner.ScanMaterialsJsonFile();
                             materialCopyScanner.CheckDuplicates(MaterialsJson);
-
                             foreach (var item in materialsRoadCopy.Where(x => x.IsRoadAndPath))
                             {
                                 CopyAssets.Add(new CopyAsset
@@ -503,6 +519,10 @@ namespace BeamNG_LevelCleanUp.Logic
                                 });
                             }
                             MaterialsJsonCopy.AddRange(materialsRoadCopy);
+                            break;
+                        case ReadTypeEnum.CopyAssetDecal:
+                            var decalCopyScanner = new DecalCopyScanner(fi, MaterialsJsonCopy, CopyAssets);
+                            decalCopyScanner.ScanManagedItems();
                             break;
                         default:
                             break;
