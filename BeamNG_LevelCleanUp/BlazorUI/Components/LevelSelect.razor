@@ -1,0 +1,22 @@
+﻿@using Microsoft.AspNetCore.Components.Forms;
+<h3>LevelSelect</h3>
+<MudFileUpload T="IBrowserFile" FilesChanged="ZipFileSelected">
+    <ButtonTemplate>
+        <MudButton HtmlTag="label"
+                   Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   for="@context">
+            Upload Files
+        </MudButton>
+    </ButtonTemplate>
+</MudFileUpload>
+
+@code {
+    IList<IBrowserFile> files = new List<IBrowserFile>();
+    private void ZipFileSelected(IBrowserFile file)
+    {
+        files.Add(file);
+        //TODO upload the files to the server
+    }
+}

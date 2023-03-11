@@ -28,681 +28,702 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.tabControl1 = new System.Windows.Forms.TabControl();
-            this.tabPage1 = new System.Windows.Forms.TabPage();
-            this.splitContainerShrink = new System.Windows.Forms.SplitContainer();
-            this.btnZipDeployment = new System.Windows.Forms.Button();
-            this.labelFileSummaryShrink = new System.Windows.Forms.Label();
-            this.btnOpenLog = new System.Windows.Forms.Button();
-            this.tbBeamLogPath = new System.Windows.Forms.TextBox();
-            this.label2 = new System.Windows.Forms.Label();
-            this.btn_deleteFiles = new System.Windows.Forms.Button();
-            this.chkDryRun = new System.Windows.Forms.CheckBox();
-            this.btn_AnalyzeLevel = new System.Windows.Forms.Button();
-            this.splitContainer_grid = new System.Windows.Forms.SplitContainer();
-            this.cbAllNoneDeleteList = new System.Windows.Forms.CheckBox();
-            this.tbFilterGridDeleteList = new System.Windows.Forms.TextBox();
-            this.dataGridViewDeleteList = new System.Windows.Forms.DataGridView();
-            this.tabPage3 = new System.Windows.Forms.TabPage();
-            this.btnZipDeployment2 = new System.Windows.Forms.Button();
-            this.label6 = new System.Windows.Forms.Label();
-            this.tb_rename_new_name_title = new System.Windows.Forms.TextBox();
-            this.Btn_RenameLevel = new System.Windows.Forms.Button();
-            this.BtnGetCurrentName = new System.Windows.Forms.Button();
-            this.label5 = new System.Windows.Forms.Label();
-            this.tb_rename_new_name_path = new System.Windows.Forms.TextBox();
-            this.label4 = new System.Windows.Forms.Label();
-            this.tb_rename_current_name = new System.Windows.Forms.TextBox();
-            this.tabPage2 = new System.Windows.Forms.TabPage();
-            this.richTextBoxErrors = new System.Windows.Forms.RichTextBox();
-            this.tabPage4 = new System.Windows.Forms.TabPage();
-            this.splitContainerCopyAssets = new System.Windows.Forms.SplitContainer();
-            this.labelFileSummaryCopy = new System.Windows.Forms.Label();
-            this.BtnCopyAssets = new System.Windows.Forms.Button();
-            this.label8 = new System.Windows.Forms.Label();
-            this.BtnScanAssets = new System.Windows.Forms.Button();
-            this.BtnCopyFromZipLevel = new System.Windows.Forms.Button();
-            this.lbLevelNameCopyFrom = new System.Windows.Forms.Label();
-            this.tbCopyFromLevel = new System.Windows.Forms.TextBox();
-            this.label9 = new System.Windows.Forms.Label();
-            this.dataGridViewCopyList = new System.Windows.Forms.DataGridView();
-            this.cbAllNoneCopyList = new System.Windows.Forms.CheckBox();
-            this.tbFilterGridCopyList = new System.Windows.Forms.TextBox();
-            this.coboCompressionLevel1 = new System.Windows.Forms.ComboBox();
-            this.tbProgress = new System.Windows.Forms.TextBox();
-            this.btnLoadLevelZipFile = new System.Windows.Forms.Button();
-            this.tbLevelZipFile = new System.Windows.Forms.TextBox();
-            this.label3 = new System.Windows.Forms.Label();
-            this.btn_openLevelFolder = new System.Windows.Forms.Button();
-            this.tbLevelPath = new System.Windows.Forms.TextBox();
-            this.label1 = new System.Windows.Forms.Label();
-            this.folderBrowserDialogLevel = new System.Windows.Forms.FolderBrowserDialog();
-            this.openFileDialogLog = new System.Windows.Forms.OpenFileDialog();
-            this.openFileDialogZip = new System.Windows.Forms.OpenFileDialog();
-            this.panel1 = new System.Windows.Forms.Panel();
-            this.label7 = new System.Windows.Forms.Label();
-            this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
-            this.tabControl1.SuspendLayout();
-            this.tabPage1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainerShrink)).BeginInit();
-            this.splitContainerShrink.Panel1.SuspendLayout();
-            this.splitContainerShrink.Panel2.SuspendLayout();
-            this.splitContainerShrink.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainer_grid)).BeginInit();
-            this.splitContainer_grid.Panel1.SuspendLayout();
-            this.splitContainer_grid.Panel2.SuspendLayout();
-            this.splitContainer_grid.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewDeleteList)).BeginInit();
-            this.tabPage3.SuspendLayout();
-            this.tabPage2.SuspendLayout();
-            this.tabPage4.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainerCopyAssets)).BeginInit();
-            this.splitContainerCopyAssets.Panel1.SuspendLayout();
-            this.splitContainerCopyAssets.Panel2.SuspendLayout();
-            this.splitContainerCopyAssets.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewCopyList)).BeginInit();
-            this.panel1.SuspendLayout();
-            this.SuspendLayout();
+            tabControl1 = new TabControl();
+            tabPage1 = new TabPage();
+            splitContainerShrink = new SplitContainer();
+            btnZipDeployment = new Button();
+            labelFileSummaryShrink = new Label();
+            btnOpenLog = new Button();
+            tbBeamLogPath = new TextBox();
+            label2 = new Label();
+            btn_deleteFiles = new Button();
+            chkDryRun = new CheckBox();
+            btn_AnalyzeLevel = new Button();
+            splitContainer_grid = new SplitContainer();
+            cbAllNoneDeleteList = new CheckBox();
+            tbFilterGridDeleteList = new TextBox();
+            dataGridViewDeleteList = new DataGridView();
+            tabPage3 = new TabPage();
+            btnZipDeployment2 = new Button();
+            label6 = new Label();
+            tb_rename_new_name_title = new TextBox();
+            Btn_RenameLevel = new Button();
+            BtnGetCurrentName = new Button();
+            label5 = new Label();
+            tb_rename_new_name_path = new TextBox();
+            label4 = new Label();
+            tb_rename_current_name = new TextBox();
+            tabPage2 = new TabPage();
+            richTextBoxErrors = new RichTextBox();
+            tabPage4 = new TabPage();
+            splitContainerCopyAssets = new SplitContainer();
+            labelFileSummaryCopy = new Label();
+            BtnCopyAssets = new Button();
+            label8 = new Label();
+            BtnScanAssets = new Button();
+            BtnCopyFromZipLevel = new Button();
+            lbLevelNameCopyFrom = new Label();
+            tbCopyFromLevel = new TextBox();
+            label9 = new Label();
+            dataGridViewCopyList = new DataGridView();
+            cbAllNoneCopyList = new CheckBox();
+            tbFilterGridCopyList = new TextBox();
+            tabPage5 = new TabPage();
+            blazorWebView1 = new Microsoft.AspNetCore.Components.WebView.WindowsForms.BlazorWebView();
+            coboCompressionLevel1 = new ComboBox();
+            tbProgress = new TextBox();
+            btnLoadLevelZipFile = new Button();
+            tbLevelZipFile = new TextBox();
+            label3 = new Label();
+            btn_openLevelFolder = new Button();
+            tbLevelPath = new TextBox();
+            label1 = new Label();
+            folderBrowserDialogLevel = new FolderBrowserDialog();
+            openFileDialogLog = new OpenFileDialog();
+            openFileDialogZip = new OpenFileDialog();
+            panel1 = new Panel();
+            label7 = new Label();
+            backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
+            tabControl1.SuspendLayout();
+            tabPage1.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)splitContainerShrink).BeginInit();
+            splitContainerShrink.Panel1.SuspendLayout();
+            splitContainerShrink.Panel2.SuspendLayout();
+            splitContainerShrink.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)splitContainer_grid).BeginInit();
+            splitContainer_grid.Panel1.SuspendLayout();
+            splitContainer_grid.Panel2.SuspendLayout();
+            splitContainer_grid.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)dataGridViewDeleteList).BeginInit();
+            tabPage3.SuspendLayout();
+            tabPage2.SuspendLayout();
+            tabPage4.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)splitContainerCopyAssets).BeginInit();
+            splitContainerCopyAssets.Panel1.SuspendLayout();
+            splitContainerCopyAssets.Panel2.SuspendLayout();
+            splitContainerCopyAssets.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)dataGridViewCopyList).BeginInit();
+            tabPage5.SuspendLayout();
+            panel1.SuspendLayout();
+            SuspendLayout();
             // 
             // tabControl1
             // 
-            this.tabControl1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.tabControl1.Controls.Add(this.tabPage1);
-            this.tabControl1.Controls.Add(this.tabPage3);
-            this.tabControl1.Controls.Add(this.tabPage2);
-            this.tabControl1.Controls.Add(this.tabPage4);
-            this.tabControl1.Location = new System.Drawing.Point(0, 140);
-            this.tabControl1.Name = "tabControl1";
-            this.tabControl1.SelectedIndex = 0;
-            this.tabControl1.Size = new System.Drawing.Size(1327, 763);
-            this.tabControl1.TabIndex = 0;
+            tabControl1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            tabControl1.Controls.Add(tabPage1);
+            tabControl1.Controls.Add(tabPage3);
+            tabControl1.Controls.Add(tabPage2);
+            tabControl1.Controls.Add(tabPage4);
+            tabControl1.Controls.Add(tabPage5);
+            tabControl1.Location = new Point(0, 140);
+            tabControl1.Name = "tabControl1";
+            tabControl1.SelectedIndex = 0;
+            tabControl1.Size = new Size(1327, 763);
+            tabControl1.TabIndex = 0;
             // 
             // tabPage1
             // 
-            this.tabPage1.Controls.Add(this.splitContainerShrink);
-            this.tabPage1.Location = new System.Drawing.Point(4, 29);
-            this.tabPage1.Name = "tabPage1";
-            this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage1.Size = new System.Drawing.Size(1319, 730);
-            this.tabPage1.TabIndex = 0;
-            this.tabPage1.Text = "Shrink Deploymentfile";
-            this.tabPage1.UseVisualStyleBackColor = true;
+            tabPage1.Controls.Add(splitContainerShrink);
+            tabPage1.Location = new Point(4, 29);
+            tabPage1.Name = "tabPage1";
+            tabPage1.Padding = new Padding(3);
+            tabPage1.Size = new Size(1319, 730);
+            tabPage1.TabIndex = 0;
+            tabPage1.Text = "Shrink Deploymentfile";
+            tabPage1.UseVisualStyleBackColor = true;
             // 
             // splitContainerShrink
             // 
-            this.splitContainerShrink.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splitContainerShrink.FixedPanel = System.Windows.Forms.FixedPanel.Panel1;
-            this.splitContainerShrink.Location = new System.Drawing.Point(3, 3);
-            this.splitContainerShrink.Name = "splitContainerShrink";
-            this.splitContainerShrink.Orientation = System.Windows.Forms.Orientation.Horizontal;
+            splitContainerShrink.Dock = DockStyle.Fill;
+            splitContainerShrink.FixedPanel = FixedPanel.Panel1;
+            splitContainerShrink.Location = new Point(3, 3);
+            splitContainerShrink.Name = "splitContainerShrink";
+            splitContainerShrink.Orientation = Orientation.Horizontal;
             // 
             // splitContainerShrink.Panel1
             // 
-            this.splitContainerShrink.Panel1.Controls.Add(this.btnZipDeployment);
-            this.splitContainerShrink.Panel1.Controls.Add(this.labelFileSummaryShrink);
-            this.splitContainerShrink.Panel1.Controls.Add(this.btnOpenLog);
-            this.splitContainerShrink.Panel1.Controls.Add(this.tbBeamLogPath);
-            this.splitContainerShrink.Panel1.Controls.Add(this.label2);
-            this.splitContainerShrink.Panel1.Controls.Add(this.btn_deleteFiles);
-            this.splitContainerShrink.Panel1.Controls.Add(this.chkDryRun);
-            this.splitContainerShrink.Panel1.Controls.Add(this.btn_AnalyzeLevel);
-            this.splitContainerShrink.Panel1.Padding = new System.Windows.Forms.Padding(10);
-            this.splitContainerShrink.Panel1MinSize = 100;
+            splitContainerShrink.Panel1.Controls.Add(btnZipDeployment);
+            splitContainerShrink.Panel1.Controls.Add(labelFileSummaryShrink);
+            splitContainerShrink.Panel1.Controls.Add(btnOpenLog);
+            splitContainerShrink.Panel1.Controls.Add(tbBeamLogPath);
+            splitContainerShrink.Panel1.Controls.Add(label2);
+            splitContainerShrink.Panel1.Controls.Add(btn_deleteFiles);
+            splitContainerShrink.Panel1.Controls.Add(chkDryRun);
+            splitContainerShrink.Panel1.Controls.Add(btn_AnalyzeLevel);
+            splitContainerShrink.Panel1.Padding = new Padding(10);
+            splitContainerShrink.Panel1MinSize = 100;
             // 
             // splitContainerShrink.Panel2
             // 
-            this.splitContainerShrink.Panel2.AutoScroll = true;
-            this.splitContainerShrink.Panel2.Controls.Add(this.splitContainer_grid);
-            this.splitContainerShrink.Panel2.Padding = new System.Windows.Forms.Padding(10);
-            this.splitContainerShrink.Panel2MinSize = 300;
-            this.splitContainerShrink.Size = new System.Drawing.Size(1313, 724);
-            this.splitContainerShrink.SplitterDistance = 170;
-            this.splitContainerShrink.TabIndex = 14;
+            splitContainerShrink.Panel2.AutoScroll = true;
+            splitContainerShrink.Panel2.Controls.Add(splitContainer_grid);
+            splitContainerShrink.Panel2.Padding = new Padding(10);
+            splitContainerShrink.Panel2MinSize = 300;
+            splitContainerShrink.Size = new Size(1313, 724);
+            splitContainerShrink.SplitterDistance = 170;
+            splitContainerShrink.TabIndex = 14;
             // 
             // btnZipDeployment
             // 
-            this.btnZipDeployment.Location = new System.Drawing.Point(342, 125);
-            this.btnZipDeployment.Name = "btnZipDeployment";
-            this.btnZipDeployment.Size = new System.Drawing.Size(146, 29);
-            this.btnZipDeployment.TabIndex = 29;
-            this.btnZipDeployment.Text = "3. Zip Deployment";
-            this.btnZipDeployment.TextImageRelation = System.Windows.Forms.TextImageRelation.TextAboveImage;
-            this.btnZipDeployment.UseVisualStyleBackColor = true;
-            this.btnZipDeployment.Click += new System.EventHandler(this.btnZipDeployment_Click);
+            btnZipDeployment.Location = new Point(342, 125);
+            btnZipDeployment.Name = "btnZipDeployment";
+            btnZipDeployment.Size = new Size(146, 29);
+            btnZipDeployment.TabIndex = 29;
+            btnZipDeployment.Text = "3. Zip Deployment";
+            btnZipDeployment.TextImageRelation = TextImageRelation.TextAboveImage;
+            btnZipDeployment.UseVisualStyleBackColor = true;
+            btnZipDeployment.Click += btnZipDeployment_Click;
             // 
             // labelFileSummaryShrink
             // 
-            this.labelFileSummaryShrink.AutoSize = true;
-            this.labelFileSummaryShrink.Dock = System.Windows.Forms.DockStyle.Right;
-            this.labelFileSummaryShrink.Location = new System.Drawing.Point(1253, 10);
-            this.labelFileSummaryShrink.Name = "labelFileSummaryShrink";
-            this.labelFileSummaryShrink.Size = new System.Drawing.Size(50, 20);
-            this.labelFileSummaryShrink.TabIndex = 24;
-            this.labelFileSummaryShrink.Text = "label2";
+            labelFileSummaryShrink.AutoSize = true;
+            labelFileSummaryShrink.Dock = DockStyle.Right;
+            labelFileSummaryShrink.Location = new Point(1253, 10);
+            labelFileSummaryShrink.Name = "labelFileSummaryShrink";
+            labelFileSummaryShrink.Size = new Size(50, 20);
+            labelFileSummaryShrink.TabIndex = 24;
+            labelFileSummaryShrink.Text = "label2";
             // 
             // btnOpenLog
             // 
-            this.btnOpenLog.Location = new System.Drawing.Point(578, 48);
-            this.btnOpenLog.Name = "btnOpenLog";
-            this.btnOpenLog.Size = new System.Drawing.Size(178, 29);
-            this.btnOpenLog.TabIndex = 22;
-            this.btnOpenLog.Text = "Select BeamNg.log";
-            this.btnOpenLog.UseVisualStyleBackColor = true;
-            this.btnOpenLog.Click += new System.EventHandler(this.btnOpenLog_Click);
+            btnOpenLog.Location = new Point(578, 48);
+            btnOpenLog.Name = "btnOpenLog";
+            btnOpenLog.Size = new Size(178, 29);
+            btnOpenLog.TabIndex = 22;
+            btnOpenLog.Text = "Select BeamNg.log";
+            btnOpenLog.UseVisualStyleBackColor = true;
+            btnOpenLog.Click += btnOpenLog_Click;
             // 
             // tbBeamLogPath
             // 
-            this.tbBeamLogPath.Location = new System.Drawing.Point(8, 50);
-            this.tbBeamLogPath.Name = "tbBeamLogPath";
-            this.tbBeamLogPath.Size = new System.Drawing.Size(564, 27);
-            this.tbBeamLogPath.TabIndex = 21;
+            tbBeamLogPath.Location = new Point(8, 50);
+            tbBeamLogPath.Name = "tbBeamLogPath";
+            tbBeamLogPath.Size = new Size(564, 27);
+            tbBeamLogPath.TabIndex = 21;
             // 
             // label2
             // 
-            this.label2.AutoSize = true;
-            this.label2.Location = new System.Drawing.Point(18, 27);
-            this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(295, 20);
-            this.label2.TabIndex = 20;
-            this.label2.Text = "BeamNg.log for excluding Errors in 2nd run";
+            label2.AutoSize = true;
+            label2.Location = new Point(18, 27);
+            label2.Name = "label2";
+            label2.Size = new Size(295, 20);
+            label2.TabIndex = 20;
+            label2.Text = "BeamNg.log for excluding Errors in 2nd run";
             // 
             // btn_deleteFiles
             // 
-            this.btn_deleteFiles.Location = new System.Drawing.Point(185, 125);
-            this.btn_deleteFiles.Name = "btn_deleteFiles";
-            this.btn_deleteFiles.Size = new System.Drawing.Size(117, 29);
-            this.btn_deleteFiles.TabIndex = 18;
-            this.btn_deleteFiles.Text = "2. Delete Files";
-            this.btn_deleteFiles.TextImageRelation = System.Windows.Forms.TextImageRelation.TextAboveImage;
-            this.btn_deleteFiles.UseVisualStyleBackColor = true;
-            this.btn_deleteFiles.Click += new System.EventHandler(this.btn_deleteFiles_Click);
+            btn_deleteFiles.Location = new Point(185, 125);
+            btn_deleteFiles.Name = "btn_deleteFiles";
+            btn_deleteFiles.Size = new Size(117, 29);
+            btn_deleteFiles.TabIndex = 18;
+            btn_deleteFiles.Text = "2. Delete Files";
+            btn_deleteFiles.TextImageRelation = TextImageRelation.TextAboveImage;
+            btn_deleteFiles.UseVisualStyleBackColor = true;
+            btn_deleteFiles.Click += btn_deleteFiles_Click;
             // 
             // chkDryRun
             // 
-            this.chkDryRun.AutoSize = true;
-            this.chkDryRun.Checked = true;
-            this.chkDryRun.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.chkDryRun.Location = new System.Drawing.Point(10, 83);
-            this.chkDryRun.Name = "chkDryRun";
-            this.chkDryRun.Size = new System.Drawing.Size(198, 24);
-            this.chkDryRun.TabIndex = 17;
-            this.chkDryRun.Text = "Dry Run without Deletion";
-            this.chkDryRun.UseVisualStyleBackColor = true;
+            chkDryRun.AutoSize = true;
+            chkDryRun.Checked = true;
+            chkDryRun.CheckState = CheckState.Checked;
+            chkDryRun.Location = new Point(10, 83);
+            chkDryRun.Name = "chkDryRun";
+            chkDryRun.Size = new Size(198, 24);
+            chkDryRun.TabIndex = 17;
+            chkDryRun.Text = "Dry Run without Deletion";
+            chkDryRun.UseVisualStyleBackColor = true;
             // 
             // btn_AnalyzeLevel
             // 
-            this.btn_AnalyzeLevel.Location = new System.Drawing.Point(7, 125);
-            this.btn_AnalyzeLevel.Name = "btn_AnalyzeLevel";
-            this.btn_AnalyzeLevel.Size = new System.Drawing.Size(142, 29);
-            this.btn_AnalyzeLevel.TabIndex = 16;
-            this.btn_AnalyzeLevel.Text = "1. Analyze Level";
-            this.btn_AnalyzeLevel.UseVisualStyleBackColor = true;
-            this.btn_AnalyzeLevel.Click += new System.EventHandler(this.btn_AnalyzeLevel_Click);
+            btn_AnalyzeLevel.Location = new Point(7, 125);
+            btn_AnalyzeLevel.Name = "btn_AnalyzeLevel";
+            btn_AnalyzeLevel.Size = new Size(142, 29);
+            btn_AnalyzeLevel.TabIndex = 16;
+            btn_AnalyzeLevel.Text = "1. Analyze Level";
+            btn_AnalyzeLevel.UseVisualStyleBackColor = true;
+            btn_AnalyzeLevel.Click += btn_AnalyzeLevel_Click;
             // 
             // splitContainer_grid
             // 
-            this.splitContainer_grid.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splitContainer_grid.FixedPanel = System.Windows.Forms.FixedPanel.Panel1;
-            this.splitContainer_grid.Location = new System.Drawing.Point(10, 10);
-            this.splitContainer_grid.Name = "splitContainer_grid";
-            this.splitContainer_grid.Orientation = System.Windows.Forms.Orientation.Horizontal;
+            splitContainer_grid.Dock = DockStyle.Fill;
+            splitContainer_grid.FixedPanel = FixedPanel.Panel1;
+            splitContainer_grid.Location = new Point(10, 10);
+            splitContainer_grid.Name = "splitContainer_grid";
+            splitContainer_grid.Orientation = Orientation.Horizontal;
             // 
             // splitContainer_grid.Panel1
             // 
-            this.splitContainer_grid.Panel1.Controls.Add(this.cbAllNoneDeleteList);
-            this.splitContainer_grid.Panel1.Controls.Add(this.tbFilterGridDeleteList);
-            this.splitContainer_grid.Panel1MinSize = 50;
+            splitContainer_grid.Panel1.Controls.Add(cbAllNoneDeleteList);
+            splitContainer_grid.Panel1.Controls.Add(tbFilterGridDeleteList);
+            splitContainer_grid.Panel1MinSize = 50;
             // 
             // splitContainer_grid.Panel2
             // 
-            this.splitContainer_grid.Panel2.Controls.Add(this.dataGridViewDeleteList);
-            this.splitContainer_grid.Panel2MinSize = 300;
-            this.splitContainer_grid.Size = new System.Drawing.Size(1293, 530);
-            this.splitContainer_grid.SplitterDistance = 51;
-            this.splitContainer_grid.TabIndex = 25;
+            splitContainer_grid.Panel2.Controls.Add(dataGridViewDeleteList);
+            splitContainer_grid.Panel2MinSize = 300;
+            splitContainer_grid.Size = new Size(1293, 530);
+            splitContainer_grid.SplitterDistance = 51;
+            splitContainer_grid.TabIndex = 25;
             // 
             // cbAllNoneDeleteList
             // 
-            this.cbAllNoneDeleteList.Checked = true;
-            this.cbAllNoneDeleteList.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbAllNoneDeleteList.Dock = System.Windows.Forms.DockStyle.Top;
-            this.cbAllNoneDeleteList.Location = new System.Drawing.Point(0, 27);
-            this.cbAllNoneDeleteList.Name = "cbAllNoneDeleteList";
-            this.cbAllNoneDeleteList.Size = new System.Drawing.Size(1293, 24);
-            this.cbAllNoneDeleteList.TabIndex = 23;
-            this.cbAllNoneDeleteList.Text = "Selection All / None";
-            this.cbAllNoneDeleteList.UseVisualStyleBackColor = true;
-            this.cbAllNoneDeleteList.CheckedChanged += new System.EventHandler(this.cbAllNoneDeleteList_CheckedChanged);
+            cbAllNoneDeleteList.Checked = true;
+            cbAllNoneDeleteList.CheckState = CheckState.Checked;
+            cbAllNoneDeleteList.Dock = DockStyle.Top;
+            cbAllNoneDeleteList.Location = new Point(0, 27);
+            cbAllNoneDeleteList.Name = "cbAllNoneDeleteList";
+            cbAllNoneDeleteList.Size = new Size(1293, 24);
+            cbAllNoneDeleteList.TabIndex = 23;
+            cbAllNoneDeleteList.Text = "Selection All / None";
+            cbAllNoneDeleteList.UseVisualStyleBackColor = true;
+            cbAllNoneDeleteList.CheckedChanged += cbAllNoneDeleteList_CheckedChanged;
             // 
             // tbFilterGridDeleteList
             // 
-            this.tbFilterGridDeleteList.Dock = System.Windows.Forms.DockStyle.Top;
-            this.tbFilterGridDeleteList.Location = new System.Drawing.Point(0, 0);
-            this.tbFilterGridDeleteList.Name = "tbFilterGridDeleteList";
-            this.tbFilterGridDeleteList.PlaceholderText = "Search...";
-            this.tbFilterGridDeleteList.Size = new System.Drawing.Size(1293, 27);
-            this.tbFilterGridDeleteList.TabIndex = 24;
-            this.tbFilterGridDeleteList.TextChanged += new System.EventHandler(this.tbFilterGridDeleteList_TextChanged);
+            tbFilterGridDeleteList.Dock = DockStyle.Top;
+            tbFilterGridDeleteList.Location = new Point(0, 0);
+            tbFilterGridDeleteList.Name = "tbFilterGridDeleteList";
+            tbFilterGridDeleteList.PlaceholderText = "Search...";
+            tbFilterGridDeleteList.Size = new Size(1293, 27);
+            tbFilterGridDeleteList.TabIndex = 24;
+            tbFilterGridDeleteList.TextChanged += tbFilterGridDeleteList_TextChanged;
             // 
             // dataGridViewDeleteList
             // 
-            this.dataGridViewDeleteList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.DisplayedCells;
-            this.dataGridViewDeleteList.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            this.dataGridViewDeleteList.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.dataGridViewDeleteList.Location = new System.Drawing.Point(0, 0);
-            this.dataGridViewDeleteList.Name = "dataGridViewDeleteList";
-            this.dataGridViewDeleteList.RowHeadersWidth = 51;
-            this.dataGridViewDeleteList.RowTemplate.Height = 29;
-            this.dataGridViewDeleteList.Size = new System.Drawing.Size(1293, 475);
-            this.dataGridViewDeleteList.TabIndex = 0;
-            this.dataGridViewDeleteList.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellContentClick);
-            this.dataGridViewDeleteList.CellValueChanged += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewDeleteList_CellValueChanged);
-            this.dataGridViewDeleteList.CurrentCellDirtyStateChanged += new System.EventHandler(this.dataGridViewDeleteList_CurrentCellDirtyStateChanged);
+            dataGridViewDeleteList.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells;
+            dataGridViewDeleteList.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            dataGridViewDeleteList.Dock = DockStyle.Fill;
+            dataGridViewDeleteList.Location = new Point(0, 0);
+            dataGridViewDeleteList.Name = "dataGridViewDeleteList";
+            dataGridViewDeleteList.RowHeadersWidth = 51;
+            dataGridViewDeleteList.RowTemplate.Height = 29;
+            dataGridViewDeleteList.Size = new Size(1293, 475);
+            dataGridViewDeleteList.TabIndex = 0;
+            dataGridViewDeleteList.CellContentClick += dataGridViewDeleteList_CellContentClick;
+            dataGridViewDeleteList.CellValueChanged += dataGridViewDeleteList_CellValueChanged;
+            dataGridViewDeleteList.CurrentCellDirtyStateChanged += dataGridViewDeleteList_CurrentCellDirtyStateChanged;
             // 
             // tabPage3
             // 
-            this.tabPage3.Controls.Add(this.btnZipDeployment2);
-            this.tabPage3.Controls.Add(this.label6);
-            this.tabPage3.Controls.Add(this.tb_rename_new_name_title);
-            this.tabPage3.Controls.Add(this.Btn_RenameLevel);
-            this.tabPage3.Controls.Add(this.BtnGetCurrentName);
-            this.tabPage3.Controls.Add(this.label5);
-            this.tabPage3.Controls.Add(this.tb_rename_new_name_path);
-            this.tabPage3.Controls.Add(this.label4);
-            this.tabPage3.Controls.Add(this.tb_rename_current_name);
-            this.tabPage3.Location = new System.Drawing.Point(4, 29);
-            this.tabPage3.Name = "tabPage3";
-            this.tabPage3.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage3.Size = new System.Drawing.Size(1319, 730);
-            this.tabPage3.TabIndex = 2;
-            this.tabPage3.Text = "Copy Map with new name";
-            this.tabPage3.UseVisualStyleBackColor = true;
+            tabPage3.Controls.Add(btnZipDeployment2);
+            tabPage3.Controls.Add(label6);
+            tabPage3.Controls.Add(tb_rename_new_name_title);
+            tabPage3.Controls.Add(Btn_RenameLevel);
+            tabPage3.Controls.Add(BtnGetCurrentName);
+            tabPage3.Controls.Add(label5);
+            tabPage3.Controls.Add(tb_rename_new_name_path);
+            tabPage3.Controls.Add(label4);
+            tabPage3.Controls.Add(tb_rename_current_name);
+            tabPage3.Location = new Point(4, 29);
+            tabPage3.Name = "tabPage3";
+            tabPage3.Padding = new Padding(3);
+            tabPage3.Size = new Size(1319, 730);
+            tabPage3.TabIndex = 2;
+            tabPage3.Text = "Copy Map with new name";
+            tabPage3.UseVisualStyleBackColor = true;
             // 
             // btnZipDeployment2
             // 
-            this.btnZipDeployment2.Location = new System.Drawing.Point(192, 252);
-            this.btnZipDeployment2.Name = "btnZipDeployment2";
-            this.btnZipDeployment2.Size = new System.Drawing.Size(153, 29);
-            this.btnZipDeployment2.TabIndex = 8;
-            this.btnZipDeployment2.Text = "2. Zip Deployment";
-            this.btnZipDeployment2.UseVisualStyleBackColor = true;
-            this.btnZipDeployment2.Click += new System.EventHandler(this.btnZipDeployment2_Click);
+            btnZipDeployment2.Location = new Point(192, 252);
+            btnZipDeployment2.Name = "btnZipDeployment2";
+            btnZipDeployment2.Size = new Size(153, 29);
+            btnZipDeployment2.TabIndex = 8;
+            btnZipDeployment2.Text = "2. Zip Deployment";
+            btnZipDeployment2.UseVisualStyleBackColor = true;
+            btnZipDeployment2.Click += btnZipDeployment2_Click;
             // 
             // label6
             // 
-            this.label6.AutoSize = true;
-            this.label6.Location = new System.Drawing.Point(9, 175);
-            this.label6.Name = "label6";
-            this.label6.Size = new System.Drawing.Size(264, 20);
-            this.label6.TabIndex = 7;
-            this.label6.Text = "Your new name for the title in info.json";
+            label6.AutoSize = true;
+            label6.Location = new Point(9, 175);
+            label6.Name = "label6";
+            label6.Size = new Size(264, 20);
+            label6.TabIndex = 7;
+            label6.Text = "Your new name for the title in info.json";
             // 
             // tb_rename_new_name_title
             // 
-            this.tb_rename_new_name_title.Location = new System.Drawing.Point(9, 198);
-            this.tb_rename_new_name_title.Name = "tb_rename_new_name_title";
-            this.tb_rename_new_name_title.Size = new System.Drawing.Size(346, 27);
-            this.tb_rename_new_name_title.TabIndex = 6;
+            tb_rename_new_name_title.Location = new Point(9, 198);
+            tb_rename_new_name_title.Name = "tb_rename_new_name_title";
+            tb_rename_new_name_title.Size = new Size(346, 27);
+            tb_rename_new_name_title.TabIndex = 6;
             // 
             // Btn_RenameLevel
             // 
-            this.Btn_RenameLevel.Location = new System.Drawing.Point(9, 252);
-            this.Btn_RenameLevel.Name = "Btn_RenameLevel";
-            this.Btn_RenameLevel.Size = new System.Drawing.Size(153, 29);
-            this.Btn_RenameLevel.TabIndex = 5;
-            this.Btn_RenameLevel.Text = "1. Rename Level";
-            this.Btn_RenameLevel.UseVisualStyleBackColor = true;
-            this.Btn_RenameLevel.Click += new System.EventHandler(this.Btn_RenameLevel_Click);
+            Btn_RenameLevel.Location = new Point(9, 252);
+            Btn_RenameLevel.Name = "Btn_RenameLevel";
+            Btn_RenameLevel.Size = new Size(153, 29);
+            Btn_RenameLevel.TabIndex = 5;
+            Btn_RenameLevel.Text = "1. Rename Level";
+            Btn_RenameLevel.UseVisualStyleBackColor = true;
+            Btn_RenameLevel.Click += Btn_RenameLevel_Click;
             // 
             // BtnGetCurrentName
             // 
-            this.BtnGetCurrentName.Location = new System.Drawing.Point(374, 47);
-            this.BtnGetCurrentName.Name = "BtnGetCurrentName";
-            this.BtnGetCurrentName.Size = new System.Drawing.Size(121, 29);
-            this.BtnGetCurrentName.TabIndex = 4;
-            this.BtnGetCurrentName.Text = "Get Name";
-            this.BtnGetCurrentName.UseVisualStyleBackColor = true;
-            this.BtnGetCurrentName.Click += new System.EventHandler(this.BtnGetCurrentName_Click);
+            BtnGetCurrentName.Location = new Point(374, 47);
+            BtnGetCurrentName.Name = "BtnGetCurrentName";
+            BtnGetCurrentName.Size = new Size(121, 29);
+            BtnGetCurrentName.TabIndex = 4;
+            BtnGetCurrentName.Text = "Get Name";
+            BtnGetCurrentName.UseVisualStyleBackColor = true;
+            BtnGetCurrentName.Click += BtnGetCurrentName_Click;
             // 
             // label5
             // 
-            this.label5.AutoSize = true;
-            this.label5.Location = new System.Drawing.Point(8, 104);
-            this.label5.Name = "label5";
-            this.label5.Size = new System.Drawing.Size(242, 20);
-            this.label5.TabIndex = 3;
-            this.label5.Text = "Your new name included in filepath";
+            label5.AutoSize = true;
+            label5.Location = new Point(8, 104);
+            label5.Name = "label5";
+            label5.Size = new Size(242, 20);
+            label5.TabIndex = 3;
+            label5.Text = "Your new name included in filepath";
             // 
             // tb_rename_new_name_path
             // 
-            this.tb_rename_new_name_path.Location = new System.Drawing.Point(8, 127);
-            this.tb_rename_new_name_path.Name = "tb_rename_new_name_path";
-            this.tb_rename_new_name_path.Size = new System.Drawing.Size(346, 27);
-            this.tb_rename_new_name_path.TabIndex = 2;
+            tb_rename_new_name_path.Location = new Point(8, 127);
+            tb_rename_new_name_path.Name = "tb_rename_new_name_path";
+            tb_rename_new_name_path.Size = new Size(346, 27);
+            tb_rename_new_name_path.TabIndex = 2;
             // 
             // label4
             // 
-            this.label4.AutoSize = true;
-            this.label4.Location = new System.Drawing.Point(9, 26);
-            this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(210, 20);
-            this.label4.TabIndex = 1;
-            this.label4.Text = "Current name of selected level";
+            label4.AutoSize = true;
+            label4.Location = new Point(9, 26);
+            label4.Name = "label4";
+            label4.Size = new Size(210, 20);
+            label4.TabIndex = 1;
+            label4.Text = "Current name of selected level";
             // 
             // tb_rename_current_name
             // 
-            this.tb_rename_current_name.Location = new System.Drawing.Point(8, 49);
-            this.tb_rename_current_name.Name = "tb_rename_current_name";
-            this.tb_rename_current_name.ReadOnly = true;
-            this.tb_rename_current_name.Size = new System.Drawing.Size(346, 27);
-            this.tb_rename_current_name.TabIndex = 0;
+            tb_rename_current_name.Location = new Point(8, 49);
+            tb_rename_current_name.Name = "tb_rename_current_name";
+            tb_rename_current_name.ReadOnly = true;
+            tb_rename_current_name.Size = new Size(346, 27);
+            tb_rename_current_name.TabIndex = 0;
             // 
             // tabPage2
             // 
-            this.tabPage2.Controls.Add(this.richTextBoxErrors);
-            this.tabPage2.Location = new System.Drawing.Point(4, 29);
-            this.tabPage2.Name = "tabPage2";
-            this.tabPage2.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage2.Size = new System.Drawing.Size(1319, 730);
-            this.tabPage2.TabIndex = 1;
-            this.tabPage2.Text = "Errors";
-            this.tabPage2.UseVisualStyleBackColor = true;
+            tabPage2.Controls.Add(richTextBoxErrors);
+            tabPage2.Location = new Point(4, 29);
+            tabPage2.Name = "tabPage2";
+            tabPage2.Padding = new Padding(3);
+            tabPage2.Size = new Size(1319, 730);
+            tabPage2.TabIndex = 1;
+            tabPage2.Text = "Errors";
+            tabPage2.UseVisualStyleBackColor = true;
             // 
             // richTextBoxErrors
             // 
-            this.richTextBoxErrors.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.richTextBoxErrors.Location = new System.Drawing.Point(3, 3);
-            this.richTextBoxErrors.Name = "richTextBoxErrors";
-            this.richTextBoxErrors.Size = new System.Drawing.Size(1313, 724);
-            this.richTextBoxErrors.TabIndex = 0;
-            this.richTextBoxErrors.Text = "";
+            richTextBoxErrors.Dock = DockStyle.Fill;
+            richTextBoxErrors.Location = new Point(3, 3);
+            richTextBoxErrors.Name = "richTextBoxErrors";
+            richTextBoxErrors.Size = new Size(1313, 724);
+            richTextBoxErrors.TabIndex = 0;
+            richTextBoxErrors.Text = "";
             // 
             // tabPage4
             // 
-            this.tabPage4.Controls.Add(this.splitContainerCopyAssets);
-            this.tabPage4.Location = new System.Drawing.Point(4, 29);
-            this.tabPage4.Name = "tabPage4";
-            this.tabPage4.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPage4.Size = new System.Drawing.Size(1319, 730);
-            this.tabPage4.TabIndex = 3;
-            this.tabPage4.Text = "Copy Assets";
-            this.tabPage4.UseVisualStyleBackColor = true;
+            tabPage4.Controls.Add(splitContainerCopyAssets);
+            tabPage4.Location = new Point(4, 29);
+            tabPage4.Name = "tabPage4";
+            tabPage4.Padding = new Padding(3);
+            tabPage4.Size = new Size(1319, 730);
+            tabPage4.TabIndex = 3;
+            tabPage4.Text = "Copy Assets";
+            tabPage4.UseVisualStyleBackColor = true;
             // 
             // splitContainerCopyAssets
             // 
-            this.splitContainerCopyAssets.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splitContainerCopyAssets.FixedPanel = System.Windows.Forms.FixedPanel.Panel1;
-            this.splitContainerCopyAssets.Location = new System.Drawing.Point(3, 3);
-            this.splitContainerCopyAssets.Name = "splitContainerCopyAssets";
-            this.splitContainerCopyAssets.Orientation = System.Windows.Forms.Orientation.Horizontal;
+            splitContainerCopyAssets.Dock = DockStyle.Fill;
+            splitContainerCopyAssets.FixedPanel = FixedPanel.Panel1;
+            splitContainerCopyAssets.Location = new Point(3, 3);
+            splitContainerCopyAssets.Name = "splitContainerCopyAssets";
+            splitContainerCopyAssets.Orientation = Orientation.Horizontal;
             // 
             // splitContainerCopyAssets.Panel1
             // 
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.labelFileSummaryCopy);
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnCopyAssets);
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.label8);
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnScanAssets);
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.BtnCopyFromZipLevel);
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.lbLevelNameCopyFrom);
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.tbCopyFromLevel);
-            this.splitContainerCopyAssets.Panel1.Controls.Add(this.label9);
-            this.splitContainerCopyAssets.Panel1MinSize = 110;
+            splitContainerCopyAssets.Panel1.Controls.Add(labelFileSummaryCopy);
+            splitContainerCopyAssets.Panel1.Controls.Add(BtnCopyAssets);
+            splitContainerCopyAssets.Panel1.Controls.Add(label8);
+            splitContainerCopyAssets.Panel1.Controls.Add(BtnScanAssets);
+            splitContainerCopyAssets.Panel1.Controls.Add(BtnCopyFromZipLevel);
+            splitContainerCopyAssets.Panel1.Controls.Add(lbLevelNameCopyFrom);
+            splitContainerCopyAssets.Panel1.Controls.Add(tbCopyFromLevel);
+            splitContainerCopyAssets.Panel1.Controls.Add(label9);
+            splitContainerCopyAssets.Panel1MinSize = 110;
             // 
             // splitContainerCopyAssets.Panel2
             // 
-            this.splitContainerCopyAssets.Panel2.Controls.Add(this.dataGridViewCopyList);
-            this.splitContainerCopyAssets.Panel2.Controls.Add(this.cbAllNoneCopyList);
-            this.splitContainerCopyAssets.Panel2.Controls.Add(this.tbFilterGridCopyList);
-            this.splitContainerCopyAssets.Panel2MinSize = 300;
-            this.splitContainerCopyAssets.Size = new System.Drawing.Size(1313, 724);
-            this.splitContainerCopyAssets.SplitterDistance = 170;
-            this.splitContainerCopyAssets.TabIndex = 35;
+            splitContainerCopyAssets.Panel2.Controls.Add(dataGridViewCopyList);
+            splitContainerCopyAssets.Panel2.Controls.Add(cbAllNoneCopyList);
+            splitContainerCopyAssets.Panel2.Controls.Add(tbFilterGridCopyList);
+            splitContainerCopyAssets.Panel2MinSize = 300;
+            splitContainerCopyAssets.Size = new Size(1313, 724);
+            splitContainerCopyAssets.SplitterDistance = 170;
+            splitContainerCopyAssets.TabIndex = 35;
             // 
             // labelFileSummaryCopy
             // 
-            this.labelFileSummaryCopy.AutoSize = true;
-            this.labelFileSummaryCopy.Dock = System.Windows.Forms.DockStyle.Right;
-            this.labelFileSummaryCopy.Location = new System.Drawing.Point(1255, 0);
-            this.labelFileSummaryCopy.Name = "labelFileSummaryCopy";
-            this.labelFileSummaryCopy.Size = new System.Drawing.Size(58, 20);
-            this.labelFileSummaryCopy.TabIndex = 36;
-            this.labelFileSummaryCopy.Text = "label10";
-            this.labelFileSummaryCopy.TextAlign = System.Drawing.ContentAlignment.TopRight;
+            labelFileSummaryCopy.AutoSize = true;
+            labelFileSummaryCopy.Dock = DockStyle.Right;
+            labelFileSummaryCopy.Location = new Point(1255, 0);
+            labelFileSummaryCopy.Name = "labelFileSummaryCopy";
+            labelFileSummaryCopy.Size = new Size(58, 20);
+            labelFileSummaryCopy.TabIndex = 36;
+            labelFileSummaryCopy.Text = "label10";
+            labelFileSummaryCopy.TextAlign = ContentAlignment.TopRight;
             // 
             // BtnCopyAssets
             // 
-            this.BtnCopyAssets.Location = new System.Drawing.Point(183, 118);
-            this.BtnCopyAssets.Name = "BtnCopyAssets";
-            this.BtnCopyAssets.Size = new System.Drawing.Size(153, 29);
-            this.BtnCopyAssets.TabIndex = 35;
-            this.BtnCopyAssets.Text = "2. Copy Assets";
-            this.BtnCopyAssets.UseVisualStyleBackColor = true;
-            this.BtnCopyAssets.Click += new System.EventHandler(this.BtnCopyAssets_Click);
+            BtnCopyAssets.Location = new Point(183, 118);
+            BtnCopyAssets.Name = "BtnCopyAssets";
+            BtnCopyAssets.Size = new Size(153, 29);
+            BtnCopyAssets.TabIndex = 35;
+            BtnCopyAssets.Text = "2. Copy Assets";
+            BtnCopyAssets.UseVisualStyleBackColor = true;
+            BtnCopyAssets.Click += BtnCopyAssets_Click;
             // 
             // label8
             // 
-            this.label8.AutoSize = true;
-            this.label8.Location = new System.Drawing.Point(5, 14);
-            this.label8.Name = "label8";
-            this.label8.Size = new System.Drawing.Size(331, 20);
-            this.label8.TabIndex = 29;
-            this.label8.Text = "The zipped map level file you want to copy from";
+            label8.AutoSize = true;
+            label8.Location = new Point(5, 14);
+            label8.Name = "label8";
+            label8.Size = new Size(331, 20);
+            label8.TabIndex = 29;
+            label8.Text = "The zipped map level file you want to copy from";
             // 
             // BtnScanAssets
             // 
-            this.BtnScanAssets.Location = new System.Drawing.Point(5, 118);
-            this.BtnScanAssets.Name = "BtnScanAssets";
-            this.BtnScanAssets.Size = new System.Drawing.Size(153, 29);
-            this.BtnScanAssets.TabIndex = 34;
-            this.BtnScanAssets.Text = "1. Scan Assets";
-            this.BtnScanAssets.UseVisualStyleBackColor = true;
-            this.BtnScanAssets.Click += new System.EventHandler(this.BtnScanAssets_Click);
+            BtnScanAssets.Location = new Point(5, 118);
+            BtnScanAssets.Name = "BtnScanAssets";
+            BtnScanAssets.Size = new Size(153, 29);
+            BtnScanAssets.TabIndex = 34;
+            BtnScanAssets.Text = "1. Scan Assets";
+            BtnScanAssets.UseVisualStyleBackColor = true;
+            BtnScanAssets.Click += BtnScanAssets_Click;
             // 
             // BtnCopyFromZipLevel
             // 
-            this.BtnCopyFromZipLevel.Location = new System.Drawing.Point(575, 35);
-            this.BtnCopyFromZipLevel.Name = "BtnCopyFromZipLevel";
-            this.BtnCopyFromZipLevel.Size = new System.Drawing.Size(178, 29);
-            this.BtnCopyFromZipLevel.TabIndex = 31;
-            this.BtnCopyFromZipLevel.Text = "Select zip file";
-            this.BtnCopyFromZipLevel.UseVisualStyleBackColor = true;
-            this.BtnCopyFromZipLevel.Click += new System.EventHandler(this.BtnCopyFromZipLevel_Click);
+            BtnCopyFromZipLevel.Location = new Point(575, 35);
+            BtnCopyFromZipLevel.Name = "BtnCopyFromZipLevel";
+            BtnCopyFromZipLevel.Size = new Size(178, 29);
+            BtnCopyFromZipLevel.TabIndex = 31;
+            BtnCopyFromZipLevel.Text = "Select zip file";
+            BtnCopyFromZipLevel.UseVisualStyleBackColor = true;
+            BtnCopyFromZipLevel.Click += BtnCopyFromZipLevel_Click;
             // 
             // lbLevelNameCopyFrom
             // 
-            this.lbLevelNameCopyFrom.AutoSize = true;
-            this.lbLevelNameCopyFrom.Location = new System.Drawing.Point(96, 82);
-            this.lbLevelNameCopyFrom.Name = "lbLevelNameCopyFrom";
-            this.lbLevelNameCopyFrom.Size = new System.Drawing.Size(0, 20);
-            this.lbLevelNameCopyFrom.TabIndex = 33;
+            lbLevelNameCopyFrom.AutoSize = true;
+            lbLevelNameCopyFrom.Location = new Point(96, 82);
+            lbLevelNameCopyFrom.Name = "lbLevelNameCopyFrom";
+            lbLevelNameCopyFrom.Size = new Size(0, 20);
+            lbLevelNameCopyFrom.TabIndex = 33;
             // 
             // tbCopyFromLevel
             // 
-            this.tbCopyFromLevel.Location = new System.Drawing.Point(5, 37);
-            this.tbCopyFromLevel.Name = "tbCopyFromLevel";
-            this.tbCopyFromLevel.Size = new System.Drawing.Size(564, 27);
-            this.tbCopyFromLevel.TabIndex = 30;
+            tbCopyFromLevel.Location = new Point(5, 37);
+            tbCopyFromLevel.Name = "tbCopyFromLevel";
+            tbCopyFromLevel.Size = new Size(564, 27);
+            tbCopyFromLevel.TabIndex = 30;
             // 
             // label9
             // 
-            this.label9.AutoSize = true;
-            this.label9.Location = new System.Drawing.Point(7, 82);
-            this.label9.Name = "label9";
-            this.label9.Size = new System.Drawing.Size(83, 20);
-            this.label9.TabIndex = 32;
-            this.label9.Text = "Levelname:";
+            label9.AutoSize = true;
+            label9.Location = new Point(7, 82);
+            label9.Name = "label9";
+            label9.Size = new Size(83, 20);
+            label9.TabIndex = 32;
+            label9.Text = "Levelname:";
             // 
             // dataGridViewCopyList
             // 
-            this.dataGridViewCopyList.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.DisplayedCells;
-            this.dataGridViewCopyList.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-            this.dataGridViewCopyList.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.dataGridViewCopyList.Location = new System.Drawing.Point(0, 51);
-            this.dataGridViewCopyList.Name = "dataGridViewCopyList";
-            this.dataGridViewCopyList.RowHeadersWidth = 51;
-            this.dataGridViewCopyList.RowTemplate.Height = 29;
-            this.dataGridViewCopyList.Size = new System.Drawing.Size(1313, 499);
-            this.dataGridViewCopyList.TabIndex = 25;
-            this.dataGridViewCopyList.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewCopyList_CellContentClick);
-            this.dataGridViewCopyList.CellValueChanged += new System.Windows.Forms.DataGridViewCellEventHandler(this.dataGridViewCopyList_CellValueChanged);
+            dataGridViewCopyList.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells;
+            dataGridViewCopyList.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            dataGridViewCopyList.Dock = DockStyle.Fill;
+            dataGridViewCopyList.Location = new Point(0, 51);
+            dataGridViewCopyList.Name = "dataGridViewCopyList";
+            dataGridViewCopyList.RowHeadersWidth = 51;
+            dataGridViewCopyList.RowTemplate.Height = 29;
+            dataGridViewCopyList.Size = new Size(1313, 499);
+            dataGridViewCopyList.TabIndex = 25;
+            dataGridViewCopyList.CellContentClick += dataGridViewCopyList_CellContentClick;
+            dataGridViewCopyList.CellValueChanged += dataGridViewCopyList_CellValueChanged;
             // 
             // cbAllNoneCopyList
             // 
-            this.cbAllNoneCopyList.Checked = true;
-            this.cbAllNoneCopyList.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbAllNoneCopyList.Dock = System.Windows.Forms.DockStyle.Top;
-            this.cbAllNoneCopyList.Location = new System.Drawing.Point(0, 27);
-            this.cbAllNoneCopyList.Name = "cbAllNoneCopyList";
-            this.cbAllNoneCopyList.Size = new System.Drawing.Size(1313, 24);
-            this.cbAllNoneCopyList.TabIndex = 26;
-            this.cbAllNoneCopyList.Text = "Selection All / None";
-            this.cbAllNoneCopyList.UseVisualStyleBackColor = true;
-            this.cbAllNoneCopyList.CheckedChanged += new System.EventHandler(this.cbAllNoneCopyList_CheckedChanged);
+            cbAllNoneCopyList.Checked = true;
+            cbAllNoneCopyList.CheckState = CheckState.Checked;
+            cbAllNoneCopyList.Dock = DockStyle.Top;
+            cbAllNoneCopyList.Location = new Point(0, 27);
+            cbAllNoneCopyList.Name = "cbAllNoneCopyList";
+            cbAllNoneCopyList.Size = new Size(1313, 24);
+            cbAllNoneCopyList.TabIndex = 26;
+            cbAllNoneCopyList.Text = "Selection All / None";
+            cbAllNoneCopyList.UseVisualStyleBackColor = true;
+            cbAllNoneCopyList.CheckedChanged += cbAllNoneCopyList_CheckedChanged;
             // 
             // tbFilterGridCopyList
             // 
-            this.tbFilterGridCopyList.Dock = System.Windows.Forms.DockStyle.Top;
-            this.tbFilterGridCopyList.Location = new System.Drawing.Point(0, 0);
-            this.tbFilterGridCopyList.Name = "tbFilterGridCopyList";
-            this.tbFilterGridCopyList.PlaceholderText = "Search...";
-            this.tbFilterGridCopyList.Size = new System.Drawing.Size(1313, 27);
-            this.tbFilterGridCopyList.TabIndex = 27;
-            this.tbFilterGridCopyList.TextChanged += new System.EventHandler(this.tbFilterGridCopyList_TextChanged);
+            tbFilterGridCopyList.Dock = DockStyle.Top;
+            tbFilterGridCopyList.Location = new Point(0, 0);
+            tbFilterGridCopyList.Name = "tbFilterGridCopyList";
+            tbFilterGridCopyList.PlaceholderText = "Search...";
+            tbFilterGridCopyList.Size = new Size(1313, 27);
+            tbFilterGridCopyList.TabIndex = 27;
+            tbFilterGridCopyList.TextChanged += tbFilterGridCopyList_TextChanged;
+            // 
+            // tabPage5
+            // 
+            tabPage5.Controls.Add(blazorWebView1);
+            tabPage5.Location = new Point(4, 29);
+            tabPage5.Name = "tabPage5";
+            tabPage5.Size = new Size(1319, 730);
+            tabPage5.TabIndex = 4;
+            tabPage5.Text = "Blazor";
+            tabPage5.UseVisualStyleBackColor = true;
+            // 
+            // blazorWebView1
+            // 
+            blazorWebView1.Dock = DockStyle.Fill;
+            blazorWebView1.Location = new Point(0, 0);
+            blazorWebView1.Name = "blazorWebView1";
+            blazorWebView1.Size = new Size(1319, 730);
+            blazorWebView1.TabIndex = 0;
+            blazorWebView1.Text = "blazorWebView1";
             // 
             // coboCompressionLevel1
             // 
-            this.coboCompressionLevel1.FormattingEnabled = true;
-            this.coboCompressionLevel1.Location = new System.Drawing.Point(824, 22);
-            this.coboCompressionLevel1.Name = "coboCompressionLevel1";
-            this.coboCompressionLevel1.Size = new System.Drawing.Size(165, 28);
-            this.coboCompressionLevel1.TabIndex = 30;
+            coboCompressionLevel1.FormattingEnabled = true;
+            coboCompressionLevel1.Location = new Point(824, 22);
+            coboCompressionLevel1.Name = "coboCompressionLevel1";
+            coboCompressionLevel1.Size = new Size(165, 28);
+            coboCompressionLevel1.TabIndex = 30;
             // 
             // tbProgress
             // 
-            this.tbProgress.Location = new System.Drawing.Point(10, 109);
-            this.tbProgress.Margin = new System.Windows.Forms.Padding(2);
-            this.tbProgress.Name = "tbProgress";
-            this.tbProgress.ReadOnly = true;
-            this.tbProgress.Size = new System.Drawing.Size(1054, 27);
-            this.tbProgress.TabIndex = 25;
+            tbProgress.Location = new Point(10, 109);
+            tbProgress.Margin = new Padding(2);
+            tbProgress.Name = "tbProgress";
+            tbProgress.ReadOnly = true;
+            tbProgress.Size = new Size(1054, 27);
+            tbProgress.TabIndex = 25;
             // 
             // btnLoadLevelZipFile
             // 
-            this.btnLoadLevelZipFile.Location = new System.Drawing.Point(582, 22);
-            this.btnLoadLevelZipFile.Name = "btnLoadLevelZipFile";
-            this.btnLoadLevelZipFile.Size = new System.Drawing.Size(178, 29);
-            this.btnLoadLevelZipFile.TabIndex = 28;
-            this.btnLoadLevelZipFile.Text = "Select zip file";
-            this.btnLoadLevelZipFile.UseVisualStyleBackColor = true;
-            this.btnLoadLevelZipFile.Click += new System.EventHandler(this.btnLoadLevelZipFile_Click);
+            btnLoadLevelZipFile.Location = new Point(582, 22);
+            btnLoadLevelZipFile.Name = "btnLoadLevelZipFile";
+            btnLoadLevelZipFile.Size = new Size(178, 29);
+            btnLoadLevelZipFile.TabIndex = 28;
+            btnLoadLevelZipFile.Text = "Select zip file";
+            btnLoadLevelZipFile.UseVisualStyleBackColor = true;
+            btnLoadLevelZipFile.Click += btnLoadLevelZipFile_Click;
             // 
             // tbLevelZipFile
             // 
-            this.tbLevelZipFile.Location = new System.Drawing.Point(12, 24);
-            this.tbLevelZipFile.Name = "tbLevelZipFile";
-            this.tbLevelZipFile.Size = new System.Drawing.Size(564, 27);
-            this.tbLevelZipFile.TabIndex = 27;
+            tbLevelZipFile.Location = new Point(12, 24);
+            tbLevelZipFile.Name = "tbLevelZipFile";
+            tbLevelZipFile.Size = new Size(564, 27);
+            tbLevelZipFile.TabIndex = 27;
             // 
             // label3
             // 
-            this.label3.AutoSize = true;
-            this.label3.Location = new System.Drawing.Point(12, 1);
-            this.label3.Name = "label3";
-            this.label3.Size = new System.Drawing.Size(182, 20);
-            this.label3.TabIndex = 26;
-            this.label3.Text = "Your zipped map level file";
+            label3.AutoSize = true;
+            label3.Location = new Point(12, 1);
+            label3.Name = "label3";
+            label3.Size = new Size(182, 20);
+            label3.TabIndex = 26;
+            label3.Text = "Your zipped map level file";
             // 
             // btn_openLevelFolder
             // 
-            this.btn_openLevelFolder.Location = new System.Drawing.Point(582, 75);
-            this.btn_openLevelFolder.Name = "btn_openLevelFolder";
-            this.btn_openLevelFolder.Size = new System.Drawing.Size(178, 29);
-            this.btn_openLevelFolder.TabIndex = 15;
-            this.btn_openLevelFolder.Text = "Select Level Folder";
-            this.btn_openLevelFolder.UseVisualStyleBackColor = true;
-            this.btn_openLevelFolder.Click += new System.EventHandler(this.btn_openLevelFolder_Click);
+            btn_openLevelFolder.Location = new Point(582, 75);
+            btn_openLevelFolder.Name = "btn_openLevelFolder";
+            btn_openLevelFolder.Size = new Size(178, 29);
+            btn_openLevelFolder.TabIndex = 15;
+            btn_openLevelFolder.Text = "Select Level Folder";
+            btn_openLevelFolder.UseVisualStyleBackColor = true;
+            btn_openLevelFolder.Click += btn_openLevelFolder_Click;
             // 
             // tbLevelPath
             // 
-            this.tbLevelPath.Location = new System.Drawing.Point(12, 77);
-            this.tbLevelPath.Name = "tbLevelPath";
-            this.tbLevelPath.Size = new System.Drawing.Size(564, 27);
-            this.tbLevelPath.TabIndex = 14;
-            this.tbLevelPath.TextChanged += new System.EventHandler(this.textBox1_TextChanged);
+            tbLevelPath.Location = new Point(12, 77);
+            tbLevelPath.Name = "tbLevelPath";
+            tbLevelPath.Size = new Size(564, 27);
+            tbLevelPath.TabIndex = 14;
+            tbLevelPath.TextChanged += textBox1_TextChanged;
             // 
             // label1
             // 
-            this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(12, 54);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(255, 20);
-            this.label1.TabIndex = 13;
-            this.label1.Text = "or Level Folder starting with /levels/...";
+            label1.AutoSize = true;
+            label1.Location = new Point(12, 54);
+            label1.Name = "label1";
+            label1.Size = new Size(255, 20);
+            label1.TabIndex = 13;
+            label1.Text = "or Level Folder starting with /levels/...";
             // 
             // panel1
             // 
-            this.panel1.Controls.Add(this.label7);
-            this.panel1.Controls.Add(this.coboCompressionLevel1);
-            this.panel1.Controls.Add(this.tbLevelZipFile);
-            this.panel1.Controls.Add(this.tbProgress);
-            this.panel1.Controls.Add(this.btnLoadLevelZipFile);
-            this.panel1.Controls.Add(this.label1);
-            this.panel1.Controls.Add(this.tbLevelPath);
-            this.panel1.Controls.Add(this.label3);
-            this.panel1.Controls.Add(this.btn_openLevelFolder);
-            this.panel1.Dock = System.Windows.Forms.DockStyle.Top;
-            this.panel1.Location = new System.Drawing.Point(0, 0);
-            this.panel1.Name = "panel1";
-            this.panel1.Size = new System.Drawing.Size(1327, 140);
-            this.panel1.TabIndex = 1;
+            panel1.Controls.Add(label7);
+            panel1.Controls.Add(coboCompressionLevel1);
+            panel1.Controls.Add(tbLevelZipFile);
+            panel1.Controls.Add(tbProgress);
+            panel1.Controls.Add(btnLoadLevelZipFile);
+            panel1.Controls.Add(label1);
+            panel1.Controls.Add(tbLevelPath);
+            panel1.Controls.Add(label3);
+            panel1.Controls.Add(btn_openLevelFolder);
+            panel1.Dock = DockStyle.Top;
+            panel1.Location = new Point(0, 0);
+            panel1.Name = "panel1";
+            panel1.Size = new Size(1327, 140);
+            panel1.TabIndex = 1;
             // 
             // label7
             // 
-            this.label7.AutoSize = true;
-            this.label7.Location = new System.Drawing.Point(824, 1);
-            this.label7.Name = "label7";
-            this.label7.Size = new System.Drawing.Size(341, 20);
-            this.label7.TabIndex = 31;
-            this.label7.Text = "Compression Level for deployment file generation";
+            label7.AutoSize = true;
+            label7.Location = new Point(824, 1);
+            label7.Name = "label7";
+            label7.Size = new Size(341, 20);
+            label7.TabIndex = 31;
+            label7.Text = "Compression Level for deployment file generation";
             // 
             // Form1
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1327, 915);
-            this.Controls.Add(this.tabControl1);
-            this.Controls.Add(this.panel1);
-            this.Name = "Form1";
-            this.tabControl1.ResumeLayout(false);
-            this.tabPage1.ResumeLayout(false);
-            this.splitContainerShrink.Panel1.ResumeLayout(false);
-            this.splitContainerShrink.Panel1.PerformLayout();
-            this.splitContainerShrink.Panel2.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainerShrink)).EndInit();
-            this.splitContainerShrink.ResumeLayout(false);
-            this.splitContainer_grid.Panel1.ResumeLayout(false);
-            this.splitContainer_grid.Panel1.PerformLayout();
-            this.splitContainer_grid.Panel2.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainer_grid)).EndInit();
-            this.splitContainer_grid.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewDeleteList)).EndInit();
-            this.tabPage3.ResumeLayout(false);
-            this.tabPage3.PerformLayout();
-            this.tabPage2.ResumeLayout(false);
-            this.tabPage4.ResumeLayout(false);
-            this.splitContainerCopyAssets.Panel1.ResumeLayout(false);
-            this.splitContainerCopyAssets.Panel1.PerformLayout();
-            this.splitContainerCopyAssets.Panel2.ResumeLayout(false);
-            this.splitContainerCopyAssets.Panel2.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.splitContainerCopyAssets)).EndInit();
-            this.splitContainerCopyAssets.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.dataGridViewCopyList)).EndInit();
-            this.panel1.ResumeLayout(false);
-            this.panel1.PerformLayout();
-            this.ResumeLayout(false);
-
+            AutoScaleDimensions = new SizeF(8F, 20F);
+            AutoScaleMode = AutoScaleMode.Font;
+            ClientSize = new Size(1327, 915);
+            Controls.Add(tabControl1);
+            Controls.Add(panel1);
+            Name = "Form1";
+            tabControl1.ResumeLayout(false);
+            tabPage1.ResumeLayout(false);
+            splitContainerShrink.Panel1.ResumeLayout(false);
+            splitContainerShrink.Panel1.PerformLayout();
+            splitContainerShrink.Panel2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)splitContainerShrink).EndInit();
+            splitContainerShrink.ResumeLayout(false);
+            splitContainer_grid.Panel1.ResumeLayout(false);
+            splitContainer_grid.Panel1.PerformLayout();
+            splitContainer_grid.Panel2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)splitContainer_grid).EndInit();
+            splitContainer_grid.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)dataGridViewDeleteList).EndInit();
+            tabPage3.ResumeLayout(false);
+            tabPage3.PerformLayout();
+            tabPage2.ResumeLayout(false);
+            tabPage4.ResumeLayout(false);
+            splitContainerCopyAssets.Panel1.ResumeLayout(false);
+            splitContainerCopyAssets.Panel1.PerformLayout();
+            splitContainerCopyAssets.Panel2.ResumeLayout(false);
+            splitContainerCopyAssets.Panel2.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)splitContainerCopyAssets).EndInit();
+            splitContainerCopyAssets.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)dataGridViewCopyList).EndInit();
+            tabPage5.ResumeLayout(false);
+            panel1.ResumeLayout(false);
+            panel1.PerformLayout();
+            ResumeLayout(false);
         }
 
         #endregion
@@ -761,5 +782,7 @@
         private TextBox tbFilterGridCopyList;
         private Button BtnCopyAssets;
         private Label labelFileSummaryCopy;
+        private TabPage tabPage5;
+        private Microsoft.AspNetCore.Components.WebView.WindowsForms.BlazorWebView blazorWebView1;
     }
 }

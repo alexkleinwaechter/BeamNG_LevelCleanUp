@@ -1,6 +1,11 @@
-﻿using BeamNG_LevelCleanUp.Communication;
+﻿using BeamNG_LevelCleanUp.BlazorUI;
+using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
+using Microsoft.AspNetCore.Components.WebView;
+using Microsoft.AspNetCore.Components.WebView.WindowsForms;
+using Microsoft.Extensions.DependencyInjection;
+using MudBlazor.Services;
 using System.ComponentModel;
 using System.Data;
 using System.IO.Compression;
@@ -26,6 +31,16 @@ namespace BeamNG_LevelCleanUp
         public Form1()
         {
             InitializeComponent();
+            var serviceCollection = new ServiceCollection();
+            serviceCollection.AddWindowsFormsBlazorWebView();
+            //serviceCollection.AddSingleton<WeatherForecastService>();
+
+            // Code for MudBlazor
+            serviceCollection.AddMudServices();
+
+            blazorWebView1.HostPage = @"wwwroot\index.html";
+            blazorWebView1.Services = serviceCollection.BuildServiceProvider();
+            blazorWebView1.RootComponents.Add<App>("#app");
         }
 
         public Task InitializeAsync(CancellationToken token)
@@ -106,12 +121,14 @@ namespace BeamNG_LevelCleanUp
                 }
             });
 
-            return Task.Delay(TimeSpan.FromSeconds(2));
+            //Nur für splashscreen
+            return Task.Delay(TimeSpan.FromSeconds(0));
         }
 
         public void Initialize()
         {
-            Thread.Sleep(TimeSpan.FromSeconds(5));
+            //Nur für splashscreen
+            //Thread.Sleep(TimeSpan.FromSeconds(5));
         }
 
 
@@ -262,7 +279,7 @@ namespace BeamNG_LevelCleanUp
                     AssetType = asset.CopyAssetType.ToString(),
                     FullName = asset.Name,
                     Selected = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? false : this.cbAllNoneCopyList.Checked,
-                    SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length: 0) / 1024f) / 1024f, 2),
+                    SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2),
                     Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false,
                     DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty,
                 };
