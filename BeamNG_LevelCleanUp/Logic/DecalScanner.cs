@@ -63,7 +63,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     var x = instances.EnumerateObject();
                     foreach (var instance in x)
                     {
-                        PubSubChannel.SendMessage(false, $"Scan Decal {instance.Name}", true);
+                        //PubSubChannel.SendMessage(false, $"Scan Decal {instance.Name}", true);
                         _decalNames.Add(instance.Name);
                     }
                 }

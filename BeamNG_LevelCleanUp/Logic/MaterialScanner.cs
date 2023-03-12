@@ -86,7 +86,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                     Cubemap = material.Cubemap,
                                 });
                             }
-                            PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
+                            //PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
                             _materials.Add(material);
 
                             var temp = child.Value.EnumerateObject().ToList();

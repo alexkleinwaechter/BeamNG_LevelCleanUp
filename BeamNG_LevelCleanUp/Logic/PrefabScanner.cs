@@ -55,7 +55,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     ShapeName = shapeName
                 };
                 AddAsset(asset);
-                PubSubChannel.SendMessage(false, $"Read Prefab asset {asset.Name}", true);
+                //PubSubChannel.SendMessage(false, $"Read Prefab asset {asset.Name}", true);
             }
         }
 

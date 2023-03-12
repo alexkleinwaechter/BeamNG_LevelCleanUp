@@ -36,7 +36,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
-                        PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
+                        //PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {
                             //if (asset.Filename.Contains("turbine_blades")) Debugger.Break();

@@ -1,28 +1,25 @@
-﻿<MudCard>
-    <MudCardHeader>
-        <CardHeaderContent>
-            <MudText Typo="Typo.h6">@Title</MudText>
-        </CardHeaderContent>
-    </MudCardHeader>
-    <MudCardContent>
-        <MudText>@Description</MudText>
-        @if (!string.IsNullOrEmpty(_selectedFile))
-        {
-            <MudListItem Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
-                @_selectedFile
-            </MudListItem>
-        }
-    </MudCardContent>
-    <MudCardActions>
-        <MudButton HtmlTag="label"
-                   Variant="Variant.Filled"
-                   Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.FileOpen"
-                   OnClick="OpenFile">
-            Select File
-        </MudButton>
-    </MudCardActions>
-</MudCard>
+﻿@if (!string.IsNullOrEmpty(Title))
+{
+    <MudText Typo="Typo.h6">@Title</MudText>
+}
+@if (!string.IsNullOrEmpty(Description))
+{
+    <MudText>@Description</MudText>
+}
+@if (!string.IsNullOrEmpty(_selectedFile))
+{
+    <MudListItem Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
+        @_selectedFile
+    </MudListItem>
+}
+<MudButton HtmlTag="label"
+           Variant="Variant.Filled"
+           Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.FileOpen"
+           OnClick="OpenFile"
+           Disabled="@Disabled">
+    Select File
+</MudButton>
 
 @code {
     [Parameter]
@@ -31,6 +28,8 @@
     public string Description { get; set; }
     [Parameter]
     public EventCallback<string> OnFileSelected { get; set; }
+    [Parameter]
+    public bool Disabled { get; set; }
     private OpenFileDialog OpenFileDialog { get; set; } = new OpenFileDialog();
     private string _selectedFile { get; set; } = string.Empty;
 

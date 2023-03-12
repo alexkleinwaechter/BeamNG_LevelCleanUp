@@ -1,29 +1,239 @@
 ﻿@page "/MapShrink"
 @using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication;
 @using BeamNG_LevelCleanUp.Logic;
+@using BeamNG_LevelCleanUp.Objects;
 @using Microsoft.AspNetCore.Components.Forms;
 @inject ISnackbar Snackbar
 
 <h3>MapShrink</h3>
-<FileSelectComponent OnFileSelected="FileSelected"
-                     Title="Select your zipped map-file"
-                     Description="Always use a copy of your project.">
-</FileSelectComponent>
+<MudExpansionPanels @ref="FileSelect">
+    <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
+        <FileSelectComponent OnFileSelected="FileSelected"
+                             Description="Always use a copy of your project."
+                             Disabled="@_fileSelectDisabled">
+        </FileSelectComponent>
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+@if (BindingListDelete.Any())
+{
+    <MudTable T="GridFileListItem" Items="@BindingListDelete" Hover="true"
+          MultiSelection="true" @bind-SelectedItems="_selectedItems"
+          @bind-Value="_searchString"
+          Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Unused Files</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="File">@context.FullName</MudTd>
+            <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
+{
+    <MudText Color="Color.Success">Nothing to delete. Well done.</MudText>
+}
+
+@if (_errors.Any())
+{
+    <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom))">Click to see Errors</MudButton>
+}
+<MudDrawer @bind-Open="@_openError" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+    <MudList Clickable="true" Dense="true" DisableGutters="false">
+        @foreach (var err in _errors)
+        {
+            <MudListItem @key="@err" Style="border-bottom:1px solid grey">
+                <MudText Typo="Typo.h6">@err</MudText>
+            </MudListItem>
+        }
+
+    </MudList>
+</MudDrawer>
 
 @code {
+    private string _levelName { get; set; }
     private string _levelPath { get; set; }
+    private string _beamLogFilePath { get; set; } = string.Empty;
+    private List<string> _missingFiles { get; set; } = new List<string>();
+    private List<string> _errors { get; set; } = new List<string>();
     private Snackbar _unzipSnackbar;
+    private BeamFileReader Reader { get; set; }
+    private string _fileSelectTitle = "Select your zipped map-file";
+    private bool _fileSelectDisabled { get; set; }
+    private bool _fileSelectExpanded { get; set; }
+    private bool _openError;
+    private Anchor _anchor;
+    private string width, height;
+    private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
+    private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
+    private bool _fixed_Header = true;
+    private MudExpansionPanels FileSelect { get; set; }
+    private string _searchString = string.Empty;
+
     protected async Task FileSelected(string file)
     {
+        FileSelect.CollapseAll();
+        _fileSelectDisabled = true;
+        _levelName = null;
+        _levelPath = null;
+        _beamLogFilePath = null;
+        _missingFiles = new List<string>();
+        _errors = new List<string>();
+        _openError = false;
+        BindingListDelete = new List<GridFileListItem>();
+
         await Task.Run(() =>
         {
-            _unzipSnackbar = Snackbar.Add("Start unzipping level", Severity.Normal, config =>
+            try
             {
-                config.VisibleStateDuration = int.MaxValue;
-            });
-            _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
-            Snackbar.Add("Unzipping finished", Severity.Success);
-            Snackbar.Remove(_unzipSnackbar);
+                _unzipSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
+                {
+                    config.VisibleStateDuration = int.MaxValue;
+                });
+                _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
+                Snackbar.Add("Unzipping finished", Severity.Success);
+                Snackbar.Remove(_unzipSnackbar);
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+                _fileSelectDisabled = false;
+            }
+
         });
+        await AnalyzeLevel();
+        _fileSelectDisabled = false;
+    }
+
+    protected async Task AnalyzeLevel()
+    {
+        _fileSelectDisabled = true;
+        await Task.Run(() =>
+        {
+            try
+            {
+                Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
+                Reader.ReadAll();
+                _missingFiles = Reader.GetMissingFilesFromBeamLog();
+                _levelName = Reader.GetLevelName();
+                PubSubChannel.SendMessage(false, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+                _fileSelectDisabled = false;
+            }
+        });
+        //tb_rename_current_name.Text = _levelName;
+        FillDeleteList();
+        _fileSelectDisabled = false;
+    }
+
+    protected override void OnInitialized()
+    {
+        _fileSelectExpanded = true;
+        var consumer = Task.Run(async () =>
+        {
+            while (await PubSubChannel.ch.Reader.WaitToReadAsync())
+            {
+                var msg = await PubSubChannel.ch.Reader.ReadAsync();
+                if (!msg.IsError)
+                {
+                    Snackbar.Add(msg.Message, Severity.Info);
+                }
+                else
+                {
+                    Snackbar.Add(msg.Message, Severity.Error);
+                    _errors.Add(msg.Message);
+                }
+            }
+        });
+    }
+
+    void OpenDrawer(Anchor anchor)
+    {
+        _openError = true;
+        this._anchor = anchor;
+
+        switch (anchor)
+        {
+            case Anchor.Start:
+                width = "300px";
+                height = "100%";
+                break;
+            case Anchor.End:
+                width = "400px";
+                height = "100%";
+                break;
+            case Anchor.Bottom:
+                width = "100%";
+                height = "200px";
+                break;
+            case Anchor.Top:
+                width = "100%";
+                height = "350px";
+                break;
+        }
+    }
+
+    private void ShowException(Exception ex)
+    {
+        var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
+        Snackbar.Add(message, Severity.Error);
+        _errors.Add(message);
+
+    }
+
+    private void FillDeleteList()
+    {
+        // this.cbAllNoneDeleteList.Checked das letzte true in selected
+        foreach (var file in Reader.GetDeleteList())
+        {
+            var item = new GridFileListItem
+                {
+                    FullName = file.FullName,
+                    SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
+                };
+            if (!_missingFiles.Any(x => x.Equals(file.FullName, StringComparison.OrdinalIgnoreCase)))
+            {
+                _selectedItems.Add(item);
+            }
+            BindingListDelete.Add(item);
+        }
+    }
+
+    private string GetFileSelectTitle()
+    {
+        if (!string.IsNullOrEmpty(_levelName))
+        {
+            return $"{_fileSelectTitle} > {_levelName}";
+        }
+        else
+        {
+            return $"{_fileSelectTitle}";
+        }
+    }
+
+    private bool FilterFunc1(GridFileListItem element) => FilterFunc(element, _searchString);
+
+    private bool FilterFunc(GridFileListItem element, string searchString)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (element.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (element.SizeMb.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        //if ($"{element.Number} {element.Position} {element.Molar}".Contains(searchString))
+        //    return true;
+        return false;
     }
 }
