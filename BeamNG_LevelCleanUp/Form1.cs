@@ -2,7 +2,6 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
-using Microsoft.AspNetCore.Components.WebView;
 using Microsoft.AspNetCore.Components.WebView.WindowsForms;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
@@ -11,6 +10,7 @@ using System.Data;
 using System.IO.Compression;
 using System.Reflection;
 using Application = System.Windows.Forms.Application;
+using Microsoft.Extensions.Logging;
 
 namespace BeamNG_LevelCleanUp
 {
@@ -39,6 +39,10 @@ namespace BeamNG_LevelCleanUp
             serviceCollection.AddMudServices();
 
             blazorWebView1.HostPage = @"wwwroot\index.html";
+#if DEBUG
+            serviceCollection.AddBlazorWebViewDeveloperTools();
+            serviceCollection.AddLogging();
+#endif
             blazorWebView1.Services = serviceCollection.BuildServiceProvider();
             blazorWebView1.RootComponents.Add<App>("#app");
         }

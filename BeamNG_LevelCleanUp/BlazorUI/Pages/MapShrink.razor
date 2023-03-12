@@ -1,8 +1,15 @@
 ﻿@page "/MapShrink"
 @using BeamNG_LevelCleanUp.BlazorUI.Components
+@using Microsoft.AspNetCore.Components.Forms;
 
 <h3>MapShrink</h3>
-<LevelSelect></LevelSelect>
-@code {
+<FileSelectComponent OnFileSelected="FileSelected"></FileSelectComponent>
 
+@code {
+    //private string _levelZipFileName { get; set; }
+    //private string _levelZipFileSize { get; set; }
+    protected async Task FileSelected(string file)
+    {
+
+    }
 }

@@ -1,0 +1,50 @@
+﻿@using Microsoft.AspNetCore.Components.Forms;
+<MudStack Row="true">
+    <MudButton HtmlTag="label"
+               Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.FileOpen"
+               OnClick="OpenFile">
+        Select File
+    </MudButton>
+    @if (!string.IsNullOrEmpty(_selectedFile))
+    {
+        <MudListItem Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
+            @_selectedFile
+        </MudListItem>
+    }
+</MudStack>
+@code {
+    [Parameter]
+    public EventCallback<string> OnFileSelected { get; set; }
+    private OpenFileDialog OpenFileDialog { get; set; } = new OpenFileDialog();
+    private string _selectedFile { get; set; } = string.Empty;
+
+    //private IList<IBrowserFile> files = new List<IBrowserFile>();
+
+    private async Task ZipFileSelected(IBrowserFile file)
+    {
+        //files.Add(file);
+        await OnFileSelected.InvokeAsync(file.Name);
+    }
+
+    private async Task OpenFile()
+    {
+        this.OpenFileDialog.Filter = "Zipfiles (*.zip)|*.zip";
+        this.OpenFileDialog.FileName = String.Empty;
+        try
+        {
+            System.Windows.Forms.DialogResult result = OpenFileDialog.ShowDialog();
+            if (result == System.Windows.Forms.DialogResult.OK)
+            {
+                _selectedFile = OpenFileDialog.FileName;
+                await OnFileSelected.InvokeAsync(_selectedFile);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw (ex);
+        }
+
+    }
+}

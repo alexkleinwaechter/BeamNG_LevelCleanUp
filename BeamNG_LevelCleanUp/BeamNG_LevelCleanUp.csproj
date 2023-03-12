@@ -16,4 +16,9 @@
     <PackageReference Include="MudBlazor" Version="6.1.9" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="BlazorUI\Interfaces\" />
+    <Folder Include="BlazorUI\Services\" />
+  </ItemGroup>
+
 </Project>
