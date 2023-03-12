@@ -1,15 +1,29 @@
 ﻿@page "/MapShrink"
 @using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Logic;
 @using Microsoft.AspNetCore.Components.Forms;
+@inject ISnackbar Snackbar
 
 <h3>MapShrink</h3>
-<FileSelectComponent OnFileSelected="FileSelected"></FileSelectComponent>
+<FileSelectComponent OnFileSelected="FileSelected"
+                     Title="Select your zipped map-file"
+                     Description="Always use a copy of your project.">
+</FileSelectComponent>
 
 @code {
-    //private string _levelZipFileName { get; set; }
-    //private string _levelZipFileSize { get; set; }
+    private string _levelPath { get; set; }
+    private Snackbar _unzipSnackbar;
     protected async Task FileSelected(string file)
     {
-
+        await Task.Run(() =>
+        {
+            _unzipSnackbar = Snackbar.Add("Start unzipping level", Severity.Normal, config =>
+            {
+                config.VisibleStateDuration = int.MaxValue;
+            });
+            _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
+            Snackbar.Add("Unzipping finished", Severity.Success);
+            Snackbar.Remove(_unzipSnackbar);
+        });
     }
 }
