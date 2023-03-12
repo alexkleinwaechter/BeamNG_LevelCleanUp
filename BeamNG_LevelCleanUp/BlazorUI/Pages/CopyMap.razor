@@ -1,6 +1,261 @@
 ﻿@page "/CopyMap"
-<h3>CopyMap</h3>
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication;
+@using BeamNG_LevelCleanUp.Logic;
+@using BeamNG_LevelCleanUp.Objects;
+@using Microsoft.AspNetCore.Components.Forms;
+@using System.IO.Compression;
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<div class="content">
+    <h3>Copy map with new name</h3>
+    <MudExpansionPanels @ref="FileSelect">
+        <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
+            <FileSelectComponent OnFileSelected="FileSelected"
+                                 Description="Always use a copy of your project."
+                                 Disabled="@_fileSelectDisabled">
+            </FileSelectComponent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
+    @if (!string.IsNullOrEmpty(_renameCurrentName))
+    {
+        <MudTextField Immediate @bind-Value="_renameCurrentName" ReadOnly Label="Current name of selected level" Variant="Variant.Text"></MudTextField>
+        <MudTextField Immediate @bind-Value="_renameNewNamePath" Label="Your new name included in filepaths" Variant="Variant.Text"></MudTextField>
+        <MudTextField Immediate @bind-Value="_renameNewTitle" Label="Your new display title in info.json" Variant="Variant.Text"></MudTextField>
+    }
+    <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+        <MudList Clickable="true" Dense="true" DisableGutters="false">
+            @{
+                var list = _showErrorLog ? _errors : _messages;
+                @foreach (var item in list)
+                {
+                    <MudListItem @key="@item" Style="border-bottom:1px solid grey">
+                        <MudText Typo="Typo.h6">@item</MudText>
+                    </MudListItem>
+                }
+            }
+        </MudList>
+    </MudDrawer>
+</div>
+<footer>
+    <MudStack Row="true" Justify="Justify.SpaceEvenly">
+        @if (_errors.Any())
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
+        }
+        @if (_messages.Any())
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+        }
+        @if (!string.IsNullOrEmpty(_renameCurrentName) && !string.IsNullOrEmpty(_renameNewNamePath) && !string.IsNullOrEmpty(_renameNewTitle))
+        {
+            <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@RenameDialog">Rename Level</MudButton>
+        }
+        @if (_showDeployButton)
+        {
+            <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
+                   @bind-Value="_compressionLevel">
+            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+            </MudSelect>
+            <MudButton @onclick="ZipAndDeploy" Variant="Variant.Text" Color="Color.Primary">Build Zipfile</MudButton>
+        }
+    </MudStack>
+</footer>
 
 @code {
+    private string _renameCurrentName { get; set; }
+    private string _renameNewNamePath { get; set; }
+    private string _renameNewTitle { get; set; }
 
+    private string _levelName { get; set; }
+    private string _levelPath { get; set; }
+    private string _beamLogFilePath { get; set; } = string.Empty;
+    private List<string> _missingFiles { get; set; } = new List<string>();
+    private List<string> _errors { get; set; } = new List<string>();
+    private List<string> _messages { get; set; } = new List<string>();
+    private Snackbar _unzipSnackbar;
+    private BeamFileReader Reader { get; set; }
+    private string _fileSelectTitle = "Select your zipped level you want to give a new name";
+    private bool _fileSelectDisabled { get; set; }
+    private bool _fileSelectExpanded { get; set; }
+    private bool _openDrawer;
+    private Anchor _anchor;
+    private string width, height;
+    private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
+    private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
+    private bool _fixed_Header = true;
+    private MudExpansionPanels FileSelect { get; set; }
+    private string _searchString = string.Empty;
+    private string _labelFileSummaryShrink { get; set; } = String.Empty;
+    private bool _showDeployButton { get; set; }
+    private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
+    bool _showErrorLog { get; set; }
+
+    protected async Task FileSelected(string file)
+    {
+        FileSelect.CollapseAll();
+        _labelFileSummaryShrink = string.Empty;
+        _fileSelectDisabled = true;
+        _levelName = null;
+        _levelPath = null;
+        _beamLogFilePath = null;
+        _missingFiles = new List<string>();
+        _errors = new List<string>();
+        _messages = new List<string>();
+        _openDrawer = false;
+        BindingListDelete = new List<GridFileListItem>();
+        _showDeployButton = false;
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                _unzipSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
+                {
+                    config.VisibleStateDuration = int.MaxValue;
+                });
+                _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
+                Snackbar.Add("Unzipping finished", Severity.Success);
+                Snackbar.Remove(_unzipSnackbar);
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+                _fileSelectDisabled = false;
+            }
+
+        });
+        await Task.Run(() =>
+            {
+                Reader = new BeamFileReader(_levelPath, string.Empty);
+                _levelName = Reader.GetLevelName();
+                _renameCurrentName = _levelName;
+            });
+        _fileSelectDisabled = false;
+    }
+
+    protected override void OnInitialized()
+    {
+        _fileSelectExpanded = true;
+        var consumer = Task.Run(async () =>
+        {
+            while (await PubSubChannel.ch.Reader.WaitToReadAsync())
+            {
+                var msg = await PubSubChannel.ch.Reader.ReadAsync();
+                if (!msg.IsError)
+                {
+                    Snackbar.Add(msg.Message, Severity.Info);
+                    _messages.Add(msg.Message);
+                }
+                else
+                {
+                    Snackbar.Add(msg.Message, Severity.Error);
+                    _errors.Add(msg.Message);
+                }
+                //Thread.Sleep(TimeSpan.FromSeconds(1));
+            }
+        });
+    }
+
+    void OpenDrawer(Anchor anchor, bool isError)
+    {
+        _showErrorLog = isError;
+        _openDrawer = true;
+        this._anchor = anchor;
+
+        switch (anchor)
+        {
+            case Anchor.Start:
+                width = "300px";
+                height = "100%";
+                break;
+            case Anchor.End:
+                width = "400px";
+                height = "100%";
+                break;
+            case Anchor.Bottom:
+                width = "100%";
+                height = "200px";
+                break;
+            case Anchor.Top:
+                width = "100%";
+                height = "350px";
+                break;
+        }
+    }
+
+    private void ShowException(Exception ex)
+    {
+        var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
+        Snackbar.Add(message, Severity.Error);
+        _errors.Add(message);
+
+    }
+
+    private string GetFileSelectTitle()
+    {
+        if (!string.IsNullOrEmpty(_levelName))
+        {
+            return $"{_fileSelectTitle} > {_levelName}";
+        }
+        else
+        {
+            return $"{_fileSelectTitle}";
+        }
+    }
+
+    private async Task RenameDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true };
+        var parameters = new DialogParameters();
+        parameters.Add("ContentText", "Do you really want to rename the level? Please always use a copy of your project with this tool!");
+        parameters.Add("ButtonText", "Rename");
+        parameters.Add("Color", Color.Warning);
+        var dialog = await DialogService.ShowAsync<SimpleDialog>("Rename Level", parameters, options);
+        var result = await dialog.Result;
+        if (!result.Canceled)
+        {
+            try
+            {
+                await Task.Run(() =>
+                {
+                    Reader = new BeamFileReader(_levelPath, string.Empty);
+                    Reader.RenameLevel(_renameNewNamePath.Replace(" ", "").Trim(), _renameNewTitle);
+                    _levelName = Reader.GetLevelName();
+                });
+                _renameCurrentName = _levelName;
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+            _showDeployButton = true;
+        }
+    }
+
+    private async Task ZipAndDeploy()
+    {
+        var path = string.Empty;
+        if (!string.IsNullOrEmpty(_levelPath))
+        {
+            try
+            {
+                path = ZipFileHandler.GetLastUnpackedPath();
+                await Task.Run(() =>
+                {
+                    ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
+                });
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        }
+    }
 }
+

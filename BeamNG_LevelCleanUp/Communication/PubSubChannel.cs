@@ -27,11 +27,15 @@ namespace BeamNG_LevelCleanUp.Communication
             }
             else
             {
-                ch.Writer.TryWrite(new PubSubMessage
+                for (int i = 0; i < 5; i++)
                 {
-                    IsError = isError,
-                    Message = message,
-                });
+                    var success = ch.Writer.TryWrite(new PubSubMessage
+                    {
+                        IsError = isError,
+                        Message = message,
+                    });
+                    if (success) break;
+                }
             }
             _counter++;
         }

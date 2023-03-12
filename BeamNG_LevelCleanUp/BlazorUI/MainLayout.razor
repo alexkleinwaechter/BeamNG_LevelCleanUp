@@ -11,9 +11,11 @@
         @GetAppTitle()
     </MudAppBar>
     <MudDrawer @bind-Open="@_drawerOpen">
-        <MyNavMenu />
+        <div class="sidebar">
+            <MyNavMenu />
+        </div>
     </MudDrawer>
-    <MudMainContent>
+    <MudMainContent Class="main">
         <MudContainer>
             @Body
         </MudContainer>

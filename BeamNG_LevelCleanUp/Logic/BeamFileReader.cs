@@ -353,6 +353,7 @@ namespace BeamNG_LevelCleanUp.Logic
         internal void RenameLevel(string nameForPath, string nameForTitle)
         {
             _newName = nameForPath;
+            _levelName = nameForPath;
             _levelRenamer = new LevelRenamer();
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
