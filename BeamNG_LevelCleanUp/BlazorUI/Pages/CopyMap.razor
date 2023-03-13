@@ -89,7 +89,7 @@
     private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
     private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
     private bool _fixed_Header = true;
-    private MudExpansionPanels FileSelect { get; set; }
+    private MudExpansionPanels? FileSelect { get; set; }
     private string _searchString = string.Empty;
     private string _labelFileSummaryShrink { get; set; } = String.Empty;
     private bool _showDeployButton { get; set; }
@@ -98,7 +98,7 @@
 
     protected async Task FileSelected(string file)
     {
-        FileSelect.CollapseAll();
+        FileSelect?.CollapseAll();
         _labelFileSummaryShrink = string.Empty;
         _fileSelectDisabled = true;
         _levelName = null;

@@ -16,18 +16,26 @@ namespace BeamNG_LevelCleanUp.Logic
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         static string _nameLevelPath { get; set; }
         static string _lastUnpackedPath { get; set; }
+        static string _lastCopyFromUnpackedPathPath { get; set; }
         internal enum JobTypeEnum
         {
             FindLevelRoot = 0
         }
-        internal static string ExtractToDirectory(string filePath, string relativeTarget)
+        internal static string ExtractToDirectory(string filePath, string relativeTarget, bool isCopyFrom = false)
         {
             var retVal = string.Empty;
             var fi = new FileInfo(filePath);
             if (fi.Exists)
             {
                 retVal = Path.Join(fi.Directory.FullName, relativeTarget);
-                _lastUnpackedPath = retVal;
+                if (isCopyFrom)
+                {
+                    _lastCopyFromUnpackedPathPath = retVal;
+                }
+                else
+                {
+                    _lastUnpackedPath = retVal;
+                }
                 var deleteDir = new DirectoryInfo(retVal);
                 if (deleteDir.Exists)
                 {
@@ -48,6 +56,11 @@ namespace BeamNG_LevelCleanUp.Logic
         internal static string GetLastUnpackedPath()
         {
             return _lastUnpackedPath;
+        }
+
+        internal static string GetLastUnpackedCopyFromPath()
+        {
+            return _lastCopyFromUnpackedPathPath;
         }
 
         internal static void BuildDeploymentFile(string filePath, string levelName, CompressionLevel compressionLevel, bool searchLevelParent = false)
