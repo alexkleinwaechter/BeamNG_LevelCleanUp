@@ -14,6 +14,7 @@ namespace BeamNG_LevelCleanUp
             return new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 AllowTrailingCommas = true,
                 IncludeFields = true,
                 WriteIndented = true

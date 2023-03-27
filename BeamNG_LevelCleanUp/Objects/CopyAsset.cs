@@ -8,7 +8,8 @@ namespace BeamNG_LevelCleanUp.Objects
 {
     public enum CopyAssetType
     {
-        Road = 0
+        Road = 0,
+        Decal = 1,
     }
     public class CopyAsset
     {
@@ -18,5 +19,6 @@ namespace BeamNG_LevelCleanUp.Objects
         public List<MaterialJson> Materials = new List<MaterialJson>();
         public string TargetPath { get; set; }
         public string SourceMaterialJsonPath { get; set; }
+        public ManagedDecalData DecalData { get; set; }
     }
 }

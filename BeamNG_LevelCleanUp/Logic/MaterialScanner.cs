@@ -87,7 +87,11 @@ namespace BeamNG_LevelCleanUp.Logic
                                 });
                             }
                             //PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
-                            _materials.Add(material);
+                            //todo: Sascha debuggen mit shrinker!!
+                            if (!_materials.Any(x => x.Name == material.Name))
+                            {
+                                _materials.Add(material);
+                            }
 
                             var temp = child.Value.EnumerateObject().ToList();
                             foreach (var item in temp)

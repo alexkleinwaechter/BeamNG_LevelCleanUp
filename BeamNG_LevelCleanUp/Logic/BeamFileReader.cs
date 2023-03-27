@@ -4,6 +4,7 @@ using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
@@ -29,7 +30,8 @@ namespace BeamNG_LevelCleanUp.Logic
             ExcludeAllFiles = 12,
             LevelRename = 13,
             CopyAssetRoad = 14,
-            CopyAssetDecal = 15
+            CopyAssetDecal = 15,
+            CopyManagedDecal = 16
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -402,7 +404,9 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.CopyAssetDecal);
+                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.CopyManagedDecal);
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetDecal);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetDecal);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -504,26 +508,42 @@ namespace BeamNG_LevelCleanUp.Logic
                             _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                             break;
                         case ReadTypeEnum.CopyAssetRoad:
-                            var materialsRoadCopy = new List<MaterialJson>();
-                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, materialsRoadCopy, new List<Asset>(), new List<string>());
+                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, MaterialsJsonCopy, new List<Asset>(), new List<string>());
                             materialCopyScanner.ScanMaterialsJsonFile();
                             materialCopyScanner.CheckDuplicates(MaterialsJson);
-                            foreach (var item in materialsRoadCopy.Where(x => x.IsRoadAndPath))
+                            foreach (var item in MaterialsJsonCopy.Where(x => x.IsRoadAndPath))
                             {
-                                CopyAssets.Add(new CopyAsset
+                                if (!CopyAssets.Any(x => x.CopyAssetType == CopyAssetType.Road && x.Name == item.Name))
                                 {
-                                    CopyAssetType = CopyAssetType.Road,
-                                    Name = item.Name,
-                                    Materials = new List<MaterialJson> { item },
-                                    SourceMaterialJsonPath = fi.FullName,
-                                    TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
-                                });
+                                    CopyAssets.Add(new CopyAsset
+                                    {
+                                        CopyAssetType = CopyAssetType.Road,
+                                        Name = item.Name,
+                                        Materials = new List<MaterialJson> { item },
+                                        SourceMaterialJsonPath = fi.FullName,
+                                        TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                                    });
+                                }
                             }
-                            MaterialsJsonCopy.AddRange(materialsRoadCopy);
                             break;
-                        case ReadTypeEnum.CopyAssetDecal:
+                        case ReadTypeEnum.CopyManagedDecal:
                             var decalCopyScanner = new DecalCopyScanner(fi, MaterialsJsonCopy, CopyAssets);
                             decalCopyScanner.ScanManagedItems();
+                            break;
+                        case ReadTypeEnum.CopyAssetDecal:
+                            foreach (var copyAsset in CopyAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal))
+                            { 
+                                var materials = MaterialsJsonCopy.Where(x => x.Name == copyAsset.DecalData.Material);
+                                foreach(var material in materials)
+                                {
+                                    if (!copyAsset.Materials.Any(x => x.Name == material.Name))
+                                    {
+                                        copyAsset.Materials.Add(material);
+                                        copyAsset.SourceMaterialJsonPath = fi.FullName;
+                                        copyAsset.TargetPath = Path.Join(_namePath, Constants.Decals, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+                                    }
+                                }
+                            }
                             break;
                         default:
                             break;

@@ -40,6 +40,18 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             {
                 managedDecalData = HandleCs(_managedItemFile);
             }
+            foreach (var decalData in managedDecalData)
+            {
+                var copyAsset = new CopyAsset
+                {
+                    CopyAssetType = CopyAssetType.Decal,
+                    DecalData = decalData,
+                    Name = decalData.Name,
+                    //SourceMaterialJsonPath = decalData.MaterialJsonPath,
+                    //TargetPath = decalData.MaterialJsonPath,
+                };
+                _copyAssets.Add(copyAsset);
+            }
         }
 
         private List<ManagedDecalData> HandleJson(FileInfo file)
@@ -93,6 +105,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     if (!string.IsNullOrEmpty(name))
                     {
                         item.Name = name;
+                        item.Class = "DecalData";
                     }
                 }
                 else
