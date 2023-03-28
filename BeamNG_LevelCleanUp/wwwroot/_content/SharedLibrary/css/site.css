@@ -1,0 +1,24 @@
+﻿html, body, #app {
+    height: 100vh;
+    max-height: 100vh;
+}
+
+.main footer {
+    height: 3rem;
+    max-height: 3rem;
+    background-color:lightgray;
+}
+
+.main .content {
+    height: calc(100vh - 7rem);
+    max-height: calc(100vh - 7rem);
+    overflow-y: auto;
+}
+
+
+@media (min-width: 641px) {
+    .sidebar {
+        max-height: 100vh;
+        overflow-y: auto;
+    }
+}

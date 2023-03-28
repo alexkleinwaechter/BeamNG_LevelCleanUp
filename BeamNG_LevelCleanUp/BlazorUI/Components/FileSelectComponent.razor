@@ -1,0 +1,55 @@
+﻿@if (!string.IsNullOrEmpty(Title))
+{
+    <MudText Typo="Typo.h6">@Title</MudText>
+}
+@if (!string.IsNullOrEmpty(Description))
+{
+    <MudText>@Description</MudText>
+}
+@if (!string.IsNullOrEmpty(_selectedFile))
+{
+    <MudListItem Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
+        @_selectedFile
+    </MudListItem>
+}
+<MudButton HtmlTag="label"
+           Variant="Variant.Filled"
+           Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.FileOpen"
+           OnClick="OpenFile"
+           Disabled="@Disabled">
+    Select File
+</MudButton>
+
+@code {
+    [Parameter]
+    public string Title { get; set; }
+    [Parameter]
+    public string Description { get; set; }
+    [Parameter]
+    public EventCallback<string> OnFileSelected { get; set; }
+    [Parameter]
+    public bool Disabled { get; set; }
+    private OpenFileDialog OpenFileDialog { get; set; } = new OpenFileDialog();
+    private string _selectedFile { get; set; } = string.Empty;
+
+    private async Task OpenFile()
+    {
+        this.OpenFileDialog.Filter = "Zipfiles (*.zip)|*.zip";
+        this.OpenFileDialog.FileName = String.Empty;
+        try
+        {
+            System.Windows.Forms.DialogResult result = OpenFileDialog.ShowDialog();
+            if (result == System.Windows.Forms.DialogResult.OK)
+            {
+                _selectedFile = OpenFileDialog.FileName;
+                await OnFileSelected.InvokeAsync(_selectedFile);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw (ex);
+        }
+
+    }
+}

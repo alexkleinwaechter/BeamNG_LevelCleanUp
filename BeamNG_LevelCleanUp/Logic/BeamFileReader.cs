@@ -1,8 +1,11 @@
-﻿using BeamNG_LevelCleanUp.Communication;
+﻿using BeamNG_LevelCleanUp.BlazorUI.Pages;
+using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
@@ -26,26 +29,38 @@ namespace BeamNG_LevelCleanUp.Logic
             ExcludeCsFiles = 10,
             ScanExtraPrefabs = 11,
             ExcludeAllFiles = 12,
-            LevelRename = 13
+            LevelRename = 13,
+            CopyAssetRoad = 14,
+            CopyAssetDecal = 15,
+            CopyManagedDecal = 16,
+            CopyDae = 17,
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
         private static string _levelName { get; set; }
         private static string _namePath { get; set; }
+        private static string _levelPathCopyFrom { get; set; }
+        private static string _levelNameCopyFrom { get; set; }
+        private static string _namePathCopyFrom { get; set; }
         private static string _beamLogPath { get; set; }
         private static bool _dryRun { get; set; }
         public static List<Asset> Assets { get; set; } = new List<Asset>();
         public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
+        public static List<MaterialJson> MaterialsJsonCopy { get; set; } = new List<MaterialJson>();
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
+        public static List<FileInfo> AllDaeCopyList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
+        public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
+
         private static string _newName;
 
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
-        internal BeamFileReader(string path, string beamLogPath)
+        internal BeamFileReader(string levelpath, string beamLogPath, string levelPathCopyFrom = null)
         {
-            _levelPath = path;
+            _levelPath = levelpath;
             _beamLogPath = beamLogPath;
+            _levelPathCopyFrom = levelPathCopyFrom;
             SanitizePath();
         }
 
@@ -58,7 +73,11 @@ namespace BeamNG_LevelCleanUp.Logic
             _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
             _namePath = ZipFileHandler.GetNamePath(_levelPath);
             _levelName = new DirectoryInfo(_namePath).Name;
+            _levelPathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetLevelPath(_levelPathCopyFrom) : null;
+            _namePathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetNamePath(_levelPathCopyFrom) : null;
+            _levelNameCopyFrom = _namePathCopyFrom != null ? new DirectoryInfo(_namePathCopyFrom).Name : null;
             PathResolver.LevelPath = _levelPath;
+            PathResolver.LevelPathCopyFrom = _levelPathCopyFrom;
         }
 
         internal string GetLevelName()
@@ -76,6 +95,7 @@ namespace BeamNG_LevelCleanUp.Logic
             DeleteList = new List<FileInfo>();
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
+            MaterialsJsonCopy = new List<MaterialJson>();
             AllDaeList = new List<FileInfo>();
             ExcludeFiles = new List<string>();
             UnusedAssetFiles = new List<string>();
@@ -83,11 +103,17 @@ namespace BeamNG_LevelCleanUp.Logic
             _managedDecalData = new List<FileInfo>();
             _managedItemData = new List<FileInfo>();
             _forestJsonFiles = new List<FileInfo>();
+            CopyAssets = new List<CopyAsset>();
         }
 
         internal List<FileInfo> GetDeleteList()
         {
             return DeleteList.OrderBy(x => x.FullName).ToList();
+        }
+
+        internal List<CopyAsset> GetCopyList()
+        {
+            return CopyAssets.OrderBy(x => x.CopyAssetType).ThenBy(x => x.Name).ToList();
         }
 
         internal void ReadAll()
@@ -105,6 +131,22 @@ namespace BeamNG_LevelCleanUp.Logic
             this.ResolveUnusedAssetFiles();
             ResolveOrphanedFiles();
             PubSubChannel.SendMessage(false, "Analyzing finished");
+        }
+
+        internal void ReadAllForCopy()
+        {
+            Reset();
+            ReadMaterialsJson();
+            CopyAssetRoad();
+            CopyAssetDecal();
+            CopyDae();
+            PubSubChannel.SendMessage(false, "Fetching Assets finished");
+        }
+
+        internal void DoCopyAssets(List<Guid> identifiers)
+        {
+            var assetCopy = new AssetCopy(identifiers, CopyAssets, _namePath, _levelName, _levelNameCopyFrom);
+            assetCopy.Copy();
         }
 
         internal void ReadInfoJson()
@@ -314,14 +356,14 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
         private static LevelRenamer _levelRenamer { get; set; }
-        internal void RenameLevel(string nameForPath, string nameForTitle)
+        internal void RenameLevel(string newNameForPath, string newNameForTitle)
         {
-            _newName = nameForPath;
+            _newName = newNameForPath;
             _levelRenamer = new LevelRenamer();
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
-                _levelRenamer.EditInfoJson(_namePath, nameForTitle);
+                _levelRenamer.EditInfoJson(_namePath, newNameForTitle);
                 WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
                 WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
                 WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
@@ -330,10 +372,11 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     Console.WriteLine(s);
                 }
+                _levelName = newNameForPath;
             }
 
             var dirInfoOld = new DirectoryInfo(_namePath);
-            var targetDir = Path.Join(dirInfoOld.Parent.FullName, nameForPath);
+            var targetDir = Path.Join(dirInfoOld.Parent.FullName, newNameForPath);
             Directory.Move(dirInfoOld.FullName, targetDir);
 
             // checking directory has
@@ -345,6 +388,74 @@ namespace BeamNG_LevelCleanUp.Logic
             PubSubChannel.SendMessage(false, "Renaming level done!");
         }
 
+        internal void CopyAssetRoad()
+        {
+            var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetRoad);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetRoad);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        internal void CopyDae()
+        {
+            var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+            if (dirInfo != null)
+            {
+                PubSubChannel.SendMessage(false, $"Read Collada Assets");
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.CopyDae);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+            foreach (var item in AllDaeCopyList)
+            {
+                var daeScanner = new DaeScanner(_levelPath, item.FullName, true);
+                var daeMaterials = daeScanner.GetMaterials();
+                var materialsJson = MaterialsJsonCopy
+                    .Where(m => daeMaterials.Select(x => x.MaterialName.ToUpper()).Contains(m.Name.ToUpper()))
+                    .Distinct()
+                    .ToList();
+                var asset = new CopyAsset
+                {
+                    CopyAssetType = CopyAssetType.Dae,
+                    Name = item.Name,
+                    Materials = materialsJson != null ? materialsJson : new List<MaterialJson>(),
+                    TargetPath = Path.Join(_namePath, Constants.Dae, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
+                    DaeFilePath = item.FullName
+                };
+                var fileInfo = new FileInfo(item.FullName);
+                asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
+                asset.SizeMb += Math.Round((fileInfo.Exists ? fileInfo.Length : 0) / 1024f) / 1024f;
+                //asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
+                //asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
+                CopyAssets.Add(asset);
+            }
+        }
+
+        internal void CopyAssetDecal()
+        {
+            var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.CopyManagedDecal);
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetDecal);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetDecal);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
@@ -429,7 +540,6 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.ImageFile:
                             DeleteList.Add(fi);
-
                             break;
                         case ReadTypeEnum.InfoJson:
                             var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);
@@ -438,6 +548,54 @@ namespace BeamNG_LevelCleanUp.Logic
                         case ReadTypeEnum.LevelRename:
                             PubSubChannel.SendMessage(false, $"Renaming in file {fi.FullName}", true);
                             _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
+                            break;
+                        case ReadTypeEnum.CopyAssetRoad:
+                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, MaterialsJsonCopy, new List<Asset>(), new List<string>());
+                            materialCopyScanner.ScanMaterialsJsonFile();
+                            materialCopyScanner.CheckDuplicates(MaterialsJson);
+                            foreach (var item in MaterialsJsonCopy.Where(x => x.IsRoadAndPath))
+                            {
+                                if (!CopyAssets.Any(x => x.CopyAssetType == CopyAssetType.Road && x.Name == item.Name))
+                                {
+                                    var asset = new CopyAsset
+                                    {
+                                        CopyAssetType = CopyAssetType.Road,
+                                        Name = item.Name,
+                                        Materials = new List<MaterialJson> { item },
+                                        SourceMaterialJsonPath = fi.FullName,
+                                        TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                                    };
+                                    asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
+                                    asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
+                                    asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
+                                    CopyAssets.Add(asset);
+                                }
+                            }
+                            break;
+                        case ReadTypeEnum.CopyManagedDecal:
+                            var decalCopyScanner = new DecalCopyScanner(fi, MaterialsJsonCopy, CopyAssets);
+                            decalCopyScanner.ScanManagedItems();
+                            break;
+                        case ReadTypeEnum.CopyAssetDecal:
+                            foreach (var asset in CopyAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal))
+                            {
+                                var materials = MaterialsJsonCopy.Where(x => x.Name == asset.DecalData.Material);
+                                foreach (var material in materials)
+                                {
+                                    if (!asset.Materials.Any(x => x.Name == material.Name))
+                                    {
+                                        asset.Materials.Add(material);
+                                        asset.SourceMaterialJsonPath = fi.FullName;
+                                        asset.TargetPath = Path.Join(_namePath, Constants.Decals, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+                                    }
+                                }
+                                asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
+                                asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
+                                asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
+                            }
+                            break;
+                        case ReadTypeEnum.CopyDae:
+                            AllDaeCopyList.Add(fi);
                             break;
                         default:
                             break;

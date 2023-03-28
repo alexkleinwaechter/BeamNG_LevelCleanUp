@@ -82,7 +82,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.Get());
                         if (!string.IsNullOrEmpty(asset.Type))
                         {
-                            PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
+                            //PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
                             _forestTypeNames.Add(asset.Type);
                         }
                     }

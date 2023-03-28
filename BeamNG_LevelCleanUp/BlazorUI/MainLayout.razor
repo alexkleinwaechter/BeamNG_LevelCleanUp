@@ -1,0 +1,38 @@
+﻿@using System.Reflection;
+@inherits LayoutComponentBase
+
+<MudThemeProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar>
+        <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        @GetAppTitle()
+    </MudAppBar>
+    <MudDrawer @bind-Open="@_drawerOpen">
+        <div class="sidebar">
+            <MyNavMenu />
+        </div>
+    </MudDrawer>
+    <MudMainContent Class="main">
+        <MudContainer>
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+@code {
+    bool _drawerOpen = true;
+
+    void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    private string GetAppTitle()
+    {
+        Version version = Assembly.GetExecutingAssembly().GetName().Version;
+        var name = "BeamNG Tools for Mapbuilders - version";
+        return $"{name} {version.Major}.{version.Minor}.{version.Build}";
+    }
+}

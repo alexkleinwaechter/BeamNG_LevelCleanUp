@@ -10,6 +10,7 @@ namespace BeamNG_LevelCleanUp.Logic
     internal static class PathResolver
     {
         internal static string LevelPath { get; set; }
+        internal static string LevelPathCopyFrom { get; set; }
         internal static string ResolvePath(string levelPath, string resourcePath, bool concatDistinctStrategy)
         {
             string retVal = null;

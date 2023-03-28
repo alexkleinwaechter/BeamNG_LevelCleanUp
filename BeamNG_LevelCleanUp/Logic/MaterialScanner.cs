@@ -41,6 +41,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         try
                         {
                             var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
+                            material.MatJsonFileLocation = _matJsonPath;
                             //if (material.Name == "shawn2") Debugger.Break();
                             if (material?.Stages != null)
                             {
@@ -85,8 +86,12 @@ namespace BeamNG_LevelCleanUp.Logic
                                     Cubemap = material.Cubemap,
                                 });
                             }
-                            PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
-                            _materials.Add(material);
+                            //PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
+                            //todo: Sascha debuggen mit shrinker!!
+                            if (!_materials.Any(x => x.Name == material.Name))
+                            {
+                                _materials.Add(material);
+                            }
 
                             var temp = child.Value.EnumerateObject().ToList();
                             foreach (var item in temp)
@@ -108,6 +113,18 @@ namespace BeamNG_LevelCleanUp.Logic
             catch (Exception ex)
             {
                 PubSubChannel.SendMessage(true, $"Error {_matJsonPath}. {ex.Message}");
+            }
+        }
+        internal void CheckDuplicates(List<MaterialJson> sourceMaterials)
+        {
+            foreach (var item in _materials)
+            {
+                var duplicates = sourceMaterials.Where(x => x.Name.Equals(item.Name));
+                if (duplicates.Any())
+                {
+                    item.IsDuplicate = true;
+                    item.DuplicateFoundLocation.AddRange(duplicates.Select(x => x.MatJsonFileLocation));
+                }
             }
         }
 
