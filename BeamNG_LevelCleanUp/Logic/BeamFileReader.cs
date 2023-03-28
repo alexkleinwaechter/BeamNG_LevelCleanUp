@@ -352,15 +352,14 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
         private static LevelRenamer _levelRenamer { get; set; }
-        internal void RenameLevel(string nameForPath, string nameForTitle)
+        internal void RenameLevel(string newNameForPath, string newNameForTitle)
         {
-            _newName = nameForPath;
-            _levelName = nameForPath;
+            _newName = newNameForPath;
             _levelRenamer = new LevelRenamer();
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
-                _levelRenamer.EditInfoJson(_namePath, nameForTitle);
+                _levelRenamer.EditInfoJson(_namePath, newNameForTitle);
                 WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
                 WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
                 WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
@@ -372,7 +371,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
 
             var dirInfoOld = new DirectoryInfo(_namePath);
-            var targetDir = Path.Join(dirInfoOld.Parent.FullName, nameForPath);
+            var targetDir = Path.Join(dirInfoOld.Parent.FullName, newNameForPath);
             Directory.Move(dirInfoOld.FullName, targetDir);
 
             // checking directory has

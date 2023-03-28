@@ -3,6 +3,7 @@
 @using BeamNG_LevelCleanUp.Communication;
 @using BeamNG_LevelCleanUp.Logic;
 @using BeamNG_LevelCleanUp.Objects;
+@using BeamNG_LevelCleanUp.Utils;
 @using Microsoft.AspNetCore.Components.Forms;
 @using System.IO.Compression;
 @inject ISnackbar Snackbar
@@ -225,7 +226,7 @@
                 await Task.Run(() =>
                 {
                     Reader = new BeamFileReader(_levelPath, string.Empty);
-                    Reader.RenameLevel(_renameNewNamePath.Replace(" ", "").Trim(), _renameNewTitle);
+                    Reader.RenameLevel(StringUtils.SanitizeFileName(_renameNewNamePath), _renameNewTitle);
                     _levelName = Reader.GetLevelName();
                 });
                 _renameCurrentName = _levelName;
