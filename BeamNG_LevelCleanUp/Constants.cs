@@ -10,6 +10,7 @@ namespace BeamNG_LevelCleanUp
     {
         internal const string RouteRoad = @"art\road";
         internal const string Decals = @"art\decals";
+        internal const string Dae = @"art\shapes";
         internal const string MappingToolsPrefix = "MT_";
     }
 }

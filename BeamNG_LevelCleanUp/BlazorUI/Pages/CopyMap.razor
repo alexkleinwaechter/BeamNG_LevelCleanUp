@@ -9,64 +9,71 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
-<div class="content">
-    <h3>Copy map with new name</h3>
-    <MudExpansionPanels @ref="FileSelect">
-        <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
-            <FileSelectComponent OnFileSelected="FileSelected"
-                                 Description="Always use a copy of your project."
-                                 Disabled="@_fileSelectDisabled">
-            </FileSelectComponent>
-        </MudExpansionPanel>
-    </MudExpansionPanels>
+<ErrorBoundary>
+    <ChildContent>
+        <div class="content">
+            <h3>Copy map with new name</h3>
+            <MudExpansionPanels @ref="FileSelect">
+                <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
+                    <FileSelectComponent OnFileSelected="FileSelected"
+                                         Description="Always use a copy of your project."
+                                         Disabled="@_fileSelectDisabled">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
 
-    @if (!string.IsNullOrEmpty(_renameCurrentName))
-    {
-        <MudTextField Immediate @bind-Value="_renameCurrentName" ReadOnly Label="Current name of selected level" Variant="Variant.Text"></MudTextField>
-        <MudTextField Immediate @bind-Value="_renameNewNamePath" Label="Your new name included in filepaths" Variant="Variant.Text"></MudTextField>
-        <MudTextField Immediate @bind-Value="_renameNewTitle" Label="Your new display title in info.json" Variant="Variant.Text"></MudTextField>
-    }
-    <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-        <MudList Clickable="true" Dense="true" DisableGutters="false">
-            @{
-                var list = _showErrorLog ? _errors : _messages;
-                @foreach (var item in list)
-                {
-                    <MudListItem @key="@item" Style="border-bottom:1px solid grey">
-                        <MudText Typo="Typo.h6">@item</MudText>
-                    </MudListItem>
-                }
+            @if (!string.IsNullOrEmpty(_renameCurrentName))
+            {
+                <MudTextField Immediate @bind-Value="_renameCurrentName" ReadOnly Label="Current name of selected level" Variant="Variant.Text"></MudTextField>
+                <MudTextField Immediate @bind-Value="_renameNewNamePath" Label="Your new name included in filepaths" Variant="Variant.Text"></MudTextField>
+                <MudTextField Immediate @bind-Value="_renameNewTitle" Label="Your new display title in info.json" Variant="Variant.Text"></MudTextField>
             }
-        </MudList>
-    </MudDrawer>
-</div>
-<footer>
-    <MudStack Row="true" Justify="Justify.SpaceEvenly">
-        @if (_errors.Any())
-        {
-            <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
-        }
-        @if (_messages.Any())
-        {
-            <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
-        }
-        @if (!string.IsNullOrEmpty(_renameCurrentName) && !string.IsNullOrEmpty(_renameNewNamePath) && !string.IsNullOrEmpty(_renameNewTitle))
-        {
-            <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@RenameDialog">Rename Level</MudButton>
-        }
-        @if (_showDeployButton)
-        {
-            <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                   @bind-Value="_compressionLevel">
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-            </MudSelect>
-            <MudButton @onclick="ZipAndDeploy" Variant="Variant.Text" Color="Color.Primary">Build Zipfile</MudButton>
-        }
-    </MudStack>
-</footer>
+            <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+                <MudList Clickable="true" Dense="true" DisableGutters="false">
+                    @{
+                        var list = _showErrorLog ? _errors : _messages;
+                        @foreach (var item in list)
+                        {
+                            <MudListItem @key="@item" Style="border-bottom:1px solid grey">
+                                <MudText Typo="Typo.h6">@item</MudText>
+                            </MudListItem>
+                        }
+                    }
+                </MudList>
+            </MudDrawer>
+        </div>
+        <footer>
+            <MudStack Row="true" Justify="Justify.SpaceEvenly">
+                @if (_errors.Any())
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                }
+                @if (!string.IsNullOrEmpty(_renameCurrentName) && !string.IsNullOrEmpty(_renameNewNamePath) && !string.IsNullOrEmpty(_renameNewTitle))
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@RenameDialog">Rename Level</MudButton>
+                }
+                @if (_showDeployButton)
+                {
+                    <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
+                           @bind-Value="_compressionLevel">
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    </MudSelect>
+                    <MudButton @onclick="ZipAndDeploy" Variant="Variant.Text" Color="Color.Primary">Build Zipfile</MudButton>
+                }
+            </MudStack>
+        </footer>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent />
+    </ErrorContent>
+</ErrorBoundary>
 
 @code {
     private string _renameCurrentName { get; set; }

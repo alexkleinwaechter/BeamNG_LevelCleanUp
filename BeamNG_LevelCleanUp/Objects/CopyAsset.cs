@@ -10,6 +10,7 @@ namespace BeamNG_LevelCleanUp.Objects
     {
         Road = 0,
         Decal = 1,
+        Dae = 2,
     }
     public class CopyAsset
     {

@@ -8,85 +8,92 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
-<div class="content">
-    <h3>MapShrink</h3>
-    <MudExpansionPanels @ref="FileSelect">
-        <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
-            <FileSelectComponent OnFileSelected="FileSelected"
-                                 Description="Always use a copy of your project."
-                                 Disabled="@_fileSelectDisabled">
-            </FileSelectComponent>
-        </MudExpansionPanel>
-    </MudExpansionPanels>
+<ErrorBoundary>
+    <ChildContent>
+        <div class="content">
+            <h3>MapShrink</h3>
+            <MudExpansionPanels @ref="FileSelect">
+                <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
+                    <FileSelectComponent OnFileSelected="FileSelected"
+                                         Description="Always use a copy of your project."
+                                         Disabled="@_fileSelectDisabled">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
 
-    @if (BindingListDelete.Any())
-    {
-        <MudTable T="GridFileListItem" Items="@BindingListDelete" Hover="true"
-              MultiSelection="true" @bind-SelectedItems="_selectedItems"
-              @bind-Value="_searchString"
-              Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
-            <ToolBarContent>
-                <MudText Typo="Typo.h6">Unused Files</MudText>
-                <MudSpacer />
-                <MudTextField DebounceInterval="300" @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-            </ToolBarContent>
-            <HeaderContent>
-                <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
-                <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="File">@context.FullName</MudTd>
-                <MudTd DataLabel="Size">@context.SizeMb</MudTd>
-            </RowTemplate>
-        </MudTable>
-    }
-    else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
-    {
-        <MudText Color="Color.Success">Nothing to delete. Well done.</MudText>
-    }
-
-    <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-        <MudList Clickable="true" Dense="true" DisableGutters="false">
-            @{
-                var list = _showErrorLog ? _errors : _messages;
-                @foreach (var item in list)
-                {
-                    <MudListItem @key="@item" Style="border-bottom:1px solid grey">
-                        <MudText Typo="Typo.h6">@item</MudText>
-                    </MudListItem>
-                }
+            @if (BindingListDelete.Any())
+            {
+                <MudTable T="GridFileListItem" Items="@BindingListDelete" Hover="true"
+                      MultiSelection="true" @bind-SelectedItems="_selectedItems"
+                      @bind-Value="_searchString"
+                      Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
+                    <ToolBarContent>
+                        <MudText Typo="Typo.h6">Unused Files</MudText>
+                        <MudSpacer />
+                        <MudTextField DebounceInterval="300" @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="File">@context.FullName</MudTd>
+                        <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+                    </RowTemplate>
+                </MudTable>
             }
-        </MudList>
-    </MudDrawer>
-</div>
-<footer>
-    <MudStack Row="true" Justify="Justify.SpaceEvenly">
-        @if (_selectedItems.Any())
-        {
-            <MudText>Files: @BindingListDelete?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
-            <MudButton @onclick="DeleteDialog" Variant="Variant.Text" Color="Color.Secondary">Delete Files</MudButton>
-        }
-        @if (_errors.Any())
-        {
-            <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
-        }
-        @if (_messages.Any())
-        {
-            <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
-        }
-        @if (_showDeployButton)
-        {
-            <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                   @bind-Value="_compressionLevel">
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-            </MudSelect>
-            <MudButton @onclick="ZipAndDeploy" Variant="Variant.Text" Color="Color.Primary">Build Zipfile</MudButton>
-        }
-    </MudStack>
-</footer>
+            else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
+            {
+                <MudText Color="Color.Success">Nothing to delete. Well done.</MudText>
+            }
+
+            <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+                <MudList Clickable="true" Dense="true" DisableGutters="false">
+                    @{
+                        var list = _showErrorLog ? _errors : _messages;
+                        @foreach (var item in list)
+                        {
+                            <MudListItem @key="@item" Style="border-bottom:1px solid grey">
+                                <MudText Typo="Typo.h6">@item</MudText>
+                            </MudListItem>
+                        }
+                    }
+                </MudList>
+            </MudDrawer>
+        </div>
+        <footer>
+            <MudStack Row="true" Justify="Justify.SpaceEvenly">
+                @if (_selectedItems.Any())
+                {
+                    <MudText>Files: @BindingListDelete?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
+                    <MudButton @onclick="DeleteDialog" Variant="Variant.Text" Color="Color.Secondary">Delete Files</MudButton>
+                }
+                @if (_errors.Any())
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                }
+                @if (_showDeployButton)
+                {
+                    <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
+                           @bind-Value="_compressionLevel">
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    </MudSelect>
+                    <MudButton @onclick="ZipAndDeploy" Variant="Variant.Text" Color="Color.Primary">Build Zipfile</MudButton>
+                }
+            </MudStack>
+        </footer>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent />
+    </ErrorContent>
+</ErrorBoundary>
 
 @code {
     private string _levelName { get; set; }

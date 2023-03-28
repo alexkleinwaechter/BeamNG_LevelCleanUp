@@ -1,4 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Communication;
+﻿using BeamNG_LevelCleanUp.BlazorUI.Pages;
+using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using System;
@@ -31,7 +32,8 @@ namespace BeamNG_LevelCleanUp.Logic
             LevelRename = 13,
             CopyAssetRoad = 14,
             CopyAssetDecal = 15,
-            CopyManagedDecal = 16
+            CopyManagedDecal = 16,
+            CopyDae = 17,
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -46,6 +48,7 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         public static List<MaterialJson> MaterialsJsonCopy { get; set; } = new List<MaterialJson>();
         public static List<FileInfo> AllDaeList { get; set; } = new List<FileInfo>();
+        public static List<FileInfo> AllDaeCopyList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
         public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
@@ -136,6 +139,7 @@ namespace BeamNG_LevelCleanUp.Logic
             ReadMaterialsJson();
             CopyAssetRoad();
             CopyAssetDecal();
+            CopyDae();
             PubSubChannel.SendMessage(false, "Fetching Assets finished");
         }
 
@@ -398,6 +402,30 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        internal void CopyDae()
+        {
+            var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+            if (dirInfo != null)
+            {
+                PubSubChannel.SendMessage(false, $"Read Collada Assets");
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.CopyDae);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+            foreach (var item in AllDaeCopyList)
+            {
+                CopyAssets.Add(new CopyAsset
+                {
+                    CopyAssetType = CopyAssetType.Dae,
+                    Name = item.Name,
+                    TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                });
+            }
+        }
+
         internal void CopyAssetDecal()
         {
             var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
@@ -531,9 +559,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.CopyAssetDecal:
                             foreach (var copyAsset in CopyAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal))
-                            { 
+                            {
                                 var materials = MaterialsJsonCopy.Where(x => x.Name == copyAsset.DecalData.Material);
-                                foreach(var material in materials)
+                                foreach (var material in materials)
                                 {
                                     if (!copyAsset.Materials.Any(x => x.Name == material.Name))
                                     {
@@ -543,6 +571,9 @@ namespace BeamNG_LevelCleanUp.Logic
                                     }
                                 }
                             }
+                            break;
+                        case ReadTypeEnum.CopyDae:
+                            AllDaeCopyList.Add(fi);
                             break;
                         default:
                             break;
