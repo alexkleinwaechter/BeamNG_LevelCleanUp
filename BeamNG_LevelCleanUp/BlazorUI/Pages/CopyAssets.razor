@@ -249,7 +249,10 @@
                 }
                 else
                 {
-                    Snackbar.Add(msg.Message, Severity.Error);
+                    Snackbar.Add(msg.Message, Severity.Error, config =>
+                    {
+                        config.VisibleStateDuration = int.MaxValue;
+                    });
                     _errors.Add(msg.Message);
                 }
                 //Thread.Sleep(TimeSpan.FromSeconds(1));
@@ -364,7 +367,7 @@
         {
             var selected = _selectedItems.Select(y => y.Identifier).ToList();
             Reader.DoCopyAssets(selected);
-            BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
+            //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
             _showDeployButton = true;
         }
     }
