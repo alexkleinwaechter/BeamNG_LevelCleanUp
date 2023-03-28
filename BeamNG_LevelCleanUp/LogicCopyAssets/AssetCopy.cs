@@ -52,6 +52,9 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         CopyManagedDecal(item);
                         CopyDecal(item);
                         break;
+                        case CopyAssetType.Dae:
+                        CopyDae(item);
+                        break;
                     default:
                         break;
                 }
@@ -62,110 +65,12 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
         private void CopyRoad(CopyAsset item)
         {
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            var sourceJsonNode = JsonNode.Parse(File.ReadAllText(item.SourceMaterialJsonPath), null, docOptions);
-            Directory.CreateDirectory(item.TargetPath);
-            foreach (var material in item.Materials)
-            {
-                var sourceMaterialNode = sourceJsonNode.AsObject().First(x => x.Value["name"]?.ToString() == material.Name);
-                var toText = sourceMaterialNode.Value.ToJsonString();
-                var targetJsonPath = Path.Join(item.TargetPath, Path.GetFileName(item.SourceMaterialJsonPath));
-                var targetJsonFile = new FileInfo(targetJsonPath);
-                foreach (var matFile in material.MaterialFiles)
-                {
-                    var targetFullName = GetTargetFileName(matFile.File.FullName);
-                    if (string.IsNullOrEmpty(targetFullName))
-                    {
-                        continue;
-                    }
-                    try
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
-                        File.Copy(matFile.File.FullName, targetFullName, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        PubSubChannel.SendMessage(true, $"Filepath error for material {material.Name}. Exception:{ex.Message}");
-                    }
-
-                    toText = toText.Replace(GetBeamNgJsonFileName(matFile.File.FullName), GetBeamNgJsonFileName(targetFullName), StringComparison.OrdinalIgnoreCase);
-                }
-                if (!targetJsonFile.Exists)
-                {
-                    var jsonObject = new JsonObject(
-                    new[]
-                        {
-                          KeyValuePair.Create<string, JsonNode?>(item.Name, JsonNode.Parse(toText)),
-                        }
-                    );
-                    File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.Get()));
-                }
-                else
-                {
-                    var targetJsonNode = JsonNode.Parse(File.ReadAllText(targetJsonFile.FullName), null, docOptions);
-                    if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == material.Name))
-                    {
-                        targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.Name, JsonNode.Parse(toText)));
-                    }
-                    File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.Get()));
-                }
-            }
+            CopyMaterials(item);
         }
 
         private void CopyDecal(CopyAsset item)
         {
-            if (item.SourceMaterialJsonPath == null)
-            {
-                return;
-            }
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
-            Directory.CreateDirectory(item.TargetPath);
-            foreach (var material in item.Materials)
-            {
-                var sourceJsonNode = JsonNode.Parse(File.ReadAllText(material.MatJsonFileLocation), null, docOptions);
-                var sourceMaterialNode = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
-                if (sourceMaterialNode.Value == null)
-                {
-                    continue;
-                }
-                var toText = sourceMaterialNode.Value.ToJsonString();
-                var targetJsonPath = Path.Join(item.TargetPath, Path.GetFileName(material.MatJsonFileLocation));
-                var targetJsonFile = new FileInfo(targetJsonPath);
-                foreach (var matFile in material.MaterialFiles)
-                {
-                    var targetFullName = GetTargetFileName(matFile.File.FullName);
-                    try
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
-                        File.Copy(matFile.File.FullName, targetFullName, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        PubSubChannel.SendMessage(true, $"Filepath error for material {material.Name}. Exception:{ex.Message}");
-                    }
-
-                    toText = toText.Replace(GetBeamNgJsonFileName(matFile.File.FullName), GetBeamNgJsonFileName(targetFullName), StringComparison.OrdinalIgnoreCase);
-                }
-                if (!targetJsonFile.Exists)
-                {
-                    var jsonObject = new JsonObject(
-                    new[]
-                        {
-                          KeyValuePair.Create<string, JsonNode?>(item.Name, JsonNode.Parse(toText)),
-                        }
-                    );
-                    File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.Get()));
-                }
-                else
-                {
-                    var targetJsonNode = JsonNode.Parse(File.ReadAllText(targetJsonFile.FullName), null, docOptions);
-                    if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == material.Name))
-                    {
-                        targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.Name, JsonNode.Parse(toText)));
-                    }
-                    File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.Get()));
-                }
-            }
+            CopyMaterials(item);
         }
 
         private void CopyManagedDecal(CopyAsset item)
@@ -196,6 +101,104 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(JsonSerializer.Serialize(item.DecalData, BeamJsonOptions.Get()))));
                 }
                 File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.Get()));
+            }
+        }
+
+        private void CopyDae(CopyAsset item)
+        {
+            Directory.CreateDirectory(item.TargetPath);
+
+            var daeFullName = GetTargetFileName(item.DaeFilePath);
+            if (string.IsNullOrEmpty(daeFullName))
+            {
+                return;
+            }
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(daeFullName));
+                File.Copy(item.DaeFilePath, daeFullName, true);
+                //Path.ChangeExtension(daeFullName, ".CDAE")
+                try
+                {
+                    File.Copy(Path.ChangeExtension(item.DaeFilePath, ".cdae"), Path.ChangeExtension(daeFullName, ".cdae"), true);
+                }
+                catch (Exception ex)
+                {
+                    //ignore
+                }
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(true, $"Filepath error for daefile {daeFullName}. Exception:{ex.Message}");
+            }
+
+            CopyMaterials(item);
+        }
+
+        private void CopyMaterials(CopyAsset item)
+        {
+            if (item.TargetPath == null)
+            {
+                return;
+            }
+            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            Directory.CreateDirectory(item.TargetPath);
+            foreach (var material in item.Materials)
+            {
+                var sourceJsonNode = JsonNode.Parse(File.ReadAllText(material.MatJsonFileLocation), null, docOptions);
+                var sourceMaterialNode = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
+                if (sourceMaterialNode.Value == null)
+                {
+                    continue;
+                }
+                var toText = sourceMaterialNode.Value.ToJsonString();
+                var targetJsonPath = Path.Join(item.TargetPath, Path.GetFileName(material.MatJsonFileLocation));
+                var targetJsonFile = new FileInfo(targetJsonPath);
+                foreach (var matFile in material.MaterialFiles)
+                {
+                    var targetFullName = GetTargetFileName(matFile.File.FullName);
+                    if (string.IsNullOrEmpty(targetFullName))
+                    {
+                        continue;
+                    }
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
+                        File.Copy(matFile.File.FullName, targetFullName, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        PubSubChannel.SendMessage(true, $"Filepath error for material {material.Name}. Exception:{ex.Message}");
+                    }
+
+                    toText = toText.Replace(GetBeamNgJsonFileName(matFile.File.FullName), GetBeamNgJsonFileName(targetFullName), StringComparison.OrdinalIgnoreCase);
+                }
+                if (!targetJsonFile.Exists)
+                {
+                    var jsonObject = new JsonObject(
+                    new[]
+                        {
+                          KeyValuePair.Create<string, JsonNode?>(material.Name, JsonNode.Parse(toText)),
+                        }
+                    );
+                    File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.Get()));
+                }
+                else
+                {
+                    var targetJsonNode = JsonNode.Parse(File.ReadAllText(targetJsonFile.FullName), null, docOptions);
+                    if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == material.Name))
+                    {
+                        try
+                        {
+                            targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(material.Name, JsonNode.Parse(toText)));
+                        }
+                        catch (Exception ex)
+                        {
+                            throw;
+                        }
+                    }
+                    File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.Get()));
+                }
             }
         }
 

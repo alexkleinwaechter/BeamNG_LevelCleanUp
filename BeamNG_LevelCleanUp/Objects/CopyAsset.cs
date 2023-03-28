@@ -21,5 +21,9 @@ namespace BeamNG_LevelCleanUp.Objects
         public string TargetPath { get; set; }
         public string SourceMaterialJsonPath { get; set; }
         public ManagedDecalData DecalData { get; set; }
+        public bool Duplicate { get; set; }
+        public string DuplicateFrom { get; set; }
+        public double SizeMb { get; set; }
+        public string DaeFilePath { get; set; }
     }
 }

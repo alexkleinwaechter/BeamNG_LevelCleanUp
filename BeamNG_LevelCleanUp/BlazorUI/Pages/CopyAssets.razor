@@ -67,7 +67,7 @@
                         var list = _showErrorLog ? _errors : _messages;
                         @foreach (var item in list)
                         {
-                            <MudListItem @key="@item" Style="border-bottom:1px solid grey">
+                            <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
@@ -302,9 +302,9 @@
                     Identifier = asset.Identifier,
                     AssetType = asset.CopyAssetType.ToString(),
                     FullName = asset.Name,
-                    SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2),
-                    Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false,
-                    DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty,
+                    SizeMb = asset.SizeMb,
+                    Duplicate = asset.Duplicate,
+                    DuplicateFrom = asset.DuplicateFrom
                 };
             BindingListCopy.Add(item);
         }

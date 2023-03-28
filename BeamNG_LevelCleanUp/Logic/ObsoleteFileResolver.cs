@@ -92,7 +92,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 .Distinct()
                 .ToList();
 
-            var usedCdaePaths = usedDaePaths.Select(x => Path.ChangeExtension(x, ".CDAE"));
+            var usedCdaePaths = usedDaePaths.Select(x => Path.ChangeExtension(x, ".cdae"));
 
             var usedMaterials = _usedAssets
                 .Where(x => x.GetAllMaterialNames().Count > 0)

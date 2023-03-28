@@ -372,6 +372,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     Console.WriteLine(s);
                 }
+                _levelName = newNameForPath;
             }
 
             var dirInfoOld = new DirectoryInfo(_namePath);
@@ -417,12 +418,26 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             foreach (var item in AllDaeCopyList)
             {
-                CopyAssets.Add(new CopyAsset
+                var daeScanner = new DaeScanner(_levelPath, item.FullName, true);
+                var daeMaterials = daeScanner.GetMaterials();
+                var materialsJson = MaterialsJsonCopy
+                    .Where(m => daeMaterials.Select(x => x.MaterialName.ToUpper()).Contains(m.Name.ToUpper()))
+                    .Distinct()
+                    .ToList();
+                var asset = new CopyAsset
                 {
                     CopyAssetType = CopyAssetType.Dae,
                     Name = item.Name,
-                    TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
-                });
+                    Materials = materialsJson != null ? materialsJson : new List<MaterialJson>(),
+                    TargetPath = Path.Join(_namePath, Constants.Dae, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
+                    DaeFilePath = item.FullName
+                };
+                var fileInfo = new FileInfo(item.FullName);
+                asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
+                asset.SizeMb += Math.Round((fileInfo.Exists ? fileInfo.Length : 0) / 1024f) / 1024f;
+                //asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
+                //asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
+                CopyAssets.Add(asset);
             }
         }
 
@@ -542,14 +557,18 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 if (!CopyAssets.Any(x => x.CopyAssetType == CopyAssetType.Road && x.Name == item.Name))
                                 {
-                                    CopyAssets.Add(new CopyAsset
+                                    var asset = new CopyAsset
                                     {
                                         CopyAssetType = CopyAssetType.Road,
                                         Name = item.Name,
                                         Materials = new List<MaterialJson> { item },
                                         SourceMaterialJsonPath = fi.FullName,
                                         TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
-                                    });
+                                    };
+                                    asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
+                                    asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
+                                    asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
+                                    CopyAssets.Add(asset);
                                 }
                             }
                             break;
@@ -558,18 +577,21 @@ namespace BeamNG_LevelCleanUp.Logic
                             decalCopyScanner.ScanManagedItems();
                             break;
                         case ReadTypeEnum.CopyAssetDecal:
-                            foreach (var copyAsset in CopyAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal))
+                            foreach (var asset in CopyAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal))
                             {
-                                var materials = MaterialsJsonCopy.Where(x => x.Name == copyAsset.DecalData.Material);
+                                var materials = MaterialsJsonCopy.Where(x => x.Name == asset.DecalData.Material);
                                 foreach (var material in materials)
                                 {
-                                    if (!copyAsset.Materials.Any(x => x.Name == material.Name))
+                                    if (!asset.Materials.Any(x => x.Name == material.Name))
                                     {
-                                        copyAsset.Materials.Add(material);
-                                        copyAsset.SourceMaterialJsonPath = fi.FullName;
-                                        copyAsset.TargetPath = Path.Join(_namePath, Constants.Decals, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+                                        asset.Materials.Add(material);
+                                        asset.SourceMaterialJsonPath = fi.FullName;
+                                        asset.TargetPath = Path.Join(_namePath, Constants.Decals, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
                                     }
                                 }
+                                asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
+                                asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
+                                asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
                             }
                             break;
                         case ReadTypeEnum.CopyDae:

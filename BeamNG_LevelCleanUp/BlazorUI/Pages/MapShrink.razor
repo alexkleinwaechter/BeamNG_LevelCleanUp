@@ -53,7 +53,7 @@
                         var list = _showErrorLog ? _errors : _messages;
                         @foreach (var item in list)
                         {
-                            <MudListItem @key="@item" Style="border-bottom:1px solid grey">
+                            <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
