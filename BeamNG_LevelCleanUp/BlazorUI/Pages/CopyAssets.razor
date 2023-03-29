@@ -82,7 +82,7 @@
                 @if (_selectedItems.Any())
                 {
                     <MudText>Files: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
-                    <MudButton @onclick="CopyDialog" Variant="Variant.Text" Color="Color.Secondary">Copy Assets</MudButton>
+                    <MudButton @onclick="CopyDialog" Variant="Variant.Text" Color="Color.Primary">Copy Assets</MudButton>
                 }
                 @if (_errors.Any())
                 {
@@ -90,7 +90,7 @@
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
                 }
                 @if (_showDeployButton)
                 {
@@ -368,6 +368,7 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
+            PubSubChannel.SendMessage(false, $"Assets are copied now. Please be patient.");
             var selected = _selectedItems.Select(y => y.Identifier).ToList();
             Reader.DoCopyAssets(selected);
             //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
@@ -383,6 +384,7 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
+                PubSubChannel.SendMessage(false, $"Zipping the deployment file. Please be patient. Path: {path}");
                 await Task.Run(() =>
                 {
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);

@@ -2,8 +2,66 @@
 
 <ErrorBoundary>
     <ChildContent>
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Welcome</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>This is a collection of some useful tools for manipulating BeamNG drive maps (aka levels).</MudText>
+            </MudCardContent>
+        </MudCard>
 
-        <h3>Welcome</h3>
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Before you start</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>It's a good idea to copy the maps you want to work with to a dedicated folder. The tool does a lot of unzipping, zipping and logfiles. You don't want to have that in your vanilla maps folder :-)</MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">1. Map Shrinker</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>You can load a zipped map and let the tool search for orphaned files and assets which are not needed in the map. This can save a lot of space. All files and configurations will be checked against your scene tree with all of its dependencies and a proposal for file deletion is shown. Please check the list. It is always possible that the tool deletes too much. So always use a copy of your project! This tool is made for deleting things :-) The good thing: You still have all your crap in the project and can use it for further ideas while having a lean deployment file.</MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">2. Rename Map</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>You can load a zipped map and then change the name in the file system. This is important if you want to see this map beside the original one. If you customized the industrial level for example and want to have your own customized level beside industrial, you could rename it with industrial_larry :-) You can change the shown name in the map overview, too. After renaming you can build a new zipfile with the tool and you are ready to go.</MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">3. Copy Assets (Experimental)</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>
+                    You can load a zipped map you want to copy assets from and a zipped map you want to have the assets. At the moment the tool allows to copy decalroads, decals and collada assets (dae files). You get a list of all the assets and can select the ones you want to copy. No need anymore for copying the whole folders from the desired maps. The tool copies only the needed materials and places them in a dedicated folder per assettype starting with a "MT_" for Mapping-tools.
+                    <br /><br />
+                    This functionality is not well tested yet. Therefore the experimantal state. Very old maps with a lot of cs files are likely not working with this functionality. This tool doesn't like corrupted json files or files with duplicate keys (and the funny json comments) which you can even find in the vanilla maps. The tool throws an error with a detailed errormessage and if your assets aren't copied because of that you have to correct the errors and start again.
+                    <br /><br />
+                    Good luck and have fun!
+                </MudText>
+            </MudCardContent>
+        </MudCard>
     </ChildContent>
     <ErrorContent>
         <CustomErrorContent />

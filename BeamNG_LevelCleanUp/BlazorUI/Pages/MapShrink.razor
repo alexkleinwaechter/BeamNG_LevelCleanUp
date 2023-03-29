@@ -74,7 +74,7 @@
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
                 }
                 @if (_showDeployButton)
                 {
@@ -302,6 +302,7 @@
             Reader.DeleteFilesAndDeploy(selected, false);
             BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
             _showDeployButton = true;
+            PubSubChannel.SendMessage(false, $"You can build your deployment file now.");
         }
     }
 
@@ -313,6 +314,7 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
+                PubSubChannel.SendMessage(false, $"Zipping the deployment file. Please be patient. Path: {path}");
                 await Task.Run(() =>
                 {
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);

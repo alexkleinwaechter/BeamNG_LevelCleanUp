@@ -13,6 +13,9 @@ namespace BeamNG_LevelCleanUp.Utils
     public class DDSImage
     {
         public string SaveAs(string sourceFile, System.Drawing.Imaging.ImageFormat targetFormat) {
+            var fi = new System.IO.FileInfo(sourceFile);
+            if (fi.Extension.ToUpper() != ".DDS") return sourceFile;
+
             using (var image = Pfimage.FromFile(sourceFile))
             {
                 PixelFormat format;

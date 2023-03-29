@@ -385,7 +385,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 Console.WriteLine("The directory was renamed to " + targetDir);
             }
-            PubSubChannel.SendMessage(false, "Renaming level done!");
+            PubSubChannel.SendMessage(false, "Renaming level done! Build your deployment file now.");
         }
 
         internal void CopyAssetRoad()
@@ -547,7 +547,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             ExcludeFiles.AddRange(infoJsonScanner.GetExcludeFiles());
                             break;
                         case ReadTypeEnum.LevelRename:
-                            PubSubChannel.SendMessage(false, $"Renaming in file {fi.FullName}", true);
+                            //PubSubChannel.SendMessage(false, $"Renaming in file {fi.FullName}", true);
                             _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                             break;
                         case ReadTypeEnum.CopyAssetRoad:

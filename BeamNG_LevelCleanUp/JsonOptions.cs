@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,7 +10,7 @@ namespace BeamNG_LevelCleanUp
 {
     public static class BeamJsonOptions
     {
-        public static JsonSerializerOptions Get()
+        public static JsonSerializerOptions GetJsonSerializerOptions()
         {
             return new JsonSerializerOptions
             {
@@ -18,6 +19,15 @@ namespace BeamNG_LevelCleanUp
                 AllowTrailingCommas = true,
                 IncludeFields = true,
                 WriteIndented = true
+            };
+        }
+
+        public static JsonDocumentOptions GetJsonDocumentOptions()
+        {
+            return new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
             };
         }
     }
