@@ -29,13 +29,13 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             foreach (string line in File.ReadAllLines(_missiongroupPath))
             {
-                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 try
                 {
                     using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
-                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
+                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
                         //PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {

@@ -1,17 +1,18 @@
 ﻿@using System.Reflection;
 @inherits LayoutComponentBase
 
-<MudThemeProvider />
+<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" @ref="@_mudThemeProvider" Theme="MyCustomTheme" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
 <MudLayout>
     <MudAppBar>
-        <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
-        @GetAppTitle()
+        <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Color="Color.Dark" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudText Color="Color.Dark"> @GetAppTitle() </MudText>
     </MudAppBar>
     <MudDrawer @bind-Open="@_drawerOpen">
         <div class="sidebar">
+            <MudSwitch @bind-Checked="@_isDarkMode" Color="Color.Primary" Class="ma-4" T="bool" Label="Light/Dark Mode"/>
             <MyNavMenu />
         </div>
     </MudDrawer>
@@ -22,6 +23,8 @@
     </MudMainContent>
 </MudLayout>
 @code {
+    private MudThemeProvider _mudThemeProvider;
+    private bool _isDarkMode;
     bool _drawerOpen = true;
 
     void DrawerToggle()
@@ -35,4 +38,37 @@
         var name = "BeamNG Tools for Mapbuilders - version";
         return $"{name} {version.Major}.{version.Minor}.{version.Build}";
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _isDarkMode = true; //await _mudThemeProvider.GetSystemPreference();
+            StateHasChanged();
+        }
+    }
+
+    MudTheme MyCustomTheme = new MudTheme()
+        {
+            Palette = new Palette()
+            {
+                Primary = Colors.Orange.Default,
+                Secondary = Colors.Brown.Lighten1,
+                AppbarBackground = Colors.Orange.Default,
+                ActionDefault = Colors.Orange.Default,
+            },
+            PaletteDark = new PaletteDark()
+            {
+                Primary = Colors.Orange.Default,
+                Secondary = Colors.Brown.Lighten1,
+                AppbarBackground = Colors.Orange.Default,
+                ActionDefault = Colors.Orange.Default,
+            },
+
+            LayoutProperties = new LayoutProperties()
+            {
+                DrawerWidthLeft = "260px",
+                DrawerWidthRight = "300px"
+            }
+        };
 }

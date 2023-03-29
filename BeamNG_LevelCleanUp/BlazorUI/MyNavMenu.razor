@@ -1,11 +1,7 @@
 ﻿@using Microsoft.AspNetCore.Components.Routing;
 <MudNavMenu>
-    <MudNavLink Href="/" Match="NavLinkMatch.All">Start</MudNavLink>
+    <MudNavLink Href="/" Match="NavLinkMatch.Prefix">Start</MudNavLink>
     <MudNavLink Href="/MapShrink" Match="NavLinkMatch.Prefix">Map Shrinker</MudNavLink>
-    <MudNavLink Href="/CopyMap" Match="NavLinkMatch.Prefix">Copy Map</MudNavLink>
+    <MudNavLink Href="/RenameMap" Match="NavLinkMatch.Prefix">Rename Map</MudNavLink>
     <MudNavLink Href="/CopyAssets" Match="NavLinkMatch.Prefix">Copy Assets</MudNavLink>
-    <MudNavGroup Title="Settings" Expanded="true">
-        <MudNavLink Href="/" Match="NavLinkMatch.Prefix">Users</MudNavLink>
-        <MudNavLink Href="/" Match="NavLinkMatch.Prefix">Security</MudNavLink>
-    </MudNavGroup>
 </MudNavMenu>

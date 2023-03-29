@@ -30,7 +30,7 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         internal void ScanMaterialsJsonFile()
         {
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
                 using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_matJsonPath), docOptions);
@@ -40,7 +40,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         try
                         {
-                            var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.Get());
+                            var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
                             material.MatJsonFileLocation = _matJsonPath;
                             //if (material.Name == "shawn2") Debugger.Break();
                             if (material?.Stages != null)
@@ -50,7 +50,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             }
                             else
                             {
-                                var stage = child.Value.Deserialize<MaterialStage>(BeamJsonOptions.Get());
+                                var stage = child.Value.Deserialize<MaterialStage>(BeamJsonOptions.GetJsonSerializerOptions());
                                 if (stage != null)
                                 {
                                     material.Stages = new List<MaterialStage>
