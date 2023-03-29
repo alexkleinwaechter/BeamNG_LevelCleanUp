@@ -28,7 +28,7 @@ The tool is coded in Microsoft .Net and the download contains all necessary fram
 ## Warning
 Never use this tool on your working project files. Always make a copy and use it with this tool. It is meant to delete things. 
 ## Roadmap
-- Copy assets from other maps to your project
+- Copy forest, prefab and terrain assets from other maps to your project
 
 ## Not working
 - Maps linking to cdae files instead of dae files. Since I can't disassemble cdae files it is not possible to get the materiallist out of them. Tokyo's Shuto Expressway will fail in a great way bcause of that. As long as you provide the dae file along the cdae file in the same directory the tool will work and delete the dae files later on.
