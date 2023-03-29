@@ -25,5 +25,6 @@ namespace BeamNG_LevelCleanUp.Objects
         public string DuplicateFrom { get; set; }
         public double SizeMb { get; set; }
         public string DaeFilePath { get; set; }
+        public List<MaterialsDae> MaterialsDae { get; set; }
     }
 }

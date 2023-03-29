@@ -429,6 +429,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     CopyAssetType = CopyAssetType.Dae,
                     Name = item.Name,
                     Materials = materialsJson != null ? materialsJson : new List<MaterialJson>(),
+                    MaterialsDae = daeMaterials,
                     TargetPath = Path.Join(_namePath, Constants.Dae, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
                     DaeFilePath = item.FullName
                 };

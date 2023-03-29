@@ -1,10 +1,15 @@
 ﻿@using BeamNG_LevelCleanUp.Objects;
+@using BeamNG_LevelCleanUp.Utils;
 @using Blazor3D.Enums;
 @using Blazor3D.Events;
+@using Blazor3D.Geometires;
 @using Blazor3D.Lights;
+@using Blazor3D.Materials;
 @using Blazor3D.Maths;
+@using Blazor3D.Objects;
 @using Blazor3D.Scenes;
 @using Blazor3D.Settings;
+@using Blazor3D.Textures;
 @using Blazor3D.Viewers;
 @using System.IO
 ;
@@ -26,6 +31,7 @@
     private string msg = string.Empty;
     private string tempDir = string.Empty;
     private string daeFilePath = string.Empty;
+    private string colormapFile = string.Empty;
 
     void Cancel() => MudDialog.Cancel();
 
@@ -38,9 +44,22 @@
     protected override Task OnInitializedAsync()
     {
         tempDir = RefreshAndGetTempDirectory();
-        CopyFiles();
         AddLights();
+        CopyFiles();
+        if (CopyAsset.CopyAssetType == CopyAssetType.Road)
+        {
+            LoadRoadPreview();
+        }
+        if (CopyAsset.CopyAssetType == CopyAssetType.Decal)
+        {
+            LoadDecalPreview();
+        }
         return base.OnInitializedAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
     }
 
     private void AddLights()
@@ -48,7 +67,7 @@
         scene.Add(new AmbientLight());
         scene.Add(new PointLight()
             {
-                Intensity = 0.5f,
+                Intensity = 50f,
                 Position = new Vector3(100, 200, 100)
             });
         scene.Add(new PointLight()
@@ -66,7 +85,6 @@
             View3D1.ObjectLoaded += OnObjectLoaded;
             View3D1.JsModuleLoaded += OnJsModuleLoaded;
         }
-
         return base.OnAfterRenderAsync(firstRender);
     }
 
@@ -74,11 +92,19 @@
     {
         if (CopyAsset.CopyAssetType == CopyAssetType.Dae)
         {
-            await LoadDae();
+            await LoadDaePreview();
+        }
+        else
+        {
+
+            if (CopyAsset.CopyAssetType != CopyAssetType.Dae)
+            {
+                await View3D1.SetCameraPositionAsync(new Vector3(1, -2, 3), new Vector3(0, 0, 0));
+            }
         }
     }
 
-    private async Task LoadDae()
+    private async Task LoadDaePreview()
     {
         var settings = new ImportSettings
             {
@@ -88,6 +114,34 @@
             };
         loadedObjectGuid = await View3D1.Import3DModelAsync(settings);
         await View3D1.SetCameraPositionAsync(new Vector3(0, 5, 10), new Vector3(0, 3, 0));
+    }
+
+    private void LoadRoadPreview()
+    {
+        scene.Add(new Mesh
+            {
+                Geometry = new PlaneGeometry(1, 4, 1, 1),
+                Position = new Vector3(0, 0, 0),
+                Material = new MeshStandardMaterial()
+                {
+                    Color = "#cccccc",
+                    Map = CreateTexture(colormapFile)
+                }
+            });
+    }
+
+    private void LoadDecalPreview()
+    {
+        scene.Add(new Mesh
+            {
+                Geometry = new PlaneGeometry(2, 2, 1, 1),
+                Position = new Vector3(0, 0, 0),
+                Material = new MeshStandardMaterial()
+                {
+                    Color = "#cccccc",
+                    Map = CreateTexture(colormapFile)
+                }
+            });
     }
 
     private Task OnObjectLoaded(Object3DArgs e)
@@ -113,7 +167,7 @@
             var daeFile = new FileInfo(CopyAsset.DaeFilePath);
             if (daeFile.Exists)
             {
-                File.Copy(CopyAsset.DaeFilePath, Path.Join(tempDir,daeFile.Name), true);
+                File.Copy(CopyAsset.DaeFilePath, Path.Join(tempDir, daeFile.Name), true);
                 daeFilePath = Path.Join("/temp", daeFile.Name).Replace(@"\", "/");
             }
         }
@@ -123,7 +177,14 @@
             {
                 if (f.File.Exists)
                 {
-                    File.Copy(f.File.FullName, Path.Join(tempDir, f.File.Name), true);
+                    if (f.MapType == "ColorMap" || f.MapType == "BaseColorMap")
+                    {
+                        var targetFile = Path.Join(tempDir, f.File.Name);
+                        File.Copy(f.File.FullName, targetFile, true);
+                        var ddsImage = new DDSImage().SaveAs(targetFile, System.Drawing.Imaging.ImageFormat.Png);
+                        var fi = new FileInfo(ddsImage);
+                        colormapFile = Path.Join("/temp", fi.Name).Replace(@"\", "/");
+                    }
                 }
             }
         }
@@ -139,5 +200,27 @@
         }
         Directory.CreateDirectory(deleteDir.FullName);
         return deleteDir.FullName;
+    }
+
+    private Texture CreateTexture(
+    string url,
+    WrappingType wraps = WrappingType.ClampToEdgeWrapping,
+    WrappingType wrapt = WrappingType.ClampToEdgeWrapping,
+    Vector2? repeat = null,
+    Vector2? offset = null,
+    float? rotation = null)
+    {
+        var texture = new Texture()
+            {
+                TextureUrl = url,
+                WrapS = wraps,
+                WrapT = wrapt
+            };
+
+        texture.Repeat = repeat == null ? texture.Repeat : repeat;
+        texture.Offset = offset == null ? texture.Offset : offset;
+        texture.Rotation = !rotation.HasValue ? texture.Rotation : rotation.Value;
+
+        return texture;
     }
 }
