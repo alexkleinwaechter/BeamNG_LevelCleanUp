@@ -19,6 +19,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public bool Duplicate { get; set; }
         public string DuplicateFrom { get; set; }
         public double SizeMb { get; set; }
+        public CopyAsset CopyAsset { get; set; }
         public string? Filter { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 
         public ListSortDescriptionCollection SortDescriptions => throw new NotImplementedException();

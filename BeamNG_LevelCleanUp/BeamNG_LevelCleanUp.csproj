@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="Autoupdater.NET.Official" Version="1.7.6" />
+    <PackageReference Include="Blazor3D" Version="0.1.24" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="7.0.59" />
     <PackageReference Include="MudBlazor" Version="6.1.9" />
   </ItemGroup>

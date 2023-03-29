@@ -1,0 +1,143 @@
+﻿@using BeamNG_LevelCleanUp.Objects;
+@using Blazor3D.Enums;
+@using Blazor3D.Events;
+@using Blazor3D.Lights;
+@using Blazor3D.Maths;
+@using Blazor3D.Scenes;
+@using Blazor3D.Settings;
+@using Blazor3D.Viewers;
+@using System.IO
+;
+<MudDialog>
+    <DialogContent>
+        <Viewer @ref="View3D1" Scene="scene" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+    [Parameter]
+    public CopyAsset CopyAsset { get; set; }
+    private Viewer? View3D1 = null!;
+    private Scene? scene = new Scene();
+    private Guid loadedObjectGuid = Guid.NewGuid();
+    private string msg = string.Empty;
+    private string tempDir = string.Empty;
+    private string daeFilePath = string.Empty;
+
+    void Cancel() => MudDialog.Cancel();
+
+    public void Dispose()
+    {
+        View3D1.ObjectLoaded -= OnObjectLoaded;
+        View3D1.JsModuleLoaded -= OnJsModuleLoaded;
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        tempDir = RefreshAndGetTempDirectory();
+        CopyFiles();
+        AddLights();
+        return base.OnInitializedAsync();
+    }
+
+    private void AddLights()
+    {
+        scene.Add(new AmbientLight());
+        scene.Add(new PointLight()
+            {
+                Intensity = 0.5f,
+                Position = new Vector3(100, 200, 100)
+            });
+        scene.Add(new PointLight()
+            {
+                Intensity = 1f,
+                Position = new Vector3(5, 5, 5)
+            });
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // subscribe events only once
+            View3D1.ObjectLoaded += OnObjectLoaded;
+            View3D1.JsModuleLoaded += OnJsModuleLoaded;
+        }
+
+        return base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task OnJsModuleLoaded()
+    {
+        if (CopyAsset.CopyAssetType == CopyAssetType.Dae)
+        {
+            await LoadDae();
+        }
+    }
+
+    private async Task LoadDae()
+    {
+        var settings = new ImportSettings
+            {
+                Format = Import3DFormats.Collada,
+                FileURL = daeFilePath,
+                Uuid = Guid.NewGuid()
+            };
+        loadedObjectGuid = await View3D1.Import3DModelAsync(settings);
+        await View3D1.SetCameraPositionAsync(new Vector3(0, 5, 10), new Vector3(0, 3, 0));
+    }
+
+    private Task OnObjectLoaded(Object3DArgs e)
+    {
+        // After object is loaded to component scene, you can locate it's C# clone in the scene.Children
+        // At the moment, only  Object3D.Uuid and Object3D.Type properties are syncronized.
+        foreach (var item in scene.Children)
+        {
+            if (item.Uuid == e.UUID)
+            {
+                this.msg = $"loaded object with id = {e.UUID} and type {item.Type}. Initial guid was {loadedObjectGuid}";
+                StateHasChanged();
+                break;
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    private void CopyFiles()
+    {
+        if (CopyAsset.CopyAssetType == CopyAssetType.Dae)
+        {
+            var daeFile = new FileInfo(CopyAsset.DaeFilePath);
+            if (daeFile.Exists)
+            {
+                File.Copy(CopyAsset.DaeFilePath, Path.Join(tempDir,daeFile.Name), true);
+                daeFilePath = Path.Join("/temp", daeFile.Name).Replace(@"\", "/");
+            }
+        }
+        foreach (var material in CopyAsset.Materials)
+        {
+            foreach (var f in material.MaterialFiles)
+            {
+                if (f.File.Exists)
+                {
+                    File.Copy(f.File.FullName, Path.Join(tempDir, f.File.Name), true);
+                }
+            }
+        }
+    }
+
+    private string RefreshAndGetTempDirectory()
+    {
+        string rootpath = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "wwwroot");
+        var deleteDir = new DirectoryInfo(Path.Join(rootpath, "temp"));
+        if (deleteDir.Exists)
+        {
+            Directory.Delete(deleteDir.FullName, true);
+        }
+        Directory.CreateDirectory(deleteDir.FullName);
+        return deleteDir.FullName;
+    }
+}

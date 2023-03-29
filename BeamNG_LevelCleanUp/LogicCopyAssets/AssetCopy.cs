@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets
 {
-    internal class AssetCopy
+    public class AssetCopy
     {
         private List<Guid> _identifier { get; set; }
         private List<CopyAsset> _assetsToCopy = new List<CopyAsset>();
@@ -19,7 +19,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private string levelNameCopyFrom;
         private bool stopFaultyFile = false;
 
-        internal AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
+        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
         {
             _identifier = identifier;
             _assetsToCopy = copyAssetList.Where(x => identifier.Contains(x.Identifier)).ToList();
@@ -40,7 +40,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             this.levelNameCopyFrom = levelNameCopyFrom;
         }
 
-        internal void Copy()
+        public void Copy()
         {
             foreach (var item in _assetsToCopy)
             {

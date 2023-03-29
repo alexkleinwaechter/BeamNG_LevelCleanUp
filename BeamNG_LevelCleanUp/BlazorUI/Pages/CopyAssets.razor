@@ -41,6 +41,7 @@
                         <MudTextField DebounceInterval="300" @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
+                        <MudTh>View</MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.AssetType)">Assettype</MudTableSortLabel></MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Duplicate)">Duplicate</MudTableSortLabel></MudTh>
@@ -48,6 +49,7 @@
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate>
+                        <MudTd><MudIconButton Icon="@Icons.Material.Filled.Pageview" OnClick="() => OpenAssetViewer(context)"></MudIconButton></MudTd>
                         <MudTd DataLabel="File">@context.AssetType</MudTd>
                         <MudTd DataLabel="File">@context.FullName</MudTd>
                         <MudTd DataLabel="File">@context.Duplicate</MudTd>
@@ -307,7 +309,8 @@
                     FullName = asset.Name,
                     SizeMb = asset.SizeMb,
                     Duplicate = asset.Duplicate,
-                    DuplicateFrom = asset.DuplicateFrom
+                    DuplicateFrom = asset.DuplicateFrom,
+                    CopyAsset = asset
                 };
             BindingListCopy.Add(item);
         }
@@ -390,5 +393,14 @@
                 ShowException(ex);
             }
         }
+    }
+
+    private void OpenAssetViewer(GridFileListItem context)
+    {
+        var dialogOptions = new DialogOptions() { FullScreen = true, CloseButton = true };
+        var parameters = new DialogParameters();
+        parameters.Add("CopyAsset", context.CopyAsset);
+
+        var dialog = DialogService.Show<AssetViewer>($"Asset Preview: {context.FullName}", parameters, dialogOptions);
     }
 }
