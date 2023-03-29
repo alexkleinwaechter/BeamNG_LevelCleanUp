@@ -55,7 +55,7 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             foreach (var file in _mainDecalsJson)
             {
-                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
@@ -72,7 +72,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void SetMaterialsJson(FileInfo file)
         {
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
                 using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
@@ -82,7 +82,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         try
                         {
-                            var decalData = managedDecalData.Value.Deserialize<ManagedDecalData>(BeamJsonOptions.Get());
+                            var decalData = managedDecalData.Value.Deserialize<ManagedDecalData>(BeamJsonOptions.GetJsonSerializerOptions());
                             _materialNames.Add(decalData.Material);
                         }
                         catch (Exception ex)

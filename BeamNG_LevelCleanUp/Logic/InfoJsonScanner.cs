@@ -23,7 +23,7 @@ namespace BeamNG_LevelCleanUp.Logic
         internal List<string> GetExcludeFiles()
         {
             PubSubChannel.SendMessage(false, $"Read info.json");
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
                 using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_infoJsonPath), docOptions);
@@ -31,7 +31,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     if (jsonObject.RootElement.TryGetProperty("previews", out JsonElement previews))
                     {
-                        var previewList = previews.Deserialize<List<string>>(BeamJsonOptions.Get());
+                        var previewList = previews.Deserialize<List<string>>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (previewList != null)
                         {
                             _exludeFiles.AddRange(previewList.Select(x => PathResolver.ResolvePath(_levelPath, x, false)));
@@ -39,7 +39,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     }
                     if (jsonObject.RootElement.TryGetProperty("spawnPoints", out JsonElement spawnpoints))
                     {
-                        var spawnpointlist = spawnpoints.Deserialize<List<SpawnPoints>>(BeamJsonOptions.Get());
+                        var spawnpointlist = spawnpoints.Deserialize<List<SpawnPoints>>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (spawnpointlist != null)
                         {
                             _exludeFiles.AddRange(spawnpointlist.Select(x => PathResolver.ResolvePath(_levelPath, x.Preview, false)));
@@ -47,7 +47,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     }
                     if (jsonObject.RootElement.TryGetProperty("gasStationPoints", out JsonElement gasStationPoints))
                     {
-                        var gasStationPointList = gasStationPoints.Deserialize<List<SpawnPoints>>(BeamJsonOptions.Get());
+                        var gasStationPointList = gasStationPoints.Deserialize<List<SpawnPoints>>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (gasStationPointList != null)
                         {
                             _exludeFiles.AddRange(gasStationPointList.Select(x => PathResolver.ResolvePath(_levelPath, x.Preview, false)));

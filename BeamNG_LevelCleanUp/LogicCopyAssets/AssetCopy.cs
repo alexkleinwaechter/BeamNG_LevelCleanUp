@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets
 {
-    internal class AssetCopy
+    public class AssetCopy
     {
         private List<Guid> _identifier { get; set; }
         private List<CopyAsset> _assetsToCopy = new List<CopyAsset>();
@@ -19,7 +19,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private string levelNameCopyFrom;
         private bool stopFaultyFile = false;
 
-        internal AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
+        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
         {
             _identifier = identifier;
             _assetsToCopy = copyAssetList.Where(x => identifier.Contains(x.Identifier)).ToList();
@@ -40,7 +40,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             this.levelNameCopyFrom = levelNameCopyFrom;
         }
 
-        internal void Copy()
+        public void Copy()
         {
             foreach (var item in _assetsToCopy)
             {
@@ -65,7 +65,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             if (!stopFaultyFile)
             {
-                PubSubChannel.SendMessage(false, $"Done! Assets copied.");
+                PubSubChannel.SendMessage(false, $"Done! Assets copied. Build your deployment file now.");
             }
             stopFaultyFile = false;
         }
@@ -88,26 +88,26 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             Directory.CreateDirectory(item.TargetPath);
             var targetJsonPath = Path.Join(item.TargetPath, "managedDecalData.json");
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             var targetJsonFile = new FileInfo(targetJsonPath);
             if (!targetJsonFile.Exists)
             {
                 var jsonObject = new JsonObject(
                 new[]
                     {
-                          KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(JsonSerializer.Serialize(item.DecalData,BeamJsonOptions.Get()))),
+                          KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(JsonSerializer.Serialize(item.DecalData,BeamJsonOptions.GetJsonSerializerOptions()))),
                     }
                 );
-                File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.Get()));
+                File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
             }
             else
             {
                 var targetJsonNode = JsonNode.Parse(File.ReadAllText(targetJsonFile.FullName), null, docOptions);
                 if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == item.DecalData.Name))
                 {
-                    targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(JsonSerializer.Serialize(item.DecalData, BeamJsonOptions.Get()))));
+                    targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(JsonSerializer.Serialize(item.DecalData, BeamJsonOptions.GetJsonSerializerOptions()))));
                 }
-                File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.Get()));
+                File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
             }
         }
 
@@ -148,7 +148,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             {
                 return;
             }
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             Directory.CreateDirectory(item.TargetPath);
             foreach (var material in item.Materials)
             {
@@ -190,7 +190,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                           KeyValuePair.Create<string, JsonNode?>(material.Name, JsonNode.Parse(toText)),
                             }
                         );
-                        File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.Get()));
+                        File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
                     }
                     else
                     {
@@ -206,7 +206,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                                 throw;
                             }
                         }
-                        File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.Get()));
+                        File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
                     }
 
                 }

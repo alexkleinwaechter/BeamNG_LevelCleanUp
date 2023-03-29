@@ -27,7 +27,7 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         public void ScanTerrain()
         {
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             PubSubChannel.SendMessage(false, $"Scan Terrainfile {_terrainPath}");
             try
             {
@@ -36,7 +36,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     if (jsonObject.RootElement.TryGetProperty("materials", out JsonElement materials))
                     {
-                        var materialList = materials.Deserialize<List<string>>(BeamJsonOptions.Get());
+                        var materialList = materials.Deserialize<List<string>>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (materialList != null)
                         {
                             foreach (var name in materialList.Distinct())
@@ -60,7 +60,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     }
                     if (jsonObject.RootElement.TryGetProperty("datafile", out JsonElement dataFile))
                     {
-                        var result = dataFile.Deserialize<string>(BeamJsonOptions.Get());
+                        var result = dataFile.Deserialize<string>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (result != null)
                         {
                             _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));
@@ -68,7 +68,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     }
                     if (jsonObject.RootElement.TryGetProperty("heightmapImage", out JsonElement heightmapImage))
                     {
-                        var result = heightmapImage.Deserialize<string>(BeamJsonOptions.Get());
+                        var result = heightmapImage.Deserialize<string>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (result != null)
                         {
                             _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));

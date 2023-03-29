@@ -57,7 +57,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private List<ManagedDecalData> HandleJson(FileInfo file)
         {
             var retVal = new List<ManagedDecalData>();
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
                 using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
@@ -67,7 +67,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     {
                         try
                         {
-                            var decalData = managedDecalData.Value.Deserialize<ManagedDecalData>(BeamJsonOptions.Get());
+                            var decalData = managedDecalData.Value.Deserialize<ManagedDecalData>(BeamJsonOptions.GetJsonSerializerOptions());
                             retVal.Add(decalData);
                         }
                         catch (Exception ex)

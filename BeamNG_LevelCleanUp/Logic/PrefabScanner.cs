@@ -128,13 +128,13 @@ namespace BeamNG_LevelCleanUp.Logic
             List<string> shapeNames = new List<string>();
             foreach (string line in File.ReadAllLines(file.FullName))
             {
-                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 try
                 {
                     using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
-                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
+                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (!string.IsNullOrEmpty(asset.ShapeName))
                         {
                             shapeNames.Add(asset.ShapeName);
@@ -158,13 +158,13 @@ namespace BeamNG_LevelCleanUp.Logic
             List<string> prefabFileNames = new List<string>();
             foreach (string line in File.ReadAllLines(file.FullName))
             {
-                JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 try
                 {
                     using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
-                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.Get());
+                        var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (!string.IsNullOrEmpty(asset.Filename))
                         {
                             prefabFileNames.Add(asset.Filename);

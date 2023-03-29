@@ -161,6 +161,13 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 _nameLevelPath = fi.Directory.FullName;
                             }
+                            if (mainDir.Length == 0) {
+                                mainDir = fi.Directory.GetDirectories("art");
+                                if (mainDir.FirstOrDefault() != null)
+                                {
+                                    _nameLevelPath = fi.Directory.FullName;
+                                }
+                            }
                             break;
                         default:
                             break;

@@ -7,8 +7,8 @@
 
 <MudLayout>
     <MudAppBar>
-        <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
-        <MudText> @GetAppTitle() </MudText>
+        <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Color="Color.Dark" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudText Color="Color.Dark"> @GetAppTitle() </MudText>
     </MudAppBar>
     <MudDrawer @bind-Open="@_drawerOpen">
         <div class="sidebar">

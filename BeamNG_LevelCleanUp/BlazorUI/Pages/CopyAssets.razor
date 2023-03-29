@@ -41,6 +41,7 @@
                         <MudTextField DebounceInterval="300" @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
+                        <MudTh>View</MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.AssetType)">Assettype</MudTableSortLabel></MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Duplicate)">Duplicate</MudTableSortLabel></MudTh>
@@ -48,6 +49,7 @@
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate>
+                        <MudTd><MudIconButton Icon="@Icons.Material.Filled.Pageview" OnClick="() => OpenAssetViewer(context)"></MudIconButton></MudTd>
                         <MudTd DataLabel="File">@context.AssetType</MudTd>
                         <MudTd DataLabel="File">@context.FullName</MudTd>
                         <MudTd DataLabel="File">@context.Duplicate</MudTd>
@@ -80,7 +82,7 @@
                 @if (_selectedItems.Any())
                 {
                     <MudText>Files: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
-                    <MudButton @onclick="CopyDialog" Variant="Variant.Text" Color="Color.Secondary">Copy Assets</MudButton>
+                    <MudButton @onclick="CopyDialog" Variant="Variant.Text" Color="Color.Primary">Copy Assets</MudButton>
                 }
                 @if (_errors.Any())
                 {
@@ -88,7 +90,7 @@
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                    <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
                 }
                 @if (_showDeployButton)
                 {
@@ -307,7 +309,8 @@
                     FullName = asset.Name,
                     SizeMb = asset.SizeMb,
                     Duplicate = asset.Duplicate,
-                    DuplicateFrom = asset.DuplicateFrom
+                    DuplicateFrom = asset.DuplicateFrom,
+                    CopyAsset = asset
                 };
             BindingListCopy.Add(item);
         }
@@ -365,6 +368,7 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
+            PubSubChannel.SendMessage(false, $"Assets are copied now. Please be patient.");
             var selected = _selectedItems.Select(y => y.Identifier).ToList();
             Reader.DoCopyAssets(selected);
             //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
@@ -380,6 +384,7 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
+                PubSubChannel.SendMessage(false, $"Zipping the deployment file. Please be patient. Path: {path}");
                 await Task.Run(() =>
                 {
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
@@ -390,5 +395,14 @@
                 ShowException(ex);
             }
         }
+    }
+
+    private void OpenAssetViewer(GridFileListItem context)
+    {
+        var dialogOptions = new DialogOptions() { FullScreen = true, CloseButton = true };
+        var parameters = new DialogParameters();
+        parameters.Add("CopyAsset", context.CopyAsset);
+
+        var dialog = DialogService.Show<AssetViewer>($"Asset Preview: {context.FullName}", parameters, dialogOptions);
     }
 }

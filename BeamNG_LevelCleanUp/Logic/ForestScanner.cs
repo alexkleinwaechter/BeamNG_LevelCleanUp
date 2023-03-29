@@ -75,11 +75,11 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (string line in File.ReadAllLines(file.FullName))
                 {
-                    JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+                    JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                     using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                     {
-                        var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.Get());
+                        var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (!string.IsNullOrEmpty(asset.Type))
                         {
                             //PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
@@ -92,7 +92,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void GetShapNamesJson(FileInfo file)
         {
-            JsonDocumentOptions docOptions = new JsonDocumentOptions { AllowTrailingCommas = true };
+            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
                 using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
@@ -102,7 +102,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         try
                         {
-                            var forestData = managedForestData.Value.Deserialize<ManagedForestData>(BeamJsonOptions.Get());
+                            var forestData = managedForestData.Value.Deserialize<ManagedForestData>(BeamJsonOptions.GetJsonSerializerOptions());
                             var name = forestData.ShapeFile;
                             if (name.StartsWith("./"))
                             {

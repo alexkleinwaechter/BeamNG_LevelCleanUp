@@ -1,0 +1,226 @@
+﻿@using BeamNG_LevelCleanUp.Objects;
+@using BeamNG_LevelCleanUp.Utils;
+@using Blazor3D.Enums;
+@using Blazor3D.Events;
+@using Blazor3D.Geometires;
+@using Blazor3D.Lights;
+@using Blazor3D.Materials;
+@using Blazor3D.Maths;
+@using Blazor3D.Objects;
+@using Blazor3D.Scenes;
+@using Blazor3D.Settings;
+@using Blazor3D.Textures;
+@using Blazor3D.Viewers;
+@using System.IO
+;
+<MudDialog>
+    <DialogContent>
+        <Viewer @ref="View3D1" Scene="scene" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+    [Parameter]
+    public CopyAsset CopyAsset { get; set; }
+    private Viewer? View3D1 = null!;
+    private Scene? scene = new Scene();
+    private Guid loadedObjectGuid = Guid.NewGuid();
+    private string msg = string.Empty;
+    private string tempDir = string.Empty;
+    private string daeFilePath = string.Empty;
+    private string colormapFile = string.Empty;
+
+    void Cancel() => MudDialog.Cancel();
+
+    public void Dispose()
+    {
+        View3D1.ObjectLoaded -= OnObjectLoaded;
+        View3D1.JsModuleLoaded -= OnJsModuleLoaded;
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        tempDir = RefreshAndGetTempDirectory();
+        AddLights();
+        CopyFiles();
+        if (CopyAsset.CopyAssetType == CopyAssetType.Road)
+        {
+            LoadRoadPreview();
+        }
+        if (CopyAsset.CopyAssetType == CopyAssetType.Decal)
+        {
+            LoadDecalPreview();
+        }
+        return base.OnInitializedAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+    }
+
+    private void AddLights()
+    {
+        scene.Add(new AmbientLight());
+        scene.Add(new PointLight()
+            {
+                Intensity = 50f,
+                Position = new Vector3(100, 200, 100)
+            });
+        scene.Add(new PointLight()
+            {
+                Intensity = 1f,
+                Position = new Vector3(5, 5, 5)
+            });
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // subscribe events only once
+            View3D1.ObjectLoaded += OnObjectLoaded;
+            View3D1.JsModuleLoaded += OnJsModuleLoaded;
+        }
+        return base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task OnJsModuleLoaded()
+    {
+        if (CopyAsset.CopyAssetType == CopyAssetType.Dae)
+        {
+            await LoadDaePreview();
+        }
+        else
+        {
+
+            if (CopyAsset.CopyAssetType != CopyAssetType.Dae)
+            {
+                await View3D1.SetCameraPositionAsync(new Vector3(1, -2, 3), new Vector3(0, 0, 0));
+            }
+        }
+    }
+
+    private async Task LoadDaePreview()
+    {
+        var settings = new ImportSettings
+            {
+                Format = Import3DFormats.Collada,
+                FileURL = daeFilePath,
+                Uuid = Guid.NewGuid()
+            };
+        loadedObjectGuid = await View3D1.Import3DModelAsync(settings);
+        await View3D1.SetCameraPositionAsync(new Vector3(0, 5, 10), new Vector3(0, 3, 0));
+    }
+
+    private void LoadRoadPreview()
+    {
+        scene.Add(new Mesh
+            {
+                Geometry = new PlaneGeometry(1, 4, 1, 1),
+                Position = new Vector3(0, 0, 0),
+                Material = new MeshStandardMaterial()
+                {
+                    Color = "#cccccc",
+                    Map = CreateTexture(colormapFile)
+                }
+            });
+    }
+
+    private void LoadDecalPreview()
+    {
+        scene.Add(new Mesh
+            {
+                Geometry = new PlaneGeometry(2, 2, 1, 1),
+                Position = new Vector3(0, 0, 0),
+                Material = new MeshStandardMaterial()
+                {
+                    Color = "#cccccc",
+                    Map = CreateTexture(colormapFile)
+                }
+            });
+    }
+
+    private Task OnObjectLoaded(Object3DArgs e)
+    {
+        // After object is loaded to component scene, you can locate it's C# clone in the scene.Children
+        // At the moment, only  Object3D.Uuid and Object3D.Type properties are syncronized.
+        foreach (var item in scene.Children)
+        {
+            if (item.Uuid == e.UUID)
+            {
+                this.msg = $"loaded object with id = {e.UUID} and type {item.Type}. Initial guid was {loadedObjectGuid}";
+                StateHasChanged();
+                break;
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    private void CopyFiles()
+    {
+        if (CopyAsset.CopyAssetType == CopyAssetType.Dae)
+        {
+            var daeFile = new FileInfo(CopyAsset.DaeFilePath);
+            if (daeFile.Exists)
+            {
+                File.Copy(CopyAsset.DaeFilePath, Path.Join(tempDir, daeFile.Name), true);
+                daeFilePath = Path.Join("/temp", daeFile.Name).Replace(@"\", "/");
+            }
+        }
+        foreach (var material in CopyAsset.Materials)
+        {
+            foreach (var f in material.MaterialFiles)
+            {
+                if (f.File.Exists)
+                {
+                    if (f.MapType == "ColorMap" || f.MapType == "BaseColorMap")
+                    {
+                        var targetFile = Path.Join(tempDir, f.File.Name);
+                        File.Copy(f.File.FullName, targetFile, true);
+                        var ddsImage = new DDSImage().SaveAs(targetFile, System.Drawing.Imaging.ImageFormat.Png);
+                        var fi = new FileInfo(ddsImage);
+                        colormapFile = Path.Join("/temp", fi.Name).Replace(@"\", "/");
+                    }
+                }
+            }
+        }
+    }
+
+    private string RefreshAndGetTempDirectory()
+    {
+        string rootpath = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "wwwroot");
+        var deleteDir = new DirectoryInfo(Path.Join(rootpath, "temp"));
+        if (deleteDir.Exists)
+        {
+            Directory.Delete(deleteDir.FullName, true);
+        }
+        Directory.CreateDirectory(deleteDir.FullName);
+        return deleteDir.FullName;
+    }
+
+    private Texture CreateTexture(
+    string url,
+    WrappingType wraps = WrappingType.ClampToEdgeWrapping,
+    WrappingType wrapt = WrappingType.ClampToEdgeWrapping,
+    Vector2? repeat = null,
+    Vector2? offset = null,
+    float? rotation = null)
+    {
+        var texture = new Texture()
+            {
+                TextureUrl = url,
+                WrapS = wraps,
+                WrapT = wrapt
+            };
+
+        texture.Repeat = repeat == null ? texture.Repeat : repeat;
+        texture.Offset = offset == null ? texture.Offset : offset;
+        texture.Rotation = !rotation.HasValue ? texture.Rotation : rotation.Value;
+
+        return texture;
+    }
+}
