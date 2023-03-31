@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json;
 using System.Threading.Tasks;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets
 {
@@ -53,13 +54,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         CopyManagedDecal(item);
                         CopyDecal(item);
                         break;
-                        case CopyAssetType.Dae:
+                    case CopyAssetType.Dae:
                         CopyDae(item);
                         break;
                     default:
                         break;
                 }
-                if (stopFaultyFile) {
+                if (stopFaultyFile)
+                {
                     break;
                 }
             }
@@ -123,11 +125,11 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(daeFullName));
-                File.Copy(item.DaeFilePath, daeFullName, true);
+                BeamFileCopy(item.DaeFilePath, daeFullName);
                 //Path.ChangeExtension(daeFullName, ".CDAE")
                 try
                 {
-                    File.Copy(Path.ChangeExtension(item.DaeFilePath, ".cdae"), Path.ChangeExtension(daeFullName, ".cdae"), true);
+                    BeamFileCopy(Path.ChangeExtension(item.DaeFilePath, ".cdae"), Path.ChangeExtension(daeFullName, ".cdae"));
                 }
                 catch (Exception ex)
                 {
@@ -173,7 +175,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         try
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
-                            File.Copy(matFile.File.FullName, targetFullName, true);
+                            BeamFileCopy(matFile.File.FullName, targetFullName);
                         }
                         catch (Exception ex)
                         {
@@ -219,6 +221,31 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
         }
 
+        private void BeamFileCopy(string sourceFile, string targetFile)
+        {
+            try
+            {
+                File.Copy(sourceFile, targetFile, true);
+            }
+            catch (Exception ex)
+            {
+                var fileParts = sourceFile.Split(@"\levels\");
+                if (fileParts.Count() == 2)
+                {
+                    var thisLevelName = fileParts[1].Split(@"\").FirstOrDefault();
+                    var beamDir = Path.Join(Steam.GetBeamInstallDir(), Constants.BeamMapPath, thisLevelName);
+                    var beamZip = beamDir + ".zip";
+                    if (new FileInfo(beamZip).Exists && !thisLevelName.Equals(levelNameCopyFrom, StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        ZipReader.ExtractFile(beamZip, fileParts[0], fileParts[1]);
+                        File.Copy(sourceFile, targetFile, true);
+                    }
+
+                    throw;
+                }
+            }
+        }
+
         private string GetTargetFileName(string sourceName)
         {
             var fileName = Path.GetFileName(sourceName);
@@ -226,8 +253,16 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             var targetParts = dir.ToLowerInvariant().Split($@"\levels\{levelNameCopyFrom}\".ToLowerInvariant());
             if (targetParts.Count() < 2)
             {
-                PubSubChannel.SendMessage(true, $"Filepath error in {sourceName}. Exception:no levels folder in path.");
-                return string.Empty;
+                //PubSubChannel.SendMessage(true, $"Filepath error in {sourceName}. Exception:no levels folder in path.");
+                targetParts = dir.ToLowerInvariant().Split($@"\levels\".ToLowerInvariant());
+                if (targetParts.Count() == 2)
+                {
+                    int pos = targetParts[1].IndexOf(@"\");
+                    if (pos >= 0)
+                    {
+                        targetParts[1] = targetParts[1].Remove(0, pos);
+                    }
+                }
             }
             return Path.Join(namePath, targetParts.Last(), $"{Constants.MappingToolsPrefix}{levelNameCopyFrom}", fileName);
         }
