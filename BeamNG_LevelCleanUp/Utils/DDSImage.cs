@@ -1,18 +1,22 @@
-﻿using Pfim;
+﻿using BeamNG_LevelCleanUp.Communication;
+using Pfim;
 using System;
 using System.Collections.Generic;
-using System.Drawing.Imaging;
+using System.Windows.Media.Imaging;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using ImageFormat = Pfim.ImageFormat;
+using System.Windows.Media;
 
 namespace BeamNG_LevelCleanUp.Utils
 {
     public class DDSImage
     {
-        public string SaveAs(string sourceFile, System.Drawing.Imaging.ImageFormat targetFormat) {
+        public float Ratio { get; set; }
+        public string SaveAs(string sourceFile, System.Drawing.Imaging.ImageFormat targetFormat)
+        {
             var fi = new System.IO.FileInfo(sourceFile);
             if (fi.Extension.ToUpper() != ".DDS") return sourceFile;
 
@@ -24,16 +28,13 @@ namespace BeamNG_LevelCleanUp.Utils
                 switch (image.Format)
                 {
                     case ImageFormat.Rgba32:
-                        format = PixelFormat.Format32bppArgb;
+                        format = PixelFormats.Bgra32;
                         break;
                     case ImageFormat.Rgb24:
-                        format = PixelFormat.Format24bppRgb;
-                        break;
-                    case ImageFormat.Rgba16:
-                        format = PixelFormat.Format16bppArgb1555;
+                        format = PixelFormats.Bgr24;
                         break;
                     case ImageFormat.Rgb8:
-                        format = PixelFormat.Format8bppIndexed;
+                        format = PixelFormats.Gray8;
                         break;
                     default:
                         // see the sample for more details
@@ -47,21 +48,38 @@ namespace BeamNG_LevelCleanUp.Utils
                 var retVal = string.Empty;
                 try
                 {
+                    Ratio = (float)image.Width / (float)image.Height;
                     var data = Marshal.UnsafeAddrOfPinnedArrayElement(image.Data, 0);
-                    var bitmap = new Bitmap(image.Width, image.Height, image.Stride, format, data);
+                    var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, format, null, data, image.Data.Length, image.Stride);
+                    //var bitmap = new Bitmap(image.Width, image.Height, image.Stride, format, data);
                     switch (targetFormat.ToString())
                     {
                         case "Png":
                             retVal = Path.ChangeExtension(sourceFile, ".png");
-                            bitmap.Save(retVal, System.Drawing.Imaging.ImageFormat.Png);
+                            using (var fileStream = new FileStream(retVal, FileMode.CreateNew))
+                            {
+                                BitmapEncoder encoder = new PngBitmapEncoder();
+                                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                                encoder.Save(fileStream);
+                            }
                             break;
                         case "Bmp":
                             retVal = Path.ChangeExtension(sourceFile, ".bmp");
-                            bitmap.Save(retVal, System.Drawing.Imaging.ImageFormat.Bmp);
+                            using (var fileStream = new FileStream(retVal, FileMode.CreateNew))
+                            {
+                                BitmapEncoder encoder = new BmpBitmapEncoder();
+                                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                                encoder.Save(fileStream);
+                            }
                             break;
                         case "Jpeg":
                             retVal = Path.ChangeExtension(sourceFile, ".jpg");
-                            bitmap.Save(retVal, System.Drawing.Imaging.ImageFormat.Jpeg);
+                            using (var fileStream = new FileStream(retVal, FileMode.CreateNew))
+                            {
+                                BitmapEncoder encoder = new JpegBitmapEncoder();
+                                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                                encoder.Save(fileStream);
+                            }
                             break;
                     }
                 }

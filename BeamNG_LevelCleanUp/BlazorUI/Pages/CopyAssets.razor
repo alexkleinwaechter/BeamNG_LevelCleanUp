@@ -253,7 +253,7 @@
                 {
                     Snackbar.Add(msg.Message, Severity.Error, config =>
                     {
-                        config.VisibleStateDuration = int.MaxValue;
+                        config.VisibleStateDuration = 30;
                     });
                     _errors.Add(msg.Message);
                 }
@@ -402,7 +402,6 @@
         var dialogOptions = new DialogOptions() { FullScreen = true, CloseButton = true };
         var parameters = new DialogParameters();
         parameters.Add("CopyAsset", context.CopyAsset);
-
         var dialog = DialogService.Show<AssetViewer>($"Asset Preview: {context.FullName}", parameters, dialogOptions);
     }
 }
