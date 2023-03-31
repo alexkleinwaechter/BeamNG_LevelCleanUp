@@ -12,5 +12,6 @@ namespace BeamNG_LevelCleanUp
         internal const string Decals = @"art\decals";
         internal const string Dae = @"art\shapes";
         internal const string MappingToolsPrefix = "MT_";
+        internal const string BeamMapPath = @"content\levels";
     }
 }

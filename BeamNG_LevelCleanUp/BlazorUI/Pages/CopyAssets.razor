@@ -4,9 +4,11 @@
 @using BeamNG_LevelCleanUp.Communication;
 @using BeamNG_LevelCleanUp.Logic;
 @using BeamNG_LevelCleanUp.Objects;
+@using BeamNG_LevelCleanUp.Utils;
 @using Microsoft.AspNetCore.Components.Forms;
 @using System.IO.Compression;
 @using System.Diagnostics.CodeAnalysis;
+@using System.Reflection;
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
@@ -15,17 +17,44 @@
         <div class="content">
             <h3>Copy Assets</h3>
             <MudExpansionPanels @ref="FileSelect">
+                <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
+                    <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
+                                         Description="The game install directory. If empty some features are missing.">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" IsInitiallyExpanded="true">
                     <FileSelectComponent OnFileSelected="FileSelectedCopyFrom"
                                          Description="Your asset source map"
                                          Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
+                    @if (_vanillaLevels.Any())
+                    {
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                               ValueChanged="OnVanillaSourceSelected"
+                               Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                        @foreach (var item in _vanillaLevels)
+                            {
+                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
                 </MudExpansionPanel>
-                <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
+                <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="false">
                     <FileSelectComponent OnFileSelected="FileSelected"
                                          Description="Your asset target map"
                                          Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
+                    @if (_vanillaLevels.Any())
+                    {
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                               ValueChanged="OnVanillaTargetSelected"
+                               Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                        @foreach (var item in _vanillaLevels)
+                            {
+                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
                 </MudExpansionPanel>
             </MudExpansionPanels>
 
@@ -38,7 +67,7 @@
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Assets in @_levelNameCopyFrom</MudText>
                         <MudSpacer />
-                        <MudTextField DebounceInterval="300" @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                        <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
                         <MudTh>View</MudTh>
@@ -140,6 +169,11 @@
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
     bool _showErrorLog { get; set; }
+    private List<FileInfo> _vanillaLevels { get; set; } = new List<FileInfo>();
+    private FileInfo _vanillaLevelSourceSelected { get; set; }
+    private FileInfo _vanillaLevelTargetSelected { get; set; }
+    private string _beamInstallDir { get; set; }
+    private string _workingDirectory { get; set; }
 
     protected void InitializeVariables()
 
@@ -157,10 +191,15 @@
         _openDrawer = false;
         BindingListCopy = new List<GridFileListItem>();
         _showDeployButton = false;
+        _vanillaLevelSourceSelected = null;
+        _vanillaLevelTargetSelected = null;
+        _workingDirectory = null;
     }
+
     protected async Task FileSelectedCopyFrom(string file)
     {
         InitializeVariables();
+        _workingDirectory = Path.GetDirectoryName(file);
         await Task.Run(() =>
         {
             try
@@ -169,7 +208,7 @@
                     {
                         config.VisibleStateDuration = int.MaxValue;
                     });
-                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(file, "_copyFrom");
+                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(Path.Join(_workingDirectory, Path.GetFileName(file)), "_copyFrom");
                 //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPathCopyFrom, null);
                 _levelNameCopyFrom = Reader.GetLevelName();
@@ -187,8 +226,34 @@
         _fileSelectDisabled = false;
     }
 
+    protected async Task OnVanillaSourceSelected(FileInfo file)
+    {
+        InitializeVariables();
+        SetDefaultWorkingDirectory();
+        _vanillaLevelSourceSelected = file;
+        var target = Path.Join(_workingDirectory, _vanillaLevelSourceSelected.Name);
+        PubSubChannel.SendMessage(false, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
+        File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
+        _fileSelectDisabled = false;
+        await FileSelectedCopyFrom(target);
+    }
+
+    protected async Task OnVanillaTargetSelected(FileInfo file)
+    {
+        SetDefaultWorkingDirectory();
+        _vanillaLevelTargetSelected = file;
+        var target = Path.Join(_workingDirectory, _vanillaLevelTargetSelected.Name);
+        PubSubChannel.SendMessage(false, $"Copy {_vanillaLevelTargetSelected.Name} to {target}");
+        File.Copy(_vanillaLevelTargetSelected.FullName, target, true);
+        await FileSelected(target);
+    }
+
     protected async Task FileSelected(string file)
     {
+        if (string.IsNullOrEmpty(_workingDirectory))
+        {
+            _workingDirectory = Path.GetDirectoryName(file);
+        }
         await Task.Run(() =>
         {
             try
@@ -197,7 +262,7 @@
                     {
                         config.VisibleStateDuration = int.MaxValue;
                     });
-                _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
+                _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(_workingDirectory, Path.GetFileName(file)), "_unpacked");
                 //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPath, null);
                 _levelName = Reader.GetLevelName();
@@ -213,6 +278,26 @@
         });
         await ScanAssets();
         _fileSelectDisabled = false;
+    }
+
+    protected void SetBeamInstallDir(string file)
+    {
+        if (file != Steam.BeamInstallDir)
+        {
+            Steam.BeamInstallDir = file;
+            GetVanillaLevels();
+        }
+    }
+
+    protected string GetBeamInstallDir()
+    {
+        if (Steam.BeamInstallDir != _beamInstallDir)
+        {
+            _beamInstallDir = Steam.GetBeamInstallDir();
+            GetVanillaLevels();
+        }
+        return "BeamNG install directory: " + _beamInstallDir;
+
     }
 
     protected async Task ScanAssets()
@@ -253,7 +338,7 @@
                 {
                     Snackbar.Add(msg.Message, Severity.Error, config =>
                     {
-                        config.VisibleStateDuration = int.MaxValue;
+                        config.VisibleStateDuration = 30;
                     });
                     _errors.Add(msg.Message);
                 }
@@ -402,7 +487,30 @@
         var dialogOptions = new DialogOptions() { FullScreen = true, CloseButton = true };
         var parameters = new DialogParameters();
         parameters.Add("CopyAsset", context.CopyAsset);
-
         var dialog = DialogService.Show<AssetViewer>($"Asset Preview: {context.FullName}", parameters, dialogOptions);
+    }
+
+    private void GetVanillaLevels()
+    {
+        var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
+        _vanillaLevels = Directory.GetFiles(dir).Select(x => new FileInfo(x)).ToList();
+        StateHasChanged();
+    }
+
+    Func<FileInfo, string> converter = p => p?.Name;
+
+    public static DirectoryInfo GetExecutingDirectory()
+    {
+        var location = new Uri(Assembly.GetEntryAssembly().GetName().CodeBase);
+        return new FileInfo(location.AbsolutePath).Directory;
+    }
+
+    public void SetDefaultWorkingDirectory()
+    {
+        if (string.IsNullOrEmpty(_workingDirectory) || (_vanillaLevelSourceSelected != null && _vanillaLevelTargetSelected != null))
+        {
+            _workingDirectory = Path.Join(GetExecutingDirectory().FullName, "MyMaps");
+            Directory.CreateDirectory(_workingDirectory);
+        }
     }
 }
