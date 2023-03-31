@@ -56,7 +56,7 @@ namespace BeamNG_LevelCleanUp.Utils
                     {
                         case "Png":
                             retVal = Path.ChangeExtension(sourceFile, ".png");
-                            using (var fileStream = new FileStream(retVal, FileMode.CreateNew))
+                            using (var fileStream = new FileStream(retVal, FileMode.Create))
                             {
                                 BitmapEncoder encoder = new PngBitmapEncoder();
                                 encoder.Frames.Add(BitmapFrame.Create(bitmap));
@@ -65,7 +65,7 @@ namespace BeamNG_LevelCleanUp.Utils
                             break;
                         case "Bmp":
                             retVal = Path.ChangeExtension(sourceFile, ".bmp");
-                            using (var fileStream = new FileStream(retVal, FileMode.CreateNew))
+                            using (var fileStream = new FileStream(retVal, FileMode.Create))
                             {
                                 BitmapEncoder encoder = new BmpBitmapEncoder();
                                 encoder.Frames.Add(BitmapFrame.Create(bitmap));
@@ -74,7 +74,7 @@ namespace BeamNG_LevelCleanUp.Utils
                             break;
                         case "Jpeg":
                             retVal = Path.ChangeExtension(sourceFile, ".jpg");
-                            using (var fileStream = new FileStream(retVal, FileMode.CreateNew))
+                            using (var fileStream = new FileStream(retVal, FileMode.Create))
                             {
                                 BitmapEncoder encoder = new JpegBitmapEncoder();
                                 encoder.Frames.Add(BitmapFrame.Create(bitmap));
