@@ -116,6 +116,15 @@ namespace BeamNG_LevelCleanUp.Logic
             //_newName = null;
         }
 
+        public string GetSteamBeamFolder() {
+            return Steam.GetBeamInstallDir();
+        }
+
+        public void SetSteamBeamFolder(string path)
+        {
+            Steam.BeamInstallDir = path;
+        }
+
         internal List<FileInfo> GetDeleteList()
         {
             return DeleteList.OrderBy(x => x.FullName).ToList();
