@@ -2,6 +2,7 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -58,6 +59,7 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
         internal BeamFileReader(string levelpath, string beamLogPath, string levelPathCopyFrom = null)
         {
+            var beamInstallDir = Steam.GetBeamInstallDir();
             _levelPath = levelpath;
             _beamLogPath = beamLogPath;
             _levelPathCopyFrom = levelPathCopyFrom;
@@ -66,6 +68,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal BeamFileReader()
         {
+            var beamInstallDir = Steam.GetBeamInstallDir();
         }
 
         internal void SanitizePath()
@@ -99,11 +102,27 @@ namespace BeamNG_LevelCleanUp.Logic
             AllDaeList = new List<FileInfo>();
             ExcludeFiles = new List<string>();
             UnusedAssetFiles = new List<string>();
+            CopyAssets = new List<CopyAsset>();
+            AllDaeCopyList = new List<FileInfo>();
             _mainDecalsJson = new List<FileInfo>();
             _managedDecalData = new List<FileInfo>();
             _managedItemData = new List<FileInfo>();
             _forestJsonFiles = new List<FileInfo>();
-            CopyAssets = new List<CopyAsset>();
+            //_levelName = null;
+            //_namePath = null;
+            //_levelNameCopyFrom = null;
+            //_namePathCopyFrom = null;
+            //_beamLogPath = null;
+            //_newName = null;
+        }
+
+        public string GetSteamBeamFolder() {
+            return Steam.GetBeamInstallDir();
+        }
+
+        public void SetSteamBeamFolder(string path)
+        {
+            Steam.BeamInstallDir = path;
         }
 
         internal List<FileInfo> GetDeleteList()

@@ -1,4 +1,5 @@
-﻿@using BeamNG_LevelCleanUp.Objects;
+﻿@using BeamNG_LevelCleanUp.Communication;
+@using BeamNG_LevelCleanUp.Objects;
 @using BeamNG_LevelCleanUp.Utils;
 @using Blazor3D.Enums;
 @using Blazor3D.Events;
@@ -15,7 +16,25 @@
 ;
 <MudDialog>
     <DialogContent>
-        <Viewer @ref="View3D1" Scene="scene" />
+        <MudContainer>
+            <Viewer @ref="View3D1" Scene="scene" />
+        </MudContainer>
+        <MudContainer Style="height: 280px; overflow-y: scroll">
+            <MudGrid>
+                @foreach (var item in imageSources)
+                {
+                    <MudItem xs="3">
+                        <MudCard Style="width:25%;">
+                            <MudCardMedia Image="@item.Path" Height="200"/>
+                            <MudCardContent>
+                                <MudText Typo="Typo.h5">@item.Filename</MudText>
+                                <MudText>@item.MapName</MudText>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudContainer>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Close</MudButton>
@@ -32,6 +51,8 @@
     private string tempDir = string.Empty;
     private string daeFilePath = string.Empty;
     private string colormapFile = string.Empty;
+    private float ratio { get; set; }
+    private List<ImageSource> imageSources = new List<ImageSource>();
 
     void Cancel() => MudDialog.Cancel();
 
@@ -43,22 +64,18 @@
 
     protected override Task OnInitializedAsync()
     {
-        tempDir = RefreshAndGetTempDirectory();
         AddLights();
         CopyFiles();
-        if (CopyAsset.CopyAssetType == CopyAssetType.Road)
+        if (CopyAsset.CopyAssetType != CopyAssetType.Dae)
         {
-            LoadRoadPreview();
-        }
-        if (CopyAsset.CopyAssetType == CopyAssetType.Decal)
-        {
-            LoadDecalPreview();
+            LoadMaterialPreview();
         }
         return base.OnInitializedAsync();
     }
 
     protected override void OnInitialized()
     {
+        tempDir = RefreshAndGetTempDirectory();
         base.OnInitialized();
     }
 
@@ -67,7 +84,7 @@
         scene.Add(new AmbientLight());
         scene.Add(new PointLight()
             {
-                Intensity = 50f,
+                Intensity = 1f,
                 Position = new Vector3(100, 200, 100)
             });
         scene.Add(new PointLight()
@@ -109,6 +126,7 @@
         var settings = new ImportSettings
             {
                 Format = Import3DFormats.Collada,
+                TextureURL = colormapFile,
                 FileURL = daeFilePath,
                 Uuid = Guid.NewGuid()
             };
@@ -116,30 +134,17 @@
         await View3D1.SetCameraPositionAsync(new Vector3(0, 5, 10), new Vector3(0, 3, 0));
     }
 
-    private void LoadRoadPreview()
+    private void LoadMaterialPreview()
     {
         scene.Add(new Mesh
             {
-                Geometry = new PlaneGeometry(1, 4, 1, 1),
+                Geometry = new PlaneGeometry(4 * ratio, 4, 1, 1),
                 Position = new Vector3(0, 0, 0),
                 Material = new MeshStandardMaterial()
                 {
-                    Color = "#cccccc",
-                    Map = CreateTexture(colormapFile)
-                }
-            });
-    }
-
-    private void LoadDecalPreview()
-    {
-        scene.Add(new Mesh
-            {
-                Geometry = new PlaneGeometry(2, 2, 1, 1),
-                Position = new Vector3(0, 0, 0),
-                Material = new MeshStandardMaterial()
-                {
-                    Color = "#cccccc",
-                    Map = CreateTexture(colormapFile)
+                    Color = "LightGrey",
+                    Map = CreateTexture(colormapFile),
+                    FlatShading = true
                 }
             });
     }
@@ -171,22 +176,44 @@
                 daeFilePath = Path.Join("/temp", daeFile.Name).Replace(@"\", "/");
             }
         }
+        string surrogateFilePath = string.Empty;
         foreach (var material in CopyAsset.Materials)
         {
             foreach (var f in material.MaterialFiles)
             {
                 if (f.File.Exists)
                 {
-                    if (f.MapType == "ColorMap" || f.MapType == "BaseColorMap")
+                    var targetFile = Path.Join(tempDir, f.File.Name);
+                    File.Copy(f.File.FullName, targetFile, true);
+                    try
                     {
-                        var targetFile = Path.Join(tempDir, f.File.Name);
-                        File.Copy(f.File.FullName, targetFile, true);
-                        var ddsImage = new DDSImage().SaveAs(targetFile, System.Drawing.Imaging.ImageFormat.Png);
-                        var fi = new FileInfo(ddsImage);
-                        colormapFile = Path.Join("/temp", fi.Name).Replace(@"\", "/");
+                        var ddsImage = new DDSImage();
+                        var convertedFile = ddsImage.SaveAs(targetFile, System.Drawing.Imaging.ImageFormat.Png);
+                        ratio = ddsImage.Ratio;
+                        var fi = new FileInfo(convertedFile);
+                        surrogateFilePath = Path.Join("/temp", fi.Name).Replace(@"\", "/");
+                        imageSources.Add(new ImageSource
+                            {
+                                MapName = f.MapType,
+                                Filename = f.File.Name,
+                                Path = surrogateFilePath
+                            });
+                        if (f.MapType == "ColorMap" || f.MapType == "BaseColorMap")
+                        {
+                            fi = new FileInfo(convertedFile);
+                            colormapFile = surrogateFilePath;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        PubSubChannel.SendMessage(true, $"Error in preview: {ex.Message}");
                     }
                 }
             }
+        }
+        if (string.IsNullOrEmpty(colormapFile))
+        {
+            colormapFile = surrogateFilePath;
         }
     }
 

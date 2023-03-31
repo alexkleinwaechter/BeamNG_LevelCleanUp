@@ -12,14 +12,28 @@
         @_selectedFile
     </MudListItem>
 }
-<MudButton HtmlTag="label"
+@if (!SelectFolder)
+{
+    <MudButton HtmlTag="label"
            Variant="Variant.Filled"
            Color="Color.Primary"
            StartIcon="@Icons.Material.Filled.FileOpen"
            OnClick="OpenFile"
            Disabled="@Disabled">
-    Select File
-</MudButton>
+        Select File
+    </MudButton>
+}
+else
+{
+    <MudButton HtmlTag="label"
+           Variant="Variant.Filled"
+           Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.FolderOpen"
+           OnClick="OpenFolder"
+           Disabled="@Disabled">
+        Select Folder
+    </MudButton>
+}
 
 @code {
     [Parameter]
@@ -30,9 +44,11 @@
     public EventCallback<string> OnFileSelected { get; set; }
     [Parameter]
     public bool Disabled { get; set; }
+    [Parameter]
+    public bool SelectFolder { get; set; } = false;
     private OpenFileDialog OpenFileDialog { get; set; } = new OpenFileDialog();
+    private FolderBrowserDialog FolderBrowserDialog { get; set; } = new FolderBrowserDialog();
     private string _selectedFile { get; set; } = string.Empty;
-
     private async Task OpenFile()
     {
         this.OpenFileDialog.Filter = "Zipfiles (*.zip)|*.zip";
@@ -51,5 +67,22 @@
             throw (ex);
         }
 
+    }
+
+    private async Task OpenFolder()
+    {
+        try
+        {
+            System.Windows.Forms.DialogResult result = FolderBrowserDialog.ShowDialog();
+            if (result == System.Windows.Forms.DialogResult.OK)
+            {
+                _selectedFile = FolderBrowserDialog.SelectedPath;
+                await OnFileSelected.InvokeAsync(_selectedFile);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw (ex);
+        }
     }
 }
