@@ -62,19 +62,22 @@
             </MudDrawer>
         </div>
         <footer>
+            @if (_selectedItems.Any())
+            {
+                <MudText>Files: @BindingListDelete?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
+            }
             <MudStack Row="true" Justify="Justify.SpaceEvenly">
                 @if (_selectedItems.Any())
                 {
-                    <MudText>Files: @BindingListDelete?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
-                    <MudButton @onclick="DeleteDialog" Variant="Variant.Text" Color="Color.Secondary">Delete Files</MudButton>
+                    <MudButton @onclick="DeleteDialog" Color="Color.Primary">Delete Files</MudButton>
                 }
                 @if (_errors.Any())
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
                 }
                 @if (_showDeployButton)
                 {
@@ -85,9 +88,13 @@
                     <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
                     <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
-                    <MudButton @onclick="ZipAndDeploy" Variant="Variant.Text" Color="Color.Primary">Build Zipfile</MudButton>
+                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
+            @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+            {
+                <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Working Directory: @ZipFileHandler.WorkingDirectory</MudButton>
+            }
         </footer>
     </ChildContent>
     <ErrorContent>
@@ -135,6 +142,11 @@
         BindingListDelete = new List<GridFileListItem>();
         _showDeployButton = false;
 
+        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+        {
+            ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
+        }
+
         await Task.Run(() =>
         {
             try
@@ -143,7 +155,7 @@
         {
             config.VisibleStateDuration = int.MaxValue;
         });
-                _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
+                _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
                 Snackbar.Remove(_unzipSnackbar);
             }

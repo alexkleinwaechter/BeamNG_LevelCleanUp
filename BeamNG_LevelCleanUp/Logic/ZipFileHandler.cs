@@ -6,22 +6,24 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
-    internal static class ZipFileHandler
+    public static class ZipFileHandler
     {
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         static string _nameLevelPath { get; set; }
         static string _lastUnpackedPath { get; set; }
         static string _lastCopyFromUnpackedPathPath { get; set; }
-        internal enum JobTypeEnum
+        public enum JobTypeEnum
         {
             FindLevelRoot = 0
         }
-        internal static string ExtractToDirectory(string filePath, string relativeTarget, bool isCopyFrom = false)
+        public static string WorkingDirectory { get; set; }
+        public static string ExtractToDirectory(string filePath, string relativeTarget, bool isCopyFrom = false)
         {
             var retVal = string.Empty;
             var fi = new FileInfo(filePath);
@@ -53,17 +55,17 @@ namespace BeamNG_LevelCleanUp.Logic
             return retVal;
         }
 
-        internal static string GetLastUnpackedPath()
+        public static string GetLastUnpackedPath()
         {
             return _lastUnpackedPath;
         }
 
-        internal static string GetLastUnpackedCopyFromPath()
+        public static string GetLastUnpackedCopyFromPath()
         {
             return _lastCopyFromUnpackedPathPath;
         }
 
-        internal static void BuildDeploymentFile(string filePath, string levelName, CompressionLevel compressionLevel, bool searchLevelParent = false)
+        public static void BuildDeploymentFile(string filePath, string levelName, CompressionLevel compressionLevel, bool searchLevelParent = false)
         {
             var fileName = $"{levelName}_deploy_{DateTime.Now.ToString("yyMMdd")}.zip";
             var targetDir = new DirectoryInfo(filePath).Parent.FullName;
@@ -77,7 +79,7 @@ namespace BeamNG_LevelCleanUp.Logic
             PubSubChannel.SendMessage(false, $"Deploymentfile created at {targetPath}");
         }
 
-        internal static string GetLevelPath(string path)
+        public static string GetLevelPath(string path)
         {
             var dirInfo = new DirectoryInfo(path);
             if (dirInfo != null)
@@ -99,7 +101,7 @@ namespace BeamNG_LevelCleanUp.Logic
             return path;
         }
 
-        internal static string GetNamePath(string path)
+        public static string GetNamePath(string path)
         {
             var dirInfo = new DirectoryInfo(path);
             if (dirInfo != null)
@@ -114,7 +116,7 @@ namespace BeamNG_LevelCleanUp.Logic
             return path;
         }
 
-        internal static void WalkDirectoryTree(DirectoryInfo root, string filePattern, JobTypeEnum jobTypeEnum)
+        public static void WalkDirectoryTree(DirectoryInfo root, string filePattern, JobTypeEnum jobTypeEnum)
         {
             var exclude = new List<string>();
             //var exclude = new List<string> { "art\\shapes\\groundcover", "art\\shapes\\trees", "art\\shapes\\rocks", "art\\shapes\\driver_training" };
@@ -183,6 +185,11 @@ namespace BeamNG_LevelCleanUp.Logic
                     WalkDirectoryTree(dirInfo, filePattern, jobTypeEnum);
                 }
             }
+        }
+
+        public static void OpenExplorer()
+        {
+            System.Diagnostics.Process.Start("explorer.exe", WorkingDirectory);
         }
     }
 }

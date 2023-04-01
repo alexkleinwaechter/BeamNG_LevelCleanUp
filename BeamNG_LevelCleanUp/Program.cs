@@ -1,4 +1,6 @@
 using AutoUpdaterDotNET;
+using BeamNG_LevelCleanUp.Communication;
+
 namespace BeamNG_LevelCleanUp
 {
     /// <summary>
@@ -47,6 +49,8 @@ namespace BeamNG_LevelCleanUp
 
         static void p_ExitRequested(object sender, EventArgs e)
         {
+            PubSubChannel.StopChannel();
+            Thread.Sleep(TimeSpan.FromSeconds(1));
             Application.ExitThread();
         }
 
