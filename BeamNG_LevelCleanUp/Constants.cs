@@ -6,12 +6,12 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp
 {
-    internal static class Constants
+    public static class Constants
     {
-        internal const string RouteRoad = @"art\road";
-        internal const string Decals = @"art\decals";
-        internal const string Dae = @"art\shapes";
-        internal const string MappingToolsPrefix = "MT_";
-        internal const string BeamMapPath = @"content\levels";
+        public const string RouteRoad = @"art\road";
+        public const string Decals = @"art\decals";
+        public const string Dae = @"art\shapes";
+        public const string MappingToolsPrefix = "MT_";
+        public const string BeamMapPath = @"content\levels";
     }
 }

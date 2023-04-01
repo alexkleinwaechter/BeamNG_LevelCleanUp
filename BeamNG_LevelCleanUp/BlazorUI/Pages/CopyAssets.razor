@@ -46,7 +46,7 @@
                     </FileSelectComponent>
                     @if (_vanillaLevels.Any())
                     {
-                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                        <MudSelect T="FileInfo" ToStringFunc="@converter" Disabled="@_fileSelectDisabled"
                                ValueChanged="OnVanillaTargetSelected"
                                Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
                         @foreach (var item in _vanillaLevels)
@@ -107,19 +107,22 @@
             </MudDrawer>
         </div>
         <footer>
+            @if (_selectedItems.Any())
+            {
+                <MudText>Files: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
+            }
             <MudStack Row="true" Justify="Justify.SpaceEvenly">
                 @if (_selectedItems.Any())
                 {
-                    <MudText>Files: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
-                    <MudButton @onclick="CopyDialog" Variant="Variant.Text" Color="Color.Primary">Copy Assets</MudButton>
+                    <MudButton @onclick="CopyDialog" Color="Color.Primary">Copy Assets</MudButton>
                 }
                 @if (_errors.Any())
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
                 }
                 @if (_showDeployButton)
                 {
@@ -130,9 +133,13 @@
                     <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
                     <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
-                    <MudButton @onclick="ZipAndDeploy" Variant="Variant.Text" Color="Color.Primary">Build Zipfile</MudButton>
+                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
+            @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+            {
+                <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Working Directory: @ZipFileHandler.WorkingDirectory</MudButton>
+            }
         </footer>
     </ChildContent>
     <ErrorContent>
@@ -173,7 +180,6 @@
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private FileInfo _vanillaLevelTargetSelected { get; set; }
     private string _beamInstallDir { get; set; }
-    private string _workingDirectory { get; set; }
 
     protected void InitializeVariables()
 
@@ -193,13 +199,13 @@
         _showDeployButton = false;
         _vanillaLevelSourceSelected = null;
         _vanillaLevelTargetSelected = null;
-        _workingDirectory = null;
+        ZipFileHandler.WorkingDirectory = null;
     }
 
     protected async Task FileSelectedCopyFrom(string file)
     {
         InitializeVariables();
-        _workingDirectory = Path.GetDirectoryName(file);
+        ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
         await Task.Run(() =>
         {
             try
@@ -208,7 +214,7 @@
                     {
                         config.VisibleStateDuration = int.MaxValue;
                     });
-                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(Path.Join(_workingDirectory, Path.GetFileName(file)), "_copyFrom");
+                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_copyFrom");
                 //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPathCopyFrom, null);
                 _levelNameCopyFrom = Reader.GetLevelName();
@@ -231,7 +237,7 @@
         InitializeVariables();
         SetDefaultWorkingDirectory();
         _vanillaLevelSourceSelected = file;
-        var target = Path.Join(_workingDirectory, _vanillaLevelSourceSelected.Name);
+        var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
         PubSubChannel.SendMessage(false, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
         File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
         _fileSelectDisabled = false;
@@ -242,7 +248,7 @@
     {
         SetDefaultWorkingDirectory();
         _vanillaLevelTargetSelected = file;
-        var target = Path.Join(_workingDirectory, _vanillaLevelTargetSelected.Name);
+        var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelTargetSelected.Name);
         PubSubChannel.SendMessage(false, $"Copy {_vanillaLevelTargetSelected.Name} to {target}");
         File.Copy(_vanillaLevelTargetSelected.FullName, target, true);
         await FileSelected(target);
@@ -250,9 +256,9 @@
 
     protected async Task FileSelected(string file)
     {
-        if (string.IsNullOrEmpty(_workingDirectory))
+        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
         {
-            _workingDirectory = Path.GetDirectoryName(file);
+            ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
         }
         await Task.Run(() =>
         {
@@ -262,7 +268,7 @@
                     {
                         config.VisibleStateDuration = int.MaxValue;
                     });
-                _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(_workingDirectory, Path.GetFileName(file)), "_unpacked");
+                _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
                 //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPath, null);
                 _levelName = Reader.GetLevelName();
@@ -507,10 +513,10 @@
 
     public void SetDefaultWorkingDirectory()
     {
-        if (string.IsNullOrEmpty(_workingDirectory) || (_vanillaLevelSourceSelected != null && _vanillaLevelTargetSelected != null))
+        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory) || (_vanillaLevelSourceSelected != null && _vanillaLevelTargetSelected != null))
         {
-            _workingDirectory = Path.Join(GetExecutingDirectory().FullName, "MyMaps");
-            Directory.CreateDirectory(_workingDirectory);
+            ZipFileHandler.WorkingDirectory = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BeamNgMT");
+            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
         }
     }
 }
