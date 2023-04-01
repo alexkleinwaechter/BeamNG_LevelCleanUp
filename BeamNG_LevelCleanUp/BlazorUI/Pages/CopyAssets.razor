@@ -332,7 +332,7 @@
         _fileSelectExpanded = true;
         var consumer = Task.Run(async () =>
         {
-            while (await PubSubChannel.ch.Reader.WaitToReadAsync())
+            while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
             {
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
                 if (!msg.IsError)
