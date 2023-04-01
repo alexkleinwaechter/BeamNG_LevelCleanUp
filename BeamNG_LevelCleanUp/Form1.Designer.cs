@@ -28,33 +28,31 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.folderBrowserDialogLevel = new System.Windows.Forms.FolderBrowserDialog();
-            this.openFileDialogLog = new System.Windows.Forms.OpenFileDialog();
-            this.openFileDialogZip = new System.Windows.Forms.OpenFileDialog();
-            this.backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
-            this.blazorWebView1 = new Microsoft.AspNetCore.Components.WebView.WindowsForms.BlazorWebView();
-            this.SuspendLayout();
+            folderBrowserDialogLevel = new FolderBrowserDialog();
+            openFileDialogLog = new OpenFileDialog();
+            openFileDialogZip = new OpenFileDialog();
+            backgroundWorker1 = new System.ComponentModel.BackgroundWorker();
+            blazorWebView1 = new Microsoft.AspNetCore.Components.WebView.WindowsForms.BlazorWebView();
+            SuspendLayout();
             // 
             // blazorWebView1
             // 
-            this.blazorWebView1.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.blazorWebView1.Location = new System.Drawing.Point(0, 0);
-            this.blazorWebView1.Margin = new System.Windows.Forms.Padding(4);
-            this.blazorWebView1.Name = "blazorWebView1";
-            this.blazorWebView1.Size = new System.Drawing.Size(1990, 1372);
-            this.blazorWebView1.TabIndex = 1;
-            this.blazorWebView1.Text = "blazorWebView1";
+            blazorWebView1.Dock = DockStyle.Fill;
+            blazorWebView1.Location = new System.Drawing.Point(0, 0);
+            blazorWebView1.Name = "blazorWebView1";
+            blazorWebView1.Size = new System.Drawing.Size(1682, 953);
+            blazorWebView1.TabIndex = 1;
+            blazorWebView1.Text = "blazorWebView1";
             // 
             // Form1
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(12F, 30F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1990, 1372);
-            this.Controls.Add(this.blazorWebView1);
-            this.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
-            this.Name = "Form1";
-            this.ResumeLayout(false);
-
+            AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
+            AutoScaleMode = AutoScaleMode.Font;
+            ClientSize = new System.Drawing.Size(1682, 953);
+            Controls.Add(blazorWebView1);
+            Name = "Form1";
+            StartPosition = FormStartPosition.CenterScreen;
+            ResumeLayout(false);
         }
 
         #endregion
