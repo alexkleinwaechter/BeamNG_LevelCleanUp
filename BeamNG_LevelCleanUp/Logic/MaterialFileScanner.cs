@@ -30,7 +30,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     var val = (string)prop.GetValue(stage, null);
                     //if (val == "/levels/LosInjurus/ART/shapes/Buildings/MetroCity/commercial/concrete_008_d.dds") Debugger.Break();
-                    //if (val == "containers_01_a_d.dds") Debugger.Break();
+                    //if (val == "levels/polish_roads_V2/from_east_coast_usa/terrain/Grass-01-D") Debugger.Break();
                     if (!string.IsNullOrEmpty(val))
                     {
                         if (val.StartsWith("./"))
