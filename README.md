@@ -4,6 +4,7 @@ Clean your map level from unused files before deployment
 Watch the tutorial videos:
 
 [![Watch the video](https://img.youtube.com/vi/-M06aIGzuKk/0.jpg)](https://youtu.be/-M06aIGzuKk) 
+[![Watch the video](https://img.youtube.com/vi/OE02UEP8ups/0.jpg)](https://youtu.be/OE02UEP8ups) 
 ## Features
 - Analyze your map and delete all unused files.
 - Copy another map and rename it, then you can use it as a basemap for your new project
