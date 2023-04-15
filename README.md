@@ -1,9 +1,9 @@
 # BeamNG Tools for Mapbuilders
 Clean your map level from unused files before deployment
 
-Watch the tutorial video:
+Watch the tutorial videos:
 
-[![Watch the video](https://img.youtube.com/vi/ZA1zjmpe1VU/0.jpg)](https://www.youtube.com/watch?v=ZA1zjmpe1VU) 
+[![Watch the video](https://img.youtube.com/vi/-M06aIGzuKk/0.jpg)](https://youtu.be/-M06aIGzuKk) 
 ## Features
 - Analyze your map and delete all unused files.
 - Copy another map and rename it, then you can use it as a basemap for your new project
