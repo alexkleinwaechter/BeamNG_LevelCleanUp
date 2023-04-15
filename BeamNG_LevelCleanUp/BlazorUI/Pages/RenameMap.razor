@@ -158,7 +158,7 @@
 
     protected override void OnInitialized()
     {
-        _fileSelectExpanded = true;
+        CheckPreviousLevel();
         var consumer = Task.Run(async () =>
         {
             while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
@@ -177,6 +177,24 @@
                 //Thread.Sleep(TimeSpan.FromSeconds(1));
             }
         });
+    }
+
+    void CheckPreviousLevel()
+    {
+        var bfr = new BeamFileReader();
+        _levelName = bfr.GetLevelName();
+        _levelPath = bfr.GetLevelPath();
+        if (!string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelPath))
+        {
+            _renameCurrentName = _levelName;
+            _unzipSnackbar
+                = Snackbar.Add($"The level {_levelName} is still loaded. You can either rename it now or load another level for renaming.",
+                Severity.Info);
+        }
+        else
+        {
+            _fileSelectExpanded = true;
+        }
     }
 
     void OpenDrawer(Anchor anchor, bool isError)

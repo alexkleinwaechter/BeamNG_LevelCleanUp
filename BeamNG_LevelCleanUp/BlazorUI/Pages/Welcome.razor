@@ -1,5 +1,5 @@
 ﻿@page "/"
-
+@inject ISnackbar Snackbar
 <ErrorBoundary>
     <ChildContent>
         <MudCard Class="my-4">
@@ -69,5 +69,9 @@
 </ErrorBoundary>
 
 @code {
-
+    protected override void OnInitialized()
+    {
+        Snackbar.Clear();
+        Snackbar.Configuration.PositionClass = Defaults.Classes.Position.BottomEnd;
+    }
 }
