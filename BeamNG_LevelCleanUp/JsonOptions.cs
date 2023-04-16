@@ -19,7 +19,7 @@ namespace BeamNG_LevelCleanUp
                 AllowTrailingCommas = true,
                 IncludeFields = true,
                 WriteIndented = true,
-                ReadCommentHandling = JsonCommentHandling.Skip
+                ReadCommentHandling = JsonCommentHandling.Skip,
             };
         }
 

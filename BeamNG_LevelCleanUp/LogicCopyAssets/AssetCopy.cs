@@ -8,6 +8,8 @@ using System.Text.Json.Nodes;
 using System.Text.Json;
 using System.Threading.Tasks;
 using BeamNG_LevelCleanUp.Utils;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets
 {
@@ -97,7 +99,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 var jsonObject = new JsonObject(
                 new[]
                     {
-                          KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(JsonSerializer.Serialize(item.DecalData,BeamJsonOptions.GetJsonSerializerOptions()))),
+                          KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(item.DecalData,BeamJsonOptions.GetJsonSerializerOptions()))),
                     }
                 );
                 File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
@@ -107,7 +109,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 var targetJsonNode = JsonNode.Parse(File.ReadAllText(targetJsonFile.FullName), null, docOptions);
                 if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == item.DecalData.Name))
                 {
-                    targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(JsonSerializer.Serialize(item.DecalData, BeamJsonOptions.GetJsonSerializerOptions()))));
+                    targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(item.DecalData, BeamJsonOptions.GetJsonSerializerOptions()))));
                 }
                 File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
             }
@@ -156,7 +158,21 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             {
                 try
                 {
-                    var sourceJsonNode = JsonNode.Parse(File.ReadAllText(material.MatJsonFileLocation), null, docOptions);
+                    var jsonString = File.ReadAllText(material.MatJsonFileLocation);
+                    JsonNode sourceJsonNode;
+                    try
+                    {
+                        sourceJsonNode = JsonNode.Parse(jsonString, null, docOptions);
+                        _ = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        //remove first duplicate key out of JsonNode
+                        var tempObject = DeserializeObject<JObject>(jsonString, new JsonSerializerSettings(), DuplicatePropertyNameHandling.Replace);
+                        jsonString = tempObject.ToString();
+                        sourceJsonNode = JsonNode.Parse(jsonString, null, docOptions);
+                        PubSubChannel.SendMessage(true, $"materials.json {material.MatJsonFileLocation} has a duplicate property. The last one wins. Message:{ex.Message}");
+                    }
                     var sourceMaterialNode = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
                     if (sourceMaterialNode.Value == null)
                     {
@@ -214,7 +230,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(true, $"materials.json {material.MatJsonFileLocation} can't be parsed. If there is a duplicate entry, delete the duplicate now and press Copy Assets again. Exception:{ex.Message}");
+                    PubSubChannel.SendMessage(true, $"materials.json {material.MatJsonFileLocation} can't be parsed. Exception:{ex.Message}");
                     stopFaultyFile = true;
                     break;
                 }
@@ -269,9 +285,11 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                             targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath));
                             File.Copy(destinationFilePath, targetFile, true);
                         }
+                        else
+                        {
+                            throw;
+                        }
                     }
-
-                    throw;
                 }
             }
         }
@@ -306,6 +324,22 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 return string.Empty;
             }
             return Path.ChangeExtension(Path.Join("levels", targetParts.Last()).Replace(@"\", "/"), null);
+        }
+
+        public static T DeserializeObject<T>(string json, JsonSerializerSettings settings, DuplicatePropertyNameHandling duplicateHandling)
+        {
+            Newtonsoft.Json.JsonSerializer jsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault(settings);
+            using (var stringReader = new StringReader(json))
+            using (var jsonTextReader = new JsonTextReader(stringReader))
+            {
+                jsonTextReader.DateParseHandling = DateParseHandling.None;
+                JsonLoadSettings loadSettings = new JsonLoadSettings
+                {
+                    DuplicatePropertyNameHandling = duplicateHandling
+                };
+                var jtoken = JToken.ReadFrom(jsonTextReader, loadSettings);
+                return jtoken.ToObject<T>(jsonSerializer);
+            }
         }
     }
 }

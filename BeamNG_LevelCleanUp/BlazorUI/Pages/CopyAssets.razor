@@ -335,18 +335,18 @@
             while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
             {
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
-                if (!msg.IsError)
+                if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
                 {
-                    Snackbar.Add(msg.Message, Severity.Info);
-                    _messages.Add(msg.Message);
-                }
-                else
-                {
-                    Snackbar.Add(msg.Message, Severity.Error, config =>
+                    if (!msg.IsError)
                     {
-                        config.VisibleStateDuration = 30;
-                    });
-                    _errors.Add(msg.Message);
+                        _messages.Add(msg.Message);
+                        Snackbar.Add(msg.Message, Severity.Info);
+                    }
+                    else
+                    {
+                        _errors.Add(msg.Message);
+                        Snackbar.Add(msg.Message, Severity.Error);
+                    }
                 }
                 //Thread.Sleep(TimeSpan.FromSeconds(1));
             }
@@ -459,11 +459,14 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
-            PubSubChannel.SendMessage(false, $"Assets are copied now. Please be patient.");
-            var selected = _selectedItems.Select(y => y.Identifier).ToList();
-            Reader.DoCopyAssets(selected);
-            //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
-            _showDeployButton = true;
+            PubSubChannel.SendMessage(false, $"Assets copy in process. Please be patient.");
+            await Task.Run(() =>
+                {
+                    var selected = _selectedItems.Select(y => y.Identifier).ToList();
+                    Reader.DoCopyAssets(selected);
+                    //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
+                    _showDeployButton = true;
+                });
         }
     }
 
