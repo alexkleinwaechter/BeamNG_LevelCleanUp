@@ -90,7 +90,7 @@
     private List<string> _missingFiles { get; set; } = new List<string>();
     private List<string> _errors { get; set; } = new List<string>();
     private List<string> _messages { get; set; } = new List<string>();
-    private Snackbar _unzipSnackbar;
+    private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
     private string _fileSelectTitle = "Select your zipped level you want to give a new name";
     private bool _fileSelectDisabled { get; set; }
@@ -132,13 +132,13 @@
         {
             try
             {
-                _unzipSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
+                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
                 {
                     config.VisibleStateDuration = int.MaxValue;
                 });
                 _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
-                Snackbar.Remove(_unzipSnackbar);
+                Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
             {
@@ -190,7 +190,7 @@
         if (!string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelPath))
         {
             _renameCurrentName = _levelName;
-            _unzipSnackbar
+            _staticSnackbar
                 = Snackbar.Add($"The level {_levelName} is still loaded. You can either rename it now or load another level for renaming.",
                 Severity.Info);
         }
@@ -284,11 +284,15 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
-                PubSubChannel.SendMessage(false, $"Zipping the deployment file. Please be patient. Path: {path}");
+                _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
+                {
+                    config.VisibleStateDuration = int.MaxValue;
+                });
                 await Task.Run(() =>
                 {
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
                 });
+                Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
             {

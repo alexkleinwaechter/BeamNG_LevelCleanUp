@@ -109,7 +109,7 @@
     private List<string> _missingFiles { get; set; } = new List<string>();
     private List<string> _errors { get; set; } = new List<string>();
     private List<string> _messages { get; set; } = new List<string>();
-    private Snackbar _unzipSnackbar;
+    private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
     private string _fileSelectTitle = "Select your zipped level you want to shrink";
     private bool _fileSelectDisabled { get; set; }
@@ -151,13 +151,13 @@
         {
             try
             {
-                _unzipSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
-        {
-            config.VisibleStateDuration = int.MaxValue;
-        });
+                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
+                {
+                    config.VisibleStateDuration = int.MaxValue;
+                });
                 _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
-                Snackbar.Remove(_unzipSnackbar);
+                Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
             {
@@ -173,6 +173,10 @@
     protected async Task AnalyzeLevel()
     {
         _fileSelectDisabled = true;
+        _staticSnackbar = Snackbar.Add("Analyzing level. Please wait...", Severity.Normal, config =>
+        {
+            config.VisibleStateDuration = int.MaxValue;
+        });
         await Task.Run(() =>
         {
             try
@@ -181,7 +185,6 @@
                 Reader.ReadAll();
                 _missingFiles = Reader.GetMissingFilesFromBeamLog();
                 _levelName = Reader.GetLevelName();
-                PubSubChannel.SendMessage(false, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
             }
             catch (Exception ex)
             {
@@ -189,9 +192,11 @@
                 _fileSelectDisabled = false;
             }
         });
-        //tb_rename_current_name.Text = _levelName;
         FillDeleteList();
         _fileSelectDisabled = false;
+        Snackbar.Remove(_staticSnackbar);
+        PubSubChannel.SendMessage(false, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
+
     }
 
     protected override void OnInitialized()
@@ -313,13 +318,13 @@
         {
             await Task.Run(() =>
                 {
-                var selected = _selectedItems
+                    var selected = _selectedItems
                                .Select(x => new FileInfo(x.FullName))
                                 .ToList();
-                Reader.DeleteFilesAndDeploy(selected, false);
-                BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
-                _showDeployButton = true;
-                PubSubChannel.SendMessage(false, $"You can build your deployment file now.");
+                    Reader.DeleteFilesAndDeploy(selected, false);
+                    BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
+                    _showDeployButton = true;
+                    PubSubChannel.SendMessage(false, $"You can build your deployment file now.");
                 });
         }
     }
@@ -332,11 +337,15 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
-                PubSubChannel.SendMessage(false, $"Zipping the deployment file. Please be patient. Path: {path}");
+                _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
+                    {
+                        config.VisibleStateDuration = int.MaxValue;
+                    });
                 await Task.Run(() =>
                 {
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
                 });
+                Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
             {
