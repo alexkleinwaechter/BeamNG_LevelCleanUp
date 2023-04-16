@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO.Compression;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -9,7 +10,7 @@ namespace BeamNG_LevelCleanUp.Utils
 {
     public static class ZipReader
     {
-        public static void ExtractFile(string zipPath, string extractPath, string filePathEnd)
+        public static string ExtractFile(string zipPath, string extractPath, string filePathEnd)
         {
             // Normalizes the path.
             extractPath = Path.GetFullPath(extractPath);
@@ -23,6 +24,7 @@ namespace BeamNG_LevelCleanUp.Utils
 
             using (ZipArchive archive = ZipFile.OpenRead(zipPath))
             {
+                string retVal = null;
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
                     if (entry.FullName.EndsWith(filePathEnd, StringComparison.OrdinalIgnoreCase))
@@ -35,8 +37,10 @@ namespace BeamNG_LevelCleanUp.Utils
                         if (destinationPath.StartsWith(extractPath, StringComparison.Ordinal))
                             Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
                             entry.ExtractToFile(destinationPath, true);
+                            retVal = destinationPath;
                     }
                 }
+                return retVal;
             }
         }
     }
