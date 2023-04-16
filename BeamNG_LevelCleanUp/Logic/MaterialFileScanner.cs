@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -42,31 +43,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             val = Path.Join(Path.GetDirectoryName(_matJsonPath), val);
                         }
                         var filePath = PathResolver.ResolvePath(_levelPath, val, false);
-                        var fileInfo = new FileInfo(filePath);
-                        var fileToCheck = new FileInfo(filePath);
-                        if (!fileToCheck.Exists)
-                        {
-                            var ddsPath = Path.ChangeExtension(filePath, ".dds");
-                            fileToCheck = new FileInfo(ddsPath);
-                        }
-                        if (!fileToCheck.Exists)
-                        {
-                            var ddsPath = Path.ChangeExtension(filePath, ".png");
-                            fileToCheck = new FileInfo(ddsPath);
-                        }
-                        if (!fileToCheck.Exists)
-                        {
-                            var ddsPath = Path.ChangeExtension(filePath, ".jpg");
-                            fileToCheck = new FileInfo(ddsPath);
-                        }
-                        if (!fileToCheck.Exists)
-                        {
-                            var ddsPath = Path.ChangeExtension(filePath, ".jpeg");
-                            fileToCheck = new FileInfo(ddsPath);
-                        }
-                        if (fileToCheck.Exists) {
-                            fileInfo = fileToCheck;
-                        }
+                        FileInfo fileInfo = FileUtils.CheckIfImageFileExists(filePath);
                         retVal.Add(new MaterialFile
                         {
                             MaterialName = materialName,

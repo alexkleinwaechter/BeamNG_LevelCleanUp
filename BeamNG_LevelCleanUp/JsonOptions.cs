@@ -18,7 +18,8 @@ namespace BeamNG_LevelCleanUp
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 AllowTrailingCommas = true,
                 IncludeFields = true,
-                WriteIndented = true
+                WriteIndented = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
             };
         }
 

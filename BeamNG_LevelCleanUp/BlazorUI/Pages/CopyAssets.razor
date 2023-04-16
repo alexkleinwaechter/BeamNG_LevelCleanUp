@@ -156,7 +156,7 @@
     private List<string> _missingFiles { get; set; } = new List<string>();
     private List<string> _errors { get; set; } = new List<string>();
     private List<string> _messages { get; set; } = new List<string>();
-    private Snackbar _unzipSnackbar;
+    private Snackbar _staticSnackbar;
     private Snackbar _unzipSnackbarCopyFrom;
     private BeamFileReader Reader { get; set; }
     private string _fileSelectTitleCopyFrom = "Select the zipped source level you want to copy from";
@@ -264,7 +264,7 @@
         {
             try
             {
-                _unzipSnackbar = Snackbar.Add("Unzipping target level...", Severity.Normal, config =>
+                _staticSnackbar = Snackbar.Add("Unzipping target level...", Severity.Normal, config =>
                     {
                         config.VisibleStateDuration = int.MaxValue;
                     });
@@ -273,7 +273,7 @@
                 Reader = new BeamFileReader(_levelPath, null);
                 _levelName = Reader.GetLevelName();
                 Snackbar.Add("Unzipping target level finished", Severity.Success);
-                Snackbar.Remove(_unzipSnackbar);
+                Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
             {
@@ -335,18 +335,18 @@
             while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
             {
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
-                if (!msg.IsError)
+                if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
                 {
-                    Snackbar.Add(msg.Message, Severity.Info);
-                    _messages.Add(msg.Message);
-                }
-                else
-                {
-                    Snackbar.Add(msg.Message, Severity.Error, config =>
+                    if (!msg.IsError)
                     {
-                        config.VisibleStateDuration = 30;
-                    });
-                    _errors.Add(msg.Message);
+                        _messages.Add(msg.Message);
+                        Snackbar.Add(msg.Message, Severity.Info);
+                    }
+                    else
+                    {
+                        _errors.Add(msg.Message);
+                        Snackbar.Add(msg.Message, Severity.Error);
+                    }
                 }
                 //Thread.Sleep(TimeSpan.FromSeconds(1));
             }
@@ -459,11 +459,18 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
-            PubSubChannel.SendMessage(false, $"Assets are copied now. Please be patient.");
-            var selected = _selectedItems.Select(y => y.Identifier).ToList();
-            Reader.DoCopyAssets(selected);
-            //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
-            _showDeployButton = true;
+            _staticSnackbar = Snackbar.Add($"Assets copy in process. Please be patient.", Severity.Normal, config =>
+            {
+                config.VisibleStateDuration = int.MaxValue;
+            });
+            await Task.Run(() =>
+                {
+                    var selected = _selectedItems.Select(y => y.Identifier).ToList();
+                    Reader.DoCopyAssets(selected);
+                    //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
+                    _showDeployButton = true;
+                });
+            Snackbar.Remove(_staticSnackbar);
         }
     }
 
@@ -475,11 +482,15 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
-                PubSubChannel.SendMessage(false, $"Zipping the deployment file. Please be patient. Path: {path}");
+                _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
+                {
+                    config.VisibleStateDuration = int.MaxValue;
+                });
                 await Task.Run(() =>
                 {
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
                 });
+                Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
             {
