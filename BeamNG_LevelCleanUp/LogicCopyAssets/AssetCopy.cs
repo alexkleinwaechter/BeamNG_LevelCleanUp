@@ -237,8 +237,38 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     var beamZip = beamDir + ".zip";
                     if (new FileInfo(beamZip).Exists && !thisLevelName.Equals(levelNameCopyFrom, StringComparison.InvariantCultureIgnoreCase))
                     {
-                        ZipReader.ExtractFile(beamZip, fileParts[0], fileParts[1]);
-                        File.Copy(sourceFile, targetFile, true);
+                        var extractPath = fileParts[0];
+                        var filePathEnd = fileParts[1];
+                        var destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        if (destinationFilePath == null)
+                        {
+                            filePathEnd = Path.ChangeExtension(filePathEnd, ".dds");
+                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath == null)
+                        {
+                            filePathEnd = Path.ChangeExtension(filePathEnd, ".png");
+                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath == null)
+                        {
+                            filePathEnd = Path.ChangeExtension(filePathEnd, ".jpg");
+                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath == null)
+                        {
+                            filePathEnd = Path.ChangeExtension(filePathEnd, ".jpeg");
+                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath != null)
+                        {
+                            targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath));
+                            File.Copy(destinationFilePath, targetFile, true);
+                        }
                     }
 
                     throw;
