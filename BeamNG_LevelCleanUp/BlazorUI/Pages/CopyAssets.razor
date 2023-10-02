@@ -30,8 +30,8 @@
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
-                               ValueChanged="OnVanillaSourceSelected"
-                               Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                                   ValueChanged="OnVanillaSourceSelected"
+                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
                         @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
@@ -47,8 +47,8 @@
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter" Disabled="@_fileSelectDisabled"
-                               ValueChanged="OnVanillaTargetSelected"
-                               Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                                   ValueChanged="OnVanillaTargetSelected"
+                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
                         @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
@@ -61,9 +61,9 @@
             @if (BindingListCopy.Any())
             {
                 <MudTable T="GridFileListItem" Items="@BindingListCopy" Hover="true"
-                      MultiSelection="true" @bind-SelectedItems="_selectedItems"
-                      @bind-Value="_searchString"
-                      Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
+                          MultiSelection="true" @bind-SelectedItems="_selectedItems"
+                @bind-Value="_searchString"
+                          Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Assets in @_levelNameCopyFrom</MudText>
                         <MudSpacer />
@@ -127,11 +127,11 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                           @bind-Value="_compressionLevel">
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -260,6 +260,20 @@
         {
             ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
         }
+        else if (ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(file))
+        {
+            PubSubChannel.SendMessage(false, $"Copy target level to {ZipFileHandler.WorkingDirectory} ...");
+            try
+            {
+                File.Copy(file, Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), true);
+                PubSubChannel.SendMessage(false, $"Copy target level finished");
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(true, $"Error copy target level to working directory: {ex.Message}");
+            }
+        }
+
         await Task.Run(() =>
         {
             try
@@ -509,9 +523,18 @@
 
     private void GetVanillaLevels()
     {
-        var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
-        _vanillaLevels = Directory.GetFiles(dir).Select(x => new FileInfo(x)).ToList();
-        StateHasChanged();
+        if (!string.IsNullOrEmpty(_beamInstallDir))
+        {
+            var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
+            try
+            {
+                _vanillaLevels = Directory.GetFiles(dir).Select(x => new FileInfo(x)).ToList();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+            }
+        }
     }
 
     Func<FileInfo, string> converter = p => p?.Name;
