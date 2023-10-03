@@ -18,8 +18,8 @@ namespace BeamNG_LevelCleanUp.Logic
         private List<Asset> _assets = new List<Asset>();
         private List<FileInfo> _forestJsonFiles;
         private List<FileInfo> _managedItemData;
-        private List<string> _forestTypeNames { get; set; } = new List<string>();
-        private List<string> _shapeNames { get; set; } = new List<string>();
+        private List<Tuple<string, string>> _forestTypeNames { get; set; } = new List<Tuple<string, string>>();
+        private List<Tuple<string, string>> _shapeNames { get; set; } = new List<Tuple<string, string>>();
 
         public ForestScanner(List<Asset> assets, List<FileInfo> forestJsonFiles, List<FileInfo> managedItemData, string levelPath)
         {
@@ -43,7 +43,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     GetShapNamesCs(file);
                 }
             }
-            foreach (var shapeName in _shapeNames.Distinct())
+            foreach (var shapeName in _shapeNames.Select(_ => _.Item1).Distinct())
             {
                 AddAsset(new Asset
                 {
@@ -51,6 +51,16 @@ namespace BeamNG_LevelCleanUp.Logic
                     ShapeName = shapeName,
                 });
             }
+        }
+
+        public List<Tuple<string, string>> GetForestTypes()
+        {
+            return _forestTypeNames.Distinct().ToList();
+        }
+
+        public List<Tuple<string, string>> GetShapNames()
+        {
+            return _shapeNames.Distinct().ToList();
         }
 
         private void AddAsset(Asset? asset)
@@ -83,7 +93,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         if (!string.IsNullOrEmpty(asset.Type))
                         {
                             //PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
-                            _forestTypeNames.Add(asset.Type);
+                            _forestTypeNames.Add(Tuple.Create(asset.Type, file.FullName));
                         }
                     }
                 }
@@ -112,7 +122,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 name = Path.Join(Path.GetDirectoryName(file.FullName), name);
                             }
-                            _shapeNames.Add(name);
+                            _shapeNames.Add(Tuple.Create(name, file.FullName));
                         }
                         catch (Exception ex)
                         {
@@ -128,7 +138,7 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         private void GetShapNamesCs(FileInfo file)
         {
-            foreach (var typeName in _forestTypeNames.Distinct())
+            foreach (var typeName in _forestTypeNames.Select(_ => _.Item1).Distinct())
             {
                 var hit = false;
                 foreach (string line in File.ReadLines(file.FullName))
@@ -153,7 +163,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 name = Path.Join(Path.GetDirectoryName(file.FullName), name);
                             }
-                            _shapeNames.Add(name);
+                            _shapeNames.Add(Tuple.Create(name, file.FullName));
                             hit = false;
                         }
                     }

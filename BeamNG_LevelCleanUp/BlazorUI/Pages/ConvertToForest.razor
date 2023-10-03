@@ -358,13 +358,10 @@
         {
             try
             {
-                //await Task.Run(() =>
-                //{
-                //    Reader = new BeamFileReader(_levelPath, string.Empty);
-                //    Reader.RenameLevel(StringUtils.SanitizeFileName(_renameNewNamePath), _renameNewTitle);
-                //    _levelName = Reader.GetLevelName();
-                //});
-                //_renameCurrentName = _levelName;
+                await Task.Run(() =>
+                {
+                    Reader.ConvertToForest(SelectedValues);
+                });
             }
             catch (Exception ex)
             {

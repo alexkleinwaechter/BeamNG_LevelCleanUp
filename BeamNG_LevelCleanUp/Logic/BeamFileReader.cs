@@ -280,7 +280,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static List<FileInfo> _forestJsonFiles { get; set; } = new List<FileInfo>();
         private static List<FileInfo> _managedItemData { get; set; } = new List<FileInfo>();
-        internal void ReadForest()
+        internal ForestScanner ReadForest()
         {
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
@@ -294,7 +294,10 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     Console.WriteLine(s);
                 }
+                return forestScanner;
             }
+            
+            return null;
         }
 
         internal void ReadAllDae()
@@ -507,6 +510,13 @@ namespace BeamNG_LevelCleanUp.Logic
                     Console.WriteLine(s);
                 }
             }
+        }
+
+        internal void ConvertToForest(List<Asset> assets)
+        {
+            var forestScanner = ReadForest();
+            //var forestConverter = new ForestConverter(assets, _levelPath);
+            //forestConverter.Convert();
         }
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
