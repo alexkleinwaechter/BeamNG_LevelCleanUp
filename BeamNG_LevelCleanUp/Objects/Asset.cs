@@ -37,8 +37,9 @@ namespace BeamNG_LevelCleanUp.Objects
         //public List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         public List<MaterialsDae> MaterialsDae { get; set; } = new List<MaterialsDae>();
         public bool? DaeExists { get; set; }
-        //public List<decimal>? Position { get; set; }
-        //public List<decimal>? RotationMatrix { get; set; }
+        public List<double>? Position { get; set; }
+        public List<double>? RotationMatrix { get; set; }
+        public List<double>? Scale { get; set; }
         public bool Hidden { get; set; }
         public string DaePath { get; set; }
         public List<AssetType> Types { get; set; } = new List<AssetType>();

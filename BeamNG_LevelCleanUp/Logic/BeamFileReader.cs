@@ -162,6 +162,38 @@ namespace BeamNG_LevelCleanUp.Logic
             PubSubChannel.SendMessage(false, "Fetching Assets finished");
         }
 
+        internal List<Asset> ReadForConvertToForest()
+        {
+            var allowedClasses = new List<string>
+            {
+                "SimGroup",
+                "TSStatic"
+            };
+            Reset();
+            ReadMissionGroup();
+            PubSubChannel.SendMessage(false, "Fetching Missiongroups finished");
+            var assets = Assets
+                .Where(_ => allowedClasses.Contains(_.Class))
+                .Where(_ => (_.Class == "TSStatic" && _.__parent != null && _.DaeExists == true && areSame(_.Scale)) || _.Class == "SimGroup")
+                .ToList();
+
+            foreach (var asset in assets)
+            {
+                if (asset.Class == "TSStatic")
+                { 
+                var fi = new FileInfo(asset.DaePath);
+                    asset.Name = fi.Name;
+                }
+            }
+            
+            return assets;
+        }
+
+        static bool areSame(List<double>? nums)
+        {
+            return nums == null || nums.Distinct().Count() == 1;
+        }
+
         internal void DoCopyAssets(List<Guid> identifiers)
         {
             var assetCopy = new AssetCopy(identifiers, CopyAssets, _namePath, _levelName, _levelNameCopyFrom);
