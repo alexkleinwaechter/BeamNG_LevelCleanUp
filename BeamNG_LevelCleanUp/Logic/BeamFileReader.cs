@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.BlazorUI.Pages;
 using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.LogicConvertForest;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
@@ -116,7 +117,8 @@ namespace BeamNG_LevelCleanUp.Logic
             //_newName = null;
         }
 
-        public string GetSteamBeamFolder() {
+        public string GetSteamBeamFolder()
+        {
             return Steam.GetBeamInstallDir();
         }
 
@@ -170,6 +172,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 "TSStatic"
             };
             Reset();
+            PubSubChannel.SendMessage(false, "Fetching Missiongroups ... Please wait");
             ReadMissionGroup();
             PubSubChannel.SendMessage(false, "Fetching Missiongroups finished");
             var assets = Assets
@@ -180,12 +183,12 @@ namespace BeamNG_LevelCleanUp.Logic
             foreach (var asset in assets)
             {
                 if (asset.Class == "TSStatic")
-                { 
-                var fi = new FileInfo(asset.DaePath);
+                {
+                    var fi = new FileInfo(asset.DaePath);
                     asset.Name = fi.Name;
                 }
             }
-            
+
             return assets;
         }
 
@@ -296,7 +299,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 return forestScanner;
             }
-            
+
             return null;
         }
 
@@ -515,8 +518,8 @@ namespace BeamNG_LevelCleanUp.Logic
         internal void ConvertToForest(List<Asset> assets)
         {
             var forestScanner = ReadForest();
-            //var forestConverter = new ForestConverter(assets, _levelPath);
-            //forestConverter.Convert();
+            var forestConverter = new ForestConverter(assets, forestScanner.GetForestInfo());
+            forestConverter.Convert();
         }
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
