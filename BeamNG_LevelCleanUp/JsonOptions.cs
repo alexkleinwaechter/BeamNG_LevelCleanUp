@@ -23,6 +23,19 @@ namespace BeamNG_LevelCleanUp
             };
         }
 
+        public static JsonSerializerOptions GetJsonSerializerOneLineOptions()
+        {
+            return new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                AllowTrailingCommas = true,
+                IncludeFields = true,
+                WriteIndented = false,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+            };
+        }
+
         public static JsonDocumentOptions GetJsonDocumentOptions()
         {
             return new JsonDocumentOptions

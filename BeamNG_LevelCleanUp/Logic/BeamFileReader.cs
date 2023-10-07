@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.BlazorUI.Pages;
 using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.LogicConvertForest;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
@@ -116,7 +117,8 @@ namespace BeamNG_LevelCleanUp.Logic
             //_newName = null;
         }
 
-        public string GetSteamBeamFolder() {
+        public string GetSteamBeamFolder()
+        {
             return Steam.GetBeamInstallDir();
         }
 
@@ -160,6 +162,39 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyAssetDecal();
             CopyDae();
             PubSubChannel.SendMessage(false, "Fetching Assets finished");
+        }
+
+        internal List<Asset> ReadForConvertToForest()
+        {
+            var allowedClasses = new List<string>
+            {
+                "SimGroup",
+                "TSStatic"
+            };
+            Reset();
+            PubSubChannel.SendMessage(false, "Fetching Missiongroups ... Please wait");
+            ReadMissionGroup();
+            PubSubChannel.SendMessage(false, "Fetching Missiongroups finished");
+            var assets = Assets
+                .Where(_ => allowedClasses.Contains(_.Class))
+                .Where(_ => (_.Class == "TSStatic" && _.__parent != null && _.DaeExists == true && areSame(_.Scale) && _.RotationMatrix?.Count == 9) || _.Class == "SimGroup")
+                .ToList();
+
+            foreach (var asset in assets)
+            {
+                if (asset.Class == "TSStatic")
+                {
+                    var fi = new FileInfo(asset.DaePath);
+                    asset.Name = fi.Name;
+                }
+            }
+
+            return assets;
+        }
+
+        static bool areSame(List<double>? nums)
+        {
+            return nums == null || nums.Distinct().Count() == 1;
         }
 
         internal void DoCopyAssets(List<Guid> identifiers)
@@ -248,7 +283,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static List<FileInfo> _forestJsonFiles { get; set; } = new List<FileInfo>();
         private static List<FileInfo> _managedItemData { get; set; } = new List<FileInfo>();
-        internal void ReadForest()
+        internal ForestScanner ReadForest()
         {
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
@@ -262,7 +297,10 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     Console.WriteLine(s);
                 }
+                return forestScanner;
             }
+
+            return null;
         }
 
         internal void ReadAllDae()
@@ -474,6 +512,31 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     Console.WriteLine(s);
                 }
+            }
+        }
+
+        internal void ConvertToForest(List<Asset> assets)
+        {
+            var forestScanner = ReadForest();
+            var forestConverter = new ForestConverter(assets,
+                forestScanner.GetForestInfo(),
+                _namePath);
+            forestConverter.Convert();
+        }
+
+        internal void DeleteFromMissiongroups(List<Asset> assets)
+        {
+            //Group assets by MissionGroupPath and return Missiongrouplines as List
+            var assetsByMissionGroupPath = assets
+                .Where(a => a.MissionGroupPath != null && a.MissionGroupLine != null)
+                .GroupBy(a => a.MissionGroupPath)
+                .Select(g => new { MissionGroupPath = g.Key, MissionGroupLines = g.Select(x => x.MissionGroupLine.Value).ToList() })
+                .ToList();
+
+
+            foreach (var assetFile in assetsByMissionGroupPath)
+            {
+                FileUtils.DeleteLinesFromFile(assetFile.MissionGroupPath, assetFile.MissionGroupLines);
             }
         }
 
