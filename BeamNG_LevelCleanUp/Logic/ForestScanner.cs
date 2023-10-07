@@ -18,8 +18,9 @@ namespace BeamNG_LevelCleanUp.Logic
         private List<Asset> _assets = new List<Asset>();
         private List<FileInfo> _forestJsonFiles;
         private List<FileInfo> _managedItemData;
-        private List<string> _forestTypeNames { get; set; } = new List<string>();
-        private List<string> _shapeNames { get; set; } = new List<string>();
+        private List<ForestInfo> _forestInfoFiles { get; set; } = new List<ForestInfo>();
+        private List<Tuple<string, string>> _forestTypeNames { get; set; } = new List<Tuple<string, string>>();
+        private List<Tuple<string, string, string>> _shapeNames { get; set; } = new List<Tuple<string, string, string>>();
 
         public ForestScanner(List<Asset> assets, List<FileInfo> forestJsonFiles, List<FileInfo> managedItemData, string levelPath)
         {
@@ -36,24 +37,54 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 if (file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
                 {
-                    GetShapNamesJson(file);
+                    GetShapeNamesJson(file);
                 }
                 else
                 {
-                    GetShapNamesCs(file);
+                    GetShapeNamesCs(file);
                 }
             }
             foreach (var shapeName in _shapeNames.Distinct())
             {
-                AddAsset(new Asset
+                //todo: daescanner full path in shapename
+                var fullpath = AddAsset(new Asset
                 {
                     Class = "TSStatic",
-                    ShapeName = shapeName,
+                    ShapeName = shapeName.Item1,
                 });
+                _forestInfoFiles.Add(new ForestInfo
+                {
+                    DaePath = fullpath,
+                    ForestTypeName = shapeName.Item2,
+                    FileOrigin = shapeName.Item3,
+                    UsedInFiles = new List<string>(),
+                });
+            }
+
+            foreach (var item in _forestInfoFiles)
+            {
+                item.UsedInFiles = _forestTypeNames.Where(_ => _.Item1 == item.ForestTypeName)
+                    .Select(_ => _.Item2)
+                    .Distinct().ToList();
             }
         }
 
-        private void AddAsset(Asset? asset)
+        public List<Tuple<string, string>> GetUsedForestTypes()
+        {
+            return _forestTypeNames.Distinct().OrderBy(o => o.Item1).ToList();
+        }
+
+        public List<Tuple<string, string, string>> GetShapeNames()
+        {
+            return _shapeNames.Distinct().OrderBy(o => o.Item1).ToList();
+        }
+
+        public List<ForestInfo> GetForestInfo()
+        {
+            return _forestInfoFiles.OrderBy(o => o.DaePath).ToList();
+        }
+
+        private string AddAsset(Asset? asset)
         {
             //if (asset.ShapeName != null && asset.ShapeName.ToUpperInvariant().Contains("skyscraper_22".ToUpperInvariant())) Debugger.Break();
             if (!string.IsNullOrEmpty(asset?.ShapeName))
@@ -67,6 +98,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
             }
             _assets.Add(asset);
+            return asset.DaePath;
         }
 
         private void RetrieveUsedForestTypes()
@@ -80,17 +112,17 @@ namespace BeamNG_LevelCleanUp.Logic
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                     {
                         var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.GetJsonSerializerOptions());
-                        if (!string.IsNullOrEmpty(asset.Type))
+                        if (!string.IsNullOrEmpty(asset.type))
                         {
                             //PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
-                            _forestTypeNames.Add(asset.Type);
+                            _forestTypeNames.Add(Tuple.Create(asset.type, file.FullName));
                         }
                     }
                 }
             }
         }
 
-        internal void GetShapNamesJson(FileInfo file)
+        internal void GetShapeNamesJson(FileInfo file)
         {
             JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
@@ -103,7 +135,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         try
                         {
                             var forestData = managedForestData.Value.Deserialize<ManagedForestData>(BeamJsonOptions.GetJsonSerializerOptions());
-                            var name = forestData.ShapeFile;
+                            var name = forestData.shapeFile;
                             if (name.StartsWith("./"))
                             {
                                 name = name.Remove(0, 2);
@@ -112,7 +144,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 name = Path.Join(Path.GetDirectoryName(file.FullName), name);
                             }
-                            _shapeNames.Add(name);
+                            _shapeNames.Add(Tuple.Create(name, forestData.internalName, file.FullName));
                         }
                         catch (Exception ex)
                         {
@@ -126,9 +158,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 PubSubChannel.SendMessage(true, $"Error DecalScanner {file.FullName}. {ex.Message}");
             }
         }
-        private void GetShapNamesCs(FileInfo file)
+        private void GetShapeNamesCs(FileInfo file)
         {
-            foreach (var typeName in _forestTypeNames.Distinct())
+            foreach (var typeName in _forestTypeNames.Select(_ => _.Item1).Distinct())
             {
                 var hit = false;
                 foreach (string line in File.ReadLines(file.FullName))
@@ -153,7 +185,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 name = Path.Join(Path.GetDirectoryName(file.FullName), name);
                             }
-                            _shapeNames.Add(name);
+                            _shapeNames.Add(Tuple.Create(name, typeName, file.FullName));
                             hit = false;
                         }
                     }
