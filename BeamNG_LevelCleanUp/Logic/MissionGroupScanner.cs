@@ -40,7 +40,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
                         asset.MissionGroupPath = _missiongroupPath;
                         asset.MissionGroupLine = linecounter;
-                        //PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
+                        PubSubChannel.SendMessage(false, $"Read MissionGroup {Directory.GetParent(_missiongroupPath).Name}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {
                             //if (asset.Filename.Contains("turbine_blades")) Debugger.Break();

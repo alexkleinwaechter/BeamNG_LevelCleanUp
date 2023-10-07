@@ -73,5 +73,9 @@
     {
         Snackbar.Clear();
         Snackbar.Configuration.PositionClass = Defaults.Classes.Position.BottomEnd;
+        Snackbar.Configuration.MaxDisplayedSnackbars = 10;
+        Snackbar.Configuration.HideTransitionDuration = 300;
+        Snackbar.Configuration.ShowTransitionDuration = 300;
+        Snackbar.Configuration.VisibleStateDuration = 5000;
     }
 }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -50,6 +51,41 @@ namespace BeamNG_LevelCleanUp.Utils
 
             // Write the updated lines back to the file, overwriting its contents.
             File.WriteAllLines(filePath, lines);
+
+            if (lines.Length == 0)
+            {
+                var name = Directory.GetParent(filePath).Name;
+                var parent = Path.Combine(Directory.GetParent(Path.GetDirectoryName(filePath)).FullName, Path.GetFileName(filePath));
+                File.Delete(filePath);
+                Directory.Delete(Path.GetDirectoryName(filePath));
+                DeleteLineByName(parent, name);
+            }
+        }
+
+        public static void DeleteLineByName(string filePath, string name)
+        {
+            if (!File.Exists(filePath))
+            {
+                return;
+            }
+
+            name = $"name\":\"{name}\"";
+            // Read all lines from the file into an array.
+            string[] lines = File.ReadAllLines(filePath);
+
+            // Use LINQ to filter out lines with line numbers not in lineNumbersToDelete.
+            var newlines = lines.Where(l => !l.ToLowerInvariant().Contains(name.ToLowerInvariant())).ToArray();
+            if (lines.Count() - newlines.Count() != 1) {
+                return;
+            }
+            // Write the updated lines back to the file, overwriting its contents.
+            File.WriteAllLines(filePath, newlines);
+
+            if (lines.Length == 0)
+            {
+                File.Delete(filePath);
+                Directory.Delete(Path.GetDirectoryName(filePath));
+            }
         }
     }
 }

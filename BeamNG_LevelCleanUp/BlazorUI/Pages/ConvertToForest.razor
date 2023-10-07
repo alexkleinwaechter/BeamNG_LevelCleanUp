@@ -38,15 +38,17 @@
                     }
                 </MudExpansionPanel>
             </MudExpansionPanels>
-
-            <MudTreeView T="ITree<Asset>" Items="Items" Dense MultiSelection="true" SelectedValuesChanged="OnSelectedValuesChanged">
-                <ItemTemplate Context="treeItemAsset">
-                    <MudTreeViewItem Items="@treeItemAsset.Children" Value="@treeItemAsset"
-                                     Text="@treeItemAsset.Data.Name" @bind-Expanded="@treeItemAsset.IsExpanded"
-                    @bind-Selected="@treeItemAsset.IsSelected" />
-                </ItemTemplate>
-            </MudTreeView>
-
+            @if (Items.Any())
+            {
+                <MudTreeView T="ITree<Asset>" Items="Items" Dense
+                             MultiSelection="true" SelectedValuesChanged="OnSelectedValuesChanged">
+                    <ItemTemplate Context="treeItemAsset">
+                        <MudTreeViewItem Items="@treeItemAsset.Children" Value="@treeItemAsset"
+                                         Text="@treeItemAsset.Data.Name" @bind-Expanded="@treeItemAsset.IsExpanded"
+                        @bind-Selected="@treeItemAsset.IsSelected" />
+                    </ItemTemplate>
+                </MudTreeView>
+            }
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
                 <MudList Clickable="true" Dense="true" DisableGutters="false">
                     @{
@@ -108,7 +110,7 @@
     private List<string> _messages { get; set; } = new List<string>();
     private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
-    private string _fileSelectTitle = "Select your zipped level you want to give a new name";
+    private string _fileSelectTitle = "Select your zipped level you want convert assets to forestitems";
     private bool _fileSelectDisabled { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
@@ -169,14 +171,19 @@
             }
 
         });
-        await Task.Run(() =>
-            {
-                Reader = new BeamFileReader(_levelPath, string.Empty);
-                _levelName = Reader.GetLevelName();
-                var assets = Reader.ReadForConvertToForest();
-                BuildTreeView(assets);
-            });
+        await InitReaderAndTree();
         _fileSelectDisabled = false;
+    }
+
+    private async Task InitReaderAndTree()
+    {
+        await Task.Run(() =>
+       {
+           Reader = new BeamFileReader(_levelPath, string.Empty);
+           _levelName = Reader.GetLevelName();
+           var assets = Reader.ReadForConvertToForest();
+           InvokeAsync(() => BuildTreeView(assets));
+       });
     }
 
     protected void BuildTreeView(List<Asset> assets)
@@ -184,6 +191,7 @@
         VirtualRootNode = assets.ToTree((parent, child) => child.__parent == parent.Name, new List<Asset>());
         Items = VirtualRootNode.Children;
         //Items = VirtualRootNode.Children.Where(_ => _.HasChildren == true).ToHashSet<ITree<Asset>>();
+        StateHasChanged();
     }
 
     protected void OnSelectedValuesChanged(HashSet<ITree<Asset>> values)
@@ -254,10 +262,16 @@
             Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
         }
     }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckPreviousLevel();
+        }
+    }
 
     protected override void OnInitialized()
     {
-        CheckPreviousLevel();
         var consumer = Task.Run(async () =>
         {
             while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
@@ -281,7 +295,7 @@
         });
     }
 
-    void CheckPreviousLevel()
+    async Task CheckPreviousLevel()
     {
         var bfr = new BeamFileReader();
         _levelName = bfr.GetLevelName();
@@ -289,8 +303,9 @@
         if (!string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelPath))
         {
             _staticSnackbar
-                = Snackbar.Add($"The level {_levelName} is still loaded. You can either rename it now or load another level for renaming.",
+                = Snackbar.Add($"The level {_levelName} is still loaded. You can either use it now or load another level for conversion.",
                 Severity.Info);
+            await UseLoadedLevelDialog();
         }
         else
         {
@@ -382,7 +397,7 @@
         parameters.Add("ContentText", "Do you want to to delete the static assets from the missiongroups? If not you have the assets duplicated. One in the tree and one as forestitem.");
         parameters.Add("ButtonText", "Delete from Missiongroups");
         parameters.Add("Color", Color.Warning);
-        var dialog = await DialogService.ShowAsync<SimpleDialog>("Deleete assets from Missiongroups", parameters, options);
+        var dialog = await DialogService.ShowAsync<SimpleDialog>("Delete assets from Missiongroups", parameters, options);
         var result = await dialog.Result;
         if (!result.Canceled)
         {
@@ -392,6 +407,29 @@
                 {
                     Reader.DeleteFromMissiongroups(SelectedValues);
                 });
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        }
+    }
+
+    private async Task UseLoadedLevelDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true };
+        var parameters = new DialogParameters();
+        parameters.Add("ContentText", $"The level {_levelName} is already loaded from a previous task. Do you want to use it for the conversion of assets to forestitems?");
+        parameters.Add("ButtonText", "Yes");
+        parameters.Add("Color", Color.Default);
+        var dialog = await DialogService.ShowAsync<SimpleDialog>("Use loaded level for conversion", parameters, options);
+        var result = await dialog.Result;
+        dialog.Close();
+        if (!result.Canceled)
+        {
+            try
+            {
+                await InitReaderAndTree();
             }
             catch (Exception ex)
             {

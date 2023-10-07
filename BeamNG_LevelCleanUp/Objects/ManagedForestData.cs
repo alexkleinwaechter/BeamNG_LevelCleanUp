@@ -15,10 +15,10 @@ namespace BeamNG_LevelCleanUp.Objects
         public double radius { get; set; }
         public double trunkBendScale { get; set; }
         public double windScale { get; set; }
-        public int dampingCoefficient { get; set; }
-        public int rigidity { get; set; }
+        public double dampingCoefficient { get; set; }
+        public double rigidity { get; set; }
         public int shadowNullDetailSize { get; set; }
-        public int tightnessCoefficient { get; set; }
+        public double tightnessCoefficient { get; set; }
         public string @class { get; set; }
         public string annotation { get; set; }
         public string dynamicCubemap { get; set; }

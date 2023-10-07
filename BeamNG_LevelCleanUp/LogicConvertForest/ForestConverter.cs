@@ -36,12 +36,12 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
             foreach (var item in _assetsToConvert)
             {
                 _forestManagedItemsFileInfo = new FileInfo(_forestManagedItemsFileInfo.FullName);
-                var existsAsForest = _forestInfoList.Where(a => a.DaePath.Equals(item.DaePath, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+                var existsAsForest = _forestInfoList.Where(a => a.DaePath != null && a.DaePath.Equals(item.DaePath, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
 
                 if (existsAsForest == null)
                 {
                     AddForestType(item);
-                    existsAsForest = _forestInfoList.Where(a => a.DaePath.Equals(item.DaePath, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+                    existsAsForest = _forestInfoList.Where(a => a.DaePath != null && a.DaePath.Equals(item.DaePath, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
                 }
                 AddForestItem(item, existsAsForest);
             }
@@ -63,6 +63,7 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
             if (!forestInfo.UsedInFiles.Any())
             {
                 var fileName = Path.Join(_namePath, _forestItemRealtivePath, forestInfo.ForestTypeName + ".forest4.json");
+                Directory.CreateDirectory(Directory.GetParent(fileName).FullName);
                 File.WriteAllText(fileName, jsonString);
                 forestInfo.UsedInFiles.Add(fileName);
             }
@@ -82,6 +83,7 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
                 persistentId = Guid.NewGuid().ToString(),
                 @class = "TSForestItemData",
                 shapeFile = asset.ShapeName,
+                translucentBlendOp = asset.TranslucentBlendOp,
             };
 
             if (!_forestManagedItemsFileInfo.Exists)
@@ -92,6 +94,7 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
                               KeyValuePair.Create<string, JsonNode?>(forestType.internalName, JsonSerializer.SerializeToNode(forestType))
                        }
                );
+                Directory.CreateDirectory(Directory.GetParent(_forestManagedItemsFileInfo.FullName).FullName);
                 File.WriteAllText(_forestManagedItemsFileInfo.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
             }
             else

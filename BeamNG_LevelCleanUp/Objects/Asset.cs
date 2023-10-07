@@ -45,6 +45,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public List<AssetType> Types { get; set; } = new List<AssetType>();
         public string? MissionGroupPath { get; set; }
         public int? MissionGroupLine { get; set; }
+        public string TranslucentBlendOp { get; set; }
 
         public List<string> GetAllMaterialNames()
         {
