@@ -39,5 +39,17 @@ namespace BeamNG_LevelCleanUp.Utils
 
             return fileInfo;
         }
+
+        public static void DeleteLinesFromFile(string filePath, List<int> lineNumbersToDelete)
+        {
+            // Read all lines from the file into an array.
+            string[] lines = File.ReadAllLines(filePath);
+
+            // Use LINQ to filter out lines with line numbers not in lineNumbersToDelete.
+            lines = lines.Where((line, index) => !lineNumbersToDelete.Contains(index + 1)).ToArray();
+
+            // Write the updated lines back to the file, overwriting its contents.
+            File.WriteAllLines(filePath, lines);
+        }
     }
 }

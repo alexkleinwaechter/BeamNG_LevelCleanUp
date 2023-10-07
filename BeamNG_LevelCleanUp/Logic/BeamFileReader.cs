@@ -518,8 +518,26 @@ namespace BeamNG_LevelCleanUp.Logic
         internal void ConvertToForest(List<Asset> assets)
         {
             var forestScanner = ReadForest();
-            var forestConverter = new ForestConverter(assets, forestScanner.GetForestInfo());
+            var forestConverter = new ForestConverter(assets, 
+                forestScanner.GetForestInfo(),
+                _namePath);
             forestConverter.Convert();
+        }
+
+        internal void DeleteFromMissiongroups(List<Asset> assets)
+        {
+            //Group assets by MissionGroupPath and return Missiongrouplines as List
+            var assetsByMissionGroupPath = assets
+                .Where(a => a.MissionGroupPath != null && a.MissionGroupLine != null)
+                .GroupBy(a => a.MissionGroupPath)
+                .Select(g => new { MissionGroupPath = g.Key, MissionGroupLines = g.Select(x => x.MissionGroupLine.Value).ToList() })
+                .ToList();
+
+
+            foreach (var assetFile in assetsByMissionGroupPath)
+            {
+                FileUtils.DeleteLinesFromFile(assetFile.MissionGroupPath, assetFile.MissionGroupLines);
+            }
         }
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)

@@ -8,6 +8,9 @@ namespace BeamNG_LevelCleanUp.Objects
 {
     public class Forest
     {
-        public string Type { get; set; }
+            public List<double> pos { get; set; }
+            public List<double> rotationMatrix { get; set; }
+            public double scale { get; set; }
+            public string type { get; set; }
     }
 }

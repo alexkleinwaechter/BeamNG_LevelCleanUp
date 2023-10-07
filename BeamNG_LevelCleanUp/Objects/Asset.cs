@@ -43,6 +43,8 @@ namespace BeamNG_LevelCleanUp.Objects
         public bool Hidden { get; set; }
         public string DaePath { get; set; }
         public List<AssetType> Types { get; set; } = new List<AssetType>();
+        public string? MissionGroupPath { get; set; }
+        public int? MissionGroupLine { get; set; }
 
         public List<string> GetAllMaterialNames()
         {

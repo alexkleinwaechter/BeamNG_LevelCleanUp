@@ -56,7 +56,8 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     DaePath = fullpath,
                     ForestTypeName = shapeName.Item2,
-                    FileOrigin = shapeName.Item3
+                    FileOrigin = shapeName.Item3,
+                    UsedInFiles = new List<string>(),
                 });
             }
 
@@ -111,10 +112,10 @@ namespace BeamNG_LevelCleanUp.Logic
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                     {
                         var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.GetJsonSerializerOptions());
-                        if (!string.IsNullOrEmpty(asset.Type))
+                        if (!string.IsNullOrEmpty(asset.type))
                         {
                             //PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
-                            _forestTypeNames.Add(Tuple.Create(asset.Type, file.FullName));
+                            _forestTypeNames.Add(Tuple.Create(asset.type, file.FullName));
                         }
                     }
                 }

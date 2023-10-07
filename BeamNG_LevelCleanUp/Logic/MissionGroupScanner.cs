@@ -27,8 +27,10 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ScanMissionGroupFile()
         {
+            var linecounter = 0;
             foreach (string line in File.ReadAllLines(_missiongroupPath))
             {
+                linecounter++;
                 JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 try
                 {
@@ -36,6 +38,8 @@ namespace BeamNG_LevelCleanUp.Logic
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
+                        asset.MissionGroupPath = _missiongroupPath;
+                        asset.MissionGroupLine = linecounter;
                         //PubSubChannel.SendMessage(false, $"Read MissionGroup of class {asset.Class}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {

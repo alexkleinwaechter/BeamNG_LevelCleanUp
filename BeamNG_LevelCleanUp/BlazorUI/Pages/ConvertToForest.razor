@@ -78,11 +78,11 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                           @bind-Value="_compressionLevel">
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -367,9 +367,39 @@
             {
                 ShowException(ex);
             }
+            await DeleteDialog();
             _showDeployButton = true;
+            SelectedValues.Clear();
+            Items.Clear();
+            PubSubChannel.SendMessage(false, $"Conversion done! You can build your deployment file now.");
         }
     }
+
+    private async Task DeleteDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true };
+        var parameters = new DialogParameters();
+        parameters.Add("ContentText", "Do you want to to delete the static assets from the missiongroups? If not you have the assets duplicated. One in the tree and one as forestitem.");
+        parameters.Add("ButtonText", "Delete from Missiongroups");
+        parameters.Add("Color", Color.Warning);
+        var dialog = await DialogService.ShowAsync<SimpleDialog>("Deleete assets from Missiongroups", parameters, options);
+        var result = await dialog.Result;
+        if (!result.Canceled)
+        {
+            try
+            {
+                await Task.Run(() =>
+                {
+                    Reader.DeleteFromMissiongroups(SelectedValues);
+                });
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        }
+    }
+
 
     private async Task ZipAndDeploy()
     {
