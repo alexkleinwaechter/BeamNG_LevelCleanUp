@@ -177,7 +177,7 @@ namespace BeamNG_LevelCleanUp.Logic
             PubSubChannel.SendMessage(false, "Fetching Missiongroups finished");
             var assets = Assets
                 .Where(_ => allowedClasses.Contains(_.Class))
-                .Where(_ => (_.Class == "TSStatic" && _.__parent != null && _.DaeExists == true && areSame(_.Scale)) || _.Class == "SimGroup")
+                .Where(_ => (_.Class == "TSStatic" && _.__parent != null && _.DaeExists == true && areSame(_.Scale) && _.RotationMatrix?.Count == 9) || _.Class == "SimGroup")
                 .ToList();
 
             foreach (var asset in assets)
@@ -518,7 +518,7 @@ namespace BeamNG_LevelCleanUp.Logic
         internal void ConvertToForest(List<Asset> assets)
         {
             var forestScanner = ReadForest();
-            var forestConverter = new ForestConverter(assets, 
+            var forestConverter = new ForestConverter(assets,
                 forestScanner.GetForestInfo(),
                 _namePath);
             forestConverter.Convert();

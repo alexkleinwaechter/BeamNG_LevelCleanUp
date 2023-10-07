@@ -62,6 +62,29 @@
                 </MudText>
             </MudCardContent>
         </MudCard>
+
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">4. Convert TSStatic Assets to forest items</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>
+                    You can load a zipped map and then convert your static assets placed in the scene tree to forest items.
+                    After selecting a level your scene tree is shown in the tool to select the items or folders you want to convert.
+                    Only assets with an identical scale on all axis and an existing rotation matrix will be converted.
+                    <br /><br />
+                    During the process the tool asks if you want to delete the assets out of the scene tree.
+                    If you don't delete them you will have duplicate assets. One in the tree and one in the forest items.
+                    This only makes sense to check if the tool does it right :-)
+                    <br /><br />
+                    A discussion if it generally makes sense to convert static assets to forest items can be found here:
+                    <br/>
+                    <a style="color: darkorange;" href="https://www.beamng.com/threads/converting-placed-meshes-to-forest-items.86837/">https://www.beamng.com/threads/converting-placed-meshes-to-forest-items.86837/</a>
+                </MudText>
+            </MudCardContent>
+        </MudCard>
     </ChildContent>
     <ErrorContent>
         <CustomErrorContent />
@@ -73,7 +96,7 @@
     {
         Snackbar.Clear();
         Snackbar.Configuration.PositionClass = Defaults.Classes.Position.BottomEnd;
-        Snackbar.Configuration.MaxDisplayedSnackbars = 10;
+        Snackbar.Configuration.MaxDisplayedSnackbars = 50;
         Snackbar.Configuration.HideTransitionDuration = 300;
         Snackbar.Configuration.ShowTransitionDuration = 300;
         Snackbar.Configuration.VisibleStateDuration = 5000;
