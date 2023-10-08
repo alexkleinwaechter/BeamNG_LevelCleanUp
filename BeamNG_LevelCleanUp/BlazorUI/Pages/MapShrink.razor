@@ -66,7 +66,7 @@
             {
                 <MudText>Files: @BindingListDelete?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
             }
-            <MudStack Row="true" Justify="Justify.SpaceEvenly">
+            <MudStack Row="true" Justify="Justify.SpaceBetween">
                 @if (_selectedItems.Any())
                 {
                     <MudButton @onclick="DeleteDialog" Color="Color.Primary">Delete Files</MudButton>
