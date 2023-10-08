@@ -59,7 +59,7 @@
             </MudDrawer>
         </div>
         <footer>
-            <MudStack Row="true" Justify="Justify.SpaceEvenly">
+            <MudStack Row="true" Justify="Justify.SpaceBetween">
                 @if (_errors.Any())
                 {
                     <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>

@@ -32,6 +32,13 @@ Zipsize after: 1.1 GB
 Open the [latest release](https://github.com/alexkleinwaechter/BeamNG_LevelCleanUp/releases/) on this page and download the *.exe file. It is not signed yet. Windows will ask you to allow execution. Why so big? 
 The tool is coded in Microsoft .Net and the download contains all necessary framework files to run without having to install .Net on your computer.
 
+## Troubleshooting
+If you get the error: System.IO.FileNotFoundException: Cannot locate the file, you need to install the Microsoft WebView2 Runtime.
+The tool needs the Microsoft WebView2 Runtime to run properly. Its already installed on Windows 11 and newer versions of Windows 10. You can Download and install the Runtime from this Website:
+https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+Direct link to the installer:
+https://go.microsoft.com/fwlink/p/?LinkId=2124703
+
 ## Warning
 Never use this tool on your working project files. Always make a copy and use it with this tool. It is meant to delete things. 
 ## Roadmap

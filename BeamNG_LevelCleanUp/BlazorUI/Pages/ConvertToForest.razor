@@ -64,7 +64,11 @@
             </MudDrawer>
         </div>
         <footer>
-            <MudStack Row="true" Justify="Justify.SpaceEvenly">
+            @if (_itemCount > 0)
+            {
+                <MudText>Items: @_itemCount, Selected: @SelectedValues.Count()</MudText>
+            }
+            <MudStack Row="true" Justify="Justify.SpaceBetween">
                 @if (_errors.Any())
                 {
                     <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
@@ -131,6 +135,7 @@
     public ITree<Asset> VirtualRootNode { get; set; } = default!;
     private HashSet<ITree<Asset>> Items { get; set; } = new HashSet<ITree<Asset>>();
     public List<Asset> SelectedValues { get; set; } = new List<Asset>();
+    private int _itemCount { get; set; } = 0;
 
     protected async Task FileSelected(string file)
     {
@@ -191,6 +196,7 @@
         VirtualRootNode = assets.ToTree((parent, child) => child.__parent == parent.Name, new List<Asset>());
         Items = VirtualRootNode.Children;
         //Items = VirtualRootNode.Children.Where(_ => _.HasChildren == true).ToHashSet<ITree<Asset>>();
+        _itemCount = assets.Count(_ => _.DaeExists == true);
         StateHasChanged();
     }
 
