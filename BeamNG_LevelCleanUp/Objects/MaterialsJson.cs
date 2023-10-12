@@ -18,6 +18,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public List<MaterialFile> MaterialFiles { get; set; } = new List<MaterialFile>();
         public bool NotUsed { get; set; }
         public bool IsDuplicate { get; set; }
+        public int DuplicateCounter { get; set; } = 1;
         public List<string> DuplicateFoundLocation { get; set; } = new List<string>();
         public string MatJsonFileLocation { get; set; }
         public string MaterialTag0 { get; set; }
