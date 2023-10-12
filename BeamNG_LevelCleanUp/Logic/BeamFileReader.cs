@@ -257,7 +257,6 @@ namespace BeamNG_LevelCleanUp.Logic
                 .ToList();
             foreach (var grp in duplicateMaterials)
             {
-
                 lines.Add($"{grp.Key} (Duplicates: {grp.Count()})");
                 lines.Add($"Duplicates found in:");
                 foreach (var mat in grp)
