@@ -251,14 +251,17 @@ namespace BeamNG_LevelCleanUp.Logic
         internal string GetDuplicateMaterialsLogFilePath()
         {
             var lines = new List<string>();
-            foreach (var item in MaterialsJson.Where(_ => _.IsDuplicate))
+            var duplicateMaterials = MaterialsJson
+                .GroupBy(x => x.Name)
+                .Where(x => x.Count() > 1)
+                .ToList();
+            foreach (var grp in duplicateMaterials)
             {
-                lines.Add($"{item.Name} (Duplicates: {item.DuplicateCounter})");
+                lines.Add($"{grp.Key} (Duplicates: {grp.Count()})");
                 lines.Add($"Duplicates found in:");
-                item.DuplicateFoundLocation.Insert(0, item.MatJsonFileLocation);
-                foreach (var path in item.DuplicateFoundLocation.Distinct())
+                foreach (var mat in grp)
                 {
-                    lines.Add(path);
+                    lines.Add(mat.MatJsonFileLocation);
                 }
             }
             if (lines.Count > 0)

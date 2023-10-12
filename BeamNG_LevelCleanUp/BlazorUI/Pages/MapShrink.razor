@@ -24,9 +24,9 @@
             @if (BindingListDelete.Any())
             {
                 <MudTable T="GridFileListItem" Items="@BindingListDelete" Hover="true"
-                      MultiSelection="true" @bind-SelectedItems="_selectedItems"
-                      @bind-Value="_searchString"
-                      Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
+                          MultiSelection="true" @bind-SelectedItems="_selectedItems"
+                @bind-Value="_searchString"
+                          Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Unused Files</MudText>
                         <MudSpacer />
@@ -82,11 +82,11 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                           @bind-Value="_compressionLevel">
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -195,6 +195,12 @@
         FillDeleteList();
         _fileSelectDisabled = false;
         Snackbar.Remove(_staticSnackbar);
+        var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
+        if (!string.IsNullOrEmpty(duplicateMaterialsPath))
+        {
+            PubSubChannel.SendMessage(false, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
+        }
+
         PubSubChannel.SendMessage(false, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
     }
 
@@ -323,11 +329,6 @@
                     Reader.DeleteFilesAndDeploy(selected, false);
                     BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
                     _showDeployButton = true;
-                    var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
-                    if (!string.IsNullOrEmpty(duplicateMaterialsPath))
-                    {
-                        PubSubChannel.SendMessage(false, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
-                    }
                     PubSubChannel.SendMessage(false, $"You can build your deployment file now.");
                 });
         }
