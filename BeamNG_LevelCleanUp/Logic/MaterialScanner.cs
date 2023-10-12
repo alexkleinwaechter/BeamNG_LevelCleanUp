@@ -92,9 +92,19 @@ namespace BeamNG_LevelCleanUp.Logic
                             }
                             //PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
                             //todo: Sascha debuggen mit shrinker!!
-                            if (!_materials.Any(x => x.Name == material.Name))
+                            var existingMaterial = _materials.FirstOrDefault(x => x.Name.Equals(material.Name));
+                            if (existingMaterial == null)
                             {
                                 _materials.Add(material);
+                            }
+                            else
+                            {
+                                existingMaterial.IsDuplicate = true;
+                                existingMaterial.DuplicateCounter++;
+                                if (!existingMaterial.DuplicateFoundLocation.Contains(material.MatJsonFileLocation))
+                                {
+                                    existingMaterial.DuplicateFoundLocation.Add(material.MatJsonFileLocation);
+                                }
                             }
 
                             var temp = child.Value.EnumerateObject().ToList();
