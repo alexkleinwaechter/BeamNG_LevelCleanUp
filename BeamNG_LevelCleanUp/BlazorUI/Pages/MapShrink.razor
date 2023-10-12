@@ -195,14 +195,6 @@
         FillDeleteList();
         _fileSelectDisabled = false;
         Snackbar.Remove(_staticSnackbar);
-        var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
-        if (!string.IsNullOrEmpty(duplicateMaterialsPath))
-        {
-            _staticSnackbar = Snackbar.Add($"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}", Severity.Warning, config =>
-           {
-               config.VisibleStateDuration = int.MaxValue;
-           });
-        }
         PubSubChannel.SendMessage(false, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
     }
 
@@ -331,6 +323,11 @@
                     Reader.DeleteFilesAndDeploy(selected, false);
                     BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
                     _showDeployButton = true;
+                    var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
+                    if (!string.IsNullOrEmpty(duplicateMaterialsPath))
+                    {
+                        PubSubChannel.SendMessage(false, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
+                    }
                     PubSubChannel.SendMessage(false, $"You can build your deployment file now.");
                 });
         }

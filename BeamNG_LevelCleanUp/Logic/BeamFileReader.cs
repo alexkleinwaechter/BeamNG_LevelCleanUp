@@ -416,6 +416,8 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             _dryRun = dryRun;
             PubSubChannel.SendMessage(false, $"Delete files");
+            var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _namePath);
+            materialScanner.RemoveDuplicatesFromJsonFiles();
             var deleter = new FileDeleter(deleteList, _levelPath, "DeletedAssetFiles", _dryRun);
             deleter.Delete();
         }
@@ -613,7 +615,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             missionGroupScanner.ScanMissionGroupFile();
                             break;
                         case ReadTypeEnum.MaterialsJson:
-                            var materialScanner = new MaterialScanner(fi.FullName, _levelPath, MaterialsJson, Assets, ExcludeFiles);
+                            var materialScanner = new MaterialScanner(fi.FullName, _levelPath, _namePath, MaterialsJson, Assets, ExcludeFiles);
                             materialScanner.ScanMaterialsJsonFile();
                             break;
                         case ReadTypeEnum.TerrainFile:
@@ -658,7 +660,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                             break;
                         case ReadTypeEnum.CopyAssetRoad:
-                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, MaterialsJsonCopy, new List<Asset>(), new List<string>());
+                            var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, _namePath, MaterialsJsonCopy, new List<Asset>(), new List<string>());
                             materialCopyScanner.ScanMaterialsJsonFile();
                             materialCopyScanner.CheckDuplicates(MaterialsJson);
                             foreach (var item in MaterialsJsonCopy.Where(x => x.IsRoadAndPath))
