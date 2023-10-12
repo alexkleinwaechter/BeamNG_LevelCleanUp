@@ -248,6 +248,31 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        internal string GetDuplicateMaterialsLogFilePath()
+        {
+            var lines = new List<string>();
+            foreach (var item in MaterialsJson.Where(_ => _.IsDuplicate))
+            {
+                lines.Add($"{item.Name} (Duplicates: {item.DuplicateCounter})");
+                lines.Add($"Duplicates found in:");
+                item.DuplicateFoundLocation.Insert(0, item.MatJsonFileLocation);
+                foreach (var path in item.DuplicateFoundLocation.Distinct())
+                {
+                    lines.Add(path);
+                }
+            }
+            if (lines.Count > 0)
+            {
+                var path = Path.Join(_levelPath, $"DuplicateMaterials.txt");
+                File.WriteAllLines(path, lines);
+                return path;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
         internal void ReadTerrainJson()
         {
             var dirInfo = new DirectoryInfo(_levelPath);
