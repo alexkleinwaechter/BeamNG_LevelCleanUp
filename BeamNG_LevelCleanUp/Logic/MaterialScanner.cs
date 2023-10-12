@@ -110,6 +110,10 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 existingMaterial.IsDuplicate = true;
                                 existingMaterial.DuplicateCounter++;
+                                if (!existingMaterial.DuplicateFoundLocation.Contains(existingMaterial.MatJsonFileLocation))
+                                {
+                                    existingMaterial.DuplicateFoundLocation.Add(existingMaterial.MatJsonFileLocation);
+                                }
                                 if (!existingMaterial.DuplicateFoundLocation.Contains(material.MatJsonFileLocation))
                                 {
                                     existingMaterial.DuplicateFoundLocation.Add(material.MatJsonFileLocation);
