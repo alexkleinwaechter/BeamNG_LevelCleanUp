@@ -155,10 +155,17 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         if (!first)
                         {
-                            toDelete.Add(x);
-                            var targetJsonNode = JsonNode.Parse(File.ReadAllText(x.MatJsonFileLocation), null, _docOptions);
-                            targetJsonNode.AsObject().Remove(x.Name);
-                            File.WriteAllText(x.MatJsonFileLocation, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+                            try
+                            {
+                                toDelete.Add(x);
+                                var targetJsonNode = JsonNode.Parse(File.ReadAllText(x.MatJsonFileLocation), null, _docOptions);
+                                targetJsonNode.AsObject().Remove(x.Name);
+                                File.WriteAllText(x.MatJsonFileLocation, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+                            }
+                            catch (Exception ex)
+                            {
+                                PubSubChannel.SendMessage(true, $"Error deleting duplicating material {x.Name} from json {x.MatJsonFileLocation}: {ex.Message}", true);
+                            }
                         }
                         first = false;
                     }
