@@ -17,17 +17,29 @@ namespace BeamNG_LevelCleanUp.Logic
     {
         private string _matJsonPath { get; set; }
         private string _levelPath { get; set; }
+        private string _namePath { get; set; }
         private List<MaterialJson> _materials = new List<MaterialJson>();
         private List<Asset> _assets = new List<Asset>();
         private List<string> _excludeFiles = new List<string>();
-        internal MaterialScanner(string matJsonPath, string levelPath, List<MaterialJson> materials, List<Asset> assets, List<string> excludeFiles)
+        private JsonDocumentOptions _docOptions = BeamJsonOptions.GetJsonDocumentOptions();
+
+        internal MaterialScanner(string matJsonPath, string levelPath, string namePath, List<MaterialJson> materials, List<Asset> assets, List<string> excludeFiles)
         {
             _matJsonPath = matJsonPath;
             _materials = materials;
             _levelPath = levelPath;
+            _namePath = namePath;
             _excludeFiles = excludeFiles;
             _assets = assets;
         }
+
+        public MaterialScanner(List<MaterialJson> materials, string levelPath, string namePath)
+        {
+            _materials = materials;
+            _levelPath = levelPath;
+            _namePath = namePath;
+        }
+
         internal void ScanMaterialsJsonFile()
         {
             JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
@@ -92,12 +104,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             }
                             //PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
                             //todo: Sascha debuggen mit shrinker!!
+                            _materials.Add(material);
                             var existingMaterial = _materials.FirstOrDefault(x => x.Name.Equals(material.Name));
-                            if (existingMaterial == null)
-                            {
-                                _materials.Add(material);
-                            }
-                            else
+                            if (existingMaterial != null)
                             {
                                 existingMaterial.IsDuplicate = true;
                                 existingMaterial.DuplicateCounter++;
@@ -129,6 +138,36 @@ namespace BeamNG_LevelCleanUp.Logic
                 PubSubChannel.SendMessage(true, $"Error {_matJsonPath}. {ex.Message}");
             }
         }
+
+        internal void RemoveDuplicatesFromJsonFiles()
+        {
+            var duplicateMaterials = _materials.GroupBy(x => x.Name).ToList();
+            var toDelete = new List<MaterialJson>();
+            foreach (var duplicate in duplicateMaterials)
+            {
+                //if (duplicate.Key == "boom_lift") Debugger.Break();
+                if (duplicate.Count() > 1)
+                {
+                    var duplicates = duplicate.OrderByDescending(x => x.MaterialFiles.Count(c => c.Missing == false)).ToList();
+                    var first = true;
+                    if (duplicates.First().MaterialFiles.Count(c => c.Missing == false) == 0) continue;
+                    duplicates.ForEach(x =>
+                    {
+                        if (!first)
+                        {
+                            toDelete.Add(x);
+                            var targetJsonNode = JsonNode.Parse(File.ReadAllText(x.MatJsonFileLocation), null, _docOptions);
+                            targetJsonNode.AsObject().Remove(x.Name);
+                            File.WriteAllText(x.MatJsonFileLocation, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+                        }
+                        first = false;
+                    }
+                    );
+                }
+            }
+            _materials.RemoveAll(x => toDelete.Contains(x));
+        }
+
         internal void CheckDuplicates(List<MaterialJson> sourceMaterials)
         {
             foreach (var item in _materials)
