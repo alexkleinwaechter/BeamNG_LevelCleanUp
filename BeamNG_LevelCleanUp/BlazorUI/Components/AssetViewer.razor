@@ -206,7 +206,7 @@
                     }
                     catch (Exception ex)
                     {
-                        PubSubChannel.SendMessage(true, $"Error in preview: {ex.Message}");
+                        PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error in preview: {ex.Message}");
                     }
                 }
             }

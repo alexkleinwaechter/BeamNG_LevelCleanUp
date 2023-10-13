@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -107,14 +108,13 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (string line in File.ReadAllLines(file.FullName))
                 {
-                    JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
-                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromString(line,file.FullName);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                     {
                         var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.GetJsonSerializerOptions());
                         if (!string.IsNullOrEmpty(asset.type))
                         {
-                            //PubSubChannel.SendMessage(false, $"Read Foresttype {asset.Type}", true);
+                            //PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Foresttype {asset.Type}", true);
                             _forestTypeNames.Add(Tuple.Create(asset.type, file.FullName));
                         }
                     }
@@ -124,10 +124,9 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void GetShapeNamesJson(FileInfo file)
         {
-            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
-                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
+                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(file.FullName);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     foreach (var managedForestData in jsonObject.RootElement.EnumerateObject())
@@ -155,7 +154,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(true, $"Error DecalScanner {file.FullName}. {ex.Message}");
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error DecalScanner {file.FullName}. {ex.Message}");
             }
         }
         private void GetShapeNamesCs(FileInfo file)

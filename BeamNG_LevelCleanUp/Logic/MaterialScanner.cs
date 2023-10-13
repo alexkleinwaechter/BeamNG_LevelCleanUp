@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -21,7 +22,6 @@ namespace BeamNG_LevelCleanUp.Logic
         private List<MaterialJson> _materials = new List<MaterialJson>();
         private List<Asset> _assets = new List<Asset>();
         private List<string> _excludeFiles = new List<string>();
-        private JsonDocumentOptions _docOptions = BeamJsonOptions.GetJsonDocumentOptions();
 
         internal MaterialScanner(string matJsonPath, string levelPath, string namePath, List<MaterialJson> materials, List<Asset> assets, List<string> excludeFiles)
         {
@@ -42,10 +42,9 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ScanMaterialsJsonFile()
         {
-            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
-                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_matJsonPath), docOptions);
+                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(_matJsonPath);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     foreach (var child in jsonObject.RootElement.EnumerateObject())
@@ -102,7 +101,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                     Cubemap = material.Cubemap,
                                 });
                             }
-                            //PubSubChannel.SendMessage(false, $"Read Material {material.Name}", true);
+                            //PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Material {material.Name}", true);
                             //todo: Sascha debuggen mit shrinker!!
                             _materials.Add(material);
 
@@ -125,7 +124,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(true, $"Error {_matJsonPath}. {ex.Message}");
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_matJsonPath}. {ex.Message}");
             }
         }
 
@@ -148,13 +147,13 @@ namespace BeamNG_LevelCleanUp.Logic
                             try
                             {
                                 toDelete.Add(x);
-                                var targetJsonNode = JsonNode.Parse(File.ReadAllText(x.MatJsonFileLocation), null, _docOptions);
+                                var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(x.MatJsonFileLocation);
                                 targetJsonNode.AsObject().Remove(x.Name);
                                 File.WriteAllText(x.MatJsonFileLocation, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
                             }
                             catch (Exception ex)
                             {
-                                PubSubChannel.SendMessage(true, $"Error deleting duplicating material {x.Name} from json {x.MatJsonFileLocation}: {ex.Message}", true);
+                                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error deleting duplicating material {x.Name} from json {x.MatJsonFileLocation}: {ex.Message}", true);
                             }
                         }
                         first = false;

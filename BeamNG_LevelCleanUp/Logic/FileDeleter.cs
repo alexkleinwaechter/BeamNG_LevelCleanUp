@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -49,7 +50,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 File.WriteAllLines(Path.Join(_levelPath, $"{_summaryFileName}_files_not_found.txt"), textLinesNotFound);
             }
-            PubSubChannel.SendMessage(false, $"{counterFound} files deleted. {counterNotFound} files not found. Dry Run: {_dryRun}. See directory {_levelPath} for logfiles.");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"{counterFound} files deleted. {counterNotFound} files not found. Dry Run: {_dryRun}. See directory {_levelPath} for logfiles.");
         }
     }
 }

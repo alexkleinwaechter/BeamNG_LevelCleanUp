@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,7 +21,7 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         internal List<string> ScanForMissingFiles()
         {
-            PubSubChannel.SendMessage(false, $"Analyzing Errors in BeamNG logfile: {_fileName}");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Analyzing Errors in BeamNG logfile: {_fileName}");
             List<string> baseDivider = new List<string> { "|", "'" };
             List<string> errorDivider = new List<string> { "failed to load texture", "missing source texture", "failed to load" };
             baseDivider = baseDivider.Concat(errorDivider).ToList();

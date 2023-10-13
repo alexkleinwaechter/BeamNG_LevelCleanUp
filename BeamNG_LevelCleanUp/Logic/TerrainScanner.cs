@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,11 +28,10 @@ namespace BeamNG_LevelCleanUp.Logic
         }
         public void ScanTerrain()
         {
-            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
-            PubSubChannel.SendMessage(false, $"Scan Terrainfile {_terrainPath}");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scan Terrainfile {_terrainPath}");
             try
             {
-                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(_terrainPath), docOptions);
+                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(_terrainPath);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     if (jsonObject.RootElement.TryGetProperty("materials", out JsonElement materials))

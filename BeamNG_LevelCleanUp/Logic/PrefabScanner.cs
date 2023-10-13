@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -55,7 +56,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     ShapeName = shapeName
                 };
                 AddAsset(asset);
-                //PubSubChannel.SendMessage(false, $"Read Prefab asset {asset.Name}", true);
+                //PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Prefab asset {asset.Name}", true);
             }
         }
 
@@ -128,10 +129,9 @@ namespace BeamNG_LevelCleanUp.Logic
             List<string> shapeNames = new List<string>();
             foreach (string line in File.ReadAllLines(file.FullName))
             {
-                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 try
                 {
-                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromString(line, file.FullName);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
@@ -147,7 +147,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(true, $"Error {file.FullName}. {ex.Message}.");
+                    PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {file.FullName}. {ex.Message}.");
                 }
             }
             return shapeNames;
@@ -161,7 +161,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 try
                 {
-                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromString(line, file.FullName);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
@@ -173,7 +173,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(true, $"Error {file.FullName}. {ex.Message}.");
+                    PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {file.FullName}. {ex.Message}.");
                 }
             }
             return prefabFileNames;

@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -55,15 +56,14 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             foreach (var file in _mainDecalsJson)
             {
-                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
-                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
+                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(file.FullName);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     JsonElement instances = jsonObject.RootElement.GetProperty("instances");
                     var x = instances.EnumerateObject();
                     foreach (var instance in x)
                     {
-                        //PubSubChannel.SendMessage(false, $"Scan Decal {instance.Name}", true);
+                        //PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scan Decal {instance.Name}", true);
                         _decalNames.Add(instance.Name);
                     }
                 }
@@ -72,10 +72,9 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void SetMaterialsJson(FileInfo file)
         {
-            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
-                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
+                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(file.FullName);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     foreach (var managedDecalData in jsonObject.RootElement.EnumerateObject())
@@ -94,7 +93,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(true, $"Error DecalScanner {file.FullName}. {ex.Message}");
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error DecalScanner {file.FullName}. {ex.Message}");
             }
         }
 

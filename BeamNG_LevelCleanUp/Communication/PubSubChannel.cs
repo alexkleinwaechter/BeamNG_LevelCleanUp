@@ -12,7 +12,7 @@ namespace BeamNG_LevelCleanUp.Communication
     {
         internal static Channel<PubSubMessage> ch = Channel.CreateUnbounded<PubSubMessage>();
         private static long _counter { get; set; }
-        public static void SendMessage(bool isError, string message, bool modulo = false)
+        public static void SendMessage(PubSubMessageType messageType, string message, bool modulo = false)
         {
             if (modulo)
             {
@@ -20,7 +20,7 @@ namespace BeamNG_LevelCleanUp.Communication
                 {
                     ch.Writer.TryWrite(new PubSubMessage
                     {
-                        IsError = isError,
+                        MessageType = messageType,
                         Message = message,
                     });
                 }
@@ -31,7 +31,7 @@ namespace BeamNG_LevelCleanUp.Communication
                 {
                     var success = ch.Writer.TryWrite(new PubSubMessage
                     {
-                        IsError = isError,
+                        MessageType = messageType,
                         Message = message,
                     });
                     if (success) break;
