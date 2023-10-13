@@ -39,19 +39,23 @@
             // 
             blazorWebView1.Dock = DockStyle.Fill;
             blazorWebView1.Location = new System.Drawing.Point(0, 0);
+            blazorWebView1.Margin = new Padding(4);
             blazorWebView1.Name = "blazorWebView1";
-            blazorWebView1.Size = new System.Drawing.Size(1682, 953);
+            blazorWebView1.Size = new System.Drawing.Size(2523, 1430);
             blazorWebView1.TabIndex = 1;
             blazorWebView1.Text = "blazorWebView1";
             // 
             // Form1
             // 
-            AutoScaleDimensions = new System.Drawing.SizeF(8F, 20F);
+            AutoScaleDimensions = new System.Drawing.SizeF(12F, 30F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(1682, 953);
+            ClientSize = new System.Drawing.Size(2523, 1430);
             Controls.Add(blazorWebView1);
+            Margin = new Padding(4);
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
+            FormClosing += Form1_FormClosing;
+            FormClosed += Form1_FormClosed;
             ResumeLayout(false);
         }
 

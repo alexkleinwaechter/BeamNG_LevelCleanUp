@@ -17,7 +17,9 @@ namespace BeamNG_LevelCleanUp.Logic
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         static string _nameLevelPath { get; set; }
         static string _lastUnpackedPath { get; set; }
-        static string _lastCopyFromUnpackedPathPath { get; set; }
+        static string _lastCopyFromUnpackedPath { get; set; }
+        static string _lastUnpackedZip { get; set; }
+        static string _lastCopyFromUnpackedZip { get; set; }
         public enum JobTypeEnum
         {
             FindLevelRoot = 0
@@ -32,10 +34,12 @@ namespace BeamNG_LevelCleanUp.Logic
                 retVal = Path.Join(fi.Directory.FullName, relativeTarget);
                 if (isCopyFrom)
                 {
-                    _lastCopyFromUnpackedPathPath = retVal;
+                    _lastCopyFromUnpackedZip = filePath;
+                    _lastCopyFromUnpackedPath = retVal;
                 }
                 else
                 {
+                    _lastUnpackedZip = filePath;
                     _lastUnpackedPath = retVal;
                 }
                 var deleteDir = new DirectoryInfo(retVal);
@@ -43,9 +47,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 {
                     Directory.Delete(retVal, true);
                 }
-                PubSubChannel.SendMessage(false, $"Unzipping to {retVal}");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Unzipping to {retVal}");
                 ZipFile.ExtractToDirectory(fi.FullName, retVal);
-                PubSubChannel.SendMessage(false, $"Finished unzipping to {retVal}");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Finished unzipping to {retVal}");
                 retVal = GetLevelPath(retVal);
             }
             else
@@ -55,6 +59,44 @@ namespace BeamNG_LevelCleanUp.Logic
             return retVal;
         }
 
+        public static void CleanUpWorkingDirectory()
+        {
+            if (!string.IsNullOrEmpty(_lastUnpackedPath))
+            {
+                var deleteDir = new DirectoryInfo(_lastUnpackedPath);
+                if (deleteDir.Exists)
+                {
+                    Directory.Delete(_lastUnpackedPath, true);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_lastCopyFromUnpackedPath))
+            {
+                var deleteDir = new DirectoryInfo(_lastCopyFromUnpackedPath);
+                if (deleteDir.Exists)
+                {
+                    Directory.Delete(_lastCopyFromUnpackedPath, true);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_lastUnpackedZip))
+            {
+                var deleteFile = new FileInfo(_lastUnpackedZip);
+                if (deleteFile.Exists)
+                {
+                    File.Delete(_lastUnpackedZip);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(_lastCopyFromUnpackedZip))
+            {
+                var deleteFile = new FileInfo(_lastCopyFromUnpackedZip);
+                if (deleteFile.Exists)
+                {
+                    File.Delete(_lastCopyFromUnpackedZip);
+                }
+            }
+        }
         public static string GetLastUnpackedPath()
         {
             return _lastUnpackedPath;
@@ -62,7 +104,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         public static string GetLastUnpackedCopyFromPath()
         {
-            return _lastCopyFromUnpackedPathPath;
+            return _lastCopyFromUnpackedPath;
         }
 
         public static void BuildDeploymentFile(string filePath, string levelName, CompressionLevel compressionLevel, bool searchLevelParent = false)
@@ -70,13 +112,13 @@ namespace BeamNG_LevelCleanUp.Logic
             var fileName = $"{levelName}_deploy_{DateTime.Now.ToString("yyMMdd")}.zip";
             var targetDir = new DirectoryInfo(filePath).Parent.FullName;
             var targetPath = Path.Join(targetDir, fileName);
-            PubSubChannel.SendMessage(false, $"Compressing Deploymentfile at {targetPath}");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Compressing Deploymentfile at {targetPath}");
             if (File.Exists(targetPath))
             {
                 File.Delete(targetPath);
             }
             ZipFile.CreateFromDirectory(filePath, targetPath, compressionLevel, false);
-            PubSubChannel.SendMessage(false, $"Deploymentfile created at {targetPath}");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Deploymentfile created at {targetPath}");
         }
 
         public static string GetLevelPath(string path)
@@ -190,6 +232,19 @@ namespace BeamNG_LevelCleanUp.Logic
         public static void OpenExplorer()
         {
             System.Diagnostics.Process.Start("explorer.exe", WorkingDirectory);
+        }
+
+        public static void OpenExplorerLogs()
+        {
+            var info = new DirectoryInfo(Path.Join(_lastUnpackedPath, "levels"));
+            if (info.Exists)
+            {
+                System.Diagnostics.Process.Start("explorer.exe", info.FullName);
+            }
+            else
+            {
+                System.Diagnostics.Process.Start("explorer.exe", Directory.GetParent(_nameLevelPath).FullName);
+            }
         }
     }
 }

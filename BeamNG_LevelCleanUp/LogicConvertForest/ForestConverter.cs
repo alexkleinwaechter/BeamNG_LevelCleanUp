@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,7 +20,6 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
         private readonly string _forestManagedItemsRealtivePath = "art/forest/managedItemData.json";
         private readonly string _forestItemRealtivePath = "forest";
         private FileInfo _forestManagedItemsFileInfo;
-        private JsonDocumentOptions _docOptions = BeamJsonOptions.GetJsonDocumentOptions();
 
         public ForestConverter(List<Asset> assetsToConvert,
             List<ForestInfo> forestInfoList, string namePath)
@@ -99,7 +99,7 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
             }
             else
             {
-                var targetJsonNode = JsonNode.Parse(File.ReadAllText(_forestManagedItemsFileInfo.FullName), null, _docOptions);
+                var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(_forestManagedItemsFileInfo.FullName);
                 if (!targetJsonNode.AsObject().Any(x => x.Value["internalName"]?.ToString() == forestType.internalName))
                 {
                     try

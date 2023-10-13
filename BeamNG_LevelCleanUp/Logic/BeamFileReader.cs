@@ -36,6 +36,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyAssetDecal = 15,
             CopyManagedDecal = 16,
             CopyDae = 17,
+            FacilityJson = 18,
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -141,6 +142,7 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             this.Reset();
             ReadInfoJson();
+            ReadFacilityJson();
             ReadMissionGroup();
             ReadForest();
             ReadDecals();
@@ -151,7 +153,7 @@ namespace BeamNG_LevelCleanUp.Logic
             ReadLevelExtras();
             this.ResolveUnusedAssetFiles();
             ResolveOrphanedFiles();
-            PubSubChannel.SendMessage(false, "Analyzing finished");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Analyzing finished");
         }
 
         internal void ReadAllForCopy()
@@ -161,7 +163,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyAssetRoad();
             CopyAssetDecal();
             CopyDae();
-            PubSubChannel.SendMessage(false, "Fetching Assets finished");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
         }
 
         internal List<Asset> ReadForConvertToForest()
@@ -172,9 +174,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 "TSStatic"
             };
             Reset();
-            PubSubChannel.SendMessage(false, "Fetching Missiongroups ... Please wait");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Missiongroups ... Please wait");
             ReadMissionGroup();
-            PubSubChannel.SendMessage(false, "Fetching Missiongroups finished");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Missiongroups finished");
             var assets = Assets
                 .Where(_ => allowedClasses.Contains(_.Class))
                 .Where(_ => (_.Class == "TSStatic" && _.__parent != null && _.DaeExists == true && areSame(_.Scale) && _.RotationMatrix?.Count == 9) || _.Class == "SimGroup")
@@ -209,6 +211,21 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        internal void ReadFacilityJson()
+        {
+            var dirInfo = new DirectoryInfo(_levelPath);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "facilities.json", ReadTypeEnum.FacilityJson);
+                WalkDirectoryTree(dirInfo, "*.facilities.json", ReadTypeEnum.FacilityJson);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -336,7 +353,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
-                PubSubChannel.SendMessage(false, $"Read Collada Assets");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Collada Assets");
                 WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.AllDae);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
@@ -354,7 +371,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));
                 if (dirInfo != null && dirInfo.Exists)
                 {
-                    PubSubChannel.SendMessage(false, $"Read Level {extra}");
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Level {extra}");
                     WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs);
                     WalkDirectoryTree(dirInfo, "*.*", ReadTypeEnum.ExcludeAllFiles);
                     Console.WriteLine("Files with restricted access:");
@@ -385,7 +402,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
-                PubSubChannel.SendMessage(false, $"Resolve unused managed asset files");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Resolve unused managed asset files");
                 var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _levelPath, ExcludeFiles);
                 resolver.ExcludeUsedAssetFiles();
                 //UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToUpperInvariant()).Contains(x.ToUpperInvariant())).ToList();
@@ -397,7 +414,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
-                PubSubChannel.SendMessage(false, $"Resolve orphaned unmanaged files");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Resolve orphaned unmanaged files");
                 WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.cdae", ReadTypeEnum.ImageFile);
                 WalkDirectoryTree(dirInfo, "*.dds", ReadTypeEnum.ImageFile);
@@ -418,7 +435,7 @@ namespace BeamNG_LevelCleanUp.Logic
         internal void DeleteFilesAndDeploy(List<FileInfo> deleteList, bool dryRun)
         {
             _dryRun = dryRun;
-            PubSubChannel.SendMessage(false, $"Delete files");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Delete files");
             var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _namePath);
             materialScanner.RemoveDuplicatesFromJsonFiles();
             var deleter = new FileDeleter(deleteList, _levelPath, "DeletedAssetFiles", _dryRun);
@@ -472,7 +489,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 Console.WriteLine("The directory was renamed to " + targetDir);
             }
-            PubSubChannel.SendMessage(false, "Renaming level done! Build your deployment file now.");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Renaming level done! Build your deployment file now.");
         }
 
         internal void CopyAssetRoad()
@@ -495,7 +512,7 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
             if (dirInfo != null)
             {
-                PubSubChannel.SendMessage(false, $"Read Collada Assets");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Collada Assets");
                 WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.CopyDae);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
@@ -572,7 +589,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
-            var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple" };
+            var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple", "_heightmap", "_minimap" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 
@@ -658,8 +675,12 @@ namespace BeamNG_LevelCleanUp.Logic
                             var infoJsonScanner = new InfoJsonScanner(fi.FullName, fi.Directory.FullName);
                             ExcludeFiles.AddRange(infoJsonScanner.GetExcludeFiles());
                             break;
+                        case ReadTypeEnum.FacilityJson:
+                            var facilityJsonScanner = new FacilityJsonScanner(fi.FullName, fi.Directory.FullName);
+                            ExcludeFiles.AddRange(facilityJsonScanner.GetExcludeFiles());
+                            break;
                         case ReadTypeEnum.LevelRename:
-                            //PubSubChannel.SendMessage(false, $"Renaming in file {fi.FullName}", true);
+                            //PubSubChannel.SendMessage(PubSubMessageType.Info, $"Renaming in file {fi.FullName}", true);
                             _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                             break;
                         case ReadTypeEnum.CopyAssetRoad:

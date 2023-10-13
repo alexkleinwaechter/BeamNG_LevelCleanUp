@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -31,16 +32,15 @@ namespace BeamNG_LevelCleanUp.Logic
             foreach (string line in File.ReadAllLines(_missiongroupPath))
             {
                 linecounter++;
-                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
                 try
                 {
-                    using JsonDocument jsonObject = JsonDocument.Parse(line, docOptions);
+                    using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromString(line, _missiongroupPath);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
                         var asset = jsonObject.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
                         asset.MissionGroupPath = _missiongroupPath;
                         asset.MissionGroupLine = linecounter;
-                        PubSubChannel.SendMessage(false, $"Read MissionGroup {Directory.GetParent(_missiongroupPath).Name}", true);
+                        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read MissionGroup {Directory.GetParent(_missiongroupPath).Name}", true);
                         if (asset.Class == "Prefab" && !string.IsNullOrEmpty(asset.Filename))
                         {
                             //if (asset.Filename.Contains("turbine_blades")) Debugger.Break();
@@ -93,7 +93,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(true, $"Error {_missiongroupPath}. {ex.Message}. jsonLine:{line}");
+                    PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_missiongroupPath}. {ex.Message}. jsonLine:{line}");
 
                 }
             }

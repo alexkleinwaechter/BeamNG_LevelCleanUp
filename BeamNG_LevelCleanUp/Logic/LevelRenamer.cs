@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,13 +20,12 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void EditInfoJson(string namePath, string newName) {
             var _infoJsonPath = Path.Join(namePath, "info.json");
-            PubSubChannel.SendMessage(false, $"Read info.json");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read info.json");
             try
             {
-                JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
-                var jsonNode = JsonNode.Parse(File.ReadAllText(_infoJsonPath), null, docOptions);
+                var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(_infoJsonPath);
                 jsonNode["title"] = newName;
-                File.WriteAllText(_infoJsonPath, jsonNode.ToJsonString()); 
+                File.WriteAllText(_infoJsonPath, jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions())); 
             }
             catch (Exception ex)
             {

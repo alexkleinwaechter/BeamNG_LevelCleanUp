@@ -29,7 +29,7 @@
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
                                    ValueChanged="OnVanillaSourceSelected"
                                    Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                        @foreach (var item in _vanillaLevels)
+                         @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
                             }
@@ -47,7 +47,7 @@
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
                 <MudList Clickable="true" Dense="true" DisableGutters="false">
                     @{
-                        var list = _showErrorLog ? _errors : _messages;
+                        var list = _showErrorLog ? _errors : (_showWarningLog ? _warnings : _messages);
                         @foreach (var item in list)
                         {
                             <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
@@ -62,11 +62,15 @@
             <MudStack Row="true" Justify="Justify.SpaceBetween">
                 @if (_errors.Any())
                 {
-                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, true))">Errors</MudButton>
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, false))">Messages</MudButton>
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
                 }
                 @if (!string.IsNullOrEmpty(_renameCurrentName) && !string.IsNullOrEmpty(_renameNewNamePath) && !string.IsNullOrEmpty(_renameNewTitle))
                 {
@@ -75,18 +79,19 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                           @bind-Value="_compressionLevel">
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                    <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-                    </MudSelect>
+                     @bind-Value="_compressionLevel">
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
             @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
             {
                 <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Working Directory: @ZipFileHandler.WorkingDirectory</MudButton>
+                <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Logfiles</MudButton>
             }
         </footer>
     </ChildContent>
@@ -105,6 +110,7 @@
     private string _beamLogFilePath { get; set; } = string.Empty;
     private List<string> _missingFiles { get; set; } = new List<string>();
     private List<string> _errors { get; set; } = new List<string>();
+    private List<string> _warnings { get; set; } = new List<string>();
     private List<string> _messages { get; set; } = new List<string>();
     private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
@@ -123,6 +129,7 @@
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
     bool _showErrorLog { get; set; }
+    bool _showWarningLog { get; set; }
     private List<FileInfo> _vanillaLevels { get; set; } = new List<FileInfo>();
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private string _beamInstallDir { get; set; }
@@ -138,6 +145,7 @@
         _beamLogFilePath = null;
         _missingFiles = new List<string>();
         _errors = new List<string>();
+        _warnings = new List<string>();
         _messages = new List<string>();
         _openDrawer = false;
         BindingListDelete = new List<GridFileListItem>();
@@ -205,7 +213,7 @@
         SetDefaultWorkingDirectory();
         _vanillaLevelSourceSelected = file;
         var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
-        PubSubChannel.SendMessage(false, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
         File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
         _fileSelectDisabled = false;
         await FileSelected(target);
@@ -246,18 +254,23 @@
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
                 if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
                 {
-                    if (!msg.IsError)
+                    switch (msg.MessageType)
                     {
-                        _messages.Add(msg.Message);
-                        Snackbar.Add(msg.Message, Severity.Info);
-                    }
-                    else
-                    {
-                        _errors.Add(msg.Message);
-                        Snackbar.Add(msg.Message, Severity.Error);
+                        case PubSubMessageType.Info:
+                            _messages.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Info);
+                            break;
+                        case PubSubMessageType.Warning:
+                            _warnings.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Warning);
+                            break;
+
+                        case PubSubMessageType.Error:
+                            _errors.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Error);
+                            break;
                     }
                 }
-                //Thread.Sleep(TimeSpan.FromSeconds(1));
             }
         });
     }
@@ -280,9 +293,10 @@
         }
     }
 
-    void OpenDrawer(Anchor anchor, bool isError)
+    void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
     {
-        _showErrorLog = isError;
+        _showErrorLog = msgType == PubSubMessageType.Error;
+        _showWarningLog = msgType == PubSubMessageType.Warning;
         _openDrawer = true;
         this._anchor = anchor;
 

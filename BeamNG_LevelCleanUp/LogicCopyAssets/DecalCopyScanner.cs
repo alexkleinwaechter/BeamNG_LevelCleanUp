@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -57,10 +58,9 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private List<ManagedDecalData> HandleJson(FileInfo file)
         {
             var retVal = new List<ManagedDecalData>();
-            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             try
             {
-                using JsonDocument jsonObject = JsonDocument.Parse(File.ReadAllText(file.FullName), docOptions);
+                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(file.FullName);
                 if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                 {
                     foreach (var managedDecalData in jsonObject.RootElement.EnumerateObject())
@@ -79,7 +79,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(true, $"Error DecalScanner {file.FullName}. {ex.Message}");
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error DecalScanner {file.FullName}. {ex.Message}");
             }
             return retVal;
         }

@@ -53,7 +53,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(true, $"Collada format error in {_resolvedDaeFile}. Exception:{ex.Message}");
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Collada format error in {_resolvedDaeFile}. Exception:{ex.Message}");
             }
 
             //Display all the book titles.

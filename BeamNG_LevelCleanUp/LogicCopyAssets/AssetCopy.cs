@@ -69,7 +69,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             if (!stopFaultyFile)
             {
-                PubSubChannel.SendMessage(false, $"Done! Assets copied. Build your deployment file now.");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Done! Assets copied. Build your deployment file now.");
             }
             stopFaultyFile = false;
         }
@@ -92,7 +92,6 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             Directory.CreateDirectory(item.TargetPath);
             var targetJsonPath = Path.Join(item.TargetPath, "managedDecalData.json");
-            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             var targetJsonFile = new FileInfo(targetJsonPath);
             if (!targetJsonFile.Exists)
             {
@@ -106,7 +105,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             else
             {
-                var targetJsonNode = JsonNode.Parse(File.ReadAllText(targetJsonFile.FullName), null, docOptions);
+                var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetJsonFile.FullName);
                 if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == item.DecalData.Name))
                 {
                     targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(item.DecalData, BeamJsonOptions.GetJsonSerializerOptions()))));
@@ -140,7 +139,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(true, $"Filepath error for daefile {daeFullName}. Exception:{ex.Message}");
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error for daefile {daeFullName}. Exception:{ex.Message}");
             }
 
             CopyMaterials(item);
@@ -152,7 +151,6 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             {
                 return;
             }
-            JsonDocumentOptions docOptions = BeamJsonOptions.GetJsonDocumentOptions();
             Directory.CreateDirectory(item.TargetPath);
             foreach (var material in item.Materials)
             {
@@ -160,19 +158,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 {
                     var jsonString = File.ReadAllText(material.MatJsonFileLocation);
                     JsonNode sourceJsonNode;
-                    try
-                    {
-                        sourceJsonNode = JsonNode.Parse(jsonString, null, docOptions);
-                        _ = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
-                    }
-                    catch (Exception ex)
-                    {
-                        //remove first duplicate key out of JsonNode
-                        var tempObject = DeserializeObject<JObject>(jsonString, new JsonSerializerSettings(), DuplicatePropertyNameHandling.Replace);
-                        jsonString = tempObject.ToString();
-                        sourceJsonNode = JsonNode.Parse(jsonString, null, docOptions);
-                        PubSubChannel.SendMessage(true, $"materials.json {material.MatJsonFileLocation} has a duplicate property. The last one wins. Message:{ex.Message}");
-                    }
+                    sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
+                    _ = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
                     var sourceMaterialNode = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
                     if (sourceMaterialNode.Value == null)
                     {
@@ -195,7 +182,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         }
                         catch (Exception ex)
                         {
-                            PubSubChannel.SendMessage(true, $"Filepath error for material {material.Name}. Exception:{ex.Message}");
+                            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error for material {material.Name}. Exception:{ex.Message}");
                         }
 
                         toText = toText.Replace(GetBeamNgJsonFileName(matFile.File.FullName), GetBeamNgJsonFileName(targetFullName), StringComparison.OrdinalIgnoreCase);
@@ -212,7 +199,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     }
                     else
                     {
-                        var targetJsonNode = JsonNode.Parse(File.ReadAllText(targetJsonFile.FullName), null, docOptions);
+                        var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetJsonFile.FullName);
                         if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == material.Name))
                         {
                             try
@@ -230,7 +217,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(true, $"materials.json {material.MatJsonFileLocation} can't be parsed. Exception:{ex.Message}");
+                    PubSubChannel.SendMessage(PubSubMessageType.Error, $"materials.json {material.MatJsonFileLocation} can't be parsed. Exception:{ex.Message}");
                     stopFaultyFile = true;
                     break;
                 }
@@ -301,7 +288,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             var targetParts = dir.ToLowerInvariant().Split($@"\levels\{levelNameCopyFrom}\".ToLowerInvariant());
             if (targetParts.Count() < 2)
             {
-                //PubSubChannel.SendMessage(true, $"Filepath error in {sourceName}. Exception:no levels folder in path.");
+                //PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error in {sourceName}. Exception:no levels folder in path.");
                 targetParts = dir.ToLowerInvariant().Split($@"\levels\".ToLowerInvariant());
                 if (targetParts.Count() == 2)
                 {
@@ -320,26 +307,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             var targetParts = windowsFileName.ToLowerInvariant().Split($@"\levels\".ToLowerInvariant());
             if (targetParts.Count() < 2)
             {
-                PubSubChannel.SendMessage(true, $"Filepath error in {windowsFileName}. Exception:no levels folder in path.");
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error in {windowsFileName}. Exception:no levels folder in path.");
                 return string.Empty;
             }
             return Path.ChangeExtension(Path.Join("levels", targetParts.Last()).Replace(@"\", "/"), null);
-        }
-
-        public static T DeserializeObject<T>(string json, JsonSerializerSettings settings, DuplicatePropertyNameHandling duplicateHandling)
-        {
-            Newtonsoft.Json.JsonSerializer jsonSerializer = Newtonsoft.Json.JsonSerializer.CreateDefault(settings);
-            using (var stringReader = new StringReader(json))
-            using (var jsonTextReader = new JsonTextReader(stringReader))
-            {
-                jsonTextReader.DateParseHandling = DateParseHandling.None;
-                JsonLoadSettings loadSettings = new JsonLoadSettings
-                {
-                    DuplicatePropertyNameHandling = duplicateHandling
-                };
-                var jtoken = JToken.ReadFrom(jsonTextReader, loadSettings);
-                return jtoken.ToObject<T>(jsonSerializer);
-            }
         }
     }
 }

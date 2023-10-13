@@ -6,9 +6,16 @@ using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Objects
 {
+    internal enum PubSubMessageType
+    {
+        Info,
+        Error,
+        Warning
+    }
+
     internal class PubSubMessage
     {
-        internal bool IsError { get; set; }
+        internal PubSubMessageType MessageType { get; set; }
         internal string Message { get; set; }
     }
 }
