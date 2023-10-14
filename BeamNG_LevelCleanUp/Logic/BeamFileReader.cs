@@ -37,6 +37,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyManagedDecal = 16,
             CopyDae = 17,
             FacilityJson = 18,
+            VehicleDae = 19,
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -142,15 +143,16 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             this.Reset();
             ReadInfoJson();
-            ReadFacilityJson();
-            ReadMissionGroup();
-            ReadForest();
-            ReadDecals();
-            ReadTerrainJson();
+            if (StaticVariables.ModContext == ModContext.Levels) ReadFacilityJson();
+            if (StaticVariables.ModContext == ModContext.Levels) ReadMissionGroup();
+            if (StaticVariables.ModContext == ModContext.Levels) ReadForest();
+            if (StaticVariables.ModContext == ModContext.Levels) ReadDecals();
+            if (StaticVariables.ModContext == ModContext.Levels) ReadTerrainJson();
+            if (StaticVariables.ModContext == ModContext.Vehicles) ReadVehicleDae();
             ReadMaterialsJson();
             ReadAllDae();
-            ReadCsFilesForGenericExclude();
-            ReadLevelExtras();
+            if (StaticVariables.ModContext == ModContext.Levels) ReadCsFilesForGenericExclude();
+            if (StaticVariables.ModContext == ModContext.Levels) ReadLevelExtras();
             this.ResolveUnusedAssetFiles();
             ResolveOrphanedFiles();
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Analyzing finished");
@@ -218,6 +220,20 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        internal void ReadVehicleDae()
+        {
+            var dirInfo = new DirectoryInfo(_levelPath);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.VehicleDae);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -739,6 +755,17 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.CopyDae:
                             AllDaeCopyList.Add(fi);
+                            break;
+                        case ReadTypeEnum.VehicleDae:
+                            var assetFromDae = new Asset();
+                            var daeScanner = new DaeScanner(_levelPath, fi.FullName);
+                            assetFromDae.Name = Path.GetFileNameWithoutExtension(fi.FullName);
+                            assetFromDae.Class = "TSStatic";
+                            assetFromDae.DaePath = fi.FullName;
+                            assetFromDae.DaeExists = true;
+                            assetFromDae.ShapeName = fi.FullName;
+                            assetFromDae.MaterialsDae = daeScanner.GetMaterials();
+                            Assets.Add(assetFromDae);
                             break;
                         default:
                             break;

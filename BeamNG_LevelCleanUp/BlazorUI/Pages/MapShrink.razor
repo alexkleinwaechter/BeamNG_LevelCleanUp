@@ -1,4 +1,4 @@
-﻿@page "/MapShrink"
+﻿@page "/MapShrink/{ModdingTarget}"
 @using BeamNG_LevelCleanUp.BlazorUI.Components
 @using BeamNG_LevelCleanUp.Communication;
 @using BeamNG_LevelCleanUp.Logic;
@@ -11,7 +11,7 @@
 <ErrorBoundary>
     <ChildContent>
         <div class="content">
-            <h3>MapShrink</h3>
+            <h3>@(ModdingTarget == "levels" ? "Map-Shrinker" : "Vehicle-Shrinker")</h3>
             <MudExpansionPanels @ref="FileSelect">
                 <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
                     <FileSelectComponent OnFileSelected="FileSelected"
@@ -31,16 +31,16 @@
                         <MudText Typo="Typo.h6">Unused Files</MudText>
                         <MudSpacer />
                         <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-                     </ToolBarContent>
-                     <HeaderContent>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
-                     </HeaderContent>
-                     <RowTemplate>
-                         <MudTd DataLabel="File">@context.FullName</MudTd>
-                         <MudTd DataLabel="Size">@context.SizeMb</MudTd>
-                     </RowTemplate>
-                 </MudTable>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="File">@context.FullName</MudTd>
+                        <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+                    </RowTemplate>
+                </MudTable>
             }
             else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
             {
@@ -86,12 +86,12 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                     @bind-Value="_compressionLevel">
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-                     </MudSelect>
+                    @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
@@ -108,6 +108,8 @@
 </ErrorBoundary>
 
 @code {
+    [Parameter]
+    public string ModdingTarget { get; set; }
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
@@ -117,7 +119,7 @@
     private List<string> _messages { get; set; } = new List<string>();
     private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
-    private string _fileSelectTitle = "Select your zipped level you want to shrink";
+    private string _fileSelectTitle = "Select your zipped mod you want to shrink";
     private bool _fileSelectDisabled { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
@@ -241,7 +243,24 @@
                 }
             }
         });
-}
+    }
+
+    public override Task SetParametersAsync(ParameterView parameters)
+    {
+        if (parameters.TryGetValue<string>("ModdingTarget", out var moddingTarget))
+        {
+            StaticVariables.ModPathPart = moddingTarget;
+            if (moddingTarget == "levels")
+            {
+                StaticVariables.ModContext = ModContext.Levels;
+            }
+            else if (moddingTarget == "vehicles")
+            {
+                StaticVariables.ModContext = ModContext.Vehicles;
+            }
+        }
+        return base.SetParametersAsync(parameters);
+    }
 
     void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
     {

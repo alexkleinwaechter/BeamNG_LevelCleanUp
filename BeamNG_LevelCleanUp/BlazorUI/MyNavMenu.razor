@@ -1,8 +1,14 @@
 ﻿@using Microsoft.AspNetCore.Components.Routing;
 <MudNavMenu>
     <MudNavLink Href="/" Match="NavLinkMatch.Prefix">Start</MudNavLink>
-    <MudNavLink Href="/MapShrink" Match="NavLinkMatch.Prefix">Map Shrinker</MudNavLink>
-    <MudNavLink Href="/RenameMap" Match="NavLinkMatch.Prefix">Rename Map</MudNavLink>
-    <MudNavLink Href="/CopyAssets" Match="NavLinkMatch.Prefix">Copy Assets</MudNavLink>
-    <MudNavLink Href="/ConvertToForest" Match="NavLinkMatch.Prefix">Convert Assets to Forestitems</MudNavLink>
+    <MudDivider Class="my-2" />
+    <MudNavGroup Title="Maps" Expanded="true">
+        <MudNavLink Href="/MapShrink/levels" Match="NavLinkMatch.Prefix">Map Shrinker</MudNavLink>
+        <MudNavLink Href="/RenameMap" Match="NavLinkMatch.Prefix">Rename Map</MudNavLink>
+        <MudNavLink Href="/CopyAssets" Match="NavLinkMatch.Prefix">Copy Assets</MudNavLink>
+        <MudNavLink Href="/ConvertToForest" Match="NavLinkMatch.Prefix">Convert Assets to Forestitems</MudNavLink>
+    </MudNavGroup>
+    <MudNavGroup Title="Vehicles" Expanded="true">
+        <MudNavLink Href="/MapShrink/vehicles" Match="NavLinkMatch.Prefix">Vehicle Shrinker</MudNavLink>
+    </MudNavGroup>
 </MudNavMenu>

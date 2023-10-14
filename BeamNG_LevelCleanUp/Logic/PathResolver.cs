@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BeamNG_LevelCleanUp.Objects;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -53,8 +54,8 @@ namespace BeamNG_LevelCleanUp.Logic
         internal static string DirectorySanitizer(string path)
         {
             return path
-                .Replace(@"levels\levels", "levels")
-                .Replace(@"levels\game:levels", "levels");
+                .Replace(@$"{StaticVariables.ModPathPart}\{StaticVariables.ModPathPart}", $"{StaticVariables.ModPathPart}")
+                .Replace(@$"{StaticVariables.ModPathPart}\game:{StaticVariables.ModPathPart}", $"{StaticVariables.ModPathPart}");
         }
 
         private static void WriteToLog(string line) {

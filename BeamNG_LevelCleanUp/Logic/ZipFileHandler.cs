@@ -133,9 +133,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
                 var nameDir = new DirectoryInfo(_nameLevelPath);
                 var levelsDir = Directory.GetParent(_nameLevelPath);
-                if (!levelsDir.Name.Equals("levels", StringComparison.OrdinalIgnoreCase))
+                if (!levelsDir.Name.Equals(StaticVariables.ModPathPart, StringComparison.OrdinalIgnoreCase))
                 {
-                    levelsDir = Directory.CreateDirectory(Path.Join(path, "levels"));
+                    levelsDir = Directory.CreateDirectory(Path.Join(path, StaticVariables.ModPathPart));
                     Directory.Move(nameDir.FullName, Path.Join(levelsDir.FullName, nameDir.Name));
                 }
                 path = levelsDir.FullName;
@@ -205,9 +205,14 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 _nameLevelPath = fi.Directory.FullName;
                             }
-                            if (mainDir.Length == 0) {
+                            if (mainDir.Length == 0)
+                            {
                                 mainDir = fi.Directory.GetDirectories("art");
                                 if (mainDir.FirstOrDefault() != null)
+                                {
+                                    _nameLevelPath = fi.Directory.FullName;
+                                }
+                                else
                                 {
                                     _nameLevelPath = fi.Directory.FullName;
                                 }
@@ -236,7 +241,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         public static void OpenExplorerLogs()
         {
-            var info = new DirectoryInfo(Path.Join(_lastUnpackedPath, "levels"));
+            var info = new DirectoryInfo(Path.Join(_lastUnpackedPath, StaticVariables.ModPathPart));
             if (info.Exists)
             {
                 System.Diagnostics.Process.Start("explorer.exe", info.FullName);
