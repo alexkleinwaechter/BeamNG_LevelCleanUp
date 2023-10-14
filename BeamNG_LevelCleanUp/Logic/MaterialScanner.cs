@@ -128,7 +128,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void RemoveDuplicatesFromJsonFiles()
+        internal void RemoveDuplicates(bool fromJsonFiles)
         {
             var duplicateMaterials = _materials.GroupBy(x => x.Name).ToList();
             var toDelete = new List<MaterialJson>();
@@ -147,9 +147,12 @@ namespace BeamNG_LevelCleanUp.Logic
                             try
                             {
                                 toDelete.Add(x);
-                                var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(x.MatJsonFileLocation);
-                                targetJsonNode.AsObject().Remove(x.Name);
-                                File.WriteAllText(x.MatJsonFileLocation, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+                                if (fromJsonFiles)
+                                {
+                                    var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(x.MatJsonFileLocation);
+                                    targetJsonNode.AsObject().Remove(x.Name);
+                                    File.WriteAllText(x.MatJsonFileLocation, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+                                }
                             }
                             catch (Exception ex)
                             {

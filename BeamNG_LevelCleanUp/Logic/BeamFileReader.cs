@@ -160,10 +160,17 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             Reset();
             ReadMaterialsJson();
+            RemoveDuplicateMaterials(false);
             CopyAssetRoad();
             CopyAssetDecal();
             CopyDae();
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
+        }
+
+        private void RemoveDuplicateMaterials(bool fromJsonFile)
+        {
+            var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _namePath);
+            materialScanner.RemoveDuplicates(fromJsonFile);
         }
 
         internal List<Asset> ReadForConvertToForest()
@@ -437,7 +444,7 @@ namespace BeamNG_LevelCleanUp.Logic
             _dryRun = dryRun;
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Delete files");
             var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _namePath);
-            materialScanner.RemoveDuplicatesFromJsonFiles();
+            materialScanner.RemoveDuplicates(true);
             var deleter = new FileDeleter(deleteList, _levelPath, "DeletedAssetFiles", _dryRun);
             deleter.Delete();
         }
@@ -499,6 +506,8 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetRoad);
                 WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetRoad);
+                var materialScanner = new MaterialScanner(MaterialsJsonCopy, _levelPathCopyFrom, _namePath);
+                materialScanner.RemoveDuplicates(false);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
