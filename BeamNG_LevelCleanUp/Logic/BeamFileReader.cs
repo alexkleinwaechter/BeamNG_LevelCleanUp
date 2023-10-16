@@ -2,6 +2,7 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.LogicConvertForest;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
+using BeamNG_LevelCleanUp.LogicVehicles;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using System;
@@ -38,6 +39,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyDae = 17,
             FacilityJson = 18,
             VehicleDae = 19,
+            Jbeam = 20,
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -149,6 +151,7 @@ namespace BeamNG_LevelCleanUp.Logic
             if (StaticVariables.ModContext == ModContext.Levels) ReadDecals();
             if (StaticVariables.ModContext == ModContext.Levels) ReadTerrainJson();
             if (StaticVariables.ModContext == ModContext.Vehicles) ReadVehicleDae();
+            if (StaticVariables.ModContext == ModContext.Vehicles) ReadJbeams();
             ReadMaterialsJson();
             ReadAllDae();
             if (StaticVariables.ModContext == ModContext.Levels) ReadCsFilesForGenericExclude();
@@ -341,6 +344,23 @@ namespace BeamNG_LevelCleanUp.Logic
                 WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.ManagedDecalData);
                 var decalScanner = new DecalScanner(Assets, _mainDecalsJson, _managedDecalData);
                 decalScanner.ScanDecals();
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+        }
+
+        private static List<FileInfo> _jbeams { get; set; } = new List<FileInfo>();
+        internal void ReadJbeams()
+        {
+            var dirInfo = new DirectoryInfo(_levelPath);
+            if (dirInfo != null)
+            {
+                WalkDirectoryTree(dirInfo, "*.jbeam", ReadTypeEnum.Jbeam);
+                var jbeamScanner = new JbeamScanner(Assets, _jbeams);
+                jbeamScanner.ScanJbeams();
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -686,6 +706,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.ManagedDecalData:
                             _managedDecalData.Add(fi);
+                            break;
+                        case ReadTypeEnum.Jbeam:
+                            _jbeams.Add(fi);
                             break;
                         case ReadTypeEnum.ForestJsonFiles:
                             _forestJsonFiles.Add(fi);
