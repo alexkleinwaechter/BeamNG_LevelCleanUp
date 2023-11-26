@@ -79,23 +79,23 @@ namespace BeamNG_LevelCleanUp.Logic
                 }
             }
 
-            if (!string.IsNullOrEmpty(_lastUnpackedZip))
-            {
-                var deleteFile = new FileInfo(_lastUnpackedZip);
-                if (deleteFile.Exists)
-                {
-                    File.Delete(_lastUnpackedZip);
-                }
-            }
+            //if (!string.IsNullOrEmpty(_lastUnpackedZip))
+            //{
+            //    var deleteFile = new FileInfo(_lastUnpackedZip);
+            //    if (deleteFile.Exists)
+            //    {
+            //        File.Delete(_lastUnpackedZip);
+            //    }
+            //}
 
-            if (!string.IsNullOrEmpty(_lastCopyFromUnpackedZip))
-            {
-                var deleteFile = new FileInfo(_lastCopyFromUnpackedZip);
-                if (deleteFile.Exists)
-                {
-                    File.Delete(_lastCopyFromUnpackedZip);
-                }
-            }
+            //if (!string.IsNullOrEmpty(_lastCopyFromUnpackedZip))
+            //{
+            //    var deleteFile = new FileInfo(_lastCopyFromUnpackedZip);
+            //    if (deleteFile.Exists)
+            //    {
+            //        File.Delete(_lastCopyFromUnpackedZip);
+            //    }
+            //}
         }
         public static string GetLastUnpackedPath()
         {
