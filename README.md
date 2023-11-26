@@ -15,8 +15,6 @@ You can load a zipped map and then change the name in the file system. This is i
 ### Copy Assets (Experimental)
 You can load a zipped map you want to copy assets from and a zipped map you want to have the assets. At the moment the tool allows to copy decalroads, decals and collada assets (dae files). You get a list of all the assets and can select the ones you want to copy. No need anymore for copying the whole folders from the desired maps. The tool copies only the needed materials and places them in a dedicated folder per assettype starting with a "MT_" for Mapping-tools.
 
-This functionality is not well tested yet. Therefore the experimantal state. Very old maps with a lot of cs files are likely not working with this functionality. This tool doesn't like corrupted json files or files with duplicate keys (and the funny json comments) which you can even find in the vanilla maps. The tool throws an error with a detailed errormessage and if your assets aren't copied because of that you have to correct the errors and start again.
-
 ### Convert TSStatic Assets to forest items
 You can load a zipped map and then convert your static assets placed in the scene tree to forest items. After selecting a level your scene tree is shown in the tool to select the items or folders you want to convert. Only assets with an identical scale on all axis and an existing rotation matrix will be converted.
 
@@ -26,7 +24,7 @@ A discussion if it generally makes sense to convert static assets to forest item
 https://www.beamng.com/threads/converting-placed-meshes-to-forest-items.86837
 
 ### Before you start
-It's a good idea to copy the maps you want to work with to a dedicated folder. The tool does a lot of unzipping, zipping and logfiles. You don't want to have that in your vanilla maps folder :)
+It's a good idea to copy the maps you want to work with to a dedicated folder. The tool does a lot of unzipping, zipping and logfiles. You don't want to have that in your vanilla maps or your mods folder :)
 
 ## Performance Example
 
@@ -49,6 +47,7 @@ https://go.microsoft.com/fwlink/p/?LinkId=2124703
 
 ## Warning
 Never use this tool on your working project files. Always make a copy and use it with this tool. It is meant to delete things. 
+
 ## Roadmap
 - Copy forest, prefab and terrain assets from other maps to your project
 - Convert content of missiongroup folder to forest items (DONE!)
