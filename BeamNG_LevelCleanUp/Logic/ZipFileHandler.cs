@@ -121,6 +121,22 @@ namespace BeamNG_LevelCleanUp.Logic
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Deploymentfile created at {targetPath}");
         }
 
+        public static void RemoveModInfo(string path)
+        {
+            var dirInfo = new DirectoryInfo(path);
+            if (dirInfo != null)
+            {
+                try
+                {
+                    Directory.Delete(Path.Join(dirInfo.FullName, "mod_info"), true);
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error: {ex.Message}");
+                }
+            }
+        }
+
         public static string GetLevelPath(string path)
         {
             var dirInfo = new DirectoryInfo(path);
@@ -205,7 +221,8 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 _nameLevelPath = fi.Directory.FullName;
                             }
-                            if (mainDir.Length == 0) {
+                            if (mainDir.Length == 0)
+                            {
                                 mainDir = fi.Directory.GetDirectories("art");
                                 if (mainDir.FirstOrDefault() != null)
                                 {

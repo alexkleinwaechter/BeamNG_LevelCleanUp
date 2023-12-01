@@ -83,6 +83,7 @@ namespace BeamNG_LevelCleanUp.Utils
                 var jsonRepair = new JsonRepair();
                 jsonString = jsonRepair.Repair(jsonString);
                 jsonNode = JsonNode.Parse(jsonString, null, docOptions);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"jsonfile {filePath} sucessfully repaired.");
             }
             var hasDuplicateKeys = JsonNodeHasDuplicateKeys(jsonNode, filePath);
             if (hasDuplicateKeys)
