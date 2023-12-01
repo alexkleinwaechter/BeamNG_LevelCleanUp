@@ -29,7 +29,7 @@
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
                                    ValueChanged="OnVanillaSourceSelected"
                                    Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                         @foreach (var item in _vanillaLevels)
+                        @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
                             }
@@ -79,12 +79,12 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                     @bind-Value="_compressionLevel">
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-                     </MudSelect>
+                    @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
@@ -384,6 +384,7 @@
                 });
                 await Task.Run(() =>
                 {
+                    ZipFileHandler.RemoveModInfo(path);
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
                 });
                 Snackbar.Remove(_staticSnackbar);
