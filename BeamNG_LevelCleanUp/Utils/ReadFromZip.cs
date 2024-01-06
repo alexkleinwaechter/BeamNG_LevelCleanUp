@@ -36,8 +36,28 @@ namespace BeamNG_LevelCleanUp.Utils
                         // are case-insensitive.
                         if (destinationPath.StartsWith(extractPath, StringComparison.Ordinal))
                             Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
-                            entry.ExtractToFile(destinationPath, true);
-                            retVal = destinationPath;
+                        entry.ExtractToFile(destinationPath, true);
+                        retVal = destinationPath;
+                    }
+                }
+                return retVal;
+            }
+        }
+
+        public static bool FileExists(string zipPath, string filePathEnd)
+        {
+            bool retVal = false;
+            // Normalizes the path.
+            filePathEnd = filePathEnd.Replace(@"\", "/");
+
+            using (ZipArchive archive = ZipFile.OpenRead(zipPath))
+            {
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    if (entry.FullName.EndsWith(filePathEnd, StringComparison.OrdinalIgnoreCase))
+                    {
+                        retVal = true;
+                        break;
                     }
                 }
                 return retVal;

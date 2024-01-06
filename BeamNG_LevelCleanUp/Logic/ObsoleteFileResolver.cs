@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -17,14 +18,16 @@ namespace BeamNG_LevelCleanUp.Logic
         private List<FileInfo> _allDaeList = new List<FileInfo>();
         private List<string> _excludeFiles = new List<string>();
         string _levelPath;
+        string _levelName;
 
-        public ObsoleteFileResolver(List<MaterialJson> materials, List<Asset> usedAssets, List<FileInfo> allDaeList, string levelPath, List<string> excludeFiles)
+        public ObsoleteFileResolver(List<MaterialJson> materials, List<Asset> usedAssets, List<FileInfo> allDaeList, string levelPath, string levelName, List<string> excludeFiles)
         {
 
             _materials = materials;
             _usedAssets = usedAssets;
             _allDaeList = allDaeList;
             _levelPath = levelPath;
+            _levelName = levelName;
             _excludeFiles = excludeFiles;
         }
         public List<string> ReturnUnusedAssetFiles()
@@ -130,7 +133,8 @@ namespace BeamNG_LevelCleanUp.Logic
             WriteMaterialFilesConventionExcludedLog(filteredFiles.Select(x => x.FullName).ToList());
         }
 
-        private void WriteMaterialFilesNotExistingLog() {
+        private void WriteMaterialFilesNotExistingLog()
+        {
             string decimalSeparator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
             string listSeparator = CultureInfo.CurrentCulture.TextInfo.ListSeparator;
 
@@ -138,13 +142,62 @@ namespace BeamNG_LevelCleanUp.Logic
                 .SelectMany(x => x.MaterialFiles).Where(x => x.Missing == true)
                 .Select(x => $"{x.MaterialName}{listSeparator}{x.File}")
                 .ToList();
-            if (files.Any())
+            List<string> checkedAgainstVanillaFiles = new List<string>();
+            foreach (var f in files)
             {
-                files.Insert(0, $"Materialname{listSeparator}File");
-                File.WriteAllLines(Path.Join(_levelPath, $"MaterialFilesNotFound.txt"), files);
+                if (!FileExistsInVanilla(f))
+                {
+                    checkedAgainstVanillaFiles.Add(f);
+                }
+            }
+            if (checkedAgainstVanillaFiles.Any())
+            {
+                checkedAgainstVanillaFiles.Insert(0, $"Materialname{listSeparator}File");
+                File.WriteAllLines(Path.Join(_levelPath, $"MaterialFilesNotFound.txt"), checkedAgainstVanillaFiles);
             }
         }
 
+        private bool FileExistsInVanilla(string sourceFile)
+        {
+            var retVal = false;
+            var fileParts = sourceFile.Split(@"\levels\");
+            if (fileParts.Count() == 2)
+            {
+                var thisLevelName = fileParts[1].Split(@"\").FirstOrDefault() ?? string.Empty;
+                var beamDir = Path.Join(Steam.GetBeamInstallDir(), Constants.BeamMapPath, thisLevelName);
+                var beamZip = beamDir + ".zip";
+                if (new FileInfo(beamZip).Exists && !thisLevelName.Equals(_levelName, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    var filePathEnd = fileParts[1];
+                    retVal = ZipReader.FileExists(beamZip, filePathEnd);
+                    if (retVal == false)
+                    {
+                        filePathEnd = Path.ChangeExtension(filePathEnd, ".dds");
+                        retVal = ZipReader.FileExists(beamZip, filePathEnd);
+                    }
+
+                    if (retVal == false)
+                    {
+                        filePathEnd = Path.ChangeExtension(filePathEnd, ".png");
+                        retVal = ZipReader.FileExists(beamZip, filePathEnd);
+                    }
+
+                    if (retVal == false)
+                    {
+                        filePathEnd = Path.ChangeExtension(filePathEnd, ".jpg");
+                        retVal = ZipReader.FileExists(beamZip, filePathEnd);
+                    }
+
+                    if (retVal == false)
+                    {
+                        filePathEnd = Path.ChangeExtension(filePathEnd, ".jpeg");
+                        retVal = ZipReader.FileExists(beamZip, filePathEnd);
+                    }
+                }
+            }
+
+            return retVal;
+        }
         private void WriteMaterialFilesConventionExcludedLog(List<string> files)
         {
             if (files.Any())

@@ -235,7 +235,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 var fileParts = sourceFile.Split(@"\levels\");
                 if (fileParts.Count() == 2)
                 {
-                    var thisLevelName = fileParts[1].Split(@"\").FirstOrDefault();
+                    var thisLevelName = fileParts[1].Split(@"\").FirstOrDefault() ?? string.Empty;
                     var beamDir = Path.Join(Steam.GetBeamInstallDir(), Constants.BeamMapPath, thisLevelName);
                     var beamZip = beamDir + ".zip";
                     if (new FileInfo(beamZip).Exists && !thisLevelName.Equals(levelNameCopyFrom, StringComparison.InvariantCultureIgnoreCase))
