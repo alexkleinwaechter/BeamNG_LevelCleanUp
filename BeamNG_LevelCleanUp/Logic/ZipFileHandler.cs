@@ -128,7 +128,11 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 try
                 {
-                    Directory.Delete(Path.Join(dirInfo.FullName, "mod_info"), true);
+                    var miPath = Path.Join(dirInfo.FullName, "mod_info");
+                    if (Directory.Exists(miPath))
+                    {
+                        Directory.Delete(miPath, true);
+                    }
                 }
                 catch (Exception ex)
                 {
