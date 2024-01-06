@@ -32,8 +32,8 @@ namespace BeamNG_LevelCleanUp.Utils
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Try to repair jsonfile {filePath} because of error: {ex.Message}");
                 var jsonRepair = new JsonRepair();
-                // westcoast dealerships.facilities.json file has a ,, in it
-                //jsonString = jsonRepair.Repair(jsonString.Replace(",,", ","));
+                // dirty: westcoast dealerships.facilities.json file has a ,, in it
+                jsonString = jsonRepair.Repair(jsonString.Replace(",,", ","));
                 jsonObject = JsonDocument.Parse(jsonString, docOptions);
             }
             var hasDuplicateKeys = HasDuplicateKeys(jsonObject.RootElement, filePath);
