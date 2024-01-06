@@ -3,6 +3,7 @@
 @using BeamNG_LevelCleanUp.Communication;
 @using BeamNG_LevelCleanUp.Logic;
 @using BeamNG_LevelCleanUp.Objects;
+@using BeamNG_LevelCleanUp.Utils
 @using Microsoft.AspNetCore.Components.Forms;
 @using System.IO.Compression;
 @inject ISnackbar Snackbar
@@ -13,11 +14,27 @@
         <div class="content">
             <h3>MapShrink</h3>
             <MudExpansionPanels @ref="FileSelect">
+                <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
+                    <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
+                                         Description="The game install directory. If empty some features are missing.">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
                     <FileSelectComponent OnFileSelected="FileSelected"
                                          Description="Always use a copy of your project."
                                          Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
+                    @if (_vanillaLevels.Any())
+                    {
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                   ValueChanged="OnVanillaSourceSelected"
+                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                         @foreach (var item in _vanillaLevels)
+                            {
+                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
                 </MudExpansionPanel>
             </MudExpansionPanels>
 
@@ -25,7 +42,7 @@
             {
                 <MudTable T="GridFileListItem" Items="@BindingListDelete" Hover="true"
                           MultiSelection="true" @bind-SelectedItems="_selectedItems"
-                @bind-Value="_searchString"
+                          @bind-Value="_searchString"
                           Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Unused Files</MudText>
@@ -38,9 +55,9 @@
                      </HeaderContent>
                      <RowTemplate>
                          <MudTd DataLabel="File">@context.FullName</MudTd>
-                         <MudTd DataLabel="Size">@context.SizeMb</MudTd>
-                     </RowTemplate>
-                 </MudTable>
+                            <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+                        </RowTemplate>
+                    </MudTable>
             }
             else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
             {
@@ -55,7 +72,7 @@
                         {
                             <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
-                            </MudListItem>
+                                </MudListItem>
                         }
                     }
                 </MudList>
@@ -86,7 +103,7 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                     @bind-Value="_compressionLevel">
+                                @bind-Value="_compressionLevel">
                          <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
                          <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
                          <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
@@ -133,6 +150,9 @@
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
     bool _showErrorLog { get; set; }
     bool _showWarningLog { get; set; }
+    private List<FileInfo> _vanillaLevels { get; set; } = new List<FileInfo>();
+    private FileInfo _vanillaLevelSourceSelected { get; set; }
+    private string _beamInstallDir { get; set; }
 
     protected async Task FileSelected(string file)
     {
@@ -185,9 +205,9 @@
         {
             config.VisibleStateDuration = int.MaxValue;
         });
+        Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
         await Task.Run(() =>
         {
-            Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
             try
             {
                 Reader.ReadAll();
@@ -199,8 +219,6 @@
                 ShowException(ex);
                 _fileSelectDisabled = false;
             }
-            Reader.WriteLogFile(_warnings, "Log_Shrinker_Warnings");
-            Reader.WriteLogFile(_errors, "Log_Shrinker_Errors");
         });
         FillDeleteList();
         _fileSelectDisabled = false;
@@ -211,6 +229,8 @@
             PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
         }
 
+        Reader.WriteLogFile(_warnings, "Log_Shrinker_Warnings");
+        Reader.WriteLogFile(_errors, "Log_Shrinker_Errors");
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
     }
 
@@ -243,7 +263,7 @@
                 }
             }
         });
-}
+    }
 
     void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
     {
@@ -372,6 +392,65 @@
             {
                 ShowException(ex);
             }
+        }
+    }
+
+    protected void SetBeamInstallDir(string file)
+    {
+        if (file != Steam.BeamInstallDir)
+        {
+            Steam.BeamInstallDir = file;
+            GetVanillaLevels();
+        }
+    }
+
+    protected string GetBeamInstallDir()
+    {
+        if (Steam.BeamInstallDir != _beamInstallDir)
+        {
+            _beamInstallDir = Steam.GetBeamInstallDir();
+            GetVanillaLevels();
+        }
+        return "BeamNG install directory: " + _beamInstallDir;
+
+    }
+
+    Func<FileInfo, string> converter = p => p?.Name;
+
+    protected async Task OnVanillaSourceSelected(FileInfo file)
+    {
+        //InitializeVariables();
+        SetDefaultWorkingDirectory();
+        _vanillaLevelSourceSelected = file;
+        var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
+        File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
+        _fileSelectDisabled = false;
+        await FileSelected(target);
+    }
+
+    private void GetVanillaLevels()
+    {
+        if (!string.IsNullOrEmpty(_beamInstallDir))
+        {
+            var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
+            try
+            {
+                _vanillaLevels = Directory.GetFiles(dir).Select(x => new FileInfo(x)).ToList();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+            }
+        }
+    }
+
+    public void SetDefaultWorkingDirectory()
+    {
+        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory) || _vanillaLevelSourceSelected != null)
+        {
+            ZipFileHandler.WorkingDirectory = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BeamNgMT");
+            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
         }
     }
 }

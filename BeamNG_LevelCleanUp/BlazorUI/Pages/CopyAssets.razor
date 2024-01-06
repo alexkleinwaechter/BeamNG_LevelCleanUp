@@ -497,8 +497,6 @@
                     Reader.DoCopyAssets(selected);
                     //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
                     _showDeployButton = true;
-                    Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
-                    Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
                 });
             Snackbar.Remove(_staticSnackbar);
             var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
@@ -507,6 +505,8 @@
                 PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
             }
 
+            Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
+            Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
         }
     }
 
