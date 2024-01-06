@@ -497,6 +497,8 @@
                     Reader.DoCopyAssets(selected);
                     //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
                     _showDeployButton = true;
+                    Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
+                    Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
                 });
             Snackbar.Remove(_staticSnackbar);
             var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();

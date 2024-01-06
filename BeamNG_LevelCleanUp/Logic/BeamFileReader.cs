@@ -300,6 +300,15 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        internal void WriteLogFile(List<string> lines, string logFileName)
+        {
+            if (lines.Count > 0)
+            {
+                var path = Path.Join(_levelPath, $"{logFileName}.txt");
+                File.WriteAllLines(path, lines);
+            }
+        }
+
         internal void ReadTerrainJson()
         {
             var dirInfo = new DirectoryInfo(_levelPath);

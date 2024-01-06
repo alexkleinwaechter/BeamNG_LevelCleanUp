@@ -187,9 +187,9 @@
         });
         await Task.Run(() =>
         {
+            Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
             try
             {
-                Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
                 Reader.ReadAll();
                 _missingFiles = Reader.GetMissingFilesFromBeamLog();
                 _levelName = Reader.GetLevelName();
@@ -199,6 +199,8 @@
                 ShowException(ex);
                 _fileSelectDisabled = false;
             }
+            Reader.WriteLogFile(_warnings, "Log_Shrinker_Warnings");
+            Reader.WriteLogFile(_errors, "Log_Shrinker_Errors");
         });
         FillDeleteList();
         _fileSelectDisabled = false;

@@ -419,6 +419,8 @@
             _showDeployButton = true;
             SelectedValues.Clear();
             Items.Clear();
+            Reader.WriteLogFile(_warnings, "Log_ForestConvert_Warnings");
+            Reader.WriteLogFile(_errors, "Log_ForestConvert_Errors");
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Conversion done! You can build your deployment file now.");
         }
     }

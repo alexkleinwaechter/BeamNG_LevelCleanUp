@@ -29,7 +29,7 @@
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
                                    ValueChanged="OnVanillaSourceSelected"
                                    Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                        @foreach (var item in _vanillaLevels)
+                         @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
                             }
@@ -52,7 +52,7 @@
                         {
                             <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
-                            </MudListItem>
+                                </MudListItem>
                         }
                     }
                 </MudList>
@@ -79,12 +79,12 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                    @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-                    </MudSelect>
+                                @bind-Value="_compressionLevel">
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
@@ -352,11 +352,11 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
+            Reader = new BeamFileReader(_levelPath, string.Empty);
             try
             {
                 await Task.Run(() =>
                 {
-                    Reader = new BeamFileReader(_levelPath, string.Empty);
                     Reader.RenameLevel(StringUtils.SanitizeFileName(_renameNewNamePath), _renameNewTitle);
                     _levelName = Reader.GetLevelName();
                 });
@@ -366,6 +366,9 @@
             {
                 ShowException(ex);
             }
+
+            Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
+            Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
             _showDeployButton = true;
         }
     }
