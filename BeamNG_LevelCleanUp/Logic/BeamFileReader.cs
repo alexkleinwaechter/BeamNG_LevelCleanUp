@@ -419,7 +419,7 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Resolve unused managed asset files");
-                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _levelPath, ExcludeFiles);
+                var resolver = new ObsoleteFileResolver(MaterialsJson, Assets, AllDaeList, _levelPath, _levelName, ExcludeFiles);
                 resolver.ExcludeUsedAssetFiles();
                 //UnusedAssetFiles = UnusedAssetFiles.Where(x => !ExcludeFiles.Select(x => x.ToUpperInvariant()).Contains(x.ToUpperInvariant())).ToList();
                 //DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
