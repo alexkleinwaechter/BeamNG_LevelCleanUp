@@ -1,15 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Nodes;
-using System.Text.Json;
-using System.Threading.Tasks;
 using BeamNG_LevelCleanUp.Utils;
-using Newtonsoft.Json.Linq;
-using Newtonsoft.Json;
+using System.Text.Json.Nodes;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets
 {
@@ -132,7 +124,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 {
                     BeamFileCopy(Path.ChangeExtension(item.DaeFilePath, ".cdae"), Path.ChangeExtension(daeFullName, ".cdae"));
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     //ignore
                 }
@@ -206,7 +198,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                             {
                                 targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(material.Name, JsonNode.Parse(toText)));
                             }
-                            catch (Exception ex)
+                            catch (Exception)
                             {
                                 throw;
                             }
@@ -230,7 +222,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             {
                 File.Copy(sourceFile, targetFile, true);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 var fileParts = sourceFile.Split(@"\levels\");
                 if (fileParts.Count() == 2)

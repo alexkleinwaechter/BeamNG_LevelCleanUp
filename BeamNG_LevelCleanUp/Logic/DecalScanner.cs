@@ -1,13 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using System.Windows.Media.Media3D;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -84,7 +78,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             var decalData = managedDecalData.Value.Deserialize<ManagedDecalData>(BeamJsonOptions.GetJsonSerializerOptions());
                             _materialNames.Add(decalData.Material);
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw;
                         }

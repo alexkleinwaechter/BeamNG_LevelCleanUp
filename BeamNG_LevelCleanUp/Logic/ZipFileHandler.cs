@@ -1,14 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
-using Microsoft.VisualBasic.Logging;
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
