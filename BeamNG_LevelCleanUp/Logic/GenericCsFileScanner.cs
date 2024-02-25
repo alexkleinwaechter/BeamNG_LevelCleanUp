@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -37,7 +38,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     var checkForFile = new FileInfo(toCheck);
                     if (!checkForFile.Exists)
                     {
-                        checkForFile = CheckMissingExtensions(checkForFile);
+                        checkForFile = FileUtils.ResolveImageFileName(checkForFile.FullName);
                     }
                     if (checkForFile.Exists)
                     {
@@ -58,7 +59,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         checkForFile = new FileInfo(toCheck);
                         if (!checkForFile.Exists)
                         {
-                            checkForFile = CheckMissingExtensions(checkForFile);
+                            checkForFile = FileUtils.ResolveImageFileName(checkForFile.FullName);
                         }
                         if (checkForFile.Exists)
                         {
@@ -67,32 +68,6 @@ namespace BeamNG_LevelCleanUp.Logic
                     }
                 }
             }
-        }
-
-        internal FileInfo CheckMissingExtensions(FileInfo fileInfo)
-        {
-
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".dds");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".png");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".jpg");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".jpeg");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            return fileInfo;
         }
 
         private void AddAsset(Asset? asset)

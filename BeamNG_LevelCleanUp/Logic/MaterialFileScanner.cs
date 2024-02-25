@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
+using System.Diagnostics;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -23,8 +24,9 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (var prop in stage.GetType().GetProperties())
                 {
                     var val = (string)prop.GetValue(stage, null);
-                    //if (val == "/levels/LosInjurus/ART/shapes/Buildings/MetroCity/commercial/concrete_008_d.dds") Debugger.Break();
-                    //if (val == "levels/polish_roads_V2/from_east_coast_usa/terrain/Grass-01-D") Debugger.Break();
+
+                    if (val == "levels/gamzone/art/shapes/buildings/pvc_covering.color") Debugger.Break();
+
                     if (!string.IsNullOrEmpty(val))
                     {
                         if (val.StartsWith("./"))
@@ -36,7 +38,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             val = Path.Join(Path.GetDirectoryName(_matJsonPath), val);
                         }
                         var filePath = PathResolver.ResolvePath(_levelPath, val, false);
-                        FileInfo fileInfo = FileUtils.CheckIfImageFileExists(filePath);
+                        FileInfo fileInfo = FileUtils.ResolveImageFileName(filePath);
                         retVal.Add(new MaterialFile
                         {
                             MaterialName = materialName,
