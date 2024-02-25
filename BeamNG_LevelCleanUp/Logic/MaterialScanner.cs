@@ -74,7 +74,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                     var fi = new FileInfo(PathResolver.ResolvePath(_levelPath, cf, false));
                                     if (!fi.Exists)
                                     {
-                                        fi = CheckMissingExtensions(fi);
+                                        fi = FileUtils.ResolveImageFileName(fi.FullName);
                                     }
                                     material.MaterialFiles.Add(new MaterialFile
                                     {
@@ -169,32 +169,6 @@ namespace BeamNG_LevelCleanUp.Logic
                     item.DuplicateFoundLocation.AddRange(duplicates.Select(x => x.MatJsonFileLocation));
                 }
             }
-        }
-
-        internal FileInfo CheckMissingExtensions(FileInfo fileInfo)
-        {
-
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".dds");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".png");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".jpg");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            if (!fileInfo.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(fileInfo.FullName, ".jpeg");
-                fileInfo = new FileInfo(ddsPath);
-            }
-            return fileInfo;
         }
     }
 }

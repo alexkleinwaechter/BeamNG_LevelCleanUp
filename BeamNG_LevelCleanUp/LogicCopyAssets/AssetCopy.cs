@@ -234,6 +234,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     {
                         var extractPath = fileParts[0];
                         var filePathEnd = fileParts[1];
+
+                        //to Do: check if filepath has image extension, if not attach png
+                        var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg" };
+                        if (!imageextensions.Any(x => filePathEnd.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            filePathEnd = filePathEnd + ".png";
+                        }
+
                         var destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
                         if (destinationFilePath == null)
                         {
