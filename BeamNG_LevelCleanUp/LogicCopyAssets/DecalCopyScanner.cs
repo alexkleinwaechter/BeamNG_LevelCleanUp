@@ -1,20 +1,12 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices.JavaScript;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Xml.Linq;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets
 {
@@ -70,7 +62,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                             var decalData = managedDecalData.Value.Deserialize<ManagedDecalData>(BeamJsonOptions.GetJsonSerializerOptions());
                             retVal.Add(decalData);
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw;
                         }

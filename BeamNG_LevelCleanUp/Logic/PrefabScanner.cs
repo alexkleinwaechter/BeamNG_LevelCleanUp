@@ -1,13 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -28,9 +22,10 @@ namespace BeamNG_LevelCleanUp.Logic
             if (file.Exists)
             {
                 prefabFileNames = file.Extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ? GetPrefabFilesJson(file) : GetPrefabFilesCs(file);
-                var prefabFileInfos = prefabFileNames.Select(x =>  new FileInfo(PathResolver.ResolvePath(_levelPath, x, false))).ToList();
+                var prefabFileInfos = prefabFileNames.Select(x => new FileInfo(PathResolver.ResolvePath(_levelPath, x, false))).ToList();
                 AddPrefabDaeFiles(file);
-                if (prefabFileInfos.Any()) {
+                if (prefabFileInfos.Any())
+                {
                     foreach (var item in prefabFileInfos)
                     {
                         if (item.Exists)

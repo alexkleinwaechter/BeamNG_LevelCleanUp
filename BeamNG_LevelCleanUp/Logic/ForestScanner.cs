@@ -1,14 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -108,7 +101,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (string line in File.ReadAllLines(file.FullName))
                 {
-                    using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromString(line,file.FullName);
+                    using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromString(line, file.FullName);
                     if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
                     {
                         var asset = jsonObject.RootElement.Deserialize<Forest>(BeamJsonOptions.GetJsonSerializerOptions());
@@ -145,7 +138,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             }
                             _shapeNames.Add(Tuple.Create(name, forestData.internalName, file.FullName));
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw;
                         }

@@ -2,7 +2,6 @@
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using System.Text.Json;
-using JsonRepairUtils;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -37,7 +36,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                 }
                             }
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw;
                         }

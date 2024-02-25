@@ -1,16 +1,8 @@
-﻿using BeamNG_LevelCleanUp.BlazorUI.Pages;
-using BeamNG_LevelCleanUp.Communication;
+﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.LogicConvertForest;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -381,7 +373,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ReadLevelExtras()
         {
-            var extras = new List<string> { "scenarios", "quickrace", "buslines" };
+            var extras = new List<string> { "scenarios", "quickrace", "buslines", "art\\cubemaps" };
             foreach (var extra in extras)
             {
                 var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));

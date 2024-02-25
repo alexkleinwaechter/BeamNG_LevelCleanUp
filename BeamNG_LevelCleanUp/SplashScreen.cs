@@ -1,14 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-
-namespace BeamNG_LevelCleanUp
+﻿namespace BeamNG_LevelCleanUp
 {
     public partial class SplashScreen : Form
     {

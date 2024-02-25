@@ -1,14 +1,8 @@
-﻿using BeamNG_LevelCleanUp.Communication;
-using Pfim;
-using System;
-using System.Collections.Generic;
-using System.Windows.Media.Imaging;
-using System.Linq;
+﻿using Pfim;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
-using ImageFormat = Pfim.ImageFormat;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using ImageFormat = Pfim.ImageFormat;
 
 namespace BeamNG_LevelCleanUp.Utils
 {
