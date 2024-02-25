@@ -2,33 +2,30 @@
 {
     public static class FileUtils
     {
-        public static FileInfo CheckIfImageFileExists(string filePath)
+        public static FileInfo ResolveImageFileName(string filePath)
         {
+            //to Do: check if filepath has image extension, if not attach png
+            var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", "*.tga" };
+            if (!imageextensions.Any(x => filePath.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
+            {
+                filePath = filePath + ".dds";
+            }
+
             var fileInfo = new FileInfo(filePath);
             var fileToCheck = new FileInfo(filePath);
-            if (!fileToCheck.Exists)
+            if (fileInfo.Exists)
             {
-                var ddsPath = Path.ChangeExtension(filePath, ".dds");
-                fileToCheck = new FileInfo(ddsPath);
+                return fileInfo;
             }
-            if (!fileToCheck.Exists)
+
+            foreach (var ext in imageextensions)
             {
-                var ddsPath = Path.ChangeExtension(filePath, ".png");
+                var ddsPath = Path.ChangeExtension(filePath, ext);
                 fileToCheck = new FileInfo(ddsPath);
-            }
-            if (!fileToCheck.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(filePath, ".jpg");
-                fileToCheck = new FileInfo(ddsPath);
-            }
-            if (!fileToCheck.Exists)
-            {
-                var ddsPath = Path.ChangeExtension(filePath, ".jpeg");
-                fileToCheck = new FileInfo(ddsPath);
-            }
-            if (fileToCheck.Exists)
-            {
-                fileInfo = fileToCheck;
+                if (fileToCheck.Exists)
+                {
+                    return fileToCheck;
+                }
             }
 
             return fileInfo;

@@ -162,6 +162,12 @@ namespace BeamNG_LevelCleanUp.Logic
                 if (new FileInfo(beamZip).Exists && !thisLevelName.Equals(_levelName, StringComparison.InvariantCultureIgnoreCase))
                 {
                     var filePathEnd = fileParts[1];
+                    //to Do: check if filepath has image extension, if not attach png
+                    var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg" };
+                    if (!imageextensions.Any(x => filePathEnd.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        filePathEnd = filePathEnd + ".png";
+                    }
                     retVal = ZipReader.FileExists(beamZip, filePathEnd);
                     if (retVal == false)
                     {
