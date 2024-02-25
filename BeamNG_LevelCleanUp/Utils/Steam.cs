@@ -1,11 +1,5 @@
-﻿using BeamNG_LevelCleanUp.Objects;
-using Microsoft.Win32;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using Microsoft.Win32;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Utils
 {

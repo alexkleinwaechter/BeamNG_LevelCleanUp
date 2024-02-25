@@ -1,10 +1,4 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -49,7 +43,8 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         _excludeFiles.Add(checkForFile.FullName);
                         // Should run with compatibility switch for quirky projects
-                        if (checkForFile.Extension.Equals(".DAE", StringComparison.OrdinalIgnoreCase)) {
+                        if (checkForFile.Extension.Equals(".DAE", StringComparison.OrdinalIgnoreCase))
+                        {
                             AddAsset(new Asset
                             {
                                 Class = "TSStatic",

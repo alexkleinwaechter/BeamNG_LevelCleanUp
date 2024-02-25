@@ -1,11 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Xml;
 
 namespace BeamNG_LevelCleanUp.Logic
@@ -24,7 +18,8 @@ namespace BeamNG_LevelCleanUp.Logic
             _resolvedDaePath = fullDaePathProvided ? _daePath : PathResolver.ResolvePath(_levelPath, _daePath, false);
             _resolvedDaeFile = new FileInfo(_resolvedDaePath);
         }
-        public bool Exists() {
+        public bool Exists()
+        {
             return _resolvedDaeFile.Exists;
         }
 

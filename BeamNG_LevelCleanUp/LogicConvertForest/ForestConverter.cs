@@ -1,14 +1,8 @@
 ﻿using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace BeamNG_LevelCleanUp.LogicConvertForest
 {
@@ -54,7 +48,7 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
                 type = forestInfo.ForestTypeName,
                 pos = asset.Position,
                 rotationMatrix = asset.RotationMatrix,
-                scale = asset.Scale == null? 1 : asset.Scale.First(),
+                scale = asset.Scale == null ? 1 : asset.Scale.First(),
             };
 
             var jsonString = JsonSerializer.SerializeToNode(forestItem)?
@@ -107,7 +101,7 @@ namespace BeamNG_LevelCleanUp.LogicConvertForest
                         targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(forestType.internalName, JsonSerializer.SerializeToNode(forestType)));
                         File.WriteAllText(_forestManagedItemsFileInfo.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         throw;
                     }

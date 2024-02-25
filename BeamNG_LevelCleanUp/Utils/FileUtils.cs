@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace BeamNG_LevelCleanUp.Utils
+﻿namespace BeamNG_LevelCleanUp.Utils
 {
     public static class FileUtils
     {
@@ -75,7 +68,8 @@ namespace BeamNG_LevelCleanUp.Utils
 
             // Use LINQ to filter out lines with line numbers not in lineNumbersToDelete.
             var newlines = lines.Where(l => !l.ToLowerInvariant().Contains(name.ToLowerInvariant())).ToArray();
-            if (lines.Count() - newlines.Count() != 1) {
+            if (lines.Count() - newlines.Count() != 1)
+            {
                 return;
             }
             // Write the updated lines back to the file, overwriting its contents.

@@ -1,16 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -115,7 +106,7 @@ namespace BeamNG_LevelCleanUp.Logic
                             }
 
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw;
                         }
