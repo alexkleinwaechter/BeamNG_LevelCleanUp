@@ -10,7 +10,7 @@
         <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Color="Color.Dark" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
         <MudText Color="Color.Dark"> @GetAppTitle() </MudText>
     </MudAppBar>
-    <MudDrawer @bind-Open="@_drawerOpen">
+    <MudDrawer Open="_drawerOpen" Breakpoint="Breakpoint.Xs">
         <div class="sidebar">
             <MudSwitch @bind-Checked="@_isDarkMode" Color="Color.Primary" Class="ma-4" T="bool" Label="Light/Dark Mode"/>
             <MyNavMenu />
