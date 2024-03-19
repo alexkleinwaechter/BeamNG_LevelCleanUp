@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "etsmaterialgen": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\aklei\\AppData\\Local\\BeamNG.drive\\0.31\\levels\\ellern_map\\art\\shapes\\converted\\main.materials.json\" \"D:\\ets\\extracted\\prefab2\\depot\\supermarket\\supermarket_01_de.pit\""
+    }
+  }
+}

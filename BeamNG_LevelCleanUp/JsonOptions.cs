@@ -1,10 +1,11 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace BeamNG_LevelCleanUp
 {
     public static class BeamJsonOptions
     {
-        public static JsonSerializerOptions GetJsonSerializerOptions()
+        public static JsonSerializerOptions GetJsonSerializerOptions(bool ignoreNullValues = false)
         {
             return new JsonSerializerOptions
             {
@@ -14,6 +15,7 @@ namespace BeamNG_LevelCleanUp
                 IncludeFields = true,
                 WriteIndented = true,
                 ReadCommentHandling = JsonCommentHandling.Skip,
+                DefaultIgnoreCondition = ignoreNullValues ? JsonIgnoreCondition.WhenWritingNull : JsonIgnoreCondition.Never
             };
         }
 
