@@ -2,114 +2,169 @@
 {
     internal class PitParser
     {
-        public Document Parse(string filePath)
+        public List<MaterialEts> Parse(string filePath)
         {
-            var document = new Document();
             var lines = File.ReadAllLines(filePath);
-            Look currentLook = null;
-            Material currentMaterial = null;
-            Variant currentVariant = null;
+            LookEts currentLook = null;
+            MaterialEts currentMaterial = null;
+            TextureEts currentTexture = null;
+            var allMaterials = new List<MaterialEts>();
+            var allLooks = new List<LookEts>();
 
             foreach (var line in lines)
             {
-                if (line.StartsWith("Header"))
+                var trimmedLine = line.Trim();
+                if (trimmedLine.StartsWith("Look {"))
                 {
-                    document.Header = new Header();
+                    currentLook = new LookEts();
+                    allLooks.Add(currentLook);
                 }
-                else if (line.StartsWith("Global"))
+                else if (trimmedLine.StartsWith("Material {") && currentLook != null)
                 {
-                    document.Global = new Global();
-                }
-                else if (line.StartsWith("Look"))
-                {
-                    currentLook = new Look();
-                    document.Looks.Add(currentLook);
-                }
-                else if (line.StartsWith("Material") && currentLook != null)
-                {
-                    currentMaterial = new Material();
+                    currentMaterial = new MaterialEts();
+                    currentTexture = null;
                     currentLook.Materials.Add(currentMaterial);
+                    allMaterials.Add(currentMaterial);
                 }
-                else if (line.StartsWith("Variant"))
+                else if (trimmedLine.StartsWith("Texture {") && currentMaterial != null)
                 {
-                    currentVariant = new Variant();
-                    document.Variants.Add(currentVariant);
+                    currentTexture = new TextureEts();
+                    currentMaterial.Textures.Add(currentTexture);
                 }
-                // Add more else if blocks for other structures
+                else if (trimmedLine.StartsWith("Attribute {") && currentMaterial != null)
+                {
+                    currentTexture = null;
+                }
 
                 // Parse key-value pairs
-                ParseKeyValue(line, document, currentLook, currentMaterial, currentVariant);
+                if (currentLook != null)
+                {
+                    ParseKeyValue(trimmedLine, currentLook, currentMaterial, currentTexture);
+                }
             }
 
-            return document;
+            return allMaterials;
         }
 
-        private void ParseKeyValue(string line, Document document, Look currentLook, Material currentMaterial, Variant currentVariant)
+        private void ParseKeyValue(string line, LookEts currentLook, MaterialEts currentMaterial, TextureEts currentTexture)
         {
-            var parts = line.Split(new[] { ':', '"' }, StringSplitOptions.RemoveEmptyEntries);
+            var parts = line.Replace("\"", "").Split(": ", StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length < 2) return;
 
             var key = parts[0].Trim();
             var value = parts[1].Trim();
 
             // Assign values to the current object in context
-            if (document.Header != null)
+            if (currentLook != null && currentMaterial == null)
             {
-                // Assign values to document.Header based on key
+                switch (key)
+                {
+                    case "Name":
+                        currentLook.Name = value;
+                        break;
+                }
             }
-            else if (document.Global != null)
+            if (currentMaterial != null)
             {
-                // Assign values to document.Global based on key
+                switch (key)
+                {
+                    case "Alias":
+                        currentMaterial.Alias = value;
+                        break;
+                    case "Effect":
+                        currentMaterial.Effect = value;
+                        if (value.Contains("decal.over"))
+                        {
+                            currentMaterial.AddLerp = true;
+                        }
+                        if (value.Contains("lightmap.night"))
+                        {
+                            currentMaterial.UseGlow = true;
+                            currentMaterial.AddAlpha = true;
+                        }
+                        if (value.Contains("window.day"))
+                        {
+                            currentMaterial.UseGlow = true;
+                        }
+                        break;
+                    case "Flags":
+                        currentMaterial.Flags = int.Parse(value);
+                        break;
+                    case "AttributeCount":
+                        currentMaterial.AttributeCount = int.Parse(value);
+                        break;
+                    case "TextureCount":
+                        currentMaterial.TextureCount = int.Parse(value);
+                        break;
+                    default:
+                        break;
+                }
             }
-            else if (currentLook != null)
+            if (currentTexture != null)
             {
-                // Assign values to currentLook based on key
-            }
-            else if (currentMaterial != null)
-            {
-                // Assign values to currentMaterial based on key
-            }
-            else if (currentVariant != null)
-            {
-                // Assign values to currentVariant based on key
+                switch (key)
+                {
+                    case "Tag":
+                        currentTexture.Tag = value;
+                        if (value.EndsWith(":texture_base"))
+                        {
+                            currentTexture.Type = TextureType.Diffuse;
+                        }
+                        else if (value.EndsWith("texture_nmap"))
+                        {
+                            currentTexture.Type = TextureType.Normal;
+                        }
+                        else
+                        {
+                            currentTexture.Type = TextureType.Unknown;
+                        }
+                        //else if (value.EndsWith("specular"))
+                        //{
+                        //    currentTexture.Type = TextureType.Specular;
+                        //}
+                        break;
+                    case "Value":
+                        currentTexture.Value = value;
+                        break;
+                    default:
+                        break;
+                }
             }
         }
     }
 
-    public class Document
-    {
-        public Header Header { get; set; }
-        public Global Global { get; set; }
-        public List<Look> Looks { get; set; } = new List<Look>();
-        public List<Variant> Variants { get; set; } = new List<Variant>();
-    }
 
-    public class Header
-    {
-        public int FormatVersion { get; set; }
-        public string Source { get; set; }
-        public string Type { get; set; }
-        public string Name { get; set; }
-    }
-
-    public class Global
-    {
-        // Define properties for Global
-    }
-
-    public class Look
+    public class LookEts
     {
         public string Name { get; set; }
-        public List<Material> Materials { get; set; } = new List<Material>();
+        public List<MaterialEts> Materials { get; set; } = new List<MaterialEts>();
     }
 
-    public class Material
+    public class MaterialEts
     {
-        // Define properties for Material
+        public string Alias { get; set; }
+        public string Effect { get; set; }
+        public int Flags { get; set; }
+        public int AttributeCount { get; set; }
+        public int TextureCount { get; set; }
+        public List<TextureEts> Textures { get; set; } = new List<TextureEts>();
+        public bool AddAlpha { get; set; }
+        public bool UseGlow { get; set; }
+        public bool AddLerp { get; internal set; }
     }
 
-    public class Variant
+    public class TextureEts
     {
-        // Define properties for Variant
+        public string Tag { get; set; }
+        public string Value { get; set; }
+        public TextureType Type { get; set; }
     }
+
+    public enum TextureType
+    {
+        Diffuse,
+        Normal,
+        Unknown
+    }
+
 }
