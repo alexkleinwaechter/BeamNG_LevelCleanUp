@@ -16,14 +16,16 @@ namespace etsmaterialgen
         {
             _materialsJson = materialsJson;
             _pitFileOrFolder = pitFileOrFolder;
+            SetBasePath();
             var fiMaterials = new FileInfo(materialsJson);
             if (!fiMaterials.Exists)
             {
-                Console.WriteLine($"Materials file not found: {materialsJson}");
-                return;
+                Console.WriteLine($"Generate new materials json: {materialsJson}");
             }
-            SetBasePath();
-            ReadMaterials();
+            else
+            {
+                ReadMaterials();
+            }
             ReadPit();
             WriteMaterialsEts();
             var matDict = new Dictionary<string, MaterialJson>();
@@ -36,9 +38,12 @@ namespace etsmaterialgen
             }
 
             var newMatJson = JsonSerializer.Serialize(matDict, BeamJsonOptions.GetJsonSerializerOptions(true));
-            fiMaterials.MoveTo($"{fiMaterials.FullName}.{DateTime.Now.Ticks}.bak");
-            File.WriteAllText(_materialsJson, newMatJson);
+            if (fiMaterials.Exists)
+            {
+                fiMaterials.MoveTo($"{fiMaterials.FullName}.{DateTime.Now.Ticks}.bak");
+            }
 
+            File.WriteAllText(_materialsJson, newMatJson);
         }
 
         private void SetBasePath()
