@@ -30,6 +30,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public string MaterialTag2 { get; set; }
         public string TranslucentBlendOp { get; set; }
         public double? AlphaRef { get; set; }
+        public bool? AlphaTest { get; set; }
         public bool? Translucent { get; set; }
         public bool? CastShadows { get; }
 
