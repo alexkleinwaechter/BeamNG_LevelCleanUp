@@ -33,6 +33,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public bool? AlphaTest { get; set; }
         public bool? Translucent { get; set; }
         public bool? CastShadows { get; }
+        public bool? TranslucentRecvShadows { get; set; }
 
         [JsonIgnore]
         public List<string> MaterialTags
