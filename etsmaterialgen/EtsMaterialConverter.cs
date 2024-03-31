@@ -132,6 +132,7 @@ namespace etsmaterialgen
                 if (matEts.AddLerp)
                 {
                     beam.Translucent = true;
+                    beam.TranslucentRecvShadows = true;
                 }
                 if (matEts.AddAlpha)
                 {
