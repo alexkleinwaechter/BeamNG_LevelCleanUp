@@ -23,5 +23,9 @@
         public string ClearCoatBottomNormalMap { get; set; }
         public string DiffuseMap { get; set; }
         public string MacroMap { get; set; }
+        public List<double> DiffuseColor { get; set; }
+        public bool? Glow { get; set; }
+        public bool? UseAnisotropic { get; set; }
+        public bool? InstanceDiffuse { get; set; }
     }
 }
