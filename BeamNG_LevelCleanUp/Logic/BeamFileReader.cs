@@ -67,11 +67,11 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void SanitizePath()
         {
-            _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
             _namePath = ZipFileHandler.GetNamePath(_levelPath);
+            _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
             _levelName = new DirectoryInfo(_namePath).Name;
-            _levelPathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetLevelPath(_levelPathCopyFrom) : null;
             _namePathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetNamePath(_levelPathCopyFrom) : null;
+            _levelPathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetLevelPath(_levelPathCopyFrom) : null;
             _levelNameCopyFrom = _namePathCopyFrom != null ? new DirectoryInfo(_namePathCopyFrom).Name : null;
             PathResolver.LevelPath = _levelPath;
             PathResolver.LevelPathCopyFrom = _levelPathCopyFrom;
