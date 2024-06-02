@@ -32,7 +32,7 @@
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
                                    ValueChanged="OnVanillaSourceSelected"
                                    Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                         @foreach (var item in _vanillaLevels)
+                            @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
                             }
@@ -40,16 +40,21 @@
                     }
                 </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="false">
-                    <FileSelectComponent OnFileSelected="FileSelected"
-                                         Description="Your asset target map"
+                    <FileSelectComponent OnFileSelected="@((x) => FileSelected(x, false))"
+                                         Description="Your zipped target map"
                                          Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
+                    <FileSelectComponent OnFileSelected="@((x) => FileSelected(x, true))" SelectFolder="true"
+                                         Description="or your unzipped map directory"
+                                         Disabled="@_fileSelectDisabled">
+                    </FileSelectComponent>
+
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter" Disabled="@_fileSelectDisabled"
                                    ValueChanged="OnVanillaTargetSelected"
                                    Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                         @foreach (var item in _vanillaLevels)
+                            @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
                             }
@@ -62,30 +67,30 @@
             {
                 <MudTable T="GridFileListItem" Items="@BindingListCopy" Hover="true"
                           MultiSelection="true" @bind-SelectedItems="_selectedItems"
-                @bind-Value="_searchString"
+                          @bind-Value="_searchString"
                           Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Assets in @_levelNameCopyFrom</MudText>
                         <MudSpacer />
                         <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-                     </ToolBarContent>
-                     <HeaderContent>
-                         <MudTh>View</MudTh>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.AssetType)">Assettype</MudTableSortLabel></MudTh>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Duplicate)">Duplicate</MudTableSortLabel></MudTh>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.DuplicateFrom)">Duplicate found in</MudTableSortLabel></MudTh>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
-                     </HeaderContent>
-                     <RowTemplate>
-                         <MudTd><MudIconButton Icon="@Icons.Material.Filled.Pageview" OnClick="() => OpenAssetViewer(context)"></MudIconButton></MudTd>
-                         <MudTd DataLabel="File">@context.AssetType</MudTd>
-                         <MudTd DataLabel="File">@context.FullName</MudTd>
-                         <MudTd DataLabel="File">@context.Duplicate</MudTd>
-                         <MudTd DataLabel="File">@context.DuplicateFrom</MudTd>
-                         <MudTd DataLabel="Size">@context.SizeMb</MudTd>
-                     </RowTemplate>
-                 </MudTable>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>View</MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.AssetType)">Assettype</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Duplicate)">Duplicate</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.DuplicateFrom)">Duplicate found in</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd><MudIconButton Icon="@Icons.Material.Filled.Pageview" OnClick="() => OpenAssetViewer(context)"></MudIconButton></MudTd>
+                        <MudTd DataLabel="File">@context.AssetType</MudTd>
+                        <MudTd DataLabel="File">@context.FullName</MudTd>
+                        <MudTd DataLabel="File">@context.Duplicate</MudTd>
+                        <MudTd DataLabel="File">@context.DuplicateFrom</MudTd>
+                        <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+                    </RowTemplate>
+                </MudTable>
             }
             else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
             {
@@ -131,12 +136,12 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                     @bind-Value="_compressionLevel">
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-                     </MudSelect>
+                               @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
@@ -166,7 +171,7 @@
     private Snackbar _unzipSnackbarCopyFrom;
     private BeamFileReader Reader { get; set; }
     private string _fileSelectTitleCopyFrom = "Select the zipped source level you want to copy from";
-    private string _fileSelectTitle = "Select the zipped target level you want to copy to";
+    private string _fileSelectTitle = "Select the target level you want to copy to";
     private bool _fileSelectDisabled { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
@@ -259,16 +264,16 @@
         var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelTargetSelected.Name);
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelTargetSelected.Name} to {target}");
         File.Copy(_vanillaLevelTargetSelected.FullName, target, true);
-        await FileSelected(target);
+        await FileSelected(target, false);
     }
 
-    protected async Task FileSelected(string file)
+    protected async Task FileSelected(string file, bool isFolder)
     {
         if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
         {
-            ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
+            ZipFileHandler.WorkingDirectory = isFolder ? file : Path.GetDirectoryName(file);
         }
-        else if (ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(file))
+        else if (!isFolder && ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(file))
         {
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy target level to {ZipFileHandler.WorkingDirectory} ...");
             try
@@ -290,7 +295,15 @@
                     {
                         config.VisibleStateDuration = int.MaxValue;
                     });
-                _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
+                if (!isFolder)
+                {
+                    _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
+                }
+                else
+                {
+                    _levelPath = ZipFileHandler.GetNamePath(file);
+                }
+
                 //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPath, null);
                 _levelName = Reader.GetLevelName();
@@ -378,7 +391,7 @@
                 }
             }
         });
-}
+    }
 
     void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
     {
