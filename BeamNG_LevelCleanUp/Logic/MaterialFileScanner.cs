@@ -23,9 +23,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (var prop in stage.GetType().GetProperties())
                 {
-                    var val = (string)prop.GetValue(stage, null);
-
-                    if (val == "levels/gamzone/art/shapes/buildings/pvc_covering.color") Debugger.Break();
+                    var val = prop.GetValue(stage, null) != null ? prop.GetValue(stage, null).ToString() : string.Empty;
 
                     if (!string.IsNullOrEmpty(val))
                     {
