@@ -230,7 +230,8 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void DoCopyTerrainMaterials(List<Asset> copyAssets, List<Asset> overwriteAssets)
         {
-
+            var terrainMaterialCopy = new TerrainMaterialCopy(copyAssets, overwriteAssets, _levelNameCopyFrom, _levelPath);
+            terrainMaterialCopy.Copy();
         }
 
         internal void ReadInfoJson(bool fromCopy)
