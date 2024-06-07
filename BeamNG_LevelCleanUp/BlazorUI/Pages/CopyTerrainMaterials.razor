@@ -65,14 +65,40 @@
 
             @if (BindingListCopy.Any())
             {
+                <MudCheckBox @bind-Value="@_overwriteTerrainMaterial" Label="Replace existing terrainmaterial in your target level" T="bool"></MudCheckBox>
+                @if (_overwriteTerrainMaterial)
+                {
+                    <MudTable T="GridFileListItem" Items="@BindingList" Hover="true"
+                              MultiSelection="true" @bind-SelectedItems="_selectedItems"
+                              @bind-Value="_searchString"
+                              Filter="new Func<GridFileListItem,bool>(FilterFuncTarget)">
+                        <ToolBarContent>
+                            <MudText Typo="Typo.h6">Select the errainmaterial from @_levelName you want to replace</MudText>
+                            <MudSpacer />
+                            <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchStringCopy" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                        </ToolBarContent>
+                        <HeaderContent>
+                            <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Asset.Class)">Assettype</MudTableSortLabel></MudTh>
+                            <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Asset.Name)">Name</MudTableSortLabel></MudTh>
+                            <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Asset.MaterialsTerrain.Count)">MaterialsCount</MudTableSortLabel></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="File">@context.Asset.Class</MudTd>
+                            <MudTd DataLabel="File">@context.Asset.Name</MudTd>
+                            <MudTd DataLabel="File">@context.Asset.MaterialsTerrain.Count</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                }
+
                 <MudTable T="GridFileListItem" Items="@BindingListCopy" Hover="true"
-                          MultiSelection="true" @bind-SelectedItems="_selectedItems"
-                          @bind-Value="_searchString"
-                          Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
+                          MultiSelection="true" @bind-SelectedItems="_selectedItemsCopy"
+                          @bind-Value="_searchStringCopy"
+                          Filter="new Func<GridFileListItem,bool>(FilterFuncCopy)">
                     <ToolBarContent>
-                        <MudText Typo="Typo.h6">Found Terrainmaterials in @_levelNameCopyFrom</MudText>
+                        <MudText Typo="Typo.h6">Select Terrainmaterial in @_levelNameCopyFrom you want to copy</MudText>
                         <MudSpacer />
-                        <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                        <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchStringCopy" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.Asset.Class)">Assettype</MudTableSortLabel></MudTh>
@@ -106,12 +132,12 @@
             </MudDrawer>
         </div>
         <footer>
-            @if (_selectedItems.Any())
+            @if (_selectedItemsCopy.Any())
             {
-                <MudText>Files: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
+                <MudText>Files: @BindingListCopy?.Count, Selected: @_selectedItemsCopy.Count(), Sum Size MB: @Math.Round(_selectedItemsCopy.Sum(x => x.SizeMb), 2)</MudText>
             }
             <MudStack Row="true" Justify="Justify.SpaceBetween">
-                @if (_selectedItems.Any())
+                @if (_selectedItemsCopy.Any())
                 {
                     <MudButton @onclick="CopyDialog" Color="Color.Primary">Copy Terrainmaterials</MudButton>
                 }
@@ -171,12 +197,15 @@
     private bool _openDrawer;
     private Anchor _anchor;
     private string width, height;
+    private List<GridFileListItem> BindingList { get; set; } = new List<GridFileListItem>();
     private List<GridFileListItem> BindingListCopy { get; set; } = new List<GridFileListItem>();
     private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
+    private HashSet<GridFileListItem> _selectedItemsCopy = new HashSet<GridFileListItem>();
     private bool _fixed_Header = true;
     [AllowNull]
     private MudExpansionPanels FileSelect { get; set; }
     private string _searchString = string.Empty;
+    private string _searchStringCopy = string.Empty;
     private string _labelFileSummaryShrink { get; set; } = String.Empty;
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
@@ -186,6 +215,7 @@
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private FileInfo _vanillaLevelTargetSelected { get; set; }
     private string _beamInstallDir { get; set; }
+    private bool _overwriteTerrainMaterial { get; set; }
 
     protected void InitializeVariables()
 
@@ -202,11 +232,13 @@
         _warnings = new List<string>();
         _messages = new List<string>();
         _openDrawer = false;
+        BindingList = new List<GridFileListItem>();
         BindingListCopy = new List<GridFileListItem>();
         _showDeployButton = false;
         _vanillaLevelSourceSelected = null;
         _vanillaLevelTargetSelected = null;
         ZipFileHandler.WorkingDirectory = null;
+        _overwriteTerrainMaterial = false;
     }
 
     protected async Task FileSelectedCopyFrom(string file)
@@ -351,6 +383,7 @@
                 _fileSelectDisabled = false;
             }
         });
+        FillList();
         FillCopyList();
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Done! Scanning Assets finished. Please selects assets to copy.");
         _fileSelectDisabled = false;
@@ -436,6 +469,19 @@
         }
     }
 
+    private void FillList()
+    {
+        foreach (var asset in Reader.GetTerrainList())
+        {
+            //switch type
+            var item = new GridFileListItem
+                {
+                    Asset = asset
+                };
+            BindingList.Add(item);
+        }
+    }
+
     private string GetFileSelectTitle()
     {
         if (!string.IsNullOrEmpty(_levelName))
@@ -460,20 +506,15 @@
         }
     }
 
-    private bool FilterFunc1(GridFileListItem element) => FilterFunc(element, _searchString);
+    private bool FilterFuncCopy(GridFileListItem element) => FilterFunc(element, _searchStringCopy);
+    private bool FilterFuncTarget(GridFileListItem element) => FilterFunc(element, _searchString);
 
     private bool FilterFunc(GridFileListItem element, string searchString)
     {
         if (string.IsNullOrWhiteSpace(searchString))
             return true;
-        if (element.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+        if (element.Asset.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
             return true;
-        if (element.AssetType.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.SizeMb.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        //if ($"{element.Number} {element.Position} {element.Molar}".Contains(searchString))
-        //    return true;
         return false;
     }
 
@@ -494,9 +535,7 @@
             });
             await Task.Run(() =>
                 {
-                    var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                    Reader.DoCopyAssets(selected);
-                    //BindingListCopy.RemoveAll(x => selected.Contains(x.Identifier));
+                    Reader.DoCopyTerrainMaterials(_selectedItemsCopy.Select(x => x.Asset).ToList(), _selectedItems.Select(x => x.Asset).ToList());
                     _showDeployButton = true;
                 });
             Snackbar.Remove(_staticSnackbar);

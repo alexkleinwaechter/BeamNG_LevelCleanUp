@@ -138,6 +138,11 @@ namespace BeamNG_LevelCleanUp.Logic
             return CopyAssets.Where(x => x.Class == "Terrain").ToList();
         }
 
+        internal List<Asset> GetTerrainList()
+        {
+            return Assets.Where(x => x.Class == "Terrain").ToList();
+        }
+
         internal void ReadAll()
         {
             Reset();
@@ -180,7 +185,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private void RemoveDuplicateMaterials(bool fromJsonFile, bool fromCopy)
         {
-            var materialScanner = new MaterialScanner(fromCopy ? MaterialsJsonCopy : MaterialsJson, fromCopy ? _levelPathCopyFrom : _levelPath,  fromCopy ? _namePathCopyFrom : _namePath);
+            var materialScanner = new MaterialScanner(fromCopy ? MaterialsJsonCopy : MaterialsJson, fromCopy ? _levelPathCopyFrom : _levelPath, fromCopy ? _namePathCopyFrom : _namePath);
             materialScanner.RemoveDuplicates(fromJsonFile);
         }
 
@@ -221,6 +226,11 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             var assetCopy = new AssetCopy(identifiers, CopyDecalRoadDaeAssets, _namePath, _levelName, _levelNameCopyFrom);
             assetCopy.Copy();
+        }
+
+        internal void DoCopyTerrainMaterials(List<Asset> copyAssets, List<Asset> overwriteAssets)
+        {
+
         }
 
         internal void ReadInfoJson(bool fromCopy)
@@ -664,11 +674,11 @@ namespace BeamNG_LevelCleanUp.Logic
                             missionGroupScanner.ScanMissionGroupFile();
                             break;
                         case ReadTypeEnum.MaterialsJson:
-                            var materialScanner = new MaterialScanner(fi.FullName, fromCopy ? _levelPathCopyFrom : _levelPath, _namePath, MaterialsJson, fromCopy ? CopyAssets : Assets, ExcludeFiles);
+                            var materialScanner = new MaterialScanner(fi.FullName, fromCopy ? _levelPathCopyFrom : _levelPath, _namePath, fromCopy ? MaterialsJsonCopy : MaterialsJson, fromCopy ? CopyAssets : Assets, ExcludeFiles);
                             materialScanner.ScanMaterialsJsonFile();
                             break;
                         case ReadTypeEnum.TerrainFile:
-                            var terrainScanner = new TerrainScanner(fi.FullName, fromCopy ? _levelPathCopyFrom : _levelPath, fromCopy ? CopyAssets : Assets, MaterialsJson, ExcludeFiles);
+                            var terrainScanner = new TerrainScanner(fi.FullName, fromCopy ? _levelPathCopyFrom : _levelPath, fromCopy ? CopyAssets : Assets, fromCopy ? MaterialsJsonCopy : MaterialsJson, ExcludeFiles);
                             terrainScanner.ScanTerrain();
                             break;
                         case ReadTypeEnum.ExcludeCsFiles:
