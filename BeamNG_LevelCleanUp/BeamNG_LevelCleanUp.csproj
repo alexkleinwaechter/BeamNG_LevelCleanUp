@@ -13,6 +13,7 @@
   <ItemGroup>
     <PackageReference Include="Autoupdater.NET.Official" Version="1.8.6" />
     <PackageReference Include="Blazor3D" Version="0.1.42" />
+    <PackageReference Include="Grille.BeamNG.Lib" Version="0.2.0" />
     <PackageReference Include="JsonRepairUtils" Version="0.0.2" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="7.0.101" />
     <PackageReference Include="MudBlazor" Version="6.20.0" />
