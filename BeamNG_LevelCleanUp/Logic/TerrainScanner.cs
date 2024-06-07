@@ -36,18 +36,22 @@ namespace BeamNG_LevelCleanUp.Logic
                         {
                             foreach (var name in materialList.Distinct())
                             {
+                                var matJson = _materialJson.Where(x => x.InternalName == name);
                                 _assets.Add(new Asset
                                 {
                                     Class = "Terrain",
-                                    Material = name,
+                                    Name = name,
+                                    Material = string.Empty,
+                                    MaterialsTerrain = matJson.ToList()
                                 });
-                                var matJson = _materialJson.Where(x => x.InternalName == name);
+
                                 foreach (var item in matJson)
                                 {
                                     _assets.Add(new Asset
                                     {
-                                        Class = "Terrain",
+                                        Class = "TerrainMaterial",
                                         Material = item.Name,
+                                        BelongsToTerrain = name
                                     });
                                 }
                             }

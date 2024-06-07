@@ -14,8 +14,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
     {
         private FileInfo _managedItemFile { get; set; }
         private List<MaterialJson> _materialsJsonCopy { get; set; }
-        private List<CopyAsset> _copyAssets { get; set; }
-        public DecalCopyScanner(FileInfo managedItemFile, List<MaterialJson> materialsJsonCopy, List<CopyAsset> copyAssets)
+        private List<CopyDecalRoadDaeAsset> _copyAssets { get; set; }
+        public DecalCopyScanner(FileInfo managedItemFile, List<MaterialJson> materialsJsonCopy, List<CopyDecalRoadDaeAsset> copyAssets)
         {
             _managedItemFile = managedItemFile;
             _materialsJsonCopy = materialsJsonCopy;
@@ -35,7 +35,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             foreach (var decalData in managedDecalData)
             {
-                var copyAsset = new CopyAsset
+                var copyAsset = new CopyDecalRoadDaeAsset
                 {
                     CopyAssetType = CopyAssetType.Decal,
                     DecalData = decalData,

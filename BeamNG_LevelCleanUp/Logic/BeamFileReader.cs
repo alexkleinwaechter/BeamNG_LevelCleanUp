@@ -29,6 +29,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyManagedDecal = 16,
             CopyDae = 17,
             FacilityJson = 18,
+            CopyTerrain = 19
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -46,7 +47,8 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<FileInfo> AllDaeCopyList { get; set; } = new List<FileInfo>();
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
-        public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
+        public static List<CopyDecalRoadDaeAsset> CopyDecalRoadDaeAssets { get; set; } = new List<CopyDecalRoadDaeAsset>();
+        public static List<Asset> CopyAssets { get; set; } = new List<Asset>();
 
         private static string _newName;
 
@@ -96,7 +98,8 @@ namespace BeamNG_LevelCleanUp.Logic
             AllDaeList = new List<FileInfo>();
             ExcludeFiles = new List<string>();
             UnusedAssetFiles = new List<string>();
-            CopyAssets = new List<CopyAsset>();
+            CopyDecalRoadDaeAssets = new List<CopyDecalRoadDaeAsset>();
+            CopyAssets = new List<Asset>();
             AllDaeCopyList = new List<FileInfo>();
             _mainDecalsJson = new List<FileInfo>();
             _managedDecalData = new List<FileInfo>();
@@ -125,43 +128,59 @@ namespace BeamNG_LevelCleanUp.Logic
             return DeleteList.OrderBy(x => x.FullName).ToList();
         }
 
-        internal List<CopyAsset> GetCopyList()
+        internal List<CopyDecalRoadDaeAsset> GetAssetCopyList()
         {
-            return CopyAssets.OrderBy(x => x.CopyAssetType).ThenBy(x => x.Name).ToList();
+            return CopyDecalRoadDaeAssets.OrderBy(x => x.CopyAssetType).ThenBy(x => x.Name).ToList();
+        }
+
+        internal List<Asset> GetTerrainCopyList()
+        {
+            return CopyAssets.Where(x => x.Class == "Terrain").ToList();
         }
 
         internal void ReadAll()
         {
-            this.Reset();
-            ReadInfoJson();
-            ReadFacilityJson();
-            ReadMissionGroup();
-            ReadForest();
-            ReadDecals();
-            ReadTerrainJson();
-            ReadMaterialsJson();
-            ReadAllDae();
-            ReadCsFilesForGenericExclude();
-            ReadLevelExtras();
+            Reset();
+            ReadInfoJson(false);
+            ReadFacilityJson(false);
+            ReadMissionGroup(false);
+            ReadForest(false);
+            ReadDecals(false);
+            ReadTerrainJson(false);
+            ReadMaterialsJson(false);
+            ReadAllDae(false);
+            ReadCsFilesForGenericExclude(false);
+            ReadLevelExtras(false);
             this.ResolveUnusedAssetFiles();
-            ResolveOrphanedFiles();
+            ResolveOrphanedFiles(false);
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Analyzing finished");
         }
 
-        internal void ReadAllForCopy()
+        internal void ReadAllForCopyAssets()
         {
             Reset();
-            ReadMaterialsJson();
-            RemoveDuplicateMaterials(false);
+            ReadMaterialsJson(false);
+            RemoveDuplicateMaterials(false, false);
             CopyAssetRoad();
             CopyAssetDecal();
             CopyDae();
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
         }
-
-        private void RemoveDuplicateMaterials(bool fromJsonFile)
+        internal void ReadAllForCopyMaterials()
         {
-            var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _namePath);
+            Reset();
+            ReadMaterialsJson(false);
+            RemoveDuplicateMaterials(false, false);
+            ReadTerrainJson(false);
+            ReadMaterialsJson(true);
+            RemoveDuplicateMaterials(false, true);
+            ReadTerrainJson(true);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Terrainmaterials finished");
+        }
+
+        private void RemoveDuplicateMaterials(bool fromJsonFile, bool fromCopy)
+        {
+            var materialScanner = new MaterialScanner(fromCopy ? MaterialsJsonCopy : MaterialsJson, fromCopy ? _levelPathCopyFrom : _levelPath,  fromCopy ? _namePathCopyFrom : _namePath);
             materialScanner.RemoveDuplicates(fromJsonFile);
         }
 
@@ -174,7 +193,7 @@ namespace BeamNG_LevelCleanUp.Logic
             };
             Reset();
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Missiongroups ... Please wait");
-            ReadMissionGroup();
+            ReadMissionGroup(false);
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Missiongroups finished");
             var assets = Assets
                 .Where(_ => allowedClasses.Contains(_.Class))
@@ -200,16 +219,16 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void DoCopyAssets(List<Guid> identifiers)
         {
-            var assetCopy = new AssetCopy(identifiers, CopyAssets, _namePath, _levelName, _levelNameCopyFrom);
+            var assetCopy = new AssetCopy(identifiers, CopyDecalRoadDaeAssets, _namePath, _levelName, _levelNameCopyFrom);
             assetCopy.Copy();
         }
 
-        internal void ReadInfoJson()
+        internal void ReadInfoJson(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson);
+                WalkDirectoryTree(dirInfo, "info.json", ReadTypeEnum.InfoJson, fromCopy);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -218,13 +237,13 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadFacilityJson()
+        internal void ReadFacilityJson(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "facilities.json", ReadTypeEnum.FacilityJson);
-                WalkDirectoryTree(dirInfo, "*.facilities.json", ReadTypeEnum.FacilityJson);
+                WalkDirectoryTree(dirInfo, "facilities.json", ReadTypeEnum.FacilityJson, fromCopy);
+                WalkDirectoryTree(dirInfo, "*.facilities.json", ReadTypeEnum.FacilityJson, fromCopy);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -233,14 +252,14 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadMissionGroup()
+        internal void ReadMissionGroup(bool fromCopy)
         {
             Assets = new List<Asset>();
             MaterialsJson = new List<MaterialJson>();
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.MissionGroup);
+                WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.MissionGroup, fromCopy);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -249,13 +268,13 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadMaterialsJson()
+        internal void ReadMaterialsJson(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson);
-                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.MaterialsJson);
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.MaterialsJson, fromCopy);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.MaterialsJson, fromCopy);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -301,12 +320,12 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadTerrainJson()
+        internal void ReadTerrainJson(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.terrain.json", ReadTypeEnum.TerrainFile);
+                WalkDirectoryTree(dirInfo, "*.terrain.json", ReadTypeEnum.TerrainFile, fromCopy);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -317,13 +336,13 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static List<FileInfo> _mainDecalsJson { get; set; } = new List<FileInfo>();
         private static List<FileInfo> _managedDecalData { get; set; } = new List<FileInfo>();
-        internal void ReadDecals()
+        internal void ReadDecals(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.MainDecalsJson);
-                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.ManagedDecalData);
+                WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.MainDecalsJson, fromCopy);
+                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.ManagedDecalData, fromCopy);
                 var decalScanner = new DecalScanner(Assets, _mainDecalsJson, _managedDecalData);
                 decalScanner.ScanDecals();
                 Console.WriteLine("Files with restricted access:");
@@ -336,13 +355,13 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static List<FileInfo> _forestJsonFiles { get; set; } = new List<FileInfo>();
         private static List<FileInfo> _managedItemData { get; set; } = new List<FileInfo>();
-        internal ForestScanner ReadForest()
+        internal ForestScanner ReadForest(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ForestJsonFiles);
-                WalkDirectoryTree(dirInfo, "managedItemData.*", ReadTypeEnum.ManagedItemData);
+                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ForestJsonFiles, fromCopy);
+                WalkDirectoryTree(dirInfo, "managedItemData.*", ReadTypeEnum.ManagedItemData, fromCopy);
                 var forestScanner = new ForestScanner(Assets, _forestJsonFiles, _managedItemData, _levelPath);
                 forestScanner.ScanForest();
                 Console.WriteLine("Files with restricted access:");
@@ -356,13 +375,13 @@ namespace BeamNG_LevelCleanUp.Logic
             return null;
         }
 
-        internal void ReadAllDae()
+        internal void ReadAllDae(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Collada Assets");
-                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.AllDae);
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.AllDae, fromCopy);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -371,17 +390,17 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadLevelExtras()
+        internal void ReadLevelExtras(bool fromCopy)
         {
             var extras = new List<string> { "scenarios", "quickrace", "buslines", "art\\cubemaps" };
             foreach (var extra in extras)
             {
-                var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));
+                var dirInfo = new DirectoryInfo(Path.Join(fromCopy ? _namePathCopyFrom : _namePath, extra));
                 if (dirInfo != null && dirInfo.Exists)
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Level {extra}");
-                    WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs);
-                    WalkDirectoryTree(dirInfo, "*.*", ReadTypeEnum.ExcludeAllFiles);
+                    WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs, fromCopy);
+                    WalkDirectoryTree(dirInfo, "*.*", ReadTypeEnum.ExcludeAllFiles, fromCopy);
                     Console.WriteLine("Files with restricted access:");
                     foreach (string s in log)
                     {
@@ -391,12 +410,12 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        internal void ReadCsFilesForGenericExclude()
+        internal void ReadCsFilesForGenericExclude(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.ExcludeCsFiles);
+                WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.ExcludeCsFiles, fromCopy);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -417,19 +436,19 @@ namespace BeamNG_LevelCleanUp.Logic
                 //DeleteList.AddRange(UnusedAssetFiles.Select(x => new FileInfo(x)));
             }
         }
-        internal void ResolveOrphanedFiles()
+        internal void ResolveOrphanedFiles(bool fromCopy)
         {
-            var dirInfo = new DirectoryInfo(_levelPath);
+            var dirInfo = new DirectoryInfo(fromCopy ? _levelPathCopyFrom : _levelPath);
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Resolve orphaned unmanaged files");
-                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.cdae", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.dds", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.png", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile);
-                WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile);
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.ImageFile, fromCopy);
+                WalkDirectoryTree(dirInfo, "*.cdae", ReadTypeEnum.ImageFile, fromCopy);
+                WalkDirectoryTree(dirInfo, "*.dds", ReadTypeEnum.ImageFile, fromCopy);
+                WalkDirectoryTree(dirInfo, "*.png", ReadTypeEnum.ImageFile, fromCopy);
+                WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile, fromCopy);
+                WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile, fromCopy);
+                WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile, fromCopy);
 
                 DeleteList = DeleteList.Where(x => !ExcludeFiles.Select(x => x.ToUpperInvariant()).Contains(x.FullName.ToUpperInvariant())).ToList();
                 Console.WriteLine("Files with restricted access:");
@@ -476,9 +495,9 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 _levelRenamer.EditInfoJson(_namePath, newNameForTitle);
-                WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
-                WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
-                WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
+                WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename, false);
+                WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename, false);
+                WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename, false);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -505,8 +524,8 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetRoad);
-                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetRoad);
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetRoad, false);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetRoad, false);
                 var materialScanner = new MaterialScanner(MaterialsJsonCopy, _levelPathCopyFrom, _namePath);
                 materialScanner.RemoveDuplicates(false);
                 Console.WriteLine("Files with restricted access:");
@@ -523,7 +542,7 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Collada Assets");
-                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.CopyDae);
+                WalkDirectoryTree(dirInfo, "*.dae", ReadTypeEnum.CopyDae, true);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -538,7 +557,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     .Where(m => daeMaterials.Select(x => x.MaterialName.ToUpper()).Contains(m.Name.ToUpper()))
                     .Distinct()
                     .ToList();
-                var asset = new CopyAsset
+                var asset = new CopyDecalRoadDaeAsset
                 {
                     CopyAssetType = CopyAssetType.Dae,
                     Name = item.Name,
@@ -552,7 +571,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 asset.SizeMb += Math.Round((fileInfo.Exists ? fileInfo.Length : 0) / 1024f) / 1024f;
                 //asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
                 //asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
-                CopyAssets.Add(asset);
+                CopyDecalRoadDaeAssets.Add(asset);
             }
         }
 
@@ -561,9 +580,9 @@ namespace BeamNG_LevelCleanUp.Logic
             var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
             if (dirInfo != null)
             {
-                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.CopyManagedDecal);
-                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetDecal);
-                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetDecal);
+                WalkDirectoryTree(dirInfo, "managedDecalData.*", ReadTypeEnum.CopyManagedDecal, true);
+                WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetDecal, true);
+                WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetDecal, true);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -574,7 +593,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ConvertToForest(List<Asset> assets)
         {
-            var forestScanner = ReadForest();
+            var forestScanner = ReadForest(false);
             var forestConverter = new ForestConverter(assets,
                 forestScanner.GetForestInfo(),
                 _namePath);
@@ -597,7 +616,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
-        private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
+        private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum, bool fromCopy)
         {
             var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple", "_heightmap", "_minimap" };
             FileInfo[] files = null;
@@ -641,26 +660,26 @@ namespace BeamNG_LevelCleanUp.Logic
                     switch (readTypeEnum)
                     {
                         case ReadTypeEnum.MissionGroup:
-                            var missionGroupScanner = new MissionGroupScanner(fi.FullName, _levelPath, Assets, ExcludeFiles);
+                            var missionGroupScanner = new MissionGroupScanner(fi.FullName, fromCopy ? _levelPathCopyFrom : _levelPath, fromCopy ? CopyAssets : Assets, ExcludeFiles);
                             missionGroupScanner.ScanMissionGroupFile();
                             break;
                         case ReadTypeEnum.MaterialsJson:
-                            var materialScanner = new MaterialScanner(fi.FullName, _levelPath, _namePath, MaterialsJson, Assets, ExcludeFiles);
+                            var materialScanner = new MaterialScanner(fi.FullName, fromCopy ? _levelPathCopyFrom : _levelPath, _namePath, MaterialsJson, fromCopy ? CopyAssets : Assets, ExcludeFiles);
                             materialScanner.ScanMaterialsJsonFile();
                             break;
                         case ReadTypeEnum.TerrainFile:
-                            var terrainScanner = new TerrainScanner(fi.FullName, _levelPath, Assets, MaterialsJson, ExcludeFiles);
+                            var terrainScanner = new TerrainScanner(fi.FullName, fromCopy ? _levelPathCopyFrom : _levelPath, fromCopy ? CopyAssets : Assets, MaterialsJson, ExcludeFiles);
                             terrainScanner.ScanTerrain();
                             break;
                         case ReadTypeEnum.ExcludeCsFiles:
-                            var csScanner = new GenericCsFileScanner(fi, _levelPath, ExcludeFiles, Assets);
+                            var csScanner = new GenericCsFileScanner(fi, fromCopy ? _levelPathCopyFrom : _levelPath, ExcludeFiles, fromCopy ? CopyAssets : Assets);
                             csScanner.ScanForFilesToExclude();
                             break;
                         case ReadTypeEnum.ExcludeAllFiles:
                             ExcludeFiles.Add(fi.FullName);
                             break;
                         case ReadTypeEnum.ScanExtraPrefabs:
-                            var prefabScanner = new PrefabScanner(Assets, _levelPath);
+                            var prefabScanner = new PrefabScanner(fromCopy ? CopyAssets : Assets, fromCopy ? _levelPathCopyFrom : _levelPath);
                             prefabScanner.AddPrefabDaeFiles(fi);
                             break;
                         case ReadTypeEnum.AllDae:
@@ -699,9 +718,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             materialCopyScanner.CheckDuplicates(MaterialsJson);
                             foreach (var item in MaterialsJsonCopy.Where(x => x.IsRoadAndPath))
                             {
-                                if (!CopyAssets.Any(x => x.CopyAssetType == CopyAssetType.Road && x.Name == item.Name))
+                                if (!CopyDecalRoadDaeAssets.Any(x => x.CopyAssetType == CopyAssetType.Road && x.Name == item.Name))
                                 {
-                                    var asset = new CopyAsset
+                                    var asset = new CopyDecalRoadDaeAsset
                                     {
                                         CopyAssetType = CopyAssetType.Road,
                                         Name = item.Name,
@@ -712,16 +731,16 @@ namespace BeamNG_LevelCleanUp.Logic
                                     asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
                                     asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
                                     asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
-                                    CopyAssets.Add(asset);
+                                    CopyDecalRoadDaeAssets.Add(asset);
                                 }
                             }
                             break;
                         case ReadTypeEnum.CopyManagedDecal:
-                            var decalCopyScanner = new DecalCopyScanner(fi, MaterialsJsonCopy, CopyAssets);
+                            var decalCopyScanner = new DecalCopyScanner(fi, MaterialsJsonCopy, CopyDecalRoadDaeAssets);
                             decalCopyScanner.ScanManagedItems();
                             break;
                         case ReadTypeEnum.CopyAssetDecal:
-                            foreach (var asset in CopyAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal))
+                            foreach (var asset in CopyDecalRoadDaeAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal))
                             {
                                 var materials = MaterialsJsonCopy.Where(x => x.Name == asset.DecalData.Material);
                                 foreach (var material in materials)
@@ -752,7 +771,7 @@ namespace BeamNG_LevelCleanUp.Logic
                 foreach (DirectoryInfo dirInfo in subDirs)
                 {
                     // Resursive call for each subdirectory.
-                    WalkDirectoryTree(dirInfo, filePattern, readTypeEnum);
+                    WalkDirectoryTree(dirInfo, filePattern, readTypeEnum, fromCopy);
                 }
             }
         }

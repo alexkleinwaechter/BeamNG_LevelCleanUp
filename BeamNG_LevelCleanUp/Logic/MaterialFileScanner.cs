@@ -1,6 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System.Diagnostics;
 
 namespace BeamNG_LevelCleanUp.Logic
 {

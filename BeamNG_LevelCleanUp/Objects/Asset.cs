@@ -30,6 +30,7 @@
 
         //public List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
         public List<MaterialsDae> MaterialsDae { get; set; } = new List<MaterialsDae>();
+        public List<MaterialJson> MaterialsTerrain { get; set; } = new List<MaterialJson>();
         public bool? DaeExists { get; set; }
         public List<double>? Position { get; set; }
         public List<double>? RotationMatrix { get; set; }
@@ -40,6 +41,7 @@
         public string? MissionGroupPath { get; set; }
         public int? MissionGroupLine { get; set; }
         public string TranslucentBlendOp { get; set; }
+        public string BelongsToTerrain { get; set; }
 
         public List<string> GetAllMaterialNames()
         {

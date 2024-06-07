@@ -8,29 +8,29 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
     public class AssetCopy
     {
         private List<Guid> _identifier { get; set; }
-        private List<CopyAsset> _assetsToCopy = new List<CopyAsset>();
+        private List<CopyDecalRoadDaeAsset> _assetsToCopy = new List<CopyDecalRoadDaeAsset>();
         private string namePath;
         private string levelName;
         private string levelNameCopyFrom;
         private bool stopFaultyFile = false;
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
+        public AssetCopy(List<Guid> identifier, List<CopyDecalRoadDaeAsset> copyAssetList)
         {
             _identifier = identifier;
             _assetsToCopy = copyAssetList.Where(x => identifier.Contains(x.Identifier)).ToList();
         }
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath) : this(identifier, copyAssetList)
+        public AssetCopy(List<Guid> identifier, List<CopyDecalRoadDaeAsset> copyAssetList, string namePath) : this(identifier, copyAssetList)
         {
             this.namePath = namePath;
         }
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath, string levelName) : this(identifier, copyAssetList, namePath)
+        public AssetCopy(List<Guid> identifier, List<CopyDecalRoadDaeAsset> copyAssetList, string namePath, string levelName) : this(identifier, copyAssetList, namePath)
         {
             this.levelName = levelName;
         }
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath, string levelName, string levelNameCopyFrom) : this(identifier, copyAssetList, namePath, levelName)
+        public AssetCopy(List<Guid> identifier, List<CopyDecalRoadDaeAsset> copyAssetList, string namePath, string levelName, string levelNameCopyFrom) : this(identifier, copyAssetList, namePath, levelName)
         {
             this.levelNameCopyFrom = levelNameCopyFrom;
         }
@@ -66,17 +66,17 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             stopFaultyFile = false;
         }
 
-        private void CopyRoad(CopyAsset item)
+        private void CopyRoad(CopyDecalRoadDaeAsset item)
         {
             CopyMaterials(item);
         }
 
-        private void CopyDecal(CopyAsset item)
+        private void CopyDecal(CopyDecalRoadDaeAsset item)
         {
             CopyMaterials(item);
         }
 
-        private void CopyManagedDecal(CopyAsset item)
+        private void CopyManagedDecal(CopyDecalRoadDaeAsset item)
         {
             if (item.TargetPath == null)
             {
@@ -106,7 +106,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
         }
 
-        private void CopyDae(CopyAsset item)
+        private void CopyDae(CopyDecalRoadDaeAsset item)
         {
             Directory.CreateDirectory(item.TargetPath);
 
@@ -137,7 +137,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             CopyMaterials(item);
         }
 
-        private void CopyMaterials(CopyAsset item)
+        private void CopyMaterials(CopyDecalRoadDaeAsset item)
         {
             if (item.TargetPath == null)
             {

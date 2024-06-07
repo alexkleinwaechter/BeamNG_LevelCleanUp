@@ -6,7 +6,7 @@
         Decal = 1,
         Dae = 2,
     }
-    public class CopyAsset
+    public class CopyDecalRoadDaeAsset
     {
         public Guid Identifier { get; set; } = Guid.NewGuid();
         public CopyAssetType CopyAssetType { get; set; }
