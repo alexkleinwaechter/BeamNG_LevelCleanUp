@@ -72,6 +72,11 @@ namespace BeamNG_LevelCleanUp.Logic
             _namePath = ZipFileHandler.GetNamePath(_levelPath);
             _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
             _levelName = new DirectoryInfo(_namePath).Name;
+
+            //Hack because of folderselection 
+            //todo: check if all can be done with namepath and ommit levelpath
+            _levelPath = _namePath;
+
             _namePathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetNamePath(_levelPathCopyFrom) : null;
             _levelPathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetLevelPath(_levelPathCopyFrom) : null;
             _levelNameCopyFrom = _namePathCopyFrom != null ? new DirectoryInfo(_namePathCopyFrom).Name : null;

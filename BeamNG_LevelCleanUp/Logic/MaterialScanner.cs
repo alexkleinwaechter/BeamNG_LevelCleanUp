@@ -49,7 +49,12 @@ namespace BeamNG_LevelCleanUp.Logic
                             {
                                 material.Name = material.InternalName;
                             }
-                            if (material?.Stages != null)
+                            if (Path.GetFileName(Path.GetDirectoryName(_matJsonPath)).ToUpperInvariant() == "TERRAINS") {
+                                material.Name = material.InternalName;
+                                var fileScanner = new MaterialFileScanner(_levelPath, null, _matJsonPath);
+                                material.MaterialFiles = fileScanner.GetTerrainMaterialFiles(material.Name);
+                            }
+                            else if (material?.Stages != null)
                             {
                                 var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
                                 material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
