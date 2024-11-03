@@ -29,6 +29,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyManagedDecal = 16,
             CopyDae = 17,
             FacilityJson = 18,
+            ChangeHeight = 19
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -47,10 +48,9 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
         public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
-
         private static string _newName;
-
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
+        private static decimal _heightOffset;
         internal BeamFileReader(string levelpath, string beamLogPath, string levelPathCopyFrom = null)
         {
             var beamInstallDir = Steam.GetBeamInstallDir();
@@ -193,6 +193,25 @@ namespace BeamNG_LevelCleanUp.Logic
             return assets;
         }
 
+        internal bool ChangeHeight(decimal heightOffset)
+        {
+            _heightOffset = heightOffset;
+            var dirInfo = new DirectoryInfo(_levelPath);
+            if (dirInfo != null)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Missiongroups ... Please wait");
+                WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.ChangeHeight);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Forest Items ... Please wait");
+                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ChangeHeight);
+                Console.WriteLine("Files with restricted access:");
+                foreach (string s in log)
+                {
+                    Console.WriteLine(s);
+                }
+            }
+
+            return true;
+        }
         static bool areSame(List<double>? nums)
         {
             return nums == null || nums.Distinct().Count() == 1;
@@ -740,6 +759,10 @@ namespace BeamNG_LevelCleanUp.Logic
                             break;
                         case ReadTypeEnum.CopyDae:
                             AllDaeCopyList.Add(fi);
+                            break;
+                        case ReadTypeEnum.ChangeHeight:
+                            var heightScanner = new HeightScanner(_heightOffset, fi.FullName, new List<string>());
+                            heightScanner.ScanMissionGroupFile();
                             break;
                         default:
                             break;
