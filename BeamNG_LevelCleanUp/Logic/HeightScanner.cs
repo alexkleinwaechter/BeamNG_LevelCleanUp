@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using System.Windows.Automation.Peers;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -104,6 +105,7 @@ namespace BeamNG_LevelCleanUp.Logic
                     {
                         if (property.Name == "instances")
                         {
+                            var updatedInstances = new Dictionary<string, List<List<decimal>>>();
                             foreach (var instance in property.Value.EnumerateObject())
                             {
                                 var allvalues = instance.Value.Deserialize<List<List<decimal>>>();
@@ -117,8 +119,9 @@ namespace BeamNG_LevelCleanUp.Logic
                                         }
                                     }
                                 }
+                                updatedInstances[instance.Name] = allvalues;
                             }
-                            mutableJson[property.Name] = instance;
+                            mutableJson[property.Name] = updatedInstances;
                         }
                         else
                         {
