@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using System.Windows.Automation.Peers;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -47,7 +48,7 @@ namespace BeamNG_LevelCleanUp.Logic
                                 if (values != null && values.Count == 3)
                                 {
                                     values[2] += _heightOffset;
-                                    mutableJson[property.Name] = values; 
+                                    mutableJson[property.Name] = values;
                                 }
                             }
                             else if (property.Name == "nodes")
@@ -91,6 +92,51 @@ namespace BeamNG_LevelCleanUp.Logic
                 PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_missiongroupPath}. {ex.Message}.");
             }
         }
-       
+        internal void ScanDecals()
+        {
+            var json = File.ReadAllText(_missiongroupPath);
+            try
+            {
+                using JsonDocument doc = JsonUtils.GetValidJsonDocumentFromString(json, _missiongroupPath);
+                if (doc.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(json))
+                {
+                    var mutableJson = new Dictionary<string, object>();
+                    foreach (var property in doc.RootElement.EnumerateObject())
+                    {
+                        if (property.Name == "instances")
+                        {
+                            var updatedInstances = new Dictionary<string, List<List<decimal>>>();
+                            foreach (var instance in property.Value.EnumerateObject())
+                            {
+                                var allvalues = instance.Value.Deserialize<List<List<decimal>>>();
+                                if (allvalues != null && allvalues.Any())
+                                {
+                                    foreach (var values in allvalues)
+                                    {
+                                        if (values != null && values.Count >= 6)
+                                        {
+                                            values[5] += _heightOffset;
+                                        }
+                                    }
+                                }
+                                updatedInstances[instance.Name] = allvalues;
+                            }
+                            mutableJson[property.Name] = updatedInstances;
+                        }
+                        else
+                        {
+                            mutableJson[property.Name] = property.Value;
+                        }
+                    }
+
+                    File.WriteAllText(_missiongroupPath, JsonSerializer.Serialize(mutableJson, BeamJsonOptions.GetJsonSerializerOneLineOptions()));
+                }
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_missiongroupPath}. {ex.Message}.");
+
+            }
+        }
     }
 }
