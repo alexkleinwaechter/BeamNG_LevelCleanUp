@@ -29,7 +29,8 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyManagedDecal = 16,
             CopyDae = 17,
             FacilityJson = 18,
-            ChangeHeight = 19
+            ChangeHeightMissionGroups = 19,
+            ChangeHeightDecals = 20
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -200,9 +201,12 @@ namespace BeamNG_LevelCleanUp.Logic
             if (dirInfo != null)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Missiongroups ... Please wait");
-                WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.ChangeHeight);
+                WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.ChangeHeightMissionGroups);
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Forest Items ... Please wait");
-                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ChangeHeight);
+                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ChangeHeightMissionGroups);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Decals ... Please wait");
+                WalkDirectoryTree(dirInfo, "main.decals.json", ReadTypeEnum.ChangeHeightDecals);
+
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
@@ -760,9 +764,13 @@ namespace BeamNG_LevelCleanUp.Logic
                         case ReadTypeEnum.CopyDae:
                             AllDaeCopyList.Add(fi);
                             break;
-                        case ReadTypeEnum.ChangeHeight:
+                        case ReadTypeEnum.ChangeHeightMissionGroups:
                             var heightScanner = new HeightScanner(_heightOffset, fi.FullName, new List<string>());
                             heightScanner.ScanMissionGroupFile();
+                            break;
+                        case ReadTypeEnum.ChangeHeightDecals:
+                            var heightScanner2 = new HeightScanner(_heightOffset, fi.FullName, new List<string>());
+                            heightScanner2.ScanDecals();
                             break;
                         default:
                             break;
