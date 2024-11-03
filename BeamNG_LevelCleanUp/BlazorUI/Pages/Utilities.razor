@@ -41,7 +41,8 @@
             @if (!string.IsNullOrEmpty(_levelPath))
             {
                 <MudNumericField @bind-Value="_heightOffset"
-                                 T="double"
+                                 T="decimal"
+                                 Format="N3"
                                  Label="Height offset in meters. Decimals allowed"
                                  HelperText="This value is added to the z-value of all position and node fields in the missiongroup folders. To lower the height, just type in a negative value">
                 </MudNumericField>
@@ -103,7 +104,7 @@
 </ErrorBoundary>
 
 @code {
-    private double _heightOffset { get; set; }
+    private decimal _heightOffset { get; set; }
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
@@ -365,6 +366,7 @@
 
             Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
             Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
+            Snackbar.Add("All changes done!", Severity.Success);
             _showDeployButton = true;
         }
     }

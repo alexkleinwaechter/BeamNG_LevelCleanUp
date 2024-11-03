@@ -50,7 +50,7 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
         private static string _newName;
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
-        private static double _heightOffset;
+        private static decimal _heightOffset;
         internal BeamFileReader(string levelpath, string beamLogPath, string levelPathCopyFrom = null)
         {
             var beamInstallDir = Steam.GetBeamInstallDir();
@@ -193,19 +193,23 @@ namespace BeamNG_LevelCleanUp.Logic
             return assets;
         }
 
-        internal bool ChangeHeight(double heightOffset)
+        internal bool ChangeHeight(decimal heightOffset)
         {
             _heightOffset = heightOffset;
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Missiongroups ... Please wait");
                 WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.ChangeHeight);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Forest Items ... Please wait");
+                WalkDirectoryTree(dirInfo, "*.forest4.json", ReadTypeEnum.ChangeHeight);
                 Console.WriteLine("Files with restricted access:");
                 foreach (string s in log)
                 {
                     Console.WriteLine(s);
                 }
             }
+
             return true;
         }
         static bool areSame(List<double>? nums)

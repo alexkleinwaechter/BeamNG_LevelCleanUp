@@ -1,6 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,11 +14,11 @@ namespace BeamNG_LevelCleanUp.Logic
 {
     internal class HeightScanner
     {
-        private double _heightOffset;
+        private decimal _heightOffset;
         private string _missiongroupPath { get; set; }
         private List<string> _excludeFiles = new List<string>();
 
-        internal HeightScanner(double heightOffset, string missiongroupPath, List<string> excludeFiles)
+        internal HeightScanner(decimal heightOffset, string missiongroupPath, List<string> excludeFiles)
         {
             _heightOffset = heightOffset;
             _missiongroupPath = missiongroupPath;
@@ -37,38 +38,41 @@ namespace BeamNG_LevelCleanUp.Logic
                     using JsonDocument doc = JsonUtils.GetValidJsonDocumentFromString(line, _missiongroupPath);
                     if (doc.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
-                        var mutableJson = new JsonObject();
-                        bool lastLine = linecounter == lines.Length;
+                        var mutableJson = new Dictionary<string, object>();
                         foreach (var property in doc.RootElement.EnumerateObject())
                         {
-                            if (property.Name == "position")
+                            if (property.Name == "position" || property.Name == "pos")
                             {
-                                var values = property.Value.Deserialize<List<double>>();
+                                var values = property.Value.Deserialize<List<decimal>>();
                                 if (values != null && values.Count == 3)
                                 {
                                     values[2] += _heightOffset;
-                                    mutableJson.Add(property.Name, JsonSerializer.Serialize(values)); 
+                                    mutableJson[property.Name] = values; 
                                 }
                             }
-                            //else if (property.Name == "nodes")
-                            //{
-                            //    var values = property.Value.Deserialize<List<double>>();
-                            //    mutableJson.Add(property.Name, JsonSerializer.Serialize(new[] { 4, 5, 6 })); // Example modification
-                            //}
+                            else if (property.Name == "nodes")
+                            {
+                                var nodes = property.Value.Deserialize<List<List<decimal>>>();
+                                if (nodes != null && nodes.Any())
+                                {
+                                    foreach (var values in nodes)
+                                    {
+                                        if (values != null && values.Count >= 3)
+                                        {
+                                            values[2] += _heightOffset;
+                                        }
+                                    }
+
+                                    mutableJson[property.Name] = nodes;
+                                }
+                            }
                             else
                             {
-                                mutableJson.Add(property.Name, property.Value.ToString());
+                                mutableJson[property.Name] = property.Value;
                             }
                         }
-                        if (!lastLine)
-                        {
-                            modifiedJsonLines.Add(JsonSerializer.Serialize(mutableJson, BeamJsonOptions.GetJsonSerializerOneLineOptions()) + ",");
-                        }
-                        else
-                        {
-                            modifiedJsonLines.Add(JsonSerializer.Serialize(mutableJson, BeamJsonOptions.GetJsonSerializerOneLineOptions()));
-                        }
 
+                        modifiedJsonLines.Add(JsonSerializer.Serialize(mutableJson, BeamJsonOptions.GetJsonSerializerOneLineOptions()));
                         //var asset = doc.RootElement.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
                     }
                 }
@@ -87,5 +91,6 @@ namespace BeamNG_LevelCleanUp.Logic
                 PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_missiongroupPath}. {ex.Message}.");
             }
         }
+       
     }
 }
