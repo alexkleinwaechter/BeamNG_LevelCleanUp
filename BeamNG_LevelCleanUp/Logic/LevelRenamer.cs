@@ -29,7 +29,7 @@ namespace BeamNG_LevelCleanUp.Logic
         internal void ReplaceInFile(string filePath, string searchText, string replaceText)
         {
             string text = File.ReadAllText(filePath);
-            text = text.Replace(searchText, replaceText, StringComparison.OrdinalIgnoreCase);
+            text = text.Replace($"levels{searchText}", $"levels{replaceText}", StringComparison.OrdinalIgnoreCase);
             File.WriteAllText(filePath, text);
         }
     }
