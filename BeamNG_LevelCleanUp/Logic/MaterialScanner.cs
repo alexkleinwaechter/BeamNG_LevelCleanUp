@@ -43,6 +43,7 @@ namespace BeamNG_LevelCleanUp.Logic
                         try
                         {
                             var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
+                            ValidateMaterialJson(material);
                             material.MatJsonFileLocation = _matJsonPath;
                             //if (material.Name == "shawn2") Debugger.Break();
                             if (string.IsNullOrEmpty(material.Name) && !string.IsNullOrEmpty(material.InternalName))
@@ -116,6 +117,23 @@ namespace BeamNG_LevelCleanUp.Logic
             catch (Exception ex)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_matJsonPath}. {ex.Message}");
+            }
+        }
+
+        internal void ValidateMaterialJson(MaterialJson materialJson)
+        {
+            if (materialJson == null)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"MaterialJson in path {_matJsonPath} is null");
+                return;
+            }
+            var persistentId = materialJson.PersistentId;
+            if (!string.IsNullOrEmpty(persistentId))
+            {
+                if (!Guid.TryParse(persistentId, out _))
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Error, $"MaterialJson in path {_matJsonPath} for materialname {materialJson.Name} has invalid PersistentId {persistentId}");
+                }
             }
         }
 
