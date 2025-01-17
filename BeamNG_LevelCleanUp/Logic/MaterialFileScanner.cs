@@ -1,6 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System.Diagnostics;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -36,6 +35,9 @@ namespace BeamNG_LevelCleanUp.Logic
                             val = Path.Join(Path.GetDirectoryName(_matJsonPath), val);
                         }
                         var filePath = PathResolver.ResolvePath(_levelPath, val, false);
+
+                        //if (filePath.Contains("buildings_world/BrettAni_All.color.png")) Debugger.Break();
+
                         FileInfo fileInfo = FileUtils.ResolveImageFileName(filePath);
                         retVal.Add(new MaterialFile
                         {
