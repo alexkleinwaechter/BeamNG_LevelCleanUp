@@ -22,6 +22,7 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (var prop in stage.GetType().GetProperties())
                 {
+                    if (prop.PropertyType != typeof(string)) continue;
                     var val = prop.GetValue(stage, null) != null ? prop.GetValue(stage, null).ToString() : string.Empty;
 
                     if (!string.IsNullOrEmpty(val))
