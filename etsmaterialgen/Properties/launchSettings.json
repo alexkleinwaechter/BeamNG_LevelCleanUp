@@ -2,7 +2,7 @@
   "profiles": {
     "etsmaterialgen": {
       "commandName": "Project",
-      "commandLineArgs": "\"C:\\Users\\aklei\\AppData\\Local\\BeamNG.drive\\0.32\\levels\\ellern_map\\art\\shapes\\converted\\main.materials.json\" \"D:\\ets\\base\\model2\\village_close\\village_close_garage_02_fr_lod1.pit\""
+      "commandLineArgs": "\"C:\\Users\\aklei\\AppData\\Local\\BeamNG.drive\\0.34\\levels\\ellern_map\\art\\shapes\\converted\\main.materials.json\" \"D:\\ets\\base\\model2\\building\\village_close\\wooden_log_cabin_01_at_lod1.pit\""
     }
   }
 }
