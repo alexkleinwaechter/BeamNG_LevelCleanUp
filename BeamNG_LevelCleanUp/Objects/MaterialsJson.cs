@@ -34,6 +34,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public bool? Translucent { get; set; }
         public bool? CastShadows { get; }
         public bool? TranslucentRecvShadows { get; set; }
+        public bool? translucentZWrite { get; set; }
 
         [JsonIgnore]
         public List<string> MaterialTags
