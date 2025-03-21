@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "etsmaterialgen": {
-      "commandName": "Project",
-      "commandLineArgs": "\"C:\\Users\\aklei\\AppData\\Local\\BeamNG.drive\\0.34\\levels\\ellern_map\\art\\shapes\\converted\\main.materials.json\" \"D:\\ets\\base\\prefab2\\gas_station\\gas_plaza_01_fr.pit\""
-    }
-  }
-}
