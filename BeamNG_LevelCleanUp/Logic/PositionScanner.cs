@@ -13,15 +13,19 @@ using System.Windows.Automation.Peers;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
-    internal class HeightScanner
+    internal class PositionScanner
     {
-        private decimal _heightOffset;
+        private decimal _xOffset;
+        private decimal _yOffset;
+        private decimal _zOffset;
         private string _missiongroupPath { get; set; }
         private List<string> _excludeFiles = new List<string>();
 
-        internal HeightScanner(decimal heightOffset, string missiongroupPath, List<string> excludeFiles)
+        internal PositionScanner(decimal xOffset, decimal yOffset, decimal zOffset, string missiongroupPath, List<string> excludeFiles)
         {
-            _heightOffset = heightOffset;
+            _xOffset = xOffset;
+            _yOffset = yOffset;
+            _zOffset = zOffset;
             _missiongroupPath = missiongroupPath;
             _excludeFiles = excludeFiles;
         }
@@ -39,15 +43,27 @@ namespace BeamNG_LevelCleanUp.Logic
                     using JsonDocument doc = JsonUtils.GetValidJsonDocumentFromString(line, _missiongroupPath);
                     if (doc.RootElement.ValueKind != JsonValueKind.Undefined && !string.IsNullOrEmpty(line))
                     {
+                        
                         var mutableJson = new Dictionary<string, object>();
+
                         foreach (var property in doc.RootElement.EnumerateObject())
                         {
+                            if (property.Name == "class" && (property.Value.GetString() == "TSStatic" || property.Value.GetString() == "Prefab"))
+                            {
+                                if (!doc.RootElement.TryGetProperty("position", out _))
+                                {
+                                    mutableJson["position"] = new List<decimal> { _xOffset, _yOffset, _zOffset };
+                                }
+                            }
+
                             if (property.Name == "position" || property.Name == "pos")
                             {
                                 var values = property.Value.Deserialize<List<decimal>>();
                                 if (values != null && values.Count == 3)
                                 {
-                                    values[2] += _heightOffset;
+                                    values[0] += _xOffset;
+                                    values[1] += _yOffset;
+                                    values[2] += _zOffset;
                                     mutableJson[property.Name] = values;
                                 }
                             }
@@ -60,7 +76,9 @@ namespace BeamNG_LevelCleanUp.Logic
                                     {
                                         if (values != null && values.Count >= 3)
                                         {
-                                            values[2] += _heightOffset;
+                                            values[0] += _xOffset;
+                                            values[1] += _yOffset;
+                                            values[2] += _zOffset;
                                         }
                                     }
 
@@ -115,7 +133,9 @@ namespace BeamNG_LevelCleanUp.Logic
                                     {
                                         if (values != null && values.Count >= 6)
                                         {
-                                            values[5] += _heightOffset;
+                                            values[3] += _xOffset;
+                                            values[4] += _yOffset;
+                                            values[5] += _zOffset;
                                         }
                                     }
                                 }

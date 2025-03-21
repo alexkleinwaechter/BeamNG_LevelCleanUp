@@ -40,11 +40,25 @@
 
             @if (!string.IsNullOrEmpty(_levelPath))
             {
-                <MudNumericField @bind-Value="_heightOffset"
+                <MudNumericField @bind-Value="_xOffset"
                                  T="decimal"
                                  Format="N3"
                                  Immediate="true"
-                                 Label="Height offset in meters. Decimals allowed"
+                                 Label="x-axis offset in meters. Decimals allowed"
+                                 HelperText="This value is added to the x-value of all position and node fields in the missiongroup folders. Positive and negative values allowed">
+                </MudNumericField>
+                <MudNumericField @bind-Value="_yOffset"
+                                 T="decimal"
+                                 Format="N3"
+                                 Immediate="true"
+                                 Label="y-axis offset in meters. Decimals allowed"
+                                 HelperText="This value is added to the y-value of all position and node fields in the missiongroup folders. Positive and negative values allowed">
+                </MudNumericField>
+                <MudNumericField @bind-Value="_zOffset"
+                                 T="decimal"
+                                 Format="N3"
+                                 Immediate="true"
+                                 Label="z-axis offset in meters. Decimals allowed"
                                  HelperText="This value is added to the z-value of all position and node fields in the missiongroup folders. To lower the height, just type in a negative value">
                 </MudNumericField>
             }
@@ -76,7 +90,7 @@
                 {
                     <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
                 }
-                @if (!string.IsNullOrEmpty(_levelPath) && _heightOffset != 0)
+                @if (!string.IsNullOrEmpty(_levelPath) && (_xOffset != 0 || _yOffset != 0 || _zOffset != 0))
                 {
                     <MudButton Color="Color.Primary" OnClick="@ApplyDialog">Apply Changes</MudButton>
                 }
@@ -105,7 +119,9 @@
 </ErrorBoundary>
 
 @code {
-    private decimal _heightOffset { get; set; }
+    private decimal _xOffset { get; set; }
+    private decimal _yOffset { get; set; }
+    private decimal _zOffset { get; set; }
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
@@ -344,7 +360,7 @@
     {
         var options = new DialogOptions { CloseOnEscapeKey = true };
         var parameters = new DialogParameters();
-        parameters.Add("ContentText", "Do you really want to chenge the level? Please always use a copy of your project with this tool!");
+        parameters.Add("ContentText", "Do you really want to change the level? Please always use a copy of your project with this tool!");
         parameters.Add("ButtonText", "Change");
         parameters.Add("Color", Color.Warning);
         var dialog = await DialogService.ShowAsync<SimpleDialog>("Change Level", parameters, options);
@@ -356,7 +372,7 @@
             {
                 await Task.Run(() =>
                 {
-                    Reader.ChangeHeight(_heightOffset);
+                    Reader.ChangePosition(_xOffset, _yOffset, _zOffset);
                     _levelName = Reader.GetLevelName();
                 });
             }

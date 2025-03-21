@@ -51,7 +51,9 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
         private static string _newName;
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
-        private static decimal _heightOffset;
+        private static decimal _xOffset;
+        private static decimal _yOffset;
+        private static decimal _zOffset;
         internal BeamFileReader(string levelpath, string beamLogPath, string levelPathCopyFrom = null)
         {
             var beamInstallDir = Steam.GetBeamInstallDir();
@@ -103,6 +105,9 @@ namespace BeamNG_LevelCleanUp.Logic
             _managedDecalData = new List<FileInfo>();
             _managedItemData = new List<FileInfo>();
             _forestJsonFiles = new List<FileInfo>();
+            _xOffset = 0;
+            _yOffset = 0;
+            _zOffset = 0;
             //_levelName = null;
             //_namePath = null;
             //_levelNameCopyFrom = null;
@@ -194,9 +199,11 @@ namespace BeamNG_LevelCleanUp.Logic
             return assets;
         }
 
-        internal bool ChangeHeight(decimal heightOffset)
+        internal bool ChangePosition(decimal xOffset, decimal yOffset, decimal zOffset)
         {
-            _heightOffset = heightOffset;
+            _xOffset = xOffset;
+            _yOffset = yOffset;
+            _zOffset = zOffset;
             var dirInfo = new DirectoryInfo(_levelPath);
             if (dirInfo != null)
             {
@@ -765,12 +772,12 @@ namespace BeamNG_LevelCleanUp.Logic
                             AllDaeCopyList.Add(fi);
                             break;
                         case ReadTypeEnum.ChangeHeightMissionGroups:
-                            var heightScanner = new HeightScanner(_heightOffset, fi.FullName, new List<string>());
-                            heightScanner.ScanMissionGroupFile();
+                            var positionScanner = new PositionScanner(_xOffset, _yOffset, _zOffset, fi.FullName, new List<string>());
+                            positionScanner.ScanMissionGroupFile();
                             break;
                         case ReadTypeEnum.ChangeHeightDecals:
-                            var heightScanner2 = new HeightScanner(_heightOffset, fi.FullName, new List<string>());
-                            heightScanner2.ScanDecals();
+                            var positionScanner2 = new PositionScanner(_xOffset, _yOffset, _zOffset, fi.FullName, new List<string>());
+                            positionScanner2.ScanDecals();
                             break;
                         default:
                             break;
