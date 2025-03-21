@@ -8,7 +8,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public string InternalName { get; set; } = string.Empty;
         public string Class { get; set; } = string.Empty;
         public string MapTo { get; set; } = string.Empty;
-        public string PersistentId { get; set; } = string.Empty;
+        public Guid PersistentId { get; set; }
         [JsonPropertyName("Stages")]
         public List<MaterialStage> Stages { get; set; }
         public List<string> CubeFace { get; set; }
@@ -34,6 +34,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public bool? Translucent { get; set; }
         public bool? CastShadows { get; }
         public bool? TranslucentRecvShadows { get; set; }
+        public bool? translucentZWrite { get; set; }
 
         [JsonIgnore]
         public List<string> MaterialTags

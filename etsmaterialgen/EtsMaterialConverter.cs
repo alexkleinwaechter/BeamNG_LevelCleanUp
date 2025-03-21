@@ -133,6 +133,7 @@ namespace etsmaterialgen
                 {
                     beam.Translucent = true;
                     beam.TranslucentRecvShadows = true;
+                    beam.translucentZWrite = true;
                 }
                 if (matEts.AddAlpha)
                 {
