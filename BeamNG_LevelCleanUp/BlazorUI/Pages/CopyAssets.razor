@@ -19,19 +19,19 @@
             <MudExpansionPanels @ref="FileSelect">
                 <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
-                                         Description="The game install directory. If empty some features are missing.">
+                    Description="The game install directory. If empty some features are missing.">
                     </FileSelectComponent>
                 </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" IsInitiallyExpanded="true">
                     <FileSelectComponent OnFileSelected="FileSelectedCopyFrom"
-                                         Description="Your asset source map"
-                                         Disabled="@_fileSelectDisabled">
+                    Description="Your asset source map"
+                    Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
-                                   ValueChanged="OnVanillaSourceSelected"
-                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                        ValueChanged="OnVanillaSourceSelected"
+                        Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
                             @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
@@ -41,19 +41,19 @@
                 </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="false">
                     <FileSelectComponent OnFileSelected="@((x) => FileSelected(x, false))"
-                                         Description="Your zipped target map"
-                                         Disabled="@_fileSelectDisabled">
+                    Description="Your zipped target map"
+                    Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
                     <FileSelectComponent OnFileSelected="@((x) => FileSelected(x, true))" SelectFolder="true"
-                                         Description="or your unzipped map directory"
-                                         Disabled="@_fileSelectDisabled">
+                    Description="or your unzipped map directory"
+                    Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
 
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter" Disabled="@_fileSelectDisabled"
-                                   ValueChanged="OnVanillaTargetSelected"
-                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                        ValueChanged="OnVanillaTargetSelected"
+                        Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
                             @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
@@ -65,14 +65,12 @@
 
             @if (BindingListCopy.Any())
             {
-                <MudTable T="GridFileListItem" Items="@BindingListCopy" Hover="true"
-                          MultiSelection="true" @bind-SelectedItems="_selectedItems"
-                          @bind-Value="_searchString"
-                          Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
+                <MudTable @ref="table" T="GridFileListItem" Hover="true" ServerData="LoadServerData"
+                MultiSelection="true" @bind-SelectedItems="_selectedItems">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Assets in @_levelNameCopyFrom</MudText>
                         <MudSpacer />
-                        <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                        <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s=>OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
                         <MudTh>View</MudTh>
@@ -136,7 +134,7 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                               @bind-Value="_compressionLevel">
+                    @bind-Value="_compressionLevel">
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
@@ -192,6 +190,7 @@
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private FileInfo _vanillaLevelTargetSelected { get; set; }
     private string _beamInstallDir { get; set; }
+    private MudTable<GridFileListItem> table;
 
     protected void InitializeVariables()
 
@@ -487,6 +486,37 @@
         //if ($"{element.Number} {element.Position} {element.Molar}".Contains(searchString))
         //    return true;
         return false;
+    }
+
+    private async Task<TableData<GridFileListItem>> LoadServerData(TableState state)
+    {
+        var items = BindingListCopy.Where(element =>
+        {
+            if (string.IsNullOrWhiteSpace(_searchString))
+                return true;
+            if (element.FullName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (element.AssetType.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (element.SizeMb.ToString().Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+                return true;
+            //if ($"{element.Number} {element.Position} {element.Molar}".Contains(searchString))
+            //    return true;
+            return false;
+
+        });
+
+        return new TableData<GridFileListItem>
+            {
+                Items = items,
+                TotalItems = items.Count()
+            };
+    }
+    
+    private void OnSearch(string text)
+    {
+        _searchString = text;
+        table.ReloadServerData();
     }
 
     private async Task CopyDialog()
