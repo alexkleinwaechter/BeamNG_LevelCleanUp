@@ -110,7 +110,7 @@ namespace etsmaterialgen
                 beam.Name = matEts.Alias;
                 beam.Class = "Material";
                 beam.MapTo = matEts.Alias;
-                beam.PersistentId = Guid.NewGuid();
+                beam.PersistentId = Guid.NewGuid().ToString();
                 var stage = new MaterialStage();
                 double diffuseColorDefault = 0.800000012;
                 stage.DiffuseColor = new List<double> { diffuseColorDefault, diffuseColorDefault, diffuseColorDefault, 1 };
