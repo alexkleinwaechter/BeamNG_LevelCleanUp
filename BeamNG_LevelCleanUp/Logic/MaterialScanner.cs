@@ -44,7 +44,9 @@ namespace BeamNG_LevelCleanUp.Logic
                         {
                             var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
                             material.MatJsonFileLocation = _matJsonPath;
-                            //if (material.Name == "shawn2") Debugger.Break();
+
+                            //if (material.Name == "curbs_track") Debugger.Break();
+
                             if (string.IsNullOrEmpty(material.Name) && !string.IsNullOrEmpty(material.InternalName))
                             {
                                 material.Name = material.InternalName;

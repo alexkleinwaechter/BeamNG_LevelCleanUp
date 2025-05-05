@@ -8,7 +8,7 @@ namespace BeamNG_LevelCleanUp.Objects
         public string InternalName { get; set; } = string.Empty;
         public string Class { get; set; } = string.Empty;
         public string MapTo { get; set; } = string.Empty;
-        public Guid PersistentId { get; set; }
+        public string PersistentId { get; set; } = string.Empty;
         [JsonPropertyName("Stages")]
         public List<MaterialStage> Stages { get; set; }
         public List<string> CubeFace { get; set; }
