@@ -11,6 +11,7 @@ You can load a zipped map and let the tool search for orphaned files and assets 
 
 ### Rename Map
 You can load a zipped map and then change the name in the file system. This is important if you want to see this map beside the original one. If you customized the industrial level for example and want to have your own customized level beside industrial, you could rename it with industrial_larry :) You can change the shown name in the map overview, too. After renaming you can build a new zipfile with the tool and you are ready to go.
+The "Rename Map" feature automatically detects changes you have made in world editor and asks you if you want to add them to yor renamed map.
 
 ### Copy Assets (Experimental)
 You can load a zipped map you want to copy assets from and a zipped map you want to have the assets. At the moment the tool allows to copy decalroads, decals and collada assets (dae files). You get a list of all the assets and can select the ones you want to copy. No need anymore for copying the whole folders from the desired maps. The tool copies only the needed materials and places them in a dedicated folder per assettype starting with a "MT_" for Mapping-tools.
