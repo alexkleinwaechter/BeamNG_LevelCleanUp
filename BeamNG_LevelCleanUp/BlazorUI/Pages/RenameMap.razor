@@ -16,20 +16,20 @@
             <MudExpansionPanels @ref="FileSelect">
                 <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
-                                         Description="The game install directory. If empty some features are missing.">
+                    Description="The game install directory. If empty some features are missing.">
                     </FileSelectComponent>
                 </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
                     <FileSelectComponent OnFileSelected="FileSelected"
-                                         Description="Always use a copy of your project."
-                                         Disabled="@_fileSelectDisabled">
+                    Description="Always use a copy of your project."
+                    Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
-                                   ValueChanged="OnVanillaSourceSelected"
-                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                         @foreach (var item in _vanillaLevels)
+                        ValueChanged="OnVanillaSourceSelected"
+                        Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                            @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
                             }
@@ -52,7 +52,7 @@
                         {
                             <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
-                                </MudListItem>
+                            </MudListItem>
                         }
                     }
                 </MudList>
@@ -79,12 +79,12 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                                @bind-Value="_compressionLevel">
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-                     </MudSelect>
+                    @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                    </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
@@ -181,9 +181,53 @@
                 _levelName = Reader.GetLevelName();
                 _renameCurrentName = _levelName;
             });
+
         _fileSelectDisabled = false;
+        var customChangesChecker = new CustomChangesChecker(_levelName, _levelPath);
+        var hasChanges = customChangesChecker.HasCustomChanges();
+        if (hasChanges)
+        {
+            await CopyCustomChangesDialog(customChangesChecker);
+        }
     }
 
+    private async Task CopyCustomChangesDialog(CustomChangesChecker customChangesChecker) 
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true };
+        var parameters = new DialogParameters();
+        parameters.Add("ContentText", $"A level with the same name {_levelName} was found in the BeamNG userfolder. You may have made changes to the map. If so, should these changes be applied?");
+        parameters.Add("ButtonText", "Yes");
+        parameters.Add("Color", Color.Warning);
+        var dialog = await DialogService.ShowAsync<SimpleDialog>("Custom changes detected", parameters, options);
+        var result = await dialog.Result;
+        if (!result.Canceled)
+        {
+            _staticSnackbar = Snackbar.Add($"Copying custom changes to selected level. Please be patient.", Severity.Normal, config =>
+            {
+                config.VisibleStateDuration = int.MaxValue;
+            });
+            try
+            {
+                await Task.Run(() =>
+                {
+                    customChangesChecker.CopyChangesToUnpacked();
+                });
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Remove(_staticSnackbar);
+                ShowException(ex);
+            }
+
+            Snackbar.Remove(_staticSnackbar);
+            Snackbar.Add($"Copying custom changes finished.", Severity.Success);
+            _staticSnackbar = Snackbar.Add($"If you want to revert {_levelName} to vanilla again, just delete the folder {customChangesChecker.GetLevelFolderPathChanges()}", Severity.Info, config =>
+            {
+                config.VisibleStateDuration = int.MaxValue;
+                config.CloseAfterNavigation = true;
+            });
+        }
+    }
 
     protected void SetBeamInstallDir(string file)
     {
