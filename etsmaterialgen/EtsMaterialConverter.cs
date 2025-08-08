@@ -42,6 +42,11 @@ namespace etsmaterialgen
             {
                 fiMaterials.MoveTo($"{fiMaterials.FullName}.{DateTime.Now.Ticks}.bak");
             }
+            
+            if (!Directory.Exists(fiMaterials.DirectoryName))
+            {
+                Directory.CreateDirectory(fiMaterials.DirectoryName);
+            }
 
             File.WriteAllText(_materialsJson, newMatJson);
         }
