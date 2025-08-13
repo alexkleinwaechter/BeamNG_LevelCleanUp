@@ -52,6 +52,21 @@ Never use this tool on your working project files. Always make a copy and use it
 - Copy forest, prefab and terrain assets from other maps to your project
 - Convert content of missiongroup folder to forest items (DONE!)
 
+## Developer Documentation
+
+For developers interested in contributing or understanding the codebase:
+
+- **[Developer Guide](DEVELOPER.md)** - Comprehensive development documentation
+- **[Setup Guide](docs/SETUP.md)** - Development environment setup
+- **[Contributing Guidelines](docs/CONTRIBUTING.md)** - How to contribute
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design and patterns
+- **[API Documentation](docs/API.md)** - Detailed API reference
+- **[Documentation Index](docs/README.md)** - Complete documentation overview
+
+## Contributing
+
+Contributions are welcome! Please read the [Contributing Guidelines](docs/CONTRIBUTING.md) and [Development Setup Guide](docs/SETUP.md) to get started.
+
 ## Not working
 - Map Shrinker: maps linking to cdae files instead of dae files. Since I can't disassemble cdae files it is not possible to get the materiallist out of them. Tokyo's Shuto Expressway will fail in a great way bcause of that. As long as you provide the dae file along the cdae file in the same directory the tool will work and delete the dae files later on.
 
