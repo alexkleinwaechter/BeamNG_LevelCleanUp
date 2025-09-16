@@ -21,17 +21,28 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal bool HasCustomChanges()
         {
-            // Pfad zum Benutzerordner
-            string userFolderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BeamNG.drive");
+            // Neuer Pfad zum Benutzerordner mit "current" Unterordner
+            string newUserFolderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BeamNG", "BeamNG.drive", "current");
+            
+            // Prüfen ob der neue Pfad existiert
+            if (Directory.Exists(newUserFolderPath))
+            {
+                // Neuer Pfad verwenden
+                _levelFolderPathChanges = Path.Combine(newUserFolderPath, "levels", _levelName);
+                return Directory.Exists(_levelFolderPathChanges);
+            }
 
-            // Überprüfen, ob der Benutzerordner existiert
-            if (!Directory.Exists(userFolderPath))
+            // Fallback: Alter Pfad für ältere Versionen
+            string oldUserFolderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BeamNG.drive");
+
+            // Überprüfen, ob der alte Benutzerordner existiert
+            if (!Directory.Exists(oldUserFolderPath))
             {
                 return false;
             }
 
             // Alle Unterordner abrufen und die höchste Versionsnummer finden
-            var versionFolders = Directory.GetDirectories(userFolderPath)
+            var versionFolders = Directory.GetDirectories(oldUserFolderPath)
                 .Select(Path.GetFileName)
                 .Where(folderName => Version.TryParse(folderName, out _)) // Nur gültige Versionsordner
                 .OrderByDescending(folderName => Version.Parse(folderName)) // Absteigend sortieren
@@ -43,7 +54,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
 
             // Höchste Versionsnummer abrufen
-            string highestVersionFolder = Path.Combine(userFolderPath, versionFolders.First());
+            string highestVersionFolder = Path.Combine(oldUserFolderPath, versionFolders.First());
 
             // Überprüfen, ob der Ordner "/levels/[_levelName]" existiert
             _levelFolderPathChanges = Path.Combine(highestVersionFolder, "levels", _levelName);
