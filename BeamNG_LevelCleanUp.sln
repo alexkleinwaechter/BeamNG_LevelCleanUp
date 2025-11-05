@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "etsmaterialgen", "etsmateri
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "meta4downloader", "meta4downloader\meta4downloader.csproj", "{9707499A-7DFD-4DE4-AE73-8BAE8520772A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImportTerrainDefaults", "ImportTerrainDefaults\ImportTerrainDefaults.csproj", "{C2434750-5538-45D7-85F4-EE2E9D2AD9C1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{9707499A-7DFD-4DE4-AE73-8BAE8520772A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9707499A-7DFD-4DE4-AE73-8BAE8520772A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9707499A-7DFD-4DE4-AE73-8BAE8520772A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C2434750-5538-45D7-85F4-EE2E9D2AD9C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C2434750-5538-45D7-85F4-EE2E9D2AD9C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C2434750-5538-45D7-85F4-EE2E9D2AD9C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C2434750-5538-45D7-85F4-EE2E9D2AD9C1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
