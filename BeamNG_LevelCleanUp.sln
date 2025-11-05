@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BeamNG_LevelCleanUp", "Beam
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "etsmaterialgen", "etsmaterialgen\etsmaterialgen.csproj", "{2C94725F-473F-4A02-875F-D685A9DCC853}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "meta4downloader", "meta4downloader\meta4downloader.csproj", "{9707499A-7DFD-4DE4-AE73-8BAE8520772A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{2C94725F-473F-4A02-875F-D685A9DCC853}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2C94725F-473F-4A02-875F-D685A9DCC853}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2C94725F-473F-4A02-875F-D685A9DCC853}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9707499A-7DFD-4DE4-AE73-8BAE8520772A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9707499A-7DFD-4DE4-AE73-8BAE8520772A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9707499A-7DFD-4DE4-AE73-8BAE8520772A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9707499A-7DFD-4DE4-AE73-8BAE8520772A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
