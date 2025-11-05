@@ -1,20 +1,28 @@
 ﻿using meta4downloader;
 
-// See https://aka.ms/new-console-template for more information
-Console.WriteLine("Hello, World!");
-
 if (args.Length < 2)
 {
-    Console.WriteLine("Usage: meta4downloader <path-to-meta4-file> <target-directory>");
+    Console.WriteLine("Usage: meta4downloader <path-to-meta4-file> <target-directory> [max-concurrent-downloads]");
     Console.WriteLine();
     Console.WriteLine("Arguments:");
-    Console.WriteLine("  <path-to-meta4-file>  Path to the .meta4 XML file");
-    Console.WriteLine("  <target-directory>    Directory where files will be downloaded");
+    Console.WriteLine("  <path-to-meta4-file>        Path to the .meta4 XML file");
+    Console.WriteLine("  <target-directory>          Directory where files will be downloaded");
+    Console.WriteLine("  [max-concurrent-downloads]  Maximum number of files to download simultaneously (default: 4)");
     return 1;
 }
 
 var meta4FilePath = args[0];
 var targetDirectory = args[1];
+var maxConcurrentDownloads = 4; // Default value
+
+if (args.Length >= 3)
+{
+    if (!int.TryParse(args[2], out maxConcurrentDownloads) || maxConcurrentDownloads < 1)
+    {
+        Console.WriteLine("Error: max-concurrent-downloads must be a positive integer.");
+        return 1;
+    }
+}
 
 try
 {
@@ -44,6 +52,7 @@ try
 
     Console.WriteLine($"Found {files.Count} file(s) to download.");
     Console.WriteLine($"Target directory: {targetDirectory}");
+    Console.WriteLine($"Max concurrent downloads: {maxConcurrentDownloads}");
     Console.WriteLine();
 
     // Calculate total size
@@ -59,7 +68,6 @@ try
     var downloadedCount = 0;
 
     // Use semaphore to limit concurrent downloads
-    var maxConcurrentDownloads = 4;
     using var semaphore = new SemaphoreSlim(maxConcurrentDownloads);
     var lockObj = new object();
 
@@ -118,6 +126,8 @@ try
                     failedCount++;
                 }
             }
+
+            return result;
         }
         finally
         {
