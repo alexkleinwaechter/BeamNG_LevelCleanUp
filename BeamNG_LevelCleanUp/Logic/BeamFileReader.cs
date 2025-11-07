@@ -164,6 +164,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyAssetDecal();
             CopyDae();
             CopyTerrainMaterials();
+            CopyGroundCovers();
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
         }
 
@@ -628,6 +629,25 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, 
                     $"No terrain materials found in {_levelNameCopyFrom} at {terrainMaterialsPath}");
+            }
+        }
+
+        internal void CopyGroundCovers()
+        {
+            // Fix path - should use _namePathCopyFrom instead of reconstructing from _levelPathCopyFrom
+            var vegetationPath = Path.Join(_namePathCopyFrom, "main", "MissionGroup", "Level_object", "vegetation", "items.level.json");
+            var vegetationFile = new FileInfo(vegetationPath);
+
+            if (vegetationFile.Exists)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scanning groundcovers from {_levelNameCopyFrom}");
+                var groundCoverScanner = new GroundCoverCopyScanner(_levelPathCopyFrom, MaterialsJsonCopy, CopyAssets);
+                groundCoverScanner.ScanGroundCovers(vegetationFile);
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                  $"No vegetation items.level.json found in {_levelNameCopyFrom} at {vegetationPath}");
             }
         }
 

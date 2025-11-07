@@ -6,6 +6,7 @@
         Decal = 1,
         Dae = 2,
         Terrain = 3,
+        GroundCover = 4,
     }
     public class CopyAsset
     {
@@ -23,5 +24,6 @@
         public List<MaterialsDae> MaterialsDae { get; set; }
         public string TerrainMaterialName { get; set; }
         public string TerrainMaterialInternalName { get; set; }
+        public GroundCover GroundCoverData { get; set; }
     }
 }
