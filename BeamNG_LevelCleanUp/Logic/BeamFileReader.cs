@@ -633,7 +633,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
-            var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple", "_heightmap", "_minimap", ".link" };
+            var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple", "_heightmap", "_minimap" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 

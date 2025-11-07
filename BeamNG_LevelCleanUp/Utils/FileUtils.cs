@@ -13,15 +13,33 @@
 
             var fileInfo = new FileInfo(filePath);
             var fileToCheck = new FileInfo(filePath);
+            
+            // Check if the file exists as-is
             if (fileInfo.Exists)
             {
                 return fileInfo;
             }
 
+            // Check if a .link file exists for this path (BeamNG link system)
+            var linkFile = new FileInfo(filePath + ".link");
+            if (linkFile.Exists)
+            {
+                return linkFile;
+            }
+
+            // Try different image extensions
             foreach (var ext in imageextensions)
             {
-                var ddsPath = Path.ChangeExtension(filePath, ext);
-                fileToCheck = new FileInfo(ddsPath);
+                var imagePath = Path.ChangeExtension(filePath, ext);
+                fileToCheck = new FileInfo(imagePath);
+                if (fileToCheck.Exists)
+                {
+                    return fileToCheck;
+                }
+                
+                // Also check for .link version of each extension
+                var linkPath = imagePath + ".link";
+                fileToCheck = new FileInfo(linkPath);
                 if (fileToCheck.Exists)
                 {
                     return fileToCheck;

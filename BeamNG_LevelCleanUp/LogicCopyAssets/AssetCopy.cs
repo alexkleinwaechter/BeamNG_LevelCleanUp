@@ -235,42 +235,81 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         var extractPath = fileParts[0];
                         var filePathEnd = fileParts[1];
 
+                        // Check if we're looking for a .link file
+                        if (sourceFile.EndsWith(".link", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                            if (destinationFilePath != null)
+                            {
+                                File.Copy(destinationFilePath, targetFile, true);
+                                return;
+                            }
+                        }
+
                         //to Do: check if filepath has image extension, if not attach png
-                        var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg" };
+                        var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", ".link" };
                         if (!imageextensions.Any(x => filePathEnd.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
                         {
                             filePathEnd = filePathEnd + ".png";
                         }
 
-                        var destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        if (destinationFilePath == null)
+                        var destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        if (destinationFilePath2 == null)
                         {
                             filePathEnd = Path.ChangeExtension(filePathEnd, ".dds");
-                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
                         }
 
-                        if (destinationFilePath == null)
+                        if (destinationFilePath2 == null)
                         {
-                            filePathEnd = Path.ChangeExtension(filePathEnd, ".png");
-                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                            // Try .link version of .dds
+                            filePathEnd = filePathEnd + ".link";
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
                         }
 
-                        if (destinationFilePath == null)
+                        if (destinationFilePath2 == null)
                         {
-                            filePathEnd = Path.ChangeExtension(filePathEnd, ".jpg");
-                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                            filePathEnd = Path.ChangeExtension(filePathEnd.Replace(".link", ""), ".png");
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
                         }
 
-                        if (destinationFilePath == null)
+                        if (destinationFilePath2 == null)
                         {
-                            filePathEnd = Path.ChangeExtension(filePathEnd, ".jpeg");
-                            destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                            // Try .link version of .png
+                            filePathEnd = filePathEnd + ".link";
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
                         }
 
-                        if (destinationFilePath != null)
+                        if (destinationFilePath2 == null)
                         {
-                            targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath));
-                            File.Copy(destinationFilePath, targetFile, true);
+                            filePathEnd = Path.ChangeExtension(filePathEnd.Replace(".link", ""), ".jpg");
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath2 == null)
+                        {
+                            // Try .link version of .jpg
+                            filePathEnd = filePathEnd + ".link";
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath2 == null)
+                        {
+                            filePathEnd = Path.ChangeExtension(filePathEnd.Replace(".link", ""), ".jpeg");
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath2 == null)
+                        {
+                            // Try .link version of .jpeg
+                            filePathEnd = filePathEnd + ".link";
+                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
+                        }
+
+                        if (destinationFilePath2 != null)
+                        {
+                            targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath2));
+                            File.Copy(destinationFilePath2, targetFile, true);
                         }
                         else
                         {
