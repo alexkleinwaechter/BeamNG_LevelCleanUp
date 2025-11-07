@@ -30,7 +30,8 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyDae = 17,
             FacilityJson = 18,
             ChangeHeightMissionGroups = 19,
-            ChangeHeightDecals = 20
+            ChangeHeightDecals = 20,
+            CopyTerrainMaterials = 21
         }
         static System.Collections.Specialized.StringCollection log = new System.Collections.Specialized.StringCollection();
         private static string _levelPath { get; set; }
@@ -162,6 +163,7 @@ namespace BeamNG_LevelCleanUp.Logic
             CopyAssetRoad();
             CopyAssetDecal();
             CopyDae();
+            CopyTerrainMaterials();
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
         }
 
@@ -606,6 +608,29 @@ namespace BeamNG_LevelCleanUp.Logic
             }
         }
 
+        internal void CopyTerrainMaterials()
+        {
+            var terrainMaterialsPath = Path.Join(_namePathCopyFrom, Constants.Terrains, "main.materials.json");
+            var terrainMaterialsFile = new FileInfo(terrainMaterialsPath);
+            
+            if (terrainMaterialsFile.Exists)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scanning terrain materials from {_levelNameCopyFrom}");
+                var terrainScanner = new TerrainCopyScanner(
+                    terrainMaterialsFile.FullName, 
+                    _levelPathCopyFrom, 
+                    _namePath, 
+                    MaterialsJsonCopy, 
+                    CopyAssets);
+                terrainScanner.ScanTerrainMaterials();
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                    $"No terrain materials found in {_levelNameCopyFrom} at {terrainMaterialsPath}");
+            }
+        }
+
         internal void ConvertToForest(List<Asset> assets)
         {
             var forestScanner = ReadForest();
@@ -782,6 +807,28 @@ namespace BeamNG_LevelCleanUp.Logic
                         case ReadTypeEnum.ChangeHeightDecals:
                             var positionScanner2 = new PositionScanner(_xOffset, _yOffset, _zOffset, fi.FullName, new List<string>());
                             positionScanner2.ScanDecals();
+                            break;
+                        case ReadTypeEnum.CopyTerrainMaterials:
+                            var terrainMaterialScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, _namePath, MaterialsJsonCopy, new List<Asset>(), new List<string>());
+                            terrainMaterialScanner.ScanMaterialsJsonFile();
+                            foreach (var item in MaterialsJsonCopy.Where(x => x.IsRoadAndPath))
+                            {
+                                if (!CopyAssets.Any(x => x.CopyAssetType == CopyAssetType.Road && x.Name == item.Name))
+                                {
+                                    var asset = new CopyAsset
+                                    {
+                                        CopyAssetType = CopyAssetType.Road,
+                                        Name = item.Name,
+                                        Materials = new List<MaterialJson> { item },
+                                        SourceMaterialJsonPath = fi.FullName,
+                                        TargetPath = Path.Join(_namePath, Constants.RouteRoad, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                                    };
+                                    asset.SizeMb = Math.Round((asset.Materials.SelectMany(x => x.MaterialFiles).Select(y => y.File).Sum(x => x.Exists ? x.Length : 0) / 1024f) / 1024f, 2);
+                                    asset.Duplicate = (asset.Materials.FirstOrDefault() != null && asset.Materials.FirstOrDefault().IsDuplicate) ? true : false;
+                                    asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
+                                    CopyAssets.Add(asset);
+                                }
+                            }
                             break;
                         default:
                             break;

@@ -5,6 +5,7 @@
         Road = 0,
         Decal = 1,
         Dae = 2,
+        Terrain = 3,
     }
     public class CopyAsset
     {
@@ -20,5 +21,7 @@
         public double SizeMb { get; set; }
         public string DaeFilePath { get; set; }
         public List<MaterialsDae> MaterialsDae { get; set; }
+        public string TerrainMaterialName { get; set; }
+        public string TerrainMaterialInternalName { get; set; }
     }
 }
