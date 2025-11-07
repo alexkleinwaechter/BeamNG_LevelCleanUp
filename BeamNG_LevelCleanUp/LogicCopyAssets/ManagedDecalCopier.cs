@@ -35,13 +35,13 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         {
             var jsonObject = new JsonObject(
                 new[]
-     {
-    KeyValuePair.Create<string, JsonNode?>(
-             decalData.Name,
-          JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(decalData, BeamJsonOptions.GetJsonSerializerOptions()))
-      ),
-     }
-       );
+                 {
+                KeyValuePair.Create<string, JsonNode?>(
+                         decalData.Name,
+                      JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(decalData, BeamJsonOptions.GetJsonSerializerOptions()))
+                  ),
+                 }
+                   );
             File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
         }
 

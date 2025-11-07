@@ -36,19 +36,19 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         /// Loads scanned groundcover JSON lines from BeamFileReader
         /// </summary>
         public void LoadGroundCoverJsonLines(List<string> groundCoverJsonLines)
-      {
-        _allGroundCoverJsonLines = groundCoverJsonLines ?? new List<string>();
-   PubSubChannel.SendMessage(PubSubMessageType.Info,
-      $"Loaded {_allGroundCoverJsonLines.Count} groundcover(s) for potential copying");
- }
+        {
+            _allGroundCoverJsonLines = groundCoverJsonLines ?? new List<string>();
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+               $"Loaded {_allGroundCoverJsonLines.Count} groundcover(s) for potential copying");
+        }
 
         /// <summary>
-    /// Loads scanned materials from BeamFileReader for material lookup
+        /// Loads scanned materials from BeamFileReader for material lookup
         /// </summary>
         public void LoadMaterialsJsonCopy(List<MaterialJson> materialsJsonCopy)
         {
             _materialsJsonCopy = materialsJsonCopy ?? new List<MaterialJson>();
-   }
+        }
 
         /// <summary>
         /// Stores groundcover JSON lines during scanning phase for later filtering and copying
@@ -85,192 +85,192 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
             int copiedCount = 0;
             foreach (var jsonLine in _allGroundCoverJsonLines)
-                    {
-             try
-                    {
-              var jsonNode = JsonNode.Parse(jsonLine);
-                   if (jsonNode == null) continue;
-
-              // Check if this groundcover has any Types that reference our terrain materials
-                   var typesArray = jsonNode["Types"] as JsonArray;
-                   if (typesArray == null) continue;
-
-                // Filter types to only those matching our terrain materials
-                       var matchingTypes = new JsonArray();
-                 bool hasMatchingTypes = false;
-
-                 foreach (var typeNode in typesArray)
- {
-     if (typeNode == null) continue;
-
-    var layer = typeNode["layer"]?.GetValue<string>();
-        if (!string.IsNullOrEmpty(layer) && terrainInternalNames.Contains(layer))
-      {
-           // Clone by re-parsing JSON (DeepClone not available in .NET 7)
-matchingTypes.Add(JsonNode.Parse(typeNode.ToJsonString()));
-      hasMatchingTypes = true;
-     }
-    }
-
-               if (hasMatchingTypes)
-  {
-       // Create a filtered groundcover with only matching types
-        // Clone by re-parsing JSON (DeepClone not available in .NET 7)
-    var filteredGroundCover = JsonNode.Parse(jsonNode.ToJsonString());
-      filteredGroundCover["Types"] = matchingTypes;
-
-                 // Copy this groundcover with filtered types
-                if (CopyFilteredGroundCover(filteredGroundCover.ToJsonString()))
-              {
-                  copiedCount++;
-                   }
-                }
-             }
-              catch (Exception ex)
-             {
-                  PubSubChannel.SendMessage(PubSubMessageType.Warning,
-               $"Error processing groundcover: {ex.Message}");
-                }
-             }
-
-              if (copiedCount > 0)
             {
-              PubSubChannel.SendMessage(PubSubMessageType.Info,
-                 $"Copied {copiedCount} groundcover(s) for terrain materials");
-          }
+                try
+                {
+                    var jsonNode = JsonNode.Parse(jsonLine);
+                    if (jsonNode == null) continue;
+
+                    // Check if this groundcover has any Types that reference our terrain materials
+                    var typesArray = jsonNode["Types"] as JsonArray;
+                    if (typesArray == null) continue;
+
+                    // Filter types to only those matching our terrain materials
+                    var matchingTypes = new JsonArray();
+                    bool hasMatchingTypes = false;
+
+                    foreach (var typeNode in typesArray)
+                    {
+                        if (typeNode == null) continue;
+
+                        var layer = typeNode["layer"]?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(layer) && terrainInternalNames.Contains(layer))
+                        {
+                            // Clone by re-parsing JSON (DeepClone not available in .NET 7)
+                            matchingTypes.Add(JsonNode.Parse(typeNode.ToJsonString()));
+                            hasMatchingTypes = true;
+                        }
+                    }
+
+                    if (hasMatchingTypes)
+                    {
+                        // Create a filtered groundcover with only matching types
+                        // Clone by re-parsing JSON (DeepClone not available in .NET 7)
+                        var filteredGroundCover = JsonNode.Parse(jsonNode.ToJsonString());
+                        filteredGroundCover["Types"] = matchingTypes;
+
+                        // Copy this groundcover with filtered types
+                        if (CopyFilteredGroundCover(filteredGroundCover.ToJsonString()))
+                        {
+                            copiedCount++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                 $"Error processing groundcover: {ex.Message}");
+                }
+            }
+
+            if (copiedCount > 0)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                   $"Copied {copiedCount} groundcover(s) for terrain materials");
+            }
+        }
+
+        /// <summary>
+        /// Copies a single groundcover with already filtered types
+        /// </summary>
+        private bool CopyFilteredGroundCover(string filteredJsonLine)
+        {
+            try
+            {
+                var jsonNode = JsonNode.Parse(filteredJsonLine);
+                if (jsonNode == null) return false;
+
+                var name = jsonNode["name"]?.GetValue<string>() ?? "Unknown";
+                var materialName = jsonNode["material"]?.GetValue<string>();
+
+                // Copy the groundcover's material if it exists
+                if (!string.IsNullOrEmpty(materialName) && _materialsJsonCopy != null)
+                {
+                    var material = _materialsJsonCopy.FirstOrDefault(m =>
+                         m.Name.Equals(materialName, StringComparison.OrdinalIgnoreCase));
+
+                    if (material != null)
+                    {
+                        // Create a CopyAsset for the material and copy it
+                        var materialCopyAsset = new CopyAsset
+                        {
+                            CopyAssetType = CopyAssetType.Terrain,
+                            Name = material.Name,
+                            Materials = new List<MaterialJson> { material },
+                            TargetPath = Path.Join(_namePath, Constants.GroundCover, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                        };
+
+                        if (!_materialCopier.Copy(materialCopyAsset))
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                         $"Failed to copy material {materialName} for GroundCover {name}");
+                        }
+                    }
+                    else
+                    {
+                        PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                     $"Material {materialName} not found for GroundCover {name}");
+                    }
                 }
 
-       /// <summary>
-     /// Copies a single groundcover with already filtered types
-     /// </summary>
-      private bool CopyFilteredGroundCover(string filteredJsonLine)
-     {
-       try
-         {
-         var jsonNode = JsonNode.Parse(filteredJsonLine);
-  if (jsonNode == null) return false;
+                // Update persistentId with new GUID
+                jsonNode["persistentId"] = Guid.NewGuid().ToString();
 
-    var name = jsonNode["name"]?.GetValue<string>() ?? "Unknown";
-var materialName = jsonNode["material"]?.GetValue<string>();
+                // Update Types array layers and shapeFilenames
+                if (jsonNode["Types"] is JsonArray typesArray)
+                {
+                    var levelName = Path.GetFileName(_namePath);
 
-        // Copy the groundcover's material if it exists
-        if (!string.IsNullOrEmpty(materialName) && _materialsJsonCopy != null)
-  {
-var material = _materialsJsonCopy.FirstOrDefault(m => 
-     m.Name.Equals(materialName, StringComparison.OrdinalIgnoreCase));
+                    foreach (var typeNode in typesArray)
+                    {
+                        if (typeNode == null) continue;
 
-       if (material != null)
-         {
-  // Create a CopyAsset for the material and copy it
-        var materialCopyAsset = new CopyAsset
-       {
-         CopyAssetType = CopyAssetType.Terrain,
-      Name = material.Name,
-        Materials = new List<MaterialJson> { material },
-  TargetPath = Path.Join(_namePath, Constants.GroundCover, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
-   };
+                        // Update layer name with suffix
+                        if (typeNode["layer"] != null)
+                        {
+                            var originalLayer = typeNode["layer"]?.GetValue<string>();
+                            if (!string.IsNullOrEmpty(originalLayer))
+                            {
+                                typeNode["layer"] = $"{originalLayer}_{_levelNameCopyFrom}";
+                            }
+                        }
 
-   if (!_materialCopier.Copy(materialCopyAsset))
-    {
-       PubSubChannel.SendMessage(PubSubMessageType.Warning,
-    $"Failed to copy material {materialName} for GroundCover {name}");
-     }
-      }
-   else
-      {
-      PubSubChannel.SendMessage(PubSubMessageType.Warning,
-   $"Material {materialName} not found for GroundCover {name}");
-       }
-     }
+                        // Update shapeFilename path
+                        if (typeNode["shapeFilename"] != null)
+                        {
+                            var originalShapeFilename = typeNode["shapeFilename"]?.GetValue<string>();
+                            if (!string.IsNullOrEmpty(originalShapeFilename))
+                            {
+                                var fileName = Path.GetFileName(originalShapeFilename);
+                                var newPath = $"/levels/{levelName}/art/shapes/groundcover/{Constants.MappingToolsPrefix}{_levelNameCopyFrom}/{fileName}";
+                                typeNode["shapeFilename"] = newPath;
 
-          // Update persistentId with new GUID
-     jsonNode["persistentId"] = Guid.NewGuid().ToString();
+                                // Copy the DAE file
+                                try
+                                {
+                                    CopyGroundCoverDaeFile(originalShapeFilename);
+                                }
+                                catch (Exception ex)
+                                {
+                                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"Failed to copy DAE file {originalShapeFilename}: {ex.Message}");
+                                }
+                            }
+                        }
+                    }
+                }
 
-          // Update Types array layers and shapeFilenames
-          if (jsonNode["Types"] is JsonArray typesArray)
-              {
- var levelName = Path.GetFileName(_namePath);
+                // Write to target
+                WriteGroundCoverToTarget(jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOneLineOptions()), name);
 
- foreach (var typeNode in typesArray)
-        {
-         if (typeNode == null) continue;
-
-        // Update layer name with suffix
-   if (typeNode["layer"] != null)
-        {
-       var originalLayer = typeNode["layer"]?.GetValue<string>();
-         if (!string.IsNullOrEmpty(originalLayer))
-           {
-         typeNode["layer"] = $"{originalLayer}_{_levelNameCopyFrom}";
-             }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+               $"Error copying filtered groundcover: {ex.Message}");
+                return false;
+            }
         }
 
-         // Update shapeFilename path
- if (typeNode["shapeFilename"] != null)
-      {
-     var originalShapeFilename = typeNode["shapeFilename"]?.GetValue<string>();
-      if (!string.IsNullOrEmpty(originalShapeFilename))
-       {
-   var fileName = Path.GetFileName(originalShapeFilename);
-    var newPath = $"/levels/{levelName}/art/shapes/groundcover/{Constants.MappingToolsPrefix}{_levelNameCopyFrom}/{fileName}";
-     typeNode["shapeFilename"] = newPath;
-
-       // Copy the DAE file
-  try
-           {
-   CopyGroundCoverDaeFile(originalShapeFilename);
-      }
-       catch (Exception ex)
-     {
-      PubSubChannel.SendMessage(PubSubMessageType.Warning,
-  $"Failed to copy DAE file {originalShapeFilename}: {ex.Message}");
-        }
-      }
-        }
-    }
-   }
-
-        // Write to target
-       WriteGroundCoverToTarget(jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOneLineOptions()), name);
-
- return true;
- }
-      catch (Exception ex)
-  {
-     PubSubChannel.SendMessage(PubSubMessageType.Error,
-    $"Error copying filtered groundcover: {ex.Message}");
-      return false;
-     }
-        }
-
-  /// <summary>
+        /// <summary>
         /// Copies a DAE file referenced by groundcover
-  /// </summary>
-  private void CopyGroundCoverDaeFile(string daeFilePath)
-  {
-       // Implementation to copy DAE file (reuse existing logic)
-    var fileName = Path.GetFileName(daeFilePath);
-    var targetPath = Path.Join(_namePath, Constants.GroundCover, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
-       Directory.CreateDirectory(targetPath);
+        /// </summary>
+        private void CopyGroundCoverDaeFile(string daeFilePath)
+        {
+            // Implementation to copy DAE file (reuse existing logic)
+            var fileName = Path.GetFileName(daeFilePath);
+            var targetPath = Path.Join(_namePath, Constants.GroundCover, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+            Directory.CreateDirectory(targetPath);
 
- var targetFilePath = Path.Join(targetPath, fileName);
+            var targetFilePath = Path.Join(targetPath, fileName);
 
-    // Use FileCopyHandler to copy the file
-   // Note: This assumes the source path needs to be resolved
-   // You may need to adjust based on how paths are structured
-     }
+            // Use FileCopyHandler to copy the file
+            // Note: This assumes the source path needs to be resolved
+            // You may need to adjust based on how paths are structured
+        }
 
-   // Keep existing Copy method for backward compatibility if needed
-public bool Copy(CopyAsset item)
-  {
-          // This method might no longer be needed since groundcovers are now copied automatically
-   // But keeping it for now in case there are other use cases
+        // Keep existing Copy method for backward compatibility if needed
+        public bool Copy(CopyAsset item)
+        {
+            // This method might no longer be needed since groundcovers are now copied automatically
+            // But keeping it for now in case there are other use cases
             if (item.GroundCoverData == null)
-   {
-     PubSubChannel.SendMessage(PubSubMessageType.Warning,
-    $"GroundCover data is null for {item.Name}");
-     return true;
-   }
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+               $"GroundCover data is null for {item.Name}");
+                return true;
+            }
 
             try
             {
@@ -448,37 +448,54 @@ public bool Copy(CopyAsset item)
 
         private void WriteGroundCoverToTarget(string jsonLine, string groundCoverName)
         {
-            // Target path: /main/MissionGroup/Level_object/vegetation/items.level.json
             var targetDir = Path.Join(_namePath, "main", "MissionGroup", "Level_object", "vegetation");
-      Directory.CreateDirectory(targetDir);
+            Directory.CreateDirectory(targetDir);
 
-    var targetFilePath = Path.Join(targetDir, "items.level.json");
-    var targetFile = new FileInfo(targetFilePath);
+            var targetFilePath = Path.Join(targetDir, "items.level.json");
+            var targetFile = new FileInfo(targetFilePath);
 
-    if (!targetFile.Exists)
- {
-          // Create new file with this entry
-          File.WriteAllText(targetFile.FullName, jsonLine);
-     }
-      else
+            if (!targetFile.Exists)
             {
-        // Check if file ends with newline to avoid double newlines
-         var existingContent = File.ReadAllText(targetFile.FullName);
-           var needsNewline = !existingContent.EndsWith(Environment.NewLine) && !string.IsNullOrEmpty(existingContent);
-        
-       // Append to existing file
-      if (needsNewline)
-                {
-        File.AppendAllText(targetFile.FullName, Environment.NewLine + jsonLine);
-    }
-      else
-                {
-    File.AppendAllText(targetFile.FullName, jsonLine + Environment.NewLine);
-       }
-      }
+                File.WriteAllText(targetFile.FullName, jsonLine);
+            }
+            else
+            {
+                // Check for duplicate by name
+                var existingLines = File.ReadAllLines(targetFile.FullName);
+                var jsonNode = JsonNode.Parse(jsonLine);
+                var name = jsonNode["name"]?.GetValue<string>();
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-         $"Wrote GroundCover {groundCoverName} to {targetFilePath}");
+                bool isDuplicate = existingLines.Any(line =>
+                {
+                    try
+                    {
+                        var existing = JsonNode.Parse(line);
+                        return existing["name"]?.GetValue<string>() == name;
+                    }
+                    catch { return false; }
+                });
+
+                if (!isDuplicate)
+                {
+                    // Only append if not duplicate
+                    var existingContent = File.ReadAllText(targetFile.FullName);
+                    var needsNewline = !existingContent.EndsWith(Environment.NewLine) && !string.IsNullOrEmpty(existingContent);
+
+                    if (needsNewline)
+                    {
+                        File.AppendAllText(targetFile.FullName, Environment.NewLine + jsonLine);
+                    }
+                    else
+                    {
+                        File.AppendAllText(targetFile.FullName, jsonLine + Environment.NewLine);
+                    }
+                }
+                else
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"GroundCover {name} already exists, skipping");
+                }
+            }
         }
     }
 }
