@@ -200,15 +200,15 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     {
                         baseName = material.Name;
                     }
-                    
+
                     // Suffix the material names
-                    // key: BaseName_LevelName-NewGUID
-                    // name: BaseName_LevelName_NewGUID
+                    // key: BaseName_LevelName
+                    // name: BaseName_LevelName
                     // internalName: BaseInternalName_LevelName (or BaseName_LevelName if no internalName)
                     var baseInternalName = !string.IsNullOrEmpty(material.InternalName) ? material.InternalName : baseName;
                     var newInternalName = $"{baseInternalName}_{levelNameCopyFrom}";
-                    var newMaterialName = $"{baseName}_{levelNameCopyFrom}_{newGuid}";
-                    var newKey = $"{baseName}_{levelNameCopyFrom}-{newGuid}";
+                    var newMaterialName = $"{baseName}_{levelNameCopyFrom}";
+                    var newKey = $"{baseName}_{levelNameCopyFrom}";
 
                     // Parse the material JSON to update it
                     var materialObj = JsonNode.Parse(sourceMaterialNode.Value.ToJsonString());
@@ -241,10 +241,12 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                                     $"Filepath error for terrain texture {material.Name}. Exception:{ex.Message}");
                             }
 
-                            // Update texture path in the material JSON (dynamically for all properties)
-                            var originalPath = GetBeamNgJsonFileName(matFile.File.FullName);
+                            // Update texture path in the material JSON
+                            // Use the original path from JSON (which may have leading slash or not)
+                            var originalPath = matFile.OriginalJsonPath;
                             var newPath = GetBeamNgJsonFileName(targetFullName);
-                            
+    
+                            // Update with the exact original path format
                             UpdateTexturePathsInMaterial(materialObj, originalPath, newPath);
                         }
 
@@ -571,13 +573,21 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
         private string GetBeamNgJsonFileName(string windowsFileName)
         {
-            var targetParts = windowsFileName.ToLowerInvariant().Split($@"\levels\".ToLowerInvariant());
+            // Normalize path separators to forward slashes for comparison
+            var normalizedPath = windowsFileName.Replace(@"\", "/").ToLowerInvariant();
+            
+            var targetParts = normalizedPath.Split("/levels/");
             if (targetParts.Count() < 2)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error in {windowsFileName}. Exception:no levels folder in path.");
                 return string.Empty;
             }
-            return Path.ChangeExtension(Path.Join("levels", targetParts.Last()).Replace(@"\", "/"), null);
+            
+          // Build the BeamNG path format (always starts without leading slash)
+            var beamNgPath = "levels/" + targetParts.Last();
+            
+            // Remove extension
+            return Path.ChangeExtension(beamNgPath, null);
         }
     }
 }

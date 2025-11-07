@@ -113,7 +113,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                             {
                                 File = fi,
                                 MapType = propName,
-                                Missing = !fi.Exists
+                                Missing = !fi.Exists,
+                                OriginalJsonPath = propValue  // Store the original JSON path
                             });
                         }
                     }

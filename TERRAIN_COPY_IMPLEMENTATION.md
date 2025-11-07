@@ -6,8 +6,8 @@ This feature allows users to copy terrain materials from one BeamNG map to anoth
 ## Key Features
 
 ### 1. **Dynamic Material Name Suffixing with GUID**
-- **Key format**: `OriginalName_LevelName-NewGUID` (e.g., `Asphalt_driver_training-07cb1034-51ed-468a-96ff-dd15b02d3eae`)
-- **name property**: `OriginalName_LevelName_NewGUID` (e.g., `Asphalt_driver_training_07cb1034-51ed-468a-96ff-dd15b02d3eae`)
+- **Key format**: `OriginalName_LevelName` (e.g., `Asphalt_driver_training`)
+- **name property**: `OriginalName_LevelName` (e.g., `Asphalt_driver_training`)
 - **internalName property**: `OriginalInternalName_LevelName` (e.g., `Asphalt_driver_training`)
 - **persistentId**: New GUID is generated for each copied material
 - This ensures complete uniqueness and prevents conflicts when copying from multiple sources
@@ -126,7 +126,7 @@ Page route: `/CopyTerrains`
 Terrain materials in BeamNG follow this structure:
 ```json
 {
-  "MaterialName-guid": {
+  "MaterialName": {
     "name": "MaterialName",
     "internalName": "MaterialName",
     "class": "TerrainMaterial",
@@ -141,8 +141,8 @@ Terrain materials in BeamNG follow this structure:
 **Source**: `Asphalt` material from `driver_training` level
 
 **After Copy**:
-- **Key**: `Asphalt_driver_training-a1b2c3d4-e5f6-7890-abcd-ef1234567890`
-- **name**: `Asphalt_driver_training_a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+- **Key**: `Asphalt_driver_training`
+- **name**: `Asphalt_driver_training`
 - **internalName**: `Asphalt_driver_training`
 - **persistentId**: `a1b2c3d4-e5f6-7890-abcd-ef1234567890` (new GUID)
 
