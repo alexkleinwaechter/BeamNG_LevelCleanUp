@@ -403,7 +403,11 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void ReadLevelExtras()
         {
-            var extras = new List<string> { "scenarios", "quickrace", "buslines", "art\\cubemaps" };
+            var extras = new List<string>
+            {
+                "scenarios", "quickrace", "buslines", "art\\cubemaps", "crawls", "perfRecordingCampaths", "camPaths",
+                "dragstrips", "driftSpots", "gameplay", "stagedBuildings", "trafficCameras"
+            };
             foreach (var extra in extras)
             {
                 var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));
@@ -629,7 +633,7 @@ namespace BeamNG_LevelCleanUp.Logic
 
         private static void WalkDirectoryTree(DirectoryInfo root, string filePattern, ReadTypeEnum readTypeEnum)
         {
-            var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple", "_heightmap", "_minimap" };
+            var exclude = new List<string> { ".depth.", ".imposter", "foam", "ripple", "_heightmap", "_minimap", ".link" };
             FileInfo[] files = null;
             DirectoryInfo[] subDirs = null;
 
