@@ -6,7 +6,7 @@
         Decal = 1,
         Dae = 2,
         Terrain = 3,
-        GroundCover = 4,
+        // GroundCover removed - now copied automatically with Terrain
     }
     public class CopyAsset
     {

@@ -23,6 +23,12 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 foreach (var prop in stage.GetType().GetProperties())
                 {
+                    // Only process string properties (texture paths), skip collections and other types
+                    if (prop.PropertyType != typeof(string))
+                    {
+                        continue;
+                    }
+
                     var val = prop.GetValue(stage, null) != null ? prop.GetValue(stage, null).ToString() : string.Empty;
 
                     if (!string.IsNullOrEmpty(val))
@@ -42,7 +48,8 @@ namespace BeamNG_LevelCleanUp.Logic
                             MaterialName = materialName,
                             Missing = !fileInfo.Exists,
                             File = fileInfo,
-                            MapType = prop.Name
+                            MapType = prop.Name,
+                            OriginalJsonPath = val
                         });
                     }
                 }

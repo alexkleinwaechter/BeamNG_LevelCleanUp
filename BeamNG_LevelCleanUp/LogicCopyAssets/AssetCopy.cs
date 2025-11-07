@@ -18,8 +18,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private MaterialCopier _materialCopier;
         private ManagedDecalCopier _managedDecalCopier;
         private DaeCopier _daeCopier;
-        private TerrainMaterialCopier _terrainMaterialCopier;
         private GroundCoverCopier _groundCoverCopier;
+        private TerrainMaterialCopier _terrainMaterialCopier;
 
         public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
         {
@@ -42,6 +42,16 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         : this(identifier, copyAssetList, namePath, levelName)
         {
             InitializeCopiers(namePath, levelName, levelNameCopyFrom);
+            // Load scanned groundcover JSON lines into the copier
+            if (Logic.BeamFileReader.GroundCoverJsonLines != null && Logic.BeamFileReader.GroundCoverJsonLines.Any())
+            {
+                _groundCoverCopier.LoadGroundCoverJsonLines(Logic.BeamFileReader.GroundCoverJsonLines);
+            }
+            // Load scanned materials for groundcover material lookup
+            if (Logic.BeamFileReader.MaterialsJsonCopy != null && Logic.BeamFileReader.MaterialsJsonCopy.Any())
+            {
+                _groundCoverCopier.LoadMaterialsJsonCopy(Logic.BeamFileReader.MaterialsJsonCopy);
+            }
         }
 
         private void InitializeCopiers(string namePath, string levelName, string levelNameCopyFrom)
@@ -51,8 +61,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             _materialCopier = new MaterialCopier(_pathConverter, _fileCopyHandler);
             _managedDecalCopier = new ManagedDecalCopier();
             _daeCopier = new DaeCopier(_pathConverter, _fileCopyHandler, _materialCopier);
-            _terrainMaterialCopier = new TerrainMaterialCopier(_pathConverter, _fileCopyHandler, levelNameCopyFrom);
             _groundCoverCopier = new GroundCoverCopier(_pathConverter, _fileCopyHandler, _materialCopier, _daeCopier, levelNameCopyFrom, namePath);
+            _terrainMaterialCopier = new TerrainMaterialCopier(_pathConverter, _fileCopyHandler, levelNameCopyFrom, _groundCoverCopier);
         }
 
         public void Copy()
@@ -73,9 +83,6 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         break;
                     case CopyAssetType.Terrain:
                         stopFaultyFile = !CopyTerrain(item);
-                        break;
-                    case CopyAssetType.GroundCover:
-                        stopFaultyFile = !CopyGroundCover(item);
                         break;
                     default:
                         break;

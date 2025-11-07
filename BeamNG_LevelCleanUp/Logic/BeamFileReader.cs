@@ -50,6 +50,7 @@ namespace BeamNG_LevelCleanUp.Logic
         public static List<string> ExcludeFiles { get; set; } = new List<string>();
         public static List<string> UnusedAssetFiles = new List<string>();
         public static List<CopyAsset> CopyAssets { get; set; } = new List<CopyAsset>();
+        public static List<string> GroundCoverJsonLines { get; set; } = new List<string>();
         private static string _newName;
         public static List<FileInfo> DeleteList { get; set; } = new List<FileInfo>();
         private static decimal _xOffset;
@@ -106,6 +107,7 @@ namespace BeamNG_LevelCleanUp.Logic
             _managedDecalData = new List<FileInfo>();
             _managedItemData = new List<FileInfo>();
             _forestJsonFiles = new List<FileInfo>();
+            GroundCoverJsonLines = new List<string>();
             _xOffset = 0;
             _yOffset = 0;
             _zOffset = 0;
@@ -634,20 +636,20 @@ namespace BeamNG_LevelCleanUp.Logic
 
         internal void CopyGroundCovers()
         {
-            // Fix path - should use _namePathCopyFrom instead of reconstructing from _levelPathCopyFrom
             var vegetationPath = Path.Join(_namePathCopyFrom, "main", "MissionGroup", "Level_object", "vegetation", "items.level.json");
             var vegetationFile = new FileInfo(vegetationPath);
 
             if (vegetationFile.Exists)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scanning groundcovers from {_levelNameCopyFrom}");
-                var groundCoverScanner = new GroundCoverCopyScanner(_levelPathCopyFrom, MaterialsJsonCopy, CopyAssets);
+                var groundCoverScanner = new GroundCoverCopyScanner(_levelPathCopyFrom);
                 groundCoverScanner.ScanGroundCovers(vegetationFile);
+                GroundCoverJsonLines = groundCoverScanner.GroundCoverJsonLines;
             }
             else
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, 
-                  $"No vegetation items.level.json found in {_levelNameCopyFrom} at {vegetationPath}");
+                    $"No vegetation items.level.json found in {_levelNameCopyFrom} at {vegetationPath}");
             }
         }
 

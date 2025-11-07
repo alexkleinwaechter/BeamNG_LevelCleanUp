@@ -13,12 +13,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private readonly PathConverter _pathConverter;
         private readonly FileCopyHandler _fileCopyHandler;
         private readonly string _levelNameCopyFrom;
+        private readonly GroundCoverCopier _groundCoverCopier;
 
-        public TerrainMaterialCopier(PathConverter pathConverter, FileCopyHandler fileCopyHandler, string levelNameCopyFrom)
+        public TerrainMaterialCopier(PathConverter pathConverter, FileCopyHandler fileCopyHandler, string levelNameCopyFrom, GroundCoverCopier groundCoverCopier)
         {
             _pathConverter = pathConverter;
             _fileCopyHandler = fileCopyHandler;
             _levelNameCopyFrom = levelNameCopyFrom;
+            _groundCoverCopier = groundCoverCopier;
         }
 
         public bool Copy(CopyAsset item)
@@ -40,6 +42,12 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 {
                     return false;
                 }
+            }
+
+            // After copying terrain materials, automatically copy related groundcovers
+            if (_groundCoverCopier != null)
+            {
+                _groundCoverCopier.CopyGroundCoversForTerrainMaterials(item.Materials);
             }
 
             return true;
