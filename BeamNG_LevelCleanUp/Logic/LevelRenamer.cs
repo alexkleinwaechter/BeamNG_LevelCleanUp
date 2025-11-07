@@ -1,6 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
+using System.Text.Json.Nodes;
 
 namespace BeamNG_LevelCleanUp.Logic
 {
@@ -18,6 +19,14 @@ namespace BeamNG_LevelCleanUp.Logic
             {
                 var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(_infoJsonPath);
                 jsonNode["title"] = newName;
+                
+                // Only set isAuxiliary to false if the field exists in the JSON
+                if (jsonNode.AsObject().ContainsKey("isAuxiliary"))
+                {
+                    jsonNode["isAuxiliary"] = false;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Set isAuxiliary to false in info.json");
+                }
+                
                 File.WriteAllText(_infoJsonPath, jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
             }
             catch (Exception ex)
