@@ -86,6 +86,7 @@
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
+                    <MudButton @onclick="CopyToLevels" Color="Color.Primary">Copy to BeamNG Levels Folder</MudButton>
                 }
             </MudStack>
             @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
@@ -438,6 +439,60 @@
             }
             catch (Exception ex)
             {
+                ShowException(ex);
+            }
+        }
+    }
+
+    private async Task CopyToLevels()
+    {
+        var path = string.Empty;
+        if (!string.IsNullOrEmpty(_levelPath))
+        {
+            try
+            {
+                path = ZipFileHandler.GetLastUnpackedPath();
+                
+                var customChangesChecker = new CustomChangesChecker(_levelName, _levelPath);
+                
+                // Check if target directory exists and ask for confirmation
+                if (customChangesChecker.TargetDirectoryExists())
+                {
+                    var options = new DialogOptions { CloseOnEscapeKey = true };
+                    var parameters = new DialogParameters();
+                    parameters.Add("ContentText", $"The level '{_levelName}' already exists in your BeamNG levels folder. Do you want to overwrite it?");
+                    parameters.Add("ButtonText", "Yes, Overwrite");
+                    parameters.Add("Color", Color.Warning);
+                    var dialog = await DialogService.ShowAsync<SimpleDialog>("Level Already Exists", parameters, options);
+                    var result = await dialog.Result;
+                    
+                    if (result.Canceled)
+                    {
+                        return; // User canceled, don't proceed with copy
+                    }
+                    
+                    // Delete the existing directory before copying
+                    customChangesChecker.DeleteTargetDirectory();
+                }
+                
+                _staticSnackbar = Snackbar.Add($"Copy level to BeamNG levels in userfolder. Please be patient.", Severity.Normal, config =>
+                {
+                    config.VisibleStateDuration = int.MaxValue;
+                });
+                
+                await Task.Run(() =>
+                {
+                    ZipFileHandler.RemoveModInfo(path);
+                    customChangesChecker.CopyUnpackedToUserFolder();
+                });
+                
+                Snackbar.Remove(_staticSnackbar);
+                Snackbar.Add($"Level '{_levelName}' successfully copied to BeamNG levels folder.", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                if (_staticSnackbar != null)
+                    Snackbar.Remove(_staticSnackbar);
                 ShowException(ex);
             }
         }

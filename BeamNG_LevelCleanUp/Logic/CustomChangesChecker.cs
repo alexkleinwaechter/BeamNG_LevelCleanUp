@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,46 +19,56 @@ namespace BeamNG_LevelCleanUp.Logic
             _unpackedPath = unpackedPath;
         }
 
-
-        internal bool HasCustomChanges()
+        /// <summary>
+        /// Gets the user folder path for BeamNG levels, trying the new path structure first, then falling back to versioned folders
+        /// </summary>
+        /// <returns>The base user folder path or null if not found</returns>
+        internal string GetUserFolderPath()
         {
-            // Neuer Pfad zum Benutzerordner mit "current" Unterordner
+            // New path to user folder with "current" subfolder
             string newUserFolderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BeamNG", "BeamNG.drive", "current");
             
-            // Prüfen ob der neue Pfad existiert
+            // Check if the new path exists
             if (Directory.Exists(newUserFolderPath))
             {
-                // Neuer Pfad verwenden
-                _levelFolderPathChanges = Path.Combine(newUserFolderPath, "levels", _levelName);
-                return Directory.Exists(_levelFolderPathChanges);
+                return newUserFolderPath;
             }
 
-            // Fallback: Alter Pfad für ältere Versionen
+            // Fallback: Old path for older versions
             string oldUserFolderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BeamNG.drive");
 
-            // Überprüfen, ob der alte Benutzerordner existiert
+            // Check if the old user folder exists
             if (!Directory.Exists(oldUserFolderPath))
             {
-                return false;
+                return null;
             }
 
-            // Alle Unterordner abrufen und die höchste Versionsnummer finden
+            // Get all subfolders and find the highest version number
             var versionFolders = Directory.GetDirectories(oldUserFolderPath)
                 .Select(Path.GetFileName)
-                .Where(folderName => Version.TryParse(folderName, out _)) // Nur gültige Versionsordner
-                .OrderByDescending(folderName => Version.Parse(folderName)) // Absteigend sortieren
+                .Where(folderName => Version.TryParse(folderName, out _)) // Only valid version folders
+                .OrderByDescending(folderName => Version.Parse(folderName)) // Sort descending
                 .ToList();
 
             if (!versionFolders.Any())
             {
-                return false; // Keine gültigen Versionsordner gefunden
+                return null; // No valid version folders found
             }
 
-            // Höchste Versionsnummer abrufen
-            string highestVersionFolder = Path.Combine(oldUserFolderPath, versionFolders.First());
+            // Get highest version number
+            return Path.Combine(oldUserFolderPath, versionFolders.First());
+        }
 
-            // Überprüfen, ob der Ordner "/levels/[_levelName]" existiert
-            _levelFolderPathChanges = Path.Combine(highestVersionFolder, "levels", _levelName);
+        internal bool HasCustomChanges()
+        {
+            string userFolderPath = GetUserFolderPath();
+            if (userFolderPath == null)
+            {
+                return false;
+            }
+
+            // Check if the folder "/levels/[_levelName]" exists
+            _levelFolderPathChanges = Path.Combine(userFolderPath, "levels", _levelName);
             return Directory.Exists(_levelFolderPathChanges);
         }
 
@@ -65,7 +76,7 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             if (HasCustomChanges())
             {
-                // Dateien und Unterordner kopieren
+                // Copy files and subdirectories
                 CopyDirectory(_levelFolderPathChanges, _unpackedPath);
                 return true;
             }
@@ -75,6 +86,64 @@ namespace BeamNG_LevelCleanUp.Logic
         internal void CopyChangesToUnpacked()
         {
             CopyDirectory(_levelFolderPathChanges, Path.Combine(_unpackedPath, _levelName));
+        }
+
+        /// <summary>
+        /// Copies content from the unpacked path to the BeamNG user levels folder
+        /// </summary>
+        /// <returns>The target directory path, or null if user folder path could not be determined</returns>
+        internal string CopyUnpackedToUserFolder()
+        {
+            string userFolderPath = GetUserFolderPath();
+            if (userFolderPath == null)
+            {
+                throw new DirectoryNotFoundException("Could not determine BeamNG user folder path.");
+            }
+
+            string sourcePath = Path.Combine(_unpackedPath, _levelName);
+            string targetPath = Path.Combine(userFolderPath, "levels", _levelName);
+
+            if (!Directory.Exists(sourcePath))
+            {
+                throw new DirectoryNotFoundException($"The source directory '{sourcePath}' was not found.");
+            }
+
+            CopyDirectory(sourcePath, targetPath);
+            return targetPath;
+        }
+
+        /// <summary>
+        /// Checks if the target directory exists in the BeamNG user levels folder
+        /// </summary>
+        /// <returns>True if the target directory exists, false otherwise</returns>
+        internal bool TargetDirectoryExists()
+        {
+            string userFolderPath = GetUserFolderPath();
+            if (userFolderPath == null)
+            {
+                return false;
+            }
+
+            string targetPath = Path.Combine(userFolderPath, "levels", _levelName);
+            return Directory.Exists(targetPath);
+        }
+
+        /// <summary>
+        /// Deletes the target directory in the BeamNG user levels folder if it exists
+        /// </summary>
+        internal void DeleteTargetDirectory()
+        {
+            string userFolderPath = GetUserFolderPath();
+            if (userFolderPath == null)
+            {
+                return;
+            }
+
+            string targetPath = Path.Combine(userFolderPath, "levels", _levelName);
+            if (Directory.Exists(targetPath))
+            {
+                Directory.Delete(targetPath, true);
+            }
         }
 
         internal string GetLevelFolderPathChanges()
@@ -94,15 +163,14 @@ namespace BeamNG_LevelCleanUp.Logic
             foreach (var file in Directory.GetFiles(sourceDir))
             {
                 string destFile = Path.Combine(destinationDir, Path.GetFileName(file));
-                File.Copy(file, destFile, overwrite: true); // Überschreibt vorhandene Dateien
+                File.Copy(file, destFile, overwrite: true); // Overwrite existing files
             }
 
             foreach (var subDir in Directory.GetDirectories(sourceDir))
             {
                 string destSubDir = Path.Combine(destinationDir, Path.GetFileName(subDir));
-                CopyDirectory(subDir, destSubDir); // Rekursiver Aufruf
+                CopyDirectory(subDir, destSubDir); // Recursive call
             }
         }
-
     }
 }
