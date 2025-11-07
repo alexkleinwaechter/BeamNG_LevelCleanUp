@@ -70,10 +70,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
                 // Generate new GUID and names for the terrain material
                 var (newKey, newMaterialName, newInternalName, newGuid) = GenerateTerrainMaterialNames(
-         sourceMaterialNode.Key,
-              material.Name,
-           material.InternalName
-            );
+                     sourceMaterialNode.Key,
+                     material.Name,
+                     material.InternalName
+                     );
 
                 // Parse and update the material JSON
                 var materialObj = JsonNode.Parse(sourceMaterialNode.Value.ToJsonString());
