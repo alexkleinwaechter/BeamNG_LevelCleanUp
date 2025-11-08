@@ -44,10 +44,11 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 }
             }
 
-            // After copying terrain materials, automatically copy related groundcovers
+            // After copying terrain materials, collect related groundcovers
+            // (they will be written once at the end by the caller in AssetCopy)
             if (_groundCoverCopier != null)
             {
-                _groundCoverCopier.CopyGroundCoversForTerrainMaterials(item.Materials);
+                _groundCoverCopier.CollectGroundCoversForTerrainMaterials(item.Materials);
             }
 
             return true;
