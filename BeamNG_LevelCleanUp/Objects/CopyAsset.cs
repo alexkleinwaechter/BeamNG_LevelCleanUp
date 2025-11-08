@@ -25,5 +25,10 @@
         public string TerrainMaterialName { get; set; }
         public string TerrainMaterialInternalName { get; set; }
         public GroundCover GroundCoverData { get; set; }
+        
+        /// <summary>
+        /// Base color for terrain texture generation in hex format (e.g., #808080)
+        /// </summary>
+        public string BaseColorHex { get; set; } = "#808080";
     }
 }

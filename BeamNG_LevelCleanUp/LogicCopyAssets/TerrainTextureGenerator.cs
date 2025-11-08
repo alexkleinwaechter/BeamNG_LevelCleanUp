@@ -58,8 +58,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 var g = Convert.ToByte(hexColor.Substring(3, 2), 16);
                 var b = Convert.ToByte(hexColor.Substring(5, 2), 16);
 
+                // For baseColorBaseTex, use the actual hex color as filename
+                // For other textures, use the predefined filename
+                var actualFileName = fileName.Equals("#base_color", StringComparison.OrdinalIgnoreCase)
+                    ? hexColor
+                    : fileName;
+
                 // Create the output file path
-                var outputPath = Path.Join(_terrainFolderPath, $"{fileName}.png");
+                var outputPath = Path.Join(_terrainFolderPath, $"{actualFileName}.png");
 
                 // Ensure the terrain folder exists
                 Directory.CreateDirectory(_terrainFolderPath);
@@ -68,7 +74,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 if (File.Exists(outputPath))
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
-                     $"Terrain texture {fileName}.png already exists, reusing.");
+                     $"Terrain texture {actualFileName}.png already exists, reusing.");
                     return outputPath;
                 }
 
@@ -88,7 +94,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 }
 
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
-                       $"Generated terrain texture: {fileName}.png ({_terrainSize}x{_terrainSize}, {textureType})");
+                       $"Generated terrain texture: {actualFileName}.png ({_terrainSize}x{_terrainSize}, {textureType})");
 
                 return outputPath;
             }
