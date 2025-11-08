@@ -67,7 +67,12 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
         public void Copy()
         {
-            foreach (var item in _assetsToCopy)
+            // Collect all terrain materials first for batch processing
+            var terrainMaterials = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.Terrain).ToList();
+            var otherAssets = _assetsToCopy.Where(x => x.CopyAssetType != CopyAssetType.Terrain).ToList();
+
+            // Copy non-terrain assets first (roads, decals, DAE files)
+            foreach (var item in otherAssets)
             {
                 switch (item.CopyAssetType)
                 {
@@ -81,9 +86,6 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     case CopyAssetType.Dae:
                         stopFaultyFile = !CopyDae(item);
                         break;
-                    case CopyAssetType.Terrain:
-                        stopFaultyFile = !CopyTerrain(item);
-                        break;
                     default:
                         break;
                 }
@@ -92,6 +94,12 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 {
                     break;
                 }
+            }
+
+            // Now process all terrain materials in batch (with groundcover collection)
+            if (!stopFaultyFile && terrainMaterials.Any())
+            {
+                stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials);
             }
 
             if (!stopFaultyFile)
@@ -122,14 +130,25 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             return _daeCopier.Copy(item);
         }
 
-        private bool CopyTerrain(CopyAsset item)
+        /// <summary>
+        /// Copies all terrain materials in batch and then writes groundcovers once
+        /// This is the new efficient approach
+        /// </summary>
+        private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
         {
-            return _terrainMaterialCopier.Copy(item);
-        }
+            // Copy all terrain materials (this also collects groundcovers)
+            foreach (var item in terrainMaterials)
+            {
+                if (!_terrainMaterialCopier.Copy(item))
+                {
+                    return false;
+                }
+            }
 
-        private bool CopyGroundCover(CopyAsset item)
-        {
-            return _groundCoverCopier.Copy(item);
+            // Write all collected groundcovers ONCE at the end
+            _groundCoverCopier.WriteAllGroundCovers();
+
+            return true;
         }
     }
 }
