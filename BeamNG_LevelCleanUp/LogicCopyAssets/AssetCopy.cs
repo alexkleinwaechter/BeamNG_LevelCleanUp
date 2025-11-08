@@ -62,7 +62,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             _managedDecalCopier = new ManagedDecalCopier();
             _daeCopier = new DaeCopier(_pathConverter, _fileCopyHandler, _materialCopier);
             _groundCoverCopier = new GroundCoverCopier(_pathConverter, _fileCopyHandler, _materialCopier, _daeCopier, levelNameCopyFrom, namePath);
-            _terrainMaterialCopier = new TerrainMaterialCopier(_pathConverter, _fileCopyHandler, levelNameCopyFrom, _groundCoverCopier);
+            
+            // Pass levelPathCopyFrom from PathResolver to TerrainMaterialCopier
+            _terrainMaterialCopier = new TerrainMaterialCopier(
+                _pathConverter, 
+                _fileCopyHandler, 
+                levelNameCopyFrom, 
+                _groundCoverCopier,
+                Logic.PathResolver.LevelPathCopyFrom);
         }
 
         public void Copy()
