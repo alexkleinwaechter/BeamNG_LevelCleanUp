@@ -21,6 +21,11 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
         public bool Copy(CopyAsset item)
         {
+            return Copy(item, null);
+        }
+
+        public bool Copy(CopyAsset item, string newMaterialName)
+        {
             if (item.TargetPath == null)
             {
                 return true;
@@ -30,7 +35,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
             foreach (var material in item.Materials)
             {
-                if (!CopyMaterial(material, item.TargetPath))
+                if (!CopyMaterial(material, item.TargetPath, newMaterialName))
                 {
                     return false;
                 }
@@ -39,7 +44,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             return true;
         }
 
-        private bool CopyMaterial(MaterialJson material, string targetPath)
+        private bool CopyMaterial(MaterialJson material, string targetPath, string newMaterialName = null)
         {
             try
             {
@@ -54,7 +59,33 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     return true;
                 }
 
-                var toText = sourceMaterialNode.Value.ToJsonString();
+                // Parse the material JSON as JsonNode to update properties
+                var materialNode = JsonNode.Parse(sourceMaterialNode.Value.ToJsonString());
+                if (materialNode == null)
+                {
+                    return true;
+                }
+
+                // Generate new GUID for persistentId
+                materialNode["persistentId"] = Guid.NewGuid().ToString().ToLowerInvariant();
+
+                // Update name if newMaterialName is provided
+                string materialKey;
+                string materialNameToWrite;
+
+                if (!string.IsNullOrEmpty(newMaterialName))
+                {
+                    materialNode["name"] = newMaterialName;
+                    materialKey = newMaterialName;
+                    materialNameToWrite = newMaterialName;
+                }
+                else
+                {
+                    materialKey = material.Name;
+                    materialNameToWrite = material.Name;
+                }
+
+                var toText = materialNode.ToJsonString();
                 var targetJsonPath = Path.Join(targetPath, Path.GetFileName(material.MatJsonFileLocation));
                 var targetJsonFile = new FileInfo(targetJsonPath);
 
@@ -62,7 +93,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 toText = CopyMaterialFilesAndUpdatePaths(material, toText);
 
                 // Write or update the JSON file
-                WriteMaterialJson(targetJsonFile, material.Name, toText);
+                WriteMaterialJson(targetJsonFile, materialKey, materialNameToWrite, toText);
 
                 return true;
             }
@@ -105,14 +136,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             return materialJson;
         }
 
-        private void WriteMaterialJson(FileInfo targetJsonFile, string materialName, string materialJson)
+        private void WriteMaterialJson(FileInfo targetJsonFile, string materialKey, string materialName, string materialJson)
         {
             if (!targetJsonFile.Exists)
             {
                 var jsonObject = new JsonObject(
           new[]
               {
-   KeyValuePair.Create<string, JsonNode?>(materialName, JsonNode.Parse(materialJson)),
+   KeyValuePair.Create<string, JsonNode?>(materialKey, JsonNode.Parse(materialJson)),
                   }
                  );
                 File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
@@ -124,7 +155,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == materialName))
                 {
                     targetJsonNode.AsObject().Add(
-                      KeyValuePair.Create<string, JsonNode?>(materialName, JsonNode.Parse(materialJson))
+                      KeyValuePair.Create<string, JsonNode?>(materialKey, JsonNode.Parse(materialJson))
                   );
                 }
 
