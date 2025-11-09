@@ -66,15 +66,15 @@
         {
             return RoughnessPreset switch
             {
-                TerrainRoughnessPreset.WetAsphalt => 20, // Very shiny
-                TerrainRoughnessPreset.Asphalt => 50, // Shiny
-                TerrainRoughnessPreset.WetSurface => 40,  // Shiny when wet
-                TerrainRoughnessPreset.Concrete => 100,     // Medium-low
-                TerrainRoughnessPreset.Rock => 110,         // Medium-low (slightly rough)
-                TerrainRoughnessPreset.DirtRoad => 150,     // Medium
-                TerrainRoughnessPreset.Grass => 180,      // Medium-high
-                TerrainRoughnessPreset.Mud => 200,          // High
-                TerrainRoughnessPreset.Forest => 190,       // High
+                TerrainRoughnessPreset.WetAsphalt => 20,
+                TerrainRoughnessPreset.Asphalt => 120,
+                TerrainRoughnessPreset.WetSurface => 40,
+                TerrainRoughnessPreset.Concrete => 130,
+                TerrainRoughnessPreset.Rock => 140,
+                TerrainRoughnessPreset.DirtRoad => 170,
+                TerrainRoughnessPreset.Grass => 180,
+                TerrainRoughnessPreset.Mud => 60,
+                TerrainRoughnessPreset.Forest => 190,
                 TerrainRoughnessPreset.Custom => RoughnessValue,
                 _ => 128  // Default medium roughness
             };
