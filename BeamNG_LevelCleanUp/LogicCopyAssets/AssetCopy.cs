@@ -86,7 +86,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             // Initialize replacer using the shared helper
             _groundCoverReplacer = new GroundCoverReplacer(
                 _groundCoverDependencyHelper,
-                namePath);
+                namePath,
+                levelNameCopyFrom);
 
             // Pass level paths to TerrainMaterialCopier
             _terrainMaterialCopier = new TerrainMaterialCopier(
