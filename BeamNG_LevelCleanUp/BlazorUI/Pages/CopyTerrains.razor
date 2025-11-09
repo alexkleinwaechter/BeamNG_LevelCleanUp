@@ -137,7 +137,9 @@
                         </MudTd>
                         <MudTd DataLabel="Replace Target" @onclick:stopPropagation>
                             <MudSelect T="string"
-                                       @bind-Value="@context.CopyAsset.ReplaceTargetMaterialName"
+                                       MultiSelection="true"
+                                       SelectedValues="@context.CopyAsset.ReplaceTargetMaterialNames"
+                                       SelectedValuesChanged="@((IEnumerable<string> values) => OnReplaceTargetChanged(context.CopyAsset, values))"
                                        Label="Mode"
                                        Dense="true"
                                        Variant="Variant.Outlined"
@@ -591,7 +593,29 @@
     {
         var options = new DialogOptions { CloseOnEscapeKey = true };
         var parameters = new DialogParameters();
-        parameters.Add("ContentText", "Do you really want to copy these terrain materials? This process cannot be undone. All material names will be suffixed with the source level name to ensure uniqueness. Please always use a copy of your project with this tool!");
+
+        // Count how many materials are in replace mode
+        var replaceCount = _selectedItems.Count(x => x.CopyAsset.IsReplaceMode);
+        var addCount = _selectedItems.Count - replaceCount;
+        var totalReplacements = _selectedItems
+      .Where(x => x.CopyAsset.IsReplaceMode)
+         .Sum(x => x.CopyAsset.ReplaceTargetMaterialNames.Count);
+
+        var messageText = "Do you really want to copy these terrain materials? This process cannot be undone. ";
+
+        if (addCount > 0)
+        {
+            messageText += $"{addCount} material(s) will be added with the source level name suffix. ";
+        }
+
+        if (replaceCount > 0)
+        {
+            messageText += $"{replaceCount} material(s) will replace {totalReplacements} target material(s) while preserving their names and IDs. ";
+        }
+
+        messageText += "Please always use a copy of your project with this tool!";
+
+        parameters.Add("ContentText", messageText);
         parameters.Add("ButtonText", "Copy");
         parameters.Add("Color", Color.Error);
         var dialog = await DialogService.ShowAsync<SimpleDialog>("Copy Terrain Materials", parameters, options);
@@ -599,15 +623,15 @@
         if (!result.Canceled)
         {
             _staticSnackbar = Snackbar.Add($"Terrain materials copy in process. Please be patient.", Severity.Normal, config =>
-            {
-                config.VisibleStateDuration = int.MaxValue;
-            });
+           {
+               config.VisibleStateDuration = int.MaxValue;
+           });
             await Task.Run(() =>
-                {
-                    var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                    Reader.DoCopyAssets(selected);
-                    _showDeployButton = true;
-                });
+            {
+                var selected = _selectedItems.Select(y => y.Identifier).ToList();
+                Reader.DoCopyAssets(selected);
+                _showDeployButton = true;
+            });
             Snackbar.Remove(_staticSnackbar);
 
             Reader.WriteLogFile(_warnings, "Log_TerrainCopy_Warnings");
@@ -624,13 +648,13 @@
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
                 _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
-                {
-                    config.VisibleStateDuration = int.MaxValue;
-                });
+                        {
+                            config.VisibleStateDuration = int.MaxValue;
+                        });
                 await Task.Run(() =>
-                {
-                    ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
-                });
+                            {
+                                ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
+                            });
                 Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
@@ -671,5 +695,48 @@
             ZipFileHandler.WorkingDirectory = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BeamNgMT");
             Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
         }
+    }
+
+    /// <summary>
+    /// Handles replace target selection changes with mutual exclusivity logic
+    /// </summary>
+    private void OnReplaceTargetChanged(CopyAsset asset, IEnumerable<string> selectedValues)
+    {
+        var valuesList = selectedValues?.ToList() ?? new List<string>();
+
+        // Check if "Add New Material" (null) was selected
+        var hasAddNew = valuesList.Contains(null);
+        var hasReplacements = valuesList.Any(v => v != null);
+
+        if (hasAddNew && hasReplacements)
+        {
+            // If both "Add New" and replacements are selected, determine which was added last
+            // by comparing with the current state
+            var currentHasAddNew = asset.ReplaceTargetMaterialNames?.Count == 0 || asset.ReplaceTargetMaterialNames == null;
+
+            if (currentHasAddNew)
+            {
+                // A replacement was just selected -> clear "Add New"
+                asset.ReplaceTargetMaterialNames = valuesList.Where(v => v != null).ToList();
+            }
+            else
+            {
+                // "Add New" was just selected -> clear all replacements
+                asset.ReplaceTargetMaterialNames = new List<string>();
+            }
+        }
+        else if (hasAddNew)
+        {
+            // Only "Add New" selected -> clear list (Add mode)
+            asset.ReplaceTargetMaterialNames = new List<string>();
+        }
+        else
+        {
+            // Only replacements selected -> use them
+            asset.ReplaceTargetMaterialNames = valuesList.Where(v => v != null).ToList();
+        }
+
+        // Force UI refresh
+        StateHasChanged();
     }
 }

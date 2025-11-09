@@ -60,9 +60,30 @@
         public int RoughnessValue { get; set; } = 128;
 
         /// <summary>
-        /// Target terrain material name to replace (null means "Add" new material)
+        /// Target terrain material names to replace (empty/null means "Add" new material)
         /// </summary>
-        public string ReplaceTargetMaterialName { get; set; }
+        public List<string> ReplaceTargetMaterialNames { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Backward compatibility: Gets/sets the first replacement target
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string ReplaceTargetMaterialName
+        {
+            get => ReplaceTargetMaterialNames?.FirstOrDefault();
+            set
+            {
+                ReplaceTargetMaterialNames = !string.IsNullOrEmpty(value)
+                         ? new List<string> { value }
+                     : new List<string>();
+            }
+        }
+
+        /// <summary>
+        /// Returns true if this is in "Replace" mode (has target materials to replace)
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsReplaceMode => ReplaceTargetMaterialNames != null && ReplaceTargetMaterialNames.Any();
 
         /// <summary>
         /// Gets the roughness value based on preset or custom value
