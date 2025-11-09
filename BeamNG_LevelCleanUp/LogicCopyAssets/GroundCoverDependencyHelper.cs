@@ -1,3 +1,4 @@
+using BeamNG_LevelCleanUp;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using System.Text.Json.Nodes;
@@ -12,7 +13,9 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
     {
         private readonly MaterialCopier _materialCopier;
         private readonly DaeCopier _daeCopier;
-        private readonly string _levelNameCopyFrom;
+        private readonly string _levelNameCopyFrom; // source level name suffix
+        private readonly string _targetNamePath; // absolute path to target level name directory (levels/<targetLevelName>)
+        private readonly string _targetLevelName; // target level folder name
         private readonly HashSet<string> _copiedDaeFiles;
         private Dictionary<string, MaterialJson> _materialLookup;
         private HashSet<string> _terrainMaterialNames; // Track which materials are terrain materials
@@ -20,11 +23,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         public GroundCoverDependencyHelper(
         MaterialCopier materialCopier,
         DaeCopier daeCopier,
-        string levelNameCopyFrom)
+        string levelNameCopyFrom,
+        string targetNamePath)
         {
             _materialCopier = materialCopier;
             _daeCopier = daeCopier;
             _levelNameCopyFrom = levelNameCopyFrom;
+            _targetNamePath = targetNamePath; // e.g. ...\\_unpacked\\levels\\<targetLevelName>
+            _targetLevelName = Path.GetFileName(_targetNamePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             _copiedDaeFiles = new HashSet<string>();
             _terrainMaterialNames = new HashSet<string>();
         }
@@ -157,26 +163,30 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 // Generate new material name with level suffix
                 var newMaterialName = $"{materialName}_{_levelNameCopyFrom}";
 
+                // Target path inside the TARGET level (like GroundCoverCopier)
+                var targetPath = Path.Join(_targetNamePath, Constants.GroundCover, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+                Directory.CreateDirectory(targetPath);
+
                 // Create a temporary CopyAsset for the material copier
                 var materialCopyAsset = new CopyAsset
                 {
                     CopyAssetType = CopyAssetType.Terrain,
                     Materials = new List<MaterialJson> { material },
-                    TargetPath = Path.GetDirectoryName(material.MatJsonFileLocation)
-                  ?.Replace("_copyFrom", "_unpacked") // Adjust path from source to target
+                    TargetPath = targetPath,
+                    Name = material.Name
                 };
 
                 // Copy the material with the new name
                 if (_materialCopier.Copy(materialCopyAsset, newMaterialName))
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
-                         $"Copied material '{materialName}' as '{newMaterialName}' for groundcover '{groundCoverName}'");
+                         $"Copied groundcover material '{materialName}' as '{newMaterialName}' for groundcover '{groundCoverName}'");
                     return newMaterialName;
                 }
                 else
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                 $"Failed to copy material '{materialName}' for groundcover '{groundCoverName}'");
+                 $"Failed to copy groundcover material '{materialName}' for groundcover '{groundCoverName}'");
                     return null;
                 }
             }

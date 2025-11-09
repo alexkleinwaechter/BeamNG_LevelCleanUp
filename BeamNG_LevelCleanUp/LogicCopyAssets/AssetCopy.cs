@@ -72,7 +72,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             _groundCoverDependencyHelper = new GroundCoverDependencyHelper(
                 _materialCopier,
                 _daeCopier,
-                levelNameCopyFrom);
+                levelNameCopyFrom,
+                namePath);
 
             // Initialize copiers using the shared helper
             _groundCoverCopier = new GroundCoverCopier(
