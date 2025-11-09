@@ -76,18 +76,61 @@
                     <HeaderContent>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.FullName)">Terrain Material</MudTableSortLabel></MudTh>
                         <MudTh>Base Color</MudTh>
+                        <MudTh>Roughness</MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="File">@context.FullName</MudTd>
-                        <MudTd DataLabel="Base Color for painting" @onclick:stopPropagation>
+                        <MudTd DataLabel="Base Color" @onclick:stopPropagation>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <div style="width: 32px; height: 32px; background-color: @context.CopyAsset.BaseColorHex; border: 1px solid #ccc; border-radius: 4px;"></div>
                                 <MudColorPicker @bind-Text="@context.CopyAsset.BaseColorHex"
                                                 Placeholder="Select Color"
                                                 DisableAlpha="true"
                                                 ColorPickerMode="ColorPickerMode.RGB"
+                                                PickerVariant="PickerVariant.Dialog"
                                                 ColorPickerView="ColorPickerView.Spectrum" />
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Roughness" @onclick:stopPropagation>
+                            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
+                                <MudSelect T="TerrainRoughnessPreset"
+                                           @bind-Value="@context.CopyAsset.RoughnessPreset"
+                                           Label="Preset"
+                                           Dense="true"
+                                           Variant="Variant.Outlined">
+                                    <MudSelectItem Value="TerrainRoughnessPreset.WetAsphalt">Wet Asphalt (Shiny)</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Asphalt">Asphalt</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.WetSurface">Wet Surface</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Concrete">Concrete</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Rock">Rock</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.DirtRoad">Dirt Road</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Grass">Grass</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Forest">Forest</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Mud">Mud (Rough)</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Custom">Custom</MudSelectItem>
+                                </MudSelect>
+                                @if (context.CopyAsset.RoughnessPreset == TerrainRoughnessPreset.Custom)
+                                {
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <MudSlider @bind-Value="@context.CopyAsset.RoughnessValue"
+                                                   Min="0" Max="255"
+                                                   Step="1"
+                                                   Color="Color.Primary">
+                                            Roughness: @context.CopyAsset.RoughnessValue
+                                        </MudSlider>
+                                        <MudText Typo="Typo.caption" Style="min-width: 80px;">
+                                            @(context.CopyAsset.RoughnessValue < 85 ? "Shiny" :
+                                            context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
+                                        </MudText>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Style="color: gray;">
+                                        Value: @context.CopyAsset.GetRoughnessValue() (0=Shiny, 255=Rough)
+                                    </MudText>
+                                }
                             </div>
                         </MudTd>
                         <MudTd DataLabel="Size">@context.SizeMb</MudTd>
@@ -435,6 +478,9 @@
     {
         foreach (var asset in Reader.GetCopyList().Where(x => x.CopyAssetType == CopyAssetType.Terrain))
         {
+            // Auto-detect roughness preset based on material name
+            asset.RoughnessPreset = CopyAsset.DetectRoughnessPresetFromName(asset.Name);
+  
             var item = new GridFileListItem
             {
                 Identifier = asset.Identifier,

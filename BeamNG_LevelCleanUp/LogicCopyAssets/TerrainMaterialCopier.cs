@@ -53,7 +53,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
             foreach (var material in item.Materials)
             {
-                if (!CopyTerrainMaterial(material, targetJsonFile, item.BaseColorHex))
+                if (!CopyTerrainMaterial(material, targetJsonFile, item.BaseColorHex, item.GetRoughnessValue()))
                 {
                     return false;
                 }
@@ -111,50 +111,50 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
         }
 
-        private bool CopyTerrainMaterial(MaterialJson material, FileInfo targetJsonFile, string baseColorHex = "#808080")
+        private bool CopyTerrainMaterial(MaterialJson material, FileInfo targetJsonFile, string baseColorHex = "#808080", int roughnessValue = 150)
         {
             try
-{
-    var jsonString = File.ReadAllText(material.MatJsonFileLocation);
+            {
+                var jsonString = File.ReadAllText(material.MatJsonFileLocation);
                 var sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
 
-              var sourceMaterialNode = sourceJsonNode.AsObject()
-       .FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
+                var sourceMaterialNode = sourceJsonNode.AsObject()
+           .FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
 
-            if (sourceMaterialNode.Value == null)
-         {
-         return true;
-     }
-
-             // Generate new GUID and names for the terrain material
-        var (newKey, newMaterialName, newInternalName, newGuid) = GenerateTerrainMaterialNames(
-sourceMaterialNode.Key,
-        material.Name,
-     material.InternalName
-    );
-
-        // Parse and update the material JSON
-          var materialObj = JsonNode.Parse(sourceMaterialNode.Value.ToJsonString());
-    if (materialObj == null)
-   {
-       return true;
+                if (sourceMaterialNode.Value == null)
+                {
+                    return true;
                 }
 
-   UpdateTerrainMaterialMetadata(materialObj, newMaterialName, newInternalName, newGuid);
+                // Generate new GUID and names for the terrain material
+                var (newKey, newMaterialName, newInternalName, newGuid) = GenerateTerrainMaterialNames(
+        sourceMaterialNode.Key,
+        material.Name,
+             material.InternalName
+            );
 
- // Copy texture files and update paths (with custom base color)
-        CopyTerrainTextures(material, materialObj, targetJsonFile.Directory.FullName, baseColorHex);
+                // Parse and update the material JSON
+                var materialObj = JsonNode.Parse(sourceMaterialNode.Value.ToJsonString());
+                if (materialObj == null)
+                {
+                    return true;
+                }
 
-    // Write to target file
-       WriteTerrainMaterialJson(targetJsonFile, newKey, materialObj);
+                UpdateTerrainMaterialMetadata(materialObj, newMaterialName, newInternalName, newGuid);
+
+                // Copy texture files and update paths (with custom base color and roughness)
+                CopyTerrainTextures(material, materialObj, targetJsonFile.Directory.FullName, baseColorHex, roughnessValue);
+
+                // Write to target file
+                WriteTerrainMaterialJson(targetJsonFile, newKey, materialObj);
 
                 return true;
-       }
-   catch (Exception ex)
+            }
+            catch (Exception ex)
             {
-       PubSubChannel.SendMessage(PubSubMessageType.Error,
- $"Terrain materials.json {material.MatJsonFileLocation} can't be parsed. Exception:{ex.Message}");
-          return false;
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+          $"Terrain materials.json {material.MatJsonFileLocation} can't be parsed. Exception:{ex.Message}");
+                return false;
             }
         }
 
@@ -265,52 +265,137 @@ sourceMaterialNode.Key,
 ? baseColorHex
     : textureProps.HexColor;
 
-    // Generate replacement PNG
-    var generatedPngPath = textureGenerator.GenerateSolidColorPng(
-   colorToUse,
-    textureProps.FileName,
-         textureProps.Type);
+                        // Generate replacement PNG
+                        var generatedPngPath = textureGenerator.GenerateSolidColorPng(
+                       colorToUse,
+                        textureProps.FileName,
+                             textureProps.Type);
 
-    // Update the path in the material JSON to point to the generated PNG
-  var newPath = _pathConverter.GetBeamNgJsonFileName(generatedPngPath);
-   UpdateTexturePathsInMaterial(materialObj, originalPath, newPath);
+                        // Update the path in the material JSON to point to the generated PNG
+                        var newPath = _pathConverter.GetBeamNgJsonFileName(generatedPngPath);
+                        UpdateTexturePathsInMaterial(materialObj, originalPath, newPath);
 
- PubSubChannel.SendMessage(PubSubMessageType.Info,
- $"Replaced {matFile.MapType} with generated texture: {Path.GetFileName(generatedPngPath)}");
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Replaced {matFile.MapType} with generated texture: {Path.GetFileName(generatedPngPath)}");
 
-         // Also update the corresponding size property if it exists
-      var sizePropertyName = matFile.MapType + "Size";
-  if (materialObj[sizePropertyName] != null)
-     {
- materialObj[sizePropertyName] = _terrainSize.Value;
-    }
+                        // Also update the corresponding size property if it exists
+                        var sizePropertyName = matFile.MapType + "Size";
+                        if (materialObj[sizePropertyName] != null)
+                        {
+                            materialObj[sizePropertyName] = _terrainSize.Value;
+                        }
 
-   continue; // Skip normal file copy for this texture
-    }
+                        continue; // Skip normal file copy for this texture
+                    }
+                }
+
+                // Normal texture copy for all other textures
+                var targetFullName = _pathConverter.GetTerrainTargetFileName(matFile.File.FullName);
+                if (string.IsNullOrEmpty(targetFullName))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
+                    _fileCopyHandler.CopyFile(matFile.File.FullName, targetFullName);
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Error,
+         $"Filepath error for terrain texture {material.Name}. Exception:{ex.Message}");
+                }
+
+                // Update texture path in the material JSON
+                var newNormalPath = _pathConverter.GetBeamNgJsonFileName(targetFullName);
+                UpdateTexturePathsInMaterial(materialObj, originalPath, newNormalPath);
+            }
         }
 
-   // Normal texture copy for all other textures
-      var targetFullName = _pathConverter.GetTerrainTargetFileName(matFile.File.FullName);
-        if (string.IsNullOrEmpty(targetFullName))
-   {
-        continue;
-      }
+        private void CopyTerrainTextures(MaterialJson material, JsonNode materialObj, string targetTerrainFolder, string baseColorHex, int roughnessValue)
+        {
+            TerrainTextureGenerator? textureGenerator = null;
 
- try
-      {
-             Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
-   _fileCopyHandler.CopyFile(matFile.File.FullName, targetFullName);
-        }
-       catch (Exception ex)
-     {
-            PubSubChannel.SendMessage(PubSubMessageType.Error,
- $"Filepath error for terrain texture {material.Name}. Exception:{ex.Message}");
-       }
+            // Initialize texture generator if we have terrain size
+            if (_terrainSize.HasValue)
+            {
+                textureGenerator = new TerrainTextureGenerator(targetTerrainFolder, _terrainSize.Value);
+            }
 
- // Update texture path in the material JSON
-        var newNormalPath = _pathConverter.GetBeamNgJsonFileName(targetFullName);
-      UpdateTexturePathsInMaterial(materialObj, originalPath, newNormalPath);
-  }
+            foreach (var matFile in material.MaterialFiles)
+            {
+                var originalPath = matFile.OriginalJsonPath;
+
+                // Check if this is a texture that should be replaced with generated dummy
+                if (textureGenerator != null &&
+                  TerrainTextureGenerator.IsReplaceableTexture(matFile.MapType))
+                {
+                    var textureProps = TerrainTextureGenerator.GetTextureProperties(matFile.MapType);
+                    if (textureProps != null)
+                    {
+                        // Determine color and custom value based on texture type
+                        var colorToUse = textureProps.HexColor;
+                        int? customValue = null;
+
+                        // Use custom color for baseColorBaseTex
+                        if (matFile.MapType.Equals("baseColorBaseTex", StringComparison.OrdinalIgnoreCase))
+                        {
+                            colorToUse = baseColorHex;
+                        }
+                        // Use custom roughness value for roughnessBaseTex
+                        else if (matFile.MapType.Equals("roughnessBaseTex", StringComparison.OrdinalIgnoreCase))
+                        {
+                            customValue = roughnessValue;
+                        }
+
+                        // Generate replacement PNG
+                        var generatedPngPath = textureGenerator.GenerateSolidColorPng(
+                            colorToUse,
+                            textureProps.FileName,
+                            textureProps.Type,
+                            customValue);
+
+                        // Update the path in the material JSON to point to the generated PNG
+                        var newPath = _pathConverter.GetBeamNgJsonFileName(generatedPngPath);
+                        UpdateTexturePathsInMaterial(materialObj, originalPath, newPath);
+
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                           $"Replaced {matFile.MapType} with generated texture: {Path.GetFileName(generatedPngPath)}");
+
+                        // Also update the corresponding size property if it exists
+                        var sizePropertyName = matFile.MapType + "Size";
+                        if (materialObj[sizePropertyName] != null)
+                        {
+                            materialObj[sizePropertyName] = _terrainSize.Value;
+                        }
+
+                        continue; // Skip normal file copy for this texture
+                    }
+                }
+
+                // Normal texture copy for all other textures
+                var targetFullName = _pathConverter.GetTerrainTargetFileName(matFile.File.FullName);
+                if (string.IsNullOrEmpty(targetFullName))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
+                    _fileCopyHandler.CopyFile(matFile.File.FullName, targetFullName);
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Error,
+               $"Filepath error for terrain texture {material.Name}. Exception:{ex.Message}");
+                }
+
+                // Update texture path in the material JSON
+                var newNormalPath = _pathConverter.GetBeamNgJsonFileName(targetFullName);
+                UpdateTexturePathsInMaterial(materialObj, originalPath, newNormalPath);
+            }
         }
 
         private (string newKey, string newMaterialName, string newInternalName, string newGuid)

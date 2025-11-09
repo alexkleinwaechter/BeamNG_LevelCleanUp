@@ -36,8 +36,9 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         /// <param name="hexColor">The color in hex format (e.g., #505a2d)</param>
         /// <param name="fileName">The filename for the PNG (without extension)</param>
         /// <param name="textureType">The type of texture to generate</param>
+        /// <param name="customValue">Optional custom grayscale value for grayscale textures (0-255)</param>
         /// <returns>The full path to the generated PNG file</returns>
-        public string GenerateSolidColorPng(string hexColor, string fileName, TextureType textureType)
+        public string GenerateSolidColorPng(string hexColor, string fileName, TextureType textureType, int? customValue = null)
         {
             try
             {
@@ -82,7 +83,9 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 switch (textureType)
                 {
                     case TextureType.Grayscale:
-                        GenerateGrayscaleImage(outputPath, r);
+                        // Use custom value if provided, otherwise use the R value from hex color
+                        var grayscaleValue = customValue ?? r;
+                        GenerateGrayscaleImage(outputPath, (byte)grayscaleValue);
                         break;
                     case TextureType.Normal:
                         GenerateNormalMapImage(outputPath);

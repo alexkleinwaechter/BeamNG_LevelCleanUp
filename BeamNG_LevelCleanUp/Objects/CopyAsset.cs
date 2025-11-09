@@ -8,6 +8,24 @@
         Terrain = 3,
         // GroundCover removed - now copied automatically with Terrain
     }
+
+    /// <summary>
+    /// Terrain material roughness presets
+    /// </summary>
+    public enum TerrainRoughnessPreset
+    {
+        Custom = 0,
+        WetAsphalt = 1,    // Very shiny
+        Asphalt = 2,       // Shiny
+        Concrete = 3,      // Medium-low roughness
+        DirtRoad = 4,      // Medium roughness
+        Grass = 5,    // Medium-high roughness
+        Mud = 6,      // High roughness
+        Forest = 7,        // High roughness
+        WetSurface = 8,    // Low roughness (shiny when wet)
+        Rock = 9           // Medium-low roughness
+    }
+
     public class CopyAsset
     {
         public Guid Identifier { get; set; } = Guid.NewGuid();
@@ -25,10 +43,87 @@
         public string TerrainMaterialName { get; set; }
         public string TerrainMaterialInternalName { get; set; }
         public GroundCover GroundCoverData { get; set; }
-        
+
         /// <summary>
         /// Base color for terrain texture generation in hex format (e.g., #808080)
         /// </summary>
         public string BaseColorHex { get; set; } = "#808080";
+
+        /// <summary>
+        /// Roughness preset for terrain material
+        /// </summary>
+        public TerrainRoughnessPreset RoughnessPreset { get; set; } = TerrainRoughnessPreset.DirtRoad;
+
+        /// <summary>
+        /// Custom roughness value (0-255, where 0 is shiny/black and 255 is rough/white)
+        /// </summary>
+        public int RoughnessValue { get; set; } = 128;
+
+        /// <summary>
+        /// Gets the roughness value based on preset or custom value
+        /// </summary>
+        public int GetRoughnessValue()
+        {
+            return RoughnessPreset switch
+            {
+                TerrainRoughnessPreset.WetAsphalt => 20, // Very shiny
+                TerrainRoughnessPreset.Asphalt => 50, // Shiny
+                TerrainRoughnessPreset.WetSurface => 40,  // Shiny when wet
+                TerrainRoughnessPreset.Concrete => 100,     // Medium-low
+                TerrainRoughnessPreset.Rock => 110,         // Medium-low (slightly rough)
+                TerrainRoughnessPreset.DirtRoad => 150,     // Medium
+                TerrainRoughnessPreset.Grass => 180,      // Medium-high
+                TerrainRoughnessPreset.Mud => 200,          // High
+                TerrainRoughnessPreset.Forest => 190,       // High
+                TerrainRoughnessPreset.Custom => RoughnessValue,
+                _ => 128  // Default medium roughness
+            };
+        }
+
+        /// <summary>
+        /// Attempts to detect appropriate roughness preset based on material name
+        /// </summary>
+        public static TerrainRoughnessPreset DetectRoughnessPresetFromName(string materialName)
+        {
+            if (string.IsNullOrEmpty(materialName))
+                return TerrainRoughnessPreset.DirtRoad;
+
+            // Sanitize and normalize the name
+            var normalized = materialName.ToLowerInvariant()
+             .Replace("-", "")
+                    .Replace("_", "")
+         .Replace(" ", "");
+
+            // Check for keywords in order of specificity
+            if (normalized.Contains("wetasphalt") || normalized.Contains("asphaltw"))
+                return TerrainRoughnessPreset.WetAsphalt;
+
+            if (normalized.Contains("asphalt") || normalized.Contains("tarmac"))
+                return TerrainRoughnessPreset.Asphalt;
+
+            if (normalized.Contains("wet") || normalized.Contains("rain") || normalized.Contains("water"))
+                return TerrainRoughnessPreset.WetSurface;
+
+            if (normalized.Contains("concrete") || normalized.Contains("cement") || normalized.Contains("pavement"))
+                return TerrainRoughnessPreset.Concrete;
+
+            if (normalized.Contains("rock") || normalized.Contains("stone") || normalized.Contains("boulder") || normalized.Contains("cliff"))
+                return TerrainRoughnessPreset.Rock;
+
+            if (normalized.Contains("grass") || normalized.Contains("lawn") || normalized.Contains("field"))
+                return TerrainRoughnessPreset.Grass;
+
+            if (normalized.Contains("forest") || normalized.Contains("wood") || normalized.Contains("tree"))
+                return TerrainRoughnessPreset.Forest;
+
+            if (normalized.Contains("mud") || normalized.Contains("clay") || normalized.Contains("swamp"))
+                return TerrainRoughnessPreset.Mud;
+
+            if (normalized.Contains("dirt") || normalized.Contains("soil") || normalized.Contains("ground") || normalized.Contains("sand"))
+                return TerrainRoughnessPreset.DirtRoad;
+
+            // Default to DirtRoad if nothing matches
+            return TerrainRoughnessPreset.DirtRoad;
+        }
     }
 }
