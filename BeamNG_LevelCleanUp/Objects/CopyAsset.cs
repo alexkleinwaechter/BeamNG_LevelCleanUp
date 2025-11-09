@@ -60,6 +60,11 @@
         public int RoughnessValue { get; set; } = 128;
 
         /// <summary>
+        /// Target terrain material name to replace (null means "Add" new material)
+        /// </summary>
+        public string ReplaceTargetMaterialName { get; set; }
+
+        /// <summary>
         /// Gets the roughness value based on preset or custom value
         /// </summary>
         public int GetRoughnessValue()

@@ -19,7 +19,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private ManagedDecalCopier _managedDecalCopier;
         private DaeCopier _daeCopier;
         private GroundCoverCopier _groundCoverCopier;
+        private GroundCoverDependencyHelper _groundCoverDependencyHelper;
         private TerrainMaterialCopier _terrainMaterialCopier;
+        private TerrainMaterialReplacer _terrainMaterialReplacer;
+        private GroundCoverReplacer _groundCoverReplacer;
 
         public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
         {
@@ -46,11 +49,14 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             if (Logic.BeamFileReader.GroundCoverJsonLines != null && Logic.BeamFileReader.GroundCoverJsonLines.Any())
             {
                 _groundCoverCopier.LoadGroundCoverJsonLines(Logic.BeamFileReader.GroundCoverJsonLines);
+                _groundCoverReplacer.LoadGroundCoverJsonLines(Logic.BeamFileReader.GroundCoverJsonLines);
             }
             // Load scanned materials for groundcover material lookup
             if (Logic.BeamFileReader.MaterialsJsonCopy != null && Logic.BeamFileReader.MaterialsJsonCopy.Any())
             {
                 _groundCoverCopier.LoadMaterialsJsonCopy(Logic.BeamFileReader.MaterialsJsonCopy);
+                _groundCoverReplacer.LoadMaterialsJsonCopy(Logic.BeamFileReader.MaterialsJsonCopy);
+                _groundCoverDependencyHelper.LoadMaterialsJsonCopy(Logic.BeamFileReader.MaterialsJsonCopy);
             }
         }
 
@@ -61,15 +67,43 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             _materialCopier = new MaterialCopier(_pathConverter, _fileCopyHandler);
             _managedDecalCopier = new ManagedDecalCopier();
             _daeCopier = new DaeCopier(_pathConverter, _fileCopyHandler, _materialCopier);
-            _groundCoverCopier = new GroundCoverCopier(_pathConverter, _fileCopyHandler, _materialCopier, _daeCopier, levelNameCopyFrom, namePath);
-            
-            // Pass levelPathCopyFrom from PathResolver to TerrainMaterialCopier
+
+            // Create shared dependency helper
+            _groundCoverDependencyHelper = new GroundCoverDependencyHelper(
+                _materialCopier,
+                _daeCopier,
+                levelNameCopyFrom);
+
+            // Initialize copiers using the shared helper
+            _groundCoverCopier = new GroundCoverCopier(
+                _pathConverter,
+                _fileCopyHandler,
+                _materialCopier,
+                _daeCopier,
+                levelNameCopyFrom,
+                namePath);
+
+            // Initialize replacer using the shared helper
+            _groundCoverReplacer = new GroundCoverReplacer(
+                _groundCoverDependencyHelper,
+                namePath);
+
+            // Pass level paths to TerrainMaterialCopier
             _terrainMaterialCopier = new TerrainMaterialCopier(
-                _pathConverter, 
-                _fileCopyHandler, 
-                levelNameCopyFrom, 
+                _pathConverter,
+                _fileCopyHandler,
+                levelNameCopyFrom,
                 _groundCoverCopier,
-                Logic.PathResolver.LevelPathCopyFrom);
+                Logic.PathResolver.LevelPathCopyFrom,
+                Logic.PathResolver.LevelPath);
+
+            // Initialize TerrainMaterialReplacer
+            _terrainMaterialReplacer = new TerrainMaterialReplacer(
+                _pathConverter,
+                _fileCopyHandler,
+                _groundCoverReplacer,
+                Logic.PathResolver.LevelPathCopyFrom,
+                Logic.PathResolver.LevelPath);
         }
 
         public void Copy()
@@ -138,13 +172,33 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         }
 
         /// <summary>
-        /// Copies all terrain materials in batch and then writes groundcovers once
-        /// This is the new efficient approach
+        /// Processes terrain materials - routes to copier or replacer based on ReplaceTargetMaterialName
         /// </summary>
         private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
         {
-            // Copy all terrain materials (this also collects groundcovers)
-            foreach (var item in terrainMaterials)
+            // Separate into copy and replace operations
+            var materialsToAdd = terrainMaterials.Where(m => string.IsNullOrEmpty(m.ReplaceTargetMaterialName)).ToList();
+            var materialsToReplace = terrainMaterials.Where(m => !string.IsNullOrEmpty(m.ReplaceTargetMaterialName)).ToList();
+
+            // Process replacements first
+            foreach (var item in materialsToReplace)
+            {
+                if (!_terrainMaterialReplacer.Replace(item))
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Failed to replace material '{item.ReplaceTargetMaterialName}'. Skipping.");
+                    // Continue with other replacements, don't fail entire batch
+                }
+            }
+
+            // Write all groundcover replacements ONCE after all terrain replacements
+            if (materialsToReplace.Any())
+            {
+                _groundCoverReplacer.WriteAllGroundCoverReplacements();
+            }
+
+            // Process additions (new materials)
+            foreach (var item in materialsToAdd)
             {
                 if (!_terrainMaterialCopier.Copy(item))
                 {
@@ -153,7 +207,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
 
             // Write all collected groundcovers ONCE at the end
-            _groundCoverCopier.WriteAllGroundCovers();
+            if (materialsToAdd.Any())
+            {
+                _groundCoverCopier.WriteAllGroundCovers();
+            }
 
             return true;
         }

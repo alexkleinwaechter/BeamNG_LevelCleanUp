@@ -615,21 +615,21 @@ namespace BeamNG_LevelCleanUp.Logic
         {
             var terrainMaterialsPath = Path.Join(_namePathCopyFrom, Constants.Terrains, "main.materials.json");
             var terrainMaterialsFile = new FileInfo(terrainMaterialsPath);
-            
+
             if (terrainMaterialsFile.Exists)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scanning terrain materials from {_levelNameCopyFrom}");
                 var terrainScanner = new TerrainCopyScanner(
-                    terrainMaterialsFile.FullName, 
-                    _levelPathCopyFrom, 
-                    _namePath, 
-                    MaterialsJsonCopy, 
+                    terrainMaterialsFile.FullName,
+                    _levelPathCopyFrom,
+                    _namePath,
+                    MaterialsJsonCopy,
                     CopyAssets);
                 terrainScanner.ScanTerrainMaterials();
             }
             else
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"No terrain materials found in {_levelNameCopyFrom} at {terrainMaterialsPath}");
             }
         }
@@ -648,7 +648,7 @@ namespace BeamNG_LevelCleanUp.Logic
             }
             else
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"No vegetation items.level.json found in {_levelNameCopyFrom} at {vegetationPath}");
             }
         }

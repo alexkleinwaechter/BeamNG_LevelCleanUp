@@ -14,7 +14,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private List<MaterialJson> _materialsJsonCopy { get; set; }
         private List<CopyAsset> _copyAssets { get; set; }
 
-        public TerrainCopyScanner(string terrainMaterialsJsonPath, string levelPathCopyFrom, string namePath, 
+        public TerrainCopyScanner(string terrainMaterialsJsonPath, string levelPathCopyFrom, string namePath,
             List<MaterialJson> materialsJsonCopy, List<CopyAsset> copyAssets)
         {
             _terrainMaterialsJsonPath = terrainMaterialsJsonPath;
@@ -71,7 +71,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                         }
                         catch (Exception ex)
                         {
-                            PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
                                 $"Error reading terrain material {child.Name}: {ex.Message}");
                         }
                     }
@@ -79,7 +79,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             }
             catch (Exception ex)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
                     $"Error scanning terrain materials from {_terrainMaterialsJsonPath}: {ex.Message}");
             }
         }
@@ -96,10 +96,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     {
                         var propName = prop.Name;
                         var propValue = prop.Value.GetString();
-                        
+
                         // Check if this looks like a texture path (contains "levels/" or ends with image extension)
-                        if (!string.IsNullOrEmpty(propValue) && 
-                            (propValue.Contains("/levels/") || 
+                        if (!string.IsNullOrEmpty(propValue) &&
+                            (propValue.Contains("/levels/") ||
                              propName.EndsWith("Tex", StringComparison.OrdinalIgnoreCase) ||
                              propName.EndsWith("Map", StringComparison.OrdinalIgnoreCase)))
                         {
@@ -108,7 +108,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                             {
                                 fi = FileUtils.ResolveImageFileName(fi.FullName);
                             }
-                            
+
                             material.MaterialFiles.Add(new MaterialFile
                             {
                                 File = fi,
@@ -121,10 +121,61 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
                         $"Error scanning property {prop.Name} for material {material.Name}: {ex.Message}");
                 }
             }
+        }
+
+        /// <summary>
+        /// Scans the target level's terrain materials for the replacement dropdown
+        /// Returns a list of terrain material names available in the target
+        /// </summary>
+        public static List<string> GetTargetTerrainMaterials(string namePath)
+        {
+            var targetMaterials = new List<string>();
+            var targetTerrainPath = Path.Join(namePath, Constants.Terrains, "main.materials.json");
+            var targetFile = new FileInfo(targetTerrainPath);
+
+            if (!targetFile.Exists)
+            {
+                return targetMaterials;
+            }
+
+            try
+            {
+                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(targetFile.FullName);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+                {
+                    foreach (var child in jsonObject.RootElement.EnumerateObject())
+                    {
+                        try
+                        {
+                            var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
+                            if (material != null && material.Class == "TerrainMaterial")
+                            {
+                                var materialName = !string.IsNullOrEmpty(material.Name) ? material.Name : material.InternalName;
+                                if (!string.IsNullOrEmpty(materialName))
+                                {
+                                    targetMaterials.Add(materialName);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"Error reading target terrain material {child.Name}: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Could not load target terrain materials: {ex.Message}");
+            }
+
+            return targetMaterials.OrderBy(x => x).ToList();
         }
     }
 }
