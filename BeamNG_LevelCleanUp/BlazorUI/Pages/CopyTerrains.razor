@@ -1,16 +1,13 @@
 @page "/CopyTerrains"
-
+@using System.Diagnostics.CodeAnalysis
+@using System.IO.Compression
+@using System.Reflection
 @using BeamNG_LevelCleanUp.BlazorUI.Components
-@using BeamNG_LevelCleanUp.Communication;
-@using BeamNG_LevelCleanUp.Logic;
-@using BeamNG_LevelCleanUp.LogicCopyAssets;
-@using BeamNG_LevelCleanUp.Objects;
-@using BeamNG_LevelCleanUp.Utils;
-@using Microsoft.AspNetCore.Components.Forms;
-@using System.IO.Compression;
-@using System.Diagnostics.CodeAnalysis;
-@using System.Reflection;
-@using MudBlazor.Utilities;
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.LogicCopyAssets
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
@@ -42,11 +39,11 @@
                     }
                 </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="false">
-                    <FileSelectComponent OnFileSelected="@((x) => FileSelected(x, false))"
+                    <FileSelectComponent OnFileSelected="@(x => FileSelected(x, false))"
                                          Description="Your zipped target map"
                                          Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
-                    <FileSelectComponent OnFileSelected="@((x) => FileSelected(x, true))" SelectFolder="true"
+                    <FileSelectComponent OnFileSelected="@(x => FileSelected(x, true))" SelectFolder="true"
                                          Description="or your unzipped map directory"
                                          Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
@@ -71,15 +68,19 @@
                           MultiSelection="true" @bind-SelectedItems="_selectedItems">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Terrain Materials in @_levelNameCopyFrom</MudText>
-                        <MudSpacer />
+                        <MudSpacer/>
                         <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s => OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
-                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.FullName)">Terrain Material</MudTableSortLabel></MudTh>
+                        <MudTh>
+                            <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.FullName)">Terrain Material</MudTableSortLabel>
+                        </MudTh>
                         <MudTh>Base Color</MudTh>
                         <MudTh>Roughness</MudTh>
                         <MudTh>Replace Target</MudTh>
-                        <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
+                        <MudTh>
+                            <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.SizeMb)">Size Mb</MudTableSortLabel>
+                        </MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="File">@context.FullName</MudTd>
@@ -91,7 +92,7 @@
                                                 DisableAlpha="true"
                                                 ColorPickerMode="ColorPickerMode.RGB"
                                                 PickerVariant="PickerVariant.Dialog"
-                                                ColorPickerView="ColorPickerView.Spectrum" />
+                                                ColorPickerView="ColorPickerView.Spectrum"/>
                             </div>
                         </MudTd>
                         <MudTd DataLabel="Roughness" @onclick:stopPropagation>
@@ -123,10 +124,10 @@
                                         </MudSlider>
                                         <MudText Typo="Typo.caption" Style="min-width: 80px;">
                                             @(context.CopyAsset.RoughnessValue < 85 ? "Shiny" :
-                                                                                context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
-                                </MudText>
-                            </div>
-                                                        }
+                                            context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
+                                        </MudText>
+                                    </div>
+                                }
                                 else
                                 {
                                     <MudText Typo="Typo.caption" Style="color: gray;">
@@ -164,7 +165,7 @@
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
                 <MudList Clickable="true" Dense="true" DisableGutters="false">
                     @{
-                        var list = _showErrorLog ? _errors : (_showWarningLog ? _warnings : _messages);
+                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
                         @foreach (var item in list)
                         {
                             <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
@@ -201,10 +202,10 @@
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
                                @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -217,7 +218,7 @@
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent />
+        <CustomErrorContent/>
     </ErrorContent>
 </ErrorBoundary>
 
@@ -227,37 +228,36 @@
     private string _levelNameCopyFrom { get; set; }
     private string _levelPathCopyFrom { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
-    private List<string> _missingFiles { get; set; } = new List<string>();
-    private List<string> _errors { get; set; } = new List<string>();
-    private List<string> _messages { get; set; } = new List<string>();
-    private List<string> _warnings { get; set; } = new List<string>();
+    private List<string> _missingFiles { get; set; } = new();
+    private List<string> _errors { get; set; } = new();
+    private List<string> _messages { get; set; } = new();
+    private List<string> _warnings { get; set; } = new();
     private Snackbar _staticSnackbar;
     private Snackbar _unzipSnackbarCopyFrom;
     private BeamFileReader Reader { get; set; }
-    private string _fileSelectTitleCopyFrom = "Select the zipped source level with terrain materials";
-    private string _fileSelectTitle = "Select the target level to copy terrain materials to";
+    private readonly string _fileSelectTitleCopyFrom = "Select the zipped source level with terrain materials";
+    private readonly string _fileSelectTitle = "Select the target level to copy terrain materials to";
     private bool _fileSelectDisabled { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
     private Anchor _anchor;
     private string width, height;
-    private List<GridFileListItem> BindingListCopy { get; set; } = new List<GridFileListItem>();
-    private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
+    private List<GridFileListItem> BindingListCopy { get; set; } = new();
+    private HashSet<GridFileListItem> _selectedItems = new();
     private bool _fixed_Header = true;
-    [AllowNull]
-    private MudExpansionPanels FileSelect { get; set; }
+    [AllowNull] private MudExpansionPanels FileSelect { get; set; }
     private string _searchString = string.Empty;
-    private string _labelFileSummaryShrink { get; set; } = String.Empty;
+    private string _labelFileSummaryShrink { get; set; } = string.Empty;
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
     bool _showErrorLog { get; set; }
     bool _showWarningLog { get; set; }
-    private List<FileInfo> _vanillaLevels { get; set; } = new List<FileInfo>();
+    private List<FileInfo> _vanillaLevels { get; set; } = new();
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private FileInfo _vanillaLevelTargetSelected { get; set; }
     private string _beamInstallDir { get; set; }
     private MudTable<GridFileListItem> table;
-    private List<string> _targetTerrainMaterials { get; set; } = new List<string>();
+    private List<string> _targetTerrainMaterials { get; set; } = new();
 
     protected void InitializeVariables()
     {
@@ -289,10 +289,7 @@
         {
             try
             {
-                _unzipSnackbarCopyFrom = Snackbar.Add("Unzipping source level...", Severity.Normal, config =>
-                    {
-                        config.VisibleStateDuration = int.MaxValue;
-                    });
+                _unzipSnackbarCopyFrom = Snackbar.Add("Unzipping source level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_copyFrom", true);
                 //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPathCopyFrom, null);
@@ -305,7 +302,6 @@
                 ShowException(ex);
                 _fileSelectDisabled = false;
             }
-
         });
         //await AnalyzeLevel();
         _fileSelectDisabled = false;
@@ -345,7 +341,7 @@
             try
             {
                 File.Copy(file, Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), true);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy target level finished");
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Copy target level finished");
             }
             catch (Exception ex)
             {
@@ -357,10 +353,7 @@
         {
             try
             {
-                _staticSnackbar = Snackbar.Add("Unzipping target level...", Severity.Normal, config =>
-                    {
-                        config.VisibleStateDuration = int.MaxValue;
-                    });
+                _staticSnackbar = Snackbar.Add("Unzipping target level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 if (!isFolder)
                 {
                     _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
@@ -381,7 +374,6 @@
                 ShowException(ex);
                 _fileSelectDisabled = false;
             }
-
         });
         await ScanAssets();
         _fileSelectDisabled = false;
@@ -403,8 +395,8 @@
             _beamInstallDir = Steam.GetBeamInstallDir();
             GetVanillaLevels();
         }
-        return "BeamNG install directory: " + _beamInstallDir;
 
+        return "BeamNG install directory: " + _beamInstallDir;
     }
 
     protected async Task ScanAssets()
@@ -429,7 +421,7 @@
             }
         });
         FillCopyList();
-        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Done! Scanning Terrain Materials finished. Please select materials to copy.");
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Scanning Terrain Materials finished. Please select materials to copy.");
         _fileSelectDisabled = false;
     }
 
@@ -469,7 +461,7 @@
         _showErrorLog = msgType == PubSubMessageType.Error;
         _showWarningLog = msgType == PubSubMessageType.Warning;
         _openDrawer = true;
-        this._anchor = anchor;
+        _anchor = anchor;
 
         switch (anchor)
         {
@@ -497,7 +489,6 @@
         var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
         Snackbar.Add(message, Severity.Error);
         _errors.Add(message);
-
     }
 
     private void FillCopyList()
@@ -527,10 +518,8 @@
         {
             return $"{_fileSelectTitle} > {_levelName}";
         }
-        else
-        {
-            return $"{_fileSelectTitle}";
-        }
+
+        return $"{_fileSelectTitle}";
     }
 
     private string GetFileSelectTitleCopyFrom()
@@ -539,13 +528,14 @@
         {
             return $"{_fileSelectTitleCopyFrom} > {_levelNameCopyFrom}";
         }
-        else
-        {
-            return $"{_fileSelectTitleCopyFrom}";
-        }
+
+        return $"{_fileSelectTitleCopyFrom}";
     }
 
-    private bool FilterFunc1(GridFileListItem element) => FilterFunc(element, _searchString);
+    private bool FilterFunc1(GridFileListItem element)
+    {
+        return FilterFunc(element, _searchString);
+    }
 
     private bool FilterFunc(GridFileListItem element, string searchString)
     {
@@ -573,7 +563,6 @@
             if (element.SizeMb.ToString().Contains(_searchString, StringComparison.OrdinalIgnoreCase))
                 return true;
             return false;
-
         });
 
         return new TableData<GridFileListItem>
@@ -598,8 +587,8 @@
         var replaceCount = _selectedItems.Count(x => x.CopyAsset.IsReplaceMode);
         var addCount = _selectedItems.Count - replaceCount;
         var totalReplacements = _selectedItems
-      .Where(x => x.CopyAsset.IsReplaceMode)
-         .Sum(x => x.CopyAsset.ReplaceTargetMaterialNames.Count);
+            .Where(x => x.CopyAsset.IsReplaceMode)
+            .Sum(x => x.CopyAsset.ReplaceTargetMaterialNames.Count);
 
         var messageText = "Do you really want to copy these terrain materials? This process cannot be undone. ";
 
@@ -622,10 +611,7 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
-            _staticSnackbar = Snackbar.Add($"Terrain materials copy in process. Please be patient.", Severity.Normal, config =>
-           {
-               config.VisibleStateDuration = int.MaxValue;
-           });
+            _staticSnackbar = Snackbar.Add("Terrain materials copy in process. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
             await Task.Run(() =>
             {
                 var selected = _selectedItems.Select(y => y.Identifier).ToList();
@@ -647,14 +633,8 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
-                _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
-                        {
-                            config.VisibleStateDuration = int.MaxValue;
-                        });
-                await Task.Run(() =>
-                            {
-                                ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
-                            });
+                _staticSnackbar = Snackbar.Add("Zipping the deployment file. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
+                await Task.Run(() => { ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel); });
                 Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
@@ -680,7 +660,7 @@
         }
     }
 
-    Func<FileInfo, string> converter = p => p?.Name;
+    readonly Func<FileInfo, string> converter = p => p?.Name;
 
     public static DirectoryInfo GetExecutingDirectory()
     {
@@ -698,7 +678,7 @@
     }
 
     /// <summary>
-    /// Handles replace target selection changes with mutual exclusivity logic
+    ///     Handles replace target selection changes with mutual exclusivity logic
     /// </summary>
     private void OnReplaceTargetChanged(CopyAsset asset, IEnumerable<string> selectedValues)
     {
@@ -739,4 +719,5 @@
         // Force UI refresh
         StateHasChanged();
     }
+
 }

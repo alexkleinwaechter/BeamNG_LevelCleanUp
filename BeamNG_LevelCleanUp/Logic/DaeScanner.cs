@@ -1,79 +1,78 @@
-﻿using BeamNG_LevelCleanUp.Communication;
+﻿using System.Xml;
+using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
-using System.Xml;
 
-namespace BeamNG_LevelCleanUp.Logic
+namespace BeamNG_LevelCleanUp.Logic;
+
+public class DaeScanner
 {
-    public class DaeScanner
+    private readonly string _daePath;
+    private readonly string _levelPath;
+    private readonly FileInfo _resolvedDaeFile;
+    private readonly string _resolvedDaePath;
+
+    public DaeScanner(string levelPath, string daePath, bool fullDaePathProvided = false)
     {
-        string _levelPath;
-        string _daePath;
-        string _resolvedDaePath;
-        FileInfo _resolvedDaeFile;
+        _daePath = daePath.Replace("/", "\\");
+        _levelPath = levelPath;
+        _resolvedDaePath = fullDaePathProvided ? _daePath : PathResolver.ResolvePath(_levelPath, _daePath, false);
+        _resolvedDaeFile = new FileInfo(_resolvedDaePath);
+    }
 
-        public DaeScanner(string levelPath, string daePath, bool fullDaePathProvided = false)
+    public bool Exists()
+    {
+        return _resolvedDaeFile.Exists;
+    }
+
+    public bool IsCdae()
+    {
+        return _resolvedDaeFile.Extension.Equals(".cdae", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public string ResolvedPath()
+    {
+        return _resolvedDaePath;
+    }
+
+    public List<MaterialsDae> GetMaterials()
+    {
+        var path = IsCdae() ? Path.ChangeExtension(_resolvedDaePath, ".dae") : _resolvedDaePath;
+
+        var retVal = new List<MaterialsDae>();
+        //Create the XmlDocument.
+        var doc = new XmlDocument();
+        try
         {
-            _daePath = daePath.Replace("/", "\\");
-            _levelPath = levelPath;
-            _resolvedDaePath = fullDaePathProvided ? _daePath : PathResolver.ResolvePath(_levelPath, _daePath, false);
-            _resolvedDaeFile = new FileInfo(_resolvedDaePath);
+            if (!new FileInfo(path).Exists) throw new Exception($"File not found and cdae can't be scanned: {path}");
+            doc.Load(path);
         }
-        public bool Exists()
+        catch (Exception ex)
         {
-            return _resolvedDaeFile.Exists;
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
+                $"Collada format error in {_resolvedDaeFile}. Exception:{ex.Message}");
         }
 
-        public bool IsCdae()
+        //Display all the book titles.
+        var elemList = doc.GetElementsByTagName("material");
+        for (var i = 0; i < elemList.Count; i++)
         {
-            return _resolvedDaeFile.Extension.Equals(".cdae", StringComparison.OrdinalIgnoreCase);
-        }
-        public string ResolvedPath()
-        {
-            return _resolvedDaePath;
-        }
-        public List<MaterialsDae> GetMaterials()
-        {
-            var path = IsCdae() ? Path.ChangeExtension(_resolvedDaePath, ".dae") : _resolvedDaePath;
-
-            var retVal = new List<MaterialsDae>();
-            //Create the XmlDocument.
-            XmlDocument doc = new XmlDocument();
-            try
+            var matDae = new MaterialsDae();
+            var elem = (XmlElement)elemList[i];
+            if (elem.HasAttribute("id"))
             {
-                if (!new FileInfo(path).Exists)
-                {
-                    throw new Exception($"File not found and cdae can't be scanned: {path}");
-                }
-                doc.Load(path);
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Collada format error in {_resolvedDaeFile}. Exception:{ex.Message}");
+                matDae.MaterialId = elem.GetAttribute("id");
+                matDae.DaeLocation = _resolvedDaePath;
             }
 
-            //Display all the book titles.
-            XmlNodeList elemList = doc.GetElementsByTagName("material");
-            for (int i = 0; i < elemList.Count; i++)
+            if (elem.HasAttribute("name"))
             {
-                var matDae = new MaterialsDae();
-                XmlElement elem = (XmlElement)elemList[i];
-                if (elem.HasAttribute("id"))
-                {
-                    matDae.MaterialId = elem.GetAttribute("id");
-                    matDae.DaeLocation = _resolvedDaePath;
-                }
-                if (elem.HasAttribute("name"))
-                {
-                    var nameParts = elem.GetAttribute("name").Split(" ");
-                    matDae.MaterialName = nameParts.FirstOrDefault();
-
-                }
-                if (!string.IsNullOrEmpty(matDae.MaterialId))
-                {
-                    retVal.Add(matDae);
-                }
+                var nameParts = elem.GetAttribute("name").Split(" ");
+                matDae.MaterialName = nameParts.FirstOrDefault();
             }
-            return retVal;
+
+            if (!string.IsNullOrEmpty(matDae.MaterialId)) retVal.Add(matDae);
         }
+
+        return retVal;
     }
 }

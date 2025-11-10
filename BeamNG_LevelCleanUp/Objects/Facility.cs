@@ -1,9 +1,8 @@
-﻿namespace BeamNG_LevelCleanUp.Objects
+﻿namespace BeamNG_LevelCleanUp.Objects;
+
+public class Facility
 {
-    public class Facility
-    {
-        public string id { get; set; }
-        public string name { get; set; }
-        public string preview { get; set; }
-    }
+    public string id { get; set; }
+    public string name { get; set; }
+    public string preview { get; set; }
 }

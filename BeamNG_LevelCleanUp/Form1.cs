@@ -4,72 +4,70 @@ using Microsoft.AspNetCore.Components.WebView.WindowsForms;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 
-namespace BeamNG_LevelCleanUp
+namespace BeamNG_LevelCleanUp;
+
+public partial class Form1 : Form
 {
-    public partial class Form1 : Form
+    public Form1()
     {
-        public Form1()
-        {
-            InitializeComponent();
+        InitializeComponent();
 
-            var serviceCollection = new ServiceCollection();
-            serviceCollection.AddWindowsFormsBlazorWebView();
-            //serviceCollection.AddSingleton<WeatherForecastService>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddWindowsFormsBlazorWebView();
+        //serviceCollection.AddSingleton<WeatherForecastService>();
 
-            // Code for MudBlazor
-            serviceCollection.AddMudServices();
+        // Code for MudBlazor
+        serviceCollection.AddMudServices();
 
-            blazorWebView1.HostPage = @"wwwroot\index.html";
+        blazorWebView1.HostPage = @"wwwroot\index.html";
 #if DEBUG
-            serviceCollection.AddBlazorWebViewDeveloperTools();
-            serviceCollection.AddLogging();
+        serviceCollection.AddBlazorWebViewDeveloperTools();
+        serviceCollection.AddLogging();
 #endif
-            blazorWebView1.Services = serviceCollection.BuildServiceProvider();
-            blazorWebView1.RootComponents.Add<App>("#app");
-        }
+        blazorWebView1.Services = serviceCollection.BuildServiceProvider();
+        blazorWebView1.RootComponents.Add<App>("#app");
+    }
 
-        public Task InitializeAsync(CancellationToken token)
+    public Task InitializeAsync(CancellationToken token)
+    {
+        //Nur für splashscreen
+        return Task.Delay(TimeSpan.FromSeconds(0));
+    }
+
+    public void Initialize()
+    {
+        //Nur für splashscreen
+        //Thread.Sleep(TimeSpan.FromSeconds(5));
+    }
+
+    private void Form1_FormClosed(object sender, FormClosedEventArgs e)
+    {
+    }
+
+    private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(ZipFileHandler.GetLastUnpackedPath()) ||
+            !string.IsNullOrEmpty(ZipFileHandler.GetLastUnpackedCopyFromPath()))
         {
-            //Nur für splashscreen
-            return Task.Delay(TimeSpan.FromSeconds(0));
-        }
-
-        public void Initialize()
-        {
-            //Nur für splashscreen
-            //Thread.Sleep(TimeSpan.FromSeconds(5));
-        }
-
-        private void Form1_FormClosed(object sender, FormClosedEventArgs e)
-        {
-
-        }
-
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            if (!string.IsNullOrEmpty(ZipFileHandler.GetLastUnpackedPath()) || !string.IsNullOrEmpty(ZipFileHandler.GetLastUnpackedCopyFromPath()))
-            {
-                if (MessageBox.Show("Should the Working Directory be cleaned from unpacked data?", "Cleanup", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            if (MessageBox.Show("Should the Working Directory be cleaned from unpacked data?", "Cleanup",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                try
                 {
-                    try
-                    {
-                        ZipFileHandler.CleanUpWorkingDirectory();
-                        Environment.Exit(0);
-                    }
-                    catch (Exception ex)
-                    {
-                        if (MessageBox.Show($"Error while cleaning up working directory: {ex.Message}. Maybe you have an editor or terminal open in one of the directories. Do you want to close the tool anyway?", "Error", MessageBoxButtons.YesNo, MessageBoxIcon.Error) == DialogResult.Yes)
-                        {
-                            Environment.Exit(0);
-                        }
-                        e.Cancel = true;
-                    }
+                    ZipFileHandler.CleanUpWorkingDirectory();
+                    Environment.Exit(0);
                 }
-            }
-            else
-            {
-                Environment.Exit(0);
-            }
+                catch (Exception ex)
+                {
+                    if (MessageBox.Show(
+                            $"Error while cleaning up working directory: {ex.Message}. Maybe you have an editor or terminal open in one of the directories. Do you want to close the tool anyway?",
+                            "Error", MessageBoxButtons.YesNo, MessageBoxIcon.Error) ==
+                        DialogResult.Yes) Environment.Exit(0);
+                    e.Cancel = true;
+                }
+        }
+        else
+        {
+            Environment.Exit(0);
         }
     }
 }

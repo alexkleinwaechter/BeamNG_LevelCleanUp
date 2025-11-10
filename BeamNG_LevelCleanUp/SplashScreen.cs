@@ -1,10 +1,9 @@
-﻿namespace BeamNG_LevelCleanUp
+﻿namespace BeamNG_LevelCleanUp;
+
+public partial class SplashScreen : Form
 {
-    public partial class SplashScreen : Form
+    public SplashScreen()
     {
-        public SplashScreen()
-        {
-            InitializeComponent();
-        }
+        InitializeComponent();
     }
 }

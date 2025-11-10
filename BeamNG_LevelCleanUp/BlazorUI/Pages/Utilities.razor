@@ -1,11 +1,10 @@
 ﻿@page "/Utilities"
+@using System.IO.Compression
 @using BeamNG_LevelCleanUp.BlazorUI.Components
-@using BeamNG_LevelCleanUp.Communication;
-@using BeamNG_LevelCleanUp.Logic;
-@using BeamNG_LevelCleanUp.Objects;
-@using BeamNG_LevelCleanUp.Utils;
-@using Microsoft.AspNetCore.Components.Forms;
-@using System.IO.Compression;
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
@@ -65,7 +64,7 @@
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
                 <MudList Clickable="true" Dense="true" DisableGutters="false">
                     @{
-                        var list = _showErrorLog ? _errors : (_showWarningLog ? _warnings : _messages);
+                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
                         @foreach (var item in list)
                         {
                             <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
@@ -98,10 +97,10 @@
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
                                @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -114,7 +113,7 @@
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent />
+        <CustomErrorContent/>
     </ErrorContent>
 </ErrorBoundary>
 
@@ -125,29 +124,29 @@
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
-    private List<string> _missingFiles { get; set; } = new List<string>();
-    private List<string> _errors { get; set; } = new List<string>();
-    private List<string> _warnings { get; set; } = new List<string>();
-    private List<string> _messages { get; set; } = new List<string>();
+    private List<string> _missingFiles { get; set; } = new();
+    private List<string> _errors { get; set; } = new();
+    private List<string> _warnings { get; set; } = new();
+    private List<string> _messages { get; set; } = new();
     private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
-    private string _fileSelectTitle = "Select your zipped level you want to make changes";
+    private readonly string _fileSelectTitle = "Select your zipped level you want to make changes";
     private bool _fileSelectDisabled { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
     private Anchor _anchor;
     private string width, height;
-    private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
-    private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
+    private List<GridFileListItem> BindingListDelete { get; set; } = new();
+    private HashSet<GridFileListItem> _selectedItems = new();
     private bool _fixed_Header = true;
     private MudExpansionPanels? FileSelect { get; set; }
     private string _searchString = string.Empty;
-    private string _labelFileSummaryShrink { get; set; } = String.Empty;
+    private string _labelFileSummaryShrink { get; set; } = string.Empty;
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
     bool _showErrorLog { get; set; }
     bool _showWarningLog { get; set; }
-    private List<FileInfo> _vanillaLevels { get; set; } = new List<FileInfo>();
+    private List<FileInfo> _vanillaLevels { get; set; } = new();
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private string _beamInstallDir { get; set; }
 
@@ -177,10 +176,7 @@
         {
             try
             {
-                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
-                {
-                    config.VisibleStateDuration = int.MaxValue;
-                });
+                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
                 Snackbar.Remove(_staticSnackbar);
@@ -190,13 +186,12 @@
                 ShowException(ex);
                 _fileSelectDisabled = false;
             }
-
         });
         await Task.Run(() =>
-            {
-                Reader = new BeamFileReader(_levelPath, string.Empty);
-                _levelName = Reader.GetLevelName();
-            });
+        {
+            Reader = new BeamFileReader(_levelPath, string.Empty);
+            _levelName = Reader.GetLevelName();
+        });
         _fileSelectDisabled = false;
     }
 
@@ -217,11 +212,11 @@
             _beamInstallDir = Steam.GetBeamInstallDir();
             GetVanillaLevels();
         }
-        return "BeamNG install directory: " + _beamInstallDir;
 
+        return "BeamNG install directory: " + _beamInstallDir;
     }
 
-    Func<FileInfo, string> converter = p => p?.Name;
+    readonly Func<FileInfo, string> converter = p => p?.Name;
 
     protected async Task OnVanillaSourceSelected(FileInfo file)
     {
@@ -300,7 +295,7 @@
         {
             _staticSnackbar
                 = Snackbar.Add($"The level {_levelName} is still loaded. You can either change it now or load another level for changes.",
-                Severity.Info);
+                    Severity.Info);
         }
         else
         {
@@ -313,7 +308,7 @@
         _showErrorLog = msgType == PubSubMessageType.Error;
         _showWarningLog = msgType == PubSubMessageType.Warning;
         _openDrawer = true;
-        this._anchor = anchor;
+        _anchor = anchor;
 
         switch (anchor)
         {
@@ -341,7 +336,6 @@
         var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
         Snackbar.Add(message, Severity.Error);
         _errors.Add(message);
-
     }
 
     private string GetFileSelectTitle()
@@ -350,10 +344,8 @@
         {
             return $"{_fileSelectTitle} > {_levelName}";
         }
-        else
-        {
-            return $"{_fileSelectTitle}";
-        }
+
+        return $"{_fileSelectTitle}";
     }
 
     private async Task ApplyDialog()
@@ -396,10 +388,7 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
-                _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
-                {
-                    config.VisibleStateDuration = int.MaxValue;
-                });
+                _staticSnackbar = Snackbar.Add("Zipping the deployment file. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 await Task.Run(() =>
                 {
                     ZipFileHandler.RemoveModInfo(path);
@@ -413,5 +402,5 @@
             }
         }
     }
-}
 
+}

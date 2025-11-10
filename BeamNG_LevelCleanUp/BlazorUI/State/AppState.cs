@@ -1,6 +1,5 @@
-﻿namespace BeamNG_LevelCleanUp.BlazorUI.State
+﻿namespace BeamNG_LevelCleanUp.BlazorUI.State;
+
+internal class AppState
 {
-    internal class AppState
-    {
-    }
 }
