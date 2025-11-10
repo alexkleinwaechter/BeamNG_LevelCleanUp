@@ -15,7 +15,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private readonly GroundCoverReplacer _groundCoverReplacer;
         private readonly string _levelPathCopyFrom;
         private readonly string _targetLevelPath;
-        private int? _terrainSize;
+        private readonly string _levelNameCopyFrom;
+        private int? _baseTextureSize;
 
         public TerrainMaterialReplacer(
             PathConverter pathConverter,
@@ -29,6 +30,13 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             _groundCoverReplacer = groundCoverReplacer;
             _levelPathCopyFrom = levelPathCopyFrom;
             _targetLevelPath = targetLevelPath;
+
+            // Extract level name from the path
+            if (!string.IsNullOrEmpty(levelPathCopyFrom))
+            {
+                var dirInfo = new DirectoryInfo(levelPathCopyFrom);
+                _levelNameCopyFrom = dirInfo.Parent?.Name;
+            }
         }
 
         public bool Replace(CopyAsset item)
@@ -42,17 +50,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
             Directory.CreateDirectory(item.TargetPath);
 
-            // Try to get terrain size from TARGET level's terrain.json
-            if (!_terrainSize.HasValue && !string.IsNullOrEmpty(_targetLevelPath))
+            // Load terrain size with fallback logic
+            if (!_baseTextureSize.HasValue)
             {
-                _terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(_targetLevelPath);
-            }
-            // Fallback to source level if target is not available
-            else if (!_terrainSize.HasValue && !string.IsNullOrEmpty(_levelPathCopyFrom))
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        "Target level path not available, using source level terrain size as fallback.");
-                _terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(_levelPathCopyFrom);
+                _baseTextureSize = TerrainTextureHelper.LoadBaseTextureSize(_targetLevelPath);
             }
 
             // Target is always art/terrains/main.materials.json
@@ -105,97 +106,98 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
               {
                   var nameProp = x.Value["name"]?.ToString();
                   var internalNameProp = x.Value["internalName"]?.ToString();
-        
-                 // Match if either name or internalName matches material.Name
+
+                  // Match if either name or internalName matches material.Name
                   return (!string.IsNullOrEmpty(nameProp) && nameProp == material.Name) ||
  (!string.IsNullOrEmpty(internalNameProp) && internalNameProp == material.Name);
- });
+              });
 
- if (sourceMaterialNode.Value == null)
-   {
-         PubSubChannel.SendMessage(PubSubMessageType.Warning,
-      $"Source material '{material.Name}' not found in {material.MatJsonFileLocation}. Skipping.");
-        return true; // Skip
- }
+                if (sourceMaterialNode.Value == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                 $"Source material '{material.Name}' not found in {material.MatJsonFileLocation}. Skipping.");
+                    return true; // Skip
+                }
 
-               // Load target material
+                // Load target material
                 var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetJsonFile.FullName);
-    
-      // Find target material by matching either "name" or "internalName" property
-           var targetMaterialNode = targetJsonNode.AsObject()
-         .FirstOrDefault(x =>
-  {
-        var nameProp = x.Value["name"]?.ToString();
+
+                // Find target material by matching either "name" or "internalName" property
+                var targetMaterialNode = targetJsonNode.AsObject()
+              .FirstOrDefault(x =>
+       {
+           var nameProp = x.Value["name"]?.ToString();
            var internalNameProp = x.Value["internalName"]?.ToString();
-   
-     // Match if either name or internalName matches replaceTargetMaterialName
-        return (!string.IsNullOrEmpty(nameProp) && nameProp == replaceTargetMaterialName) ||
-         (!string.IsNullOrEmpty(internalNameProp) && internalNameProp == replaceTargetMaterialName);
-    });
 
-   if (targetMaterialNode.Value == null)
-{
-             PubSubChannel.SendMessage(PubSubMessageType.Warning,
-       $"Cannot find target material '{replaceTargetMaterialName}' to replace. Skipping.");
-         return true; // Skip, not fatal
-     }
+           // Match if either name or internalName matches replaceTargetMaterialName
+           return (!string.IsNullOrEmpty(nameProp) && nameProp == replaceTargetMaterialName) ||
+       (!string.IsNullOrEmpty(internalNameProp) && internalNameProp == replaceTargetMaterialName);
+       });
 
-     // Parse source material
+                if (targetMaterialNode.Value == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+              $"Cannot find target material '{replaceTargetMaterialName}' to replace. Skipping.");
+                    return true; // Skip, not fatal
+                }
+
+                // Parse source material
                 var sourceMaterialObj = JsonNode.Parse(sourceMaterialNode.Value.ToJsonString());
-  if (sourceMaterialObj == null)
-           {
-        return true;
-     }
+                if (sourceMaterialObj == null)
+                {
+                    return true;
+                }
 
-         // Keep target material's key, name, internalName, persistentId, class
-     var targetKey = targetMaterialNode.Key;
-        var targetName = targetMaterialNode.Value["name"]?.ToString() ?? replaceTargetMaterialName;
-           var targetInternalName = targetMaterialNode.Value["internalName"]?.ToString() ?? targetName;
-         var targetGuid = targetMaterialNode.Value["persistentId"]?.ToString() ?? Guid.NewGuid().ToString();
-       var targetClass = targetMaterialNode.Value["class"]?.ToString() ?? "TerrainMaterial";
+                // Keep target material's key, name, internalName, persistentId, class
+                var targetKey = targetMaterialNode.Key;
+                var targetName = targetMaterialNode.Value["name"]?.ToString() ?? replaceTargetMaterialName;
+                var targetInternalName = targetMaterialNode.Value["internalName"]?.ToString() ?? targetName;
+                var targetGuid = targetMaterialNode.Value["persistentId"]?.ToString() ?? Guid.NewGuid().ToString();
+                var targetClass = targetMaterialNode.Value["class"]?.ToString() ?? "TerrainMaterial";
 
-      // Remove preserved properties from source material
-          var sourceProperties = sourceMaterialObj.AsObject().ToList();
-            foreach (var prop in sourceProperties)
-          {
-  if (prop.Key == "name" || prop.Key == "internalName" || prop.Key == "persistentId" || prop.Key == "class")
-        {
-      sourceMaterialObj.AsObject().Remove(prop.Key);
-        }
-          }
+                // Remove preserved properties from source material
+                var sourceProperties = sourceMaterialObj.AsObject().ToList();
+                foreach (var prop in sourceProperties)
+                {
+                    if (prop.Key == "name" || prop.Key == "internalName" || prop.Key == "persistentId" || prop.Key == "class")
+                    {
+                        sourceMaterialObj.AsObject().Remove(prop.Key);
+                    }
+                }
 
-    // Set preserved target properties
-          sourceMaterialObj["name"] = targetName;
-     sourceMaterialObj["internalName"] = targetInternalName;
-       sourceMaterialObj["persistentId"] = targetGuid;
-       sourceMaterialObj["class"] = targetClass;
+                // Set preserved target properties
+                sourceMaterialObj["name"] = targetName;
+                sourceMaterialObj["internalName"] = targetInternalName;
+                sourceMaterialObj["persistentId"] = targetGuid;
+                sourceMaterialObj["class"] = targetClass;
 
-    // Copy texture files and update paths (with custom base color and roughness)
-             TerrainTextureHelper.CopyTerrainTextures(
-       material,
-      sourceMaterialObj,
-         targetJsonFile.Directory.FullName,
-baseColorHex,
-      roughnessValue,
-        _terrainSize,
-       _pathConverter,
-  _fileCopyHandler);
+                // Copy texture files and update paths (with custom base color and roughness)
+                TerrainTextureHelper.CopyTerrainTextures(
+          material,
+         sourceMaterialObj,
+            targetJsonFile.Directory.FullName,
+   baseColorHex,
+         roughnessValue,
+           _baseTextureSize,
+          _pathConverter,
+     _fileCopyHandler,
+       _levelNameCopyFrom);
 
-        // Write to target file (replace mode)
-       WriteReplacedTerrainMaterial(targetJsonFile, targetKey, sourceMaterialObj, replaceTargetMaterialName);
+                // Write to target file (replace mode)
+                WriteReplacedTerrainMaterial(targetJsonFile, targetKey, sourceMaterialObj, replaceTargetMaterialName);
 
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Successfully replaced terrain material '{replaceTargetMaterialName}' with '{material.Name}'");
 
-         return true;
- }
-            catch (Exception ex)
-          {
-  PubSubChannel.SendMessage(PubSubMessageType.Error,
-         $"Error replacing terrain material '{replaceTargetMaterialName}': {ex.Message}");
- return false;
+                return true;
             }
-      }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                       $"Error replacing terrain material '{replaceTargetMaterialName}': {ex.Message}");
+                return false;
+            }
+        }
 
         private void WriteReplacedTerrainMaterial(
    FileInfo targetJsonFile,

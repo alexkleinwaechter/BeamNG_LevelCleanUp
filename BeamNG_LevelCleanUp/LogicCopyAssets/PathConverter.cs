@@ -47,7 +47,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             return Path.Join(_namePath, Constants.Terrains, fileName);
         }
 
-        public string GetBeamNgJsonFileName(string windowsFileName)
+        public string GetBeamNgJsonPathOrFileName(string windowsFileName, bool removeExtension = true)
         {
             // Normalize path separators to forward slashes for comparison
             var normalizedPath = windowsFileName.Replace(@"\", "/").ToLowerInvariant();
@@ -63,7 +63,12 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
             var beamNgPath = "levels/" + targetParts.Last();
 
             // Remove extension
-            return Path.ChangeExtension(beamNgPath, null);
+            if (removeExtension)
+            {
+                return Path.ChangeExtension(beamNgPath, null);
+            }
+
+            return beamNgPath;
         }
     }
 }

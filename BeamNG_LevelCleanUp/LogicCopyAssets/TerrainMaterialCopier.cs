@@ -17,7 +17,7 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
         private readonly GroundCoverCopier _groundCoverCopier;
         private readonly string _levelPathCopyFrom;
         private readonly string _targetLevelPath;
-        private int? _terrainSize;
+        private int? _baseTextureSize;
 
         public TerrainMaterialCopier(PathConverter pathConverter, FileCopyHandler fileCopyHandler, string levelNameCopyFrom, GroundCoverCopier groundCoverCopier)
         {
@@ -48,17 +48,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
 
             Directory.CreateDirectory(item.TargetPath);
 
-            // Try to get terrain size from TARGET level's terrain.json if not already loaded
-            if (!_terrainSize.HasValue && !string.IsNullOrEmpty(_targetLevelPath))
+            // Load terrain size with fallback logic
+            if (!_baseTextureSize.HasValue)
             {
-                _terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(_targetLevelPath);
-            }
-            // Fallback to source level if target is not available
-            else if (!_terrainSize.HasValue && !string.IsNullOrEmpty(_levelPathCopyFrom))
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                "Target level path not available, using source level terrain size as fallback.");
-                _terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(_levelPathCopyFrom);
+                _baseTextureSize = TerrainTextureHelper.LoadBaseTextureSize(_targetLevelPath);
             }
 
             // Target is always art/terrains/main.materials.json
@@ -131,9 +124,10 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                     targetJsonFile.Directory.FullName,
                     baseColorHex,
                     roughnessValue,
-                    _terrainSize,
+                    _baseTextureSize,
                     _pathConverter,
-                    _fileCopyHandler);
+                    _fileCopyHandler,
+                    _levelNameCopyFrom);
 
                 // Write to target file
                 WriteTerrainMaterialJson(targetJsonFile, newKey, materialObj);

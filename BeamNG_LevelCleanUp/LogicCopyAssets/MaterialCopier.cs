@@ -127,8 +127,8 @@ namespace BeamNG_LevelCleanUp.LogicCopyAssets
                 }
 
                 materialJson = materialJson.Replace(
-              _pathConverter.GetBeamNgJsonFileName(matFile.File.FullName),
-                _pathConverter.GetBeamNgJsonFileName(targetFullName),
+              _pathConverter.GetBeamNgJsonPathOrFileName(matFile.File.FullName),
+                _pathConverter.GetBeamNgJsonPathOrFileName(targetFullName),
             StringComparison.OrdinalIgnoreCase
               );
             }
