@@ -102,110 +102,127 @@ public class GroundCoverReplacer
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Loaded {existingGroundCovers.Count} existing entries from target vegetation file.");
 
-        var newGroundCovers = new List<JsonNode>();
-        var deletedGroundCoverNames = new List<string>();
-        var modifiedGroundCovers = new List<JsonNode>();
+        var newGroundCovers = new List<JsonNode>();             
+        var deletedGroundCoverNames = new HashSet<string>();
+        var modifiedGroundCoversMap = new Dictionary<string, JsonNode>();
 
-        // Resolve all replaced material names to their INTERNAL names (what GroundCover.Types.layer uses)
+        // Resolve all replaced material names to their INTERNAL names
         var allReplacedMaterialInternalNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var key in _groundCoversToReplace.Keys)
-            if (targetNameToInternal.TryGetValue(key, out var internalName))
-                allReplacedMaterialInternalNames.Add(internalName);
-            else
-                // Fallback: if not found, assume key is already internalName
-                allReplacedMaterialInternalNames.Add(key);
-
-        if (!allReplacedMaterialInternalNames.Any())
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                "No replaced material internal names collected. Skipping modification phase.");
-        else
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Replaced material internal names: {string.Join(", ", allReplacedMaterialInternalNames)}");
-
+        
+        // Group replacements by source material to avoid duplicating groundcovers
+        var sourceToTargetsMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        
         foreach (var kvp in _groundCoversToReplace)
         {
-            var targetMaterialKey = kvp.Key; // Could be name or internalName
+            var targetMaterialKey = kvp.Key;
             var sourceMaterials = kvp.Value;
 
             // Resolve target internalName
             var targetInternalName = targetNameToInternal.TryGetValue(targetMaterialKey, out var resolvedInternal)
                 ? resolvedInternal
                 : targetMaterialKey;
+                
+            allReplacedMaterialInternalNames.Add(targetInternalName);
 
-            // Resolve SOURCE internal name (used in source groundcovers)
+            // Get source internal name
             var sourceInternalName = sourceMaterials.FirstOrDefault()?.InternalName ?? sourceMaterials.First().Name;
 
-            // Find SOURCE groundcovers that reference the SOURCE internal name (via layer property)
+            if (!sourceToTargetsMap.ContainsKey(sourceInternalName))
+                sourceToTargetsMap[sourceInternalName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            sourceToTargetsMap[sourceInternalName].Add(targetInternalName);
+        }
+
+        if (!allReplacedMaterialInternalNames.Any())
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                "No replaced material internal names collected. Skipping modification phase.");
+        }
+        else
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Replaced material internal names: {string.Join(", ", allReplacedMaterialInternalNames)}");
+        }
+
+        // Process each unique source material and create groundcovers for its target materials
+        foreach (var sourceEntry in sourceToTargetsMap)
+        {
+            var sourceInternalName = sourceEntry.Key;
+            var targetInternalNames = sourceEntry.Value;
+
+            // Find SOURCE groundcovers that reference the SOURCE internal name
             var sourceGroundCovers = FindSourceGroundCoversByLayer(sourceInternalName);
 
             if (!sourceGroundCovers.Any())
             {
-                // SCENARIO B: Source has NO groundcovers -> Remove layers from existing groundcovers
+                // SCENARIO B: Source has NO groundcovers
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Source material '{sourceInternalName}' has no groundcovers. Removing '{targetInternalName}' layers from existing groundcovers.");
+                    $"Source material '{sourceInternalName}' has no groundcovers. Target materials {string.Join(", ", targetInternalNames)} will have their layers removed.");
             }
             else
             {
-                // SCENARIO A: Source HAS groundcovers -> Copy them with level suffix
+                // SCENARIO A: Source HAS groundcovers - copy for each TARGET material separately
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Found {sourceGroundCovers.Count} source groundcover(s) for material '{sourceInternalName}'. Copying to target with level suffix.");
+                    $"Found {sourceGroundCovers.Count} source groundcover(s) for material '{sourceInternalName}'. Creating copies for {targetInternalNames.Count} target material(s).");
 
-                foreach (var sourceGroundCover in sourceGroundCovers)
+                // For each target material, create separate groundcover copies
+                foreach (var targetInternalName in targetInternalNames)
                 {
-                    var sourceGroundCoverName = sourceGroundCover["name"]?.ToString();
-                    if (string.IsNullOrEmpty(sourceGroundCoverName)) continue;
-
-                    // Copy source groundcover with level suffix (like in Add mode)
-                    var newGroundCover = CopySourceGroundCover(
-                        sourceGroundCover,
-                        sourceGroundCoverName,
-                        targetInternalName,
-                        sourceInternalName);
-
-                    if (newGroundCover != null)
+                    foreach (var sourceGroundCover in sourceGroundCovers)
                     {
-                        newGroundCovers.Add(newGroundCover);
-                        var newName = newGroundCover["name"]?.ToString();
-                        PubSubChannel.SendMessage(PubSubMessageType.Info,
-                            $"Copied groundcover '{sourceGroundCoverName}' as '{newName}' (layer: {sourceInternalName} → {targetInternalName})");
+                        var sourceGroundCoverName = sourceGroundCover["name"]?.ToString();
+                        if (string.IsNullOrEmpty(sourceGroundCoverName)) continue;
+
+                        // Create a unique copy for THIS target material
+                        var newGroundCover = CopySourceGroundCoverForSingleTarget(
+                            sourceGroundCover,
+                            sourceGroundCoverName,
+                            targetInternalName,
+                            sourceInternalName);
+
+                        if (newGroundCover != null)
+                        {
+                            newGroundCovers.Add(newGroundCover);
+                            var newName = newGroundCover["name"]?.ToString();
+                            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                $"Copied groundcover '{sourceGroundCoverName}' as '{newName}' (layer: {sourceInternalName} → {targetInternalName})");
+                        }
                     }
                 }
             }
         }
 
-        // Now process ALL existing groundcovers to remove/modify layers for replaced materials
+        // Process existing groundcovers to remove replaced layers
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             "Processing existing groundcovers to remove replaced layers...");
 
-        foreach (var existingGC in existingGroundCovers.ToList())
+        foreach (var existingEntry in existingGroundCovers.ToList())
         {
-            var gcNode = existingGC.Value;
-            var gcName = gcNode["name"]?.ToString();
+            var gcName = existingEntry.Key;
+            var gcNode = existingEntry.Value;
 
-            if (string.IsNullOrEmpty(gcName) ||
-                gcNode["class"]?.ToString() != "GroundCover") continue; // Skip non-groundcover entries
+            if (gcNode["class"]?.ToString() != "GroundCover") continue;
 
-            // Remove Types that reference any replaced material INTERNAL name
+            // Remove Types that reference any replaced material
             var (modified, shouldDelete) = RemoveReplacedLayers(gcNode, allReplacedMaterialInternalNames);
 
             if (shouldDelete)
             {
-                // All layers removed -> delete entire groundcover
                 deletedGroundCoverNames.Add(gcName);
+                var displayName = gcNode["name"]?.ToString() ?? gcName;
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Deleted groundcover '{gcName}' (all layers referenced replaced materials)");
+                    $"Deleted groundcover '{displayName}' (all layers referenced replaced materials)");
             }
             else if (modified)
             {
-                // Some layers removed -> keep modified groundcover
-                modifiedGroundCovers.Add(gcNode);
+                modifiedGroundCoversMap[gcName] = gcNode;
             }
         }
 
         // Write changes back to file
-        if (newGroundCovers.Any() || deletedGroundCoverNames.Any() || modifiedGroundCovers.Any())
-            WriteGroundCoverChangesToFile(targetGcFile, existingGroundCovers, newGroundCovers, modifiedGroundCovers,
-                deletedGroundCoverNames);
+        if (newGroundCovers.Any() || deletedGroundCoverNames.Any() || modifiedGroundCoversMap.Any())
+            WriteGroundCoverChangesToFile(targetGcFile, existingGroundCovers, newGroundCovers, 
+                modifiedGroundCoversMap.Values.ToList(), deletedGroundCoverNames.ToList());
         else
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 "No groundcover changes to write.");
@@ -359,6 +376,47 @@ public class GroundCoverReplacer
         }
 
         return (false, false); // No changes
+    }
+
+    /// <summary>
+    ///     Copies a source groundcover for a SINGLE target material (one-to-one replacement)
+    /// </summary>
+    private JsonNode CopySourceGroundCoverForSingleTarget(
+        JsonNode sourceGroundCover,
+        string sourceGroundCoverName,
+        string targetMaterialInternalName,
+        string sourceMaterialInternalName)
+    {
+        try
+        {
+            // Create a copy of source groundcover
+            var newGroundCover = JsonNode.Parse(sourceGroundCover.ToJsonString());
+
+            // Generate new name with level suffix AND target material name for uniqueness
+            var newName = $"{sourceGroundCoverName}_{targetMaterialInternalName}_{_levelNameCopyFrom}";
+            newGroundCover["name"] = newName;
+
+            // Generate new GUID
+            newGroundCover["persistentId"] = Guid.NewGuid().ToString();
+
+            // Update layer references: source internal name -> target internal name (one-to-one)
+            UpdateLayerReferences(newGroundCover, sourceMaterialInternalName, targetMaterialInternalName);
+
+            // Copy dependencies
+            var newMaterialName = _dependencyHelper.CopyGroundCoverDependencies(sourceGroundCover, newName);
+
+            // Update material property
+            if (!string.IsNullOrEmpty(newMaterialName)) 
+                newGroundCover["material"] = newMaterialName;
+
+            return newGroundCover;
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
+                $"Error copying source groundcover '{sourceGroundCoverName}': {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
