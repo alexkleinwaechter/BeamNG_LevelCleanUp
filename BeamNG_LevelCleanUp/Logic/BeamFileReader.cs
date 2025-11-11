@@ -32,10 +32,10 @@ internal class BeamFileReader
 
     private static string _levelPath { get; set; }
     private static string _levelName { get; set; }
-    private static string _namePath { get; set; }
+    private static string _levelNamePath { get; set; }
     private static string _levelPathCopyFrom { get; set; }
     private static string _levelNameCopyFrom { get; set; }
-    private static string _namePathCopyFrom { get; set; }
+    private static string _levelNamePathCopyFrom { get; set; }
     private static string _beamLogPath { get; set; }
     private static bool _dryRun { get; set; }
     public static List<Asset> Assets { get; set; } = new();
@@ -57,14 +57,19 @@ internal class BeamFileReader
 
     internal void SanitizePath()
     {
-        _namePath = ZipFileHandler.GetNamePath(_levelPath);
+        _levelNamePath = ZipFileHandler.GetNamePath(_levelPath);
         _levelPath = ZipFileHandler.GetLevelPath(_levelPath);
-        _levelName = new DirectoryInfo(_namePath).Name;
-        _namePathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetNamePath(_levelPathCopyFrom) : null;
+        _levelName = new DirectoryInfo(_levelNamePath).Name;
+        _levelNamePathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetNamePath(_levelPathCopyFrom) : null;
         _levelPathCopyFrom = _levelPathCopyFrom != null ? ZipFileHandler.GetLevelPath(_levelPathCopyFrom) : null;
-        _levelNameCopyFrom = _namePathCopyFrom != null ? new DirectoryInfo(_namePathCopyFrom).Name : null;
+        _levelNameCopyFrom = _levelNamePathCopyFrom != null ? new DirectoryInfo(_levelNamePathCopyFrom).Name : null;
         PathResolver.LevelPath = _levelPath;
+        PathResolver.LevelNamePath = _levelNamePath;
+        PathResolver.LevelName = _levelName;
         PathResolver.LevelPathCopyFrom = _levelPathCopyFrom;
+        PathResolver.LevelNamePathCopyFrom = _levelNamePathCopyFrom;
+        PathResolver.LevelNameCopyFrom = _levelNameCopyFrom;
+
     }
 
     internal string GetLevelName()
@@ -157,7 +162,7 @@ internal class BeamFileReader
 
     private void RemoveDuplicateMaterials(bool fromJsonFile)
     {
-        var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _namePath);
+        var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _levelNamePath);
         materialScanner.RemoveDuplicates(fromJsonFile);
     }
 
@@ -217,7 +222,7 @@ internal class BeamFileReader
 
     internal void DoCopyAssets(List<Guid> identifiers)
     {
-        var assetCopy = new AssetCopy(identifiers, CopyAssets, _namePath, _levelName, _levelNameCopyFrom);
+        var assetCopy = new AssetCopy(identifiers, CopyAssets);
         assetCopy.Copy();
     }
 
@@ -365,7 +370,7 @@ internal class BeamFileReader
         };
         foreach (var extra in extras)
         {
-            var dirInfo = new DirectoryInfo(Path.Join(_namePath, extra));
+            var dirInfo = new DirectoryInfo(Path.Join(_levelNamePath, extra));
             if (dirInfo != null && dirInfo.Exists)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Level {extra}");
@@ -427,7 +432,7 @@ internal class BeamFileReader
     {
         _dryRun = dryRun;
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Delete files");
-        var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _namePath);
+        var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _levelNamePath);
         materialScanner.RemoveDuplicates(true);
         var deleter = new FileDeleter(deleteList, _levelPath, "DeletedAssetFiles", _dryRun);
         deleter.Delete();
@@ -454,7 +459,7 @@ internal class BeamFileReader
         var dirInfo = new DirectoryInfo(_levelPath);
         if (dirInfo != null)
         {
-            _levelRenamer.EditInfoJson(_namePath, newNameForTitle);
+            _levelRenamer.EditInfoJson(_levelNamePath, newNameForTitle);
             WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
             WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
             WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
@@ -463,7 +468,7 @@ internal class BeamFileReader
             _levelName = newNameForPath;
         }
 
-        var dirInfoOld = new DirectoryInfo(_namePath);
+        var dirInfoOld = new DirectoryInfo(_levelNamePath);
         var targetDir = Path.Join(dirInfoOld.Parent.FullName, newNameForPath);
         Directory.Move(dirInfoOld.FullName, targetDir);
 
@@ -480,7 +485,7 @@ internal class BeamFileReader
         {
             WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopyAssetRoad);
             WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopyAssetRoad);
-            var materialScanner = new MaterialScanner(MaterialsJsonCopy, _levelPathCopyFrom, _namePath);
+            var materialScanner = new MaterialScanner(MaterialsJsonCopy, _levelPathCopyFrom, _levelNamePath);
             materialScanner.RemoveDuplicates(false);
             Console.WriteLine("Files with restricted access:");
             foreach (var s in log) Console.WriteLine(s);
@@ -512,7 +517,7 @@ internal class BeamFileReader
                 Name = item.Name,
                 Materials = materialsJson != null ? materialsJson : new List<MaterialJson>(),
                 MaterialsDae = daeMaterials,
-                TargetPath = Path.Join(_namePath, Constants.Dae, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
+                TargetPath = Path.Join(_levelNamePath, Constants.Dae, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
                 DaeFilePath = item.FullName
             };
             var fileInfo = new FileInfo(item.FullName);
@@ -542,7 +547,7 @@ internal class BeamFileReader
 
     internal void CopyTerrainMaterials()
     {
-        var terrainMaterialsPath = Path.Join(_namePathCopyFrom, Constants.Terrains, "main.materials.json");
+        var terrainMaterialsPath = Path.Join(_levelNamePathCopyFrom, Constants.Terrains, "main.materials.json");
         var terrainMaterialsFile = new FileInfo(terrainMaterialsPath);
 
         if (terrainMaterialsFile.Exists)
@@ -551,7 +556,7 @@ internal class BeamFileReader
             var terrainScanner = new TerrainCopyScanner(
                 terrainMaterialsFile.FullName,
                 _levelPathCopyFrom,
-                _namePath,
+                _levelNamePath,
                 MaterialsJsonCopy,
                 CopyAssets);
             terrainScanner.ScanTerrainMaterials();
@@ -565,7 +570,7 @@ internal class BeamFileReader
 
     internal void CopyGroundCovers()
     {
-        var vegetationPath = Path.Join(_namePathCopyFrom, "main", "MissionGroup", "Level_object", "vegetation",
+        var vegetationPath = Path.Join(_levelNamePathCopyFrom, "main", "MissionGroup", "Level_object", "vegetation",
             "items.level.json");
         var vegetationFile = new FileInfo(vegetationPath);
 
@@ -588,7 +593,7 @@ internal class BeamFileReader
         var forestScanner = ReadForest();
         var forestConverter = new ForestConverter(assets,
             forestScanner.GetForestInfo(),
-            _namePath);
+            _levelNamePath);
         forestConverter.Convert();
     }
 
@@ -654,7 +659,7 @@ internal class BeamFileReader
                         missionGroupScanner.ScanMissionGroupFile();
                         break;
                     case ReadTypeEnum.MaterialsJson:
-                        var materialScanner = new MaterialScanner(fi.FullName, _levelPath, _namePath, MaterialsJson,
+                        var materialScanner = new MaterialScanner(fi.FullName, _levelPath, _levelNamePath, MaterialsJson,
                             Assets, ExcludeFiles);
                         materialScanner.ScanMaterialsJsonFile();
                         break;
@@ -705,7 +710,7 @@ internal class BeamFileReader
                         _levelRenamer.ReplaceInFile(fi.FullName, $"/{_levelName}/", $"/{_newName}/");
                         break;
                     case ReadTypeEnum.CopyAssetRoad:
-                        var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, _namePath,
+                        var materialCopyScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, _levelNamePath,
                             MaterialsJsonCopy, new List<Asset>(), new List<string>());
                         materialCopyScanner.ScanMaterialsJsonFile();
                         materialCopyScanner.CheckDuplicates(MaterialsJson);
@@ -718,7 +723,7 @@ internal class BeamFileReader
                                     Name = item.Name,
                                     Materials = new List<MaterialJson> { item },
                                     SourceMaterialJsonPath = fi.FullName,
-                                    TargetPath = Path.Join(_namePath, Constants.RouteRoad,
+                                    TargetPath = Path.Join(_levelNamePath, Constants.RouteRoad,
                                         $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
                                 };
                                 asset.SizeMb =
@@ -750,7 +755,7 @@ internal class BeamFileReader
                                 {
                                     asset.Materials.Add(material);
                                     asset.SourceMaterialJsonPath = fi.FullName;
-                                    asset.TargetPath = Path.Join(_namePath, Constants.Decals,
+                                    asset.TargetPath = Path.Join(_levelNamePath, Constants.Decals,
                                         $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
                                 }
 

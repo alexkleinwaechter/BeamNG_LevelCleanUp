@@ -2,10 +2,14 @@
 
 internal static class PathResolver
 {
-    internal static string LevelPath { get; set; }
-    internal static string LevelPathCopyFrom { get; set; }
+    public static string LevelNameCopyFrom;
+    public static string LevelNamePathCopyFrom;
+    public static string LevelName;
+    public static string LevelNamePath;
+    public static string LevelPath { get; set; }
+    public static string LevelPathCopyFrom { get; set; }
 
-    internal static string ResolvePath(string levelPath, string resourcePath, bool concatDistinctStrategy)
+    public static string ResolvePath(string levelPath, string resourcePath, bool concatDistinctStrategy)
     {
         string retVal = null;
         var toReplaceDelim = '/';
@@ -27,7 +31,7 @@ internal static class PathResolver
         return retVal;
     }
 
-    internal static string ResolvePathBasedOnCsFilePath(FileInfo csFile, string resourcePath)
+    public static string ResolvePathBasedOnCsFilePath(FileInfo csFile, string resourcePath)
     {
         string retVal = null;
         var toReplaceDelim = '/';
@@ -43,7 +47,7 @@ internal static class PathResolver
         return retVal;
     }
 
-    internal static string DirectorySanitizer(string path)
+    public static string DirectorySanitizer(string path)
     {
         return path
             .Replace(@"levels\levels", "levels")

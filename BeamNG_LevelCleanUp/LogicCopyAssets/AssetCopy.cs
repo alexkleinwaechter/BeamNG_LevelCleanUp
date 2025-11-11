@@ -24,29 +24,76 @@ public class AssetCopy
     private TerrainMaterialReplacer _terrainMaterialReplacer;
     private bool stopFaultyFile;
 
+    private List<Guid> _identifier { get; set; }
+
+    /// <summary>
+    ///     Creates an AssetCopy instance for copying assets between levels
+    /// </summary>
+    /// <param name="identifier">List of asset identifiers to copy</param>
+    /// <param name="copyAssetList">Full list of available copy assets</param>
+    /// <param name="namePath">Target level path</param>
+    /// <param name="levelName">Target level name</param>
+    /// <param name="levelNameCopyFrom">Source level name</param>
     public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
     {
         _identifier = identifier;
         _assetsToCopy = copyAssetList.Where(x => identifier.Contains(x.Identifier)).ToList();
+
+        InitializeCopiers();
+        LoadGroundCoverData();
     }
 
-    public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath)
-        : this(identifier, copyAssetList)
+    private void InitializeCopiers()
     {
-        InitializeCopiers(namePath, null, null);
+        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName, PathResolver.LevelNameCopyFrom);
+        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName, PathResolver.LevelNameCopyFrom);
+        _fileCopyHandler = new FileCopyHandler(PathResolver.LevelNameCopyFrom);
+        _materialCopier = new MaterialCopier(_pathConverter, _fileCopyHandler);
+        _managedDecalCopier = new ManagedDecalCopier();
+        _daeCopier = new DaeCopier(_pathConverter, _fileCopyHandler, _materialCopier);
+
+        // Create shared dependency helper
+        _groundCoverDependencyHelper = new GroundCoverDependencyHelper(
+            _materialCopier,
+            _daeCopier,
+            PathResolver.LevelNameCopyFrom,
+            PathResolver.LevelNamePath);
+
+        // Initialize copiers using the shared helper
+        _groundCoverCopier = new GroundCoverCopier(
+            _pathConverter,
+            _fileCopyHandler,
+            _materialCopier,
+            _daeCopier,
+            PathResolver.LevelNameCopyFrom,
+            PathResolver.LevelNamePath);
+
+        // Initialize replacer using the shared helper
+        _groundCoverReplacer = new GroundCoverReplacer(
+            _groundCoverDependencyHelper,
+            PathResolver.LevelNamePath,
+            PathResolver.LevelNameCopyFrom);
+
+        // Pass level paths to TerrainMaterialCopier
+        _terrainMaterialCopier = new TerrainMaterialCopier(
+            _pathConverter,
+            _fileCopyHandler,
+            PathResolver.LevelNameCopyFrom,
+            _groundCoverCopier,
+            PathResolver.LevelPathCopyFrom,
+            PathResolver.LevelNamePath);
+
+        // Initialize TerrainMaterialReplacer
+        _terrainMaterialReplacer = new TerrainMaterialReplacer(
+            _pathConverter,
+            _fileCopyHandler,
+            _groundCoverReplacer,
+            PathResolver.LevelPathCopyFrom,
+            PathResolver.LevelNamePath);
     }
 
-    public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath, string levelName)
-        : this(identifier, copyAssetList, namePath)
+    private void LoadGroundCoverData()
     {
-        InitializeCopiers(namePath, levelName, null);
-    }
-
-    public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath, string levelName,
-        string levelNameCopyFrom)
-        : this(identifier, copyAssetList, namePath, levelName)
-    {
-        InitializeCopiers(namePath, levelName, levelNameCopyFrom);
         // Load scanned groundcover JSON lines into the copier
         if (BeamFileReader.GroundCoverJsonLines != null && BeamFileReader.GroundCoverJsonLines.Any())
         {
@@ -61,56 +108,6 @@ public class AssetCopy
             _groundCoverReplacer.LoadMaterialsJsonCopy(BeamFileReader.MaterialsJsonCopy);
             _groundCoverDependencyHelper.LoadMaterialsJsonCopy(BeamFileReader.MaterialsJsonCopy);
         }
-    }
-
-    private List<Guid> _identifier { get; set; }
-
-    private void InitializeCopiers(string namePath, string levelName, string levelNameCopyFrom)
-    {
-        _pathConverter = new PathConverter(namePath, levelName, levelNameCopyFrom);
-        _fileCopyHandler = new FileCopyHandler(levelNameCopyFrom);
-        _materialCopier = new MaterialCopier(_pathConverter, _fileCopyHandler);
-        _managedDecalCopier = new ManagedDecalCopier();
-        _daeCopier = new DaeCopier(_pathConverter, _fileCopyHandler, _materialCopier);
-
-        // Create shared dependency helper
-        _groundCoverDependencyHelper = new GroundCoverDependencyHelper(
-            _materialCopier,
-            _daeCopier,
-            levelNameCopyFrom,
-            namePath);
-
-        // Initialize copiers using the shared helper
-        _groundCoverCopier = new GroundCoverCopier(
-            _pathConverter,
-            _fileCopyHandler,
-            _materialCopier,
-            _daeCopier,
-            levelNameCopyFrom,
-            namePath);
-
-        // Initialize replacer using the shared helper
-        _groundCoverReplacer = new GroundCoverReplacer(
-            _groundCoverDependencyHelper,
-            namePath,
-            levelNameCopyFrom);
-
-        // Pass level paths to TerrainMaterialCopier
-        _terrainMaterialCopier = new TerrainMaterialCopier(
-            _pathConverter,
-            _fileCopyHandler,
-            levelNameCopyFrom,
-            _groundCoverCopier,
-            PathResolver.LevelPathCopyFrom,
-            namePath);
-
-        // Initialize TerrainMaterialReplacer
-        _terrainMaterialReplacer = new TerrainMaterialReplacer(
-            _pathConverter,
-            _fileCopyHandler,
-            _groundCoverReplacer,
-            PathResolver.LevelPathCopyFrom,
-            namePath);
     }
 
     public void Copy()

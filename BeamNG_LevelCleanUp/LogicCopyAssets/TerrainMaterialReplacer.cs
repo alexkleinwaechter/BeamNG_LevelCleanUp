@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 
@@ -35,7 +36,7 @@ public class TerrainMaterialReplacer
         if (!string.IsNullOrEmpty(levelPathCopyFrom))
         {
             var dirInfo = new DirectoryInfo(levelPathCopyFrom);
-            _levelNameCopyFrom = dirInfo.Parent?.Name;
+            _levelNameCopyFrom = PathResolver.LevelNameCopyFrom;
         }
     }
 
