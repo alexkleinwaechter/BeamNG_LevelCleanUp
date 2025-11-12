@@ -116,28 +116,51 @@ public class AssetCopy
         var terrainMaterials = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.Terrain).ToList();
         var otherAssets = _assetsToCopy.Where(x => x.CopyAssetType != CopyAssetType.Terrain).ToList();
 
-        // Copy non-terrain assets first (roads, decals, DAE files)
-        foreach (var item in otherAssets)
-        {
-            switch (item.CopyAssetType)
-            {
-                case CopyAssetType.Road:
-                    stopFaultyFile = !CopyRoad(item);
-                    break;
-                case CopyAssetType.Decal:
-                    CopyManagedDecal(item);
-                    stopFaultyFile = !CopyDecal(item);
-                    break;
-                case CopyAssetType.Dae:
-                    stopFaultyFile = !CopyDae(item);
-                    break;
-            }
+        // Group other assets by type for potential batch processing
+        var roads = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Road).ToList();
+        var decals = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal).ToList();
+        var daeFiles = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Dae).ToList();
 
+        // Copy roads in batch mode
+        if (roads.Any())
+        {
+            _materialCopier.BeginBatch();
+            foreach (var item in roads)
+            {
+                stopFaultyFile = !CopyRoad(item);
+                if (stopFaultyFile) break;
+            }
+            _materialCopier.EndBatch();
+            
+            if (stopFaultyFile) return;
+        }
+
+        // Copy decals in batch mode
+        if (decals.Any())
+        {
+            _materialCopier.BeginBatch();
+            foreach (var item in decals)
+            {
+                CopyManagedDecal(item);
+                stopFaultyFile = !CopyDecal(item);
+                if (stopFaultyFile) break;
+            }
+            _materialCopier.EndBatch();
+            
+            if (stopFaultyFile) return;
+        }
+
+        // Copy DAE files (non-batch for now as they use MaterialCopier internally)
+        foreach (var item in daeFiles)
+        {
+            stopFaultyFile = !CopyDae(item);
             if (stopFaultyFile) break;
         }
 
+        if (stopFaultyFile) return;
+
         // Now process all terrain materials in batch (with groundcover collection)
-        if (!stopFaultyFile && terrainMaterials.Any()) stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials);
+        if (terrainMaterials.Any()) stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials);
 
         if (!stopFaultyFile)
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Assets copied. Build your deployment file now.");

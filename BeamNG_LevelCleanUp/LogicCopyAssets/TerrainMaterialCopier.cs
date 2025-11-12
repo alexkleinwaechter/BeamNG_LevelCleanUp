@@ -18,6 +18,11 @@ public class TerrainMaterialCopier
     private readonly string _targetLevelPath;
     private int? _baseTextureSize;
 
+    // Batch processing caches
+    private readonly Dictionary<string, JsonNode> _sourceJsonCache = new();
+    private JsonNode _targetJsonCache;
+    private FileInfo _targetJsonFile;
+
     public TerrainMaterialCopier(PathConverter pathConverter, FileCopyHandler fileCopyHandler, string levelNameCopyFrom,
         GroundCoverCopier groundCoverCopier)
     {
@@ -52,11 +57,20 @@ public class TerrainMaterialCopier
 
         // Target is always art/terrains/main.materials.json
         var targetJsonPath = Path.Join(item.TargetPath, "main.materials.json");
-        var targetJsonFile = new FileInfo(targetJsonPath);
+        _targetJsonFile = new FileInfo(targetJsonPath);
+
+        // Initialize batch processing - load target JSON once
+        InitializeBatch();
 
         foreach (var material in item.Materials)
-            if (!CopyTerrainMaterial(material, targetJsonFile, item.BaseColorHex, item.GetRoughnessValue()))
+            if (!CopyTerrainMaterial(material, _targetJsonFile, item.BaseColorHex, item.GetRoughnessValue()))
+            {
+                FlushBatch(); // Ensure we write what we have so far
                 return false;
+            }
+
+        // Flush all cached writes to disk
+        FlushBatch();
 
         // After copying terrain materials, collect related groundcovers
         // (they will be written once at the end by the caller in AssetCopy)
@@ -65,13 +79,55 @@ public class TerrainMaterialCopier
         return true;
     }
 
+    /// <summary>
+    /// Initializes batch processing by loading the target JSON file once
+    /// </summary>
+    private void InitializeBatch()
+    {
+        _sourceJsonCache.Clear();
+        
+        if (_targetJsonFile.Exists)
+        {
+            _targetJsonCache = JsonUtils.GetValidJsonNodeFromFilePath(_targetJsonFile.FullName);
+        }
+        else
+        {
+            _targetJsonCache = new JsonObject();
+        }
+    }
+
+    /// <summary>
+    /// Flushes the cached target JSON to disk
+    /// </summary>
+    private void FlushBatch()
+    {
+        if (_targetJsonCache != null && _targetJsonFile != null)
+        {
+            File.WriteAllText(_targetJsonFile.FullName,
+                _targetJsonCache.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+        }
+        
+        _sourceJsonCache.Clear();
+        _targetJsonCache = null;
+    }
+
     private bool CopyTerrainMaterial(MaterialJson material, FileInfo targetJsonFile, string baseColorHex = "#808080",
         int roughnessValue = 150)
     {
         try
         {
-            var jsonString = File.ReadAllText(material.MatJsonFileLocation);
-            var sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
+            // Use cached source JSON if available
+            JsonNode sourceJsonNode;
+            if (_sourceJsonCache.TryGetValue(material.MatJsonFileLocation, out var cachedSource))
+            {
+                sourceJsonNode = cachedSource;
+            }
+            else
+            {
+                var jsonString = File.ReadAllText(material.MatJsonFileLocation);
+                sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
+                _sourceJsonCache[material.MatJsonFileLocation] = sourceJsonNode;
+            }
 
             // Find the material by matching either "name" or "internalName" property
             var sourceMaterialNode = sourceJsonNode.AsObject()
@@ -116,8 +172,8 @@ public class TerrainMaterialCopier
                 _fileCopyHandler,
                 _levelNameCopyFrom);
 
-            // Write to target file
-            WriteTerrainMaterialJson(targetJsonFile, newKey, materialObj);
+            // Add to cached target JSON instead of writing immediately
+            WriteTerrainMaterialJsonBatch(newKey, materialObj);
 
             return true;
         }
@@ -166,6 +222,25 @@ public class TerrainMaterialCopier
         var newKey = $"{baseName}_{_levelNameCopyFrom}";
 
         return (newKey, newMaterialName, newInternalName, newGuid);
+    }
+
+    /// <summary>
+    /// Batch-aware version that adds to cached JSON instead of writing to disk
+    /// </summary>
+    private void WriteTerrainMaterialJsonBatch(string newKey, JsonNode materialObj)
+    {
+        var toText = materialObj.ToJsonString();
+
+        // ADD MODE: Only add if key doesn't exist in cached JSON
+        if (!_targetJsonCache.AsObject().Any(x => x.Key == newKey))
+        {
+            _targetJsonCache.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(newKey, JsonNode.Parse(toText)));
+        }
+        else
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Terrain material key {newKey} already exists in target, skipping.");
+        }
     }
 
     private void WriteTerrainMaterialJson(FileInfo targetJsonFile, string newKey, JsonNode materialObj)

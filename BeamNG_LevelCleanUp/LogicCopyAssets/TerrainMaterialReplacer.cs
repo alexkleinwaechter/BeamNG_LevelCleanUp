@@ -19,6 +19,11 @@ public class TerrainMaterialReplacer
     private readonly string _targetLevelPath;
     private int? _baseTextureSize;
 
+    // Batch processing caches
+    private readonly Dictionary<string, JsonNode> _sourceJsonCache = new();
+    private JsonNode _targetJsonCache;
+    private FileInfo _targetJsonFile;
+
     public TerrainMaterialReplacer(
         PathConverter pathConverter,
         FileCopyHandler fileCopyHandler,
@@ -56,12 +61,21 @@ public class TerrainMaterialReplacer
 
         // Target is always art/terrains/main.materials.json
         var targetJsonPath = Path.Join(item.TargetPath, "main.materials.json");
-        var targetJsonFile = new FileInfo(targetJsonPath);
+        _targetJsonFile = new FileInfo(targetJsonPath);
+
+        // Initialize batch processing - load target JSON once
+        InitializeBatch();
 
         foreach (var material in item.Materials)
-            if (!ReplaceTerrainMaterial(material, targetJsonFile, item.BaseColorHex, item.GetRoughnessValue(),
+            if (!ReplaceTerrainMaterial(material, _targetJsonFile, item.BaseColorHex, item.GetRoughnessValue(),
                     item.ReplaceTargetMaterialName))
+            {
+                FlushBatch(); // Ensure we write what we have so far
                 return false;
+            }
+
+        // Flush all cached writes to disk
+        FlushBatch();
 
         // After replacing terrain materials, replace related groundcovers
         if (_groundCoverReplacer != null)
@@ -70,6 +84,38 @@ public class TerrainMaterialReplacer
                 item.Materials);
 
         return true;
+    }
+
+    /// <summary>
+    /// Initializes batch processing by loading the target JSON file once
+    /// </summary>
+    private void InitializeBatch()
+    {
+        _sourceJsonCache.Clear();
+
+        if (_targetJsonFile != null && _targetJsonFile.Exists)
+        {
+            _targetJsonCache = JsonUtils.GetValidJsonNodeFromFilePath(_targetJsonFile.FullName);
+        }
+        else
+        {
+            _targetJsonCache = new JsonObject();
+        }
+    }
+
+    /// <summary>
+    /// Flushes the cached target JSON to disk
+    /// </summary>
+    private void FlushBatch()
+    {
+        if (_targetJsonCache != null && _targetJsonFile != null)
+        {
+            File.WriteAllText(_targetJsonFile.FullName,
+                _targetJsonCache.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+        }
+
+        _sourceJsonCache.Clear();
+        _targetJsonCache = null;
     }
 
     private bool ReplaceTerrainMaterial(
@@ -82,16 +128,25 @@ public class TerrainMaterialReplacer
         try
         {
             // Validate target file exists
-            if (!targetJsonFile.Exists)
+            if (_targetJsonCache == null || _targetJsonCache.AsObject().Count == 0)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Cannot replace material '{replaceTargetMaterialName}' - target file does not exist. Skipping.");
                 return true; // Skip, not fatal
             }
 
-            // Load source material
-            var jsonString = File.ReadAllText(material.MatJsonFileLocation);
-            var sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
+            // Use cached source JSON if available
+            JsonNode sourceJsonNode;
+            if (_sourceJsonCache.TryGetValue(material.MatJsonFileLocation, out var cachedSource))
+            {
+                sourceJsonNode = cachedSource;
+            }
+            else
+            {
+                var jsonString = File.ReadAllText(material.MatJsonFileLocation);
+                sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
+                _sourceJsonCache[material.MatJsonFileLocation] = sourceJsonNode;
+            }
 
             // Find source material by matching either "name" or "internalName" property
             var sourceMaterialNode = sourceJsonNode.AsObject()
@@ -112,11 +167,8 @@ public class TerrainMaterialReplacer
                 return true; // Skip
             }
 
-            // Load target material
-            var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetJsonFile.FullName);
-
-            // Find target material by matching either "name" or "internalName" property
-            var targetMaterialNode = targetJsonNode.AsObject()
+            // Find target material in cached JSON by matching either "name" or "internalName" property
+            var targetMaterialNode = _targetJsonCache.AsObject()
                 .FirstOrDefault(x =>
                 {
                     var nameProp = x.Value["name"]?.ToString();
@@ -170,8 +222,8 @@ public class TerrainMaterialReplacer
                 _fileCopyHandler,
                 _levelNameCopyFrom);
 
-            // Write to target file (replace mode)
-            WriteReplacedTerrainMaterial(targetJsonFile, targetKey, sourceMaterialObj, replaceTargetMaterialName);
+            // Write to cached target JSON instead of writing to disk immediately
+            WriteReplacedTerrainMaterialBatch(targetKey, sourceMaterialObj, replaceTargetMaterialName);
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Successfully replaced terrain material '{replaceTargetMaterialName}' with '{material.Name}'");
@@ -184,6 +236,30 @@ public class TerrainMaterialReplacer
                 $"Error replacing terrain material '{replaceTargetMaterialName}': {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Batch-aware version that updates cached JSON instead of writing to disk
+    /// </summary>
+    private void WriteReplacedTerrainMaterialBatch(
+        string targetKey,
+        JsonNode materialObj,
+        string replaceTargetMaterialName)
+    {
+        var toText = materialObj.ToJsonString();
+
+        // Remove old entry with the same key from cached JSON
+        if (_targetJsonCache.AsObject().ContainsKey(targetKey))
+        {
+            _targetJsonCache.AsObject().Remove(targetKey);
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Removed existing material '{replaceTargetMaterialName}' (key: {targetKey})");
+        }
+
+        // Add new material with the same key to cached JSON
+        _targetJsonCache.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(targetKey, JsonNode.Parse(toText)));
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Replaced material with key '{targetKey}'");
     }
 
     private void WriteReplacedTerrainMaterial(

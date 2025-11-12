@@ -13,10 +13,37 @@ public class MaterialCopier
     private readonly FileCopyHandler _fileCopyHandler;
     private readonly PathConverter _pathConverter;
 
+    // Batch operation caches
+    private readonly Dictionary<string, JsonNode> _sourceJsonCache = new();
+    private readonly Dictionary<string, JsonNode> _targetJsonCache = new();
+    private bool _batchMode = false;
+
     public MaterialCopier(PathConverter pathConverter, FileCopyHandler fileCopyHandler)
     {
         _pathConverter = pathConverter;
         _fileCopyHandler = fileCopyHandler;
+    }
+
+    /// <summary>
+    /// Enables batch mode for multiple copy operations. Call BeginBatch before processing multiple items,
+    /// then call EndBatch to flush all cached JSON writes.
+    /// </summary>
+    public void BeginBatch()
+    {
+        _batchMode = true;
+        _sourceJsonCache.Clear();
+        _targetJsonCache.Clear();
+    }
+
+    /// <summary>
+    /// Ends batch mode and flushes all cached JSON writes to disk.
+    /// </summary>
+    public void EndBatch()
+    {
+        FlushTargetJsonFiles();
+        _batchMode = false;
+        _sourceJsonCache.Clear();
+        _targetJsonCache.Clear();
     }
 
     public bool Copy(CopyAsset item)
@@ -34,6 +61,14 @@ public class MaterialCopier
             if (!CopyMaterial(material, item.TargetPath, newMaterialName))
                 return false;
 
+        // If not in batch mode, flush immediately
+        if (!_batchMode)
+        {
+            FlushTargetJsonFiles();
+            _sourceJsonCache.Clear();
+            _targetJsonCache.Clear();
+        }
+
         return true;
     }
 
@@ -41,8 +76,18 @@ public class MaterialCopier
     {
         try
         {
-            var jsonString = File.ReadAllText(material.MatJsonFileLocation);
-            var sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
+            // Use cached source JSON if available
+            JsonNode sourceJsonNode;
+            if (_sourceJsonCache.TryGetValue(material.MatJsonFileLocation, out var cachedSource))
+            {
+                sourceJsonNode = cachedSource;
+            }
+            else
+            {
+                var jsonString = File.ReadAllText(material.MatJsonFileLocation);
+                sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
+                _sourceJsonCache[material.MatJsonFileLocation] = sourceJsonNode;
+            }
 
             var sourceMaterialNode = sourceJsonNode.AsObject()
                 .FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
@@ -79,8 +124,8 @@ public class MaterialCopier
             // Copy material files and update paths
             toText = CopyMaterialFilesAndUpdatePaths(material, toText);
 
-            // Write or update the JSON file
-            WriteMaterialJson(targetJsonFile, materialKey, materialNameToWrite, toText);
+            // Write or update the JSON file (cached in batch mode)
+            WriteMaterialJsonBatch(targetJsonFile, materialKey, materialNameToWrite, toText);
 
             return true;
         }
@@ -118,6 +163,49 @@ public class MaterialCopier
         }
 
         return materialJson;
+    }
+
+    /// <summary>
+    /// Batch-aware version of WriteMaterialJson - caches writes in batch mode
+    /// </summary>
+    private void WriteMaterialJsonBatch(FileInfo targetJsonFile, string materialKey, string materialName,
+        string materialJson)
+    {
+        // Get or create the target JSON node (from cache or file)
+        JsonNode targetJsonNode;
+        if (_targetJsonCache.TryGetValue(targetJsonFile.FullName, out var cachedTarget))
+        {
+            targetJsonNode = cachedTarget;
+        }
+        else if (targetJsonFile.Exists)
+        {
+            targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetJsonFile.FullName);
+            _targetJsonCache[targetJsonFile.FullName] = targetJsonNode;
+        }
+        else
+        {
+            targetJsonNode = new JsonObject();
+            _targetJsonCache[targetJsonFile.FullName] = targetJsonNode;
+        }
+
+        // Add material if it doesn't exist
+        if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == materialName))
+        {
+            targetJsonNode.AsObject().Add(
+                KeyValuePair.Create<string, JsonNode?>(materialKey, JsonNode.Parse(materialJson))
+            );
+        }
+    }
+
+    /// <summary>
+    /// Flushes all cached target JSON files to disk
+    /// </summary>
+    private void FlushTargetJsonFiles()
+    {
+        foreach (var kvp in _targetJsonCache)
+        {
+            File.WriteAllText(kvp.Key, kvp.Value.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+        }
     }
 
     private void WriteMaterialJson(FileInfo targetJsonFile, string materialKey, string materialName,
