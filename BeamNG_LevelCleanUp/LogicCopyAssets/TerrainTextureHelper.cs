@@ -127,7 +127,8 @@ public static class TerrainTextureHelper
         int roughnessValue,
         int? terrainSize,
         PathConverter pathConverter,
-        FileCopyHandler fileCopyHandler, string levelNameCopyFrom)
+        FileCopyHandler fileCopyHandler, 
+        string levelNameCopyFrom)
     {
         TerrainTextureGenerator? textureGenerator = null;
 
@@ -135,9 +136,13 @@ public static class TerrainTextureHelper
         if (terrainSize.HasValue)
             textureGenerator = new TerrainTextureGenerator(targetTerrainFolder, terrainSize.Value);
 
+        // OPTIMIZATION: Collect all path replacements first, then do a single pass through JSON
+        var pathReplacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var matFile in material.MaterialFiles)
         {
             var originalPath = matFile.OriginalJsonPath;
+            string newPath;
 
             // Check if this is a texture that should be replaced with generated dummy
             if (textureGenerator != null &&
@@ -168,17 +173,19 @@ public static class TerrainTextureHelper
                         textureProps.Type,
                         customValue);
 
-                    // Update the path in the material JSON to point to the generated PNG
-                    var newPath = pathConverter.GetBeamNgJsonPathOrFileName(generatedPngPath, false);
-                    UpdateTexturePathsInMaterial(materialObj, originalPath, newPath);
+                    // Prepare the new path for batch update
+                    newPath = pathConverter.GetBeamNgJsonPathOrFileName(generatedPngPath, false);
 
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         $"Replaced {matFile.MapType} with generated texture: {Path.GetFileName(generatedPngPath)}");
 
                     // Also update the corresponding size property if it exists
                     var sizePropertyName = matFile.MapType + "Size";
-                    if (materialObj[sizePropertyName] != null) materialObj[sizePropertyName] = terrainSize.Value;
+                    if (materialObj[sizePropertyName] != null) 
+                        materialObj[sizePropertyName] = terrainSize.Value;
 
+                    // Add to batch replacements
+                    pathReplacements[originalPath] = newPath;
                     continue; // Skip normal file copy for this texture
                 }
             }
@@ -205,57 +212,124 @@ public static class TerrainTextureHelper
                     $"Filepath error for terrain texture {material.Name}. Exception:{ex.Message}");
             }
 
-            // Update texture path in the material JSON with the suffixed filename
-            var newNormalPath = pathConverter.GetBeamNgJsonPathOrFileName(suffixedTargetFullName, false);
-            UpdateTexturePathsInMaterial(materialObj, originalPath, newNormalPath);
+            // Prepare the new path for batch update
+            newPath = pathConverter.GetBeamNgJsonPathOrFileName(suffixedTargetFullName, false);
+            
+            // Add to batch replacements
+            pathReplacements[originalPath] = newPath;
+        }
+
+        // OPTIMIZATION: Single pass through the material JSON to update all paths at once
+        // This reduces method calls from ~20,000 to ~150 for typical scenarios
+        if (pathReplacements.Any())
+        {
+            UpdateTexturePathsInMaterialBatch(materialObj, pathReplacements);
         }
     }
 
     /// <summary>
-    ///     Recursively updates texture paths in material JSON
+    ///     Batch version: Updates multiple texture paths in a single pass through the material JSON
+    ///     This is significantly faster than calling UpdateTexturePathsInMaterial once per texture
+    /// </summary>
+    private static void UpdateTexturePathsInMaterialBatch(JsonNode materialNode, Dictionary<string, string> pathReplacements)
+    {
+        if (materialNode is JsonObject obj)
+        {
+            foreach (var prop in obj.ToList())
+            {
+                if (prop.Value == null) continue;
+
+                if (prop.Value is JsonValue jsonValue)
+                {
+                    // Avoid exception-based control flow by using TryGetValue
+                    if (jsonValue.TryGetValue<string>(out var strValue) && 
+                        !string.IsNullOrEmpty(strValue) && 
+                        pathReplacements.TryGetValue(strValue, out var newPath))
+                    {
+                        obj[prop.Key] = newPath;
+                    }
+                }
+                else
+                {
+                    // Recurse into nested objects/arrays
+                    UpdateTexturePathsInMaterialBatch(prop.Value, pathReplacements);
+                }
+            }
+        }
+        else if (materialNode is JsonArray arr)
+        {
+            for (var i = 0; i < arr.Count; i++)
+            {
+                if (arr[i] == null) continue;
+
+                if (arr[i] is JsonValue jsonValue)
+                {
+                    // Avoid exception-based control flow by using TryGetValue
+                    if (jsonValue.TryGetValue<string>(out var strValue) && 
+                        !string.IsNullOrEmpty(strValue) && 
+                        pathReplacements.TryGetValue(strValue, out var newPath))
+                    {
+                        arr[i] = JsonValue.Create(newPath);
+                    }
+                }
+                else
+                {
+                    // Recurse into nested objects/arrays
+                    UpdateTexturePathsInMaterialBatch(arr[i], pathReplacements);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Recursively updates texture paths in material JSON (single path at a time)
+    ///     Note: This is kept for backward compatibility, but CopyTerrainTextures now uses the batch version
     /// </summary>
     public static void UpdateTexturePathsInMaterial(JsonNode materialNode, string oldPath, string newPath)
     {
         if (materialNode is JsonObject obj)
         {
             foreach (var prop in obj.ToList())
-                if (prop.Value != null)
+            {
+                if (prop.Value == null) continue;
+
+                if (prop.Value is JsonValue jsonValue)
                 {
-                    if (prop.Value is JsonValue jsonValue)
-                        try
-                        {
-                            var strValue = jsonValue.GetValue<string>();
-                            if (!string.IsNullOrEmpty(strValue) &&
-                                strValue.Equals(oldPath, StringComparison.OrdinalIgnoreCase)) obj[prop.Key] = newPath;
-                        }
-                        catch
-                        {
-                            // Not a string value, skip
-                        }
-                    else
-                        UpdateTexturePathsInMaterial(prop.Value, oldPath, newPath);
+                    // Avoid exception-based control flow by using TryGetValue
+                    if (jsonValue.TryGetValue<string>(out var strValue) && 
+                        !string.IsNullOrEmpty(strValue) &&
+                        strValue.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        obj[prop.Key] = newPath;
+                    }
                 }
+                else
+                {
+                    UpdateTexturePathsInMaterial(prop.Value, oldPath, newPath);
+                }
+            }
         }
         else if (materialNode is JsonArray arr)
         {
             for (var i = 0; i < arr.Count; i++)
-                if (arr[i] != null)
+            {
+                if (arr[i] == null) continue;
+
+                if (arr[i] is JsonValue jsonValue)
                 {
-                    if (arr[i] is JsonValue jsonValue)
-                        try
-                        {
-                            var strValue = jsonValue.GetValue<string>();
-                            if (!string.IsNullOrEmpty(strValue) &&
-                                strValue.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
-                                arr[i] = JsonValue.Create(newPath);
-                        }
-                        catch
-                        {
-                            // Not a string value, skip
-                        }
-                    else
-                        UpdateTexturePathsInMaterial(arr[i], oldPath, newPath);
+                    // Avoid exception-based control flow by using TryGetValue
+                    if (jsonValue.TryGetValue<string>(out var strValue) && 
+                        !string.IsNullOrEmpty(strValue) &&
+                        strValue.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        arr[i] = JsonValue.Create(newPath);
+                    }
                 }
+                else
+                {
+                    UpdateTexturePathsInMaterial(arr[i], oldPath, newPath);
+                }
+            }
         }
     }
 }
