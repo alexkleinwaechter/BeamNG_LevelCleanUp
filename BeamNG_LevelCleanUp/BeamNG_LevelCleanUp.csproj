@@ -17,7 +17,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="9.0.11" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="9.0.11" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.11" />
-    <PackageReference Include="MudBlazor" Version="6.21.0" />
+    <PackageReference Include="MudBlazor" Version="8.14.0" />
     <PackageReference Include="Pfim" Version="0.11.3" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="System.Text.Json" Version="9.0.11" />

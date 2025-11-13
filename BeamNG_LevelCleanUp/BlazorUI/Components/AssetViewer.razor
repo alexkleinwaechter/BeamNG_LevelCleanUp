@@ -1,4 +1,5 @@
 ﻿@using System.Drawing.Imaging
+@using MudBlazor
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
@@ -13,7 +14,7 @@
 @using HomagGroup.Blazor3D.Settings
 @using HomagGroup.Blazor3D.Textures
 @using HomagGroup.Blazor3D.Viewers
-;
+
 <MudDialog>
     <DialogContent>
         <MudContainer>
@@ -42,7 +43,7 @@
 </MudDialog>
 
 @code {
-    [CascadingParameter] MudDialogInstance MudDialog { get; set; }
+    [CascadingParameter] MudBlazor.IDialogReference MudDialog { get; set; }
     [Parameter] public CopyAsset CopyAsset { get; set; }
     private Viewer? View3D1;
     private readonly Scene? scene = new();
@@ -56,7 +57,7 @@
 
     void Cancel()
     {
-        MudDialog.Cancel();
+        MudDialog.Close(DialogResult.Cancel());
     }
 
     public void Dispose()
