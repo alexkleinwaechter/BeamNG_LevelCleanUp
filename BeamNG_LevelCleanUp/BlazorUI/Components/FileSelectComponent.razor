@@ -9,7 +9,7 @@
 }
 @if (!string.IsNullOrEmpty(_selectedFile))
 {
-    <MudListItem Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
+    <MudListItem T="string" Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
         @_selectedFile
     </MudListItem>
 }

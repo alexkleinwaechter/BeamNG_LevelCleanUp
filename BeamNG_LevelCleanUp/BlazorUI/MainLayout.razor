@@ -2,6 +2,7 @@
 @inherits LayoutComponentBase
 
 <MudThemeProvider @bind-IsDarkMode="@_isDarkMode" @ref="@_mudThemeProvider" Theme="MyCustomTheme"/>
+<MudPopoverProvider/>
 <MudDialogProvider/>
 <MudSnackbarProvider/>
 
@@ -51,7 +52,7 @@
 
     readonly MudTheme MyCustomTheme = new()
     {
-        Palette = new Palette
+        PaletteLight = new PaletteLight
         {
             Primary = Colors.Orange.Default,
             Secondary = Colors.Brown.Lighten1,
