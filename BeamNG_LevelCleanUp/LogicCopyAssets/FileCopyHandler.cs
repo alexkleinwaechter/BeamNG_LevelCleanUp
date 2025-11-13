@@ -35,9 +35,13 @@ public class FileCopyHandler
         var beamDir = Path.Join(Steam.GetBeamInstallDir(), Constants.BeamMapPath, thisLevelName);
         var beamZip = beamDir + ".zip";
 
-        if (!new FileInfo(beamZip).Exists ||
-            thisLevelName.Equals(_levelNameCopyFrom, StringComparison.InvariantCultureIgnoreCase))
+        if (!new FileInfo(beamZip).Exists)
             throw new FileNotFoundException($"Could not find zip file: {beamZip}");
+
+        if (thisLevelName.Equals(_levelNameCopyFrom, StringComparison.InvariantCultureIgnoreCase))
+        {
+            // Same level, extract directly
+        }
 
         var extractPath = fileParts[0];
         var filePathEnd = fileParts[1];
