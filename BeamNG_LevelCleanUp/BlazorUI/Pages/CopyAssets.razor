@@ -511,7 +511,7 @@
 
     private void OnSearch(string text)
     {
-        _searchString = text;
+        _searchString = text ?? string.Empty;
         table.ReloadServerData();
     }
 

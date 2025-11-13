@@ -68,7 +68,7 @@
                           MultiSelection="true" @bind-SelectedItems="_selectedItems">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Terrain Materials in @_levelNameCopyFrom</MudText>
-                        <MudSpacer/>
+                        <MudSpacer />
                         <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s => OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
@@ -92,7 +92,8 @@
                                                 ShowAlpha="false"
                                                 ColorPickerMode="ColorPickerMode.RGB"
                                                 PickerVariant="PickerVariant.Dialog"
-                                                ColorPickerView="ColorPickerView.Spectrum"/>
+                                                ColorPickerView="ColorPickerView.Spectrum"
+                                                ShowToolbar="true" />
                             </div>
                         </MudTd>
                         <MudTd DataLabel="Roughness" @onclick:stopPropagation>
@@ -124,10 +125,10 @@
                                         </MudSlider>
                                         <MudText Typo="Typo.caption" Style="min-width: 80px;">
                                             @(context.CopyAsset.RoughnessValue < 85 ? "Shiny" :
-                                            context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
-                                        </MudText>
-                                    </div>
-                                }
+                                                                                context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
+                                </MudText>
+                            </div>
+                                                        }
                                 else
                                 {
                                     <MudText Typo="Typo.caption" Style="color: gray;">
@@ -202,10 +203,10 @@
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
                                @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -218,7 +219,7 @@
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent/>
+        <CustomErrorContent />
     </ErrorContent>
 </ErrorBoundary>
 
@@ -719,4 +720,5 @@
         StateHasChanged();
     }
 
-}}
+}
+}
