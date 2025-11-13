@@ -43,7 +43,7 @@
 </MudDialog>
 
 @code {
-    [CascadingParameter] MudBlazor.IDialogReference MudDialog { get; set; }
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
     [Parameter] public CopyAsset CopyAsset { get; set; }
     private Viewer? View3D1;
     private readonly Scene? scene = new();
