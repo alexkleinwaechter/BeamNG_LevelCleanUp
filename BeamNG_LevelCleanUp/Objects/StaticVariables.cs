@@ -1,7 +1,6 @@
-﻿namespace BeamNG_LevelCleanUp.Objects
+﻿namespace BeamNG_LevelCleanUp.Objects;
+
+public static class StaticVariables
 {
-    public static class StaticVariables
-    {
-        public static bool ApplicationExitRequest { get; set; }
-    }
+    public static bool ApplicationExitRequest { get; set; }
 }

@@ -1,355 +1,239 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
-using BeamNG_LevelCleanUp.Utils;
-using System.Text.Json.Nodes;
 
-namespace BeamNG_LevelCleanUp.LogicCopyAssets
+namespace BeamNG_LevelCleanUp.LogicCopyAssets;
+
+/// <summary>
+///     Main orchestrator for copying assets between levels
+/// </summary>
+public class AssetCopy
 {
-    public class AssetCopy
+    private readonly List<CopyAsset> _assetsToCopy = new();
+    private DaeCopier _daeCopier;
+    private FileCopyHandler _fileCopyHandler;
+    private GroundCoverCopier _groundCoverCopier;
+    private GroundCoverDependencyHelper _groundCoverDependencyHelper;
+    private GroundCoverReplacer _groundCoverReplacer;
+    private ManagedDecalCopier _managedDecalCopier;
+    private MaterialCopier _materialCopier;
+
+    // Specialized copiers
+    private PathConverter _pathConverter;
+    private TerrainMaterialCopier _terrainMaterialCopier;
+    private TerrainMaterialReplacer _terrainMaterialReplacer;
+    private bool stopFaultyFile;
+
+    private List<Guid> _identifier { get; set; }
+
+    /// <summary>
+    ///     Creates an AssetCopy instance for copying assets between levels
+    /// </summary>
+    /// <param name="identifier">List of asset identifiers to copy</param>
+    /// <param name="copyAssetList">Full list of available copy assets</param>
+    /// <param name="namePath">Target level path</param>
+    /// <param name="levelName">Target level name</param>
+    /// <param name="levelNameCopyFrom">Source level name</param>
+    public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
     {
-        private List<Guid> _identifier { get; set; }
-        private List<CopyAsset> _assetsToCopy = new List<CopyAsset>();
-        private string namePath;
-        private string levelName;
-        private string levelNameCopyFrom;
-        private bool stopFaultyFile = false;
+        _identifier = identifier;
+        _assetsToCopy = copyAssetList.Where(x => identifier.Contains(x.Identifier)).ToList();
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList)
+        InitializeCopiers();
+        LoadGroundCoverData();
+    }
+
+    private void InitializeCopiers()
+    {
+        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName, PathResolver.LevelNameCopyFrom);
+        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName, PathResolver.LevelNameCopyFrom);
+        _fileCopyHandler = new FileCopyHandler(PathResolver.LevelNameCopyFrom);
+        _materialCopier = new MaterialCopier(_pathConverter, _fileCopyHandler);
+        _managedDecalCopier = new ManagedDecalCopier();
+        _daeCopier = new DaeCopier(_pathConverter, _fileCopyHandler, _materialCopier);
+
+        // Create shared dependency helper
+        _groundCoverDependencyHelper = new GroundCoverDependencyHelper(
+            _materialCopier,
+            _daeCopier,
+            PathResolver.LevelNameCopyFrom,
+            PathResolver.LevelNamePath);
+
+        // Initialize copiers using the shared helper
+        _groundCoverCopier = new GroundCoverCopier(
+            _pathConverter,
+            _fileCopyHandler,
+            _materialCopier,
+            _daeCopier,
+            PathResolver.LevelNameCopyFrom,
+            PathResolver.LevelNamePath);
+
+        // Initialize replacer using the shared helper
+        _groundCoverReplacer = new GroundCoverReplacer(
+            _groundCoverDependencyHelper,
+            PathResolver.LevelNamePath,
+            PathResolver.LevelNameCopyFrom);
+
+        // Pass level paths to TerrainMaterialCopier
+        _terrainMaterialCopier = new TerrainMaterialCopier(
+            _pathConverter,
+            _fileCopyHandler,
+            PathResolver.LevelNameCopyFrom,
+            _groundCoverCopier,
+            PathResolver.LevelPathCopyFrom,
+            PathResolver.LevelNamePath);
+
+        // Initialize TerrainMaterialReplacer
+        _terrainMaterialReplacer = new TerrainMaterialReplacer(
+            _pathConverter,
+            _fileCopyHandler,
+            _groundCoverReplacer,
+            PathResolver.LevelPathCopyFrom,
+            PathResolver.LevelNamePath);
+    }
+
+    private void LoadGroundCoverData()
+    {
+        // Load scanned groundcover JSON lines into the copier
+        if (BeamFileReader.GroundCoverJsonLines != null && BeamFileReader.GroundCoverJsonLines.Any())
         {
-            _identifier = identifier;
-            _assetsToCopy = copyAssetList.Where(x => identifier.Contains(x.Identifier)).ToList();
+            _groundCoverCopier.LoadGroundCoverJsonLines(BeamFileReader.GroundCoverJsonLines);
+            _groundCoverReplacer.LoadGroundCoverJsonLines(BeamFileReader.GroundCoverJsonLines);
         }
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath) : this(identifier, copyAssetList)
+        // Load scanned materials for groundcover material lookup
+        if (BeamFileReader.MaterialsJsonCopy != null && BeamFileReader.MaterialsJsonCopy.Any())
         {
-            this.namePath = namePath;
+            _groundCoverCopier.LoadMaterialsJsonCopy(BeamFileReader.MaterialsJsonCopy);
+            _groundCoverReplacer.LoadMaterialsJsonCopy(BeamFileReader.MaterialsJsonCopy);
+            _groundCoverDependencyHelper.LoadMaterialsJsonCopy(BeamFileReader.MaterialsJsonCopy);
+        }
+    }
+
+    public void Copy()
+    {
+        // Collect all terrain materials first for batch processing
+        var terrainMaterials = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.Terrain).ToList();
+        var otherAssets = _assetsToCopy.Where(x => x.CopyAssetType != CopyAssetType.Terrain).ToList();
+
+        // Group other assets by type for potential batch processing
+        var roads = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Road).ToList();
+        var decals = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal).ToList();
+        var daeFiles = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Dae).ToList();
+
+        // Copy roads in batch mode
+        if (roads.Any())
+        {
+            _materialCopier.BeginBatch();
+            foreach (var item in roads)
+            {
+                stopFaultyFile = !CopyRoad(item);
+                if (stopFaultyFile) break;
+            }
+            _materialCopier.EndBatch();
+            
+            if (stopFaultyFile) return;
         }
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath, string levelName) : this(identifier, copyAssetList, namePath)
+        // Copy decals in batch mode
+        if (decals.Any())
         {
-            this.levelName = levelName;
+            _materialCopier.BeginBatch();
+            foreach (var item in decals)
+            {
+                CopyManagedDecal(item);
+                stopFaultyFile = !CopyDecal(item);
+                if (stopFaultyFile) break;
+            }
+            _materialCopier.EndBatch();
+            
+            if (stopFaultyFile) return;
         }
 
-        public AssetCopy(List<Guid> identifier, List<CopyAsset> copyAssetList, string namePath, string levelName, string levelNameCopyFrom) : this(identifier, copyAssetList, namePath, levelName)
+        // Copy DAE files (non-batch for now as they use MaterialCopier internally)
+        foreach (var item in daeFiles)
         {
-            this.levelNameCopyFrom = levelNameCopyFrom;
+            stopFaultyFile = !CopyDae(item);
+            if (stopFaultyFile) break;
         }
 
-        public void Copy()
+        if (stopFaultyFile) return;
+
+        // Now process all terrain materials in batch (with groundcover collection)
+        if (terrainMaterials.Any()) stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials);
+
+        if (!stopFaultyFile)
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Assets copied. Build your deployment file now.");
+
+        stopFaultyFile = false;
+    }
+
+    private bool CopyRoad(CopyAsset item)
+    {
+        return _materialCopier.Copy(item);
+    }
+
+    private bool CopyDecal(CopyAsset item)
+    {
+        return _materialCopier.Copy(item);
+    }
+
+    private void CopyManagedDecal(CopyAsset item)
+    {
+        _managedDecalCopier.Copy(item);
+    }
+
+    private bool CopyDae(CopyAsset item)
+    {
+        return _daeCopier.Copy(item);
+    }
+
+    /// <summary>
+    ///     Processes terrain materials - routes to copier or replacer based on ReplaceTargetMaterialNames
+    /// </summary>
+    private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
+    {
+        // Separate into copy and replace operations
+        var materialsToAdd = terrainMaterials.Where(m => !m.IsReplaceMode).ToList();
+        var materialsToReplace = terrainMaterials.Where(m => m.IsReplaceMode).ToList();
+
+        // Process replacements first
+        foreach (var item in materialsToReplace)
+            // Loop through each target material to replace
+        foreach (var targetMaterialName in item.ReplaceTargetMaterialNames)
         {
-            foreach (var item in _assetsToCopy)
+            if (string.IsNullOrEmpty(targetMaterialName))
+                continue; // Skip null/empty (shouldn't happen, but safety check)
+
+            // Create a copy of the item with single replacement target
+            var singleReplaceItem = new CopyAsset
             {
-                switch (item.CopyAssetType)
-                {
-                    case CopyAssetType.Road:
-                        CopyRoad(item);
-                        break;
-                    case CopyAssetType.Decal:
-                        CopyManagedDecal(item);
-                        CopyDecal(item);
-                        break;
-                    case CopyAssetType.Dae:
-                        CopyDae(item);
-                        break;
-                    default:
-                        break;
-                }
-                if (stopFaultyFile)
-                {
-                    break;
-                }
-            }
-            if (!stopFaultyFile)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Done! Assets copied. Build your deployment file now.");
-            }
-            stopFaultyFile = false;
+                BaseColorHex = item.BaseColorHex,
+                RoughnessPreset = item.RoughnessPreset,
+                RoughnessValue = item.RoughnessValue,
+                Materials = item.Materials,
+                TargetPath = item.TargetPath,
+                CopyAssetType = item.CopyAssetType,
+                ReplaceTargetMaterialName = targetMaterialName // Set single target for backward compatibility
+            };
+
+            if (!_terrainMaterialReplacer.Replace(singleReplaceItem))
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Failed to replace material '{targetMaterialName}'. Skipping.");
+            // Continue with other replacements, don't fail entire batch
         }
 
-        private void CopyRoad(CopyAsset item)
-        {
-            CopyMaterials(item);
-        }
+        // Write all groundcover replacements ONCE after all terrain replacements
+        if (materialsToReplace.Any()) _groundCoverReplacer.WriteAllGroundCoverReplacements();
 
-        private void CopyDecal(CopyAsset item)
-        {
-            CopyMaterials(item);
-        }
+        // Process additions (new materials)
+        foreach (var item in materialsToAdd)
+            if (!_terrainMaterialCopier.Copy(item))
+                return false;
 
-        private void CopyManagedDecal(CopyAsset item)
-        {
-            if (item.TargetPath == null)
-            {
-                return;
-            }
-            Directory.CreateDirectory(item.TargetPath);
-            var targetJsonPath = Path.Join(item.TargetPath, "managedDecalData.json");
-            var targetJsonFile = new FileInfo(targetJsonPath);
-            if (!targetJsonFile.Exists)
-            {
-                var jsonObject = new JsonObject(
-                new[]
-                    {
-                          KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(item.DecalData,BeamJsonOptions.GetJsonSerializerOptions()))),
-                    }
-                );
-                File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
-            }
-            else
-            {
-                var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetJsonFile.FullName);
-                if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == item.DecalData.Name))
-                {
-                    targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(item.DecalData.Name, JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(item.DecalData, BeamJsonOptions.GetJsonSerializerOptions()))));
-                }
-                File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
-            }
-        }
+        // Write all collected groundcovers ONCE at the end
+        if (materialsToAdd.Any()) _groundCoverCopier.WriteAllGroundCovers();
 
-        private void CopyDae(CopyAsset item)
-        {
-            Directory.CreateDirectory(item.TargetPath);
-
-            var daeFullName = GetTargetFileName(item.DaeFilePath);
-            if (string.IsNullOrEmpty(daeFullName))
-            {
-                return;
-            }
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(daeFullName));
-                BeamFileCopy(item.DaeFilePath, daeFullName);
-                //Path.ChangeExtension(daeFullName, ".CDAE")
-                try
-                {
-                    BeamFileCopy(Path.ChangeExtension(item.DaeFilePath, ".cdae"), Path.ChangeExtension(daeFullName, ".cdae"));
-                }
-                catch (Exception)
-                {
-                    //ignore
-                }
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error for daefile {daeFullName}. Exception:{ex.Message}");
-            }
-
-            CopyMaterials(item);
-        }
-
-        private void CopyMaterials(CopyAsset item)
-        {
-            if (item.TargetPath == null)
-            {
-                return;
-            }
-            Directory.CreateDirectory(item.TargetPath);
-            foreach (var material in item.Materials)
-            {
-                try
-                {
-                    var jsonString = File.ReadAllText(material.MatJsonFileLocation);
-                    JsonNode sourceJsonNode;
-                    sourceJsonNode = JsonUtils.GetValidJsonNodeFromString(jsonString, material.MatJsonFileLocation);
-                    _ = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
-                    var sourceMaterialNode = sourceJsonNode.AsObject().FirstOrDefault(x => x.Value["name"]?.ToString() == material.Name);
-                    if (sourceMaterialNode.Value == null)
-                    {
-                        continue;
-                    }
-                    var toText = sourceMaterialNode.Value.ToJsonString();
-                    var targetJsonPath = Path.Join(item.TargetPath, Path.GetFileName(material.MatJsonFileLocation));
-                    var targetJsonFile = new FileInfo(targetJsonPath);
-                    foreach (var matFile in material.MaterialFiles)
-                    {
-                        var targetFullName = GetTargetFileName(matFile.File.FullName);
-                        if (string.IsNullOrEmpty(targetFullName))
-                        {
-                            continue;
-                        }
-                        try
-                        {
-                            Directory.CreateDirectory(Path.GetDirectoryName(targetFullName));
-                            BeamFileCopy(matFile.File.FullName, targetFullName);
-                        }
-                        catch (Exception ex)
-                        {
-                            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error for material {material.Name}. Exception:{ex.Message}");
-                        }
-
-                        toText = toText.Replace(GetBeamNgJsonFileName(matFile.File.FullName), GetBeamNgJsonFileName(targetFullName), StringComparison.OrdinalIgnoreCase);
-                    }
-                    if (!targetJsonFile.Exists)
-                    {
-                        var jsonObject = new JsonObject(
-                        new[]
-                            {
-                          KeyValuePair.Create<string, JsonNode?>(material.Name, JsonNode.Parse(toText)),
-                            }
-                        );
-                        File.WriteAllText(targetJsonFile.FullName, jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
-                    }
-                    else
-                    {
-                        var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetJsonFile.FullName);
-                        if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == material.Name))
-                        {
-                            try
-                            {
-                                targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(material.Name, JsonNode.Parse(toText)));
-                            }
-                            catch (Exception)
-                            {
-                                throw;
-                            }
-                        }
-                        File.WriteAllText(targetJsonFile.FullName, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
-                    }
-
-                }
-                catch (Exception ex)
-                {
-                    PubSubChannel.SendMessage(PubSubMessageType.Error, $"materials.json {material.MatJsonFileLocation} can't be parsed. Exception:{ex.Message}");
-                    stopFaultyFile = true;
-                    break;
-                }
-            }
-        }
-
-        private void BeamFileCopy(string sourceFile, string targetFile)
-        {
-            try
-            {
-                File.Copy(sourceFile, targetFile, true);
-            }
-            catch (Exception)
-            {
-                var fileParts = sourceFile.Split(@"\levels\");
-                if (fileParts.Count() == 2)
-                {
-                    var thisLevelName = fileParts[1].Split(@"\").FirstOrDefault() ?? string.Empty;
-                    var beamDir = Path.Join(Steam.GetBeamInstallDir(), Constants.BeamMapPath, thisLevelName);
-                    var beamZip = beamDir + ".zip";
-                    if (new FileInfo(beamZip).Exists && !thisLevelName.Equals(levelNameCopyFrom, StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        var extractPath = fileParts[0];
-                        var filePathEnd = fileParts[1];
-
-                        // Check if we're looking for a .link file
-                        if (sourceFile.EndsWith(".link", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var destinationFilePath = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                            if (destinationFilePath != null)
-                            {
-                                File.Copy(destinationFilePath, targetFile, true);
-                                return;
-                            }
-                        }
-
-                        //to Do: check if filepath has image extension, if not attach png
-                        var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", ".link" };
-                        if (!imageextensions.Any(x => filePathEnd.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            filePathEnd = filePathEnd + ".png";
-                        }
-
-                        var destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        if (destinationFilePath2 == null)
-                        {
-                            filePathEnd = Path.ChangeExtension(filePathEnd, ".dds");
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 == null)
-                        {
-                            // Try .link version of .dds
-                            filePathEnd = filePathEnd + ".link";
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 == null)
-                        {
-                            filePathEnd = Path.ChangeExtension(filePathEnd.Replace(".link", ""), ".png");
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 == null)
-                        {
-                            // Try .link version of .png
-                            filePathEnd = filePathEnd + ".link";
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 == null)
-                        {
-                            filePathEnd = Path.ChangeExtension(filePathEnd.Replace(".link", ""), ".jpg");
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 == null)
-                        {
-                            // Try .link version of .jpg
-                            filePathEnd = filePathEnd + ".link";
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 == null)
-                        {
-                            filePathEnd = Path.ChangeExtension(filePathEnd.Replace(".link", ""), ".jpeg");
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 == null)
-                        {
-                            // Try .link version of .jpeg
-                            filePathEnd = filePathEnd + ".link";
-                            destinationFilePath2 = ZipReader.ExtractFile(beamZip, extractPath, filePathEnd);
-                        }
-
-                        if (destinationFilePath2 != null)
-                        {
-                            targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath2));
-                            File.Copy(destinationFilePath2, targetFile, true);
-                        }
-                        else
-                        {
-                            throw;
-                        }
-                    }
-                }
-            }
-        }
-
-        private string GetTargetFileName(string sourceName)
-        {
-            var fileName = Path.GetFileName(sourceName);
-            var dir = Path.GetDirectoryName(sourceName);
-            var targetParts = dir.ToLowerInvariant().Split($@"\levels\{levelNameCopyFrom}\".ToLowerInvariant());
-            if (targetParts.Count() < 2)
-            {
-                //PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error in {sourceName}. Exception:no levels folder in path.");
-                targetParts = dir.ToLowerInvariant().Split($@"\levels\".ToLowerInvariant());
-                if (targetParts.Count() == 2)
-                {
-                    int pos = targetParts[1].IndexOf(@"\");
-                    if (pos >= 0)
-                    {
-                        targetParts[1] = targetParts[1].Remove(0, pos);
-                    }
-                }
-            }
-            return Path.Join(namePath, targetParts.Last(), $"{Constants.MappingToolsPrefix}{levelNameCopyFrom}", fileName);
-        }
-
-        private string GetBeamNgJsonFileName(string windowsFileName)
-        {
-            var targetParts = windowsFileName.ToLowerInvariant().Split($@"\levels\".ToLowerInvariant());
-            if (targetParts.Count() < 2)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Filepath error in {windowsFileName}. Exception:no levels folder in path.");
-                return string.Empty;
-            }
-            return Path.ChangeExtension(Path.Join("levels", targetParts.Last()).Replace(@"\", "/"), null);
-        }
+        return true;
     }
 }

@@ -2,24 +2,9 @@
 
 public static class TreeExtensions
 {
-    /// <summary> Generic interface for tree node structure </summary>
-    /// <typeparam name="T"></typeparam>
-    public interface ITree<T>
-    {
-        T Data { get; }
-        ITree<T> Parent { get; }
-        HashSet<ITree<T>> Children { get; }
-        bool HasPartialChildSelection { get; }
-        bool IsRoot { get; }
-        bool IsLeaf { get; }
-        bool HasChildren { get; }
-        bool IsSelected { get; set; }
-        bool IsExpanded { get; set; }
-        int Level { get; }
-    }
-
     /// <summary> Flatten tree to plain list of nodes </summary>
-    public static IEnumerable<TNode> Flatten<TNode>(this IEnumerable<TNode> nodes, Func<TNode, IEnumerable<TNode>> childrenSelector)
+    public static IEnumerable<TNode> Flatten<TNode>(this IEnumerable<TNode> nodes,
+        Func<TNode, IEnumerable<TNode>> childrenSelector)
     {
         if (nodes == null) throw new ArgumentNullException(nameof(nodes));
         return nodes.SelectMany(c => childrenSelector(c).Flatten(childrenSelector)).Concat(nodes);
@@ -38,30 +23,50 @@ public static class TreeExtensions
         return Tree<T>.FromLookup(lookup, selectedItems);
     }
 
+    /// <summary> Generic interface for tree node structure </summary>
+    /// <typeparam name="T"></typeparam>
+    public interface ITree<T>
+    {
+        T Data { get; }
+        ITree<T> Parent { get; }
+        HashSet<ITree<T>> Children { get; }
+        bool HasPartialChildSelection { get; }
+        bool IsRoot { get; }
+        bool IsLeaf { get; }
+        bool HasChildren { get; }
+        bool IsSelected { get; set; }
+        bool IsExpanded { get; set; }
+        int Level { get; }
+    }
+
     /// <summary> Internal implementation of <see cref="ITree{T}" /></summary>
     /// <typeparam name="T">Custom data type to associate with tree node.</typeparam>
     internal class Tree<T> : ITree<T>
     {
+        private Tree(T data)
+        {
+            Children = new HashSet<ITree<T>>();
+            Data = data;
+        }
+
         public T Data { get; }
         public ITree<T> Parent { get; private set; }
         public HashSet<ITree<T>> Children { get; }
+
         public bool HasPartialChildSelection
             => Children.Count > 0 && Children.Count(x => x.IsSelected) > 0
-                && Children.Count(x => x.IsSelected) < Children.Count();
+                                  && Children.Count(x => x.IsSelected) < Children.Count();
+
         public bool IsRoot => Parent == null;
         public bool IsLeaf => Children.Count == 0;
         public bool HasChildren => Children.Count > 0;
         public bool IsSelected { get; set; }
         public bool IsExpanded { get; set; } = true;
         public int Level => IsRoot ? 0 : Parent.Level + 1;
-        private Tree(T data)
-        {
-            Children = new HashSet<ITree<T>>();
-            Data = data;
-        }
+
         public static Tree<T> FromLookup(ILookup<T, T> lookup, ICollection<T> selectedItems)
         {
-            var rootData = lookup.Count == 1 ? lookup.First().Key : default(T);
+            var rootData = lookup.Count == 1 ? lookup.First().Key : default;
             var root = new Tree<T>(rootData);
             root.IsSelected = Selected(rootData, selectedItems);
             root.LoadChildren(lookup, selectedItems);
@@ -86,4 +91,3 @@ public static class TreeExtensions
         }
     }
 }
-

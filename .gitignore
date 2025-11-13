@@ -362,3 +362,4 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /etsmaterialgen/Properties/launchSettings.json
+/examples_for_ai

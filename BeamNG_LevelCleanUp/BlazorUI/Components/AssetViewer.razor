@@ -1,23 +1,23 @@
-﻿@using BeamNG_LevelCleanUp.Communication;
-@using BeamNG_LevelCleanUp.Objects;
-@using BeamNG_LevelCleanUp.Utils;
-@using HomagGroup.Blazor3D.Enums;
-@using HomagGroup.Blazor3D.Events;
-@using HomagGroup.Blazor3D.Geometires;
-@using HomagGroup.Blazor3D.Lights;
-@using HomagGroup.Blazor3D.Materials;
-@using HomagGroup.Blazor3D.Maths;
-@using HomagGroup.Blazor3D.Objects;
-@using HomagGroup.Blazor3D.Scenes;
-@using HomagGroup.Blazor3D.Settings;
-@using HomagGroup.Blazor3D.Textures;
-@using HomagGroup.Blazor3D.Viewers;
-@using System.IO
+﻿@using System.Drawing.Imaging
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@using HomagGroup.Blazor3D.Enums
+@using HomagGroup.Blazor3D.Events
+@using HomagGroup.Blazor3D.Geometires
+@using HomagGroup.Blazor3D.Lights
+@using HomagGroup.Blazor3D.Materials
+@using HomagGroup.Blazor3D.Maths
+@using HomagGroup.Blazor3D.Objects
+@using HomagGroup.Blazor3D.Scenes
+@using HomagGroup.Blazor3D.Settings
+@using HomagGroup.Blazor3D.Textures
+@using HomagGroup.Blazor3D.Viewers
 ;
 <MudDialog>
     <DialogContent>
         <MudContainer>
-            <Viewer @ref="View3D1" Scene="scene" />
+            <Viewer @ref="View3D1" Scene="scene"/>
         </MudContainer>
         <MudContainer Style="height: 280px; overflow-y: scroll">
             <MudGrid>
@@ -40,21 +40,24 @@
         <MudButton OnClick="Cancel">Close</MudButton>
     </DialogActions>
 </MudDialog>
+
 @code {
     [CascadingParameter] MudDialogInstance MudDialog { get; set; }
-    [Parameter]
-    public CopyAsset CopyAsset { get; set; }
-    private Viewer? View3D1 = null!;
-    private Scene? scene = new Scene();
+    [Parameter] public CopyAsset CopyAsset { get; set; }
+    private Viewer? View3D1;
+    private readonly Scene? scene = new();
     private Guid loadedObjectGuid = Guid.NewGuid();
     private string msg = string.Empty;
     private string tempDir = string.Empty;
     private string daeFilePath = string.Empty;
     private string colormapFile = string.Empty;
     private float ratio { get; set; }
-    private List<ImageSource> imageSources = new List<ImageSource>();
+    private readonly List<ImageSource> imageSources = new();
 
-    void Cancel() => MudDialog.Cancel();
+    void Cancel()
+    {
+        MudDialog.Cancel();
+    }
 
     public void Dispose()
     {
@@ -70,6 +73,7 @@
         {
             LoadMaterialPreview();
         }
+
         return base.OnInitializedAsync();
     }
 
@@ -82,16 +86,16 @@
     private void AddLights()
     {
         scene.Add(new AmbientLight());
-        scene.Add(new PointLight()
-            {
-                Intensity = 1f,
-                Position = new Vector3(100, 200, 100)
-            });
-        scene.Add(new PointLight()
-            {
-                Intensity = 1f,
-                Position = new Vector3(5, 5, 5)
-            });
+        scene.Add(new PointLight
+        {
+            Intensity = 1f,
+            Position = new Vector3(100, 200, 100)
+        });
+        scene.Add(new PointLight
+        {
+            Intensity = 1f,
+            Position = new Vector3(5, 5, 5)
+        });
     }
 
     protected override Task OnAfterRenderAsync(bool firstRender)
@@ -102,6 +106,7 @@
             View3D1.ObjectLoaded += OnObjectLoaded;
             View3D1.JsModuleLoaded += OnJsModuleLoaded;
         }
+
         return base.OnAfterRenderAsync(firstRender);
     }
 
@@ -113,7 +118,6 @@
         }
         else
         {
-
             if (CopyAsset.CopyAssetType != CopyAssetType.Dae)
             {
                 await View3D1.SetCameraPositionAsync(new Vector3(1, -2, 3), new Vector3(0, 0, 0));
@@ -124,12 +128,12 @@
     private async Task LoadDaePreview()
     {
         var settings = new ImportSettings
-            {
-                Format = Import3DFormats.Collada,
-                TextureURL = colormapFile,
-                FileURL = daeFilePath,
-                Uuid = Guid.NewGuid()
-            };
+        {
+            Format = Import3DFormats.Collada,
+            TextureURL = colormapFile,
+            FileURL = daeFilePath,
+            Uuid = Guid.NewGuid()
+        };
         loadedObjectGuid = await View3D1.Import3DModelAsync(settings);
         await View3D1.SetCameraPositionAsync(new Vector3(0, 5, 10), new Vector3(0, 3, 0));
     }
@@ -137,16 +141,16 @@
     private void LoadMaterialPreview()
     {
         scene.Add(new Mesh
+        {
+            Geometry = new PlaneGeometry(4 * ratio, 4),
+            Position = new Vector3(0, 0, 0),
+            Material = new MeshStandardMaterial
             {
-                Geometry = new PlaneGeometry(4 * ratio, 4, 1, 1),
-                Position = new Vector3(0, 0, 0),
-                Material = new MeshStandardMaterial()
-                {
-                    Color = "LightGrey",
-                    Map = CreateTexture(colormapFile),
-                    FlatShading = true
-                }
-            });
+                Color = "LightGrey",
+                Map = CreateTexture(colormapFile),
+                FlatShading = true
+            }
+        });
     }
 
     private Task OnObjectLoaded(Object3DArgs e)
@@ -157,11 +161,12 @@
         {
             if (item.Uuid == e.UUID)
             {
-                this.msg = $"loaded object with id = {e.UUID} and type {item.Type}. Initial guid was {loadedObjectGuid}";
+                msg = $"loaded object with id = {e.UUID} and type {item.Type}. Initial guid was {loadedObjectGuid}";
                 StateHasChanged();
                 break;
             }
         }
+
         return Task.CompletedTask;
     }
 
@@ -176,7 +181,8 @@
                 daeFilePath = Path.Join("/temp", daeFile.Name).Replace(@"\", "/");
             }
         }
-        string surrogateFilePath = string.Empty;
+
+        var surrogateFilePath = string.Empty;
         foreach (var material in CopyAsset.Materials)
         {
             foreach (var f in material.MaterialFiles)
@@ -188,16 +194,16 @@
                     try
                     {
                         var ddsImage = new DDSImage();
-                        var convertedFile = ddsImage.SaveAs(targetFile, System.Drawing.Imaging.ImageFormat.Png);
+                        var convertedFile = ddsImage.SaveAs(targetFile, ImageFormat.Png);
                         ratio = ddsImage.Ratio;
                         var fi = new FileInfo(convertedFile);
                         surrogateFilePath = Path.Join("/temp", fi.Name).Replace(@"\", "/");
                         imageSources.Add(new ImageSource
-                            {
-                                MapName = f.MapType,
-                                Filename = f.File.Name,
-                                Path = surrogateFilePath
-                            });
+                        {
+                            MapName = f.MapType,
+                            Filename = f.File.Name,
+                            Path = surrogateFilePath
+                        });
                         if (f.MapType == "ColorMap" || f.MapType == "BaseColorMap")
                         {
                             fi = new FileInfo(convertedFile);
@@ -211,6 +217,7 @@
                 }
             }
         }
+
         if (string.IsNullOrEmpty(colormapFile))
         {
             colormapFile = surrogateFilePath;
@@ -219,30 +226,31 @@
 
     private string RefreshAndGetTempDirectory()
     {
-        string rootpath = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "wwwroot");
+        var rootpath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
         var deleteDir = new DirectoryInfo(Path.Join(rootpath, "temp"));
         if (deleteDir.Exists)
         {
             Directory.Delete(deleteDir.FullName, true);
         }
+
         Directory.CreateDirectory(deleteDir.FullName);
         return deleteDir.FullName;
     }
 
     private Texture CreateTexture(
-    string url,
-    WrappingType wraps = WrappingType.ClampToEdgeWrapping,
-    WrappingType wrapt = WrappingType.ClampToEdgeWrapping,
-    Vector2? repeat = null,
-    Vector2? offset = null,
-    float? rotation = null)
+        string url,
+        WrappingType wraps = WrappingType.ClampToEdgeWrapping,
+        WrappingType wrapt = WrappingType.ClampToEdgeWrapping,
+        Vector2? repeat = null,
+        Vector2? offset = null,
+        float? rotation = null)
     {
-        var texture = new Texture()
-            {
-                TextureUrl = url,
-                WrapS = wraps,
-                WrapT = wrapt
-            };
+        var texture = new Texture
+        {
+            TextureUrl = url,
+            WrapS = wraps,
+            WrapT = wrapt
+        };
 
         texture.Repeat = repeat == null ? texture.Repeat : repeat;
         texture.Offset = offset == null ? texture.Offset : offset;
@@ -250,4 +258,5 @@
 
         return texture;
     }
+
 }

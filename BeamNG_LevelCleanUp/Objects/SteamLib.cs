@@ -1,8 +1,7 @@
-﻿namespace BeamNG_LevelCleanUp.Objects
+﻿namespace BeamNG_LevelCleanUp.Objects;
+
+public class SteamLib
 {
-    public class SteamLib
-    {
-        public string LibPath { get; set; }
-        public string SteamPath { get; set; }
-    }
+    public string LibPath { get; set; }
+    public string SteamPath { get; set; }
 }
