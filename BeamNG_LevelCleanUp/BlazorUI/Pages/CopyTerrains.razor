@@ -146,7 +146,8 @@
                                        Dense="true"
                                        Variant="Variant.Outlined"
                                        Placeholder="Add New Material"
-                                       Clearable="false">
+                                       Clearable="false"
+                                       HelperText="Add or replace terrainmaterials in target">
                                 <MudSelectItem Value="@((string)null)">Add New Material</MudSelectItem>
                                 @foreach (var targetMaterial in _targetTerrainMaterials)
                                 {
