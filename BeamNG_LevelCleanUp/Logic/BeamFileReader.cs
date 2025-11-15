@@ -47,6 +47,7 @@ internal class BeamFileReader
     public static List<CopyAsset> CopyAssets { get; set; } = new();
     public static List<string> GroundCoverJsonLines { get; set; } = new();
     public static List<FileInfo> DeleteList { get; set; } = new();
+    private static List<FileInfo> _terrainMaterialFiles { get; set; } = new();
 
     private static List<FileInfo> _mainDecalsJson { get; set; } = new();
     private static List<FileInfo> _managedDecalData { get; set; } = new();
@@ -98,6 +99,8 @@ internal class BeamFileReader
         _managedItemData = new List<FileInfo>();
         _forestJsonFiles = new List<FileInfo>();
         GroundCoverJsonLines = new List<string>();
+        _terrainMaterialFiles = new List<FileInfo>();
+
         _xOffset = 0;
         _yOffset = 0;
         _zOffset = 0;
@@ -547,24 +550,41 @@ internal class BeamFileReader
 
     internal void CopyTerrainMaterials()
     {
-        var terrainMaterialsPath = Path.Join(_levelNamePathCopyFrom, Constants.Terrains, "main.materials.json");
-        var terrainMaterialsFile = new FileInfo(terrainMaterialsPath);
+        var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+        if (dirInfo != null)
+        {
+            // Sammle alle materials.json Dateien, die TerrainMaterial enthalten
+            var terrainMaterialFiles = new List<FileInfo>();
+            WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.FindTerrainMaterialFiles);
+            WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.FindTerrainMaterialFiles);
 
-        if (terrainMaterialsFile.Exists)
-        {
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scanning terrain materials from {_levelNameCopyFrom}");
-            var terrainScanner = new TerrainCopyScanner(
-                terrainMaterialsFile.FullName,
-                _levelPathCopyFrom,
-                _levelNamePath,
-                MaterialsJsonCopy,
-                CopyAssets);
-            terrainScanner.ScanTerrainMaterials();
-        }
-        else
-        {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"No terrain materials found in {_levelNameCopyFrom} at {terrainMaterialsPath}");
+            if (_terrainMaterialFiles.Any())
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Found {_terrainMaterialFiles.Count} terrain material file(s) in {_levelNameCopyFrom}");
+
+                foreach (var terrainMaterialFile in _terrainMaterialFiles)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Scanning terrain materials from {terrainMaterialFile.Name}");
+
+                    var terrainScanner = new TerrainCopyScanner(
+                        terrainMaterialFile.FullName,
+                        _levelPathCopyFrom,
+                        _levelNamePath,
+                        MaterialsJsonCopy,
+                        CopyAssets);
+                    terrainScanner.ScanTerrainMaterials();
+                }
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"No terrain materials found in {_levelNameCopyFrom}");
+            }
+
+            // Reset für nächsten Durchlauf
+            _terrainMaterialFiles.Clear();
         }
     }
 
@@ -604,7 +624,7 @@ internal class BeamFileReader
             .Where(a => a.MissionGroupPath != null && a.MissionGroupLine != null)
             .GroupBy(a => a.MissionGroupPath)
             .Select(g => new
-                { MissionGroupPath = g.Key, MissionGroupLines = g.Select(x => x.MissionGroupLine.Value).ToList() })
+            { MissionGroupPath = g.Key, MissionGroupLines = g.Select(x => x.MissionGroupLine.Value).ToList() })
             .ToList();
 
 
@@ -786,6 +806,19 @@ internal class BeamFileReader
                             new List<string>());
                         positionScanner2.ScanDecals();
                         break;
+                    case ReadTypeEnum.FindTerrainMaterialFiles:
+                        // Prüfe ob diese materials.json Datei TerrainMaterial Einträge enthält
+                        if (File.Exists(fi.FullName))
+                        {
+                            var jsonContent = File.ReadAllText(fi.FullName);
+                            // Einfache Prüfung ob "class": "TerrainMaterial" im JSON vorkommt
+                            if (jsonContent.Contains("\"class\": \"TerrainMaterial\"") ||
+                                jsonContent.Contains("\"class\":\"TerrainMaterial\""))
+                            {
+                                _terrainMaterialFiles.Add(fi);
+                            }
+                        }
+                        break;
                 }
             }
 
@@ -821,6 +854,7 @@ internal class BeamFileReader
         FacilityJson = 18,
         ChangeHeightMissionGroups = 19,
         ChangeHeightDecals = 20,
-        CopyTerrainMaterials = 21
+        CopyTerrainMaterials = 21,
+        FindTerrainMaterialFiles = 22
     }
 }
