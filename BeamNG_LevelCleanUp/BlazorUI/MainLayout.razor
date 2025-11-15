@@ -1,19 +1,20 @@
-﻿@using System.Reflection;
+﻿@using System.Reflection
 @inherits LayoutComponentBase
 
-<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" @ref="@_mudThemeProvider" Theme="MyCustomTheme" />
-<MudDialogProvider />
-<MudSnackbarProvider />
+<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" @ref="@_mudThemeProvider" Theme="MyCustomTheme"/>
+<MudPopoverProvider/>
+<MudDialogProvider/>
+<MudSnackbarProvider/>
 
 <MudLayout>
     <MudAppBar>
-        <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Color="Color.Dark" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudIconButton Style="min-width:200px;" Icon="@Icons.Material.Filled.Menu" Color="Color.Dark" Edge="Edge.Start" OnClick="@(e => DrawerToggle())"/>
         <MudText Color="Color.Dark"> @GetAppTitle() </MudText>
     </MudAppBar>
     <MudDrawer Open="_drawerOpen" Breakpoint="Breakpoint.Xs">
         <div class="sidebar">
             <MudSwitch @bind-Checked="@_isDarkMode" Color="Color.Primary" Class="ma-4" T="bool" Label="Light/Dark Mode"/>
-            <MyNavMenu />
+            <MyNavMenu/>
         </div>
     </MudDrawer>
     <MudMainContent Class="main">
@@ -22,6 +23,7 @@
         </MudContainer>
     </MudMainContent>
 </MudLayout>
+
 @code {
     private MudThemeProvider _mudThemeProvider;
     private bool _isDarkMode;
@@ -34,7 +36,7 @@
 
     private string GetAppTitle()
     {
-        Version version = Assembly.GetExecutingAssembly().GetName().Version;
+        var version = Assembly.GetExecutingAssembly().GetName().Version;
         var name = "BeamNG Tools for Mapbuilders - version";
         return $"{name} {version.Major}.{version.Minor}.{version.Build}";
     }
@@ -48,27 +50,28 @@
         }
     }
 
-    MudTheme MyCustomTheme = new MudTheme()
+    readonly MudTheme MyCustomTheme = new()
+    {
+        PaletteLight = new PaletteLight
         {
-            Palette = new Palette()
-            {
-                Primary = Colors.Orange.Default,
-                Secondary = Colors.Brown.Lighten1,
-                AppbarBackground = Colors.Orange.Default,
-                ActionDefault = Colors.Orange.Default,
-            },
-            PaletteDark = new PaletteDark()
-            {
-                Primary = Colors.Orange.Default,
-                Secondary = Colors.Brown.Lighten1,
-                AppbarBackground = Colors.Orange.Default,
-                ActionDefault = Colors.Orange.Default,
-            },
+            Primary = Colors.Orange.Default,
+            Secondary = Colors.Brown.Lighten1,
+            AppbarBackground = Colors.Orange.Default,
+            ActionDefault = Colors.Orange.Default
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = Colors.Orange.Default,
+            Secondary = Colors.Brown.Lighten1,
+            AppbarBackground = Colors.Orange.Default,
+            ActionDefault = Colors.Orange.Default
+        },
 
-            LayoutProperties = new LayoutProperties()
-            {
-                DrawerWidthLeft = "260px",
-                DrawerWidthRight = "300px"
-            }
-        };
+        LayoutProperties = new LayoutProperties
+        {
+            DrawerWidthLeft = "260px",
+            DrawerWidthRight = "300px"
+        }
+    };
+
 }

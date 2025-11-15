@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "meta4downloader": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\aklei\\Downloads\\dop20rgb_jp2_07137.meta4\" \"D:\\qgis_projects\\kattenes\\raw_satelite\" 5"
+    }
+  }
+}

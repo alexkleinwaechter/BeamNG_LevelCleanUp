@@ -1,88 +1,93 @@
-﻿using Pfim;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Pfim;
 using ImageFormat = Pfim.ImageFormat;
 
-namespace BeamNG_LevelCleanUp.Utils
+namespace BeamNG_LevelCleanUp.Utils;
+
+public class DDSImage
 {
-    public class DDSImage
+    public float Ratio { get; set; }
+
+    public string SaveAs(string sourceFile, System.Drawing.Imaging.ImageFormat targetFormat)
     {
-        public float Ratio { get; set; }
-        public string SaveAs(string sourceFile, System.Drawing.Imaging.ImageFormat targetFormat)
+        var fi = new FileInfo(sourceFile);
+        if (fi.Extension.ToUpper() != ".DDS") return sourceFile;
+
+        using (var image = Pfimage.FromFile(sourceFile))
         {
-            var fi = new System.IO.FileInfo(sourceFile);
-            if (fi.Extension.ToUpper() != ".DDS") return sourceFile;
+            PixelFormat format;
 
-            using (var image = Pfimage.FromFile(sourceFile))
+            // Convert from Pfim's backend agnostic image format into GDI+'s image format
+            switch (image.Format)
             {
-                PixelFormat format;
-
-                // Convert from Pfim's backend agnostic image format into GDI+'s image format
-                switch (image.Format)
-                {
-                    case ImageFormat.Rgba32:
-                        format = PixelFormats.Bgra32;
-                        break;
-                    case ImageFormat.Rgb24:
-                        format = PixelFormats.Bgr24;
-                        break;
-                    case ImageFormat.Rgb8:
-                        format = PixelFormats.Gray8;
-                        break;
-                    default:
-                        // see the sample for more details
-                        throw new NotImplementedException();
-                }
-
-                // Pin pfim's data array so that it doesn't get reaped by GC, unnecessary
-                // in this snippet but useful technique if the data was going to be used in
-                // control like a picture box
-                var handle = GCHandle.Alloc(image.Data, GCHandleType.Pinned);
-                var retVal = string.Empty;
-                try
-                {
-                    Ratio = (float)image.Width / (float)image.Height;
-                    var data = Marshal.UnsafeAddrOfPinnedArrayElement(image.Data, 0);
-                    var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, format, null, data, image.Data.Length, image.Stride);
-                    //var bitmap = new Bitmap(image.Width, image.Height, image.Stride, format, data);
-                    switch (targetFormat.ToString())
-                    {
-                        case "Png":
-                            retVal = Path.ChangeExtension(sourceFile, ".png");
-                            using (var fileStream = new FileStream(retVal, FileMode.Create))
-                            {
-                                BitmapEncoder encoder = new PngBitmapEncoder();
-                                encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                                encoder.Save(fileStream);
-                            }
-                            break;
-                        case "Bmp":
-                            retVal = Path.ChangeExtension(sourceFile, ".bmp");
-                            using (var fileStream = new FileStream(retVal, FileMode.Create))
-                            {
-                                BitmapEncoder encoder = new BmpBitmapEncoder();
-                                encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                                encoder.Save(fileStream);
-                            }
-                            break;
-                        case "Jpeg":
-                            retVal = Path.ChangeExtension(sourceFile, ".jpg");
-                            using (var fileStream = new FileStream(retVal, FileMode.Create))
-                            {
-                                BitmapEncoder encoder = new JpegBitmapEncoder();
-                                encoder.Frames.Add(BitmapFrame.Create(bitmap));
-                                encoder.Save(fileStream);
-                            }
-                            break;
-                    }
-                }
-                finally
-                {
-                    handle.Free();
-                }
-                return retVal;
+                case ImageFormat.Rgba32:
+                    format = PixelFormats.Bgra32;
+                    break;
+                case ImageFormat.Rgb24:
+                    format = PixelFormats.Bgr24;
+                    break;
+                case ImageFormat.Rgb8:
+                    format = PixelFormats.Gray8;
+                    break;
+                default:
+                    // see the sample for more details
+                    throw new NotImplementedException();
             }
+
+            // Pin pfim's data array so that it doesn't get reaped by GC, unnecessary
+            // in this snippet but useful technique if the data was going to be used in
+            // control like a picture box
+            var handle = GCHandle.Alloc(image.Data, GCHandleType.Pinned);
+            var retVal = string.Empty;
+            try
+            {
+                Ratio = image.Width / (float)image.Height;
+                var data = Marshal.UnsafeAddrOfPinnedArrayElement(image.Data, 0);
+                var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, format, null, data,
+                    image.Data.Length, image.Stride);
+                //var bitmap = new Bitmap(image.Width, image.Height, image.Stride, format, data);
+                switch (targetFormat.ToString())
+                {
+                    case "Png":
+                        retVal = Path.ChangeExtension(sourceFile, ".png");
+                        using (var fileStream = new FileStream(retVal, FileMode.Create))
+                        {
+                            BitmapEncoder encoder = new PngBitmapEncoder();
+                            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                            encoder.Save(fileStream);
+                        }
+
+                        break;
+                    case "Bmp":
+                        retVal = Path.ChangeExtension(sourceFile, ".bmp");
+                        using (var fileStream = new FileStream(retVal, FileMode.Create))
+                        {
+                            BitmapEncoder encoder = new BmpBitmapEncoder();
+                            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                            encoder.Save(fileStream);
+                        }
+
+                        break;
+                    case "Jpeg":
+                        retVal = Path.ChangeExtension(sourceFile, ".jpg");
+                        using (var fileStream = new FileStream(retVal, FileMode.Create))
+                        {
+                            BitmapEncoder encoder = new JpegBitmapEncoder();
+                            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                            encoder.Save(fileStream);
+                        }
+
+                        break;
+                }
+            }
+            finally
+            {
+                handle.Free();
+            }
+
+            return retVal;
         }
     }
 }

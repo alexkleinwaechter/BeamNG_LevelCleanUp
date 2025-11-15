@@ -1,7 +1,6 @@
-﻿namespace BeamNG_LevelCleanUp.Objects
+﻿namespace BeamNG_LevelCleanUp.Objects;
+
+public class AssetType
 {
-    public class AssetType
-    {
-        public string ShapeFilename { get; set; }
-    }
+    public string ShapeFilename { get; set; }
 }

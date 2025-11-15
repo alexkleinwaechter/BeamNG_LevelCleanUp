@@ -1,11 +1,10 @@
 ﻿@page "/MapShrink"
+@using System.IO.Compression
 @using BeamNG_LevelCleanUp.BlazorUI.Components
-@using BeamNG_LevelCleanUp.Communication;
-@using BeamNG_LevelCleanUp.Logic;
-@using BeamNG_LevelCleanUp.Objects;
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
-@using Microsoft.AspNetCore.Components.Forms;
-@using System.IO.Compression;
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
@@ -29,7 +28,7 @@
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
                                    ValueChanged="OnVanillaSourceSelected"
                                    Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                         @foreach (var item in _vanillaLevels)
+                            @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
                             }
@@ -43,21 +42,25 @@
                 <MudTable T="GridFileListItem" Items="@BindingListDelete" Hover="true"
                           MultiSelection="true" @bind-SelectedItems="_selectedItems"
                           @bind-Value="_searchString"
-                          Filter="new Func<GridFileListItem,bool>(FilterFunc1)">
+                          Filter="new Func<GridFileListItem, bool>(FilterFunc1)">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Unused Files</MudText>
-                        <MudSpacer />
+                        <MudSpacer/>
                         <MudTextField DebounceInterval="300" Clearable @bind-Value="_searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-                     </ToolBarContent>
-                     <HeaderContent>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.FullName)">File</MudTableSortLabel></MudTh>
-                         <MudTh><MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x=>x.SizeMb)">Size Mb</MudTableSortLabel></MudTh>
-                     </HeaderContent>
-                     <RowTemplate>
-                         <MudTd DataLabel="File">@context.FullName</MudTd>
-                            <MudTd DataLabel="Size">@context.SizeMb</MudTd>
-                        </RowTemplate>
-                    </MudTable>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>
+                            <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.FullName)">File</MudTableSortLabel>
+                        </MudTh>
+                        <MudTh>
+                            <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.SizeMb)">Size Mb</MudTableSortLabel>
+                        </MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="File">@context.FullName</MudTd>
+                        <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+                    </RowTemplate>
+                </MudTable>
             }
             else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
             {
@@ -65,14 +68,14 @@
             }
 
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-                <MudList Clickable="true" Dense="true" DisableGutters="false">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
-                        var list = _showErrorLog ? _errors : (_showWarningLog ? _warnings : _messages);
+                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
                         @foreach (var item in list)
                         {
-                            <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
-                                </MudListItem>
+                            </MudListItem>
                         }
                     }
                 </MudList>
@@ -103,12 +106,12 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                                @bind-Value="_compressionLevel">
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
-                     </MudSelect>
+                               @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
+                    </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
             </MudStack>
@@ -120,7 +123,7 @@
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent />
+        <CustomErrorContent/>
     </ErrorContent>
 </ErrorBoundary>
 
@@ -128,35 +131,35 @@
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
-    private List<string> _missingFiles { get; set; } = new List<string>();
-    private List<string> _errors { get; set; } = new List<string>();
-    private List<string> _warnings { get; set; } = new List<string>();
-    private List<string> _messages { get; set; } = new List<string>();
+    private List<string> _missingFiles { get; set; } = new();
+    private List<string> _errors { get; set; } = new();
+    private List<string> _warnings { get; set; } = new();
+    private List<string> _messages { get; set; } = new();
     private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
-    private string _fileSelectTitle = "Select your zipped level you want to shrink";
+    private readonly string _fileSelectTitle = "Select your zipped level you want to shrink";
     private bool _fileSelectDisabled { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
     private Anchor _anchor;
     private string width, height;
-    private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
-    private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
+    private List<GridFileListItem> BindingListDelete { get; set; } = new();
+    private HashSet<GridFileListItem> _selectedItems = new();
     private bool _fixed_Header = true;
     private MudExpansionPanels FileSelect { get; set; }
     private string _searchString = string.Empty;
-    private string _labelFileSummaryShrink { get; set; } = String.Empty;
+    private string _labelFileSummaryShrink { get; set; } = string.Empty;
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
     bool _showErrorLog { get; set; }
     bool _showWarningLog { get; set; }
-    private List<FileInfo> _vanillaLevels { get; set; } = new List<FileInfo>();
+    private List<FileInfo> _vanillaLevels { get; set; } = new();
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private string _beamInstallDir { get; set; }
 
     protected async Task FileSelected(string file)
     {
-        FileSelect.CollapseAll();
+        await FileSelect.CollapseAllAsync();
         _labelFileSummaryShrink = string.Empty;
         _fileSelectDisabled = true;
         _levelName = null;
@@ -179,10 +182,7 @@
         {
             try
             {
-                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
-                {
-                    config.VisibleStateDuration = int.MaxValue;
-                });
+                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
                 Snackbar.Remove(_staticSnackbar);
@@ -192,7 +192,6 @@
                 ShowException(ex);
                 _fileSelectDisabled = false;
             }
-
         });
         await AnalyzeLevel();
         _fileSelectDisabled = false;
@@ -201,10 +200,7 @@
     protected async Task AnalyzeLevel()
     {
         _fileSelectDisabled = true;
-        _staticSnackbar = Snackbar.Add("Analyzing level. Please wait...", Severity.Normal, config =>
-        {
-            config.VisibleStateDuration = int.MaxValue;
-        });
+        _staticSnackbar = Snackbar.Add("Analyzing level. Please wait...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
         Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
         await Task.Run(() =>
         {
@@ -270,7 +266,7 @@
         _showErrorLog = msgType == PubSubMessageType.Error;
         _showWarningLog = msgType == PubSubMessageType.Warning;
         _openDrawer = true;
-        this._anchor = anchor;
+        _anchor = anchor;
 
         switch (anchor)
         {
@@ -298,7 +294,6 @@
         var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
         Snackbar.Add(message, Severity.Error);
         _errors.Add(message);
-
     }
 
     private void FillDeleteList()
@@ -307,14 +302,15 @@
         foreach (var file in Reader.GetDeleteList())
         {
             var item = new GridFileListItem
-                {
-                    FullName = file.FullName,
-                    SizeMb = file.Exists ? Math.Round((file.Length / 1024f) / 1024f, 2) : 0
-                };
+            {
+                FullName = file.FullName,
+                SizeMb = file.Exists ? Math.Round(file.Length / 1024f / 1024f, 2) : 0
+            };
             if (!_missingFiles.Any(x => x.Equals(file.FullName, StringComparison.OrdinalIgnoreCase)))
             {
                 _selectedItems.Add(item);
             }
+
             BindingListDelete.Add(item);
         }
     }
@@ -325,13 +321,14 @@
         {
             return $"{_fileSelectTitle} > {_levelName}";
         }
-        else
-        {
-            return $"{_fileSelectTitle}";
-        }
+
+        return $"{_fileSelectTitle}";
     }
 
-    private bool FilterFunc1(GridFileListItem element) => FilterFunc(element, _searchString);
+    private bool FilterFunc1(GridFileListItem element)
+    {
+        return FilterFunc(element, _searchString);
+    }
 
     private bool FilterFunc(GridFileListItem element, string searchString)
     {
@@ -358,15 +355,15 @@
         if (!result.Canceled)
         {
             await Task.Run(() =>
-                {
-                    var selected = _selectedItems
-                               .Select(x => new FileInfo(x.FullName))
-                                .ToList();
-                    Reader.DeleteFilesAndDeploy(selected, false);
-                    BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
-                    _showDeployButton = true;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"You can build your deployment file now.");
-                });
+            {
+                var selected = _selectedItems
+                    .Select(x => new FileInfo(x.FullName))
+                    .ToList();
+                Reader.DeleteFilesAndDeploy(selected, false);
+                BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
+                _showDeployButton = true;
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "You can build your deployment file now.");
+            });
         }
     }
 
@@ -378,14 +375,8 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
-                _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
-                    {
-                        config.VisibleStateDuration = int.MaxValue;
-                    });
-                await Task.Run(() =>
-                {
-                    ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
-                });
+                _staticSnackbar = Snackbar.Add("Zipping the deployment file. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
+                await Task.Run(() => { ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel); });
                 Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
@@ -411,11 +402,11 @@
             _beamInstallDir = Steam.GetBeamInstallDir();
             GetVanillaLevels();
         }
-        return "BeamNG install directory: " + _beamInstallDir;
 
+        return "BeamNG install directory: " + _beamInstallDir;
     }
 
-    Func<FileInfo, string> converter = p => p?.Name;
+    readonly Func<FileInfo, string> converter = p => p?.Name;
 
     protected async Task OnVanillaSourceSelected(FileInfo file)
     {
@@ -453,4 +444,5 @@
             Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
         }
     }
+
 }

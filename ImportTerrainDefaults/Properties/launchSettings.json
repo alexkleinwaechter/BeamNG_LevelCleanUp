@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ImportTerrainDefaults": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\aklei\\AppData\\Local\\BeamNG\\BeamNG.drive\\current\\levels\\kattenes\\export\\theTerrain_terrainPreset.json\" \"C:\\Users\\aklei\\AppData\\Local\\BeamNG\\BeamNG.drive\\current\\levels\\kattenes\\import\""
+    }
+  }
+}

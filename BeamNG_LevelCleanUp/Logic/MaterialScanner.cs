@@ -1,142 +1,121 @@
-﻿using BeamNG_LevelCleanUp.Communication;
+﻿using System.Text.Json;
+using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System.Text.Json;
 
-namespace BeamNG_LevelCleanUp.Logic
+namespace BeamNG_LevelCleanUp.Logic;
+
+internal class MaterialScanner
 {
-    internal class MaterialScanner
+    private readonly List<Asset> _assets = new();
+    private readonly List<string> _excludeFiles = new();
+    private readonly List<MaterialJson> _materials = new();
+
+    internal MaterialScanner(string matJsonPath, string levelPath, string namePath, List<MaterialJson> materials,
+        List<Asset> assets, List<string> excludeFiles)
     {
-        private string _matJsonPath { get; set; }
-        private string _levelPath { get; set; }
-        private string _namePath { get; set; }
-        private List<MaterialJson> _materials = new List<MaterialJson>();
-        private List<Asset> _assets = new List<Asset>();
-        private List<string> _excludeFiles = new List<string>();
+        _matJsonPath = matJsonPath;
+        _materials = materials;
+        _levelPath = levelPath;
+        _namePath = namePath;
+        _excludeFiles = excludeFiles;
+        _assets = assets;
+    }
 
-        internal MaterialScanner(string matJsonPath, string levelPath, string namePath, List<MaterialJson> materials, List<Asset> assets, List<string> excludeFiles)
-        {
-            _matJsonPath = matJsonPath;
-            _materials = materials;
-            _levelPath = levelPath;
-            _namePath = namePath;
-            _excludeFiles = excludeFiles;
-            _assets = assets;
-        }
+    public MaterialScanner(List<MaterialJson> materials, string levelPath, string namePath)
+    {
+        _materials = materials;
+        _levelPath = levelPath;
+        _namePath = namePath;
+    }
 
-        public MaterialScanner(List<MaterialJson> materials, string levelPath, string namePath)
-        {
-            _materials = materials;
-            _levelPath = levelPath;
-            _namePath = namePath;
-        }
+    private string _matJsonPath { get; }
+    private string _levelPath { get; }
+    private string _namePath { get; set; }
 
-        internal void ScanMaterialsJsonFile()
+    internal void ScanMaterialsJsonFile()
+    {
+        try
         {
-            try
-            {
-                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(_matJsonPath);
-                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+            using var jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(_matJsonPath);
+            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+                foreach (var child in jsonObject.RootElement.EnumerateObject())
                 {
-                    foreach (var child in jsonObject.RootElement.EnumerateObject())
+                    var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
+                    material.MatJsonFileLocation = _matJsonPath;
+
+                    //if (material.Name == "curbs_track") Debugger.Break();
+                    if (string.IsNullOrEmpty(material.Name) && !string.IsNullOrEmpty(material.InternalName))
+                        material.Name = material.InternalName;
+                    if (material?.Stages != null)
                     {
-                        try
+                        var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
+                        material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
+                    }
+                    else
+                    {
+                        var stage = child.Value.Deserialize<MaterialStage>(BeamJsonOptions.GetJsonSerializerOptions());
+                        if (stage != null)
                         {
-                            var material = child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
-                            material.MatJsonFileLocation = _matJsonPath;
-
-                            //if (material.Name == "curbs_track") Debugger.Break();
-
-                            if (string.IsNullOrEmpty(material.Name) && !string.IsNullOrEmpty(material.InternalName))
+                            material.Stages = new List<MaterialStage>
                             {
-                                material.Name = material.InternalName;
-                            }
-                            if (material?.Stages != null)
-                            {
-                                var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
-                                material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
-                            }
-                            else
-                            {
-                                var stage = child.Value.Deserialize<MaterialStage>(BeamJsonOptions.GetJsonSerializerOptions());
-                                if (stage != null)
-                                {
-                                    material.Stages = new List<MaterialStage>
-                                    {
-                                        stage
-                                    };
-                                    var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
-                                    material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
-                                }
-                            }
-                            if (material?.CubeFace != null && material?.CubeFace.Count > 0)
-                            {
-                                foreach (var cf in material.CubeFace)
-                                {
-                                    var fi = new FileInfo(PathResolver.ResolvePath(_levelPath, cf, false));
-                                    if (!fi.Exists)
-                                    {
-                                        fi = FileUtils.ResolveImageFileName(fi.FullName);
-                                    }
-                                    material.MaterialFiles.Add(new MaterialFile
-                                    {
-                                        File = fi,
-                                        MapType = "cubeFace",
-                                        Missing = !fi.Exists
-                                    });
-                                }
-                            }
-                            if (!string.IsNullOrEmpty(material.Cubemap))
-                            {
-                                _assets.Add(new Asset
-                                {
-                                    Class = "Decal",
-                                    Cubemap = material.Cubemap,
-                                });
-                            }
-                            //PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Material {material.Name}", true);
-                            //todo: Sascha debuggen mit shrinker!!
-                            _materials.Add(material);
-
-                            var temp = child.Value.EnumerateObject().ToList();
-                            foreach (var item in temp)
-                            {
-                                if (item.Name.EndsWith("Tex"))
-                                {
-                                    _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, item.Value.GetString(), false));
-                                }
-                            }
-
-                        }
-                        catch (Exception)
-                        {
-                            throw;
+                                stage
+                            };
+                            var fileScanner = new MaterialFileScanner(_levelPath, material.Stages, _matJsonPath);
+                            material.MaterialFiles = fileScanner.GetMaterialFiles(material.Name);
                         }
                     }
-                }
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_matJsonPath}. {ex.Message}");
-            }
-        }
 
-        internal void RemoveDuplicates(bool fromJsonFiles)
+                    if (material?.CubeFace != null && material?.CubeFace.Count > 0)
+                        foreach (var cf in material.CubeFace)
+                        {
+                            var fi = new FileInfo(PathResolver.ResolvePath(_levelPath, cf, false));
+                            if (!fi.Exists) fi = FileUtils.ResolveImageFileName(fi.FullName);
+                            material.MaterialFiles.Add(new MaterialFile
+                            {
+                                File = fi,
+                                MapType = "cubeFace",
+                                Missing = !fi.Exists
+                            });
+                        }
+
+                    if (!string.IsNullOrEmpty(material.Cubemap))
+                        _assets.Add(new Asset
+                        {
+                            Class = "Decal",
+                            Cubemap = material.Cubemap
+                        });
+
+                    //PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Material {material.Name}", true);
+                    //todo: Sascha debuggen mit shrinker!!
+                    _materials.Add(material);
+
+                    var temp = child.Value.EnumerateObject().ToList();
+                    foreach (var item in temp)
+                        if (item.Name.EndsWith("Tex"))
+                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, item.Value.GetString(), false));
+                }
+        }
+        catch (Exception ex)
         {
-            var duplicateMaterials = _materials.GroupBy(x => x.Name).ToList();
-            var toDelete = new List<MaterialJson>();
-            foreach (var duplicate in duplicateMaterials)
+            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error {_matJsonPath}. {ex.Message}");
+        }
+    }
+
+    internal void RemoveDuplicates(bool fromJsonFiles)
+    {
+        var duplicateMaterials = _materials.GroupBy(x => x.Name).ToList();
+        var toDelete = new List<MaterialJson>();
+        foreach (var duplicate in duplicateMaterials)
+            //if (duplicate.Key == "boom_lift") Debugger.Break();
+            if (duplicate.Count() > 1)
             {
-                //if (duplicate.Key == "boom_lift") Debugger.Break();
-                if (duplicate.Count() > 1)
-                {
-                    var duplicates = duplicate.OrderByDescending(x => x.MaterialFiles.Count(c => c.Missing == false)).ToList();
-                    var first = true;
-                    if (duplicates.First().MaterialFiles.Count(c => c.Missing == false) == 0) continue;
-                    duplicates.ForEach(x =>
+                var duplicates = duplicate.OrderByDescending(x => x.MaterialFiles.Count(c => !c.Missing)).ToList();
+                var first = true;
+                if (duplicates.First().MaterialFiles.Count(c => !c.Missing) == 0) continue;
+                duplicates.ForEach(x =>
                     {
                         if (!first)
-                        {
                             try
                             {
                                 toDelete.Add(x);
@@ -144,32 +123,34 @@ namespace BeamNG_LevelCleanUp.Logic
                                 {
                                     var targetJsonNode = JsonUtils.GetValidJsonNodeFromFilePath(x.MatJsonFileLocation);
                                     targetJsonNode.AsObject().Remove(x.Name);
-                                    File.WriteAllText(x.MatJsonFileLocation, targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+                                    File.WriteAllText(x.MatJsonFileLocation,
+                                        targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
                                 }
                             }
                             catch (Exception ex)
                             {
-                                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error deleting duplicating material {x.Name} from json {x.MatJsonFileLocation}: {ex.Message}", true);
+                                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                                    $"Error deleting duplicating material {x.Name} from json {x.MatJsonFileLocation}: {ex.Message}",
+                                    true);
                             }
-                        }
+
                         first = false;
                     }
-                    );
-                }
+                );
             }
-            _materials.RemoveAll(x => toDelete.Contains(x));
-        }
 
-        internal void CheckDuplicates(List<MaterialJson> sourceMaterials)
+        _materials.RemoveAll(x => toDelete.Contains(x));
+    }
+
+    internal void CheckDuplicates(List<MaterialJson> sourceMaterials)
+    {
+        foreach (var item in _materials)
         {
-            foreach (var item in _materials)
+            var duplicates = sourceMaterials.Where(x => x.Name.Equals(item.Name));
+            if (duplicates.Any())
             {
-                var duplicates = sourceMaterials.Where(x => x.Name.Equals(item.Name));
-                if (duplicates.Any())
-                {
-                    item.IsDuplicate = true;
-                    item.DuplicateFoundLocation.AddRange(duplicates.Select(x => x.MatJsonFileLocation));
-                }
+                item.IsDuplicate = true;
+                item.DuplicateFoundLocation.AddRange(duplicates.Select(x => x.MatJsonFileLocation));
             }
         }
     }

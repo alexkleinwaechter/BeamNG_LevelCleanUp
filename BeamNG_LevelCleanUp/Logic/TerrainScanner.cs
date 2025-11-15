@@ -1,81 +1,74 @@
-﻿using BeamNG_LevelCleanUp.Communication;
+﻿using System.Text.Json;
+using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
-using System.Text.Json;
 
-namespace BeamNG_LevelCleanUp.Logic
+namespace BeamNG_LevelCleanUp.Logic;
+
+internal class TerrainScanner
 {
-    internal class TerrainScanner
-    {
-        private string _terrainPath { get; set; }
-        private string _levelPath { get; set; }
-        private List<Asset> _assets = new List<Asset>();
-        private List<MaterialJson> _materialJson = new List<MaterialJson>();
-        private List<string> _excludeFiles = new List<string>();
-        internal TerrainScanner(string terrainPath, string levelPath, List<Asset> assets, List<MaterialJson> materialJson, List<string> excludeFiles)
-        {
+    private readonly List<Asset> _assets = new();
+    private readonly List<string> _excludeFiles = new();
+    private readonly List<MaterialJson> _materialJson = new();
 
-            _terrainPath = terrainPath;
-            _assets = assets;
-            _levelPath = levelPath;
-            _excludeFiles = excludeFiles;
-            _materialJson = materialJson;
-        }
-        public void ScanTerrain()
+    internal TerrainScanner(string terrainPath, string levelPath, List<Asset> assets, List<MaterialJson> materialJson,
+        List<string> excludeFiles)
+    {
+        _terrainPath = terrainPath;
+        _assets = assets;
+        _levelPath = levelPath;
+        _excludeFiles = excludeFiles;
+        _materialJson = materialJson;
+    }
+
+    private string _terrainPath { get; }
+    private string _levelPath { get; }
+
+    public void ScanTerrain()
+    {
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scan Terrainfile {_terrainPath}");
+        try
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scan Terrainfile {_terrainPath}");
-            try
+            using var jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(_terrainPath);
+            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
             {
-                using JsonDocument jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(_terrainPath);
-                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+                if (jsonObject.RootElement.TryGetProperty("materials", out var materials))
                 {
-                    if (jsonObject.RootElement.TryGetProperty("materials", out JsonElement materials))
-                    {
-                        var materialList = materials.Deserialize<List<string>>(BeamJsonOptions.GetJsonSerializerOptions());
-                        if (materialList != null)
+                    var materialList = materials.Deserialize<List<string>>(BeamJsonOptions.GetJsonSerializerOptions());
+                    if (materialList != null)
+                        foreach (var name in materialList.Distinct())
                         {
-                            foreach (var name in materialList.Distinct())
+                            _assets.Add(new Asset
                             {
+                                Class = "Terrain",
+                                Material = name
+                            });
+                            var matJson = _materialJson.Where(x => x.InternalName == name);
+                            foreach (var item in matJson)
                                 _assets.Add(new Asset
                                 {
                                     Class = "Terrain",
-                                    Material = name,
+                                    Material = item.Name
                                 });
-                                var matJson = _materialJson.Where(x => x.InternalName == name);
-                                foreach (var item in matJson)
-                                {
-                                    _assets.Add(new Asset
-                                    {
-                                        Class = "Terrain",
-                                        Material = item.Name,
-                                    });
-                                }
-                            }
                         }
-                    }
-                    if (jsonObject.RootElement.TryGetProperty("datafile", out JsonElement dataFile))
-                    {
-                        var result = dataFile.Deserialize<string>(BeamJsonOptions.GetJsonSerializerOptions());
-                        if (result != null)
-                        {
-                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));
-                        }
-                    }
-                    if (jsonObject.RootElement.TryGetProperty("heightmapImage", out JsonElement heightmapImage))
-                    {
-                        var result = heightmapImage.Deserialize<string>(BeamJsonOptions.GetJsonSerializerOptions());
-                        if (result != null)
-                        {
-                            _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));
-                        }
-                    }
+                }
 
+                if (jsonObject.RootElement.TryGetProperty("datafile", out var dataFile))
+                {
+                    var result = dataFile.Deserialize<string>(BeamJsonOptions.GetJsonSerializerOptions());
+                    if (result != null) _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));
+                }
+
+                if (jsonObject.RootElement.TryGetProperty("heightmapImage", out var heightmapImage))
+                {
+                    var result = heightmapImage.Deserialize<string>(BeamJsonOptions.GetJsonSerializerOptions());
+                    if (result != null) _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, result, false));
                 }
             }
-            catch (Exception ex)
-            {
-                throw new Exception($"Stopped! Error {_terrainPath}. {ex.Message}");
-            }
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Stopped! Error {_terrainPath}. {ex.Message}");
         }
     }
 }

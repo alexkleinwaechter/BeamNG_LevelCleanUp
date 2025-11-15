@@ -1,82 +1,80 @@
-﻿namespace BeamNG_LevelCleanUp.Utils
+﻿namespace BeamNG_LevelCleanUp.Utils;
+
+public static class FileUtils
 {
-    public static class FileUtils
+    public static FileInfo ResolveImageFileName(string filePath)
     {
-        public static FileInfo ResolveImageFileName(string filePath)
+        //to Do: check if filepath has image extension, if not attach png
+        var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", "*.tga" };
+        if (!imageextensions.Any(x => filePath.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
+            filePath = filePath + ".dds";
+
+        var fileInfo = new FileInfo(filePath);
+        var fileToCheck = new FileInfo(filePath);
+
+        // Check if the file exists as-is
+        if (fileInfo.Exists) return fileInfo;
+
+        // Check if a .link file exists for this path (BeamNG link system)
+        var linkFile = new FileInfo(filePath + ".link");
+        if (linkFile.Exists) return linkFile;
+
+        // Try different image extensions
+        foreach (var ext in imageextensions)
         {
-            //to Do: check if filepath has image extension, if not attach png
-            var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", "*.tga" };
-            if (!imageextensions.Any(x => filePath.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
-            {
-                filePath = filePath + ".dds";
-            }
+            var imagePath = Path.ChangeExtension(filePath, ext);
+            fileToCheck = new FileInfo(imagePath);
+            if (fileToCheck.Exists) return fileToCheck;
 
-            var fileInfo = new FileInfo(filePath);
-            var fileToCheck = new FileInfo(filePath);
-            if (fileInfo.Exists)
-            {
-                return fileInfo;
-            }
-
-            foreach (var ext in imageextensions)
-            {
-                var ddsPath = Path.ChangeExtension(filePath, ext);
-                fileToCheck = new FileInfo(ddsPath);
-                if (fileToCheck.Exists)
-                {
-                    return fileToCheck;
-                }
-            }
-
-            return fileInfo;
+            // Also check for .link version of each extension
+            var linkPath = imagePath + ".link";
+            fileToCheck = new FileInfo(linkPath);
+            if (fileToCheck.Exists) return fileToCheck;
         }
 
-        public static void DeleteLinesFromFile(string filePath, List<int> lineNumbersToDelete)
+        return fileInfo;
+    }
+
+    public static void DeleteLinesFromFile(string filePath, List<int> lineNumbersToDelete)
+    {
+        // Read all lines from the file into an array.
+        var lines = File.ReadAllLines(filePath);
+
+        // Use LINQ to filter out lines with line numbers not in lineNumbersToDelete.
+        lines = lines.Where((line, index) => !lineNumbersToDelete.Contains(index + 1)).ToArray();
+
+        // Write the updated lines back to the file, overwriting its contents.
+        File.WriteAllLines(filePath, lines);
+
+        if (lines.Length == 0)
         {
-            // Read all lines from the file into an array.
-            string[] lines = File.ReadAllLines(filePath);
-
-            // Use LINQ to filter out lines with line numbers not in lineNumbersToDelete.
-            lines = lines.Where((line, index) => !lineNumbersToDelete.Contains(index + 1)).ToArray();
-
-            // Write the updated lines back to the file, overwriting its contents.
-            File.WriteAllLines(filePath, lines);
-
-            if (lines.Length == 0)
-            {
-                var name = Directory.GetParent(filePath).Name;
-                var parent = Path.Combine(Directory.GetParent(Path.GetDirectoryName(filePath)).FullName, Path.GetFileName(filePath));
-                File.Delete(filePath);
-                Directory.Delete(Path.GetDirectoryName(filePath));
-                DeleteLineByName(parent, name);
-            }
+            var name = Directory.GetParent(filePath).Name;
+            var parent = Path.Combine(Directory.GetParent(Path.GetDirectoryName(filePath)).FullName,
+                Path.GetFileName(filePath));
+            File.Delete(filePath);
+            Directory.Delete(Path.GetDirectoryName(filePath));
+            DeleteLineByName(parent, name);
         }
+    }
 
-        public static void DeleteLineByName(string filePath, string name)
+    public static void DeleteLineByName(string filePath, string name)
+    {
+        if (!File.Exists(filePath)) return;
+
+        name = $"name\":\"{name}\"";
+        // Read all lines from the file into an array.
+        var lines = File.ReadAllLines(filePath);
+
+        // Use LINQ to filter out lines with line numbers not in lineNumbersToDelete.
+        var newlines = lines.Where(l => !l.ToLowerInvariant().Contains(name.ToLowerInvariant())).ToArray();
+        if (lines.Count() - newlines.Count() != 1) return;
+        // Write the updated lines back to the file, overwriting its contents.
+        File.WriteAllLines(filePath, newlines);
+
+        if (lines.Length == 0)
         {
-            if (!File.Exists(filePath))
-            {
-                return;
-            }
-
-            name = $"name\":\"{name}\"";
-            // Read all lines from the file into an array.
-            string[] lines = File.ReadAllLines(filePath);
-
-            // Use LINQ to filter out lines with line numbers not in lineNumbersToDelete.
-            var newlines = lines.Where(l => !l.ToLowerInvariant().Contains(name.ToLowerInvariant())).ToArray();
-            if (lines.Count() - newlines.Count() != 1)
-            {
-                return;
-            }
-            // Write the updated lines back to the file, overwriting its contents.
-            File.WriteAllLines(filePath, newlines);
-
-            if (lines.Length == 0)
-            {
-                File.Delete(filePath);
-                Directory.Delete(Path.GetDirectoryName(filePath));
-            }
+            File.Delete(filePath);
+            Directory.Delete(Path.GetDirectoryName(filePath));
         }
     }
 }

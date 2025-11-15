@@ -2,35 +2,38 @@
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 
-namespace BeamNG_LevelCleanUp.Logic
+namespace BeamNG_LevelCleanUp.Logic;
+
+internal class LevelRenamer
 {
-    internal class LevelRenamer
+    internal void EditInfoJson(string namePath, string newName)
     {
-        internal LevelRenamer()
+        var _infoJsonPath = Path.Join(namePath, "info.json");
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Read info.json");
+        try
         {
-        }
+            var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(_infoJsonPath);
+            jsonNode["title"] = newName;
 
-        internal void EditInfoJson(string namePath, string newName)
-        {
-            var _infoJsonPath = Path.Join(namePath, "info.json");
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read info.json");
-            try
+            // Only set isAuxiliary to false if the field exists in the JSON
+            if (jsonNode.AsObject().ContainsKey("isAuxiliary"))
             {
-                var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(_infoJsonPath);
-                jsonNode["title"] = newName;
-                File.WriteAllText(_infoJsonPath, jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+                jsonNode["isAuxiliary"] = false;
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Set isAuxiliary to false in info.json");
             }
-            catch (Exception ex)
-            {
-                throw new Exception($"Stopped! Error {_infoJsonPath}. {ex.Message}");
-            }
-        }
 
-        internal void ReplaceInFile(string filePath, string searchText, string replaceText)
-        {
-            string text = File.ReadAllText(filePath);
-            text = text.Replace($"levels{searchText}", $"levels{replaceText}", StringComparison.OrdinalIgnoreCase);
-            File.WriteAllText(filePath, text);
+            File.WriteAllText(_infoJsonPath, jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
         }
+        catch (Exception ex)
+        {
+            throw new Exception($"Stopped! Error {_infoJsonPath}. {ex.Message}");
+        }
+    }
+
+    internal void ReplaceInFile(string filePath, string searchText, string replaceText)
+    {
+        var text = File.ReadAllText(filePath);
+        text = text.Replace($"levels{searchText}", $"levels{replaceText}", StringComparison.OrdinalIgnoreCase);
+        File.WriteAllText(filePath, text);
     }
 }

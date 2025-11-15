@@ -1,11 +1,10 @@
 ﻿@page "/RenameMap"
+@using System.IO.Compression
 @using BeamNG_LevelCleanUp.BlazorUI.Components
-@using BeamNG_LevelCleanUp.Communication;
-@using BeamNG_LevelCleanUp.Logic;
-@using BeamNG_LevelCleanUp.Objects;
-@using BeamNG_LevelCleanUp.Utils;
-@using Microsoft.AspNetCore.Components.Forms;
-@using System.IO.Compression;
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
@@ -16,19 +15,19 @@
             <MudExpansionPanels @ref="FileSelect">
                 <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
-                    Description="The game install directory. If empty some features are missing.">
+                                         Description="The game install directory. If empty some features are missing.">
                     </FileSelectComponent>
                 </MudExpansionPanel>
                 <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
                     <FileSelectComponent OnFileSelected="FileSelected"
-                    Description="Always use a copy of your project."
-                    Disabled="@_fileSelectDisabled">
+                                         Description="Always use a copy of your project."
+                                         Disabled="@_fileSelectDisabled">
                     </FileSelectComponent>
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
-                        ValueChanged="OnVanillaSourceSelected"
-                        Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                                   ValueChanged="OnVanillaSourceSelected"
+                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
                             @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
@@ -45,12 +44,12 @@
                 <MudTextField Immediate @bind-Value="_renameNewTitle" Label="Your new display title in info.json" Variant="Variant.Text"></MudTextField>
             }
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-                <MudList Clickable="true" Dense="true" DisableGutters="false">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
-                        var list = _showErrorLog ? _errors : (_showWarningLog ? _warnings : _messages);
+                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
                         @foreach (var item in list)
                         {
-                            <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
@@ -79,13 +78,14 @@
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                    @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                               @bind-Value="_compressionLevel">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
+                    <MudButton @onclick="CopyToLevels" Color="Color.Primary">Copy to BeamNG Levels Folder</MudButton>
                 }
             </MudStack>
             @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
@@ -96,7 +96,7 @@
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent />
+        <CustomErrorContent/>
     </ErrorContent>
 </ErrorBoundary>
 
@@ -108,36 +108,36 @@
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
-    private List<string> _missingFiles { get; set; } = new List<string>();
-    private List<string> _errors { get; set; } = new List<string>();
-    private List<string> _warnings { get; set; } = new List<string>();
-    private List<string> _messages { get; set; } = new List<string>();
+    private List<string> _missingFiles { get; set; } = new();
+    private List<string> _errors { get; set; } = new();
+    private List<string> _warnings { get; set; } = new();
+    private List<string> _messages { get; set; } = new();
     private Snackbar _staticSnackbar;
     private BeamFileReader Reader { get; set; }
-    private string _fileSelectTitle = "Select your zipped level you want to give a new name";
+    private readonly string _fileSelectTitle = "Select your zipped level you want to give a new name";
     private bool _fileSelectDisabled { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
     private Anchor _anchor;
     private string width, height;
-    private List<GridFileListItem> BindingListDelete { get; set; } = new List<GridFileListItem>();
-    private HashSet<GridFileListItem> _selectedItems = new HashSet<GridFileListItem>();
+    private List<GridFileListItem> BindingListDelete { get; set; } = new();
+    private HashSet<GridFileListItem> _selectedItems = new();
     private bool _fixed_Header = true;
     private MudExpansionPanels? FileSelect { get; set; }
     private string _searchString = string.Empty;
-    private string _labelFileSummaryShrink { get; set; } = String.Empty;
+    private string _labelFileSummaryShrink { get; set; } = string.Empty;
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
     bool _showErrorLog { get; set; }
     bool _showWarningLog { get; set; }
-    private List<FileInfo> _vanillaLevels { get; set; } = new List<FileInfo>();
+    private List<FileInfo> _vanillaLevels { get; set; } = new();
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private string _beamInstallDir { get; set; }
 
 
     protected async Task FileSelected(string file)
     {
-        FileSelect?.CollapseAll();
+        await (FileSelect?.CollapseAllAsync() ?? Task.CompletedTask);
         _labelFileSummaryShrink = string.Empty;
         _fileSelectDisabled = true;
         _levelName = null;
@@ -160,10 +160,7 @@
         {
             try
             {
-                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config =>
-                {
-                    config.VisibleStateDuration = int.MaxValue;
-                });
+                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
                 Snackbar.Remove(_staticSnackbar);
@@ -173,14 +170,13 @@
                 ShowException(ex);
                 _fileSelectDisabled = false;
             }
-
         });
         await Task.Run(() =>
-            {
-                Reader = new BeamFileReader(_levelPath, string.Empty);
-                _levelName = Reader.GetLevelName();
-                _renameCurrentName = _levelName;
-            });
+        {
+            Reader = new BeamFileReader(_levelPath, string.Empty);
+            _levelName = Reader.GetLevelName();
+            _renameCurrentName = _levelName;
+        });
 
         _fileSelectDisabled = false;
         var customChangesChecker = new CustomChangesChecker(_levelName, _levelPath);
@@ -191,7 +187,7 @@
         }
     }
 
-    private async Task CopyCustomChangesDialog(CustomChangesChecker customChangesChecker) 
+    private async Task CopyCustomChangesDialog(CustomChangesChecker customChangesChecker)
     {
         var options = new DialogOptions { CloseOnEscapeKey = true };
         var parameters = new DialogParameters();
@@ -202,16 +198,10 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
-            _staticSnackbar = Snackbar.Add($"Copying custom changes to selected level. Please be patient.", Severity.Normal, config =>
-            {
-                config.VisibleStateDuration = int.MaxValue;
-            });
+            _staticSnackbar = Snackbar.Add("Copying custom changes to selected level. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
             try
             {
-                await Task.Run(() =>
-                {
-                    customChangesChecker.CopyChangesToUnpacked();
-                });
+                await Task.Run(() => { customChangesChecker.CopyChangesToUnpacked(); });
             }
             catch (Exception ex)
             {
@@ -220,7 +210,7 @@
             }
 
             Snackbar.Remove(_staticSnackbar);
-            Snackbar.Add($"Copying custom changes finished.", Severity.Success);
+            Snackbar.Add("Copying custom changes finished.", Severity.Success);
             _staticSnackbar = Snackbar.Add($"If you want to revert {_levelName} to vanilla again, just delete the folder {customChangesChecker.GetLevelFolderPathChanges()}", Severity.Info, config =>
             {
                 config.VisibleStateDuration = int.MaxValue;
@@ -245,11 +235,11 @@
             _beamInstallDir = Steam.GetBeamInstallDir();
             GetVanillaLevels();
         }
-        return "BeamNG install directory: " + _beamInstallDir;
 
+        return "BeamNG install directory: " + _beamInstallDir;
     }
 
-    Func<FileInfo, string> converter = p => p?.Name;
+    readonly Func<FileInfo, string> converter = p => p?.Name;
 
     protected async Task OnVanillaSourceSelected(FileInfo file)
     {
@@ -329,7 +319,7 @@
             _renameCurrentName = _levelName;
             _staticSnackbar
                 = Snackbar.Add($"The level {_levelName} is still loaded. You can either rename it now or load another level for renaming.",
-                Severity.Info);
+                    Severity.Info);
         }
         else
         {
@@ -342,7 +332,7 @@
         _showErrorLog = msgType == PubSubMessageType.Error;
         _showWarningLog = msgType == PubSubMessageType.Warning;
         _openDrawer = true;
-        this._anchor = anchor;
+        _anchor = anchor;
 
         switch (anchor)
         {
@@ -370,7 +360,6 @@
         var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
         Snackbar.Add(message, Severity.Error);
         _errors.Add(message);
-
     }
 
     private string GetFileSelectTitle()
@@ -379,10 +368,8 @@
         {
             return $"{_fileSelectTitle} > {_levelName}";
         }
-        else
-        {
-            return $"{_fileSelectTitle}";
-        }
+
+        return $"{_fileSelectTitle}";
     }
 
     private async Task RenameDialog()
@@ -425,16 +412,16 @@
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
-                _staticSnackbar = Snackbar.Add($"Zipping the deployment file. Please be patient.", Severity.Normal, config =>
-                {
-                    config.VisibleStateDuration = int.MaxValue;
-                });
+                _staticSnackbar = Snackbar.Add("Zipping the deployment file. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 await Task.Run(() =>
                 {
                     ZipFileHandler.RemoveModInfo(path);
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
                 });
-                Snackbar.Remove(_staticSnackbar);
+                if (_staticSnackbar != null)
+                {
+                    Snackbar.Remove(_staticSnackbar);
+                }
             }
             catch (Exception ex)
             {
@@ -442,5 +429,56 @@
             }
         }
     }
-}
 
+    private async Task CopyToLevels()
+    {
+        var path = string.Empty;
+        if (!string.IsNullOrEmpty(_levelPath))
+        {
+            try
+            {
+                path = ZipFileHandler.GetLastUnpackedPath();
+
+                var customChangesChecker = new CustomChangesChecker(_levelName, _levelPath);
+
+                // Check if target directory exists and ask for confirmation
+                if (customChangesChecker.TargetDirectoryExists())
+                {
+                    var options = new DialogOptions { CloseOnEscapeKey = true };
+                    var parameters = new DialogParameters();
+                    parameters.Add("ContentText", $"The level '{_levelName}' already exists in your BeamNG levels folder. Do you want to overwrite it?");
+                    parameters.Add("ButtonText", "Yes, Overwrite");
+                    parameters.Add("Color", Color.Warning);
+                    var dialog = await DialogService.ShowAsync<SimpleDialog>("Level Already Exists", parameters, options);
+                    var result = await dialog.Result;
+
+                    if (result.Canceled)
+                    {
+                        return; // User canceled, don't proceed with copy
+                    }
+
+                    // Delete the existing directory before copying
+                    customChangesChecker.DeleteTargetDirectory();
+                }
+
+                _staticSnackbar = Snackbar.Add("Copy level to BeamNG levels in userfolder. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
+
+                await Task.Run(() =>
+                {
+                    ZipFileHandler.RemoveModInfo(path);
+                    customChangesChecker.CopyUnpackedToUserFolder();
+                });
+
+                Snackbar.Remove(_staticSnackbar);
+                Snackbar.Add($"Level '{_levelName}' successfully copied to BeamNG levels folder.", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                if (_staticSnackbar != null)
+                    Snackbar.Remove(_staticSnackbar);
+                ShowException(ex);
+            }
+        }
+    }
+
+}

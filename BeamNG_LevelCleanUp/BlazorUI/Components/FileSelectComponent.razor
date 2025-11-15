@@ -1,4 +1,5 @@
-﻿@if (!string.IsNullOrEmpty(Title))
+﻿@using DialogResult = System.Windows.Forms.DialogResult
+@if (!string.IsNullOrEmpty(Title))
 {
     <MudText Typo="Typo.h6">@Title</MudText>
 }
@@ -8,55 +9,51 @@
 }
 @if (!string.IsNullOrEmpty(_selectedFile))
 {
-    <MudListItem Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
+    <MudListItem T="string" Icon="@Icons.Material.Filled.AttachFile" @key="@_selectedFile">
         @_selectedFile
     </MudListItem>
 }
 @if (!SelectFolder)
 {
     <MudButton HtmlTag="label"
-           Variant="Variant.Filled"
-           Color="Color.Primary"
-           StartIcon="@Icons.Material.Filled.FileOpen"
-           OnClick="OpenFile"
-           Disabled="@Disabled">
+               Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.FileOpen"
+               OnClick="OpenFile"
+               Disabled="@Disabled">
         Select File
     </MudButton>
 }
 else
 {
     <MudButton HtmlTag="label"
-           Variant="Variant.Filled"
-           Color="Color.Primary"
-           StartIcon="@Icons.Material.Filled.FolderOpen"
-           OnClick="OpenFolder"
-           Disabled="@Disabled">
+               Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.FolderOpen"
+               OnClick="OpenFolder"
+               Disabled="@Disabled">
         Select Folder
     </MudButton>
 }
 
 @code {
-    [Parameter]
-    public string Title { get; set; }
-    [Parameter]
-    public string Description { get; set; }
-    [Parameter]
-    public EventCallback<string> OnFileSelected { get; set; }
-    [Parameter]
-    public bool Disabled { get; set; }
-    [Parameter]
-    public bool SelectFolder { get; set; } = false;
-    private OpenFileDialog OpenFileDialog { get; set; } = new OpenFileDialog();
-    private FolderBrowserDialog FolderBrowserDialog { get; set; } = new FolderBrowserDialog();
+    [Parameter] public string Title { get; set; }
+    [Parameter] public string Description { get; set; }
+    [Parameter] public EventCallback<string> OnFileSelected { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool SelectFolder { get; set; }
+    private OpenFileDialog OpenFileDialog { get; } = new();
+    private FolderBrowserDialog FolderBrowserDialog { get; } = new();
     private string _selectedFile { get; set; } = string.Empty;
+
     private async Task OpenFile()
     {
-        this.OpenFileDialog.Filter = "Zipfiles (*.zip)|*.zip";
-        this.OpenFileDialog.FileName = String.Empty;
+        OpenFileDialog.Filter = "Zipfiles (*.zip)|*.zip";
+        OpenFileDialog.FileName = string.Empty;
         try
         {
-            System.Windows.Forms.DialogResult result = OpenFileDialog.ShowDialog();
-            if (result == System.Windows.Forms.DialogResult.OK)
+            var result = OpenFileDialog.ShowDialog();
+            if (result == DialogResult.OK)
             {
                 _selectedFile = OpenFileDialog.FileName;
                 await OnFileSelected.InvokeAsync(_selectedFile);
@@ -64,17 +61,16 @@ else
         }
         catch (Exception ex)
         {
-            throw (ex);
+            throw ex;
         }
-
     }
 
     private async Task OpenFolder()
     {
         try
         {
-            System.Windows.Forms.DialogResult result = FolderBrowserDialog.ShowDialog();
-            if (result == System.Windows.Forms.DialogResult.OK)
+            var result = FolderBrowserDialog.ShowDialog();
+            if (result == DialogResult.OK)
             {
                 _selectedFile = FolderBrowserDialog.SelectedPath;
                 await OnFileSelected.InvokeAsync(_selectedFile);
@@ -82,7 +78,8 @@ else
         }
         catch (Exception ex)
         {
-            throw (ex);
+            throw ex;
         }
     }
+
 }
