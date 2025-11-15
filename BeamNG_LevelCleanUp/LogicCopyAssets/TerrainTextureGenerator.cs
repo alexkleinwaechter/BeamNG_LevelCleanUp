@@ -66,13 +66,13 @@ public class TerrainTextureGenerator
             // Ensure the terrain folder exists
             Directory.CreateDirectory(_terrainFolderPath);
 
-            // Check if file already exists to avoid regenerating
-            if (File.Exists(outputPath))
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Terrain texture {actualFileName}.png already exists, reusing.");
-                return outputPath;
-            }
+            //// Check if file already exists to avoid regenerating is problem when replacing textures from already copied terrains
+            //if (File.Exists(outputPath))
+            //{
+            //    PubSubChannel.SendMessage(PubSubMessageType.Info,
+            //        $"Terrain texture {actualFileName}.png already exists, reusing.");
+            //    return outputPath;
+            //}
 
             // Create the image based on texture type
             switch (textureType)
