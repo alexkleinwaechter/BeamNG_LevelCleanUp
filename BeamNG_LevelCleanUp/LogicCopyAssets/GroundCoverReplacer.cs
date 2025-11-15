@@ -387,35 +387,66 @@ public class GroundCoverReplacer
         string targetMaterialInternalName,
         string sourceMaterialInternalName)
     {
-        try
+   try
         {
             // Create a copy of source groundcover
-            var newGroundCover = JsonNode.Parse(sourceGroundCover.ToJsonString());
+          var newGroundCover = JsonNode.Parse(sourceGroundCover.ToJsonString());
 
-            // Generate new name with level suffix AND target material name for uniqueness
-            var newName = $"{sourceGroundCoverName}_{targetMaterialInternalName}_{_levelNameCopyFrom}";
-            newGroundCover["name"] = newName;
+   // Clean the source name by removing existing suffixes
+          var levelSuffix = $"_{_levelNameCopyFrom}";
+    var cleanSourceName = sourceGroundCoverName;
 
-            // Generate new GUID
-            newGroundCover["persistentId"] = Guid.NewGuid().ToString();
+   // Remove existing level suffix if present
+if (sourceGroundCoverName.EndsWith(levelSuffix, StringComparison.OrdinalIgnoreCase))
+   {
+           cleanSourceName = sourceGroundCoverName.Substring(0, sourceGroundCoverName.Length - levelSuffix.Length);
+            
+           // Now check if there's a material suffix before the level suffix
+                // Pattern: OriginalName_MaterialName_LevelName -> we want just "OriginalName"
+     // The material name might itself contain the level suffix (e.g., "Fieldgrass_ellern_map")
+    
+          // Find the last underscore in the cleaned name
+           var lastUnderscoreIndex = cleanSourceName.LastIndexOf('_');
+        if (lastUnderscoreIndex > 0)
+    {
+        // Get everything after the last underscore - this might be a material name
+        var potentialMaterialSuffix = cleanSourceName.Substring(lastUnderscoreIndex + 1);
+      
+  // Remove it if it looks like it might be a material name (length > 3 characters)
+                 // This heuristic should catch material names but not parts of the original name
+     if (potentialMaterialSuffix.Length > 3)
+         {
+ cleanSourceName = cleanSourceName.Substring(0, lastUnderscoreIndex);
+  PubSubChannel.SendMessage(PubSubMessageType.Info,
+           $"Cleaned groundcover name: '{sourceGroundCoverName}' -> '{cleanSourceName}' (removed material suffix '{potentialMaterialSuffix}' and level suffix)");
+  }
+   }
+            }
+            
+            // Generate new name with target material name AND level suffix for uniqueness
+var newName = $"{cleanSourceName}_{targetMaterialInternalName}_{_levelNameCopyFrom}";
+   newGroundCover["name"] = newName;
+
+     // Generate new GUID
+    newGroundCover["persistentId"] = Guid.NewGuid().ToString();
 
             // Update layer references: source internal name -> target internal name (one-to-one)
-            UpdateLayerReferences(newGroundCover, sourceMaterialInternalName, targetMaterialInternalName);
+        UpdateLayerReferences(newGroundCover, sourceMaterialInternalName, targetMaterialInternalName);
 
             // Copy dependencies
-            var newMaterialName = _dependencyHelper.CopyGroundCoverDependencies(sourceGroundCover, newName);
+     var newMaterialName = _dependencyHelper.CopyGroundCoverDependencies(sourceGroundCover, newName);
 
-            // Update material property
-            if (!string.IsNullOrEmpty(newMaterialName)) 
-                newGroundCover["material"] = newMaterialName;
+  // Update material property
+  if (!string.IsNullOrEmpty(newMaterialName)) 
+    newGroundCover["material"] = newMaterialName;
 
-            return newGroundCover;
+    return newGroundCover;
         }
         catch (Exception ex)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Error,
-                $"Error copying source groundcover '{sourceGroundCoverName}': {ex.Message}");
-            return null;
+          $"Error copying source groundcover '{sourceGroundCoverName}': {ex.Message}");
+  return null;
         }
     }
 
@@ -517,44 +548,56 @@ public class GroundCoverReplacer
     ///     Writes groundcover changes (replacements and deletions) back to file
     /// </summary>
     private void WriteGroundCoverChangesToFile(
-        FileInfo targetFile,
-        Dictionary<string, JsonNode> existingGroundCovers,
+      FileInfo targetFile,
+   Dictionary<string, JsonNode> existingGroundCovers,
         List<JsonNode> newGroundCovers,
         List<JsonNode> modifiedGroundCovers,
-        List<string> deletedGroundCoverNames)
+   List<string> deletedGroundCoverNames)
     {
         try
         {
-            // Apply new groundcovers
+            var replacedCount = 0;
+            
+      // Apply new groundcovers (will overwrite existing ones with same name)
             foreach (var newGC in newGroundCovers)
-            {
-                var name = newGC["name"]?.ToString();
-                if (!string.IsNullOrEmpty(name)) existingGroundCovers[name] = newGC;
-            }
+         {
+    var name = newGC["name"]?.ToString();
+   if (!string.IsNullOrEmpty(name))
+      {
+             if (existingGroundCovers.ContainsKey(name))
+   {
+              replacedCount++;
+    PubSubChannel.SendMessage(PubSubMessageType.Info,
+     $"Replacing existing groundcover '{name}' with updated version");
+         }
+             existingGroundCovers[name] = newGC;
+        }
+   }
 
-            // Apply modifications (updated groundcovers with removed layers)
-            foreach (var modifiedGC in modifiedGroundCovers)
+       // Apply modifications (updated groundcovers with removed layers)
+          foreach (var modifiedGC in modifiedGroundCovers)
             {
-                var name = modifiedGC["name"]?.ToString();
+         var name = modifiedGC["name"]?.ToString();
                 if (!string.IsNullOrEmpty(name)) existingGroundCovers[name] = modifiedGC;
-            }
+          }
 
             // Apply deletions
             foreach (var deletedName in deletedGroundCoverNames) existingGroundCovers.Remove(deletedName);
 
-            // Write all groundcovers to file (keep one JSON object per line)
+       // Write all groundcovers to file (keep one JSON object per line)
             var lines = existingGroundCovers.Values
-                .Select(gc => gc.ToJsonString(BeamJsonOptions.GetJsonSerializerOneLineOptions()))
-                .ToList();
+ .Select(gc => gc.ToJsonString(BeamJsonOptions.GetJsonSerializerOneLineOptions()))
+ .ToList();
 
             File.WriteAllLines(targetFile.FullName, lines);
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Updated groundcovers: {newGroundCovers.Count} added, {modifiedGroundCovers.Count} modified (layers removed), {deletedGroundCoverNames.Count} deleted in {targetFile.FullName}");
-        }
-        catch (Exception ex)
-        {
-            PubSubChannel.SendMessage(PubSubMessageType.Error,
+      var addedCount = newGroundCovers.Count - replacedCount;
+          PubSubChannel.SendMessage(PubSubMessageType.Info,
+ $"Updated groundcovers: {addedCount} added, {replacedCount} replaced, {modifiedGroundCovers.Count} modified (layers removed), {deletedGroundCoverNames.Count} deleted in {targetFile.FullName}");
+ }
+    catch (Exception ex)
+      {
+   PubSubChannel.SendMessage(PubSubMessageType.Error,
                 $"Error writing groundcover changes: {ex.Message}");
         }
     }

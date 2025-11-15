@@ -33,12 +33,14 @@ public class TerrainTextureGenerator
     ///     Generates an 8-bit PNG file with a solid color at terrain size dimensions
     /// </summary>
     /// <param name="hexColor">The color in hex format (e.g., #505a2d)</param>
-    /// <param name="fileName">The filename for the PNG (without extension)</param>
+    /// <param name="baseFileName">The filename for the PNG (without extension)</param>
     /// <param name="textureType">The type of texture to generate</param>
-    /// <param name="customValue">Optional custom grayscale value for grayscale textures (0-255)</param>
+    /// <param name="fileNameSuffix"></param>
+    /// <param name="customGreyscaleValue">Optional custom grayscale value for grayscale textures (0-255)</param>
     /// <returns>The full path to the generated PNG file</returns>
-    public string GenerateSolidColorPng(string hexColor, string fileName, TextureType textureType,
-        int? customValue = null)
+    public string GenerateSolidColorPng(string hexColor, string baseFileName, TextureType textureType,
+        string? fileNameSuffix = null,
+        int? customGreyscaleValue = null)
     {
         try
         {
@@ -56,9 +58,11 @@ public class TerrainTextureGenerator
 
             // For baseColorBaseTex, use the actual hex color as filename
             // For other textures, use the predefined filename
-            var actualFileName = fileName.Equals("#base_color", StringComparison.OrdinalIgnoreCase)
-                ? hexColor
-                : fileName;
+            var needsColorInName = baseFileName.Equals("#base_color", StringComparison.OrdinalIgnoreCase) ||
+                                   baseFileName.Equals("#base_r", StringComparison.OrdinalIgnoreCase);
+            var actualFileName = needsColorInName
+                ? $"{baseFileName}_{hexColor}{fileNameSuffix}"
+                : $"{baseFileName}{fileNameSuffix}";
 
             // Create the output file path
             var outputPath = Path.Join(_terrainFolderPath, $"{actualFileName}.png");
@@ -66,20 +70,20 @@ public class TerrainTextureGenerator
             // Ensure the terrain folder exists
             Directory.CreateDirectory(_terrainFolderPath);
 
-            //// Check if file already exists to avoid regenerating is problem when replacing textures from already copied terrains
-            //if (File.Exists(outputPath))
-            //{
-            //    PubSubChannel.SendMessage(PubSubMessageType.Info,
-            //        $"Terrain texture {actualFileName}.png already exists, reusing.");
-            //    return outputPath;
-            //}
+            // Check if file already exists to avoid regenerating
+            if (File.Exists(outputPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Terrain texture {actualFileName}.png already exists, reusing.");
+                return outputPath;
+            }
 
             // Create the image based on texture type
             switch (textureType)
             {
                 case TextureType.Grayscale:
                     // Use custom value if provided, otherwise use the R value from hex color
-                    var grayscaleValue = customValue ?? r;
+                    var grayscaleValue = customGreyscaleValue ?? r;
                     GenerateGrayscaleImage(outputPath, (byte)grayscaleValue);
                     break;
                 case TextureType.Normal:
@@ -99,7 +103,7 @@ public class TerrainTextureGenerator
         catch (Exception ex)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Error,
-                $"Failed to generate terrain texture {fileName}: {ex.Message}");
+                $"Failed to generate terrain texture {baseFileName}: {ex.Message}");
             throw;
         }
     }
@@ -110,8 +114,8 @@ public class TerrainTextureGenerator
         var color = new Rgba32(r, g, b);
 
         for (var y = 0; y < _terrainSize; y++)
-        for (var x = 0; x < _terrainSize; x++)
-            image[x, y] = color;
+            for (var x = 0; x < _terrainSize; x++)
+                image[x, y] = color;
 
         image.SaveAsPng(outputPath);
     }
@@ -122,8 +126,8 @@ public class TerrainTextureGenerator
         var color = new L8(grayscaleValue);
 
         for (var y = 0; y < _terrainSize; y++)
-        for (var x = 0; x < _terrainSize; x++)
-            image[x, y] = color;
+            for (var x = 0; x < _terrainSize; x++)
+                image[x, y] = color;
 
         image.SaveAsPng(outputPath);
     }
@@ -135,8 +139,8 @@ public class TerrainTextureGenerator
         var normalColor = new Rgba32(128, 128, 255);
 
         for (var y = 0; y < _terrainSize; y++)
-        for (var x = 0; x < _terrainSize; x++)
-            image[x, y] = normalColor;
+            for (var x = 0; x < _terrainSize; x++)
+                image[x, y] = normalColor;
 
         image.SaveAsPng(outputPath);
     }

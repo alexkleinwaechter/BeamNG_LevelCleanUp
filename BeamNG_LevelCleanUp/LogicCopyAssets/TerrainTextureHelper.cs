@@ -164,14 +164,13 @@ public static class TerrainTextureHelper
 
                     // Generate replacement PNG with level name suffix
                     var baseFileName = Path.GetFileNameWithoutExtension(textureProps.FileName);
-                    var extension = Path.GetExtension(textureProps.FileName);
-                    var suffixedFileName = $"{baseFileName}_{levelNameCopyFrom}{extension}";
 
                     var generatedPngPath = textureGenerator.GenerateSolidColorPng(
-                        colorToUse,
-                        suffixedFileName,
-                        textureProps.Type,
-                        customValue);
+                        hexColor: colorToUse,
+                        baseFileName: baseFileName,
+                        textureType: textureProps.Type,
+                        fileNameSuffix: $"_{levelNameCopyFrom}",
+                        customGreyscaleValue: customValue);
 
                     // Prepare the new path for batch update
                     newPath = pathConverter.GetBeamNgJsonPathOrFileName(generatedPngPath, false);
