@@ -118,38 +118,68 @@ public class TerrainCopyScanner
 
     /// <summary>
     ///     Scans the target level's terrain materials for the replacement dropdown
+    ///     Dynamically finds the actual terrain materials file instead of using hardcoded paths
     ///     Returns a list of terrain material names available in the target
     /// </summary>
     public static List<string> GetTargetTerrainMaterials(string namePath)
     {
         var targetMaterials = new List<string>();
-        var targetTerrainPath = Path.Join(namePath, Constants.Terrains, "main.materials.json");
-        var targetFile = new FileInfo(targetTerrainPath);
-
-        if (!targetFile.Exists) return targetMaterials;
 
         try
         {
-            using var jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(targetFile.FullName);
-            if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
-                foreach (var child in jsonObject.RootElement.EnumerateObject())
-                    try
-                    {
-                        var material =
-                            child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
-                        if (material != null && material.Class == "TerrainMaterial")
+            // Dynamically find terrain materials file (same pattern as CopyTerrainMaterials in BeamFileReader)
+            var terrainPath = Path.Join(namePath, "art", "terrains");
+            if (!Directory.Exists(terrainPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"No terrains folder found in target level at {terrainPath}.");
+                return targetMaterials;
+            }
+
+            // Search for materials.json files that contain TerrainMaterial
+            var materialFiles = Directory.GetFiles(terrainPath, "*.materials.json", SearchOption.AllDirectories)
+                .Concat(Directory.GetFiles(terrainPath, "materials.json", SearchOption.AllDirectories))
+                .Distinct()
+                .ToList();
+
+            foreach (var materialFile in materialFiles)
+            {
+                // Check if this file contains TerrainMaterial entries
+                if (!File.Exists(materialFile))
+                    continue;
+
+                var jsonContent = File.ReadAllText(materialFile);
+                if (!jsonContent.Contains("\"class\": \"TerrainMaterial\"") &&
+                    !jsonContent.Contains("\"class\":\"TerrainMaterial\""))
+                    continue;
+
+                // This file has terrain materials, scan it
+                using var jsonObject = JsonUtils.GetValidJsonDocumentFromFilePath(materialFile);
+                if (jsonObject.RootElement.ValueKind != JsonValueKind.Undefined)
+                    foreach (var child in jsonObject.RootElement.EnumerateObject())
+                        try
                         {
-                            var materialName = !string.IsNullOrEmpty(material.Name)
-                                ? material.Name
-                                : material.InternalName;
-                            if (!string.IsNullOrEmpty(materialName)) targetMaterials.Add(materialName);
+                            var material =
+                                child.Value.Deserialize<MaterialJson>(BeamJsonOptions.GetJsonSerializerOptions());
+                            if (material != null && material.Class == "TerrainMaterial")
+                            {
+                                var materialName = !string.IsNullOrEmpty(material.Name)
+                                    ? material.Name
+                                    : material.InternalName;
+                                if (!string.IsNullOrEmpty(materialName) && !targetMaterials.Contains(materialName))
+                                    targetMaterials.Add(materialName);
+                            }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                            $"Error reading target terrain material {child.Name}: {ex.Message}");
-                    }
+                        catch (Exception ex)
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"Error reading target terrain material {child.Name}: {ex.Message}");
+                        }
+            }
+
+            if (!targetMaterials.Any())
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    "No terrain materials found in target level.");
         }
         catch (Exception ex)
         {

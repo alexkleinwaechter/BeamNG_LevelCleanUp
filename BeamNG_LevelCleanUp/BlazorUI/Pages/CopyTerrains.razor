@@ -68,7 +68,7 @@
                           MultiSelection="true" @bind-SelectedItems="_selectedItems">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Terrain Materials in @_levelNameCopyFrom</MudText>
-                        <MudSpacer />
+                        <MudSpacer/>
                         <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s => OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
@@ -93,7 +93,7 @@
                                                 ColorPickerMode="ColorPickerMode.RGB"
                                                 PickerVariant="PickerVariant.Dialog"
                                                 ColorPickerView="ColorPickerView.Spectrum"
-                                                ShowToolbar="true" />
+                                                ShowToolbar="true"/>
                             </div>
                         </MudTd>
                         <MudTd DataLabel="Roughness" @onclick:stopPropagation>
@@ -125,10 +125,10 @@
                                         </MudSlider>
                                         <MudText Typo="Typo.caption" Style="min-width: 80px;">
                                             @(context.CopyAsset.RoughnessValue < 85 ? "Shiny" :
-                                                                                context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
-                                </MudText>
-                            </div>
-                                                        }
+                                            context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
+                                        </MudText>
+                                    </div>
+                                }
                                 else
                                 {
                                     <MudText Typo="Typo.caption" Style="color: gray;">
@@ -204,10 +204,10 @@
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
                                @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -220,7 +220,7 @@
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent />
+        <CustomErrorContent/>
     </ErrorContent>
 </ErrorBoundary>
 
@@ -377,6 +377,10 @@
                 _fileSelectDisabled = false;
             }
         });
+
+        // Check for PBR terrain materials upgrade
+        await CheckPbrUpgrade();
+
         await ScanAssets();
         _fileSelectDisabled = false;
     }
@@ -573,7 +577,8 @@
             TotalItems = items.Count()
         };
     }
-    private void OnSearch(String text)
+
+    private void OnSearch(string text)
     {
         _searchString = text;
         table.ReloadServerData();
@@ -719,6 +724,73 @@
 
         // Force UI refresh
         StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Checks if target level has PBR terrain materials, and prompts user for upgrade if not
+    /// </summary>
+    private async Task CheckPbrUpgrade()
+    {
+        if (string.IsNullOrEmpty(_levelPath))
+            return;
+
+        await Task.Run(async () =>
+        {
+            try
+            {
+                // Get the namePath from _levelPath
+                var namePath = ZipFileHandler.GetNamePath(_levelPath);
+
+                // Check if base material size can be determined
+                var baseMaterialSize = TerrainTextureHelper.GetBaseMaterialSize(namePath);
+
+                if (baseMaterialSize == null)
+                {
+                    // Prompt user about PBR upgrade on the UI thread
+                    await InvokeAsync(async () =>
+                    {
+                        var options = new DialogOptions { CloseOnEscapeKey = true };
+                        var parameters = new DialogParameters();
+                        parameters.Add("ContentText",
+                            "The target level does not appear to have PBR (Physically Based Rendering) terrain materials configured. " +
+                            "Would you like to upgrade the terrain materials to PBR format? " +
+                            "If yes please use the replace function in target material dropdown to change the old materials.");
+                        parameters.Add("ButtonText", "Yes, Upgrade to PBR");
+                        parameters.Add("Color", Color.Info);
+
+                        var dialog = await DialogService.ShowAsync<SimpleDialog>("Upgrade Terrain Materials to PBR?", parameters, options);
+                        var result = await dialog.Result;
+
+                        BeamFileReader.UpgradeTerrainMaterialsToPbr = !result.Canceled;
+
+                        if (!result.Canceled)
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                "Terrain materials will be upgraded to PBR format during copy.");
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                "Terrain materials will be copied in legacy format.");
+                        }
+                    });
+                }
+                else
+                {
+                    // Target already has PBR materials
+                    BeamFileReader.UpgradeTerrainMaterialsToPbr = false;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Target level already has PBR terrain materials (base size: {baseMaterialSize}x{baseMaterialSize}).");
+                }
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Could not determine PBR status: {ex.Message}")
+                    ;
+                BeamFileReader.UpgradeTerrainMaterialsToPbr = false;
+            }
+        });
     }
 
 }

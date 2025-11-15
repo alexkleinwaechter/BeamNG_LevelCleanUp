@@ -227,7 +227,7 @@ public class TerrainMaterialCopier
 
         // ADD MODE: Only add if key doesn't exist in cached JSON
         if (!_targetJsonCache.AsObject().Any(x => x.Key == newKey))
-            _targetJsonCache.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(newKey, JsonNode.Parse(toText)));
+            _targetJsonCache.AsObject().Add(KeyValuePair.Create(newKey, JsonNode.Parse(toText)));
         else
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Terrain material key {newKey} already exists in target, skipping.");

@@ -197,6 +197,41 @@ public class AssetCopy
     /// </summary>
     private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
     {
+        // Check if user wants to upgrade to PBR and add TerrainMaterialTextureSet if needed
+        if (BeamFileReader.UpgradeTerrainMaterialsToPbr && terrainMaterials.Any())
+        {
+            // Get the target materials.json file path from the first terrain material
+            // All terrain materials should have the same target path
+            var targetMaterialsPath = Path.Join(terrainMaterials.First().TargetPath, "main.materials.json");
+
+            var pbrUpgradeHandler = new PbrUpgradeHandler(
+                targetMaterialsPath,
+                PathResolver.LevelName,
+                PathResolver.LevelNamePath); // Pass the target level path
+
+            // Get texture sizes from SOURCE level's TerrainMaterialTextureSet
+            var sourceSizes = TerrainTextureHelper.GetAllTextureSizes(PathResolver.LevelNamePathCopyFrom);
+            var terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(PathResolver.LevelNamePath) ?? 1024;
+            if (sourceSizes != null)
+            {
+                // Use source sizes
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Using texture sizes from source level: base={sourceSizes.BaseTexSize}, detail={sourceSizes.DetailTexSize}, macro={sourceSizes.MacroTexSize}");
+                pbrUpgradeHandler.AddTerrainMaterialTextureSet(
+                    terrainSize,
+                    sourceSizes.DetailTexSize,
+                    sourceSizes.MacroTexSize);
+            }
+            else
+            {
+
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"No TerrainMaterialTextureSet found in source level. Using fallback size: {terrainSize}");
+                pbrUpgradeHandler.AddTerrainMaterialTextureSet(terrainSize, terrainSize, terrainSize);
+            }
+        }
+
         // Separate into copy and replace operations
         var materialsToAdd = terrainMaterials.Where(m => !m.IsReplaceMode).ToList();
         var materialsToReplace = terrainMaterials.Where(m => m.IsReplaceMode).ToList();

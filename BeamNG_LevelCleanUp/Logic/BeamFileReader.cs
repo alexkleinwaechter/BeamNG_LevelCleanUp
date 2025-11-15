@@ -57,6 +57,11 @@ internal class BeamFileReader
     private static List<FileInfo> _managedItemData { get; set; } = new();
     private static LevelRenamer _levelRenamer { get; set; }
 
+    /// <summary>
+    ///     Indicates whether the user wants to upgrade terrain materials to PBR format
+    /// </summary>
+    public static bool UpgradeTerrainMaterialsToPbr { get; set; }
+
     internal void SanitizePath()
     {
         _levelNamePath = ZipFileHandler.GetNamePath(_levelPath);
@@ -71,7 +76,6 @@ internal class BeamFileReader
         PathResolver.LevelPathCopyFrom = _levelPathCopyFrom;
         PathResolver.LevelNamePathCopyFrom = _levelNamePathCopyFrom;
         PathResolver.LevelNameCopyFrom = _levelNameCopyFrom;
-
     }
 
     internal string GetLevelName()
@@ -522,7 +526,8 @@ internal class BeamFileReader
                 Name = item.Name,
                 Materials = materialsJson != null ? materialsJson : new List<MaterialJson>(),
                 MaterialsDae = daeMaterials,
-                TargetPath = Path.Join(_levelNamePath, Constants.Dae, $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
+                TargetPath = Path.Join(_levelNamePath, Constants.Dae,
+                    $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
                 DaeFilePath = item.FullName
             };
             var fileInfo = new FileInfo(item.FullName);
@@ -614,9 +619,7 @@ internal class BeamFileReader
 
                     // Füge die gefundenen GroundCover-Zeilen zur Gesamtliste hinzu
                     if (groundCoverScanner.GroundCoverJsonLines?.Any() == true)
-                    {
                         GroundCoverJsonLines.AddRange(groundCoverScanner.GroundCoverJsonLines);
-                    }
                 }
             }
             else
@@ -643,7 +646,7 @@ internal class BeamFileReader
             .Where(a => a.MissionGroupPath != null && a.MissionGroupLine != null)
             .GroupBy(a => a.MissionGroupPath)
             .Select(g => new
-            { MissionGroupPath = g.Key, MissionGroupLines = g.Select(x => x.MissionGroupLine.Value).ToList() })
+                { MissionGroupPath = g.Key, MissionGroupLines = g.Select(x => x.MissionGroupLine.Value).ToList() })
             .ToList();
 
 
@@ -698,7 +701,8 @@ internal class BeamFileReader
                         missionGroupScanner.ScanMissionGroupFile();
                         break;
                     case ReadTypeEnum.MaterialsJson:
-                        var materialScanner = new MaterialScanner(fi.FullName, _levelPath, _levelNamePath, MaterialsJson,
+                        var materialScanner = new MaterialScanner(fi.FullName, _levelPath, _levelNamePath,
+                            MaterialsJson,
                             Assets, ExcludeFiles);
                         materialScanner.ScanMaterialsJsonFile();
                         break;
@@ -833,10 +837,9 @@ internal class BeamFileReader
                             // Einfache Prüfung ob "class": "TerrainMaterial" im JSON vorkommt
                             if (jsonContent.Contains("\"class\": \"TerrainMaterial\"") ||
                                 jsonContent.Contains("\"class\":\"TerrainMaterial\""))
-                            {
                                 _terrainMaterialFiles.Add(fi);
-                            }
                         }
+
                         break;
                     case ReadTypeEnum.FindGroundCoverFiles:
                         // Prüfe ob diese items.level.json Datei GroundCover Einträge enthält
@@ -846,10 +849,9 @@ internal class BeamFileReader
                             // Einfache Prüfung ob "class": "GroundCover" im JSON vorkommt
                             if (jsonContent.Contains("\"class\": \"GroundCover\"") ||
                                 jsonContent.Contains("\"class\":\"GroundCover\""))
-                            {
                                 _groundCoverFiles.Add(fi);
-                            }
                         }
+
                         break;
                 }
             }
