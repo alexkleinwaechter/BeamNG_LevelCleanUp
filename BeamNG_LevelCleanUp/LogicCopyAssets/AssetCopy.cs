@@ -197,6 +197,22 @@ public class AssetCopy
     /// </summary>
     private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
     {
+        // Check if user wants to upgrade to PBR and add TerrainMaterialTextureSet if needed
+        if (BeamFileReader.UpgradeTerrainMaterialsToPbr && terrainMaterials.Any())
+        {
+            // Get the target materials.json file path from the first terrain material
+            // All terrain materials should have the same target path
+            var targetMaterialsPath = Path.Join(terrainMaterials.First().TargetPath, "main.materials.json");
+
+            var pbrUpgradeHandler = new PbrUpgradeHandler(
+                targetMaterialsPath,
+                PathResolver.LevelName,
+                PathResolver.LevelNamePath); // Pass the target level path
+
+            // Add the TerrainMaterialTextureSet to enable PBR
+            pbrUpgradeHandler.AddTerrainMaterialTextureSet(TerrainTextureHelper.GetTerrainSizeFromJson(PathResolver.LevelNamePath) ?? 1024);
+        }
+
         // Separate into copy and replace operations
         var materialsToAdd = terrainMaterials.Where(m => !m.IsReplaceMode).ToList();
         var materialsToReplace = terrainMaterials.Where(m => m.IsReplaceMode).ToList();
@@ -204,28 +220,28 @@ public class AssetCopy
         // Process replacements first
         foreach (var item in materialsToReplace)
             // Loop through each target material to replace
-        foreach (var targetMaterialName in item.ReplaceTargetMaterialNames)
-        {
-            if (string.IsNullOrEmpty(targetMaterialName))
-                continue; // Skip null/empty (shouldn't happen, but safety check)
-
-            // Create a copy of the item with single replacement target
-            var singleReplaceItem = new CopyAsset
+            foreach (var targetMaterialName in item.ReplaceTargetMaterialNames)
             {
-                BaseColorHex = item.BaseColorHex,
-                RoughnessPreset = item.RoughnessPreset,
-                RoughnessValue = item.RoughnessValue,
-                Materials = item.Materials,
-                TargetPath = item.TargetPath,
-                CopyAssetType = item.CopyAssetType,
-                ReplaceTargetMaterialName = targetMaterialName // Set single target for backward compatibility
-            };
+                if (string.IsNullOrEmpty(targetMaterialName))
+                    continue; // Skip null/empty (shouldn't happen, but safety check)
 
-            if (!_terrainMaterialReplacer.Replace(singleReplaceItem))
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"Failed to replace material '{targetMaterialName}'. Skipping.");
-            // Continue with other replacements, don't fail entire batch
-        }
+                // Create a copy of the item with single replacement target
+                var singleReplaceItem = new CopyAsset
+                {
+                    BaseColorHex = item.BaseColorHex,
+                    RoughnessPreset = item.RoughnessPreset,
+                    RoughnessValue = item.RoughnessValue,
+                    Materials = item.Materials,
+                    TargetPath = item.TargetPath,
+                    CopyAssetType = item.CopyAssetType,
+                    ReplaceTargetMaterialName = targetMaterialName // Set single target for backward compatibility
+                };
+
+                if (!_terrainMaterialReplacer.Replace(singleReplaceItem))
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Failed to replace material '{targetMaterialName}'. Skipping.");
+                // Continue with other replacements, don't fail entire batch
+            }
 
         // Write all groundcover replacements ONCE after all terrain replacements
         if (materialsToReplace.Any()) _groundCoverReplacer.WriteAllGroundCoverReplacements();

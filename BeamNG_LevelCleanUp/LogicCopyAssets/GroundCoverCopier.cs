@@ -161,6 +161,7 @@ public class GroundCoverCopier
     /// <summary>
     ///     PHASE 2: Write all collected groundcovers to the target file
     ///     Copies entire groundcovers with all Types, suffixing all layer names
+    ///     Dynamically finds the target vegetation file or creates one at the default location
     /// </summary>
     public void WriteAllGroundCovers()
     {
@@ -172,11 +173,21 @@ public class GroundCoverCopier
         // Clear DAE file tracking for this batch
         _copiedDaeFiles.Clear();
 
-        var targetDir = Path.Join(_namePath, "main", "MissionGroup", "Level_object", "vegetation");
-        Directory.CreateDirectory(targetDir);
+        // Dynamically find the target vegetation file
+        var targetFile = VegetationFileHelper.FindTargetVegetationFile(_namePath);
 
-        var targetFilePath = Path.Join(targetDir, "items.level.json");
-        var targetFile = new FileInfo(targetFilePath);
+        if (targetFile == null)
+        {
+            // No existing vegetation file found - create at default location
+            var defaultPath = VegetationFileHelper.GetDefaultVegetationFilePath(_namePath);
+            targetFile = new FileInfo(defaultPath);
+
+            // Create directory if it doesn't exist
+            Directory.CreateDirectory(Path.GetDirectoryName(defaultPath));
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"No existing vegetation file found. Creating new file at: {defaultPath}");
+        }
 
         // Load existing groundcovers from target
         var existingGroundCovers = LoadExistingGroundCovers(targetFile);
@@ -227,7 +238,7 @@ public class GroundCoverCopier
         WriteAllGroundCoversToFile(targetFile, existingGroundCovers.Values);
 
         PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Groundcover copy complete: {created} created, {merged} updated");
+            $"Groundcover copy complete: {created} created, {merged} updated in {targetFile.FullName}");
 
         // Clear for next operation
         _groundCoversToCopy.Clear();

@@ -70,6 +70,7 @@ public class GroundCoverReplacer
 
     /// <summary>
     ///     Writes all marked groundcover replacements
+    ///     Dynamically finds the target vegetation file
     /// </summary>
     public void WriteAllGroundCoverReplacements()
     {
@@ -83,14 +84,18 @@ public class GroundCoverReplacer
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Processing {_groundCoversToReplace.Count} groundcover replacement(s)...");
 
-        var targetGcFile = new FileInfo(Path.Join(_namePath, "main", "MissionGroup", "Level_object", "vegetation",
-            "items.level.json"));
-        if (!targetGcFile.Exists)
+        // Dynamically find the target vegetation file
+        var targetGcFile = VegetationFileHelper.FindTargetVegetationFile(_namePath);
+
+        if (targetGcFile == null || !targetGcFile.Exists)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"Target groundcover file not found at {targetGcFile.FullName}. Skipping groundcover replacement.");
+                "No vegetation file found in target level. Cannot replace groundcovers.");
             return;
         }
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Using target vegetation file: {targetGcFile.FullName}");
 
         var targetMaterialsFile = new FileInfo(Path.Join(_namePath, "art", "terrains", "main.materials.json"));
 
