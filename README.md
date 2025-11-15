@@ -16,6 +16,45 @@ The "Rename Map" feature automatically detects changes you have made in world ed
 ### Copy Assets (Experimental)
 You can load a zipped map you want to copy assets from and a zipped map you want to have the assets. At the moment the tool allows to copy decalroads, decals and collada assets (dae files). You get a list of all the assets and can select the ones you want to copy. No need anymore for copying the whole folders from the desired maps. The tool copies only the needed materials and places them in a dedicated folder per assettype starting with a "MT_" for Mapping-tools.
 
+### Copy/Replace Terrain Materials
+A powerful feature for transferring terrain materials between BeamNG.drive maps.
+
+Flexible Copy Modes:
+- Add Mode: Copy terrain materials from source to target with automatic name suffixing to prevent conflicts
+- Replace Mode: Replace existing target terrain materials while preserving their names and persistent IDs
+
+Smart Material Handling:
+- Auto-detect and copy all material dependencies
+- Dynamic roughness and base color adjustment for each material
+- Material-specific roughness presets (Wet Asphalt, Concrete, Grass, Mud, etc.)
+- Visual color picker for custom base colors (painting the ground)
+  
+Automatic GroundCover Management:
+- Automatically detects and copies associated groundcover vegetation
+- Updates groundcover layer references to match new terrain materials
+- In Replace mode: cleanly removes old groundcover layers referencing replaced materials
+- Copies groundcover dependencies (materials, DAE meshes)
+  
+PBR (Physically Based Rendering) Upgrade:
+- Automatically detects if target level lacks PBR terrain materials
+- Prompts for optional upgrade to modern PBR format
+- Extracts texture sizes from source level's TerrainMaterialTextureSet
+- Creates and configures TerrainMaterialTextureSet in target level
+- Updates TerrainBlock objects to reference the new texture set
+  
+Multi-Target Replacement:
+- Replace multiple target materials with a single source material (e.g., replace all grass types with snow)
+- Batch processing for efficient large-scale material operations
+  
+Use Cases
+- Just add new terrain to your map
+- Winter Maps: Replace grass materials with snow across an entire map
+- Desert Conversions: Swap vegetation materials for sand/dirt terrain
+- Legacy Upgrades: Modernize old maps to use PBR terrain rendering
+  
+Technical Details
+- Generates placeholder textures for base color, roughness, and normal maps
+
 ### Convert TSStatic Assets to forest items
 You can load a zipped map and then convert your static assets placed in the scene tree to forest items. After selecting a level your scene tree is shown in the tool to select the items or folders you want to convert. Only assets with an identical scale on all axis and an existing rotation matrix will be converted.
 
