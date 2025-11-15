@@ -53,21 +53,38 @@ public static class TerrainTextureHelper
     }
 
     /// <summary>
-    ///     Reads the base material texture size from the *.blabla.json file
+    ///     Reads the base material texture size from the *.materials.json file
     ///     Extracts the first value from the baseTexSize array in TerrainMaterialTextureSet
     /// </summary>
     public static int? GetBaseMaterialSize(string levelPath)
     {
+        var sizes = GetAllTextureSizes(levelPath);
+        return sizes?.BaseTexSize;
+    }
+
+    /// <summary>
+    ///     Reads all texture sizes (base, detail, macro) from TerrainMaterialTextureSet in materials.json
+    ///     Returns null if no TerrainMaterialTextureSet is found
+    /// </summary>
+    public static TerrainTextureSizes? GetAllTextureSizes(string levelPath)
+    {
         try
         {
-            levelPath = Path.Join(levelPath, "art", "terrains");
+            var terrainPath = Path.Join(levelPath, "art", "terrains");
 
-            var materialFiles = Directory.GetFiles(levelPath, "*.materials.json", SearchOption.AllDirectories);
+            if (!Directory.Exists(terrainPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"No terrains folder found at {terrainPath}.");
+                return null;
+            }
+
+            var materialFiles = Directory.GetFiles(terrainPath, "*.materials.json", SearchOption.AllDirectories);
 
             if (materialFiles.Length == 0)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"No *.main.materials.json file found in {levelPath}.");
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"No *.materials.json file found in {terrainPath}.");
                 return null;
             }
 
@@ -78,27 +95,51 @@ public static class TerrainTextureHelper
             foreach (var property in jsonDoc.RootElement.EnumerateObject())
                 if (property.Value.TryGetProperty("class", out var classElement) &&
                     classElement.GetString() == "TerrainMaterialTextureSet")
-                    if (property.Value.TryGetProperty("baseTexSize", out var baseTexSizeElement))
-                        if (baseTexSizeElement.ValueKind == JsonValueKind.Array)
-                        {
-                            var enumerator = baseTexSizeElement.EnumerateArray();
-                            if (enumerator.MoveNext())
-                            {
-                                var size = enumerator.Current.GetInt32();
-                                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                    $"Base material size from {Path.GetFileName(materialFile)} ({property.Name}): {size}");
-                                return size;
-                            }
-                        }
+                {
+                    var sizes = new TerrainTextureSizes();
 
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"No 'baseTexSize' property found in TerrainMaterialTextureSet in {materialFile}.");
+                    // Extract baseTexSize
+                    if (property.Value.TryGetProperty("baseTexSize", out var baseTexSizeElement) &&
+                        baseTexSizeElement.ValueKind == JsonValueKind.Array)
+                    {
+                        var enumerator = baseTexSizeElement.EnumerateArray();
+                        if (enumerator.MoveNext())
+                            sizes.BaseTexSize = enumerator.Current.GetInt32();
+                    }
+
+                    // Extract detailTexSize
+                    if (property.Value.TryGetProperty("detailTexSize", out var detailTexSizeElement) &&
+                        detailTexSizeElement.ValueKind == JsonValueKind.Array)
+                    {
+                        var enumerator = detailTexSizeElement.EnumerateArray();
+                        if (enumerator.MoveNext())
+                            sizes.DetailTexSize = enumerator.Current.GetInt32();
+                    }
+
+                    // Extract macroTexSize
+                    if (property.Value.TryGetProperty("macroTexSize", out var macroTexSizeElement) &&
+                        macroTexSizeElement.ValueKind == JsonValueKind.Array)
+                    {
+                        var enumerator = macroTexSizeElement.EnumerateArray();
+                        if (enumerator.MoveNext())
+                            sizes.MacroTexSize = enumerator.Current.GetInt32();
+                    }
+
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Texture sizes from {Path.GetFileName(materialFile)} ({property.Name}): " +
+                        $"base={sizes.BaseTexSize}, detail={sizes.DetailTexSize}, macro={sizes.MacroTexSize}");
+
+                    return sizes;
+                }
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"No TerrainMaterialTextureSet found in {materialFile}.");
             return null;
         }
         catch (Exception ex)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"Error reading base material size: {ex.Message}.");
+                $"Error reading texture sizes: {ex.Message}.");
             return null;
         }
     }
@@ -313,5 +354,15 @@ public static class TerrainTextureHelper
                     UpdateTexturePathsInMaterial(arr[i], oldPath, newPath);
                 }
             }
+    }
+
+    /// <summary>
+    ///     Container for terrain texture sizes
+    /// </summary>
+    public class TerrainTextureSizes
+    {
+        public int BaseTexSize { get; set; } = 1024;
+        public int DetailTexSize { get; set; } = 1024;
+        public int MacroTexSize { get; set; } = 1024;
     }
 }
