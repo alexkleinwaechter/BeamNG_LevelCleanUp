@@ -74,9 +74,10 @@ public static class TerrainTextureHelper
             var materialFile = materialFiles[0];
             using var jsonDoc = JsonUtils.GetValidJsonDocumentFromFilePath(materialFile);
 
-            // Find the key containing "TextureSet"
+            // Find the object with class "TerrainMaterialTextureSet"
             foreach (var property in jsonDoc.RootElement.EnumerateObject())
-                if (property.Name.Contains("TextureSet", StringComparison.OrdinalIgnoreCase))
+                if (property.Value.TryGetProperty("class", out var classElement) &&
+                    classElement.GetString() == "TerrainMaterialTextureSet")
                     if (property.Value.TryGetProperty("baseTexSize", out var baseTexSizeElement))
                         if (baseTexSizeElement.ValueKind == JsonValueKind.Array)
                         {
