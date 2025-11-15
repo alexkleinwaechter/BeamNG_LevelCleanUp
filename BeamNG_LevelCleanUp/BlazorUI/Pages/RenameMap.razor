@@ -418,7 +418,10 @@
                     ZipFileHandler.RemoveModInfo(path);
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
                 });
-                Snackbar.Remove(_staticSnackbar);
+                if (_staticSnackbar != null)
+                {
+                    Snackbar.Remove(_staticSnackbar);
+                }
             }
             catch (Exception ex)
             {
