@@ -114,8 +114,8 @@ public class TerrainTextureGenerator
         var color = new Rgba32(r, g, b);
 
         for (var y = 0; y < _terrainSize; y++)
-            for (var x = 0; x < _terrainSize; x++)
-                image[x, y] = color;
+        for (var x = 0; x < _terrainSize; x++)
+            image[x, y] = color;
 
         image.SaveAsPng(outputPath);
     }
@@ -126,8 +126,8 @@ public class TerrainTextureGenerator
         var color = new L8(grayscaleValue);
 
         for (var y = 0; y < _terrainSize; y++)
-            for (var x = 0; x < _terrainSize; x++)
-                image[x, y] = color;
+        for (var x = 0; x < _terrainSize; x++)
+            image[x, y] = color;
 
         image.SaveAsPng(outputPath);
     }
@@ -139,8 +139,8 @@ public class TerrainTextureGenerator
         var normalColor = new Rgba32(128, 128, 255);
 
         for (var y = 0; y < _terrainSize; y++)
-            for (var x = 0; x < _terrainSize; x++)
-                image[x, y] = normalColor;
+        for (var x = 0; x < _terrainSize; x++)
+            image[x, y] = normalColor;
 
         image.SaveAsPng(outputPath);
     }

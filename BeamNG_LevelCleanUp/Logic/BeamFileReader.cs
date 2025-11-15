@@ -48,6 +48,7 @@ internal class BeamFileReader
     public static List<string> GroundCoverJsonLines { get; set; } = new();
     public static List<FileInfo> DeleteList { get; set; } = new();
     private static List<FileInfo> _terrainMaterialFiles { get; set; } = new();
+    private static List<FileInfo> _groundCoverFiles { get; set; } = new();
 
     private static List<FileInfo> _mainDecalsJson { get; set; } = new();
     private static List<FileInfo> _managedDecalData { get; set; } = new();
@@ -100,6 +101,7 @@ internal class BeamFileReader
         _forestJsonFiles = new List<FileInfo>();
         GroundCoverJsonLines = new List<string>();
         _terrainMaterialFiles = new List<FileInfo>();
+        _groundCoverFiles = new List<FileInfo>();
 
         _xOffset = 0;
         _yOffset = 0;
@@ -590,21 +592,38 @@ internal class BeamFileReader
 
     internal void CopyGroundCovers()
     {
-        var vegetationPath = Path.Join(_levelNamePathCopyFrom, "main", "MissionGroup", "Level_object", "vegetation",
-            "items.level.json");
-        var vegetationFile = new FileInfo(vegetationPath);
+        var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+        if (dirInfo != null)
+        {
+            // Sammle alle items.level.json Dateien, die GroundCover enthalten
+            _groundCoverFiles.Clear();
+            WalkDirectoryTree(dirInfo, "items.level.json", ReadTypeEnum.FindGroundCoverFiles);
 
-        if (vegetationFile.Exists)
-        {
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Scanning groundcovers from {_levelNameCopyFrom}");
-            var groundCoverScanner = new GroundCoverCopyScanner(_levelPathCopyFrom);
-            groundCoverScanner.ScanGroundCovers(vegetationFile);
-            GroundCoverJsonLines = groundCoverScanner.GroundCoverJsonLines;
-        }
-        else
-        {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"No vegetation items.level.json found in {_levelNameCopyFrom} at {vegetationPath}");
+            if (_groundCoverFiles.Any())
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Found {_groundCoverFiles.Count} groundcover file(s) in {_levelNameCopyFrom}");
+
+                foreach (var groundCoverFile in _groundCoverFiles)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Scanning groundcovers from {groundCoverFile.Name} at {groundCoverFile.DirectoryName}");
+
+                    var groundCoverScanner = new GroundCoverCopyScanner(_levelPathCopyFrom);
+                    groundCoverScanner.ScanGroundCovers(groundCoverFile);
+
+                    // Füge die gefundenen GroundCover-Zeilen zur Gesamtliste hinzu
+                    if (groundCoverScanner.GroundCoverJsonLines?.Any() == true)
+                    {
+                        GroundCoverJsonLines.AddRange(groundCoverScanner.GroundCoverJsonLines);
+                    }
+                }
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"No groundcover files found in {_levelNameCopyFrom}");
+            }
         }
     }
 
@@ -819,6 +838,19 @@ internal class BeamFileReader
                             }
                         }
                         break;
+                    case ReadTypeEnum.FindGroundCoverFiles:
+                        // Prüfe ob diese items.level.json Datei GroundCover Einträge enthält
+                        if (File.Exists(fi.FullName))
+                        {
+                            var jsonContent = File.ReadAllText(fi.FullName);
+                            // Einfache Prüfung ob "class": "GroundCover" im JSON vorkommt
+                            if (jsonContent.Contains("\"class\": \"GroundCover\"") ||
+                                jsonContent.Contains("\"class\":\"GroundCover\""))
+                            {
+                                _groundCoverFiles.Add(fi);
+                            }
+                        }
+                        break;
                 }
             }
 
@@ -855,6 +887,7 @@ internal class BeamFileReader
         ChangeHeightMissionGroups = 19,
         ChangeHeightDecals = 20,
         CopyTerrainMaterials = 21,
-        FindTerrainMaterialFiles = 22
+        FindTerrainMaterialFiles = 22,
+        FindGroundCoverFiles = 23
     }
 }

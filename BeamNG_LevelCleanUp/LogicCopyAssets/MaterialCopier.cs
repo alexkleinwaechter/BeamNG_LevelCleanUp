@@ -16,7 +16,7 @@ public class MaterialCopier
     // Batch operation caches
     private readonly Dictionary<string, JsonNode> _sourceJsonCache = new();
     private readonly Dictionary<string, JsonNode> _targetJsonCache = new();
-    private bool _batchMode = false;
+    private bool _batchMode;
 
     public MaterialCopier(PathConverter pathConverter, FileCopyHandler fileCopyHandler)
     {
@@ -25,8 +25,8 @@ public class MaterialCopier
     }
 
     /// <summary>
-    /// Enables batch mode for multiple copy operations. Call BeginBatch before processing multiple items,
-    /// then call EndBatch to flush all cached JSON writes.
+    ///     Enables batch mode for multiple copy operations. Call BeginBatch before processing multiple items,
+    ///     then call EndBatch to flush all cached JSON writes.
     /// </summary>
     public void BeginBatch()
     {
@@ -36,7 +36,7 @@ public class MaterialCopier
     }
 
     /// <summary>
-    /// Ends batch mode and flushes all cached JSON writes to disk.
+    ///     Ends batch mode and flushes all cached JSON writes to disk.
     /// </summary>
     public void EndBatch()
     {
@@ -166,7 +166,7 @@ public class MaterialCopier
     }
 
     /// <summary>
-    /// Batch-aware version of WriteMaterialJson - caches writes in batch mode
+    ///     Batch-aware version of WriteMaterialJson - caches writes in batch mode
     /// </summary>
     private void WriteMaterialJsonBatch(FileInfo targetJsonFile, string materialKey, string materialName,
         string materialJson)
@@ -190,22 +190,18 @@ public class MaterialCopier
 
         // Add material if it doesn't exist
         if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == materialName))
-        {
             targetJsonNode.AsObject().Add(
                 KeyValuePair.Create<string, JsonNode?>(materialKey, JsonNode.Parse(materialJson))
             );
-        }
     }
 
     /// <summary>
-    /// Flushes all cached target JSON files to disk
+    ///     Flushes all cached target JSON files to disk
     /// </summary>
     private void FlushTargetJsonFiles()
     {
         foreach (var kvp in _targetJsonCache)
-        {
             File.WriteAllText(kvp.Key, kvp.Value.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
-        }
     }
 
     private void WriteMaterialJson(FileInfo targetJsonFile, string materialKey, string materialName,

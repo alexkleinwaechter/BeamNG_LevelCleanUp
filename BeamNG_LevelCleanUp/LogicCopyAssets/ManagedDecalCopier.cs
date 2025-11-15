@@ -29,7 +29,7 @@ public class ManagedDecalCopier
         var jsonObject = new JsonObject(
             new[]
             {
-                KeyValuePair.Create<string, JsonNode?>(
+                KeyValuePair.Create(
                     decalData.Name,
                     JsonNode.Parse(JsonSerializer.Serialize(decalData, BeamJsonOptions.GetJsonSerializerOptions()))
                 )
@@ -44,7 +44,7 @@ public class ManagedDecalCopier
 
         if (!targetJsonNode.AsObject().Any(x => x.Value["name"]?.ToString() == decalData.Name))
             targetJsonNode.AsObject().Add(
-                KeyValuePair.Create<string, JsonNode?>(
+                KeyValuePair.Create(
                     decalData.Name,
                     JsonNode.Parse(JsonSerializer.Serialize(decalData, BeamJsonOptions.GetJsonSerializerOptions()))
                 )

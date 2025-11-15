@@ -15,11 +15,11 @@ public class TerrainMaterialCopier
     private readonly string _levelNameCopyFrom;
     private readonly string _levelPathCopyFrom;
     private readonly PathConverter _pathConverter;
-    private readonly string _targetLevelPath;
-    private int? _baseTextureSize;
 
     // Batch processing caches
     private readonly Dictionary<string, JsonNode> _sourceJsonCache = new();
+    private readonly string _targetLevelPath;
+    private int? _baseTextureSize;
     private JsonNode _targetJsonCache;
     private FileInfo _targetJsonFile;
 
@@ -80,33 +80,27 @@ public class TerrainMaterialCopier
     }
 
     /// <summary>
-    /// Initializes batch processing by loading the target JSON file once
+    ///     Initializes batch processing by loading the target JSON file once
     /// </summary>
     private void InitializeBatch()
     {
         _sourceJsonCache.Clear();
-        
+
         if (_targetJsonFile.Exists)
-        {
             _targetJsonCache = JsonUtils.GetValidJsonNodeFromFilePath(_targetJsonFile.FullName);
-        }
         else
-        {
             _targetJsonCache = new JsonObject();
-        }
     }
 
     /// <summary>
-    /// Flushes the cached target JSON to disk
+    ///     Flushes the cached target JSON to disk
     /// </summary>
     private void FlushBatch()
     {
         if (_targetJsonCache != null && _targetJsonFile != null)
-        {
             File.WriteAllText(_targetJsonFile.FullName,
                 _targetJsonCache.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
-        }
-        
+
         _sourceJsonCache.Clear();
         _targetJsonCache = null;
     }
@@ -225,7 +219,7 @@ public class TerrainMaterialCopier
     }
 
     /// <summary>
-    /// Batch-aware version that adds to cached JSON instead of writing to disk
+    ///     Batch-aware version that adds to cached JSON instead of writing to disk
     /// </summary>
     private void WriteTerrainMaterialJsonBatch(string newKey, JsonNode materialObj)
     {
@@ -233,14 +227,10 @@ public class TerrainMaterialCopier
 
         // ADD MODE: Only add if key doesn't exist in cached JSON
         if (!_targetJsonCache.AsObject().Any(x => x.Key == newKey))
-        {
             _targetJsonCache.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(newKey, JsonNode.Parse(toText)));
-        }
         else
-        {
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Terrain material key {newKey} already exists in target, skipping.");
-        }
     }
 
     private void WriteTerrainMaterialJson(FileInfo targetJsonFile, string newKey, JsonNode materialObj)
@@ -252,7 +242,7 @@ public class TerrainMaterialCopier
             var jsonObject = new JsonObject(
                 new[]
                 {
-                    KeyValuePair.Create<string, JsonNode?>(newKey, JsonNode.Parse(toText))
+                    KeyValuePair.Create(newKey, JsonNode.Parse(toText))
                 });
             File.WriteAllText(targetJsonFile.FullName,
                 jsonObject.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
@@ -263,7 +253,7 @@ public class TerrainMaterialCopier
 
             // ADD MODE: Only add if key doesn't exist
             if (!targetJsonNode.AsObject().Any(x => x.Key == newKey))
-                targetJsonNode.AsObject().Add(KeyValuePair.Create<string, JsonNode?>(newKey, JsonNode.Parse(toText)));
+                targetJsonNode.AsObject().Add(KeyValuePair.Create(newKey, JsonNode.Parse(toText)));
             else
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Terrain material key {newKey} already exists in target, skipping.");

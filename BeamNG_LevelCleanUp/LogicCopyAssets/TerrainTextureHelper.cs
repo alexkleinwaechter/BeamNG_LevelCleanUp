@@ -127,7 +127,7 @@ public static class TerrainTextureHelper
         int roughnessValue,
         int? terrainSize,
         PathConverter pathConverter,
-        FileCopyHandler fileCopyHandler, 
+        FileCopyHandler fileCopyHandler,
         string levelNameCopyFrom)
     {
         TerrainTextureGenerator? textureGenerator = null;
@@ -166,11 +166,11 @@ public static class TerrainTextureHelper
                     var baseFileName = Path.GetFileNameWithoutExtension(textureProps.FileName);
 
                     var generatedPngPath = textureGenerator.GenerateSolidColorPng(
-                        hexColor: colorToUse,
-                        baseFileName: baseFileName,
-                        textureType: textureProps.Type,
-                        fileNameSuffix: $"_{levelNameCopyFrom}",
-                        customGreyscaleValue: customValue);
+                        colorToUse,
+                        baseFileName,
+                        textureProps.Type,
+                        $"_{levelNameCopyFrom}",
+                        customValue);
 
                     // Prepare the new path for batch update
                     newPath = pathConverter.GetBeamNgJsonPathOrFileName(generatedPngPath, false);
@@ -180,7 +180,7 @@ public static class TerrainTextureHelper
 
                     // Also update the corresponding size property if it exists
                     var sizePropertyName = matFile.MapType + "Size";
-                    if (materialObj[sizePropertyName] != null) 
+                    if (materialObj[sizePropertyName] != null)
                         materialObj[sizePropertyName] = terrainSize.Value;
 
                     // Add to batch replacements
@@ -213,27 +213,24 @@ public static class TerrainTextureHelper
 
             // Prepare the new path for batch update
             newPath = pathConverter.GetBeamNgJsonPathOrFileName(suffixedTargetFullName, false);
-            
+
             // Add to batch replacements
             pathReplacements[originalPath] = newPath;
         }
 
         // OPTIMIZATION: Single pass through the material JSON to update all paths at once
         // This reduces method calls from ~20,000 to ~150 for typical scenarios
-        if (pathReplacements.Any())
-        {
-            UpdateTexturePathsInMaterialBatch(materialObj, pathReplacements);
-        }
+        if (pathReplacements.Any()) UpdateTexturePathsInMaterialBatch(materialObj, pathReplacements);
     }
 
     /// <summary>
     ///     Batch version: Updates multiple texture paths in a single pass through the material JSON
     ///     This is significantly faster than calling UpdateTexturePathsInMaterial once per texture
     /// </summary>
-    private static void UpdateTexturePathsInMaterialBatch(JsonNode materialNode, Dictionary<string, string> pathReplacements)
+    private static void UpdateTexturePathsInMaterialBatch(JsonNode materialNode,
+        Dictionary<string, string> pathReplacements)
     {
         if (materialNode is JsonObject obj)
-        {
             foreach (var prop in obj.ToList())
             {
                 if (prop.Value == null) continue;
@@ -241,12 +238,10 @@ public static class TerrainTextureHelper
                 if (prop.Value is JsonValue jsonValue)
                 {
                     // Avoid exception-based control flow by using TryGetValue
-                    if (jsonValue.TryGetValue<string>(out var strValue) && 
-                        !string.IsNullOrEmpty(strValue) && 
+                    if (jsonValue.TryGetValue<string>(out var strValue) &&
+                        !string.IsNullOrEmpty(strValue) &&
                         pathReplacements.TryGetValue(strValue, out var newPath))
-                    {
                         obj[prop.Key] = newPath;
-                    }
                 }
                 else
                 {
@@ -254,9 +249,7 @@ public static class TerrainTextureHelper
                     UpdateTexturePathsInMaterialBatch(prop.Value, pathReplacements);
                 }
             }
-        }
         else if (materialNode is JsonArray arr)
-        {
             for (var i = 0; i < arr.Count; i++)
             {
                 if (arr[i] == null) continue;
@@ -264,12 +257,10 @@ public static class TerrainTextureHelper
                 if (arr[i] is JsonValue jsonValue)
                 {
                     // Avoid exception-based control flow by using TryGetValue
-                    if (jsonValue.TryGetValue<string>(out var strValue) && 
-                        !string.IsNullOrEmpty(strValue) && 
+                    if (jsonValue.TryGetValue<string>(out var strValue) &&
+                        !string.IsNullOrEmpty(strValue) &&
                         pathReplacements.TryGetValue(strValue, out var newPath))
-                    {
                         arr[i] = JsonValue.Create(newPath);
-                    }
                 }
                 else
                 {
@@ -277,7 +268,6 @@ public static class TerrainTextureHelper
                     UpdateTexturePathsInMaterialBatch(arr[i], pathReplacements);
                 }
             }
-        }
     }
 
     /// <summary>
@@ -287,7 +277,6 @@ public static class TerrainTextureHelper
     public static void UpdateTexturePathsInMaterial(JsonNode materialNode, string oldPath, string newPath)
     {
         if (materialNode is JsonObject obj)
-        {
             foreach (var prop in obj.ToList())
             {
                 if (prop.Value == null) continue;
@@ -295,21 +284,17 @@ public static class TerrainTextureHelper
                 if (prop.Value is JsonValue jsonValue)
                 {
                     // Avoid exception-based control flow by using TryGetValue
-                    if (jsonValue.TryGetValue<string>(out var strValue) && 
+                    if (jsonValue.TryGetValue<string>(out var strValue) &&
                         !string.IsNullOrEmpty(strValue) &&
                         strValue.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
-                    {
                         obj[prop.Key] = newPath;
-                    }
                 }
                 else
                 {
                     UpdateTexturePathsInMaterial(prop.Value, oldPath, newPath);
                 }
             }
-        }
         else if (materialNode is JsonArray arr)
-        {
             for (var i = 0; i < arr.Count; i++)
             {
                 if (arr[i] == null) continue;
@@ -317,18 +302,15 @@ public static class TerrainTextureHelper
                 if (arr[i] is JsonValue jsonValue)
                 {
                     // Avoid exception-based control flow by using TryGetValue
-                    if (jsonValue.TryGetValue<string>(out var strValue) && 
+                    if (jsonValue.TryGetValue<string>(out var strValue) &&
                         !string.IsNullOrEmpty(strValue) &&
                         strValue.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
-                    {
                         arr[i] = JsonValue.Create(newPath);
-                    }
                 }
                 else
                 {
                     UpdateTexturePathsInMaterial(arr[i], oldPath, newPath);
                 }
             }
-        }
     }
 }
