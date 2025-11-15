@@ -14,12 +14,12 @@
         <div class="content">
             <h3>Convert static assets to forest items</h3>
             <MudExpansionPanels @ref="FileSelect">
-                <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
+                <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
                                          Description="The game install directory. If empty some features are missing.">
                     </FileSelectComponent>
                 </MudExpansionPanel>
-                <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
+                <MudExpansionPanel Text="@GetFileSelectTitle()" Expanded="true">
                     <FileSelectComponent OnFileSelected="FileSelected"
                                          Description="Always use a copy of your project."
                                          Disabled="@_fileSelectDisabled">
@@ -37,24 +37,24 @@
                     }
                 </MudExpansionPanel>
             </MudExpansionPanels>
-            @if (Items.Any())
+            @if (TreeItems.Any())
             {
-                <MudTreeView T="ITree<Asset>" Items="Items" Dense
-                             MultiSelection="true" SelectedValuesChanged="OnSelectedValuesChanged">
-                    <ItemTemplate Context="treeItemAsset">
-                        <MudTreeViewItem Items="@treeItemAsset.Children" Value="@treeItemAsset"
-                                         Text="@treeItemAsset.Data.Name" @bind-Expanded="@treeItemAsset.IsExpanded"
-                                         @bind-Selected="@treeItemAsset.IsSelected"/>
+                <MudTreeView T="ITree<Asset>" Items="TreeItems" Dense
+                             SelectionMode="SelectionMode.MultiSelection" @bind-SelectedValues="SelectedTreeValues">
+                    <ItemTemplate Context="treeItemData">
+                        <MudTreeViewItem Items="@ConvertToTreeItemData(treeItemData.Value.Children)" Value="@treeItemData.Value"
+                                         Text="@treeItemData.Value.Data.Name" @bind-Expanded="@treeItemData.Expanded"
+                                         @bind-Selected="@treeItemData.Selected"/>
                     </ItemTemplate>
                 </MudTreeView>
             }
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-                <MudList Clickable="true" Dense="true" DisableGutters="false">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
                         var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
                         @foreach (var item in list)
                         {
-                            <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
@@ -140,12 +140,39 @@
     private string _beamInstallDir { get; set; }
     public ITree<Asset> VirtualRootNode { get; set; } = default!;
     private HashSet<ITree<Asset>> Items { get; set; } = new();
+    private HashSet<TreeItemData<ITree<Asset>>> TreeItems { get; set; } = new();
+    private IReadOnlyCollection<ITree<Asset>> _selectedTreeValues = new HashSet<ITree<Asset>>();
+    public IReadOnlyCollection<ITree<Asset>> SelectedTreeValues
+    {
+        get => _selectedTreeValues;
+        set
+        {
+            _selectedTreeValues = value;
+            OnSelectedValuesChanged(value);
+        }
+    }
     public List<Asset> SelectedValues { get; set; } = new();
     private int _itemCount { get; set; }
 
+    private HashSet<TreeItemData<ITree<Asset>>> ConvertToTreeItemData(HashSet<ITree<Asset>> items)
+    {
+        var result = new HashSet<TreeItemData<ITree<Asset>>>();
+        foreach (var item in items)
+        {
+            var treeItemData = new TreeItemData<ITree<Asset>>
+            {
+                Value = item,
+                Expanded = item.IsExpanded,
+                Selected = item.IsSelected
+            };
+            result.Add(treeItemData);
+        }
+        return result;
+    }
+
     protected async Task FileSelected(string file)
     {
-        FileSelect?.CollapseAll();
+        await (FileSelect?.CollapseAllAsync() ?? Task.CompletedTask);
         _labelFileSummaryShrink = string.Empty;
         _fileSelectDisabled = true;
         _levelName = null;
@@ -202,18 +229,26 @@
     {
         VirtualRootNode = assets.ToTree((parent, child) => child.__parent == parent.Name, new List<Asset>());
         Items = VirtualRootNode.Children;
-        //Items = VirtualRootNode.Children.Where(_ => _.HasChildren == true).ToHashSet<ITree<Asset>>();
+        TreeItems = ConvertToTreeItemData(Items);
         _itemCount = assets.Count(_ => _.DaeExists == true);
         StateHasChanged();
     }
 
-    protected void OnSelectedValuesChanged(HashSet<ITree<Asset>> values)
+    protected Task OnSelectedValuesChanged(IReadOnlyCollection<ITree<Asset>> values)
     {
-        SelectedValues = values.Flatten(x => x.Children)
+        SelectedValues = values
+            .Flatten(x => x.Children)
             .Select(_ => _.Data)
             .Where(_ => _.Class == "TSStatic")
             .Distinct()
             .ToList();
+        return Task.CompletedTask;
+    }
+
+    private Task HandleSelectedValuesChanged()
+    {
+        // This will be called by the tree view
+        return Task.CompletedTask;
     }
 
     protected void SetBeamInstallDir(string file)
@@ -403,6 +438,7 @@
             _showDeployButton = true;
             SelectedValues.Clear();
             Items.Clear();
+            TreeItems.Clear();
             Reader.WriteLogFile(_warnings, "Log_ForestConvert_Warnings");
             Reader.WriteLogFile(_errors, "Log_ForestConvert_Errors");
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Conversion done! You can build your deployment file now.");

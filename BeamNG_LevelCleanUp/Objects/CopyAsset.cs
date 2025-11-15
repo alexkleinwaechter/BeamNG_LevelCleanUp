@@ -128,7 +128,7 @@ public class CopyAsset
         if (normalized.Contains("asphalt") || normalized.Contains("tarmac"))
             return TerrainRoughnessPreset.Asphalt;
 
-        if (normalized.Contains("wet") || normalized.Contains("rain") || normalized.Contains("water"))
+        if (normalized.Contains("wet") || normalized.Contains("rain") || normalized.Contains("water") || normalized.Contains("ive") || normalized.Contains("snow"))
             return TerrainRoughnessPreset.WetSurface;
 
         if (normalized.Contains("concrete") || normalized.Contains("cement") || normalized.Contains("pavement"))

@@ -1,6 +1,7 @@
 ﻿using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Text;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 
@@ -14,6 +15,13 @@ public static class ZipFileHandler
     }
 
     private static readonly StringCollection log = new();
+
+    static ZipFileHandler()
+    {
+        // Register code page encoding provider for .NET 9
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     private static string _nameLevelPath { get; set; }
     private static string _lastUnpackedPath { get; set; }
     private static string _lastCopyFromUnpackedPath { get; set; }
@@ -42,7 +50,11 @@ public static class ZipFileHandler
             var deleteDir = new DirectoryInfo(retVal);
             if (deleteDir.Exists) Directory.Delete(retVal, true);
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Unzipping to {retVal}");
-            ZipFile.ExtractToDirectory(fi.FullName, retVal);
+
+            // Detect the correct encoding for the ZIP file
+            var encoding = DetectZipEncoding(fi.FullName);
+            ZipFile.ExtractToDirectory(fi.FullName, retVal, encoding, true);
+
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Finished unzipping to {retVal}");
             retVal = GetLevelPath(retVal);
         }
@@ -105,8 +117,62 @@ public static class ZipFileHandler
         var targetPath = Path.Join(targetDir, fileName);
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Compressing Deploymentfile at {targetPath}");
         if (File.Exists(targetPath)) File.Delete(targetPath);
-        ZipFile.CreateFromDirectory(filePath, targetPath, compressionLevel, false);
+        ZipFile.CreateFromDirectory(filePath, targetPath, compressionLevel, false, Encoding.UTF8);
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Deploymentfile created at {targetPath}");
+    }
+
+    private static Encoding DetectZipEncoding(string zipPath)
+    {
+        // Try UTF-8 first and check if entry names contain valid UTF-8 characters
+        try
+        {
+            using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Read, Encoding.UTF8))
+            {
+                foreach (var entry in archive.Entries)
+                    // Check if the entry name contains replacement characters which indicate encoding issues
+                    if (entry.FullName.Contains('\uFFFD'))
+                        // UTF-8 failed, try common fallback encodings
+                        // Try code page 850 (Western European - commonly used by 7-Zip)
+                        try
+                        {
+                            return Encoding.GetEncoding(850);
+                        }
+                        catch
+                        {
+                            // Fallback to code page 437 (IBM PC)
+                            try
+                            {
+                                return Encoding.GetEncoding(437);
+                            }
+                            catch
+                            {
+                                // Last resort: use Latin1/ISO-8859-1
+                                return Encoding.Latin1;
+                            }
+                        }
+
+                return Encoding.UTF8;
+            }
+        }
+        catch
+        {
+            // If UTF-8 fails completely, try fallback encodings
+            try
+            {
+                return Encoding.GetEncoding(850);
+            }
+            catch
+            {
+                try
+                {
+                    return Encoding.GetEncoding(437);
+                }
+                catch
+                {
+                    return Encoding.Latin1;
+                }
+            }
+        }
     }
 
     public static void RemoveModInfo(string path)

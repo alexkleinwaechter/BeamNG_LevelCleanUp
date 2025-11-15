@@ -44,12 +44,12 @@
                 <MudTextField Immediate @bind-Value="_renameNewTitle" Label="Your new display title in info.json" Variant="Variant.Text"></MudTextField>
             }
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-                <MudList Clickable="true" Dense="true" DisableGutters="false">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
                         var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
                         @foreach (var item in list)
                         {
-                            <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
@@ -137,7 +137,7 @@
 
     protected async Task FileSelected(string file)
     {
-        FileSelect?.CollapseAll();
+        await (FileSelect?.CollapseAllAsync() ?? Task.CompletedTask);
         _labelFileSummaryShrink = string.Empty;
         _fileSelectDisabled = true;
         _levelName = null;
@@ -418,7 +418,10 @@
                     ZipFileHandler.RemoveModInfo(path);
                     ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel);
                 });
-                Snackbar.Remove(_staticSnackbar);
+                if (_staticSnackbar != null)
+                {
+                    Snackbar.Remove(_staticSnackbar);
+                }
             }
             catch (Exception ex)
             {

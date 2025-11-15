@@ -16,12 +16,12 @@
         <div class="content">
             <h3>Copy Terrain Materials</h3>
             <MudExpansionPanels @ref="FileSelect">
-                <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
+                <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
                                          Description="The game install directory. If empty some features are missing.">
                     </FileSelectComponent>
                 </MudExpansionPanel>
-                <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" IsInitiallyExpanded="true">
+                <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" Expanded="true">
                     <FileSelectComponent OnFileSelected="FileSelectedCopyFrom"
                                          Description="Your terrain source map"
                                          Disabled="@_fileSelectDisabled">
@@ -38,7 +38,7 @@
                         </MudSelect>
                     }
                 </MudExpansionPanel>
-                <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="false">
+                <MudExpansionPanel Text="@GetFileSelectTitle()" Expanded="false">
                     <FileSelectComponent OnFileSelected="@(x => FileSelected(x, false))"
                                          Description="Your zipped target map"
                                          Disabled="@_fileSelectDisabled">
@@ -68,7 +68,7 @@
                           MultiSelection="true" @bind-SelectedItems="_selectedItems">
                     <ToolBarContent>
                         <MudText Typo="Typo.h6">Found Terrain Materials in @_levelNameCopyFrom</MudText>
-                        <MudSpacer/>
+                        <MudSpacer />
                         <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s => OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
                     </ToolBarContent>
                     <HeaderContent>
@@ -89,10 +89,11 @@
                                 <div style="width: 32px; height: 32px; background-color: @context.CopyAsset.BaseColorHex; border: 1px solid #ccc; border-radius: 4px;"></div>
                                 <MudColorPicker @bind-Text="@context.CopyAsset.BaseColorHex"
                                                 Placeholder="Select Color"
-                                                DisableAlpha="true"
+                                                ShowAlpha="false"
                                                 ColorPickerMode="ColorPickerMode.RGB"
                                                 PickerVariant="PickerVariant.Dialog"
-                                                ColorPickerView="ColorPickerView.Spectrum"/>
+                                                ColorPickerView="ColorPickerView.Spectrum"
+                                                ShowToolbar="true" />
                             </div>
                         </MudTd>
                         <MudTd DataLabel="Roughness" @onclick:stopPropagation>
@@ -116,7 +117,7 @@
                                 @if (context.CopyAsset.RoughnessPreset == TerrainRoughnessPreset.Custom)
                                 {
                                     <div style="display: flex; align-items: center; gap: 8px;">
-                                        <MudSlider @bind-Value="@context.CopyAsset.RoughnessValue"
+                                        <MudSlider T="int" @bind-Value="@context.CopyAsset.RoughnessValue"
                                                    Min="0" Max="255"
                                                    Step="1"
                                                    Color="Color.Primary">
@@ -124,10 +125,10 @@
                                         </MudSlider>
                                         <MudText Typo="Typo.caption" Style="min-width: 80px;">
                                             @(context.CopyAsset.RoughnessValue < 85 ? "Shiny" :
-                                            context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
-                                        </MudText>
-                                    </div>
-                                }
+                                                                                context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
+                                </MudText>
+                            </div>
+                                                        }
                                 else
                                 {
                                     <MudText Typo="Typo.caption" Style="color: gray;">
@@ -145,7 +146,8 @@
                                        Dense="true"
                                        Variant="Variant.Outlined"
                                        Placeholder="Add New Material"
-                                       Clearable="false">
+                                       Clearable="false"
+                                       HelperText="Add or replace terrainmaterials in target">
                                 <MudSelectItem Value="@((string)null)">Add New Material</MudSelectItem>
                                 @foreach (var targetMaterial in _targetTerrainMaterials)
                                 {
@@ -163,12 +165,12 @@
             }
 
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-                <MudList Clickable="true" Dense="true" DisableGutters="false">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
                         var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
                         @foreach (var item in list)
                         {
-                            <MudListItem @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
@@ -202,10 +204,10 @@
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
                                @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal" />
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize" />
                     </MudSelect>
                     <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
                 }
@@ -218,7 +220,7 @@
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent/>
+        <CustomErrorContent />
     </ErrorContent>
 </ErrorBoundary>
 
@@ -261,7 +263,7 @@
 
     protected void InitializeVariables()
     {
-        FileSelect.CollapseAll();
+        FileSelect.CollapseAllAsync();
         _labelFileSummaryShrink = string.Empty;
         _fileSelectDisabled = true;
         _levelName = null;
@@ -550,7 +552,7 @@
         return false;
     }
 
-    private async Task<TableData<GridFileListItem>> LoadServerData(TableState state)
+    private async Task<TableData<GridFileListItem>> LoadServerData(TableState state, CancellationToken token)
     {
         var items = BindingListCopy.Where(element =>
         {
@@ -571,8 +573,7 @@
             TotalItems = items.Count()
         };
     }
-
-    private void OnSearch(string text)
+    private void OnSearch(String text)
     {
         _searchString = text;
         table.ReloadServerData();

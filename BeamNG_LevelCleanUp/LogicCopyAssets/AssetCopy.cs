@@ -24,8 +24,6 @@ public class AssetCopy
     private TerrainMaterialReplacer _terrainMaterialReplacer;
     private bool stopFaultyFile;
 
-    private List<Guid> _identifier { get; set; }
-
     /// <summary>
     ///     Creates an AssetCopy instance for copying assets between levels
     /// </summary>
@@ -43,10 +41,14 @@ public class AssetCopy
         LoadGroundCoverData();
     }
 
+    private List<Guid> _identifier { get; set; }
+
     private void InitializeCopiers()
     {
-        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName, PathResolver.LevelNameCopyFrom);
-        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName, PathResolver.LevelNameCopyFrom);
+        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName,
+            PathResolver.LevelNameCopyFrom);
+        _pathConverter = new PathConverter(PathResolver.LevelNamePath, PathResolver.LevelName,
+            PathResolver.LevelNameCopyFrom);
         _fileCopyHandler = new FileCopyHandler(PathResolver.LevelNameCopyFrom);
         _materialCopier = new MaterialCopier(_pathConverter, _fileCopyHandler);
         _managedDecalCopier = new ManagedDecalCopier();
@@ -130,8 +132,9 @@ public class AssetCopy
                 stopFaultyFile = !CopyRoad(item);
                 if (stopFaultyFile) break;
             }
+
             _materialCopier.EndBatch();
-            
+
             if (stopFaultyFile) return;
         }
 
@@ -145,8 +148,9 @@ public class AssetCopy
                 stopFaultyFile = !CopyDecal(item);
                 if (stopFaultyFile) break;
             }
+
             _materialCopier.EndBatch();
-            
+
             if (stopFaultyFile) return;
         }
 

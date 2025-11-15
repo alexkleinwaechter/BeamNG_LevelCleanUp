@@ -93,8 +93,7 @@ public class TerrainCopyScanner
 
                     // Check if this looks like a texture path (contains "levels/" or ends with image extension)
                     if (!string.IsNullOrEmpty(propValue) &&
-                        (propValue.Contains("/levels/") ||
-                         propName.EndsWith("Tex", StringComparison.OrdinalIgnoreCase) ||
+                        (propName.EndsWith("Tex", StringComparison.OrdinalIgnoreCase) ||
                          propName.EndsWith("Map", StringComparison.OrdinalIgnoreCase)))
                     {
                         var fi = new FileInfo(PathResolver.ResolvePath(_levelPathCopyFrom, propValue, false));

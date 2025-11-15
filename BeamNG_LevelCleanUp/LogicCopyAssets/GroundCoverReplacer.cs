@@ -102,16 +102,16 @@ public class GroundCoverReplacer
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Loaded {existingGroundCovers.Count} existing entries from target vegetation file.");
 
-        var newGroundCovers = new List<JsonNode>();             
+        var newGroundCovers = new List<JsonNode>();
         var deletedGroundCoverNames = new HashSet<string>();
         var modifiedGroundCoversMap = new Dictionary<string, JsonNode>();
 
         // Resolve all replaced material names to their INTERNAL names
         var allReplacedMaterialInternalNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        
+
         // Group replacements by source material to avoid duplicating groundcovers
         var sourceToTargetsMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        
+
         foreach (var kvp in _groundCoversToReplace)
         {
             var targetMaterialKey = kvp.Key;
@@ -121,7 +121,7 @@ public class GroundCoverReplacer
             var targetInternalName = targetNameToInternal.TryGetValue(targetMaterialKey, out var resolvedInternal)
                 ? resolvedInternal
                 : targetMaterialKey;
-                
+
             allReplacedMaterialInternalNames.Add(targetInternalName);
 
             // Get source internal name
@@ -129,20 +129,16 @@ public class GroundCoverReplacer
 
             if (!sourceToTargetsMap.ContainsKey(sourceInternalName))
                 sourceToTargetsMap[sourceInternalName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
+
             sourceToTargetsMap[sourceInternalName].Add(targetInternalName);
         }
 
         if (!allReplacedMaterialInternalNames.Any())
-        {
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 "No replaced material internal names collected. Skipping modification phase.");
-        }
         else
-        {
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Replaced material internal names: {string.Join(", ", allReplacedMaterialInternalNames)}");
-        }
 
         // Process each unique source material and create groundcovers for its target materials
         foreach (var sourceEntry in sourceToTargetsMap)
@@ -167,26 +163,24 @@ public class GroundCoverReplacer
 
                 // For each target material, create separate groundcover copies
                 foreach (var targetInternalName in targetInternalNames)
+                foreach (var sourceGroundCover in sourceGroundCovers)
                 {
-                    foreach (var sourceGroundCover in sourceGroundCovers)
+                    var sourceGroundCoverName = sourceGroundCover["name"]?.ToString();
+                    if (string.IsNullOrEmpty(sourceGroundCoverName)) continue;
+
+                    // Create a unique copy for THIS target material
+                    var newGroundCover = CopySourceGroundCoverForSingleTarget(
+                        sourceGroundCover,
+                        sourceGroundCoverName,
+                        targetInternalName,
+                        sourceInternalName);
+
+                    if (newGroundCover != null)
                     {
-                        var sourceGroundCoverName = sourceGroundCover["name"]?.ToString();
-                        if (string.IsNullOrEmpty(sourceGroundCoverName)) continue;
-
-                        // Create a unique copy for THIS target material
-                        var newGroundCover = CopySourceGroundCoverForSingleTarget(
-                            sourceGroundCover,
-                            sourceGroundCoverName,
-                            targetInternalName,
-                            sourceInternalName);
-
-                        if (newGroundCover != null)
-                        {
-                            newGroundCovers.Add(newGroundCover);
-                            var newName = newGroundCover["name"]?.ToString();
-                            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                $"Copied groundcover '{sourceGroundCoverName}' as '{newName}' (layer: {sourceInternalName} → {targetInternalName})");
-                        }
+                        newGroundCovers.Add(newGroundCover);
+                        var newName = newGroundCover["name"]?.ToString();
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Copied groundcover '{sourceGroundCoverName}' as '{newName}' (layer: {sourceInternalName} → {targetInternalName})");
                     }
                 }
             }
@@ -221,7 +215,7 @@ public class GroundCoverReplacer
 
         // Write changes back to file
         if (newGroundCovers.Any() || deletedGroundCoverNames.Any() || modifiedGroundCoversMap.Any())
-            WriteGroundCoverChangesToFile(targetGcFile, existingGroundCovers, newGroundCovers, 
+            WriteGroundCoverChangesToFile(targetGcFile, existingGroundCovers, newGroundCovers,
                 modifiedGroundCoversMap.Values.ToList(), deletedGroundCoverNames.ToList());
         else
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
@@ -392,8 +386,39 @@ public class GroundCoverReplacer
             // Create a copy of source groundcover
             var newGroundCover = JsonNode.Parse(sourceGroundCover.ToJsonString());
 
-            // Generate new name with level suffix AND target material name for uniqueness
-            var newName = $"{sourceGroundCoverName}_{targetMaterialInternalName}_{_levelNameCopyFrom}";
+            // Clean the source name by removing existing suffixes
+            var levelSuffix = $"_{_levelNameCopyFrom}";
+            var cleanSourceName = sourceGroundCoverName;
+
+            // Remove existing level suffix if present
+            if (sourceGroundCoverName.EndsWith(levelSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                cleanSourceName = sourceGroundCoverName.Substring(0, sourceGroundCoverName.Length - levelSuffix.Length);
+
+                // Now check if there's a material suffix before the level suffix
+                // Pattern: OriginalName_MaterialName_LevelName -> we want just "OriginalName"
+                // The material name might itself contain the level suffix (e.g., "Fieldgrass_ellern_map")
+
+                // Find the last underscore in the cleaned name
+                var lastUnderscoreIndex = cleanSourceName.LastIndexOf('_');
+                if (lastUnderscoreIndex > 0)
+                {
+                    // Get everything after the last underscore - this might be a material name
+                    var potentialMaterialSuffix = cleanSourceName.Substring(lastUnderscoreIndex + 1);
+
+                    // Remove it if it looks like it might be a material name (length > 3 characters)
+                    // This heuristic should catch material names but not parts of the original name
+                    if (potentialMaterialSuffix.Length > 3)
+                    {
+                        cleanSourceName = cleanSourceName.Substring(0, lastUnderscoreIndex);
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Cleaned groundcover name: '{sourceGroundCoverName}' -> '{cleanSourceName}' (removed material suffix '{potentialMaterialSuffix}' and level suffix)");
+                    }
+                }
+            }
+
+            // Generate new name with target material name AND level suffix for uniqueness
+            var newName = $"{cleanSourceName}_{targetMaterialInternalName}_{_levelNameCopyFrom}";
             newGroundCover["name"] = newName;
 
             // Generate new GUID
@@ -406,7 +431,7 @@ public class GroundCoverReplacer
             var newMaterialName = _dependencyHelper.CopyGroundCoverDependencies(sourceGroundCover, newName);
 
             // Update material property
-            if (!string.IsNullOrEmpty(newMaterialName)) 
+            if (!string.IsNullOrEmpty(newMaterialName))
                 newGroundCover["material"] = newMaterialName;
 
             return newGroundCover;
@@ -525,11 +550,23 @@ public class GroundCoverReplacer
     {
         try
         {
-            // Apply new groundcovers
+            var replacedCount = 0;
+
+            // Apply new groundcovers (will overwrite existing ones with same name)
             foreach (var newGC in newGroundCovers)
             {
                 var name = newGC["name"]?.ToString();
-                if (!string.IsNullOrEmpty(name)) existingGroundCovers[name] = newGC;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    if (existingGroundCovers.ContainsKey(name))
+                    {
+                        replacedCount++;
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Replacing existing groundcover '{name}' with updated version");
+                    }
+
+                    existingGroundCovers[name] = newGC;
+                }
             }
 
             // Apply modifications (updated groundcovers with removed layers)
@@ -549,8 +586,9 @@ public class GroundCoverReplacer
 
             File.WriteAllLines(targetFile.FullName, lines);
 
+            var addedCount = newGroundCovers.Count - replacedCount;
             PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Updated groundcovers: {newGroundCovers.Count} added, {modifiedGroundCovers.Count} modified (layers removed), {deletedGroundCoverNames.Count} deleted in {targetFile.FullName}");
+                $"Updated groundcovers: {addedCount} added, {replacedCount} replaced, {modifiedGroundCovers.Count} modified (layers removed), {deletedGroundCoverNames.Count} deleted in {targetFile.FullName}");
         }
         catch (Exception ex)
         {
