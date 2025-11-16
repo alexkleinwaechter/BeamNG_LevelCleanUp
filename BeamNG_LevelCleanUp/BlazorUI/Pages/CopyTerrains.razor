@@ -24,13 +24,15 @@
                 <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" Expanded="true">
                     <FileSelectComponent OnFileSelected="FileSelectedCopyFrom"
                                          Description="Your terrain source map"
-                                         Disabled="@_fileSelectDisabled">
+                                         Disabled="@GetFileSelectDisabled()">
                     </FileSelectComponent>
                     @if (_vanillaLevels.Any())
                     {
                         <MudSelect T="FileInfo" ToStringFunc="@converter"
                                    ValueChanged="OnVanillaSourceSelected"
-                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                                   Value="@_vanillaLevelSourceSelected"
+                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable
+                                   Disabled="@GetFileSelectDisabled()">
                             @foreach (var item in _vanillaLevels)
                             {
                                 <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
@@ -41,17 +43,19 @@
                 <MudExpansionPanel Text="@GetFileSelectTitle()" Expanded="false">
                     <FileSelectComponent OnFileSelected="@(x => FileSelected(x, false))"
                                          Description="Your zipped target map"
-                                         Disabled="@_fileSelectDisabled">
+                                         Disabled="@GetFileSelectDisabled()">
                     </FileSelectComponent>
                     <FileSelectComponent OnFileSelected="@(x => FileSelected(x, true))" SelectFolder="true"
                                          Description="or your unzipped map directory"
-                                         Disabled="@_fileSelectDisabled">
+                                         Disabled="@GetFileSelectDisabled()">
                     </FileSelectComponent>
 
                     @if (_vanillaLevels.Any())
                     {
-                        <MudSelect T="FileInfo" ToStringFunc="@converter" Disabled="@_fileSelectDisabled"
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                   Disabled="@GetFileSelectDisabled()"
                                    ValueChanged="OnVanillaTargetSelected"
+                                   Value="@_vanillaLevelTargetSelected"
                                    Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
                             @foreach (var item in _vanillaLevels)
                             {
@@ -61,6 +65,13 @@
                     }
                 </MudExpansionPanel>
             </MudExpansionPanels>
+
+            @if (!string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
+            {
+                <MudButton @onclick="ResetPage" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Refresh" Style="margin-top: 16px;">
+                    Reset and Select Different Maps
+                </MudButton>
+            }
 
             @if (BindingListCopy.Any())
             {
@@ -240,6 +251,7 @@
     private readonly string _fileSelectTitleCopyFrom = "Select the zipped source level with terrain materials";
     private readonly string _fileSelectTitle = "Select the target level to copy terrain materials to";
     private bool _fileSelectDisabled { get; set; }
+    private bool _isLoadingMap { get; set; }
     private bool _fileSelectExpanded { get; set; }
     private bool _openDrawer;
     private Anchor _anchor;
@@ -261,11 +273,28 @@
     private MudTable<GridFileListItem> table;
     private List<string> _targetTerrainMaterials { get; set; } = new();
 
+    /// <summary>
+    ///     Determines if file selection should be disabled
+    /// </summary>
+    private bool GetFileSelectDisabled()
+    {
+        // Disable if currently loading a map
+        if (_isLoadingMap)
+            return true;
+
+        // Disable if both source and target are already selected
+        if (!string.IsNullOrEmpty(_levelNameCopyFrom) && !string.IsNullOrEmpty(_levelName))
+            return true;
+
+        return _fileSelectDisabled;
+    }
+
     protected void InitializeVariables()
     {
         FileSelect.CollapseAllAsync();
         _labelFileSummaryShrink = string.Empty;
-        _fileSelectDisabled = true;
+        _fileSelectDisabled = false;
+        _isLoadingMap = false;
         _levelName = null;
         _levelNameCopyFrom = null;
         _levelPath = null;
@@ -281,11 +310,46 @@
         _vanillaLevelTargetSelected = null;
         ZipFileHandler.WorkingDirectory = null;
         _targetTerrainMaterials = new List<string>();
+        _selectedItems = new HashSet<GridFileListItem>();
+    }
+
+    /// <summary>
+    ///     Resets the entire page state and allows selecting different maps
+    /// </summary>
+    protected async Task ResetPage()
+    {
+        // Call Reader.Reset() if it exists
+        if (Reader != null)
+        {
+            Reader.Reset();
+        }
+
+        // Reset all page variables
+        InitializeVariables();
+
+        // Collapse all panels first
+        await FileSelect.CollapseAllAsync();
+
+        // Wait a moment for the collapse to complete
+        await Task.Delay(100);
+
+        // Expand only the source panel (index 1) using ExpandAsync
+        if (FileSelect.Panels.Count > 1)
+        {
+            await FileSelect.Panels[1].ExpandAsync();
+        }
+
+        // Force UI refresh
+        StateHasChanged();
+
+        // Show success message
+        Snackbar.Add("Page reset successfully. You can now select different maps.", Severity.Success);
     }
 
     protected async Task FileSelectedCopyFrom(string file)
     {
         InitializeVariables();
+        _isLoadingMap = true;
         ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
         await Task.Run(() =>
         {
@@ -293,7 +357,6 @@
             {
                 _unzipSnackbarCopyFrom = Snackbar.Add("Unzipping source level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_copyFrom", true);
-                //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPathCopyFrom, null);
                 _levelNameCopyFrom = Reader.GetLevelName();
                 Snackbar.Add("Unzipping source level finished", Severity.Success);
@@ -302,27 +365,44 @@
             catch (Exception ex)
             {
                 ShowException(ex);
+            }
+            finally
+            {
+                _isLoadingMap = false;
                 _fileSelectDisabled = false;
             }
         });
-        //await AnalyzeLevel();
-        _fileSelectDisabled = false;
     }
 
     protected async Task OnVanillaSourceSelected(FileInfo file)
     {
+        if (file == null)
+        {
+            // Clear selection
+            _vanillaLevelSourceSelected = null;
+            return;
+        }
+
         InitializeVariables();
+        _isLoadingMap = true;
         SetDefaultWorkingDirectory();
         _vanillaLevelSourceSelected = file;
         var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
         File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
-        _fileSelectDisabled = false;
         await FileSelectedCopyFrom(target);
     }
 
     protected async Task OnVanillaTargetSelected(FileInfo file)
     {
+        if (file == null)
+        {
+            // Clear selection
+            _vanillaLevelTargetSelected = null;
+            return;
+        }
+
+        _isLoadingMap = true;
         SetDefaultWorkingDirectory();
         _vanillaLevelTargetSelected = file;
         var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelTargetSelected.Name);
@@ -333,6 +413,8 @@
 
     protected async Task FileSelected(string file, bool isFolder)
     {
+        _isLoadingMap = true;
+
         if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
         {
             ZipFileHandler.WorkingDirectory = isFolder ? file : Path.GetDirectoryName(file);
@@ -365,7 +447,6 @@
                     _levelPath = ZipFileHandler.GetNamePath(file);
                 }
 
-                //ACHTUNG CONCURRENCY
                 Reader = new BeamFileReader(_levelPath, null);
                 _levelName = Reader.GetLevelName();
                 Snackbar.Add("Unzipping target level finished", Severity.Success);
@@ -374,6 +455,10 @@
             catch (Exception ex)
             {
                 ShowException(ex);
+            }
+            finally
+            {
+                _isLoadingMap = false;
                 _fileSelectDisabled = false;
             }
         });
@@ -382,7 +467,12 @@
         await CheckPbrUpgrade();
 
         await ScanAssets();
-        _fileSelectDisabled = false;
+
+        // Collapse the target panel (index 2) after successful selection
+        if (FileSelect.Panels.Count > 2)
+        {
+            await FileSelect.Panels[2].CollapseAsync();
+        }
     }
 
     protected void SetBeamInstallDir(string file)
@@ -416,19 +506,20 @@
                 Reader.ReadAllForCopy();
 
                 // Load target terrain materials for the dropdown
-                // Get the namePath from _levelPath
                 var namePath = ZipFileHandler.GetNamePath(_levelPath);
                 _targetTerrainMaterials = TerrainCopyScanner.GetTargetTerrainMaterials(namePath);
             }
             catch (Exception ex)
             {
                 ShowException(ex);
+            }
+            finally
+            {
                 _fileSelectDisabled = false;
             }
         });
         FillCopyList();
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Scanning Terrain Materials finished. Please select materials to copy.");
-        _fileSelectDisabled = false;
     }
 
     protected override void OnInitialized()
