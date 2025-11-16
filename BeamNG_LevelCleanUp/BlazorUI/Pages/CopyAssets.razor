@@ -250,6 +250,7 @@
         _vanillaLevelSourceSelected = null;
         _vanillaLevelTargetSelected = null;
         ZipFileHandler.WorkingDirectory = null;
+        Reader = null;
     }
 
     /// <summary>
@@ -354,7 +355,7 @@
     {
         _isLoadingMap = true;
 
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+        if (_vanillaLevelTargetSelected == null)
         {
             ZipFileHandler.WorkingDirectory = isFolder ? file : Path.GetDirectoryName(file);
         }
@@ -669,7 +670,9 @@
             var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
             try
             {
-                _vanillaLevels = Directory.GetFiles(dir).Select(x => new FileInfo(x)).ToList();
+                _vanillaLevels = Directory.GetFiles(dir)
+                    .Where(x => x.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    .Select(x => new FileInfo(x)).ToList();
                 StateHasChanged();
             }
             catch (Exception ex)

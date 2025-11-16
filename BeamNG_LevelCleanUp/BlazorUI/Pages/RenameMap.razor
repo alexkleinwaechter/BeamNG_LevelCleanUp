@@ -143,6 +143,8 @@
         _levelName = null;
         _levelPath = null;
         _beamLogFilePath = null;
+        _renameNewNamePath = null;
+        _renameNewTitle = null;
         _missingFiles = new List<string>();
         _errors = new List<string>();
         _warnings = new List<string>();
@@ -150,12 +152,16 @@
         _openDrawer = false;
         BindingListDelete = new List<GridFileListItem>();
         _showDeployButton = false;
+        Reader = null;
+        _vanillaLevelSourceSelected = null;
 
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+        if (_staticSnackbar != null)
         {
-            ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
+            Snackbar.Remove(_staticSnackbar);
+            _staticSnackbar = null;
         }
 
+        ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
         await Task.Run(() =>
         {
             try
@@ -260,7 +266,9 @@
             var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
             try
             {
-                _vanillaLevels = Directory.GetFiles(dir).Select(x => new FileInfo(x)).ToList();
+                _vanillaLevels = Directory.GetFiles(dir)
+                    .Where(x => x.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    .Select(x => new FileInfo(x)).ToList();
                 StateHasChanged();
             }
             catch (Exception ex)

@@ -172,11 +172,10 @@
         _openDrawer = false;
         BindingListDelete = new List<GridFileListItem>();
         _showDeployButton = false;
+        Reader = null;
+        _vanillaLevelSourceSelected = null;
 
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
-        {
-            ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
-        }
+        ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
 
         await Task.Run(() =>
         {
@@ -427,7 +426,9 @@
             var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
             try
             {
-                _vanillaLevels = Directory.GetFiles(dir).Select(x => new FileInfo(x)).ToList();
+                _vanillaLevels = Directory.GetFiles(dir)
+                    .Where(x => x.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    .Select(x => new FileInfo(x)).ToList();
                 StateHasChanged();
             }
             catch (Exception ex)
