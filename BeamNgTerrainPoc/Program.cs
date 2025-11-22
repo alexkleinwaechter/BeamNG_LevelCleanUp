@@ -3,6 +3,7 @@
 using BeamNgTerrainPoc.Terrain;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Processing;
+using BeamNgTerrainPoc.Terrain.Validation;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -209,7 +210,7 @@ static async Task CreateTerrainWithMultipleMaterials()
         int terrainSize = heightmap.Width;
         
         // Validate size is power of 2
-        if (!IsPowerOfTwo(terrainSize))
+        if (!TerrainValidator.IsPowerOfTwo(terrainSize))
         {
             Console.WriteLine($"ERROR: Heightmap size {terrainSize} is not a power of 2");
             heightmap.Dispose();
@@ -323,12 +324,4 @@ static (int Index, string MaterialName)? ParseLayerMapFileName(string fileName)
     {
         return null;
     }
-}
-
-/// <summary>
-/// Checks if a number is a power of 2.
-/// </summary>
-static bool IsPowerOfTwo(int x)
-{
-    return (x > 0) && ((x & (x - 1)) == 0);
 }

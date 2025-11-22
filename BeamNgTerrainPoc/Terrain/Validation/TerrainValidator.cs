@@ -115,8 +115,11 @@ public static class TerrainValidator
     
     /// <summary>
     /// Checks if a number is a power of 2.
+    /// Useful for validating terrain sizes and other power-of-2 requirements.
     /// </summary>
-    private static bool IsPowerOfTwo(int x)
+    /// <param name="x">The number to check</param>
+    /// <returns>True if x is a power of 2, false otherwise</returns>
+    public static bool IsPowerOfTwo(int x)
     {
         return (x > 0) && ((x & (x - 1)) == 0);
     }
