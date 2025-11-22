@@ -136,13 +136,17 @@ static async Task CreateTerrainWithMultipleMaterials()
     // Source directory with all terrain files
     string sourceDir = @"D:\temp\TestMappingTools\_import";
     
+    // Terrain name (can be changed to match your terrain)
+    string terrainName = "theTerrain";
+    
     try
     {
         Console.WriteLine($"Loading terrain data from: {sourceDir}");
+        Console.WriteLine($"Terrain name: {terrainName}");
         Console.WriteLine();
         
-        // Load heightmap
-        string heightmapPath = Path.Combine(sourceDir, "theTerrain_heightmap.png");
+        // Load heightmap (using terrain name in filename)
+        string heightmapPath = Path.Combine(sourceDir, $"{terrainName}_heightmap.png");
         if (!File.Exists(heightmapPath))
         {
             Console.WriteLine($"ERROR: Heightmap not found at {heightmapPath}");
@@ -153,13 +157,13 @@ static async Task CreateTerrainWithMultipleMaterials()
         var heightmap = Image.Load<L16>(heightmapPath);
         Console.WriteLine($"  Heightmap size: {heightmap.Width}x{heightmap.Height}");
         
-        // Find and parse all layer map files
-        var layerMapFiles = Directory.GetFiles(sourceDir, "theTerrain_layerMap_*.png")
+        // Find and parse all layer map files (using terrain name pattern)
+        var layerMapFiles = Directory.GetFiles(sourceDir, $"{terrainName}_layerMap_*.png")
             .Select(path => new
             {
                 Path = path,
                 FileName = Path.GetFileName(path),
-                ParsedInfo = ParseLayerMapFileName(Path.GetFileName(path))
+                ParsedInfo = ParseLayerMapFileName(Path.GetFileName(path), terrainName)
             })
             .Where(x => x.ParsedInfo != null)
             .OrderBy(x => x.ParsedInfo!.Value.Index)
@@ -227,13 +231,14 @@ static async Task CreateTerrainWithMultipleMaterials()
             Size = terrainSize,
             MaxHeight = 500.0f, // Adjust as needed for your terrain
             HeightmapImage = heightmap,
-            Materials = materials
+            Materials = materials,
+            TerrainName = terrainName
         };
         
-        // Create output path
+        // Create output path (using terrain name)
         string outputDir = @"D:\temp\TestMappingTools\_output";
         Directory.CreateDirectory(outputDir);
-        string outputPath = Path.Combine(outputDir, "theTerrain.ter");
+        string outputPath = Path.Combine(outputDir, $"{terrainName}.ter");
         
         Console.WriteLine($"Output path: {outputPath}");
         Console.WriteLine();
@@ -253,6 +258,7 @@ static async Task CreateTerrainWithMultipleMaterials()
             var fileInfo = new FileInfo(outputPath);
             Console.WriteLine();
             Console.WriteLine("Summary:");
+            Console.WriteLine($"  Terrain name: {terrainName}");
             Console.WriteLine($"  File size: {fileInfo.Length:N0} bytes ({fileInfo.Length / (1024.0 * 1024.0):F2} MB)");
             Console.WriteLine($"  Terrain size: {terrainSize}x{terrainSize}");
             Console.WriteLine($"  Max height: {parameters.MaxHeight}");
@@ -288,19 +294,22 @@ static async Task CreateTerrainWithMultipleMaterials()
 
 /// <summary>
 /// Parses layer map filename to extract index and material name.
-/// Format: theTerrain_layerMap_[index]_[materialName].png
+/// Format: {terrainName}_layerMap_[index]_[materialName].png
 /// </summary>
-static (int Index, string MaterialName)? ParseLayerMapFileName(string fileName)
+/// <param name="fileName">The filename to parse</param>
+/// <param name="terrainName">The name of the terrain (e.g., "theTerrain")</param>
+/// <returns>Tuple with Index and MaterialName, or null if parsing fails</returns>
+static (int Index, string MaterialName)? ParseLayerMapFileName(string fileName, string terrainName)
 {
     try
     {
         // Remove extension
         string nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
         
-        // Expected format: theTerrain_layerMap_[index]_[materialName]
-        const string prefix = "theTerrain_layerMap_";
+        // Expected format: {terrainName}_layerMap_[index]_[materialName]
+        string prefix = $"{terrainName}_layerMap_";
 
-        if (!nameWithoutExt.StartsWith(prefix))
+        if (!nameWithoutExt.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             return null;
         
         // Remove prefix

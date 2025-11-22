@@ -34,4 +34,10 @@ public class TerrainCreationParameters
     /// Optional: Include layer texture data in the output file (currently not used by BeamNG)
     /// </summary>
     public bool IncludeLayerTextureData { get; set; } = false;
+    
+    /// <summary>
+    /// Optional: Name of the terrain (used for file naming conventions)
+    /// Default is "theTerrain" if not specified.
+    /// </summary>
+    public string TerrainName { get; set; } = "theTerrain";
 }

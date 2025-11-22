@@ -27,7 +27,8 @@ var parameters = new TerrainCreationParameters
         new MaterialDefinition("grass"),  // Default material (no image)
         new MaterialDefinition("dirt", Image.Load<L8>("dirt_layer.png")),
         new MaterialDefinition("rock", Image.Load<L8>("rock_layer.png"))
-    }
+    },
+    TerrainName = "myTerrain" // Optional: specify terrain name
 };
 
 // Create terrain file
@@ -74,6 +75,7 @@ Main class for creating terrain files.
 - `HeightmapImage` (Image<L16>) - 16-bit grayscale heightmap
 - `Materials` (List<MaterialDefinition>) - Material definitions
 - `IncludeLayerTextureData` (bool) - Optional, not used by BeamNG
+- `TerrainName` (string) - Optional terrain name (default: "theTerrain")
 
 ### MaterialDefinition
 
