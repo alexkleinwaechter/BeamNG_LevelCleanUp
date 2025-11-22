@@ -2,6 +2,8 @@ using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Processing;
 using BeamNgTerrainPoc.Terrain.Validation;
 using Grille.BeamNG;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace BeamNgTerrainPoc.Terrain;
 
@@ -40,21 +42,42 @@ public class TerrainCreator
             Console.WriteLine($"  WARNING: {warning}");
         }
         
+        Image<L16>? heightmapImage = null;
+        bool shouldDisposeHeightmap = false;
+        
         try
         {
-            // 2. Process heightmap
+            // 2. Load or use heightmap
+            if (parameters.HeightmapImage != null)
+            {
+                heightmapImage = parameters.HeightmapImage;
+                shouldDisposeHeightmap = false; // Caller owns this
+            }
+            else if (!string.IsNullOrWhiteSpace(parameters.HeightmapPath))
+            {
+                Console.WriteLine($"Loading heightmap from: {parameters.HeightmapPath}");
+                heightmapImage = Image.Load<L16>(parameters.HeightmapPath);
+                shouldDisposeHeightmap = true; // We loaded it, we dispose it
+            }
+            else
+            {
+                Console.WriteLine("ERROR: No heightmap provided (HeightmapImage or HeightmapPath required)");
+                return false;
+            }
+            
+            // 3. Process heightmap
             Console.WriteLine("Processing heightmap...");
             var heights = HeightmapProcessor.ProcessHeightmap(
-                parameters.HeightmapImage,
+                heightmapImage,
                 parameters.MaxHeight);
             
-            // 3. Process material layers
+            // 4. Process material layers
             Console.WriteLine("Processing material layers...");
             var materialIndices = MaterialLayerProcessor.ProcessMaterialLayers(
                 parameters.Materials,
                 parameters.Size);
             
-            // 4. Create Grille.BeamNG.Lib Terrain object
+            // 5. Create Grille.BeamNG.Lib Terrain object
             Console.WriteLine("Building terrain data structure...");
             var materialNames = parameters.Materials
                 .Select(m => m.MaterialName)
@@ -64,7 +87,7 @@ public class TerrainCreator
                 parameters.Size,
                 materialNames);
             
-            // 5. Fill terrain data
+            // 6. Fill terrain data
             Console.WriteLine("Filling terrain data...");
             for (int i = 0; i < terrain.Data.Length; i++)
             {
@@ -76,7 +99,7 @@ public class TerrainCreator
                 };
             }
             
-            // 6. Save using Grille.BeamNG.Lib
+            // 7. Save using Grille.BeamNG.Lib
             Console.WriteLine($"Writing terrain file to {outputPath}...");
             
             // Ensure output directory exists
@@ -105,6 +128,14 @@ public class TerrainCreator
             Console.WriteLine($"ERROR: Failed to create terrain file: {ex.Message}");
             Console.WriteLine($"Stack trace: {ex.StackTrace}");
             return false;
+        }
+        finally
+        {
+            // Dispose heightmap if we loaded it
+            if (shouldDisposeHeightmap && heightmapImage != null)
+            {
+                heightmapImage.Dispose();
+            }
         }
     }
     

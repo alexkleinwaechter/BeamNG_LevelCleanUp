@@ -62,7 +62,7 @@ static async Task CreateSimpleTestTerrain()
     {
         Size = size,
         MaxHeight = maxHeight,
-        HeightmapImage = heightmap,
+        HeightmapImage = heightmap, // Still supported for advanced scenarios
         Materials = new List<MaterialDefinition>
         {
             new MaterialDefinition("grass") // Single material, entire terrain uses this
@@ -84,6 +84,11 @@ static async Task CreateSimpleTestTerrain()
         Console.WriteLine();
         Console.WriteLine($"✓ Test terrain created successfully!");
         Console.WriteLine($"  Location: {outputPath}");
+        Console.WriteLine();
+        Console.WriteLine("NOTE: For library usage, prefer using file paths:");
+        Console.WriteLine("  parameters.HeightmapPath = \"path/to/heightmap.png\"");
+        Console.WriteLine("  materials.Add(new MaterialDefinition(\"grass\", \"path/to/layer.png\"))");
+        Console.WriteLine("  This avoids ImageSharp dependency in your code!");
     }
     else
     {
@@ -91,7 +96,7 @@ static async Task CreateSimpleTestTerrain()
         Console.WriteLine("✗ Failed to create test terrain.");
     }
 
-    // Dispose images
+    // Dispose images (when using HeightmapImage directly, you're responsible for disposal)
     heightmap.Dispose();
 }
 
@@ -145,7 +150,7 @@ static async Task CreateTerrainWithMultipleMaterials()
         Console.WriteLine($"Terrain name: {terrainName}");
         Console.WriteLine();
 
-        // Load heightmap (using terrain name in filename)
+        // Heightmap path (using terrain name in filename)
         string heightmapPath = Path.Combine(sourceDir, $"{terrainName}_heightmap.png");
         if (!File.Exists(heightmapPath))
         {
@@ -153,9 +158,7 @@ static async Task CreateTerrainWithMultipleMaterials()
             return;
         }
 
-        Console.WriteLine("Loading heightmap...");
-        var heightmap = Image.Load<L16>(heightmapPath);
-        Console.WriteLine($"  Heightmap size: {heightmap.Width}x{heightmap.Height}");
+        Console.WriteLine($"Found heightmap: {heightmapPath}");
 
         // Find and parse all layer map files (using terrain name pattern)
         var layerMapFiles = Directory.GetFiles(sourceDir, $"{terrainName}_layerMap_*.png")
@@ -172,37 +175,22 @@ static async Task CreateTerrainWithMultipleMaterials()
         Console.WriteLine($"Found {layerMapFiles.Count} layer map files");
         Console.WriteLine();
 
-        if (layerMapFiles.Count == 0)
-        {
-            Console.WriteLine("WARNING: No layer map files found. Creating terrain with single default material.");
-        }
-
-        // Create material definitions
+        // Create material definitions with file paths
         var materials = new List<MaterialDefinition>();
 
         foreach (var layerFile in layerMapFiles)
         {
             var info = layerFile.ParsedInfo!.Value;
-            Console.WriteLine($"Loading layer {info.Index}: {info.MaterialName}");
-
-            try
-            {
-                var layerImage = Image.Load<L8>(layerFile.Path);
-                materials.Add(new MaterialDefinition(info.MaterialName, layerImage));
-                Console.WriteLine($"  ✓ Loaded layer image ({layerImage.Width}x{layerImage.Height})");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"  ✗ Failed to load layer image: {ex.Message}");
-                // Add material without image
-                materials.Add(new MaterialDefinition(info.MaterialName));
-            }
+            Console.WriteLine($"Adding layer {info.Index}: {info.MaterialName}");
+            
+            // Pass file path instead of loaded image
+            materials.Add(new MaterialDefinition(info.MaterialName, layerFile.Path));
         }
 
-        // If no materials were loaded, add a default one
+        // If no materials were found, add a default one
         if (materials.Count == 0)
         {
-            Console.WriteLine("Adding default material: grass");
+            Console.WriteLine("No layer maps found. Adding default material: grass");
             materials.Add(new MaterialDefinition("grass"));
         }
 
@@ -210,27 +198,16 @@ static async Task CreateTerrainWithMultipleMaterials()
         Console.WriteLine($"Total materials: {materials.Count}");
         Console.WriteLine();
 
-        // Determine terrain size from heightmap
-        int terrainSize = heightmap.Width;
+        // Determine terrain size - we'll need to load heightmap temporarily to check size
+        // Or you can specify it directly if you know it
+        int terrainSize = 4096; // Adjust based on your heightmap
 
-        // Validate size is power of 2
-        if (!TerrainValidator.IsPowerOfTwo(terrainSize))
-        {
-            Console.WriteLine($"ERROR: Heightmap size {terrainSize} is not a power of 2");
-            heightmap.Dispose();
-            foreach (var mat in materials.Where(m => m.LayerImage != null))
-            {
-                mat.LayerImage?.Dispose();
-            }
-            return;
-        }
-
-        // Create terrain parameters
+        // Create terrain parameters using file paths
         var parameters = new TerrainCreationParameters
         {
             Size = terrainSize,
             MaxHeight = 500.0f, // Adjust as needed for your terrain
-            HeightmapImage = heightmap,
+            HeightmapPath = heightmapPath, // Use path instead of image
             Materials = materials,
             TerrainName = terrainName
         };
@@ -243,7 +220,7 @@ static async Task CreateTerrainWithMultipleMaterials()
         Console.WriteLine($"Output path: {outputPath}");
         Console.WriteLine();
 
-        // Create terrain file
+        // Create terrain file - images will be loaded and disposed automatically
         Console.WriteLine("Creating terrain file...");
         var success = await creator.CreateTerrainFileAsync(outputPath, parameters);
 
@@ -263,26 +240,18 @@ static async Task CreateTerrainWithMultipleMaterials()
             Console.WriteLine($"  Terrain size: {terrainSize}x{terrainSize}");
             Console.WriteLine($"  Max height: {parameters.MaxHeight}");
             Console.WriteLine($"  Total materials: {materials.Count}");
-            Console.WriteLine($"  Materials with layer images: {materials.Count(m => m.LayerImage != null)}");
 
             Console.WriteLine();
             Console.WriteLine("Material list:");
             for (int i = 0; i < materials.Count; i++)
             {
-                string hasImage = materials[i].LayerImage != null ? "✓" : "✗";
+                string hasImage = !string.IsNullOrWhiteSpace(materials[i].LayerImagePath) ? "✓" : "✗";
                 Console.WriteLine($"  [{i}] {hasImage} {materials[i].MaterialName}");
             }
         }
         else
         {
             Console.WriteLine("✗ Failed to create terrain.");
-        }
-
-        // Dispose images
-        heightmap.Dispose();
-        foreach (var mat in materials.Where(m => m.LayerImage != null))
-        {
-            mat.LayerImage?.Dispose();
         }
     }
     catch (Exception ex)

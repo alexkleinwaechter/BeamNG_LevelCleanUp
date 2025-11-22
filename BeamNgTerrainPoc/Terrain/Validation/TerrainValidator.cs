@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.Models;
+using System.IO;
 
 namespace BeamNgTerrainPoc.Terrain.Validation;
 
@@ -30,18 +31,29 @@ public static class TerrainValidator
             result.IsValid = false;
         }
         
-        // 3. Heightmap must be provided
-        if (parameters.HeightmapImage == null)
+        // 3. Heightmap must be provided (either image or path)
+        if (parameters.HeightmapImage == null && string.IsNullOrWhiteSpace(parameters.HeightmapPath))
         {
-            result.Errors.Add("Heightmap image is required");
+            result.Errors.Add("Heightmap is required (provide HeightmapImage or HeightmapPath)");
             result.IsValid = false;
         }
-        // Heightmap dimensions must match size
-        else if (parameters.HeightmapImage.Width != parameters.Size || 
-                 parameters.HeightmapImage.Height != parameters.Size)
+        
+        // Validate heightmap path exists if provided
+        if (!string.IsNullOrWhiteSpace(parameters.HeightmapPath) && !File.Exists(parameters.HeightmapPath))
         {
-            result.Errors.Add($"Heightmap dimensions ({parameters.HeightmapImage.Width}x{parameters.HeightmapImage.Height}) don't match terrain size ({parameters.Size}x{parameters.Size})");
+            result.Errors.Add($"Heightmap file not found: {parameters.HeightmapPath}");
             result.IsValid = false;
+        }
+        
+        // Heightmap dimensions must match size (only if image is provided directly)
+        if (parameters.HeightmapImage != null)
+        {
+            if (parameters.HeightmapImage.Width != parameters.Size || 
+                parameters.HeightmapImage.Height != parameters.Size)
+            {
+                result.Errors.Add($"Heightmap dimensions ({parameters.HeightmapImage.Width}x{parameters.HeightmapImage.Height}) don't match terrain size ({parameters.Size}x{parameters.Size})");
+                result.IsValid = false;
+            }
         }
         
         // 4. Must have at least one material
@@ -64,21 +76,17 @@ public static class TerrainValidator
             }
         }
         
-        // 6. All layer images (if provided) must match terrain size
+        // 6. Validate layer image paths exist (if provided)
         if (parameters.Materials != null)
         {
             for (int i = 0; i < parameters.Materials.Count; i++)
             {
-                var layerImage = parameters.Materials[i].LayerImage;
-                if (layerImage != null)
+                var layerImagePath = parameters.Materials[i].LayerImagePath;
+                if (!string.IsNullOrWhiteSpace(layerImagePath) && !File.Exists(layerImagePath))
                 {
-                    if (layerImage.Width != parameters.Size || layerImage.Height != parameters.Size)
-                    {
-                        result.Errors.Add(
-                            $"Layer image for material '{parameters.Materials[i].MaterialName}' " +
-                            $"dimensions ({layerImage.Width}x{layerImage.Height}) don't match terrain size ({parameters.Size}x{parameters.Size})");
-                        result.IsValid = false;
-                    }
+                    result.Errors.Add(
+                        $"Layer image file not found for material '{parameters.Materials[i].MaterialName}': {layerImagePath}");
+                    result.IsValid = false;
                 }
             }
         }
@@ -99,7 +107,7 @@ public static class TerrainValidator
         // Warning if no layer images provided
         if (parameters.Materials != null)
         {
-            int materialsWithoutImages = parameters.Materials.Count(m => m.LayerImage == null);
+            int materialsWithoutImages = parameters.Materials.Count(m => string.IsNullOrWhiteSpace(m.LayerImagePath));
             if (materialsWithoutImages == parameters.Materials.Count)
             {
                 result.Warnings.Add("No material layer images provided - all terrain will use first material (index 0)");

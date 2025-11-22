@@ -19,12 +19,21 @@ public class TerrainCreationParameters
     public float MaxHeight { get; set; }
     
     /// <summary>
-    /// 16-bit grayscale heightmap image
+    /// Path to 16-bit grayscale heightmap image file.
+    /// Use this OR HeightmapImage, not both.
     /// </summary>
-    public Image<L16> HeightmapImage { get; set; } = null!;
+    public string? HeightmapPath { get; set; }
     
     /// <summary>
-    /// List of material definitions. Each material has a name and optional layer image.
+    /// 16-bit grayscale heightmap image (for advanced scenarios where image is already loaded).
+    /// Use this OR HeightmapPath, not both.
+    /// If both are provided, HeightmapImage takes precedence.
+    /// Note: When using HeightmapImage directly, caller is responsible for disposal.
+    /// </summary>
+    public Image<L16>? HeightmapImage { get; set; }
+    
+    /// <summary>
+    /// List of material definitions. Each material has a name and optional layer image path.
     /// Order matters - index in list = material index in terrain file.
     /// First material (index 0) is used as default/fallback where no other material is defined.
     /// </summary>
