@@ -182,9 +182,23 @@ static async Task CreateTerrainWithMultipleMaterials()
         {
             var info = layerFile.ParsedInfo!.Value;
             Console.WriteLine($"Adding layer {info.Index}: {info.MaterialName}");
-            
+
+            //Configure road smoothing parameters if needed
+            RoadSmoothingParameters roadParameters = null;
+            if (info.MaterialName.Contains("GROUNDMODEL_ASPHALT1", StringComparison.OrdinalIgnoreCase))
+            {
+                // Set specific parameters for road material
+                Console.WriteLine($"Configuring road smoothing for layer {info.Index}");
+                roadParameters = new RoadSmoothingParameters
+                {
+                    RoadWidthMeters = 8.0f,
+                    RoadMaxSlopeDegrees = 7.0f,
+                    TerrainAffectedRangeMeters = 5.0f
+                };
+            }
+
             // Pass file path instead of loaded image
-            materials.Add(new MaterialDefinition(info.MaterialName, layerFile.Path));
+            materials.Add(new MaterialDefinition(info.MaterialName, layerFile.Path, roadParameters));
         }
 
         // If no materials were found, add a default one
@@ -207,6 +221,7 @@ static async Task CreateTerrainWithMultipleMaterials()
         {
             Size = terrainSize,
             MaxHeight = 500.0f, // Adjust as needed for your terrain
+            MetersPerPixel = 1.0f, // Adjust based on your terrain scale
             HeightmapPath = heightmapPath, // Use path instead of image
             Materials = materials,
             TerrainName = terrainName

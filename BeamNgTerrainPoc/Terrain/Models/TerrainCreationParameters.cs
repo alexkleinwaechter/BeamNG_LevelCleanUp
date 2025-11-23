@@ -49,4 +49,11 @@ public class TerrainCreationParameters
     /// Default is "theTerrain" if not specified.
     /// </summary>
     public string TerrainName { get; set; } = "theTerrain";
+    
+    /// <summary>
+    /// Meters per pixel for the terrain (used for road smoothing calculations).
+    /// Default is 2.0 (typical for BeamNG: 1024 terrain = 2048 meters).
+    /// This defines the world-space scale of the terrain.
+    /// </summary>
+    public float MetersPerPixel { get; set; } = 2.0f;
 }
