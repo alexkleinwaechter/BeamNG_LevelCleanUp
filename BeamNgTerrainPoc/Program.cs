@@ -16,8 +16,7 @@ if (args.Length > 0)
     Console.WriteLine($"Arguments: {string.Join(", ", args)}");
 
     // Check for specific test mode
-    if (args[0].Equals("complex", StringComparison.OrdinalIgnoreCase) ||
-        args[0].Equals("multi", StringComparison.OrdinalIgnoreCase))
+    if (args[0].Equals("complex", StringComparison.OrdinalIgnoreCase))
     {
         Console.WriteLine("Running complex multi-material terrain creation...");
         Console.WriteLine();

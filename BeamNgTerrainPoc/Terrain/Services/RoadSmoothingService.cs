@@ -64,7 +64,7 @@ public class RoadSmoothingService
                 roadLayer.GetLength(0));
         }
         
-        // 2. Extract road geometry
+        // 2. Extract road geometry (simplified - just validates road mask)
         byte[,] smoothingMask = exclusionMask != null
             ? _exclusionProcessor.ApplyExclusionsToRoadMask(roadLayer, exclusionMask)
             : roadLayer;
@@ -75,16 +75,8 @@ public class RoadSmoothingService
             parameters,
             metersPerPixel);
         
-        if (exclusionMask != null)
-        {
-            _exclusionProcessor.MarkExcludedCrossSections(geometry, exclusionMask, metersPerPixel);
-        }
-        
-        // 3. Calculate target elevations
-        Console.WriteLine("Calculating target elevations...");
-        _heightCalculator.CalculateTargetElevations(geometry, heightMap, metersPerPixel);
-        
-        // 4. Blend with terrain
+        // Note: With direct approach, we don't use cross-sections
+        // 3. Blend with terrain using direct road mask
         Console.WriteLine("Blending road with terrain...");
         var newHeightMap = _terrainBlender.BlendRoadWithTerrain(
             heightMap,
@@ -92,9 +84,9 @@ public class RoadSmoothingService
             parameters,
             metersPerPixel);
         
-        // 5. Calculate delta map and statistics
+        // 4. Calculate delta map and statistics
         var deltaMap = CalculateDeltaMap(heightMap, newHeightMap);
-        var statistics = CalculateStatistics(heightMap, newHeightMap, geometry, parameters, metersPerPixel);
+        var statistics = CalculateStatistics(heightMap, newHeightMap, parameters, metersPerPixel);
         
         Console.WriteLine("Road smoothing complete!");
         
@@ -121,7 +113,6 @@ public class RoadSmoothingService
     private SmoothingStatistics CalculateStatistics(
         float[,] original,
         float[,] modified,
-        RoadGeometry geometry,
         RoadSmoothingParameters parameters,
         float metersPerPixel)
     {
@@ -173,28 +164,10 @@ public class RoadSmoothingService
         stats.PixelsModified = modifiedPixels;
         stats.MaxDiscontinuity = maxDiscontinuity;
         
-        // Calculate slopes along road
-        float maxRoadSlope = 0;
-        for (int i = 1; i < geometry.CrossSections.Count; i++)
-        {
-            var cs1 = geometry.CrossSections[i - 1];
-            var cs2 = geometry.CrossSections[i];
-            
-            if (cs1.IsExcluded || cs2.IsExcluded)
-                continue;
-            
-            float distance = System.Numerics.Vector2.Distance(cs1.CenterPoint, cs2.CenterPoint);
-            if (distance < 0.001f) continue;
-            
-            float slope = MathF.Abs(cs2.TargetElevation - cs1.TargetElevation) / distance;
-            float slopeDegrees = MathF.Atan(slope) * 180.0f / MathF.PI;
-            
-            maxRoadSlope = MathF.Max(maxRoadSlope, slopeDegrees);
-        }
-        
-        stats.MaxRoadSlope = maxRoadSlope;
-        stats.MaxSideSlope = parameters.SideMaxSlopeDegrees; // TODO: Calculate actual max
-        stats.MaxTransverseSlope = 0; // Road should be level side-to-side
+        // Estimate max road slope from discontinuities
+        stats.MaxRoadSlope = MathF.Atan(maxDiscontinuity / metersPerPixel) * 180.0f / MathF.PI;
+        stats.MaxSideSlope = parameters.SideMaxSlopeDegrees;
+        stats.MaxTransverseSlope = 0;
         
         // Check constraints
         stats.MeetsAllConstraints = true;

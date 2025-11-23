@@ -203,7 +203,7 @@ public class TerrainCreator
         float metersPerPixel,
         int size)
     {
-        // Convert 1D heightmap to 2D
+        // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
         
         SmoothingResult? finalResult = null;
@@ -254,11 +254,14 @@ public class TerrainCreator
         
         var layer = new byte[expectedSize, expectedSize];
         
+        // ImageSharp is top-down, BeamNG is bottom-up
+        // Flip Y to match HeightmapProcessor behavior
         for (int y = 0; y < expectedSize; y++)
         {
             for (int x = 0; x < expectedSize; x++)
             {
-                layer[y, x] = image[x, y].PackedValue;
+                int flippedY = expectedSize - 1 - y;
+                layer[flippedY, x] = image[x, y].PackedValue;
             }
         }
         
@@ -269,6 +272,8 @@ public class TerrainCreator
     {
         var array2D = new float[size, size];
         
+        // array1D is already flipped by HeightmapProcessor (bottom-up)
+        // Just unpack it into 2D with same orientation
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
@@ -285,6 +290,7 @@ public class TerrainCreator
         int size = array2D.GetLength(0);
         var array1D = new float[size * size];
         
+        // Pack 2D into 1D maintaining the orientation
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
@@ -312,14 +318,20 @@ public class TerrainCreator
             // Convert float heights back to 16-bit heightmap
             using var heightmapImage = new Image<L16>(size, size);
             
+            // modifiedHeights is in BeamNG orientation (bottom-up)
+            // ImageSharp expects top-down, so flip Y when writing
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
+                    // Flip Y to convert from bottom-up (BeamNG) to top-down (ImageSharp)
+                    int flippedY = size - 1 - y;
+                    
                     // Convert height (0.0 to maxHeight) to 16-bit value (0 to 65535)
                     float normalizedHeight = modifiedHeights[y, x] / maxHeight;
                     ushort pixelValue = (ushort)Math.Clamp(normalizedHeight * 65535f, 0, 65535);
-                    heightmapImage[x, y] = new L16(pixelValue);
+                    
+                    heightmapImage[x, flippedY] = new L16(pixelValue);
                 }
             }
             
