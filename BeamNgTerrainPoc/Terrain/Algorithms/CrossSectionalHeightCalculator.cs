@@ -4,7 +4,8 @@ using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
-/// Calculates target elevations for road cross-sections using cross-sectional leveling approach
+/// Calculates target elevations for road cross-sections using perpendicular sampling.
+/// For spline-based approach: samples along the actual perpendicular to the road.
 /// </summary>
 public class CrossSectionalHeightCalculator : IHeightCalculator
 {
@@ -21,13 +22,16 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
             return;
         }
         
+        Console.WriteLine($"Calculating target elevations for {geometry.CrossSections.Count} cross-sections...");
+        
         // Step 1: Calculate initial target elevations from heightmap
+        // Using PERPENDICULAR sampling (the key fix for curves!)
         CalculateInitialElevations(geometry.CrossSections, heightMap, metersPerPixel);
         
         // Step 2: Apply longitudinal slope constraints
         ApplySlopeConstraints(geometry.CrossSections, geometry.Parameters.RoadMaxSlopeDegrees);
         
-        Console.WriteLine($"Calculated target elevations for {geometry.CrossSections.Count} cross-sections");
+        Console.WriteLine($"Calculated target elevations (road should be level side-to-side)");
     }
     
     private void CalculateInitialElevations(
@@ -43,17 +47,18 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
             if (crossSection.IsExcluded)
                 continue;
             
-            // Sample heights along the cross-section
-            var heights = SampleCrossSectionHeights(
-                crossSection, 
-                heightMap, 
+            // KEY FIX: Sample along the PERPENDICULAR (Normal direction) to the road
+            // This ensures the road is level side-to-side, even on curves!
+            var heights = SampleAlongPerpendicular(
+                crossSection,
+                heightMap,
                 heightMapWidth,
                 heightMapHeight,
                 metersPerPixel);
             
             if (heights.Count == 0)
             {
-                // Fallback: use nearest pixel
+                // Fallback: use center pixel
                 int pixelX = (int)(crossSection.CenterPoint.X / metersPerPixel);
                 int pixelY = (int)(crossSection.CenterPoint.Y / metersPerPixel);
                 
@@ -64,23 +69,15 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
             }
             else
             {
-                // Weighted average favoring center (70% center, 15% each edge)
-                float centerWeight = 0.7f;
-                float edgeWeight = 0.15f;
-                
-                float centerHeight = heights[heights.Count / 2];
-                float leftHeight = heights[0];
-                float rightHeight = heights[^1];
-                
-                crossSection.TargetElevation = 
-                    centerHeight * centerWeight + 
-                    leftHeight * edgeWeight + 
-                    rightHeight * edgeWeight;
+                // Use MEDIAN (more robust than average for roads)
+                // This prevents outliers from skewing the road elevation
+                heights.Sort();
+                crossSection.TargetElevation = heights[heights.Count / 2];
             }
         }
     }
     
-    private List<float> SampleCrossSectionHeights(
+    private List<float> SampleAlongPerpendicular(
         CrossSection crossSection,
         float[,] heightMap,
         int heightMapWidth,
@@ -89,8 +86,9 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
     {
         var heights = new List<float>();
         
-        // Sample at 5 points across the road width
-        int numSamples = 5;
+        // Sample at multiple points across the road width
+        // Along the PERPENDICULAR (Normal) direction
+        int numSamples = 7; // More samples for better accuracy
         float halfWidth = crossSection.WidthMeters / 2.0f;
         
         for (int i = 0; i < numSamples; i++)
@@ -98,7 +96,8 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
             float t = i / (float)(numSamples - 1); // 0 to 1
             float offset = (t - 0.5f) * 2.0f * halfWidth; // -halfWidth to +halfWidth
             
-            // Calculate sample position
+            // Calculate sample position along PERPENDICULAR
+            // This is the key difference from grid-aligned sampling!
             var samplePos = crossSection.CenterPoint + crossSection.NormalDirection * offset;
             
             // Convert to pixel coordinates
@@ -121,7 +120,7 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
         if (crossSections.Count < 2)
             return;
         
-        // Filter out excluded sections for slope calculation
+        // Filter out excluded sections
         var activeSections = crossSections.Where(cs => !cs.IsExcluded).ToList();
         
         if (activeSections.Count < 2)

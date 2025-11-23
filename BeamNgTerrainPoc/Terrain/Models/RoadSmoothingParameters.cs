@@ -1,6 +1,27 @@
 namespace BeamNgTerrainPoc.Terrain.Models;
 
 /// <summary>
+/// Approach to use for road smoothing
+/// </summary>
+public enum RoadSmoothingApproach
+{
+    /// <summary>
+    /// Direct road mask approach - simple, robust, works with intersections.
+    /// Grid-aligned sampling (may have slight tilt on curves).
+    /// Best for: Complex road networks, intersections, general use.
+    /// </summary>
+    DirectMask,
+    
+    /// <summary>
+    /// Spline-based approach - uses centerline extraction and smooth splines.
+    /// Perpendicular sampling (level on curves).
+    /// Best for: Simple curved roads without intersections.
+    /// Note: May fail on complex road networks!
+    /// </summary>
+    SplineBased
+}
+
+/// <summary>
 /// Parameters for road smoothing algorithm applied to heightmaps.
 /// Defines how roads should be flattened and blended into surrounding terrain.
 /// </summary>
@@ -58,6 +79,12 @@ public class RoadSmoothingParameters
     /// Default: Cosine (smoothest)
     /// </summary>
     public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
+    
+    /// <summary>
+    /// Which approach to use for road smoothing
+    /// Default: DirectMask (most robust)
+    /// </summary>
+    public RoadSmoothingApproach Approach { get; set; } = RoadSmoothingApproach.DirectMask;
     
     /// <summary>
     /// Validates the parameters and returns any errors.

@@ -13,6 +13,11 @@ public class RoadGeometry
     public List<Vector2> Centerline { get; set; } = new();
     
     /// <summary>
+    /// Smooth spline through centerline points (for spline-based approach)
+    /// </summary>
+    public RoadSpline? Spline { get; set; }
+    
+    /// <summary>
     /// Cross-sections generated along the road at regular intervals
     /// </summary>
     public List<CrossSection> CrossSections { get; set; } = new();

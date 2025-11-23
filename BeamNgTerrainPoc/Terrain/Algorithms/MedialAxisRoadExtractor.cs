@@ -5,11 +5,18 @@ using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
-/// Extracts road geometry using direct road mask approach.
-/// Simple and robust - no complex centerline extraction needed.
+/// Extracts road geometry using spline-based approach.
+/// Creates smooth road spline for direction-aware cross-sectional smoothing.
 /// </summary>
 public class MedialAxisRoadExtractor : IRoadExtractor
 {
+    private readonly SparseCenterlineExtractor _centerlineExtractor;
+    
+    public MedialAxisRoadExtractor()
+    {
+        _centerlineExtractor = new SparseCenterlineExtractor();
+    }
+    
     public RoadGeometry ExtractRoadGeometry(
         byte[,] roadLayer, 
         RoadSmoothingParameters parameters,
@@ -17,64 +24,55 @@ public class MedialAxisRoadExtractor : IRoadExtractor
     {
         var geometry = new RoadGeometry(roadLayer, parameters);
         
-        Console.WriteLine("Using direct road mask approach (no centerline extraction)...");
+        Console.WriteLine("Extracting road geometry with spline-based approach...");
         
-        // Step 1: Convert to binary mask
-        var binaryMask = CreateBinaryMask(roadLayer);
+        // Step 1: Extract sparse centerline points (pixel coordinates)
+        var centerlinePixels = _centerlineExtractor.ExtractCenterlinePoints(roadLayer, metersPerPixel);
         
-        // Step 2: Find all road pixels
-        var roadPixels = FindRoadPixels(binaryMask);
-        
-        if (roadPixels.Count == 0)
+        if (centerlinePixels.Count < 2)
         {
-            Console.WriteLine("Warning: No road pixels found");
+            Console.WriteLine("Warning: Insufficient centerline points for spline");
             return geometry;
         }
         
-        Console.WriteLine($"Found {roadPixels.Count:N0} road pixels");
+        // Step 2: Convert to world coordinates
+        geometry.Centerline = centerlinePixels
+            .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
+            .ToList();
         
-        // For direct approach, we don't need centerline or cross-sections
-        // The TerrainBlender will work directly with the road mask
-        geometry.Centerline = new List<Vector2>(); // Empty - not needed
-        geometry.CrossSections = new List<CrossSection>(); // Empty - not needed
+        Console.WriteLine($"Centerline: {geometry.Centerline.Count} points");
+        
+        // Step 3: Create spline through centerline points
+        try
+        {
+            geometry.Spline = new RoadSpline(geometry.Centerline);
+            Console.WriteLine($"Spline created: {geometry.Spline.TotalLength:F1} meters total length");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Failed to create spline: {ex.Message}");
+            return geometry;
+        }
+        
+        // Step 4: Sample spline to create cross-sections
+        var splineSamples = geometry.Spline.SampleByDistance(parameters.CrossSectionIntervalMeters);
+        Console.WriteLine($"Sampled {splineSamples.Count} points along spline");
+        
+        // Step 5: Convert spline samples to cross-sections
+        geometry.CrossSections = splineSamples
+            .Select((sample, index) => new CrossSection
+            {
+                Index = index,
+                CenterPoint = sample.Position,
+                TangentDirection = sample.Tangent,
+                NormalDirection = sample.Normal,
+                WidthMeters = parameters.RoadWidthMeters,
+                IsExcluded = false
+            })
+            .ToList();
+        
+        Console.WriteLine($"Generated {geometry.CrossSections.Count} cross-sections");
         
         return geometry;
-    }
-    
-    private byte[,] CreateBinaryMask(byte[,] roadLayer)
-    {
-        int height = roadLayer.GetLength(0);
-        int width = roadLayer.GetLength(1);
-        var binary = new byte[height, width];
-        
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                binary[y, x] = roadLayer[y, x] > 128 ? (byte)255 : (byte)0;
-            }
-        }
-        
-        return binary;
-    }
-    
-    private List<Vector2> FindRoadPixels(byte[,] binaryMask)
-    {
-        int height = binaryMask.GetLength(0);
-        int width = binaryMask.GetLength(1);
-        var pixels = new List<Vector2>();
-        
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (binaryMask[y, x] > 0)
-                {
-                    pixels.Add(new Vector2(x, y));
-                }
-            }
-        }
-        
-        return pixels;
     }
 }

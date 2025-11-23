@@ -190,9 +190,21 @@ static async Task CreateTerrainWithMultipleMaterials()
                 Console.WriteLine($"Configuring road smoothing for layer {info.Index}");
                 roadParameters = new RoadSmoothingParameters
                 {
+                    // Use DirectMask approach (robust, handles intersections)
+                    Approach = RoadSmoothingApproach.DirectMask,
+                    
+                    // Road geometry
                     RoadWidthMeters = 6.0f,
                     RoadMaxSlopeDegrees = 14.0f,
-                    TerrainAffectedRangeMeters = 3.0f
+                    TerrainAffectedRangeMeters = 3.0f,
+                    
+                    // Blending
+                    BlendFunctionType = BlendFunctionType.Cosine,
+                    SideMaxSlopeDegrees = 45.0f
+                    
+                    // NOTE: To use spline-based approach (for simple curved roads without intersections):
+                    // Approach = RoadSmoothingApproach.SplineBased,
+                    // CrossSectionIntervalMeters = 2.0f
                 };
             }
 

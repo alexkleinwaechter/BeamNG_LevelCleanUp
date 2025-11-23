@@ -5,340 +5,343 @@ using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
-/// Blends road surfaces smoothly with surrounding terrain using direct road mask approach
+/// Blends road surfaces smoothly with surrounding terrain using spline-based cross-sections
 /// </summary>
 public class TerrainBlender
 {
+    private const int GridCellSize = 32; // pixels per grid cell
+    
+    // Cache for index-based cross-section lookup
+    private Dictionary<int, CrossSection>? _sectionsByIndex;
+    
     public float[,] BlendRoadWithTerrain(
         float[,] originalHeightMap,
         RoadGeometry geometry,
         RoadSmoothingParameters parameters,
         float metersPerPixel)
     {
+        if (geometry.CrossSections.Count == 0)
+        {
+            Console.WriteLine("No cross-sections to blend");
+            return (float[,])originalHeightMap.Clone();
+        }
+        
         int height = originalHeightMap.GetLength(0);
         int width = originalHeightMap.GetLength(1);
         var modifiedHeightMap = (float[,])originalHeightMap.Clone();
         
-        Console.WriteLine($"Processing {width}x{height} heightmap with direct road mask approach...");
+        Console.WriteLine($"Building spatial index for {geometry.CrossSections.Count} cross-sections...");
+        
+        // Build index-based lookup for O(1) access
+        _sectionsByIndex = geometry.CrossSections.ToDictionary(s => s.Index);
+        
+        // Build spatial index for faster nearest cross-section lookup
+        var spatialIndex = BuildSpatialIndex(geometry.CrossSections, metersPerPixel, width, height);
+        
+        Console.WriteLine($"Spatial index built with {spatialIndex.Count} grid cells");
+        
+        int modifiedPixels = 0;
+        float maxAffectedDistance = (parameters.RoadWidthMeters / 2.0f) + parameters.TerrainAffectedRangeMeters;
+        
+        // Pre-calculate grid dimensions
+        int gridWidth = (width + GridCellSize - 1) / GridCellSize;
+        int gridHeight = (height + GridCellSize - 1) / GridCellSize;
+        
+        Console.WriteLine($"Processing {width}x{height} heightmap with {gridWidth}x{gridHeight} grid...");
         
         var startTime = DateTime.Now;
         
-        // Step 1: Calculate target elevations for all road pixels
-        var roadElevations = CalculateRoadElevations(
-            originalHeightMap, 
-            geometry.RoadMask, 
-            parameters, 
-            metersPerPixel);
-        
-        // Step 2: Apply road elevations and blend with terrain
-        int modifiedPixels = ApplyRoadSmoothing(
-            originalHeightMap,
-            modifiedHeightMap,
-            geometry.RoadMask,
-            roadElevations,
-            parameters,
-            metersPerPixel);
-        
-        Console.WriteLine($"Blended {modifiedPixels:N0} pixels in {(DateTime.Now - startTime).TotalSeconds:F1}s");
-        
-        return modifiedHeightMap;
-    }
-    
-    private float[,] CalculateRoadElevations(
-        float[,] heightMap,
-        byte[,] roadMask,
-        RoadSmoothingParameters parameters,
-        float metersPerPixel)
-    {
-        int height = heightMap.GetLength(0);
-        int width = heightMap.GetLength(1);
-        var elevations = new float[height, width];
-        
-        Console.WriteLine("Calculating road elevations...");
-        
-        // For each road pixel, calculate target elevation from surrounding terrain
+        // Process each pixel
         for (int y = 0; y < height; y++)
         {
             if (y % 100 == 0 && y > 0)
             {
-                Console.WriteLine($"  Calculating elevations: {(y / (float)height * 100):F1}%");
+                float progress = (y / (float)height) * 100f;
+                var elapsed = DateTime.Now - startTime;
+                var estimated = TimeSpan.FromSeconds(elapsed.TotalSeconds / progress * 100);
+                Console.WriteLine($"  Progress: {progress:F1}% ({modifiedPixels:N0} pixels modified) - ETA: {estimated:mm\\:ss}");
             }
             
             for (int x = 0; x < width; x++)
             {
-                if (roadMask[y, x] > 128)
+                var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
+                
+                // Find nearest cross-section using spatial index
+                var nearestSection = FindNearestCrossSectionFast(
+                    worldPos, 
+                    x, 
+                    y, 
+                    spatialIndex, 
+                    gridWidth, 
+                    gridHeight,
+                    maxAffectedDistance);
+                
+                if (nearestSection == null || nearestSection.IsExcluded)
+                    continue;
+                
+                // Find the closest point on the road centerline and get interpolated data
+                var roadPoint = FindClosestPointOnRoad(worldPos, nearestSection);
+                
+                if (roadPoint == null)
+                    continue;
+                
+                // Calculate perpendicular distance from pixel to road centerline
+                float distanceToCenter = roadPoint.Value.DistanceFromRoad;
+                
+                // Determine zone and blend
+                float halfRoadWidth = parameters.RoadWidthMeters / 2.0f;
+                float totalAffectedRange = halfRoadWidth + parameters.TerrainAffectedRangeMeters;
+                
+                if (distanceToCenter <= totalAffectedRange)
                 {
-                    // Sample surrounding heights (within road width)
-                    float targetElevation = CalculateLocalRoadElevation(
-                        heightMap, 
-                        roadMask, 
-                        x, 
-                        y, 
-                        parameters.RoadWidthMeters, 
-                        metersPerPixel);
+                    float newHeight = CalculateBlendedHeight(
+                        worldPos,
+                        roadPoint.Value.Elevation,
+                        originalHeightMap[y, x],
+                        distanceToCenter,
+                        parameters);
                     
-                    elevations[y, x] = targetElevation;
+                    modifiedHeightMap[y, x] = newHeight;
+                    modifiedPixels++;
                 }
-                else
+            }
+        }
+        
+        Console.WriteLine($"Blended {modifiedPixels:N0} pixels in {(DateTime.Now - startTime).TotalSeconds:F1}s");
+        
+        // Clear cache
+        _sectionsByIndex = null;
+        
+        return modifiedHeightMap;
+    }
+    
+    private struct RoadPoint
+    {
+        public float DistanceFromRoad;
+        public float Elevation;
+    }
+    
+    private RoadPoint? FindClosestPointOnRoad(Vector2 worldPos, CrossSection nearestSection)
+    {
+        float minDistance = float.MaxValue;
+        float interpolatedElevation = nearestSection.TargetElevation;
+        
+        // Check segment before nearest cross-section
+        if (nearestSection.Index > 0 && _sectionsByIndex!.TryGetValue(nearestSection.Index - 1, out var prevSection))
+        {
+            if (!prevSection.IsExcluded)
+            {
+                var result = GetDistanceAndElevationOnSegment(worldPos, prevSection, nearestSection);
+                if (result.Distance < minDistance)
                 {
-                    elevations[y, x] = heightMap[y, x];
+                    minDistance = result.Distance;
+                    interpolatedElevation = result.Elevation;
                 }
             }
         }
         
-        // Apply slope constraints
-        elevations = ApplySlopeConstraints(elevations, roadMask, parameters, metersPerPixel);
-        
-        return elevations;
-    }
-    
-    private float CalculateLocalRoadElevation(
-        float[,] heightMap,
-        byte[,] roadMask,
-        int x,
-        int y,
-        float roadWidthMeters,
-        float metersPerPixel)
-    {
-        int height = heightMap.GetLength(0);
-        int width = heightMap.GetLength(1);
-        
-        // Sample in a cross pattern along and perpendicular to road
-        int sampleRadius = (int)(roadWidthMeters / (2 * metersPerPixel));
-        sampleRadius = Math.Max(1, Math.Min(sampleRadius, 10));
-        
-        float sum = 0;
-        int count = 0;
-        
-        // Sample along the road direction (horizontal and vertical)
-        for (int dx = -sampleRadius; dx <= sampleRadius; dx++)
+        // Check segment after nearest cross-section
+        if (_sectionsByIndex!.TryGetValue(nearestSection.Index + 1, out var nextSection))
         {
-            int sx = x + dx;
-            if (sx >= 0 && sx < width && roadMask[y, sx] > 128)
+            if (!nextSection.IsExcluded)
             {
-                sum += heightMap[y, sx];
-                count++;
+                var result = GetDistanceAndElevationOnSegment(worldPos, nearestSection, nextSection);
+                if (result.Distance < minDistance)
+                {
+                    minDistance = result.Distance;
+                    interpolatedElevation = result.Elevation;
+                }
             }
         }
         
-        for (int dy = -sampleRadius; dy <= sampleRadius; dy++)
+        // Also check distance to the nearest cross-section point itself
+        float pointDistance = Vector2.Distance(worldPos, nearestSection.CenterPoint);
+        if (pointDistance < minDistance)
         {
-            int sy = y + dy;
-            if (sy >= 0 && sy < height && roadMask[sy, x] > 128)
-            {
-                sum += heightMap[sy, x];
-                count++;
-            }
+            minDistance = pointDistance;
+            interpolatedElevation = nearestSection.TargetElevation;
         }
         
-        return count > 0 ? sum / count : heightMap[y, x];
+        return new RoadPoint
+        {
+            DistanceFromRoad = minDistance,
+            Elevation = interpolatedElevation
+        };
     }
     
-    private float[,] ApplySlopeConstraints(
-        float[,] elevations,
-        byte[,] roadMask,
-        RoadSmoothingParameters parameters,
-        float metersPerPixel)
+    private (float Distance, float Elevation) GetDistanceAndElevationOnSegment(
+        Vector2 point, 
+        CrossSection start, 
+        CrossSection end)
     {
-        int height = elevations.GetLength(0);
-        int width = elevations.GetLength(1);
-        var constrained = (float[,])elevations.Clone();
+        // Vector from segment start to end
+        Vector2 segment = end.CenterPoint - start.CenterPoint;
+        float segmentLength = segment.Length();
         
-        Console.WriteLine("Applying slope constraints...");
+        if (segmentLength < 0.001f)
+            return (Vector2.Distance(point, start.CenterPoint), start.TargetElevation);
         
-        float maxSlopeRatio = MathF.Tan(parameters.RoadMaxSlopeDegrees * MathF.PI / 180.0f);
-        float maxSlopeDiff = maxSlopeRatio * metersPerPixel;
+        // Vector from segment start to point
+        Vector2 toPoint = point - start.CenterPoint;
         
-        // Multiple passes to propagate constraints
-        for (int pass = 0; pass < 5; pass++)
+        // Project point onto segment to find parameter t [0, 1]
+        float t = Vector2.Dot(toPoint, segment) / (segmentLength * segmentLength);
+        
+        // Clamp to segment bounds
+        t = Math.Clamp(t, 0.0f, 1.0f);
+        
+        // Find closest point on segment
+        Vector2 closestPoint = start.CenterPoint + segment * t;
+        
+        // Calculate perpendicular distance
+        float distance = Vector2.Distance(point, closestPoint);
+        
+        // Interpolate elevation based on position along segment
+        float elevation = start.TargetElevation + (end.TargetElevation - start.TargetElevation) * t;
+        
+        return (distance, elevation);
+    }
+    
+    private Dictionary<(int, int), List<CrossSection>> BuildSpatialIndex(
+        List<CrossSection> crossSections,
+        float metersPerPixel,
+        int width,
+        int height)
+    {
+        var index = new Dictionary<(int, int), List<CrossSection>>();
+        
+        foreach (var section in crossSections)
         {
-            bool changed = false;
+            if (section.IsExcluded)
+                continue;
             
-            for (int y = 1; y < height - 1; y++)
+            // Convert world coordinates to pixel coordinates
+            int pixelX = (int)(section.CenterPoint.X / metersPerPixel);
+            int pixelY = (int)(section.CenterPoint.Y / metersPerPixel);
+            
+            // Calculate grid cell
+            int gridX = pixelX / GridCellSize;
+            int gridY = pixelY / GridCellSize;
+            
+            var key = (gridX, gridY);
+            if (!index.ContainsKey(key))
+                index[key] = new List<CrossSection>();
+            
+            index[key].Add(section);
+        }
+        
+        return index;
+    }
+    
+    private CrossSection? FindNearestCrossSectionFast(
+        Vector2 worldPos,
+        int pixelX,
+        int pixelY,
+        Dictionary<(int, int), List<CrossSection>> spatialIndex,
+        int gridWidth,
+        int gridHeight,
+        float maxSearchDistance)
+    {
+        // Calculate grid cell for this pixel
+        int gridX = pixelX / GridCellSize;
+        int gridY = pixelY / GridCellSize;
+        
+        CrossSection? nearest = null;
+        float minDistance = float.MaxValue;
+        
+        // Search in expanding radius
+        int searchRadius = 1;
+        int maxSearchRadius = 3;
+        
+        while (searchRadius <= maxSearchRadius)
+        {
+            bool foundInThisRadius = false;
+            
+            for (int dy = -searchRadius; dy <= searchRadius; dy++)
             {
-                for (int x = 1; x < width - 1; x++)
+                for (int dx = -searchRadius; dx <= searchRadius; dx++)
                 {
-                    if (roadMask[y, x] == 0)
+                    // Only check cells in the current radius ring
+                    if (Math.Abs(dx) != searchRadius && Math.Abs(dy) != searchRadius)
                         continue;
                     
-                    float currentElev = constrained[y, x];
+                    int checkGridX = gridX + dx;
+                    int checkGridY = gridY + dy;
                     
-                    // Check 4-connected neighbors
-                    for (int dy = -1; dy <= 1; dy++)
+                    // Skip out-of-bounds cells
+                    if (checkGridX < 0 || checkGridX >= gridWidth || 
+                        checkGridY < 0 || checkGridY >= gridHeight)
+                        continue;
+                    
+                    var key = (checkGridX, checkGridY);
+                    
+                    if (spatialIndex.TryGetValue(key, out var sections))
                     {
-                        for (int dx = -1; dx <= 1; dx++)
+                        foreach (var section in sections)
                         {
-                            if (dx == 0 && dy == 0)
-                                continue;
-                            if (Math.Abs(dx) + Math.Abs(dy) != 1) // Only 4-connected
-                                continue;
+                            float distance = Vector2.Distance(worldPos, section.CenterPoint);
                             
-                            int nx = x + dx;
-                            int ny = y + dy;
-                            
-                            if (roadMask[ny, nx] > 128)
+                            if (distance < minDistance)
                             {
-                                float neighborElev = constrained[ny, nx];
-                                float diff = MathF.Abs(currentElev - neighborElev);
-                                
-                                if (diff > maxSlopeDiff)
-                                {
-                                    // Average to reduce slope
-                                    float avg = (currentElev + neighborElev) / 2.0f;
-                                    constrained[y, x] = avg;
-                                    constrained[ny, nx] = avg;
-                                    changed = true;
-                                }
+                                minDistance = distance;
+                                nearest = section;
+                                foundInThisRadius = true;
                             }
                         }
                     }
                 }
             }
             
-            if (!changed)
+            // If we found something in this radius and it's close enough, stop searching
+            if (foundInThisRadius && minDistance < maxSearchDistance)
                 break;
-        }
-        
-        return constrained;
-    }
-    
-    private int ApplyRoadSmoothing(
-        float[,] originalHeightMap,
-        float[,] modifiedHeightMap,
-        byte[,] roadMask,
-        float[,] roadElevations,
-        RoadSmoothingParameters parameters,
-        float metersPerPixel)
-    {
-        int height = originalHeightMap.GetLength(0);
-        int width = originalHeightMap.GetLength(1);
-        int modifiedPixels = 0;
-        
-        Console.WriteLine("Applying road smoothing and blending...");
-        
-        float blendDistancePixels = parameters.TerrainAffectedRangeMeters / metersPerPixel;
-        int maxSearchRadius = (int)Math.Ceiling(blendDistancePixels) + 1;
-        
-        for (int y = 0; y < height; y++)
-        {
-            if (y % 100 == 0 && y > 0)
-            {
-                Console.WriteLine($"  Blending: {(y / (float)height * 100):F1}%");
-            }
             
-            for (int x = 0; x < width; x++)
-            {
-                // Direct road pixel - always modify
-                if (roadMask[y, x] > 128)
-                {
-                    modifiedHeightMap[y, x] = roadElevations[y, x];
-                    modifiedPixels++;
-                    continue;
-                }
-                
-                // Check if this pixel is near enough to a road
-                float distanceToRoad = CalculateDistanceToNearestRoad(roadMask, x, y, maxSearchRadius);
-                
-                // Skip if too far from any road
-                if (distanceToRoad >= float.MaxValue || distanceToRoad > blendDistancePixels)
-                    continue;
-                
-                // Transition zone - blend with terrain
-                float roadElev = GetNearestRoadElevation(roadElevations, roadMask, x, y, maxSearchRadius);
-                
-                float blendFactor = distanceToRoad / blendDistancePixels;
-                float t = BlendFunctions.Apply(blendFactor, parameters.BlendFunctionType);
-                
-                float originalHeight = originalHeightMap[y, x];
-                float heightDiff = originalHeight - roadElev;
-                
-                // Apply side slope constraint
-                float maxSlopeRatio = MathF.Tan(parameters.SideMaxSlopeDegrees * MathF.PI / 180.0f);
-                float maxAllowedDiff = distanceToRoad * metersPerPixel * maxSlopeRatio;
-                
-                if (MathF.Abs(heightDiff) > maxAllowedDiff)
-                {
-                    heightDiff = MathF.Sign(heightDiff) * maxAllowedDiff;
-                }
-                
-                modifiedHeightMap[y, x] = roadElev + heightDiff * t;
-                modifiedPixels++;
-            }
+            searchRadius++;
         }
         
-        return modifiedPixels;
+        // Only return if within max search distance
+        if (minDistance > maxSearchDistance)
+            return null;
+        
+        return nearest;
     }
     
-    private float CalculateDistanceToNearestRoad(byte[,] roadMask, int x, int y, int maxRadius)
+    private float CalculateBlendedHeight(
+        Vector2 worldPos,
+        float roadElevation,
+        float originalHeight,
+        float distanceToCenter,
+        RoadSmoothingParameters parameters)
     {
-        if (roadMask[y, x] > 128)
-            return 0;
+        float halfRoadWidth = parameters.RoadWidthMeters / 2.0f;
         
-        int height = roadMask.GetLength(0);
-        int width = roadMask.GetLength(1);
-        
-        // Simple distance search in expanding square
-        for (int radius = 1; radius <= maxRadius; radius++)
+        // Road Surface Zone - use interpolated road elevation
+        if (distanceToCenter <= halfRoadWidth)
         {
-            for (int dy = -radius; dy <= radius; dy++)
-            {
-                for (int dx = -radius; dx <= radius; dx++)
-                {
-                    // Only check perimeter of square
-                    if (Math.Abs(dx) != radius && Math.Abs(dy) != radius)
-                        continue;
-                    
-                    int nx = x + dx;
-                    int ny = y + dy;
-                    
-                    if (nx >= 0 && nx < width && ny >= 0 && ny < height)
-                    {
-                        if (roadMask[ny, nx] > 128)
-                        {
-                            return MathF.Sqrt(dx * dx + dy * dy);
-                        }
-                    }
-                }
-            }
+            return roadElevation;
         }
         
-        return float.MaxValue;
-    }
-    
-    private float GetNearestRoadElevation(float[,] roadElevations, byte[,] roadMask, int x, int y, int maxRadius)
-    {
-        if (roadMask[y, x] > 128)
-            return roadElevations[y, x];
+        // Transition Zone
+        float roadEdgeDistance = distanceToCenter - halfRoadWidth;
+        float blendFactor = roadEdgeDistance / parameters.TerrainAffectedRangeMeters;
         
-        int height = roadMask.GetLength(0);
-        int width = roadMask.GetLength(1);
+        // Apply blend function
+        float t = BlendFunctions.Apply(blendFactor, parameters.BlendFunctionType);
         
-        // Find nearest road pixel elevation
-        for (int radius = 1; radius <= maxRadius; radius++)
+        // Calculate height difference
+        float heightDiff = originalHeight - roadElevation;
+        
+        // Apply side slope constraint
+        float maxSlopeRatio = MathF.Tan(parameters.SideMaxSlopeDegrees * MathF.PI / 180.0f);
+        float maxAllowedDiff = roadEdgeDistance * maxSlopeRatio;
+        
+        if (MathF.Abs(heightDiff) > maxAllowedDiff)
         {
-            for (int dy = -radius; dy <= radius; dy++)
-            {
-                for (int dx = -radius; dx <= radius; dx++)
-                {
-                    // Only check perimeter of square
-                    if (Math.Abs(dx) != radius && Math.Abs(dy) != radius)
-                        continue;
-                    
-                    int nx = x + dx;
-                    int ny = y + dy;
-                    
-                    if (nx >= 0 && nx < width && ny >= 0 && ny < height)
-                    {
-                        if (roadMask[ny, nx] > 128)
-                        {
-                            return roadElevations[ny, nx];
-                        }
-                    }
-                }
-            }
+            // Constrain to max slope (creates embankment or cutting)
+            heightDiff = MathF.Sign(heightDiff) * maxAllowedDiff;
         }
         
-        // Fallback - return original elevation if no road found nearby
-        return roadElevations[y, x];
+        // Blend between road elevation and constrained terrain
+        return roadElevation + heightDiff * t;
     }
 }
