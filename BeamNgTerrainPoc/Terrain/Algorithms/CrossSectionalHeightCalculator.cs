@@ -31,7 +31,15 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
         // Step 2: Apply longitudinal slope constraints
         ApplySlopeConstraints(geometry.CrossSections, geometry.Parameters.RoadMaxSlopeDegrees);
         
-        Console.WriteLine($"Calculated target elevations (road should be level side-to-side)");
+        // Debug output
+        var avgElevation = geometry.CrossSections.Average(cs => cs.TargetElevation);
+        var minElevation = geometry.CrossSections.Min(cs => cs.TargetElevation);
+        var maxElevation = geometry.CrossSections.Max(cs => cs.TargetElevation);
+        
+        Console.WriteLine($"Target elevations calculated:");
+        Console.WriteLine($"  Average: {avgElevation:F2}m, Min: {minElevation:F2}m, Max: {maxElevation:F2}m");
+        Console.WriteLine($"  First section: {geometry.CrossSections.First().TargetElevation:F2}m at ({geometry.CrossSections.First().CenterPoint.X:F1}, {geometry.CrossSections.First().CenterPoint.Y:F1})");
+        Console.WriteLine($"  Last section:  {geometry.CrossSections.Last().TargetElevation:F2}m at ({geometry.CrossSections.Last().CenterPoint.X:F1}, {geometry.CrossSections.Last().CenterPoint.Y:F1})");
     }
     
     private void CalculateInitialElevations(
@@ -41,6 +49,8 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
     {
         int heightMapHeight = heightMap.GetLength(0);
         int heightMapWidth = heightMap.GetLength(1);
+        
+        int fallbackCount = 0;
         
         foreach (var crossSection in crossSections)
         {
@@ -66,6 +76,7 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
                 pixelY = Math.Clamp(pixelY, 0, heightMapHeight - 1);
                 
                 crossSection.TargetElevation = heightMap[pixelY, pixelX];
+                fallbackCount++;
             }
             else
             {
@@ -74,6 +85,11 @@ public class CrossSectionalHeightCalculator : IHeightCalculator
                 heights.Sort();
                 crossSection.TargetElevation = heights[heights.Count / 2];
             }
+        }
+        
+        if (fallbackCount > 0)
+        {
+            Console.WriteLine($"  Warning: {fallbackCount} cross-sections used fallback (no perpendicular samples)");
         }
     }
     

@@ -5,16 +5,16 @@ using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
-/// Extracts road geometry using spline-based approach.
-/// Creates smooth road spline for direction-aware cross-sectional smoothing.
+/// Extracts road geometry using skeletonization-based spline fitting.
+/// Uses Zhang-Suen thinning to get clean centerlines that handle intersections naturally.
 /// </summary>
 public class MedialAxisRoadExtractor : IRoadExtractor
 {
-    private readonly SparseCenterlineExtractor _centerlineExtractor;
+    private readonly SkeletonizationRoadExtractor _skeletonExtractor;
     
     public MedialAxisRoadExtractor()
     {
-        _centerlineExtractor = new SparseCenterlineExtractor();
+        _skeletonExtractor = new SkeletonizationRoadExtractor();
     }
     
     public RoadGeometry ExtractRoadGeometry(
@@ -24,54 +24,89 @@ public class MedialAxisRoadExtractor : IRoadExtractor
     {
         var geometry = new RoadGeometry(roadLayer, parameters);
         
-        Console.WriteLine("Extracting road geometry with spline-based approach...");
+        Console.WriteLine("Extracting road geometry with skeletonization-based spline approach...");
         
-        // Step 1: Extract sparse centerline points (pixel coordinates)
-        var centerlinePixels = _centerlineExtractor.ExtractCenterlinePoints(roadLayer, metersPerPixel);
+        // Step 1: Extract centerline paths using skeletonization
+        var centerlinePathsPixels = _skeletonExtractor.ExtractCenterlinePaths(roadLayer);
         
-        if (centerlinePixels.Count < 2)
+        if (centerlinePathsPixels.Count == 0)
         {
-            Console.WriteLine("Warning: Insufficient centerline points for spline");
+            Console.WriteLine("Warning: No centerline paths extracted");
             return geometry;
         }
         
-        // Step 2: Convert to world coordinates
-        geometry.Centerline = centerlinePixels
-            .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
-            .ToList();
+        Console.WriteLine($"Extracted {centerlinePathsPixels.Count} path(s)");
         
-        Console.WriteLine($"Centerline: {geometry.Centerline.Count} points");
+        // Step 2: Process each path separately
+        int totalCrossSections = 0;
+        var allCrossSections = new List<CrossSection>();
+        int sectionIndex = 0;
         
-        // Step 3: Create spline through centerline points
-        try
+        foreach (var pathPixels in centerlinePathsPixels)
         {
-            geometry.Spline = new RoadSpline(geometry.Centerline);
-            Console.WriteLine($"Spline created: {geometry.Spline.TotalLength:F1} meters total length");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Warning: Failed to create spline: {ex.Message}");
-            return geometry;
-        }
-        
-        // Step 4: Sample spline to create cross-sections
-        var splineSamples = geometry.Spline.SampleByDistance(parameters.CrossSectionIntervalMeters);
-        Console.WriteLine($"Sampled {splineSamples.Count} points along spline");
-        
-        // Step 5: Convert spline samples to cross-sections
-        geometry.CrossSections = splineSamples
-            .Select((sample, index) => new CrossSection
+            if (pathPixels.Count < 3)
             {
-                Index = index,
-                CenterPoint = sample.Position,
-                TangentDirection = sample.Tangent,
-                NormalDirection = sample.Normal,
-                WidthMeters = parameters.RoadWidthMeters,
-                IsExcluded = false
-            })
-            .ToList();
+                Console.WriteLine($"  Skipping path with only {pathPixels.Count} points");
+                continue;
+            }
+            
+            // For bitmap skeletons, use ALL points - they're already simplified by thinning!
+            // Skeletonization mathematically reduced the road to 1-pixel wide
+            // No need for additional simplification
+            var simplified = pathPixels;
+            Console.WriteLine($"  Path: {pathPixels.Count} skeleton points (no simplification needed for bitmap data)");
+            
+            if (simplified.Count < 2)
+                continue;
+            
+            // Convert to world coordinates
+            var worldPoints = simplified
+                .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
+                .ToList();
+            
+            // Create spline for this path
+            try
+            {
+                var pathSpline = new RoadSpline(worldPoints);
+                float pathLength = pathSpline.TotalLength;
+                
+                Console.WriteLine($"  Spline: {pathLength:F1}m length, {simplified.Count} control points from skeleton");
+                
+                // Sample spline to create cross-sections
+                var splineSamples = pathSpline.SampleByDistance(parameters.CrossSectionIntervalMeters);
+                
+                // Generate cross-sections from samples
+                foreach (var sample in splineSamples)
+                {
+                    allCrossSections.Add(new CrossSection
+                    {
+                        Index = sectionIndex++,
+                        CenterPoint = sample.Position,
+                        TangentDirection = sample.Tangent,
+                        NormalDirection = sample.Normal,
+                        WidthMeters = parameters.RoadWidthMeters,
+                        IsExcluded = false
+                    });
+                }
+                
+                totalCrossSections += splineSamples.Count;
+                
+                // Store the first/longest path as the main centerline
+                if (geometry.Centerline.Count == 0 || worldPoints.Count > geometry.Centerline.Count)
+                {
+                    geometry.Centerline = worldPoints;
+                    geometry.Spline = pathSpline;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  Warning: Failed to create spline for path: {ex.Message}");
+            }
+        }
         
-        Console.WriteLine($"Generated {geometry.CrossSections.Count} cross-sections");
+        geometry.CrossSections = allCrossSections;
+        
+        Console.WriteLine($"Generated {totalCrossSections} total cross-sections from {centerlinePathsPixels.Count} paths");
         
         return geometry;
     }

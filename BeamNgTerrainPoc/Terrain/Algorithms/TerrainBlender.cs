@@ -40,6 +40,10 @@ public class TerrainBlender
         
         Console.WriteLine($"Spatial index built with {spatialIndex.Count} grid cells");
         
+        // Debug: Check if cross-sections have valid elevations
+        var sectionsWithElevation = geometry.CrossSections.Count(cs => cs.TargetElevation != 0);
+        Console.WriteLine($"Cross-sections with non-zero elevation: {sectionsWithElevation}/{geometry.CrossSections.Count}");
+        
         int modifiedPixels = 0;
         float maxAffectedDistance = (parameters.RoadWidthMeters / 2.0f) + parameters.TerrainAffectedRangeMeters;
         
@@ -48,18 +52,20 @@ public class TerrainBlender
         int gridHeight = (height + GridCellSize - 1) / GridCellSize;
         
         Console.WriteLine($"Processing {width}x{height} heightmap with {gridWidth}x{gridHeight} grid...");
+        Console.WriteLine($"Max affected distance: {maxAffectedDistance:F1} meters ({maxAffectedDistance / metersPerPixel:F0} pixels)");
         
         var startTime = DateTime.Now;
         
         // Process each pixel
         for (int y = 0; y < height; y++)
         {
-            if (y % 100 == 0 && y > 0)
+            if (y % 50 == 0 && y > 0)  // More frequent updates (was 100)
             {
                 float progress = (y / (float)height) * 100f;
                 var elapsed = DateTime.Now - startTime;
-                var estimated = TimeSpan.FromSeconds(elapsed.TotalSeconds / progress * 100);
-                Console.WriteLine($"  Progress: {progress:F1}% ({modifiedPixels:N0} pixels modified) - ETA: {estimated:mm\\:ss}");
+                var estimated = elapsed.TotalSeconds > 0 ? TimeSpan.FromSeconds(elapsed.TotalSeconds / (y / (float)height)) : TimeSpan.Zero;
+                var remaining = estimated - elapsed;
+                Console.WriteLine($"  Progress: {progress:F1}% ({modifiedPixels:N0} pixels modified) - Elapsed: {elapsed:mm\\:ss}, ETA: {remaining:mm\\:ss}");
             }
             
             for (int x = 0; x < width; x++)

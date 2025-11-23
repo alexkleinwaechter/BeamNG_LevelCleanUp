@@ -190,21 +190,23 @@ static async Task CreateTerrainWithMultipleMaterials()
                 Console.WriteLine($"Configuring road smoothing for layer {info.Index}");
                 roadParameters = new RoadSmoothingParameters
                 {
-                    // Use DirectMask approach (robust, handles intersections)
+                    // SKELETONIZATION-BASED SPLINE APPROACH
                     Approach = RoadSmoothingApproach.DirectMask,
                     
-                    // Road geometry
-                    RoadWidthMeters = 6.0f,
-                    RoadMaxSlopeDegrees = 14.0f,
-                    TerrainAffectedRangeMeters = 3.0f,
+                    // Road geometry - INCREASED for visibility
+                    RoadWidthMeters = 8.0f,              // Road surface width
+                    TerrainAffectedRangeMeters = 5.0f,   // INCREASED - blend distance from edge
+                    CrossSectionIntervalMeters = 1.0f,    // Cross-section spacing
+                    
+                    // Slope constraints
+                    RoadMaxSlopeDegrees = 14.0f,          // Max longitudinal slope
+                    SideMaxSlopeDegrees = 45.0f,          // Max side slope
                     
                     // Blending
-                    BlendFunctionType = BlendFunctionType.Cosine,
-                    SideMaxSlopeDegrees = 45.0f
+                    BlendFunctionType = BlendFunctionType.Cosine
                     
-                    // NOTE: To use spline-based approach (for simple curved roads without intersections):
-                    // Approach = RoadSmoothingApproach.SplineBased,
-                    // CrossSectionIntervalMeters = 2.0f
+                    // Max affected distance = 10/2 + 20 = 25 meters (25 pixels)
+                    // Total road influence width = 50 meters (very visible!)
                 };
             }
 
