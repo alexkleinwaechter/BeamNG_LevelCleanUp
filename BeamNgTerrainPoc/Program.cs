@@ -190,9 +190,9 @@ static async Task CreateTerrainWithMultipleMaterials()
                 Console.WriteLine($"Configuring road smoothing for layer {info.Index}");
                 roadParameters = new RoadSmoothingParameters
                 {
-                    RoadWidthMeters = 7.0f,
+                    RoadWidthMeters = 6.0f,
                     RoadMaxSlopeDegrees = 14.0f,
-                    TerrainAffectedRangeMeters = 1.0f
+                    TerrainAffectedRangeMeters = 3.0f
                 };
             }
 
