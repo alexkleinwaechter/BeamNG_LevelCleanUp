@@ -190,23 +190,24 @@ static async Task CreateTerrainWithMultipleMaterials()
                 Console.WriteLine($"Configuring road smoothing for layer {info.Index}");
                 roadParameters = new RoadSmoothingParameters
                 {
-                    // SKELETONIZATION-BASED SPLINE APPROACH
-                    Approach = RoadSmoothingApproach.DirectMask,
+                    // OPTION: Choose your approach
+                    // DirectMask: Fast, robust, handles intersections (3 min)
+                    // SplineBased: Slow, perfect leveling on curves (20 min)
+                    Approach = RoadSmoothingApproach.SplineBased,
                     
-                    // Road geometry - INCREASED for visibility
-                    RoadWidthMeters = 8.0f,              // Road surface width
-                    TerrainAffectedRangeMeters = 5.0f,   // INCREASED - blend distance from edge
-                    CrossSectionIntervalMeters = 1.0f,    // Cross-section spacing
+                    // Road geometry (civil engineering standards)
+                    RoadWidthMeters = 8.0f,              // Formation level width (lane width × lanes)
+                    TerrainAffectedRangeMeters = 10.0f,   // Cut/fill zone (extends far from road!)
+                    CrossSectionIntervalMeters = 1.0f,    // Station interval (1m = detailed)
                     
-                    // Slope constraints
-                    RoadMaxSlopeDegrees = 14.0f,          // Max longitudinal slope
-                    SideMaxSlopeDegrees = 45.0f,          // Max side slope
+                    // Slope constraints (civil engineering limits)
+                    RoadMaxSlopeDegrees = 4.0f,           // Longitudinal max (6-10° typical for roads)
+                    SideMaxSlopeDegrees = 30.0f,          // Embankment batter (2:3 slope = 33.7°)
                     
-                    // Blending
+                    // Blending function (smooth cut/fill transitions)
                     BlendFunctionType = BlendFunctionType.Cosine
                     
-                    // Max affected distance = 10/2 + 20 = 25 meters (25 pixels)
-                    // Total road influence width = 50 meters (very visible!)
+                    // Total affected corridor width = 10 + 2×30 = 70 meters (very visible!)
                 };
             }
 
