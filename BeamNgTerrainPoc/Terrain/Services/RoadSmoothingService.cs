@@ -1,6 +1,9 @@
 using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace BeamNgTerrainPoc.Terrain.Services;
 
@@ -75,34 +78,47 @@ public class RoadSmoothingService
             parameters,
             metersPerPixel);
         
-        // 3. Process based on approach
-        float[,] newHeightMap;
-        
-        if (parameters.Approach == RoadSmoothingApproach.DirectMask)
+        // Optional spline debug export
+        if (parameters.Approach == RoadSmoothingApproach.SplineBased && parameters.ExportSplineDebugImage)
         {
-            // Direct approach - no cross-sections needed
-            var directBlender = (DirectTerrainBlender)_terrainBlender!;
-            newHeightMap = directBlender.BlendRoadWithTerrain(
-                heightMap,
-                geometry,
-                parameters,
-                metersPerPixel);
+            try { ExportSplineDebugImage(geometry, metersPerPixel, parameters); }
+            catch (Exception ex) { Console.WriteLine($"Spline debug export failed: {ex.Message}"); }
+        }
+        
+        float[,] newHeightMap = heightMap; // default no change
+        
+        if (!parameters.EnableTerrainBlending)
+        {
+            Console.WriteLine("Terrain blending disabled (debug mode). Returning original heightmap with geometry only.");
         }
         else
         {
-            // Spline approach - calculate elevations first
-            if (geometry.CrossSections.Count > 0)
+            if (parameters.Approach == RoadSmoothingApproach.DirectMask)
             {
-                Console.WriteLine("Calculating target elevations for cross-sections...");
-                _heightCalculator!.CalculateTargetElevations(geometry, heightMap, metersPerPixel);
+                // Direct approach - no cross-sections needed
+                var directBlender = (DirectTerrainBlender)_terrainBlender!;
+                newHeightMap = directBlender.BlendRoadWithTerrain(
+                    heightMap,
+                    geometry,
+                    parameters,
+                    metersPerPixel);
             }
-            
-            var splineBlender = (TerrainBlender)_terrainBlender!;
-            newHeightMap = splineBlender.BlendRoadWithTerrain(
-                heightMap,
-                geometry,
-                parameters,
-                metersPerPixel);
+            else
+            {
+                // Spline approach - calculate elevations first
+                if (geometry.CrossSections.Count > 0)
+                {
+                    Console.WriteLine("Calculating target elevations for cross-sections...");
+                    _heightCalculator!.CalculateTargetElevations(geometry, heightMap, metersPerPixel);
+                }
+                
+                var splineBlender = (TerrainBlender)_terrainBlender!;
+                newHeightMap = splineBlender.BlendRoadWithTerrain(
+                    heightMap,
+                    geometry,
+                    parameters,
+                    metersPerPixel);
+            }
         }
         
         // 4. Calculate delta map and statistics
@@ -132,91 +148,99 @@ public class RoadSmoothingService
         }
     }
     
-    private float[,] CalculateDeltaMap(float[,] original, float[,] modified)
+    private void ExportSplineDebugImage(RoadGeometry geometry, float metersPerPixel, RoadSmoothingParameters parameters)
     {
-        int height = original.GetLength(0);
-        int width = original.GetLength(1);
-        var delta = new float[height, width];
+        if (geometry.Spline == null || geometry.Centerline.Count == 0)
+        {
+            Console.WriteLine("No spline to export.");
+            return;
+        }
+        int width = geometry.Width;
+        int height = geometry.Height;
+        var image = new Image<Rgba32>(width, height, new Rgba32(0,0,0,255));
         
+        // Draw road mask faintly
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                delta[y, x] = modified[y, x] - original[y, x];
+                if (geometry.RoadMask[y, x] > 128)
+                {
+                    image[x, height - 1 - y] = new Rgba32(32,32,32,255); // flip Y for visualization
+                }
             }
         }
         
+        // Draw spline centerline samples
+        float sampleInterval = parameters.CrossSectionIntervalMeters;
+        for (float d = 0; d <= geometry.Spline.TotalLength; d += sampleInterval)
+        {
+            var p = geometry.Spline.GetPointAtDistance(d);
+            int px = (int)(p.X / metersPerPixel);
+            int py = (int)(p.Y / metersPerPixel);
+            if (px >=0 && px < width && py >=0 && py < height)
+            {
+                image[px, height - 1 - py] = new Rgba32(255,255,0,255); // yellow centerline
+            }
+        }
+        
+        // Draw road width (perpendicular segments) for a subset of cross-sections
+        int step = Math.Max(1, (int)(2.0f * parameters.CrossSectionIntervalMeters));
+        foreach (var cs in geometry.CrossSections.Where(c => c.LocalIndex % step == 0))
+        {
+            var center = cs.CenterPoint;
+            float halfWidth = parameters.RoadWidthMeters / 2.0f;
+            var left = center - cs.NormalDirection * halfWidth;
+            var right = center + cs.NormalDirection * halfWidth;
+            int lx = (int)(left.X / metersPerPixel);
+            int ly = (int)(left.Y / metersPerPixel);
+            int rx = (int)(right.X / metersPerPixel);
+            int ry = (int)(right.Y / metersPerPixel);
+            DrawLine(image, lx, ly, rx, ry, new Rgba32(0,255,0,255)); // green road width
+        }
+        
+        var dir = parameters.DebugOutputDirectory;
+        if (string.IsNullOrWhiteSpace(dir)) dir = Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(dir);
+        string filePath = Path.Combine(dir, "spline_debug.png");
+        image.SaveAsPng(filePath);
+        Console.WriteLine($"Exported spline debug image: {filePath}");
+    }
+    
+    private void DrawLine(Image<Rgba32> img, int x0, int y0, int x1, int y1, Rgba32 color)
+    {
+        int height = img.Height;
+        // Flip Y input -> image coordinates
+        y0 = height - 1 - y0;
+        y1 = height - 1 - y1;
+        int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1; int err = dx + dy;
+        while (true)
+        {
+            if (x0 >=0 && x0 < img.Width && y0 >=0 && y0 < img.Height)
+                img[x0, y0] = color;
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+    
+    private float[,] CalculateDeltaMap(float[,] original, float[,] modified)
+    {
+        int h = original.GetLength(0); int w = original.GetLength(1); var delta = new float[h,w];
+        for (int y=0;y<h;y++) for (int x=0;x<w;x++) delta[y,x] = modified[y,x]-original[y,x];
         return delta;
     }
     
-    private SmoothingStatistics CalculateStatistics(
-        float[,] original,
-        float[,] modified,
-        RoadSmoothingParameters parameters,
-        float metersPerPixel)
+    private SmoothingStatistics CalculateStatistics(float[,] original,float[,] modified,RoadSmoothingParameters parameters,float metersPerPixel)
     {
         var stats = new SmoothingStatistics();
-        
-        int height = original.GetLength(0);
-        int width = original.GetLength(1);
-        
-        // Calculate volumes and pixel counts
-        float cutVolume = 0;
-        float fillVolume = 0;
-        int modifiedPixels = 0;
-        float maxDiscontinuity = 0;
-        
-        float pixelArea = metersPerPixel * metersPerPixel;
-        
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                float delta = modified[y, x] - original[y, x];
-                
-                if (MathF.Abs(delta) > 0.001f)
-                {
-                    modifiedPixels++;
-                    
-                    if (delta < 0)
-                        cutVolume += MathF.Abs(delta) * pixelArea;
-                    else
-                        fillVolume += delta * pixelArea;
-                }
-                
-                // Check discontinuities with neighbors
-                if (x < width - 1)
-                {
-                    float discontinuity = MathF.Abs(modified[y, x + 1] - modified[y, x]);
-                    maxDiscontinuity = MathF.Max(maxDiscontinuity, discontinuity);
-                }
-                if (y < height - 1)
-                {
-                    float discontinuity = MathF.Abs(modified[y + 1, x] - modified[y, x]);
-                    maxDiscontinuity = MathF.Max(maxDiscontinuity, discontinuity);
-                }
-            }
-        }
-        
-        stats.TotalCutVolume = cutVolume;
-        stats.TotalFillVolume = fillVolume;
-        stats.PixelsModified = modifiedPixels;
-        stats.MaxDiscontinuity = maxDiscontinuity;
-        
-        // Estimate max road slope from discontinuities
-        stats.MaxRoadSlope = MathF.Atan(maxDiscontinuity / metersPerPixel) * 180.0f / MathF.PI;
-        stats.MaxSideSlope = parameters.SideMaxSlopeDegrees;
-        stats.MaxTransverseSlope = 0;
-        
-        // Check constraints
-        stats.MeetsAllConstraints = true;
-        
-        if (stats.MaxRoadSlope > parameters.RoadMaxSlopeDegrees + 0.1f)
-        {
-            stats.ConstraintViolations.Add($"Max road slope ({stats.MaxRoadSlope:F2}°) exceeds limit ({parameters.RoadMaxSlopeDegrees}°)");
-            stats.MeetsAllConstraints = false;
-        }
-        
-        return stats;
+        int h = original.GetLength(0); int w = original.GetLength(1);
+        float cut=0, fill=0; int modPixels=0; float maxDisc=0; float pixelArea = metersPerPixel * metersPerPixel; const float th=0.001f;
+        var mask = new bool[h,w];
+        for (int y=0;y<h;y++) for (int x=0;x<w;x++) { float d = modified[y,x]-original[y,x]; if (MathF.Abs(d)>th){modPixels++; mask[y,x]=true; if(d<0) cut+=MathF.Abs(d)*pixelArea; else fill+=d*pixelArea;} }
+        for (int y=0;y<h;y++) for (int x=0;x<w;x++) if(mask[y,x]) { if(x<w-1 && mask[y,x+1]) { float disc=MathF.Abs(modified[y,x+1]-modified[y,x]); if(disc>maxDisc) maxDisc=disc;} if(y<h-1 && mask[y+1,x]) { float disc=MathF.Abs(modified[y+1,x]-modified[y,x]); if(disc>maxDisc) maxDisc=disc;} }
+        stats.TotalCutVolume=cut; stats.TotalFillVolume=fill; stats.PixelsModified=modPixels; stats.MaxDiscontinuity=maxDisc; stats.MaxRoadSlope=MathF.Atan(maxDisc/metersPerPixel)*180.0f/MathF.PI; stats.MaxSideSlope=parameters.SideMaxSlopeDegrees; stats.MaxTransverseSlope=0; stats.MeetsAllConstraints=true; if(stats.MaxRoadSlope>parameters.RoadMaxSlopeDegrees+0.1f){ stats.ConstraintViolations.Add($"Max road slope ({stats.MaxRoadSlope:F2}°) exceeds limit ({parameters.RoadMaxSlopeDegrees}°)"); stats.MeetsAllConstraints=false; } return stats;
     }
 }

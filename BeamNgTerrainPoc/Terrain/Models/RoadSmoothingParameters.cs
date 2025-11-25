@@ -87,6 +87,30 @@ public class RoadSmoothingParameters
     public RoadSmoothingApproach Approach { get; set; } = RoadSmoothingApproach.DirectMask;
     
     /// <summary>
+    /// If false, skip terrain blending (debug mode: only extract geometry/elevations)
+    /// </summary>
+    public bool EnableTerrainBlending { get; set; } = true;
+    
+    /// <summary>
+    /// Export spline debug image (only for SplineBased). Shows centerline and road width.
+    /// </summary>
+    public bool ExportSplineDebugImage { get; set; } = false;
+    
+    /// <summary>
+    /// Optional output directory for debug images. If null or empty uses working directory.
+    /// </summary>
+    public string? DebugOutputDirectory { get; set; }
+    
+    /// <summary>Export a skeleton debug image (raw skeleton, ordered path, densified points)</summary>
+    public bool ExportSkeletonDebugImage { get; set; } = false;
+    /// <summary>Use graph-based ordering instead of greedy nearest neighbor.</summary>
+    public bool UseGraphOrdering { get; set; } = true;
+    /// <summary>Maximum spacing (pixels) after densification. Larger gaps will be filled with intermediate points.</summary>
+    public float DensifyMaxSpacingPixels { get; set; } = 1.0f;
+    /// <summary>Maximum neighbor link distance (pixels) allowed when building adjacency graph.</summary>
+    public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
+    
+    /// <summary>
     /// Validates the parameters and returns any errors.
     /// </summary>
     public List<string> Validate()
@@ -111,6 +135,12 @@ public class RoadSmoothingParameters
         if (LongitudinalSmoothingWindowMeters <= 0)
             errors.Add("LongitudinalSmoothingWindowMeters must be greater than 0");
         
+        if (DensifyMaxSpacingPixels <= 0)
+            errors.Add("DensifyMaxSpacingPixels must be greater than 0");
+            
+        if (OrderingNeighborRadiusPixels < 1f)
+            errors.Add("OrderingNeighborRadiusPixels must be at least 1");
+            
         return errors;
     }
 }

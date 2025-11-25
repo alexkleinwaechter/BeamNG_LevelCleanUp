@@ -39,7 +39,17 @@ public class CrossSection
     public bool IsExcluded { get; set; }
     
     /// <summary>
-    /// Index of this cross-section along the road (for ordering)
+    /// Global index of this cross-section across all paths
     /// </summary>
     public int Index { get; set; }
+    
+    /// <summary>
+    /// Identifier for the path this cross-section belongs to
+    /// </summary>
+    public int PathId { get; set; }
+    
+    /// <summary>
+    /// Index within its own path (monotonic along the path)
+    /// </summary>
+    public int LocalIndex { get; set; }
 }

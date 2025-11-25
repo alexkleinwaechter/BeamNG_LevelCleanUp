@@ -1,4 +1,7 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
@@ -11,7 +14,7 @@ public class SkeletonizationRoadExtractor
     /// <summary>
     /// Extract centerline from road mask using skeletonization
     /// </summary>
-    public List<List<Vector2>> ExtractCenterlinePaths(byte[,] roadMask)
+    public List<List<Vector2>> ExtractCenterlinePaths(byte[,] roadMask, RoadSmoothingParameters? parameters = null)
     {
         Console.WriteLine("Extracting road centerline using skeletonization...");
         
@@ -39,15 +42,25 @@ public class SkeletonizationRoadExtractor
         Console.WriteLine($"Skeleton: {skeletonPixels:N0} centerline pixels");
         
         // Step 3: Extract connected components (path segments)
-        var paths = ExtractConnectedPaths(skeleton);
+        var rawPaths = ExtractConnectedPaths(skeleton);
         
-        Console.WriteLine($"Found {paths.Count} path segments");
-        for (int i = 0; i < Math.Min(5, paths.Count); i++)
+        Console.WriteLine($"Found {rawPaths.Count} raw connected components");
+        var orderedPaths = new List<List<Vector2>>();
+        
+        foreach (var path in rawPaths)
         {
-            Console.WriteLine($"  Path {i}: {paths[i].Count} points");
+            var ordered = parameters?.UseGraphOrdering == true
+                ? OrderPathGraph(path, parameters.OrderingNeighborRadiusPixels)
+                : OrderPathPoints(path, parameters?.OrderingNeighborRadiusPixels ?? 2.0f);
+            var densified = DensifyPath(ordered, parameters?.DensifyMaxSpacingPixels ?? 1.0f);
+            orderedPaths.Add(densified);
         }
         
-        return paths;
+        if (parameters?.ExportSkeletonDebugImage == true)
+        {
+            try { ExportSkeletonDebugImage(roadMask, skeleton, orderedPaths, parameters); } catch (Exception ex) { Console.WriteLine($"Skeleton debug export failed: {ex.Message}"); }
+        }
+        return orderedPaths;
     }
     
     /// <summary>
@@ -217,9 +230,7 @@ public class SkeletonizationRoadExtractor
                     
                     if (path.Count >= 3) // Minimum points for a valid path
                     {
-                        // Order points to form continuous path
-                        var orderedPath = OrderPathPoints(path);
-                        paths.Add(orderedPath);
+                        paths.Add(path);
                     }
                 }
             }
@@ -262,16 +273,12 @@ public class SkeletonizationRoadExtractor
         }
     }
     
-    /// <summary>
-    /// Order path points to form a continuous line
-    /// </summary>
-    private List<Vector2> OrderPathPoints(List<Vector2> points)
+    // Original greedy ordering retained for fallback
+    private List<Vector2> OrderPathPoints(List<Vector2> points, float radius)
     {
-        if (points.Count <= 2)
-            return points;
+        if (points.Count <= 2) return points;
         
-        // Find an endpoint (point with only one neighbor in skeleton)
-        var start = FindEndpoint(points) ?? points[0];
+        var start = FindEndpoint(points, radius) ?? points[0];
         
         var ordered = new List<Vector2> { start };
         var remaining = new HashSet<Vector2>(points);
@@ -283,7 +290,7 @@ public class SkeletonizationRoadExtractor
         while (remaining.Count > 0)
         {
             var nearest = remaining
-                .Where(p => Vector2.Distance(current, p) <= 2.0f) // 8-connectivity
+                .Where(p => Vector2.Distance(current, p) <= radius) // 8-connectivity
                 .OrderBy(p => Vector2.Distance(current, p))
                 .FirstOrDefault();
             
@@ -301,10 +308,42 @@ public class SkeletonizationRoadExtractor
         return ordered;
     }
     
-    /// <summary>
-    /// Find endpoint of a path (point with only one neighbor)
-    /// </summary>
-    private Vector2? FindEndpoint(List<Vector2> points)
+    // Graph-based ordering: build adjacency list then perform longest path traversal using DFS
+    private List<Vector2> OrderPathGraph(List<Vector2> points, float neighborRadius)
+    {
+        if(points.Count<=2) return points;
+        var adj=new Dictionary<Vector2,List<Vector2>>();
+        foreach(var p in points) adj[p]=new List<Vector2>();
+        for(int i=0;i<points.Count;i++)
+        {
+            for(int j=i+1;j<points.Count;j++)
+            {
+                float d=Vector2.Distance(points[i],points[j]);
+                if(d<=neighborRadius) { adj[points[i]].Add(points[j]); adj[points[j]].Add(points[i]); }
+            }
+        }
+        // Find endpoints (degree 1) else fall back
+        var endpoints=adj.Where(kv=>kv.Value.Count==1).Select(kv=>kv.Key).ToList();
+        var best=new List<Vector2>();
+        if(endpoints.Count>=2)
+        {
+            foreach(var ep in endpoints)
+            {
+                var path=DepthLongest(ep,adj,new HashSet<Vector2>());
+                if(path.Count>best.Count) best=path;
+            }
+        }
+        if(best.Count==0) // fallback: start anywhere
+        {
+            best=DepthLongest(points[0],adj,new HashSet<Vector2>());
+        }
+        return best;
+    }
+    
+    private List<Vector2> DepthLongest(Vector2 start, Dictionary<Vector2,List<Vector2>> adj, HashSet<Vector2> visited)
+    { visited.Add(start); var best=new List<Vector2>{start}; foreach(var n in adj[start]) if(!visited.Contains(n)) { var path=DepthLongest(n,adj,visited); if(path.Count+1>best.Count) { best=new List<Vector2>{start}; best.AddRange(path); } } return best; }
+    
+    private Vector2? FindEndpoint(List<Vector2> points, float radius)
     {
         foreach (var point in points)
         {
@@ -312,7 +351,7 @@ public class SkeletonizationRoadExtractor
             {
                 if (p == point) return false;
                 float dist = Vector2.Distance(p, point);
-                return dist <= 2.0f; // 8-connectivity
+                return dist <= radius; // 8-connectivity
             });
             
             if (neighbors == 1)
@@ -320,5 +359,55 @@ public class SkeletonizationRoadExtractor
         }
         
         return null;
+    }
+    
+    private List<Vector2> DensifyPath(List<Vector2> ordered, float maxSpacing)
+    {
+        if (ordered.Count < 2) return ordered;
+        var result = new List<Vector2>();
+        
+        for (int i = 0; i < ordered.Count - 1; i++)
+        {
+            var a = ordered[i];
+            var b = ordered[i + 1];
+            result.Add(a);
+            
+            float dist = Vector2.Distance(a, b);
+            if (dist > maxSpacing)
+            {
+                int extra = (int)MathF.Floor(dist / maxSpacing) - 1;
+                for (int k = 1; k <= extra; k++)
+                {
+                    float t = k / (float)(extra + 1);
+                    result.Add(Vector2.Lerp(a, b, t));
+                }
+            }
+        }
+        
+        result.Add(ordered[^1]);
+        return result;
+    }
+    
+    private void ExportSkeletonDebugImage(byte[,] roadMask, bool[,] skeleton, List<List<Vector2>> orderedPaths, RoadSmoothingParameters p)
+    {
+        int h = roadMask.GetLength(0), w = roadMask.GetLength(1);
+        var img = new Image<Rgba32>(w, h, new Rgba32(0, 0, 0, 255));
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) if (roadMask[y, x] > 128) img[x, h - 1 - y] = new Rgba32(25, 25, 25, 255);
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) if (skeleton[y, x]) img[x, h - 1 - y] = new Rgba32(60, 60, 60, 255);
+        var colors = new[]{new Rgba32(255,0,0,255),new Rgba32(0,255,0,255),new Rgba32(0,128,255,255),new Rgba32(255,128,0,255)};
+        int ci = 0; foreach (var path in orderedPaths) {
+            var col = colors[ci % colors.Length];
+            foreach (var pt in path) {
+                int px = (int)pt.X, py = (int)pt.Y;
+                if (px >= 0 && px < w && py >= 0 && py < h) img[px, h - 1 - py] = col;
+            }
+            ci++;
+        }
+        var dir = p.DebugOutputDirectory;
+        if (string.IsNullOrWhiteSpace(dir)) dir = Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(dir);
+        string fp = Path.Combine(dir, "skeleton_debug.png");
+        img.SaveAsPng(fp);
+        Console.WriteLine($"Exported skeleton debug image: {fp}");
     }
 }
