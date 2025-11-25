@@ -200,9 +200,11 @@ internal class Program
                             // DirectMask: Fast, robust, handles intersections (3 min)
                             // SplineBased: Slow, perfect leveling on curves (20 min)
                             Approach = RoadSmoothingApproach.SplineBased,
-                            EnableTerrainBlending = false,
+                            EnableTerrainBlending = true,
                             ExportSplineDebugImage = true,
+                            ExportSmoothedElevationDebugImage = true,
                             DebugOutputDirectory = @"D:\temp\TestMappingTools\_output",
+                            BridgeEndpointMaxDistancePixels = 4.0f,
 
                             // Road geometry (civil engineering standards)
                             RoadWidthMeters = 8.0f,              // Formation level width (lane width × lanes)
@@ -216,7 +218,6 @@ internal class Program
                             // Blending function (smooth cut/fill transitions)
                             BlendFunctionType = BlendFunctionType.Cosine
 
-                            // Total affected corridor width = 10 + 2×30 = 70 meters (very visible!)
                         };
                     }
 

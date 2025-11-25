@@ -101,6 +101,7 @@ public class RoadSmoothingParameters
     /// </summary>
     public string? DebugOutputDirectory { get; set; }
     
+    // DEBUG OPTIONS
     /// <summary>Export a skeleton debug image (raw skeleton, ordered path, densified points)</summary>
     public bool ExportSkeletonDebugImage { get; set; } = false;
     /// <summary>Use graph-based ordering instead of greedy nearest neighbor.</summary>
@@ -109,6 +110,14 @@ public class RoadSmoothingParameters
     public float DensifyMaxSpacingPixels { get; set; } = 1.0f;
     /// <summary>Maximum neighbor link distance (pixels) allowed when building adjacency graph.</summary>
     public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
+    /// <summary>Maximum distance (pixels) to bridge gaps between skeleton endpoints.</summary>
+    public float BridgeEndpointMaxDistancePixels { get; set; } = 4.0f;
+    
+    /// <summary>
+    /// Exports a second spline debug image showing the final calculated elevations color-coded.
+    /// Blue = lowest, Red = highest elevations.
+    /// </summary>
+    public bool ExportSmoothedElevationDebugImage { get; set; } = false;
     
     /// <summary>
     /// Validates the parameters and returns any errors.
@@ -140,6 +149,9 @@ public class RoadSmoothingParameters
             
         if (OrderingNeighborRadiusPixels < 1f)
             errors.Add("OrderingNeighborRadiusPixels must be at least 1");
+            
+        if (BridgeEndpointMaxDistancePixels < 0)
+            errors.Add("BridgeEndpointMaxDistancePixels must be greater than or equal to 0");
             
         return errors;
     }
