@@ -119,6 +119,69 @@ public class RoadSmoothingParameters
     /// </summary>
     public bool ExportSmoothedElevationDebugImage { get; set; } = false;
     
+    // JUNCTION HANDLING
+    /// <summary>
+    /// When true, prefer paths that continue straight through junctions rather than taking sharp turns.
+    /// This helps extract main roads without following every branch at intersections.
+    /// Default: false
+    /// </summary>
+    public bool PreferStraightThroughJunctions { get; set; } = false;
+    
+    /// <summary>
+    /// Maximum angle change (in degrees) to consider a path "straight through" a junction.
+    /// Paths with smaller angle changes are preferred when PreferStraightThroughJunctions is true.
+    /// Default: 45.0 (paths within 45° of current direction are considered straight)
+    /// </summary>
+    public float JunctionAngleThreshold { get; set; } = 45.0f;
+    
+    /// <summary>
+    /// Minimum path length (in pixels) to keep. Shorter paths are filtered out.
+    /// Helps remove small road fragments, parking lots, or driveways.
+    /// Default: 20.0
+    /// </summary>
+    public float MinPathLengthPixels { get; set; } = 20.0f;
+    
+    // SPLINE PARAMETERS
+    /// <summary>
+    /// Tolerance for path simplification (in pixels). Lower values preserve more detail.
+    /// Set to 0 to disable simplification.
+    /// Default: 0.5
+    /// </summary>
+    public float SimplifyTolerancePixels { get; set; } = 0.5f;
+    
+    /// <summary>
+    /// Spline tension parameter (0-1). Higher values make the spline follow control points more tightly.
+    /// 0 = very loose (smooth but may deviate from path)
+    /// 1 = very tight (follows path closely but may be less smooth)
+    /// Default: 0.5
+    /// </summary>
+    public float SplineTension { get; set; } = 0.5f;
+    
+    /// <summary>
+    /// Spline continuity parameter (-1 to 1). Controls how sharp corners are rendered.
+    /// -1 = sharp corners
+    /// 0 = balanced
+    /// 1 = very smooth corners
+    /// Default: 0.0
+    /// </summary>
+    public float SplineContinuity { get; set; } = 0.0f;
+    
+    /// <summary>
+    /// Spline bias parameter (-1 to 1). Controls which direction the curve favors.
+    /// -1 = bias toward previous point
+    /// 0 = neutral
+    /// 1 = bias toward next point
+    /// Default: 0.0
+    /// </summary>
+    public float SplineBias { get; set; } = 0.0f;
+    
+    /// <summary>
+    /// Window size for elevation smoothing (number of cross-sections).
+    /// Larger values create smoother elevation transitions but may lose detail.
+    /// Default: 10
+    /// </summary>
+    public int SmoothingWindowSize { get; set; } = 10;
+    
     /// <summary>
     /// Validates the parameters and returns any errors.
     /// </summary>
@@ -152,6 +215,27 @@ public class RoadSmoothingParameters
             
         if (BridgeEndpointMaxDistancePixels < 0)
             errors.Add("BridgeEndpointMaxDistancePixels must be greater than or equal to 0");
+        
+        if (JunctionAngleThreshold < 0 || JunctionAngleThreshold > 180)
+            errors.Add("JunctionAngleThreshold must be between 0 and 180 degrees");
+        
+        if (MinPathLengthPixels < 0)
+            errors.Add("MinPathLengthPixels must be greater than or equal to 0");
+        
+        if (SimplifyTolerancePixels < 0)
+            errors.Add("SimplifyTolerancePixels must be greater than or equal to 0");
+        
+        if (SplineTension < 0 || SplineTension > 1)
+            errors.Add("SplineTension must be between 0 and 1");
+        
+        if (SplineContinuity < -1 || SplineContinuity > 1)
+            errors.Add("SplineContinuity must be between -1 and 1");
+        
+        if (SplineBias < -1 || SplineBias > 1)
+            errors.Add("SplineBias must be between -1 and 1");
+        
+        if (SmoothingWindowSize < 1)
+            errors.Add("SmoothingWindowSize must be at least 1");
             
         return errors;
     }

@@ -35,16 +35,18 @@ public class SkeletonizationRoadExtractor
         var (endpoints, junctions, classifications) = DetectKeypoints(skeleton);
         Console.WriteLine($"Found {endpoints.Count} endpoints and {junctions.Count} junctions");
         
-        // Extract paths using BeamNG-style algorithm
-        var rawPaths = ExtractPathsFromEndpointsAndJunctions(skeleton, endpoints, junctions, classifications);
+        // Extract paths using BeamNG-style algorithm with junction awareness
+        var rawPaths = ExtractPathsFromEndpointsAndJunctions(skeleton, endpoints, junctions, classifications, parameters);
         Console.WriteLine($"Extracted {rawPaths.Count} raw paths");
         
-        // Join close paths (much more aggressive than before)
-        rawPaths = JoinClosePaths(rawPaths, 40.0f); // 40 pixels like BeamNG
+        // Join close paths (use parameter or default to 40 pixels)
+        float joinThreshold = parameters?.BridgeEndpointMaxDistancePixels ?? 40.0f;
+        rawPaths = JoinClosePaths(rawPaths, joinThreshold);
         Console.WriteLine($"After joining: {rawPaths.Count} paths");
         
-        // Filter short paths
-        rawPaths = FilterShortPaths(rawPaths, 20.0f);
+        // Filter short paths (use parameter or default to 20 pixels)
+        float minLength = parameters?.MinPathLengthPixels ?? 20.0f;
+        rawPaths = FilterShortPaths(rawPaths, minLength);
         Console.WriteLine($"After filtering: {rawPaths.Count} paths");
         
         var orderedPaths = new List<List<Vector2>>();
@@ -157,17 +159,26 @@ public class SkeletonizationRoadExtractor
         return transitions;
     }
     
-    // Extract paths using BeamNG-style approach
+    // Extract paths using BeamNG-style approach WITH JUNCTION AWARENESS
     private List<List<Vector2>> ExtractPathsFromEndpointsAndJunctions(
         bool[,] skeleton, 
         List<Vector2> endpoints, 
         List<Vector2> junctions,
-        Dictionary<int, string> classifications)
+        Dictionary<int, string> classifications,
+        RoadSmoothingParameters? parameters)
     {
         int h = skeleton.GetLength(0), w = skeleton.GetLength(1);
         var visited = new HashSet<int>();
         var paths = new List<List<Vector2>>();
         var walkedArms = new Dictionary<int, HashSet<int>>();
+        
+        bool preferStraight = parameters?.PreferStraightThroughJunctions ?? false;
+        float angleThreshold = parameters?.JunctionAngleThreshold ?? 45.0f;
+        
+        if (preferStraight)
+        {
+            Console.WriteLine($"Junction awareness enabled: preferring paths within {angleThreshold}° of current direction");
+        }
         
         // Mark arm as walked
         void MarkArmWalked(int fromIdx, int toIdx)
@@ -182,18 +193,55 @@ public class SkeletonizationRoadExtractor
             return walkedArms.ContainsKey(fromIdx) && walkedArms[fromIdx].Contains(toIdx);
         }
         
-        // Get all control points (endpoints + junctions)
+        // CRITICAL FIX: Gather ALL skeleton pixels as potential control points (BeamNG approach)
+        // This ensures we don't miss any isolated fragments or loops
         var controlPoints = new List<Vector2>();
-        controlPoints.AddRange(endpoints);
-        controlPoints.AddRange(junctions);
+        for (int y = 1; y < h - 1; y++)
+        {
+            for (int x = 1; x < w - 1; x++)
+            {
+                if (skeleton[y, x])
+                {
+                    int idx = y * w + x;
+                    if (!visited.Contains(idx))
+                    {
+                        controlPoints.Add(new Vector2(x, y));
+                    }
+                }
+            }
+        }
+        
+        Console.WriteLine($"Found {controlPoints.Count} total skeleton pixels to process (includes {endpoints.Count} endpoints, {junctions.Count} junctions)");
         
         // From each control point, walk in all unwalked directions
         foreach (var pt in controlPoints)
         {
             int fromIdx = (int)(pt.Y * w + pt.X);
             
+            // Skip if already visited
+            if (visited.Contains(fromIdx))
+                continue;
+            
             // Get unvisited neighbors
             var neighbors = GetUnvisitedNeighbors(skeleton, (int)pt.X, (int)pt.Y, visited, w, h);
+            
+            // If no neighbors, mark as visited and continue
+            if (neighbors.Count == 0)
+            {
+                visited.Add(fromIdx);
+                continue;
+            }
+            
+            // If junction-aware mode and we have multiple neighbors, sort by preference
+            if (preferStraight && neighbors.Count > 1 && paths.Count > 0)
+            {
+                // Find the last path that ended at this point to get incoming direction
+                var incomingDir = GetIncomingDirection(pt, paths, w);
+                if (incomingDir.HasValue)
+                {
+                    neighbors = SortNeighborsByAngle(pt, neighbors, incomingDir.Value, angleThreshold);
+                }
+            }
             
             foreach (var nb in neighbors)
             {
@@ -224,6 +272,61 @@ public class SkeletonizationRoadExtractor
         return paths;
     }
     
+    // Get the incoming direction to a junction point from existing paths
+    private Vector2? GetIncomingDirection(Vector2 junctionPoint, List<List<Vector2>> paths, int width)
+    {
+        // Find a path that ends at this junction
+        foreach (var path in paths)
+        {
+            if (path.Count < 2) continue;
+            
+            var lastPt = path[path.Count - 1];
+            if (Vector2.Distance(lastPt, junctionPoint) < 1.5f)
+            {
+                // Get direction from second-to-last to last point
+                var prevPt = path[path.Count - 2];
+                var dir = Vector2.Normalize(lastPt - prevPt);
+                return dir;
+            }
+            
+            var firstPt = path[0];
+            if (Vector2.Distance(firstPt, junctionPoint) < 1.5f)
+            {
+                // Get direction from second to first point (reversed)
+                if (path.Count >= 2)
+                {
+                    var nextPt = path[1];
+                    var dir = Vector2.Normalize(firstPt - nextPt);
+                    return dir;
+                }
+            }
+        }
+        return null;
+    }
+    
+    // Sort neighbors by angle from incoming direction (prefer straight through)
+    private List<Vector2> SortNeighborsByAngle(Vector2 fromPoint, List<Vector2> neighbors, Vector2 incomingDir, float angleThreshold)
+    {
+        var scored = neighbors.Select(nb =>
+        {
+            var toDir = Vector2.Normalize(nb - fromPoint);
+            float dot = Vector2.Dot(incomingDir, toDir);
+            float angleRad = MathF.Acos(Math.Clamp(dot, -1f, 1f));
+            float angleDeg = angleRad * 180f / MathF.PI;
+            return new { Neighbor = nb, Angle = angleDeg };
+        })
+        .OrderBy(x => x.Angle) // Smallest angle first (most aligned with incoming direction)
+        .ToList();
+        
+        // Debug output for first junction only
+        if (scored.Count > 1 && scored[0].Angle < angleThreshold)
+        {
+            Console.WriteLine($"  Junction: preferred path at {scored[0].Angle:F1}° vs alternatives at {string.Join(", ", scored.Skip(1).Select(s => $"{s.Angle:F1}°"))}");
+        }
+        
+        return scored.Select(x => x.Neighbor).ToList();
+    }
+    
     // Walk a path from start through first neighbor until hitting another control point
     private List<Vector2> WalkPath(
         bool[,] skeleton,
@@ -243,6 +346,7 @@ public class SkeletonizationRoadExtractor
         {
             int idx = (int)(current.Y * w + current.X);
             
+            // Stop if already visited globally or locally
             if (globalVisited.Contains(idx) || localVisited.Contains(idx))
                 break;
             
@@ -250,8 +354,8 @@ public class SkeletonizationRoadExtractor
             globalVisited.Add(idx);
             localVisited.Add(idx);
             
-            // Stop if we hit another control point
-            if (path.Count > 2 && classifications.ContainsKey(idx))
+            // Stop if we hit another control point (but allow first point)
+            if (path.Count > 1 && classifications.ContainsKey(idx))
                 break;
             
             // Find next unvisited neighbor
@@ -259,6 +363,7 @@ public class SkeletonizationRoadExtractor
             if (neighbors.Count == 0)
                 break;
             
+            // Take first available neighbor (could be enhanced with direction preference here too)
             current = neighbors[0];
         }
         
@@ -495,7 +600,7 @@ public class SkeletonizationRoadExtractor
                 int px=(int)pt.X, py=(int)pt.Y; 
                 if(px>=0&&px<w&&py>=0&&py<h) 
                     img[px,h-1-py]=col; 
-            } 
+            }
             ci++; 
         } 
         var dir=p.DebugOutputDirectory; 

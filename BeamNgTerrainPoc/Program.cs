@@ -203,21 +203,38 @@ internal class Program
                             EnableTerrainBlending = true,
                             ExportSplineDebugImage = true,
                             ExportSmoothedElevationDebugImage = true,
+                            ExportSkeletonDebugImage = true,
                             DebugOutputDirectory = @"D:\temp\TestMappingTools\_output",
-                            BridgeEndpointMaxDistancePixels = 4.0f,
+                            
+                            // JUNCTION BEHAVIOR - Prefer straight through intersections
+                            PreferStraightThroughJunctions = true,    // Follow main road direction
+                            JunctionAngleThreshold = 45.0f,           // Max angle for "straight" (45° = gentle curves OK)
+                            MinPathLengthPixels = 50.0f,              // Ignore short segments (driveways, parking)
+                            
+                            // CONNECTIVITY PARAMETERS - Better gap bridging
+                            BridgeEndpointMaxDistancePixels = 40.0f,  // Bridge up to 40px gaps
+                            DensifyMaxSpacingPixels = 2.0f,           // Add points every 2px for smooth curves
+                            SimplifyTolerancePixels = 1.0f,           // Keep detail (lower = more points preserved)
+                            
+                            // SPLINE FITTING - Balance between smooth and accurate
+                            SplineTension = 0.3f,                     // Lower = straighter through junctions (0-1)
+                            SplineContinuity = 0.5f,                  // Moderate smoothing at corners (-1 to 1)
+                            SplineBias = 0.0f,                        // Neutral (no directional preference)
 
                             // Road geometry (civil engineering standards)
-                            RoadWidthMeters = 8.0f,              // Formation level width (lane width × lanes)
-                            TerrainAffectedRangeMeters = 10.0f,   // Cut/fill zone (extends far from road!)
-                            CrossSectionIntervalMeters = 1.0f,    // Station interval (1m = detailed)
+                            RoadWidthMeters = 8.0f,                   // Formation level width
+                            TerrainAffectedRangeMeters = 10.0f,       // Cut/fill zone
+                            CrossSectionIntervalMeters = 1.0f,        // Station interval (1m = detailed)
 
                             // Slope constraints (civil engineering limits)
-                            RoadMaxSlopeDegrees = 4.0f,           // Longitudinal max (6-10° typical for roads)
-                            SideMaxSlopeDegrees = 30.0f,          // Embankment batter (2:3 slope = 33.7°)
+                            RoadMaxSlopeDegrees = 6.0f,               // Slightly increased for mountain roads
+                            SideMaxSlopeDegrees = 30.0f,              // Embankment batter (2:3 slope)
 
+                            // Smoothing window (larger = smoother elevation transitions)
+                            SmoothingWindowSize = 15,                 // Average over 15 cross-sections
+                            
                             // Blending function (smooth cut/fill transitions)
                             BlendFunctionType = BlendFunctionType.Cosine
-
                         };
                     }
 
