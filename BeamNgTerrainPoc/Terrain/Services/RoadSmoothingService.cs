@@ -53,6 +53,27 @@ public class RoadSmoothingService
             throw new ArgumentException($"Invalid parameters: {string.Join(", ", validationErrors)}");
         }
         
+        // Auto-adjust CrossSectionIntervalMeters to prevent "dotted road" artifacts
+        float totalImpactRadius = (parameters.RoadWidthMeters / 2.0f) + parameters.TerrainAffectedRangeMeters;
+        float recommendedMaxInterval = totalImpactRadius / 3.0f; // Need at least 3 cross-sections across impact zone
+        
+        if (parameters.CrossSectionIntervalMeters > recommendedMaxInterval)
+        {
+            Console.WriteLine($"  ?? WARNING: CrossSectionIntervalMeters ({parameters.CrossSectionIntervalMeters}m) may cause gaps!");
+            Console.WriteLine($"  Recommended max: {recommendedMaxInterval:F2}m for {totalImpactRadius:F1}m impact radius");
+            Console.WriteLine($"  Auto-adjusting to prevent dotted roads...");
+            parameters.CrossSectionIntervalMeters = recommendedMaxInterval * 0.8f; // Use 80% for safety margin
+            Console.WriteLine($"  ? Adjusted to: {parameters.CrossSectionIntervalMeters:F2}m");
+        }
+        
+        // Warn about global leveling with small blend zones
+        if (parameters.GlobalLevelingStrength > 0.5f && parameters.TerrainAffectedRangeMeters < 15.0f)
+        {
+            Console.WriteLine($"  ?? WARNING: High GlobalLevelingStrength ({parameters.GlobalLevelingStrength:F2}) + small blend range ({parameters.TerrainAffectedRangeMeters}m)");
+            Console.WriteLine($"  This combination may create disconnected road segments (dots)!");
+            Console.WriteLine($"  Consider: GlobalLevelingStrength=0 (terrain-following) OR TerrainAffectedRangeMeters?15m");
+        }
+        
         // Initialize components based on approach
         InitializeComponents(parameters.Approach);
         

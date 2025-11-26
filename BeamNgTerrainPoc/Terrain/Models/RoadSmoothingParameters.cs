@@ -15,64 +15,126 @@ public enum RoadSmoothingApproach
     /// <summary>
     /// Spline-based approach - uses centerline extraction and smooth splines.
     /// Perpendicular sampling (level on curves).
-    /// Best for: Simple curved roads without intersections.
+    /// Best for: Simple curved roads, highways, racing circuits WITHOUT complex intersections.
     /// Note: May fail on complex road networks!
     /// </summary>
     SplineBased
 }
 
 /// <summary>
-/// Parameters for road smoothing algorithm applied to heightmaps.
-/// Defines how roads should be flattened and blended into surrounding terrain.
+/// Main parameters for road smoothing algorithm applied to heightmaps.
+/// Contains COMMON parameters for all approaches, plus approach-specific sub-parameters.
 /// </summary>
 public class RoadSmoothingParameters
 {
+    // ========================================
+    // APPROACH SELECTION
+    // ========================================
+    
     /// <summary>
-    /// Width of the road in meters.
+    /// Which approach to use for road smoothing.
+    /// Default: DirectMask (most robust, handles intersections)
+    /// </summary>
+    public RoadSmoothingApproach Approach { get; set; } = RoadSmoothingApproach.DirectMask;
+    
+    // ========================================
+    // APPROACH-SPECIFIC PARAMETERS
+    // ========================================
+    
+    /// <summary>
+    /// Spline-specific parameters (only used when Approach = SplineBased).
+    /// Null = use defaults. Set this to customize spline extraction and smoothing.
+    /// </summary>
+    public SplineRoadParameters? SplineParameters { get; set; }
+    
+    /// <summary>
+    /// DirectMask-specific parameters (only used when Approach = DirectMask).
+    /// Null = use defaults. Set this to customize direct mask sampling.
+    /// </summary>
+    public DirectMaskRoadParameters? DirectMaskParameters { get; set; }
+    
+    // ========================================
+    // COMMON ROAD GEOMETRY (All Approaches)
+    // ========================================
+    
+    /// <summary>
+    /// Width of the road surface in meters.
+    /// This is the area that will be completely flattened to target elevation.
     /// Default: 8.0 (typical 2-lane road)
     /// </summary>
     public float RoadWidthMeters { get; set; } = 8.0f;
     
     /// <summary>
     /// Distance from road edge to blend terrain in meters.
-    /// This is the range where the road transitions smoothly into natural terrain.
-    /// Default: 15.0
+    /// This creates the embankment/transition zone between road and natural terrain.
+    /// 
+    /// Total terrain impact width = RoadWidthMeters + (TerrainAffectedRangeMeters × 2)
+    /// Example: 8m road + (12m × 2) = 32m total width
+    /// 
+    /// Typical values:
+    /// - 8-12m: Narrow mountain road (tight integration)
+    /// - 12-15m: Standard highway (realistic)
+    /// - 20-30m: Wide highway or when using high GlobalLevelingStrength
+    /// 
+    /// Default: 12.0
     /// </summary>
-    public float TerrainAffectedRangeMeters { get; set; } = 15.0f;
-    
-    /// <summary>
-    /// Maximum allowed road slope in degrees.
-    /// Prevents unrealistic steepness on the road surface.
-    /// Default: 8.0 (typical highway maximum)
-    /// </summary>
-    public float RoadMaxSlopeDegrees { get; set; } = 8.0f;
-    
-    /// <summary>
-    /// Maximum slope for embankments/sides in degrees.
-    /// Controls how sharply the terrain transitions from road to environment.
-    /// Default: 30.0 (stable embankment)
-    /// </summary>
-    public float SideMaxSlopeDegrees { get; set; } = 30.0f;
-    
-    /// <summary>
-    /// Paths to layer maps for areas to exclude from road smoothing (e.g., water, bridges).
-    /// White pixels (255) in these layers indicate areas where road smoothing should NOT occur.
-    /// </summary>
-    public List<string>? ExclusionLayerPaths { get; set; }
+    public float TerrainAffectedRangeMeters { get; set; } = 12.0f;
     
     /// <summary>
     /// Distance between cross-section samples in meters.
     /// Smaller values = more accurate but slower processing.
-    /// Default: 2.0
+    /// 
+    /// IMPORTANT: Should be ? (RoadWidthMeters/2 + TerrainAffectedRangeMeters) / 3 to avoid gaps!
+    /// 
+    /// Typical values:
+    /// - 0.25-0.5m: Ultra-high detail (racing circuits)
+    /// - 0.5-1.0m: High detail (highways)
+    /// - 1.0-2.0m: Standard detail (local roads)
+    /// 
+    /// Default: 0.5
     /// </summary>
-    public float CrossSectionIntervalMeters { get; set; } = 2.0f;
+    public float CrossSectionIntervalMeters { get; set; } = 0.5f;
     
     /// <summary>
     /// Window size for longitudinal smoothing in meters.
-    /// Affects how smooth the road is along its length.
+    /// Affects how smooth the road is along its length direction.
     /// Default: 20.0
     /// </summary>
     public float LongitudinalSmoothingWindowMeters { get; set; } = 20.0f;
+    
+    // ========================================
+    // SLOPE CONSTRAINTS (All Approaches)
+    // ========================================
+    
+    /// <summary>
+    /// Maximum allowed road surface slope in degrees.
+    /// Prevents unrealistic steepness on the road itself.
+    /// 
+    /// Typical values:
+    /// - 1-2°: Racing circuit (ultra-flat)
+    /// - 4-6°: Highway standard
+    /// - 8-10°: Mountain road (steep but driveable)
+    /// 
+    /// Default: 4.0
+    /// </summary>
+    public float RoadMaxSlopeDegrees { get; set; } = 4.0f;
+    
+    /// <summary>
+    /// Maximum slope for embankments/sides in degrees.
+    /// Controls how sharply terrain transitions from road edge to natural terrain.
+    /// 
+    /// Typical values:
+    /// - 20-25°: Gentle embankment (1:2.5 ratio)
+    /// - 30°: Standard embankment (1:1.7 ratio)
+    /// - 35-40°: Steep embankment (1:1.2 ratio)
+    /// 
+    /// Default: 30.0
+    /// </summary>
+    public float SideMaxSlopeDegrees { get; set; } = 30.0f;
+    
+    // ========================================
+    // BLENDING (All Approaches)
+    // ========================================
     
     /// <summary>
     /// Type of blend function to use for terrain transitions.
@@ -81,119 +143,207 @@ public class RoadSmoothingParameters
     public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
     
     /// <summary>
-    /// Which approach to use for road smoothing
-    /// Default: DirectMask (most robust)
-    /// </summary>
-    public RoadSmoothingApproach Approach { get; set; } = RoadSmoothingApproach.DirectMask;
-    
-    /// <summary>
-    /// If false, skip terrain blending (debug mode: only extract geometry/elevations)
+    /// If false, skip terrain blending (debug mode: only extract geometry/elevations).
+    /// Default: true
     /// </summary>
     public bool EnableTerrainBlending { get; set; } = true;
     
-    /// <summary>
-    /// Export spline debug image (only for SplineBased). Shows centerline and road width.
-    /// </summary>
-    public bool ExportSplineDebugImage { get; set; } = false;
+    // ========================================
+    // EXCLUSION ZONES (All Approaches)
+    // ========================================
     
     /// <summary>
-    /// Optional output directory for debug images. If null or empty uses working directory.
+    /// Paths to layer maps for areas to exclude from road smoothing.
+    /// White pixels (255) in these layers indicate areas where smoothing should NOT occur.
+    /// </summary>
+    public List<string>? ExclusionLayerPaths { get; set; }
+    
+    // ========================================
+    // DEBUG OUTPUT (All Approaches)
+    // ========================================
+    
+    /// <summary>
+    /// Optional output directory for debug images. If null uses working directory.
     /// </summary>
     public string? DebugOutputDirectory { get; set; }
     
-    // DEBUG OPTIONS
-    /// <summary>Export a skeleton debug image (raw skeleton, ordered path, densified points)</summary>
-    public bool ExportSkeletonDebugImage { get; set; } = false;
-    /// <summary>Use graph-based ordering instead of greedy nearest neighbor.</summary>
-    public bool UseGraphOrdering { get; set; } = true;
-    /// <summary>Maximum spacing (pixels) after densification. Larger gaps will be filled with intermediate points.</summary>
-    public float DensifyMaxSpacingPixels { get; set; } = 1.0f;
-    /// <summary>Maximum neighbor link distance (pixels) allowed when building adjacency graph.</summary>
-    public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
-    /// <summary>Maximum distance (pixels) to bridge gaps between skeleton endpoints.</summary>
-    public float BridgeEndpointMaxDistancePixels { get; set; } = 4.0f;
+    // ========================================
+    // BACKWARD COMPATIBILITY PROPERTIES
+    // THESE PROVIDE DIRECT ACCESS TO SUB-PARAMETERS FOR SIMPLER API
+    // ========================================
+    
+    #region Backward Compatibility - Spline Properties
+    
+    public bool UseGraphOrdering
+    {
+        get => GetSplineParameters().UseGraphOrdering;
+        set => GetSplineParameters().UseGraphOrdering = value;
+    }
+    
+    public float DensifyMaxSpacingPixels
+    {
+        get => GetSplineParameters().DensifyMaxSpacingPixels;
+        set => GetSplineParameters().DensifyMaxSpacingPixels = value;
+    }
+    
+    public float OrderingNeighborRadiusPixels
+    {
+        get => GetSplineParameters().OrderingNeighborRadiusPixels;
+        set => GetSplineParameters().OrderingNeighborRadiusPixels = value;
+    }
+    
+    public float BridgeEndpointMaxDistancePixels
+    {
+        get => GetSplineParameters().BridgeEndpointMaxDistancePixels;
+        set => GetSplineParameters().BridgeEndpointMaxDistancePixels = value;
+    }
+    
+    public bool PreferStraightThroughJunctions
+    {
+        get => GetSplineParameters().PreferStraightThroughJunctions;
+        set => GetSplineParameters().PreferStraightThroughJunctions = value;
+    }
+    
+    public float JunctionAngleThreshold
+    {
+        get => GetSplineParameters().JunctionAngleThreshold;
+        set => GetSplineParameters().JunctionAngleThreshold = value;
+    }
+    
+    public float MinPathLengthPixels
+    {
+        get => GetSplineParameters().MinPathLengthPixels;
+        set => GetSplineParameters().MinPathLengthPixels = value;
+    }
+    
+    public float SimplifyTolerancePixels
+    {
+        get => GetSplineParameters().SimplifyTolerancePixels;
+        set => GetSplineParameters().SimplifyTolerancePixels = value;
+    }
+    
+    public float SplineTension
+    {
+        get => GetSplineParameters().SplineTension;
+        set => GetSplineParameters().SplineTension = value;
+    }
+    
+    public float SplineContinuity
+    {
+        get => GetSplineParameters().SplineContinuity;
+        set => GetSplineParameters().SplineContinuity = value;
+    }
+    
+    public float SplineBias
+    {
+        get => GetSplineParameters().SplineBias;
+        set => GetSplineParameters().SplineBias = value;
+    }
+    
+    public int SmoothingWindowSize
+    {
+        get => GetSplineParameters().SmoothingWindowSize;
+        set => GetSplineParameters().SmoothingWindowSize = value;
+    }
+    
+    public bool UseButterworthFilter
+    {
+        get => Approach == RoadSmoothingApproach.SplineBased 
+            ? GetSplineParameters().UseButterworthFilter 
+            : GetDirectMaskParameters().UseButterworthFilter;
+        set
+        {
+            if (Approach == RoadSmoothingApproach.SplineBased)
+                GetSplineParameters().UseButterworthFilter = value;
+            else
+                GetDirectMaskParameters().UseButterworthFilter = value;
+        }
+    }
+    
+    public int ButterworthFilterOrder
+    {
+        get => Approach == RoadSmoothingApproach.SplineBased 
+            ? GetSplineParameters().ButterworthFilterOrder 
+            : GetDirectMaskParameters().ButterworthFilterOrder;
+        set
+        {
+            if (Approach == RoadSmoothingApproach.SplineBased)
+                GetSplineParameters().ButterworthFilterOrder = value;
+            else
+                GetDirectMaskParameters().ButterworthFilterOrder = value;
+        }
+    }
+    
+    public float GlobalLevelingStrength
+    {
+        get => GetSplineParameters().GlobalLevelingStrength;
+        set => GetSplineParameters().GlobalLevelingStrength = value;
+    }
+    
+    public bool ExportSplineDebugImage
+    {
+        get => GetSplineParameters().ExportSplineDebugImage;
+        set => GetSplineParameters().ExportSplineDebugImage = value;
+    }
+    
+    public bool ExportSkeletonDebugImage
+    {
+        get => GetSplineParameters().ExportSkeletonDebugImage;
+        set => GetSplineParameters().ExportSkeletonDebugImage = value;
+    }
+    
+    public bool ExportSmoothedElevationDebugImage
+    {
+        get => GetSplineParameters().ExportSmoothedElevationDebugImage;
+        set => GetSplineParameters().ExportSmoothedElevationDebugImage = value;
+    }
+    
+    #endregion
+    
+    #region Backward Compatibility - DirectMask Properties
+    
+    public int RoadPixelSearchRadius
+    {
+        get => GetDirectMaskParameters().RoadPixelSearchRadius;
+        set => GetDirectMaskParameters().RoadPixelSearchRadius = value;
+    }
+    
+    #endregion
+    
+    // ========================================
+    // HELPER METHODS
+    // ========================================
     
     /// <summary>
-    /// Exports a second spline debug image showing the final calculated elevations color-coded.
-    /// Blue = lowest, Red = highest elevations.
+    /// Gets or creates the SplineParameters object (auto-creates with defaults if null).
     /// </summary>
-    public bool ExportSmoothedElevationDebugImage { get; set; } = false;
+    public SplineRoadParameters GetSplineParameters()
+    {
+        return SplineParameters ??= new SplineRoadParameters();
+    }
     
-    // JUNCTION HANDLING
     /// <summary>
-    /// When true, prefer paths that continue straight through junctions rather than taking sharp turns.
-    /// This helps extract main roads without following every branch at intersections.
-    /// Default: false
+    /// Gets or creates the DirectMaskParameters object (auto-creates with defaults if null).
     /// </summary>
-    public bool PreferStraightThroughJunctions { get; set; } = false;
+    public DirectMaskRoadParameters GetDirectMaskParameters()
+    {
+        return DirectMaskParameters ??= new DirectMaskRoadParameters();
+    }
     
     /// <summary>
-    /// Maximum angle change (in degrees) to consider a path "straight through" a junction.
-    /// Paths with smaller angle changes are preferred when PreferStraightThroughJunctions is true.
-    /// Default: 45.0 (paths within 45° of current direction are considered straight)
-    /// </summary>
-    public float JunctionAngleThreshold { get; set; } = 45.0f;
-    
-    /// <summary>
-    /// Minimum path length (in pixels) to keep. Shorter paths are filtered out.
-    /// Helps remove small road fragments, parking lots, or driveways.
-    /// Default: 20.0
-    /// </summary>
-    public float MinPathLengthPixels { get; set; } = 20.0f;
-    
-    // SPLINE PARAMETERS
-    /// <summary>
-    /// Tolerance for path simplification (in pixels). Lower values preserve more detail.
-    /// Set to 0 to disable simplification.
-    /// Default: 0.5
-    /// </summary>
-    public float SimplifyTolerancePixels { get; set; } = 0.5f;
-    
-    /// <summary>
-    /// Spline tension parameter (0-1). Higher values make the spline follow control points more tightly.
-    /// 0 = very loose (smooth but may deviate from path)
-    /// 1 = very tight (follows path closely but may be less smooth)
-    /// Default: 0.5
-    /// </summary>
-    public float SplineTension { get; set; } = 0.5f;
-    
-    /// <summary>
-    /// Spline continuity parameter (-1 to 1). Controls how sharp corners are rendered.
-    /// -1 = sharp corners
-    /// 0 = balanced
-    /// 1 = very smooth corners
-    /// Default: 0.0
-    /// </summary>
-    public float SplineContinuity { get; set; } = 0.0f;
-    
-    /// <summary>
-    /// Spline bias parameter (-1 to 1). Controls which direction the curve favors.
-    /// -1 = bias toward previous point
-    /// 0 = neutral
-    /// 1 = bias toward next point
-    /// Default: 0.0
-    /// </summary>
-    public float SplineBias { get; set; } = 0.0f;
-    
-    /// <summary>
-    /// Window size for elevation smoothing (number of cross-sections).
-    /// Larger values create smoother elevation transitions but may lose detail.
-    /// Default: 10
-    /// </summary>
-    public int SmoothingWindowSize { get; set; } = 10;
-    
-    /// <summary>
-    /// Validates the parameters and returns any errors.
+    /// Validates all parameters and returns any errors.
+    /// Includes validation for approach-specific parameters.
     /// </summary>
     public List<string> Validate()
     {
         var errors = new List<string>();
         
+        // Validate common parameters
         if (RoadWidthMeters <= 0)
             errors.Add("RoadWidthMeters must be greater than 0");
             
         if (TerrainAffectedRangeMeters < 0)
-            errors.Add("TerrainAffectedRangeMeters must be greater than or equal to 0");
+            errors.Add("TerrainAffectedRangeMeters must be >= 0");
             
         if (RoadMaxSlopeDegrees < 0 || RoadMaxSlopeDegrees > 90)
             errors.Add("RoadMaxSlopeDegrees must be between 0 and 90");
@@ -207,35 +357,39 @@ public class RoadSmoothingParameters
         if (LongitudinalSmoothingWindowMeters <= 0)
             errors.Add("LongitudinalSmoothingWindowMeters must be greater than 0");
         
-        if (DensifyMaxSpacingPixels <= 0)
-            errors.Add("DensifyMaxSpacingPixels must be greater than 0");
+        // Validate approach-specific parameters
+        if (Approach == RoadSmoothingApproach.SplineBased && SplineParameters != null)
+        {
+            errors.AddRange(SplineParameters.Validate());
+        }
+        else if (Approach == RoadSmoothingApproach.DirectMask && DirectMaskParameters != null)
+        {
+            errors.AddRange(DirectMaskParameters.Validate());
+        }
+        
+        // Warn about problematic combinations (SplineBased only)
+        if (Approach == RoadSmoothingApproach.SplineBased)
+        {
+            var splineParams = GetSplineParameters();
             
-        if (OrderingNeighborRadiusPixels < 1f)
-            errors.Add("OrderingNeighborRadiusPixels must be at least 1");
+            // Warn about dotted roads risk
+            if (splineParams.GlobalLevelingStrength > 0.5f && TerrainAffectedRangeMeters < 15.0f)
+            {
+                errors.Add($"WARNING: High GlobalLevelingStrength ({splineParams.GlobalLevelingStrength:F2}) " +
+                          $"with small TerrainAffectedRangeMeters ({TerrainAffectedRangeMeters}m) " +
+                          $"may create disconnected road segments! Recommend: TerrainAffectedRangeMeters ? 20m " +
+                          $"OR GlobalLevelingStrength ? 0.5");
+            }
             
-        if (BridgeEndpointMaxDistancePixels < 0)
-            errors.Add("BridgeEndpointMaxDistancePixels must be greater than or equal to 0");
-        
-        if (JunctionAngleThreshold < 0 || JunctionAngleThreshold > 180)
-            errors.Add("JunctionAngleThreshold must be between 0 and 180 degrees");
-        
-        if (MinPathLengthPixels < 0)
-            errors.Add("MinPathLengthPixels must be greater than or equal to 0");
-        
-        if (SimplifyTolerancePixels < 0)
-            errors.Add("SimplifyTolerancePixels must be greater than or equal to 0");
-        
-        if (SplineTension < 0 || SplineTension > 1)
-            errors.Add("SplineTension must be between 0 and 1");
-        
-        if (SplineContinuity < -1 || SplineContinuity > 1)
-            errors.Add("SplineContinuity must be between -1 and 1");
-        
-        if (SplineBias < -1 || SplineBias > 1)
-            errors.Add("SplineBias must be between -1 and 1");
-        
-        if (SmoothingWindowSize < 1)
-            errors.Add("SmoothingWindowSize must be at least 1");
+            // Warn about insufficient cross-section density
+            float totalImpactRadius = (RoadWidthMeters / 2.0f) + TerrainAffectedRangeMeters;
+            float recommendedMaxInterval = totalImpactRadius / 3.0f;
+            if (CrossSectionIntervalMeters > recommendedMaxInterval)
+            {
+                errors.Add($"WARNING: CrossSectionIntervalMeters ({CrossSectionIntervalMeters}m) may cause gaps! " +
+                          $"Recommend: ? {recommendedMaxInterval:F2}m for {totalImpactRadius:F1}m impact radius");
+            }
+        }
             
         return errors;
     }

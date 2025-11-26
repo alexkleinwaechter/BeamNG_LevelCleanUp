@@ -196,45 +196,58 @@ internal class Program
                         Console.WriteLine($"Configuring road smoothing for layer {info.Index}");
                         roadParameters = new RoadSmoothingParameters
                         {
-                            // OPTION: Choose your approach
-                            // DirectMask: Fast, robust, handles intersections (3 min)
-                            // SplineBased: Slow, perfect leveling on curves (20 min)
+                            // ========================================
+                            // APPROACH & COMMON SETTINGS
+                            // ========================================
                             Approach = RoadSmoothingApproach.SplineBased,
                             EnableTerrainBlending = true,
-                            ExportSplineDebugImage = true,
-                            ExportSmoothedElevationDebugImage = true,
-                            ExportSkeletonDebugImage = true,
                             DebugOutputDirectory = @"D:\temp\TestMappingTools\_output",
                             
-                            // JUNCTION BEHAVIOR - Prefer straight through intersections
-                            PreferStraightThroughJunctions = true,    // Follow main road direction
-                            JunctionAngleThreshold = 45.0f,           // Max angle for "straight" (45° = gentle curves OK)
-                            MinPathLengthPixels = 50.0f,              // Ignore short segments (driveways, parking)
+                            // ROAD GEOMETRY (applies to all approaches)
+                            RoadWidthMeters = 8.0f,
+                            TerrainAffectedRangeMeters = 12.0f,       // 32m total width (realistic highway)
+                            CrossSectionIntervalMeters = 0.5f,        // Auto-adjusts if needed
                             
-                            // CONNECTIVITY PARAMETERS - Better gap bridging
-                            BridgeEndpointMaxDistancePixels = 40.0f,  // Bridge up to 40px gaps
-                            DensifyMaxSpacingPixels = 2.0f,           // Add points every 2px for smooth curves
-                            SimplifyTolerancePixels = 1.0f,           // Keep detail (lower = more points preserved)
+                            // SLOPE CONSTRAINTS
+                            RoadMaxSlopeDegrees = 4.0f,               // Allow gentle terrain following
+                            SideMaxSlopeDegrees = 30.0f,              // Standard embankment
                             
-                            // SPLINE FITTING - Balance between smooth and accurate
-                            SplineTension = 0.3f,                     // Lower = straighter through junctions (0-1)
-                            SplineContinuity = 0.5f,                  // Moderate smoothing at corners (-1 to 1)
-                            SplineBias = 0.0f,                        // Neutral (no directional preference)
-
-                            // Road geometry (civil engineering standards)
-                            RoadWidthMeters = 8.0f,                   // Formation level width
-                            TerrainAffectedRangeMeters = 10.0f,       // Cut/fill zone
-                            CrossSectionIntervalMeters = 1.0f,        // Station interval (1m = detailed)
-
-                            // Slope constraints (civil engineering limits)
-                            RoadMaxSlopeDegrees = 6.0f,               // Slightly increased for mountain roads
-                            SideMaxSlopeDegrees = 30.0f,              // Embankment batter (2:3 slope)
-
-                            // Smoothing window (larger = smoother elevation transitions)
-                            SmoothingWindowSize = 15,                 // Average over 15 cross-sections
+                            // BLENDING
+                            BlendFunctionType = BlendFunctionType.Cosine,
                             
-                            // Blending function (smooth cut/fill transitions)
-                            BlendFunctionType = BlendFunctionType.Cosine
+                            // ========================================
+                            // SPLINE-SPECIFIC SETTINGS
+                            // ========================================
+                            SplineParameters = new SplineRoadParameters
+                            {
+                                // JUNCTION HANDLING
+                                PreferStraightThroughJunctions = true,
+                                JunctionAngleThreshold = 45.0f,
+                                MinPathLengthPixels = 50.0f,
+                                
+                                // CONNECTIVITY & PATH EXTRACTION
+                                BridgeEndpointMaxDistancePixels = 40.0f,
+                                DensifyMaxSpacingPixels = 1.5f,
+                                SimplifyTolerancePixels = 0.5f,
+                                UseGraphOrdering = true,
+                                OrderingNeighborRadiusPixels = 2.5f,
+                                
+                                // SPLINE CURVE FITTING
+                                SplineTension = 0.2f,                 // Loose for smooth curves
+                                SplineContinuity = 0.7f,              // Very smooth corners
+                                SplineBias = 0.0f,
+                                
+                                // ELEVATION SMOOTHING - Butterworth filter
+                                SmoothingWindowSize = 201,            // 50m radius
+                                UseButterworthFilter = true,          // Maximally flat passband
+                                ButterworthFilterOrder = 4,           // Aggressive flatness
+                                GlobalLevelingStrength = 0.0f,        // DISABLED - terrain-following
+                                
+                                // DEBUG OUTPUT
+                                ExportSplineDebugImage = true,
+                                ExportSkeletonDebugImage = true,
+                                ExportSmoothedElevationDebugImage = true
+                            }
                         };
                     }
 
@@ -261,7 +274,7 @@ internal class Program
                 var parameters = new TerrainCreationParameters
                 {
                     Size = terrainSize,
-                    MaxHeight = 500.0f, // Adjust as needed for your terrain
+                    MaxHeight = 192.54f, // Adjust as needed for your terrain
                     MetersPerPixel = 1.0f, // Adjust based on your terrain scale
                     HeightmapPath = heightmapPath, // Use path instead of image
                     Materials = materials,
