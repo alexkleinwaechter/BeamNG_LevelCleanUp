@@ -222,12 +222,13 @@ internal class Program
                             SplineParameters = new SplineRoadParameters
                             {
                                 // SKELETONIZATION
-                                SkeletonDilationRadius = 0,           // Minimal dilation for clean curves (0-5)
+                                SkeletonDilationRadius = 0,           // No dilation for cleanest skeleton (0-5)
                                 
-                                // JUNCTION HANDLING
-                                PreferStraightThroughJunctions = true,
-                                JunctionAngleThreshold = 90.0f,
-                                MinPathLengthPixels = 50.0f,
+                                // JUNCTION HANDLING - DISABLED for continuous curves
+                                // (Only enable for road networks with actual intersections)
+                                PreferStraightThroughJunctions = false,  // ← Don't interfere with curves
+                                JunctionAngleThreshold = 90.0f,          // (Unused when PreferStraightThroughJunctions=false)
+                                MinPathLengthPixels = 100.0f,            // Filter short fragments + aggressive spur pruning for hairpins
                                 
                                 // CONNECTIVITY & PATH EXTRACTION
                                 BridgeEndpointMaxDistancePixels = 40.0f,

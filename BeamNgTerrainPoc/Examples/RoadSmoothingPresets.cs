@@ -36,7 +36,12 @@ public static class RoadSmoothingPresets
         SplineParameters = new SplineRoadParameters
         {
             // Skeletonization
-            SkeletonDilationRadius = 1,           // Minimal dilation for clean curves
+            SkeletonDilationRadius = 0,           // No dilation for cleanest skeleton
+            
+            // Junction handling - disabled for continuous curves
+            PreferStraightThroughJunctions = false,  // Only enable for road networks with intersections
+            JunctionAngleThreshold = 45.0f,          // (Unused when PreferStraightThroughJunctions=false)
+            MinPathLengthPixels = 50.0f,
             
             // Butterworth filter for maximally flat passband
             UseButterworthFilter = true,
@@ -45,11 +50,6 @@ public static class RoadSmoothingPresets
             
             // Terrain-following mode (no global leveling)
             GlobalLevelingStrength = 0.0f,
-            
-            // Junction handling
-            PreferStraightThroughJunctions = true,
-            JunctionAngleThreshold = 45.0f,
-            MinPathLengthPixels = 50.0f,
             
             // Connectivity
             BridgeEndpointMaxDistancePixels = 40.0f,

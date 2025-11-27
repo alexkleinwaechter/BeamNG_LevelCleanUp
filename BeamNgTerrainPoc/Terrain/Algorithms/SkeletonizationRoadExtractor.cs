@@ -20,12 +20,19 @@ public class SkeletonizationRoadExtractor
                 if (binaryMask[y,x]) roadPixels++;
         Console.WriteLine($"Input: {roadPixels:N0} road pixels");
         
-        // Use configurable dilation radius (default: 1 pixel for minimal tail artifacts)
+        // Use configurable dilation radius (default: 0 for hairpin-friendly skeletonization)
         var sp = parameters?.SplineParameters ?? new SplineRoadParameters();
         int dilationRadius = sp.SkeletonDilationRadius;
         
-        binaryMask = DilateMask(binaryMask, dilationRadius);
-        Console.WriteLine($"After dilation (radius={dilationRadius}px): mask prepared for skeletonization");
+        if (dilationRadius > 0)
+        {
+            binaryMask = DilateMask(binaryMask, dilationRadius);
+            Console.WriteLine($"After dilation (radius={dilationRadius}px): mask prepared for skeletonization");
+        }
+        else
+        {
+            Console.WriteLine($"Dilation disabled (radius=0) - using original mask for hairpin-friendly skeletonization");
+        }
         
         var skeleton = ApplyZhangSuenThinning(binaryMask);
         int skeletonPixels = 0; 
@@ -35,8 +42,9 @@ public class SkeletonizationRoadExtractor
         Console.WriteLine($"Skeleton: {skeletonPixels:N0} centerline pixels");
         
         // PRUNE SHORT SPURS: Remove dead-end branches shorter than threshold
+        // Use more aggressive pruning for hairpins: MinPathLength instead of /4
         float pruneLength = parameters?.SplineParameters?.MinPathLengthPixels ?? 20.0f;
-        skeleton = PruneShortSpurs(skeleton, (int)Math.Max(5, pruneLength / 4)); // Prune very short spurs
+        skeleton = PruneShortSpurs(skeleton, (int)pruneLength); // Full MinPathLength for aggressive pruning
         int prunedPixels = 0;
         for (int y = 0; y < height; y++) 
             for (int x = 0; x < width; x++) 
