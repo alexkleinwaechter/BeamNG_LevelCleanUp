@@ -35,6 +35,9 @@ public static class RoadSmoothingPresets
         // SPLINE-SPECIFIC PARAMETERS
         SplineParameters = new SplineRoadParameters
         {
+            // Skeletonization
+            SkeletonDilationRadius = 1,           // Minimal dilation for clean curves
+            
             // Butterworth filter for maximally flat passband
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,

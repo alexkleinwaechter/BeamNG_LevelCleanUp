@@ -20,9 +20,12 @@ public class SkeletonizationRoadExtractor
                 if (binaryMask[y,x]) roadPixels++;
         Console.WriteLine($"Input: {roadPixels:N0} road pixels");
         
-        // DILATE the mask before skeletonization (BeamNG technique)
-        binaryMask = DilateMask(binaryMask, 3);
-        Console.WriteLine($"After dilation: mask prepared for skeletonization");
+        // Use configurable dilation radius (default: 1 pixel for minimal tail artifacts)
+        var sp = parameters?.SplineParameters ?? new SplineRoadParameters();
+        int dilationRadius = sp.SkeletonDilationRadius;
+        
+        binaryMask = DilateMask(binaryMask, dilationRadius);
+        Console.WriteLine($"After dilation (radius={dilationRadius}px): mask prepared for skeletonization");
         
         var skeleton = ApplyZhangSuenThinning(binaryMask);
         int skeletonPixels = 0; 
@@ -30,6 +33,15 @@ public class SkeletonizationRoadExtractor
             for (int x = 0; x < width; x++) 
                 if (skeleton[y,x]) skeletonPixels++;
         Console.WriteLine($"Skeleton: {skeletonPixels:N0} centerline pixels");
+        
+        // PRUNE SHORT SPURS: Remove dead-end branches shorter than threshold
+        float pruneLength = parameters?.SplineParameters?.MinPathLengthPixels ?? 20.0f;
+        skeleton = PruneShortSpurs(skeleton, (int)Math.Max(5, pruneLength / 4)); // Prune very short spurs
+        int prunedPixels = 0;
+        for (int y = 0; y < height; y++) 
+            for (int x = 0; x < width; x++) 
+                if (skeleton[y,x]) prunedPixels++;
+        Console.WriteLine($"After pruning: {prunedPixels:N0} pixels (removed {skeletonPixels - prunedPixels} spur pixels)");
         
         // Detect keypoints (endpoints and junctions)
         var (endpoints, junctions, classifications) = DetectKeypoints(skeleton);
@@ -63,6 +75,42 @@ public class SkeletonizationRoadExtractor
         }
         
         return orderedPaths;
+    }
+    
+    // NEW: Prune short dead-end branches (spurs) from skeleton
+    private bool[,] PruneShortSpurs(bool[,] skeleton, int maxSpurLength)
+    {
+        int h = skeleton.GetLength(0), w = skeleton.GetLength(1);
+        var result = (bool[,])skeleton.Clone();
+        bool changed = true;
+        int iterations = 0;
+        
+        while (changed && iterations < maxSpurLength)
+        {
+            changed = false;
+            iterations++;
+            
+            for (int y = 1; y < h - 1; y++)
+            {
+                for (int x = 1; x < w - 1; x++)
+                {
+                    if (!result[y, x]) continue;
+                    
+                    // Count neighbors
+                    int neighbors = CountNeighbors(result, x, y);
+                    
+                    // If endpoint (degree 1), remove it
+                    if (neighbors == 1)
+                    {
+                        result[y, x] = false;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        
+        Console.WriteLine($"  Spur pruning: {iterations} iteration(s), max spur length: {maxSpurLength}px");
+        return result;
     }
     
     // Dilate mask to expand black regions (helps with intersection connectivity)

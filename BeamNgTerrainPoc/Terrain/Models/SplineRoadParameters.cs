@@ -73,6 +73,23 @@ public class SplineRoadParameters
     public float MinPathLengthPixels { get; set; } = 20.0f;
     
     // ========================================
+    // SKELETONIZATION PREPROCESSING
+    // ========================================
+    
+    /// <summary>
+    /// Dilation radius (in pixels) applied to road mask before skeletonization.
+    /// Helps bridge small gaps and improve connectivity.
+    /// 
+    /// 0 = no dilation (cleanest skeleton, may miss disconnected fragments)
+    /// 1 = minimal dilation (RECOMMENDED - good balance, minimal tail artifacts)
+    /// 2 = moderate dilation (better connectivity, minor blobs at curves)
+    /// 3 = heavy dilation (maximum connectivity, SIGNIFICANT tail artifacts at hairpins)
+    /// 
+    /// Default: 1
+    /// </summary>
+    public int SkeletonDilationRadius { get; set; } = 1;
+    
+    // ========================================
     // SPLINE CURVE FITTING
     // ========================================
     
@@ -211,6 +228,9 @@ public class SplineRoadParameters
         
         if (ButterworthFilterOrder < 1 || ButterworthFilterOrder > 8)
             errors.Add("ButterworthFilterOrder must be between 1 and 8");
+        
+        if (SkeletonDilationRadius < 0 || SkeletonDilationRadius > 5)
+            errors.Add("SkeletonDilationRadius must be between 0 and 5");
             
         return errors;
     }

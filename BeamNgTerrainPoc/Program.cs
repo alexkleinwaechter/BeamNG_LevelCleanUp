@@ -221,9 +221,12 @@ internal class Program
                             // ========================================
                             SplineParameters = new SplineRoadParameters
                             {
+                                // SKELETONIZATION
+                                SkeletonDilationRadius = 0,           // Minimal dilation for clean curves (0-5)
+                                
                                 // JUNCTION HANDLING
                                 PreferStraightThroughJunctions = true,
-                                JunctionAngleThreshold = 45.0f,
+                                JunctionAngleThreshold = 90.0f,
                                 MinPathLengthPixels = 50.0f,
                                 
                                 // CONNECTIVITY & PATH EXTRACTION
