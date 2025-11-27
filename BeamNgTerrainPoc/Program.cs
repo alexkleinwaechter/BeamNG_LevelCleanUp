@@ -144,7 +144,7 @@ internal class Program
             var creator = new TerrainCreator();
 
             // Source directory with all terrain files
-            string sourceDir = @"D:\temp\TestMappingTools\_import";
+            string sourceDir = @"C:\temp\TestMappingTools\_import";
 
             // Terrain name (can be changed to match your terrain)
             string terrainName = "theTerrain";
@@ -197,11 +197,11 @@ internal class Program
                         roadParameters = new RoadSmoothingParameters
                         {
                             // ========================================
-                            // APPROACH & COMMON SETTINGS
+                            // USE IMPROVED SPLINE APPROACH
                             // ========================================
-                            Approach = RoadSmoothingApproach.SplineBased,
+                            Approach = RoadSmoothingApproach.ImprovedSpline, // <<<< CHANGED: Use new improved approach
                             EnableTerrainBlending = true,
-                            DebugOutputDirectory = @"D:\temp\TestMappingTools\_output",
+                            DebugOutputDirectory = @"C:\temp\TestMappingTools\_output",
                             
                             // ROAD GEOMETRY (applies to all approaches)
                             RoadWidthMeters = 8.0f,
@@ -216,7 +216,7 @@ internal class Program
                             BlendFunctionType = BlendFunctionType.Cosine,
                             
                             // ========================================
-                            // SPLINE-SPECIFIC SETTINGS
+                            // SPLINE-SPECIFIC SETTINGS (used by both SplineBased and ImprovedSpline)
                             // ========================================
                             SplineParameters = new SplineRoadParameters
                             {
@@ -282,7 +282,7 @@ internal class Program
                 };
 
                 // Create output path (using terrain name)
-                string outputDir = @"D:\temp\TestMappingTools\_output";
+                string outputDir = @"C:\temp\TestMappingTools\_output";
                 Directory.CreateDirectory(outputDir);
                 string outputPath = Path.Combine(outputDir, $"{terrainName}.ter");
 

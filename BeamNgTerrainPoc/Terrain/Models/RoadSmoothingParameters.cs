@@ -18,7 +18,16 @@ public enum RoadSmoothingApproach
     /// Best for: Simple curved roads, highways, racing circuits WITHOUT complex intersections.
     /// Note: May fail on complex road networks!
     /// </summary>
-    SplineBased
+    SplineBased,
+    
+    /// <summary>
+    /// IMPROVED spline-based approach with internal upsampling.
+    /// Uses 4x upsampling + SDF-based blending + iterative shoulder smoothing + Gaussian downsampling.
+    /// Eliminates: Jagged edges, stairs, blocky artifacts.
+    /// Best for: High-quality smooth roads, highways, racing circuits.
+    /// Slower than SplineBased but produces professional results.
+    /// </summary>
+    ImprovedSpline
 }
 
 /// <summary>

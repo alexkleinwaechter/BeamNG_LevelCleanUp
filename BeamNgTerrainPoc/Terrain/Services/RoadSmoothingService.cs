@@ -124,9 +124,32 @@ public class RoadSmoothingService
                     parameters,
                     metersPerPixel);
             }
+            else if (parameters.Approach == RoadSmoothingApproach.ImprovedSpline)
+            {
+                // Improved spline approach - calculate elevations first, then use improved blender
+                if (geometry.CrossSections.Count > 0)
+                {
+                    Console.WriteLine("Calculating target elevations for cross-sections...");
+                    _heightCalculator!.CalculateTargetElevations(geometry, heightMap, metersPerPixel);
+
+                    // Export smoothed elevation debug image if enabled
+                    if (parameters.ExportSmoothedElevationDebugImage)
+                    {
+                        try { ExportSmoothedElevationDebugImage(geometry, metersPerPixel, parameters); }
+                        catch (Exception ex) { Console.WriteLine($"Smoothed elevation debug export failed: {ex.Message}"); }
+                    }
+                }
+                
+                var improvedBlender = (ImprovedSplineTerrainBlender)_terrainBlender!;
+                newHeightMap = improvedBlender.BlendRoadWithTerrain(
+                    heightMap,
+                    geometry,
+                    parameters,
+                    metersPerPixel);
+            }
             else
             {
-                // Spline approach - calculate elevations first
+                // Original spline approach - calculate elevations first
                 if (geometry.CrossSections.Count > 0)
                 {
                     Console.WriteLine("Calculating target elevations for cross-sections...");
@@ -166,6 +189,13 @@ public class RoadSmoothingService
             _roadExtractor = new DirectRoadExtractor();
             _terrainBlender = new DirectTerrainBlender();
             _heightCalculator = null; // Not needed for direct approach
+        }
+        else if (approach == RoadSmoothingApproach.ImprovedSpline)
+        {
+            Console.WriteLine("Using IMPROVED SPLINE approach (4x upsampling, smooth blending)");
+            _roadExtractor = new MedialAxisRoadExtractor();
+            _heightCalculator = new CrossSectionalHeightCalculator();
+            _terrainBlender = new ImprovedSplineTerrainBlender();
         }
         else
         {
