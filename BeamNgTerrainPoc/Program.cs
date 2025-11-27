@@ -144,7 +144,7 @@ internal class Program
             var creator = new TerrainCreator();
 
             // Source directory with all terrain files
-            string sourceDir = @"C:\temp\TestMappingTools\_import";
+            string sourceDir = @"d:\temp\TestMappingTools\_import";
 
             // Terrain name (can be changed to match your terrain)
             string terrainName = "theTerrain";
@@ -201,11 +201,11 @@ internal class Program
                             // ========================================
                             Approach = RoadSmoothingApproach.ImprovedSpline, // <<<< CHANGED: Use new improved approach
                             EnableTerrainBlending = true,
-                            DebugOutputDirectory = @"C:\temp\TestMappingTools\_output",
+                            DebugOutputDirectory = @"d:\temp\TestMappingTools\_output",
                             
                             // ROAD GEOMETRY (applies to all approaches)
                             RoadWidthMeters = 8.0f,
-                            TerrainAffectedRangeMeters = 12.0f,       // 32m total width (realistic highway)
+                            TerrainAffectedRangeMeters = 6.0f,       // 32m total width (realistic highway)
                             CrossSectionIntervalMeters = 0.5f,        // Auto-adjusts if needed
                             
                             // SLOPE CONSTRAINTS
@@ -282,7 +282,7 @@ internal class Program
                 };
 
                 // Create output path (using terrain name)
-                string outputDir = @"C:\temp\TestMappingTools\_output";
+                string outputDir = @"d:\temp\TestMappingTools\_output";
                 Directory.CreateDirectory(outputDir);
                 string outputPath = Path.Combine(outputDir, $"{terrainName}.ter");
 

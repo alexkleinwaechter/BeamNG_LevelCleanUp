@@ -262,7 +262,7 @@ if (info.MaterialName.Contains("GROUNDMODEL_ASPHALT1", StringComparison.OrdinalI
     // OR customize a preset:
     roadParameters = RoadSmoothingPresets.HillyAggressive;
     roadParameters.SmoothingWindowSize = 151;  // Tweak specific values
-    roadParameters.DebugOutputDirectory = @"C:\temp\TestMappingTools\_output";
+    roadParameters.DebugOutputDirectory = @"d:\temp\TestMappingTools\_output";
     roadParameters.ExportSplineDebugImage = true;
     roadParameters.ExportSmoothedElevationDebugImage = true;
     roadParameters.ExportSkeletonDebugImage = true;
