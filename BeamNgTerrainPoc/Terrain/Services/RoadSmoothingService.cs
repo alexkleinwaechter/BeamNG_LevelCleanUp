@@ -100,7 +100,7 @@ public class RoadSmoothingService
             metersPerPixel);
         
         // Optional spline debug export
-        if (parameters.Approach == RoadSmoothingApproach.SplineBased && parameters.ExportSplineDebugImage)
+        if (parameters.Approach == RoadSmoothingApproach.Spline && parameters.ExportSplineDebugImage)
         {
             try { ExportSplineDebugImage(geometry, metersPerPixel, parameters, "spline_debug.png"); }
             catch (Exception ex) { Console.WriteLine($"Spline debug export failed: {ex.Message}"); }
@@ -124,9 +124,9 @@ public class RoadSmoothingService
                     parameters,
                     metersPerPixel);
             }
-            else if (parameters.Approach == RoadSmoothingApproach.ImprovedSpline)
+            else // RoadSmoothingApproach.Spline
             {
-                // Optimized distance field approach - calculate elevations first, then use EDT-based blending
+                // Spline approach - calculate elevations first, then use distance field blending
                 if (geometry.CrossSections.Count > 0)
                 {
                     Console.WriteLine("Calculating target elevations for cross-sections...");
@@ -142,29 +142,6 @@ public class RoadSmoothingService
                 
                 var distanceFieldBlender = (DistanceFieldTerrainBlender)_terrainBlender!;
                 newHeightMap = distanceFieldBlender.BlendRoadWithTerrain(
-                    heightMap,
-                    geometry,
-                    parameters,
-                    metersPerPixel);
-            }
-            else
-            {
-                // Original spline approach - calculate elevations first
-                if (geometry.CrossSections.Count > 0)
-                {
-                    Console.WriteLine("Calculating target elevations for cross-sections...");
-                    _heightCalculator!.CalculateTargetElevations(geometry, heightMap, metersPerPixel);
-
-                    // Export smoothed elevation debug image if enabled
-                    if (parameters.ExportSmoothedElevationDebugImage)
-                    {
-                        try { ExportSmoothedElevationDebugImage(geometry, metersPerPixel, parameters); }
-                        catch (Exception ex) { Console.WriteLine($"Smoothed elevation debug export failed: {ex.Message}"); }
-                    }
-                }
-                
-                var splineBlender = (TerrainBlender)_terrainBlender!;
-                newHeightMap = splineBlender.BlendRoadWithTerrain(
                     heightMap,
                     geometry,
                     parameters,
@@ -190,19 +167,12 @@ public class RoadSmoothingService
             _terrainBlender = new DirectTerrainBlender();
             _heightCalculator = null; // Not needed for direct approach
         }
-        else if (approach == RoadSmoothingApproach.ImprovedSpline)
+        else // RoadSmoothingApproach.Spline
         {
-            Console.WriteLine("Using OPTIMIZED DISTANCE FIELD approach (fast, smooth, 15x faster than upsampling)");
+            Console.WriteLine("Using OPTIMIZED SPLINE approach (fast, smooth, EDT-based)");
             _roadExtractor = new MedialAxisRoadExtractor();
             _heightCalculator = new OptimizedElevationSmoother(); // O(N) prefix-sum smoothing
             _terrainBlender = new DistanceFieldTerrainBlender(); // Global EDT-based blending
-        }
-        else
-        {
-            Console.WriteLine("Using SPLINE-BASED approach (level on curves, simple roads only)");
-            _roadExtractor = new MedialAxisRoadExtractor();
-            _heightCalculator = new CrossSectionalHeightCalculator();
-            _terrainBlender = new TerrainBlender();
         }
     }
     

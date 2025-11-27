@@ -13,28 +13,22 @@ public enum RoadSmoothingApproach
     DirectMask,
     
     /// <summary>
-    /// Spline-based approach - uses centerline extraction and smooth splines.
-    /// Perpendicular sampling (level on curves).
-    /// Best for: Simple curved roads, highways, racing circuits WITHOUT complex intersections.
-    /// Note: May fail on complex road networks!
-    /// </summary>
-    SplineBased,
-    
-    /// <summary>
-    /// OPTIMIZED distance field approach - RECOMMENDED for smooth roads.
-    /// Uses global Euclidean Distance Transform (EDT) + analytical blending + O(N) elevation smoothing.
+    /// SPLINE-BASED approach - RECOMMENDED for smooth roads (highways, racing circuits).
+    /// Uses centerline extraction + global Euclidean Distance Transform (EDT) + analytical blending.
     /// 
-    /// PERFORMANCE: ~15x faster than old upsampling approach (3s vs 45s for 4096x4096).
-    /// ALGORITHM:
+    /// FEATURES:
+    /// - Perpendicular sampling (perfectly level on curves)
     /// - Exact EDT (Felzenszwalb & Huttenlocher) in O(W*H)
-    /// - Prefix-sum elevation smoothing in O(N) instead of O(N*W)
+    /// - Prefix-sum elevation smoothing in O(N)
     /// - No per-pixel cross-section iteration
     /// 
+    /// PERFORMANCE: Fast, scales linearly with terrain size (3s for 4096x4096).
     /// QUALITY: Eliminates jagged edges, stairs, blocky artifacts.
-    /// Best for: All smooth road scenarios - highways, racing circuits, curved roads.
-    /// Produces professional results faster than SplineBased.
+    /// 
+    /// Best for: Curved roads, highways, racing circuits.
+    /// Note: Use DirectMask for complex intersections.
     /// </summary>
-    ImprovedSpline
+    Spline
 }
 
 /// <summary>
@@ -264,12 +258,12 @@ public class RoadSmoothingParameters
     
     public bool UseButterworthFilter
     {
-        get => Approach == RoadSmoothingApproach.SplineBased 
+        get => Approach == RoadSmoothingApproach.Spline 
             ? GetSplineParameters().UseButterworthFilter 
             : GetDirectMaskParameters().UseButterworthFilter;
         set
         {
-            if (Approach == RoadSmoothingApproach.SplineBased)
+            if (Approach == RoadSmoothingApproach.Spline)
                 GetSplineParameters().UseButterworthFilter = value;
             else
                 GetDirectMaskParameters().UseButterworthFilter = value;
@@ -278,12 +272,12 @@ public class RoadSmoothingParameters
     
     public int ButterworthFilterOrder
     {
-        get => Approach == RoadSmoothingApproach.SplineBased 
+        get => Approach == RoadSmoothingApproach.Spline 
             ? GetSplineParameters().ButterworthFilterOrder 
             : GetDirectMaskParameters().ButterworthFilterOrder;
         set
         {
-            if (Approach == RoadSmoothingApproach.SplineBased)
+            if (Approach == RoadSmoothingApproach.Spline)
                 GetSplineParameters().ButterworthFilterOrder = value;
             else
                 GetDirectMaskParameters().ButterworthFilterOrder = value;
@@ -374,7 +368,7 @@ public class RoadSmoothingParameters
             errors.Add("LongitudinalSmoothingWindowMeters must be greater than 0");
         
         // Validate approach-specific parameters
-        if (Approach == RoadSmoothingApproach.SplineBased && SplineParameters != null)
+        if (Approach == RoadSmoothingApproach.Spline && SplineParameters != null)
         {
             errors.AddRange(SplineParameters.Validate());
         }
@@ -383,8 +377,8 @@ public class RoadSmoothingParameters
             errors.AddRange(DirectMaskParameters.Validate());
         }
         
-        // Warn about problematic combinations (SplineBased only)
-        if (Approach == RoadSmoothingApproach.SplineBased)
+        // Warn about problematic combinations (Spline approach only)
+        if (Approach == RoadSmoothingApproach.Spline)
         {
             var splineParams = GetSplineParameters();
             

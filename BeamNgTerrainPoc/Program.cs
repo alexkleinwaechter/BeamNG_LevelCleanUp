@@ -197,9 +197,9 @@ internal class Program
                         roadParameters = new RoadSmoothingParameters
                         {
                             // ========================================
-                            // USE IMPROVED SPLINE APPROACH
+                            // USE SPLINE APPROACH (OPTIMIZED)
                             // ========================================
-                            Approach = RoadSmoothingApproach.ImprovedSpline, // <<<< CHANGED: Use new improved approach
+                            Approach = RoadSmoothingApproach.Spline, // Fast EDT-based blending
                             EnableTerrainBlending = true,
                             DebugOutputDirectory = @"d:\temp\TestMappingTools\_output",
                             
@@ -215,8 +215,9 @@ internal class Program
                             // BLENDING
                             BlendFunctionType = BlendFunctionType.Cosine,
                             
+                            
                             // ========================================
-                            // SPLINE-SPECIFIC SETTINGS (used by both SplineBased and ImprovedSpline)
+                            // SPLINE-SPECIFIC SETTINGS
                             // ========================================
                             SplineParameters = new SplineRoadParameters
                             {
