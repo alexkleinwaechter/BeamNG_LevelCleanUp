@@ -243,7 +243,7 @@ internal class Program
                                 SplineBias = 0.0f,
                                 
                                 // ELEVATION SMOOTHING - Butterworth filter
-                                SmoothingWindowSize = 201,            // 50m radius
+                                SmoothingWindowSize = 301,            // 50m radius
                                 UseButterworthFilter = true,          // Maximally flat passband
                                 ButterworthFilterOrder = 4,           // Aggressive flatness
                                 GlobalLevelingStrength = 0.0f,        // DISABLED - terrain-following

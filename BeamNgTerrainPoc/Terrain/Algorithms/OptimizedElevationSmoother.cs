@@ -11,9 +11,20 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms;
 /// </summary>
 public class OptimizedElevationSmoother : IHeightCalculator
 {
+    /// <summary>
+    /// Calculates target elevations for road cross-sections using optimized prefix-sum smoothing.
+    /// Window size is determined by parameters (default: 101 for highway quality).
+    /// </summary>
     public void CalculateTargetElevations(RoadGeometry geometry, float[,] heightMap, float metersPerPixel)
     {
         Console.WriteLine("Calculating target elevations (optimized prefix-sum)...");
+
+        // Get smoothing window size from parameters (default: 101 for highway quality)
+        int windowSize = geometry.Parameters?.SmoothingWindowSize ?? 101;
+        float crossSectionSpacing = geometry.Parameters?.CrossSectionIntervalMeters ?? 0.5f;
+        float smoothingRadiusMeters = (windowSize / 2.0f) * crossSectionSpacing;
+        
+        Console.WriteLine($"  Smoothing window: {windowSize} cross-sections (~{smoothingRadiusMeters:F1}m radius)");
 
         // Group by PathId for per-path processing
         var pathGroups = geometry.CrossSections
@@ -45,7 +56,6 @@ public class OptimizedElevationSmoother : IHeightCalculator
             }
 
             // Step 2: Apply box filter smoothing using prefix sums (O(N))
-            int windowSize = 51; // ±25 cross-sections (~25m for typical 0.5m spacing)
             var smoothed = BoxFilterPrefixSum(rawElevations, windowSize);
 
             // Step 3: Assign smoothed elevations
