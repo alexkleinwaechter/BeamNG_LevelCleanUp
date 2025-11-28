@@ -215,6 +215,16 @@ internal class Program
                             // BLENDING
                             BlendFunctionType = BlendFunctionType.Cosine,
                             
+                            // ========================================
+                            // POST-PROCESSING SMOOTHING (NEW!)
+                            // Eliminates staircase artifacts on road surface
+                            // ========================================
+                            EnablePostProcessingSmoothing = true,     // Enable post-processing blur
+                            SmoothingType = PostProcessingSmoothingType.Gaussian, // Best quality
+                            SmoothingKernelSize = 7,                  // 7x7 kernel (medium smoothing)
+                            SmoothingSigma = 1.5f,                    // Standard deviation
+                            SmoothingMaskExtensionMeters = 6.0f,      // Smooth road + 6m into shoulder
+                            SmoothingIterations = 1,                  // Single pass usually sufficient
                             
                             // ========================================
                             // SPLINE-SPECIFIC SETTINGS

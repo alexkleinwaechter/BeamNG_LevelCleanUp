@@ -13,6 +13,18 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms;
 /// </summary>
 public class DistanceFieldTerrainBlender
 {
+    private float[,]? _lastDistanceField;
+
+    /// <summary>
+    /// Gets the last computed distance field for reuse in post-processing.
+    /// </summary>
+    public float[,] GetLastDistanceField()
+    {
+        if (_lastDistanceField == null)
+            throw new InvalidOperationException("No distance field has been computed yet. Call BlendRoadWithTerrain first.");
+        return _lastDistanceField;
+    }
+
     public float[,] BlendRoadWithTerrain(
         float[,] originalHeightMap,
         RoadGeometry geometry,
@@ -40,6 +52,7 @@ public class DistanceFieldTerrainBlender
         Console.WriteLine("Computing distance field (exact EDT)...");
         var startTime = DateTime.Now;
         var distanceField = ComputeDistanceField(roadCoreMask, metersPerPixel);
+        _lastDistanceField = distanceField; // Store for post-processing
         var edtElapsed = DateTime.Now - startTime;
         Console.WriteLine($"  EDT completed in {edtElapsed.TotalSeconds:F2}s");
 
@@ -384,5 +397,289 @@ public class DistanceFieldTerrainBlender
         Console.WriteLine($"  Modified {modifiedPixels:N0} pixels total");
         Console.WriteLine($"    Road core: {roadCorePixels:N0} pixels");
         Console.WriteLine($"    Shoulder: {shoulderPixels:N0} pixels");
+    }
+
+    /// <summary>
+    /// Applies post-processing smoothing to eliminate staircase artifacts on the road surface.
+    /// Uses a masked smoothing approach - only smooths within the road and shoulder areas.
+    /// </summary>
+    public void ApplyPostProcessingSmoothing(
+        float[,] heightMap,
+        float[,] distanceField,
+        RoadSmoothingParameters parameters,
+        float metersPerPixel)
+    {
+        if (!parameters.EnablePostProcessingSmoothing)
+        {
+            return;
+        }
+
+        Console.WriteLine("=== POST-PROCESSING SMOOTHING ===");
+        Console.WriteLine($"  Type: {parameters.SmoothingType}");
+        Console.WriteLine($"  Kernel Size: {parameters.SmoothingKernelSize}");
+        Console.WriteLine($"  Sigma: {parameters.SmoothingSigma:F2}");
+        Console.WriteLine($"  Mask Extension: {parameters.SmoothingMaskExtensionMeters}m");
+        Console.WriteLine($"  Iterations: {parameters.SmoothingIterations}");
+
+        // Build smoothing mask (road + extension)
+        float maxSmoothingDist = (parameters.RoadWidthMeters / 2.0f) + parameters.SmoothingMaskExtensionMeters;
+        var smoothingMask = BuildSmoothingMask(distanceField, maxSmoothingDist);
+
+        // Apply smoothing iterations
+        for (int iter = 0; iter < parameters.SmoothingIterations; iter++)
+        {
+            if (parameters.SmoothingIterations > 1)
+            {
+                Console.WriteLine($"  Iteration {iter + 1}/{parameters.SmoothingIterations}...");
+            }
+
+            switch (parameters.SmoothingType)
+            {
+                case PostProcessingSmoothingType.Gaussian:
+                    ApplyGaussianSmoothing(heightMap, smoothingMask, parameters.SmoothingKernelSize, parameters.SmoothingSigma);
+                    break;
+                case PostProcessingSmoothingType.Box:
+                    ApplyBoxSmoothing(heightMap, smoothingMask, parameters.SmoothingKernelSize);
+                    break;
+                case PostProcessingSmoothingType.Bilateral:
+                    ApplyBilateralSmoothing(heightMap, smoothingMask, parameters.SmoothingKernelSize, parameters.SmoothingSigma);
+                    break;
+            }
+        }
+
+        Console.WriteLine("=== POST-PROCESSING SMOOTHING COMPLETE ===");
+    }
+
+    /// <summary>
+    /// Builds a binary mask indicating which pixels should be smoothed.
+    /// </summary>
+    private bool[,] BuildSmoothingMask(float[,] distanceField, float maxDistance)
+    {
+        int height = distanceField.GetLength(0);
+        int width = distanceField.GetLength(1);
+        var mask = new bool[height, width];
+        int maskedPixels = 0;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (distanceField[y, x] <= maxDistance)
+                {
+                    mask[y, x] = true;
+                    maskedPixels++;
+                }
+            }
+        }
+
+        Console.WriteLine($"  Smoothing mask: {maskedPixels:N0} pixels");
+        return mask;
+    }
+
+    /// <summary>
+    /// Applies Gaussian blur with the specified kernel size and sigma.
+    /// Only smooths pixels within the mask.
+    /// </summary>
+    private void ApplyGaussianSmoothing(float[,] heightMap, bool[,] mask, int kernelSize, float sigma)
+    {
+        int height = heightMap.GetLength(0);
+        int width = heightMap.GetLength(1);
+        int radius = kernelSize / 2;
+
+        // Build Gaussian kernel
+        float[,] kernel = BuildGaussianKernel(kernelSize, sigma);
+
+        // Create temporary buffer
+        var tempMap = new float[height, width];
+        int smoothedPixels = 0;
+
+        // Apply convolution only to masked pixels
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!mask[y, x])
+                {
+                    tempMap[y, x] = heightMap[y, x]; // Keep original value
+                    continue;
+                }
+
+                float sum = 0f;
+                float weightSum = 0f;
+
+                // Convolve with Gaussian kernel
+                for (int ky = -radius; ky <= radius; ky++)
+                {
+                    for (int kx = -radius; kx <= radius; kx++)
+                    {
+                        int ny = y + ky;
+                        int nx = x + kx;
+
+                        if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                        {
+                            float weight = kernel[ky + radius, kx + radius];
+                            sum += heightMap[ny, nx] * weight;
+                            weightSum += weight;
+                        }
+                    }
+                }
+
+                tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
+                smoothedPixels++;
+            }
+        }
+
+        // Copy back
+        Array.Copy(tempMap, heightMap, height * width);
+        Console.WriteLine($"    Gaussian smoothed {smoothedPixels:N0} pixels");
+    }
+
+    /// <summary>
+    /// Builds a 2D Gaussian kernel with the specified size and sigma.
+    /// </summary>
+    private float[,] BuildGaussianKernel(int size, float sigma)
+    {
+        var kernel = new float[size, size];
+        int radius = size / 2;
+        float sum = 0f;
+        float twoSigmaSquared = 2f * sigma * sigma;
+
+        for (int y = -radius; y <= radius; y++)
+        {
+            for (int x = -radius; x <= radius; x++)
+            {
+                float distance = x * x + y * y;
+                float value = MathF.Exp(-distance / twoSigmaSquared);
+                kernel[y + radius, x + radius] = value;
+                sum += value;
+            }
+        }
+
+        // Normalize
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                kernel[y, x] /= sum;
+            }
+        }
+
+        return kernel;
+    }
+
+    /// <summary>
+    /// Applies box blur (simple averaging) with the specified kernel size.
+    /// Only smooths pixels within the mask.
+    /// </summary>
+    private void ApplyBoxSmoothing(float[,] heightMap, bool[,] mask, int kernelSize)
+    {
+        int height = heightMap.GetLength(0);
+        int width = heightMap.GetLength(1);
+        int radius = kernelSize / 2;
+
+        var tempMap = new float[height, width];
+        int smoothedPixels = 0;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!mask[y, x])
+                {
+                    tempMap[y, x] = heightMap[y, x];
+                    continue;
+                }
+
+                float sum = 0f;
+                int count = 0;
+
+                // Average with neighbors in box
+                for (int ky = -radius; ky <= radius; ky++)
+                {
+                    for (int kx = -radius; kx <= radius; kx++)
+                    {
+                        int ny = y + ky;
+                        int nx = x + kx;
+
+                        if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                        {
+                            sum += heightMap[ny, nx];
+                            count++;
+                        }
+                    }
+                }
+
+                tempMap[y, x] = count > 0 ? sum / count : heightMap[y, x];
+                smoothedPixels++;
+            }
+        }
+
+        Array.Copy(tempMap, heightMap, height * width);
+        Console.WriteLine($"    Box smoothed {smoothedPixels:N0} pixels");
+    }
+
+    /// <summary>
+    /// Applies bilateral filtering - edge-preserving smoothing.
+    /// Considers both spatial distance and intensity difference.
+    /// Only smooths pixels within the mask.
+    /// </summary>
+    private void ApplyBilateralSmoothing(float[,] heightMap, bool[,] mask, int kernelSize, float sigma)
+    {
+        int height = heightMap.GetLength(0);
+        int width = heightMap.GetLength(1);
+        int radius = kernelSize / 2;
+        float sigmaSpatial = sigma;
+        float sigmaRange = sigma * 0.5f; // Intensity difference threshold
+
+        var tempMap = new float[height, width];
+        int smoothedPixels = 0;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!mask[y, x])
+                {
+                    tempMap[y, x] = heightMap[y, x];
+                    continue;
+                }
+
+                float centerValue = heightMap[y, x];
+                float sum = 0f;
+                float weightSum = 0f;
+
+                for (int ky = -radius; ky <= radius; ky++)
+                {
+                    for (int kx = -radius; kx <= radius; kx++)
+                    {
+                        int ny = y + ky;
+                        int nx = x + kx;
+
+                        if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                        {
+                            float neighborValue = heightMap[ny, nx];
+
+                            // Spatial weight (distance in pixels)
+                            float spatialDist = kx * kx + ky * ky;
+                            float spatialWeight = MathF.Exp(-spatialDist / (2f * sigmaSpatial * sigmaSpatial));
+
+                            // Range weight (difference in elevation)
+                            float valueDiff = centerValue - neighborValue;
+                            float rangeWeight = MathF.Exp(-(valueDiff * valueDiff) / (2f * sigmaRange * sigmaRange));
+
+                            float weight = spatialWeight * rangeWeight;
+                            sum += neighborValue * weight;
+                            weightSum += weight;
+                        }
+                    }
+                }
+
+                tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
+                smoothedPixels++;
+            }
+        }
+
+        Array.Copy(tempMap, heightMap, height * width);
+        Console.WriteLine($"    Bilateral smoothed {smoothedPixels:N0} pixels");
     }
 }

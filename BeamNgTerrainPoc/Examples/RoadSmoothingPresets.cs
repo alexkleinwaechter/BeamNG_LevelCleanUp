@@ -18,7 +18,6 @@ public static class RoadSmoothingPresets
     /// Processing time: ~3-4 seconds for 4096x4096 (optimized!)
     /// Quality: Professional highway standard with natural terrain integration
     /// </summary>
-    /// <summary>
     public static RoadSmoothingParameters TerrainFollowingSmooth => new()
     {
         Approach = RoadSmoothingApproach.Spline,
@@ -31,6 +30,14 @@ public static class RoadSmoothingPresets
         RoadMaxSlopeDegrees = 4.0f,
         SideMaxSlopeDegrees = 30.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
+        
+        // POST-PROCESSING SMOOTHING (eliminates staircase artifacts)
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 7,
+        SmoothingSigma = 1.5f,
+        SmoothingMaskExtensionMeters = 6.0f,
+        SmoothingIterations = 1,
         
         // SPLINE-SPECIFIC PARAMETERS
         SplineParameters = new SplineRoadParameters
@@ -84,6 +91,14 @@ public static class RoadSmoothingPresets
         SideMaxSlopeDegrees = 25.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
         
+        // POST-PROCESSING SMOOTHING - Heavy for ultra-smooth result
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 9,                  // Larger kernel for mountainous terrain
+        SmoothingSigma = 2.0f,                    // More aggressive
+        SmoothingMaskExtensionMeters = 8.0f,
+        SmoothingIterations = 2,                  // Multiple passes for very smooth result
+        
         // SPLINE-SPECIFIC PARAMETERS
         SplineParameters = new SplineRoadParameters
         {
@@ -126,6 +141,14 @@ public static class RoadSmoothingPresets
         SideMaxSlopeDegrees = 28.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
         
+        // POST-PROCESSING SMOOTHING - Medium smoothing
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 7,
+        SmoothingSigma = 1.5f,
+        SmoothingMaskExtensionMeters = 6.0f,
+        SmoothingIterations = 1,
+        
         SplineParameters = new SplineRoadParameters
         {
             UseButterworthFilter = true,
@@ -164,6 +187,14 @@ public static class RoadSmoothingPresets
         RoadMaxSlopeDegrees = 6.0f,
         SideMaxSlopeDegrees = 30.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
+        
+        // POST-PROCESSING SMOOTHING - Light smoothing for flat terrain
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 5,                  // Smaller kernel preserves detail
+        SmoothingSigma = 1.0f,                    // Light smoothing
+        SmoothingMaskExtensionMeters = 4.0f,
+        SmoothingIterations = 1,
         
         SplineParameters = new SplineRoadParameters
         {
@@ -229,6 +260,14 @@ public static class RoadSmoothingPresets
         RoadMaxSlopeDegrees = 1.0f,
         SideMaxSlopeDegrees = 20.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
+        
+        // POST-PROCESSING SMOOTHING - MAXIMUM smoothing
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 11,                 // Maximum kernel size
+        SmoothingSigma = 3.0f,                    // Very aggressive
+        SmoothingMaskExtensionMeters = 10.0f,     // Smooth entire blend zone
+        SmoothingIterations = 3,                  // Multiple passes
         
         SplineParameters = new SplineRoadParameters
         {

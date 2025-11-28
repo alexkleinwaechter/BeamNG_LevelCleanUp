@@ -146,6 +146,17 @@ public class RoadSmoothingService
                     geometry,
                     parameters,
                     metersPerPixel);
+
+                // Apply post-processing smoothing if enabled (Spline approach only)
+                if (parameters.EnablePostProcessingSmoothing)
+                {
+                    Console.WriteLine("Applying post-processing smoothing to eliminate staircase artifacts...");
+                    distanceFieldBlender.ApplyPostProcessingSmoothing(
+                        newHeightMap,
+                        distanceFieldBlender.GetLastDistanceField(),
+                        parameters,
+                        metersPerPixel);
+                }
             }
         }
         

@@ -159,6 +159,64 @@ public class RoadSmoothingParameters
     public bool EnableTerrainBlending { get; set; } = true;
 
     // ========================================
+    // POST-PROCESSING SMOOTHING (All Approaches)
+    // ========================================
+
+    /// <summary>
+    /// Enable post-processing smoothing to eliminate staircase artifacts on the road surface.
+    /// Applies a Gaussian blur or similar smoothing algorithm masked to the road and shoulder areas.
+    /// This addresses the visible interval-based staircase effect that can occur after blending.
+    /// Default: false (disabled for backward compatibility)
+    /// </summary>
+    public bool EnablePostProcessingSmoothing { get; set; } = false;
+
+    /// <summary>
+    /// Type of smoothing filter to apply in post-processing.
+    /// Default: Gaussian (best quality, slower)
+    /// </summary>
+    public PostProcessingSmoothingType SmoothingType { get; set; } = PostProcessingSmoothingType.Gaussian;
+
+    /// <summary>
+    /// Kernel size for the smoothing filter in pixels.
+    /// Larger values = smoother but slower.
+    /// Typical values:
+    /// - 3-5: Light smoothing (preserve detail)
+    /// - 7-9: Medium smoothing (good balance)
+    /// - 11-15: Heavy smoothing (very smooth roads)
+    /// Default: 7
+    /// </summary>
+    public int SmoothingKernelSize { get; set; } = 7;
+
+    /// <summary>
+    /// Sigma value for Gaussian blur (standard deviation).
+    /// Higher values = more aggressive smoothing.
+    /// Typical values:
+    /// - 0.5-1.0: Light smoothing
+    /// - 1.0-2.0: Medium smoothing
+    /// - 2.0-4.0: Heavy smoothing
+    /// Default: 1.5
+    /// </summary>
+    public float SmoothingSigma { get; set; } = 1.5f;
+
+    /// <summary>
+    /// Extension of the smoothing mask beyond the road edge in meters.
+    /// This applies smoothing to the shoulder/blend zone as well to ensure continuity.
+    /// Typical values:
+    /// - 2-4m: Smooth only near road edge
+    /// - 4-8m: Smooth into shoulder zone
+    /// - 8-12m: Smooth entire blend zone
+    /// Default: 6.0 (reaches into shoulder)
+    /// </summary>
+    public float SmoothingMaskExtensionMeters { get; set; } = 6.0f;
+
+    /// <summary>
+    /// Number of smoothing iterations to apply.
+    /// More iterations = smoother result but slower.
+    /// Default: 1
+    /// </summary>
+    public int SmoothingIterations { get; set; } = 1;
+
+    // ========================================
     // EXCLUSION ZONES (All Approaches)
     // ========================================
 
@@ -366,6 +424,22 @@ public class RoadSmoothingParameters
 
         if (LongitudinalSmoothingWindowMeters <= 0)
             errors.Add("LongitudinalSmoothingWindowMeters must be greater than 0");
+
+        // Validate post-processing smoothing parameters
+        if (EnablePostProcessingSmoothing)
+        {
+            if (SmoothingKernelSize < 3 || SmoothingKernelSize % 2 == 0)
+                errors.Add("SmoothingKernelSize must be an odd number >= 3");
+
+            if (SmoothingSigma <= 0)
+                errors.Add("SmoothingSigma must be greater than 0");
+
+            if (SmoothingMaskExtensionMeters < 0)
+                errors.Add("SmoothingMaskExtensionMeters must be >= 0");
+
+            if (SmoothingIterations < 1)
+                errors.Add("SmoothingIterations must be >= 1");
+        }
 
         // Validate approach-specific parameters
         if (Approach == RoadSmoothingApproach.Spline && SplineParameters != null)
