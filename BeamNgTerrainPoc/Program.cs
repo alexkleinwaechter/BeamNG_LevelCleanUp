@@ -368,7 +368,7 @@ internal class Program
                 // ROAD GEOMETRY - Highway (8m wide)
                 // ========================================
                 RoadWidthMeters = 8.0f,
-                TerrainAffectedRangeMeters = 6.0f,      // Wide shoulder for smooth transition
+                TerrainAffectedRangeMeters = 6.0f,       // Shoulder for smooth transition
                 CrossSectionIntervalMeters = 0.5f,       // High quality sampling
 
                 // ========================================
@@ -418,10 +418,10 @@ internal class Program
                     SplineContinuity = 0.7f,             // Very smooth corners
                     SplineBias = 0.0f,
 
-                    // Elevation smoothing - Butterworth filter
-                    SmoothingWindowSize = 301,           // ~100m smoothing window
-                    UseButterworthFilter = true,
-                    ButterworthFilterOrder = 4,
+                    // Elevation smoothing
+                    SmoothingWindowSize = 301,           // ~150m smoothing window
+                    UseButterworthFilter = true,         // Butterworth filter
+                    ButterworthFilterOrder = 4,          // Aggressive flatness
                     GlobalLevelingStrength = 0.0f,       // Terrain-following
 
                     // Debug output
@@ -503,9 +503,9 @@ internal class Program
                     SplineContinuity = 0.5f,             // Allow sharper corners
                     SplineBias = 0.0f,
 
-                    // Elevation smoothing - less aggressive for mountains
+                    // Elevation smoothing
                     SmoothingWindowSize = 201,           // ~100m smoothing window
-                    UseButterworthFilter = true,
+                    UseButterworthFilter = true,         // Butterworth filter
                     ButterworthFilterOrder = 3,          // Less aggressive
                     GlobalLevelingStrength = 0.0f,       // Follow terrain closely
 
@@ -588,7 +588,7 @@ internal class Program
                     SplineContinuity = 0.3f,             // Allow natural bumps
                     SplineBias = 0.0f,
 
-                    // Elevation smoothing - minimal for dirt roads
+                    // Elevation smoothing
                     SmoothingWindowSize = 51,            // ~40m smoothing window
                     UseButterworthFilter = false,        // Use simple Gaussian
                     ButterworthFilterOrder = 2,          // Not used (UseButterworthFilter=false)
