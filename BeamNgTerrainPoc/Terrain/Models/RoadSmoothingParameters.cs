@@ -235,6 +235,19 @@ public class RoadSmoothingParameters
     /// </summary>
     public string? DebugOutputDirectory { get; set; }
 
+    /// <summary>
+    /// Export the smoothed heightmap as a grayscale image with road outlines overlaid.
+    /// Shows:
+    /// - Smoothed heightmap as grayscale background (black=low, white=high)
+    /// - Thin cyan outline at road edges (± roadWidth/2)
+    /// - Thin magenta outline at terrain blending edges (± roadWidth/2 + terrainAffectedRange)
+    /// 
+    /// Only works with Spline approach (requires distance field).
+    /// Output file: smoothed_heightmap_with_road_outlines.png
+    /// Default: false
+    /// </summary>
+    public bool ExportSmoothedHeightmapWithOutlines { get; set; } = false;
+
     // ========================================
     // BACKWARD COMPATIBILITY PROPERTIES
     // THESE PROVIDE DIRECT ACCESS TO SUB-PARAMETERS FOR SIMPLER API

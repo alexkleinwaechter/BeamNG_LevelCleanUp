@@ -394,6 +394,11 @@ internal class Program
                 SmoothingIterations = 1,
 
                 // ========================================
+                // DEBUG VISUALIZATION
+                // ========================================
+                ExportSmoothedHeightmapWithOutlines = true,
+
+                // ========================================
                 // SPLINE-SPECIFIC SETTINGS
                 // ========================================
                 SplineParameters = new SplineRoadParameters

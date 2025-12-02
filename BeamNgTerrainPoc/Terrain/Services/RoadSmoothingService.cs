@@ -157,6 +157,13 @@ public class RoadSmoothingService
                         parameters,
                         metersPerPixel);
                 }
+
+                // Export heightmap with road outlines if enabled
+                if (parameters.ExportSmoothedHeightmapWithOutlines)
+                {
+                    try { ExportSmoothedHeightmapWithRoadOutlines(newHeightMap, geometry, distanceFieldBlender.GetLastDistanceField(), metersPerPixel, parameters); }
+                    catch (Exception ex) { Console.WriteLine($"Smoothed heightmap with outlines export failed: {ex.Message}"); }
+                }
             }
         }
         
@@ -306,6 +313,97 @@ public class RoadSmoothingService
         float b = Math.Clamp((1.0f - value) * 2.0f, 0f, 1f);
         float g = 1.0f - Math.Abs(value - 0.5f) * 2.0f;
         return new Rgba32(r, g, b);
+    }
+
+    /// <summary>
+    /// Exports the smoothed heightmap as a grayscale image with road outlines overlaid.
+    /// Shows:
+    /// - Smoothed heightmap as grayscale background
+    /// - Thin cyan outline at road edges (± roadWidth/2)
+    /// - Thin magenta outline at terrain blending edges (± roadWidth/2 + terrainAffectedRange)
+    /// </summary>
+    private void ExportSmoothedHeightmapWithRoadOutlines(
+        float[,] smoothedHeightMap, 
+        RoadGeometry geometry, 
+        float[,] distanceField,
+        float metersPerPixel, 
+        RoadSmoothingParameters parameters)
+    {
+        int width = smoothedHeightMap.GetLength(1);
+        int height = smoothedHeightMap.GetLength(0);
+        
+        Console.WriteLine($"Exporting smoothed heightmap with road outlines ({width}x{height})...");
+
+        // Step 1: Find height range for grayscale normalization
+        float minHeight = float.MaxValue;
+        float maxHeight = float.MinValue;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float h = smoothedHeightMap[y, x];
+                if (h < minHeight) minHeight = h;
+                if (h > maxHeight) maxHeight = h;
+            }
+        }
+        float heightRange = maxHeight - minHeight;
+        if (heightRange < 0.01f) heightRange = 1f; // Avoid division by zero
+
+        // Step 2: Create grayscale heightmap image
+        using var image = new Image<Rgba32>(width, height);
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float normalizedHeight = (smoothedHeightMap[y, x] - minHeight) / heightRange;
+                byte gray = (byte)(normalizedHeight * 255f);
+                image[x, height - 1 - y] = new Rgba32(gray, gray, gray, 255); // Flip Y for visualization
+            }
+        }
+
+        // Step 3: Draw road outlines (thin lines at road edges and blend zone edges)
+        float roadHalfWidth = parameters.RoadWidthMeters / 2.0f;
+        float blendZoneMaxDist = roadHalfWidth + parameters.TerrainAffectedRangeMeters;
+        
+        // Tolerance for edge detection (in meters) - makes lines 1-2 pixels wide
+        float edgeTolerance = metersPerPixel * 0.75f;
+
+        int roadEdgePixels = 0;
+        int blendEdgePixels = 0;
+
+        // Scan all pixels and check distance field
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float dist = distanceField[y, x];
+
+                // Road edge outline (cyan) - thin line at roadHalfWidth
+                if (Math.Abs(dist - roadHalfWidth) < edgeTolerance)
+                {
+                    image[x, height - 1 - y] = new Rgba32(0, 255, 255, 255); // Cyan
+                    roadEdgePixels++;
+                }
+                // Blend zone edge outline (magenta) - thin line at max blend distance
+                else if (Math.Abs(dist - blendZoneMaxDist) < edgeTolerance)
+                {
+                    image[x, height - 1 - y] = new Rgba32(255, 0, 255, 255); // Magenta
+                    blendEdgePixels++;
+                }
+            }
+        }
+
+        // Step 4: Save image
+        var dir = parameters.DebugOutputDirectory;
+        if (string.IsNullOrWhiteSpace(dir)) dir = Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(dir);
+        string filePath = Path.Combine(dir, "smoothed_heightmap_with_road_outlines.png");
+        image.SaveAsPng(filePath);
+        
+        Console.WriteLine($"Exported smoothed heightmap with outlines: {filePath}");
+        Console.WriteLine($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");
+        Console.WriteLine($"  Road edge outline (cyan): {roadEdgePixels:N0} pixels at ±{roadHalfWidth:F1}m from centerline");
+        Console.WriteLine($"  Blend zone edge outline (magenta): {blendEdgePixels:N0} pixels at ±{blendZoneMaxDist:F1}m from centerline");
     }
     
     private void DrawLine(Image<Rgba32> img, int x0, int y0, int x1, int y1, Rgba32 color)
