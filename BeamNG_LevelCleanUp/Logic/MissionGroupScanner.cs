@@ -66,6 +66,11 @@ internal class MissionGroupScanner
                         _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.NightGradientFile, false));
                     if (!string.IsNullOrEmpty(asset.SunScaleGradientFile))
                         _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.SunScaleGradientFile, false));
+                    
+                    // TerrainBlock: Exclude terrain file from deletion
+                    if (!string.IsNullOrEmpty(asset.TerrainFile))
+                        _excludeFiles.Add(PathResolver.ResolvePath(_levelPath, asset.TerrainFile, false));
+                    
                     AddAsset(asset);
                 }
             }
