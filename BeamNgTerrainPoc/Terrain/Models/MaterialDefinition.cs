@@ -18,9 +18,17 @@ public class MaterialDefinition
     /// </summary>
     public string? LayerImagePath { get; set; }
     
-    public MaterialDefinition(string materialName, string? layerImagePath = null)
+    /// <summary>
+    /// Optional road smoothing parameters.
+    /// If set, this material is treated as a road and the heightmap will be modified
+    /// to create smooth, level road surfaces with proper blending into terrain.
+    /// </summary>
+    public RoadSmoothingParameters? RoadParameters { get; set; }
+    
+    public MaterialDefinition(string materialName, string? layerImagePath = null, RoadSmoothingParameters? roadParameters = null)
     {
         MaterialName = materialName;
         LayerImagePath = layerImagePath;
+        RoadParameters = roadParameters;
     }
 }
