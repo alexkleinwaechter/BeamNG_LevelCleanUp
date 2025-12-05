@@ -304,6 +304,27 @@ public static CreateLevelWizardState GetWizardState() => _wizardState;
     {
         SetDefaultWorkingDirectory();
         
+        // Clean up any existing extracted files
+        ZipFileHandler.CleanUpWorkingDirectory();
+        
+        // If file is in a different folder than working directory, copy it first
+        if (ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(file))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy source level to {ZipFileHandler.WorkingDirectory} ...");
+            try
+            {
+                var target = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
+                File.Copy(file, target, true);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Copy source level finished");
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error copying source level to working directory: {ex.Message}");
+                ShowException(ex);
+                return;
+            }
+        }
+        
         await Task.Run(() =>
         {
             try
@@ -343,6 +364,10 @@ public static CreateLevelWizardState GetWizardState() => _wizardState;
         }
 
         SetDefaultWorkingDirectory();
+        
+        // Clean up any existing extracted files
+        ZipFileHandler.CleanUpWorkingDirectory();
+        
         _vanillaLevelSourceSelected = file;
         var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
         

@@ -86,6 +86,43 @@ public class MissionGroupCopier
             Directory.CreateDirectory(dir);
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Created directory: {dir}", true);
         }
+        
+        // Create hierarchy items.level.json files
+        CreateMissionGroupHierarchy();
+    }
+    
+    /// <summary>
+    ///     Creates the MissionGroup hierarchy with proper SimGroup entries at each level
+    /// </summary>
+    private void CreateMissionGroupHierarchy()
+    {
+        // 1. Create main/items.level.json with MissionGroup entry
+        var mainItemsPath = Path.Join(_targetLevelNamePath, "main", "items.level.json");
+        var missionGroupEntry = new Dictionary<string, object>
+        {
+            { "name", "MissionGroup" },
+            { "class", "SimGroup" },
+            { "persistentId", Guid.NewGuid().ToString() },
+            { "enabled", "1" }
+        };
+        var missionGroupJson = JsonSerializer.Serialize(missionGroupEntry, BeamJsonOptions.GetJsonSerializerOneLineOptions());
+        File.WriteAllText(mainItemsPath, missionGroupJson + Environment.NewLine);
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Created main/items.level.json with MissionGroup entry", true);
+        
+        // 2. Create main/MissionGroup/items.level.json with Level_object entry
+        var missionGroupItemsPath = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "items.level.json");
+        var levelObjectEntry = new Dictionary<string, object>
+        {
+            { "name", "Level_object" },
+            { "class", "SimGroup" },
+            { "persistentId", Guid.NewGuid().ToString() },
+            { "__parent", "MissionGroup" }
+        };
+        var levelObjectJson = JsonSerializer.Serialize(levelObjectEntry, BeamJsonOptions.GetJsonSerializerOneLineOptions());
+        File.WriteAllText(missionGroupItemsPath, levelObjectJson + Environment.NewLine);
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Created main/MissionGroup/items.level.json with Level_object entry", true);
+        
+        // 3. main/MissionGroup/Level_object/items.level.json will be created by WriteMissionGroupItems()
     }
 
     /// <summary>
@@ -402,7 +439,15 @@ public class MissionGroupCopier
                                     $"Updated CloudLayer texture: {textureFileName}", true);
                             }
                         }
+                        
+                        // Set __parent to Level_object for all copied objects
                         jsonDict["__parent"] = JsonSerializer.SerializeToElement("Level_object");
+                        
+                        // Generate new persistentId for copied objects
+                        if (jsonDict.ContainsKey("persistentId"))
+                        {
+                            jsonDict["persistentId"] = JsonSerializer.SerializeToElement(Guid.NewGuid().ToString());
+                        }
                         // Serialize back to JSON (one line, preserving all original fields)
                         var updatedJson = JsonSerializer.Serialize(jsonDict, BeamJsonOptions.GetJsonSerializerOneLineOptions());
                         lines.Add(updatedJson);
