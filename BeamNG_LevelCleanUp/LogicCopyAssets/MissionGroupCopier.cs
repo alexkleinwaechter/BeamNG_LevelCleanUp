@@ -17,6 +17,7 @@ public class MissionGroupCopier
     private readonly string _targetLevelPath;
     private readonly string _targetLevelNamePath;
     private readonly string _targetLevelName;
+    private readonly List<MaterialJson> _sourceMaterials;
 
     public MissionGroupCopier(
         List<Asset> missionGroupAssets,
@@ -24,7 +25,8 @@ public class MissionGroupCopier
         string sourceLevelNamePath,
         string targetLevelPath,
         string targetLevelNamePath,
-        string targetLevelName)
+        string targetLevelName,
+        List<MaterialJson> sourceMaterials = null)
     {
         _missionGroupAssets = missionGroupAssets;
         _sourceLevelPath = sourceLevelPath;
@@ -32,6 +34,7 @@ public class MissionGroupCopier
         _targetLevelPath = targetLevelPath;
         _targetLevelNamePath = targetLevelNamePath;
         _targetLevelName = targetLevelName;
+        _sourceMaterials = sourceMaterials ?? new List<MaterialJson>();
     }
 
     /// <summary>
@@ -49,7 +52,10 @@ public class MissionGroupCopier
             // 2. Copy referenced files
             CopyReferencedFiles();
 
-            // 3. Write MissionGroup items to target
+            // 3. Copy referenced materials (cubemaps, moon materials, flare types)
+            CopyReferencedMaterials();
+
+            // 4. Write MissionGroup items to target
             WriteMissionGroupItems();
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
@@ -79,6 +85,35 @@ public class MissionGroupCopier
         {
             Directory.CreateDirectory(dir);
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Created directory: {dir}", true);
+        }
+    }
+
+    /// <summary>
+    ///     Copies materials referenced by MissionGroup objects
+    ///     (cubemaps, moon materials, flare types, etc.)
+    /// </summary>
+    private void CopyReferencedMaterials()
+    {
+        if (_sourceMaterials == null || !_sourceMaterials.Any())
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                "No source materials available for referenced material copying", true);
+            return;
+        }
+
+        var materialCopier = new ReferencedMaterialCopier(
+            _sourceLevelPath,
+            new DirectoryInfo(_sourceLevelNamePath).Name,
+            _targetLevelNamePath,
+            _targetLevelName,
+            _sourceMaterials);
+
+        var copiedMaterials = materialCopier.CopyReferencedMaterials(_missionGroupAssets);
+
+        if (copiedMaterials.Any())
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Copied {copiedMaterials.Count} referenced material(s): {string.Join(", ", copiedMaterials)}");
         }
     }
 

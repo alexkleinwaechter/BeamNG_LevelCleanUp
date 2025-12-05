@@ -375,6 +375,10 @@
                 // 4. Copy MissionGroup data
                 _reader.ReadMissionGroupsForCreateLevel();
                 
+                // Also read materials from source level for copying referenced materials
+                var sourceReader = new BeamFileReader(_sourceLevelPath, null);
+                sourceReader.ReadMaterialsJson();
+                
                 var sourceLevelNamePath = ZipFileHandler.GetNamePath(_sourceLevelPath);
                 
                 var missionGroupCopier = new MissionGroupCopier(
@@ -383,7 +387,8 @@
                     sourceLevelNamePath,
                     targetRoot,
                     targetLevelNamePath,
-                    _targetLevelPath);
+                    _targetLevelPath,
+                    BeamFileReader.MaterialsJson);  // Pass source materials
                     
                 missionGroupCopier.CopyMissionGroupData();
                 
