@@ -1,5 +1,6 @@
 @using DialogResult = System.Windows.Forms.DialogResult
 @using BeamNgTerrainPoc.Terrain.Models
+@using BeamNgTerrainPoc.Examples
 
 <MudExpansionPanel Text="@GetPanelTitle()" 
                    IsInitiallyExpanded="false"
@@ -105,16 +106,26 @@
                 </MudItem>
                 
                 <MudItem xs="12">
-                    <MudSelect T="RoadPreset" 
-                              @bind-Value="@_selectedPreset"
-                              Label="Apply Preset"
+                    <MudSelect T="RoadPresetType" 
+                              Value="@Material.SelectedPreset"
+                              ValueChanged="@OnPresetChanged"
+                              Label="Road Preset"
                               Variant="Variant.Outlined"
                               AnchorOrigin="Origin.BottomCenter">
-                        <MudSelectItem Value="RoadPreset.Custom">Custom</MudSelectItem>
-                        <MudSelectItem Value="RoadPreset.Highway">Highway (8m, smooth)</MudSelectItem>
-                        <MudSelectItem Value="RoadPreset.MountainRoad">Mountain Road (6m, steep)</MudSelectItem>
-                        <MudSelectItem Value="RoadPreset.DirtRoad">Dirt Road (5m, rough)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.Custom">Custom</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.Highway">Highway (8m, professional quality)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, steep grades)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.DirtRoad">Dirt Road (5m, rustic)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.TerrainFollowingSmooth">Terrain Following (Butterworth filter)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.MountainousUltraSmooth">Mountainous Ultra Smooth (aggressive leveling)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.HillyAggressive">Hilly Aggressive (moderate leveling)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.FlatModerate">Flat Moderate (light smoothing)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.FastTesting">Fast Testing (DirectMask)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.ExtremeNuclear">Extreme Nuclear (maximum smoothing)</MudSelectItem>
                     </MudSelect>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                        Select a preset to use optimized settings. The 4 parameters above will override preset values.
+                    </MudText>
                 </MudItem>
             }
         </MudGrid>
@@ -122,88 +133,98 @@
 </MudExpansionPanel>
 
 @code {
-    [Parameter] public TerrainMaterialItemExtended Material { get; set; } = null!;
-    [Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
-    
-    private RoadPreset _selectedPreset = RoadPreset.Custom;
+[Parameter] public TerrainMaterialItemExtended Material { get; set; } = null!;
+[Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
 
-    private string GetPanelTitle()
+private string GetPanelTitle()
+{
+    return $"[{Material.Order}] {Material.InternalName}";
+}
+
+private async Task SelectLayerMap()
+{
+    string? selectedPath = null;
+    var staThread = new Thread(() =>
     {
-        return $"[{Material.Order}] {Material.InternalName}";
-    }
-
-    private async Task SelectLayerMap()
-    {
-        string? selectedPath = null;
-        var staThread = new Thread(() =>
+        using var dialog = new OpenFileDialog();
+        dialog.Filter = "PNG Images (*.png)|*.png|All Files (*.*)|*.*";
+        dialog.Title = $"Select Layer Map for {Material.InternalName}";
+        if (dialog.ShowDialog() == DialogResult.OK)
         {
-            using var dialog = new OpenFileDialog();
-            dialog.Filter = "PNG Images (*.png)|*.png|All Files (*.*)|*.*";
-            dialog.Title = $"Select Layer Map for {Material.InternalName}";
-            if (dialog.ShowDialog() == DialogResult.OK)
-            {
-                selectedPath = dialog.FileName;
-            }
-        });
-        staThread.SetApartmentState(ApartmentState.STA);
-        staThread.Start();
-        staThread.Join();
-
-        if (!string.IsNullOrEmpty(selectedPath))
-        {
-            Material.LayerMapPath = selectedPath;
-            await OnMaterialChanged.InvokeAsync(Material);
+            selectedPath = dialog.FileName;
         }
-    }
+    });
+    staThread.SetApartmentState(ApartmentState.STA);
+    staThread.Start();
+    staThread.Join();
 
-    private async Task ClearLayerMap()
+    if (!string.IsNullOrEmpty(selectedPath))
     {
-        Material.LayerMapPath = null;
+        Material.LayerMapPath = selectedPath;
         await OnMaterialChanged.InvokeAsync(Material);
     }
+}
 
-    private RoadPreset SelectedPreset
-    {
-        get => _selectedPreset;
-        set
-        {
-            _selectedPreset = value;
-            ApplyPreset(value);
-        }
-    }
+private async Task ClearLayerMap()
+{
+    Material.LayerMapPath = null;
+    await OnMaterialChanged.InvokeAsync(Material);
+}
 
-    private void ApplyPreset(RoadPreset preset)
+private async Task OnPresetChanged(RoadPresetType preset)
+{
+    Material.SelectedPreset = preset;
+        
+    // Apply preset values to the 4 prominent parameters
+    var presetParams = GetPresetParameters(preset);
+    if (presetParams != null)
     {
-        switch (preset)
-        {
-            case RoadPreset.Highway:
-                Material.RoadWidthMeters = 8.0f;
-                Material.TerrainAffectedRangeMeters = 12.0f;
-                Material.RoadMaxSlopeDegrees = 6.0f;
-                Material.SideMaxSlopeDegrees = 45.0f;
-                break;
-            case RoadPreset.MountainRoad:
-                Material.RoadWidthMeters = 6.0f;
-                Material.TerrainAffectedRangeMeters = 8.0f;
-                Material.RoadMaxSlopeDegrees = 10.0f;
-                Material.SideMaxSlopeDegrees = 35.0f;
-                break;
-            case RoadPreset.DirtRoad:
-                Material.RoadWidthMeters = 5.0f;
-                Material.TerrainAffectedRangeMeters = 6.0f;
-                Material.RoadMaxSlopeDegrees = 12.0f;
-                Material.SideMaxSlopeDegrees = 40.0f;
-                break;
-        }
+        Material.RoadWidthMeters = presetParams.RoadWidthMeters;
+        Material.TerrainAffectedRangeMeters = presetParams.TerrainAffectedRangeMeters;
+        Material.RoadMaxSlopeDegrees = presetParams.RoadMaxSlopeDegrees;
+        Material.SideMaxSlopeDegrees = presetParams.SideMaxSlopeDegrees;
     }
+        
+    await OnMaterialChanged.InvokeAsync(Material);
+}
 
-    public enum RoadPreset
+/// <summary>
+/// Gets the RoadSmoothingParameters for a given preset type.
+/// Returns null for Custom preset.
+/// </summary>
+public static RoadSmoothingParameters? GetPresetParameters(RoadPresetType preset)
+{
+    return preset switch
     {
-        Custom,
-        Highway,
-        MountainRoad,
-        DirtRoad
-    }
+        RoadPresetType.Highway => RoadSmoothingPresets.Highway,
+        RoadPresetType.MountainRoad => RoadSmoothingPresets.MountainRoad,
+        RoadPresetType.DirtRoad => RoadSmoothingPresets.DirtRoad,
+        RoadPresetType.TerrainFollowingSmooth => RoadSmoothingPresets.TerrainFollowingSmooth,
+        RoadPresetType.MountainousUltraSmooth => RoadSmoothingPresets.MountainousUltraSmooth,
+        RoadPresetType.HillyAggressive => RoadSmoothingPresets.HillyAggressive,
+        RoadPresetType.FlatModerate => RoadSmoothingPresets.FlatModerate,
+        RoadPresetType.FastTesting => RoadSmoothingPresets.FastTesting,
+        RoadPresetType.ExtremeNuclear => RoadSmoothingPresets.ExtremeNuclear,
+        _ => null
+    };
+}
+
+/// <summary>
+/// Available road smoothing presets from RoadSmoothingPresets class
+/// </summary>
+public enum RoadPresetType
+{
+    Custom,
+    Highway,
+    MountainRoad,
+    DirtRoad,
+    TerrainFollowingSmooth,
+    MountainousUltraSmooth,
+    HillyAggressive,
+    FlatModerate,
+    FastTesting,
+    ExtremeNuclear
+}
     
     /// <summary>
     /// Extended terrain material item with additional properties for terrain generation
@@ -222,9 +243,91 @@
         
         // Road smoothing
         public bool IsRoadMaterial { get; set; }
+        public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.Highway;
+        
+        // Prominent parameters (override preset values)
         public float RoadWidthMeters { get; set; } = 8.0f;
-        public float TerrainAffectedRangeMeters { get; set; } = 12.0f;
+        public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
         public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
         public float SideMaxSlopeDegrees { get; set; } = 45.0f;
+        
+        /// <summary>
+        /// Builds the full RoadSmoothingParameters by starting with the selected preset
+        /// and overriding the 4 prominent parameters.
+        /// </summary>
+        public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null)
+        {
+            // Start with preset or create default
+            var baseParams = TerrainMaterialSettings.GetPresetParameters(SelectedPreset);
+            
+            // Clone the preset to avoid modifying the static instance
+            var result = new RoadSmoothingParameters
+            {
+                // Copy all settings from preset (or use defaults for Custom)
+                Approach = baseParams?.Approach ?? RoadSmoothingApproach.Spline,
+                EnableTerrainBlending = baseParams?.EnableTerrainBlending ?? true,
+                CrossSectionIntervalMeters = baseParams?.CrossSectionIntervalMeters ?? 0.5f,
+                BlendFunctionType = baseParams?.BlendFunctionType ?? BlendFunctionType.Cosine,
+                
+                // Post-processing smoothing
+                EnablePostProcessingSmoothing = baseParams?.EnablePostProcessingSmoothing ?? true,
+                SmoothingType = baseParams?.SmoothingType ?? PostProcessingSmoothingType.Gaussian,
+                SmoothingKernelSize = baseParams?.SmoothingKernelSize ?? 7,
+                SmoothingSigma = baseParams?.SmoothingSigma ?? 1.5f,
+                SmoothingMaskExtensionMeters = baseParams?.SmoothingMaskExtensionMeters ?? 6.0f,
+                SmoothingIterations = baseParams?.SmoothingIterations ?? 1,
+                
+                // Debug
+                DebugOutputDirectory = debugOutputDirectory,
+                ExportSmoothedHeightmapWithOutlines = baseParams?.ExportSmoothedHeightmapWithOutlines ?? false,
+                
+                // Override with prominent parameters
+                RoadWidthMeters = RoadWidthMeters,
+                TerrainAffectedRangeMeters = TerrainAffectedRangeMeters,
+                RoadMaxSlopeDegrees = RoadMaxSlopeDegrees,
+                SideMaxSlopeDegrees = SideMaxSlopeDegrees
+            };
+            
+            // Copy SplineParameters if preset has them
+            if (baseParams?.SplineParameters != null)
+            {
+                result.SplineParameters = new SplineRoadParameters
+                {
+                    SkeletonDilationRadius = baseParams.SplineParameters.SkeletonDilationRadius,
+                    PreferStraightThroughJunctions = baseParams.SplineParameters.PreferStraightThroughJunctions,
+                    JunctionAngleThreshold = baseParams.SplineParameters.JunctionAngleThreshold,
+                    MinPathLengthPixels = baseParams.SplineParameters.MinPathLengthPixels,
+                    BridgeEndpointMaxDistancePixels = baseParams.SplineParameters.BridgeEndpointMaxDistancePixels,
+                    DensifyMaxSpacingPixels = baseParams.SplineParameters.DensifyMaxSpacingPixels,
+                    SimplifyTolerancePixels = baseParams.SplineParameters.SimplifyTolerancePixels,
+                    UseGraphOrdering = baseParams.SplineParameters.UseGraphOrdering,
+                    OrderingNeighborRadiusPixels = baseParams.SplineParameters.OrderingNeighborRadiusPixels,
+                    SplineTension = baseParams.SplineParameters.SplineTension,
+                    SplineContinuity = baseParams.SplineParameters.SplineContinuity,
+                    SplineBias = baseParams.SplineParameters.SplineBias,
+                    SmoothingWindowSize = baseParams.SplineParameters.SmoothingWindowSize,
+                    UseButterworthFilter = baseParams.SplineParameters.UseButterworthFilter,
+                    ButterworthFilterOrder = baseParams.SplineParameters.ButterworthFilterOrder,
+                    GlobalLevelingStrength = baseParams.SplineParameters.GlobalLevelingStrength,
+                    ExportSplineDebugImage = baseParams.SplineParameters.ExportSplineDebugImage,
+                    ExportSkeletonDebugImage = baseParams.SplineParameters.ExportSkeletonDebugImage,
+                    ExportSmoothedElevationDebugImage = baseParams.SplineParameters.ExportSmoothedElevationDebugImage
+                };
+            }
+            
+            // Copy DirectMaskParameters if preset has them
+            if (baseParams?.DirectMaskParameters != null)
+            {
+                result.DirectMaskParameters = new DirectMaskRoadParameters
+                {
+                    SmoothingWindowSize = baseParams.DirectMaskParameters.SmoothingWindowSize,
+                    RoadPixelSearchRadius = baseParams.DirectMaskParameters.RoadPixelSearchRadius,
+                    UseButterworthFilter = baseParams.DirectMaskParameters.UseButterworthFilter,
+                    ButterworthFilterOrder = baseParams.DirectMaskParameters.ButterworthFilterOrder
+                };
+            }
+            
+            return result;
+        }
     }
 }

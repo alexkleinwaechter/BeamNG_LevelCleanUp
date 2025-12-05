@@ -318,10 +318,10 @@ public static class RoadSmoothingPresets
         
         // POST-PROCESSING SMOOTHING - Eliminates staircase artifacts
         EnablePostProcessingSmoothing = true,
-        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingType = PostProcessingSmoothingType.Box,
         SmoothingKernelSize = 7,                  // Medium smoothing
         SmoothingSigma = 1.5f,
-        SmoothingMaskExtensionMeters = 6.0f,      // Smooth into shoulder
+        SmoothingMaskExtensionMeters = 3.0f,      // Smooth into shoulder
         SmoothingIterations = 1,
         
         // DEBUG VISUALIZATION
@@ -351,7 +351,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
             
             // Elevation smoothing
-            SmoothingWindowSize = 301,            // ~150m smoothing window
+            SmoothingWindowSize = 401,            // ~150m smoothing window
             UseButterworthFilter = true,          // Butterworth filter
             ButterworthFilterOrder = 4,           // Aggressive flatness
             GlobalLevelingStrength = 0.0f,        // Terrain-following

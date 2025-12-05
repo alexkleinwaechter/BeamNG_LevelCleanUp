@@ -612,14 +612,8 @@
 
                     if (mat.IsRoadMaterial)
                     {
-                        roadParams = new RoadSmoothingParameters
-                        {
-                            RoadWidthMeters = mat.RoadWidthMeters,
-                            TerrainAffectedRangeMeters = mat.TerrainAffectedRangeMeters,
-                            RoadMaxSlopeDegrees = mat.RoadMaxSlopeDegrees,
-                            SideMaxSlopeDegrees = mat.SideMaxSlopeDegrees,
-                            DebugOutputDirectory = debugPath
-                        };
+                        // Build full parameters from preset with prominent parameter overrides
+                        roadParams = mat.BuildRoadSmoothingParameters(debugPath);
                     }
 
                     materialDefinitions.Add(new MaterialDefinition(
