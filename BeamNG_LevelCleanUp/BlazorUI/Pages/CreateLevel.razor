@@ -339,6 +339,7 @@
             {
                 // 1. Create target directory structure
                 // targetRoot will be: WorkingDirectory/_unpacked/levels/targetLevelPath
+                _targetLevelPath = StringUtils.SanitizeFileName(_targetLevelPath);
                 var targetRoot = Path.Join(
                     ZipFileHandler.WorkingDirectory, 
                     "_unpacked", 
