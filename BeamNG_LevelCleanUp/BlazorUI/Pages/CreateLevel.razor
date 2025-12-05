@@ -218,7 +218,12 @@
 </ErrorBoundary>
 
 @code {
-    private static CreateLevelWizardState _wizardState = new();
+private static CreateLevelWizardState _wizardState = new();
+    
+/// <summary>
+///     Exposes the wizard state for other pages (e.g., CopyTerrains in wizard mode)
+/// </summary>
+public static CreateLevelWizardState GetWizardState() => _wizardState;
     
     private string _sourceLevelName;
     private string _sourceLevelPath;

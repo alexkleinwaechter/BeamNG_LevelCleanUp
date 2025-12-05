@@ -10,12 +10,29 @@
 @using BeamNG_LevelCleanUp.Utils
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject NavigationManager Navigation
 
 <ErrorBoundary>
-    <ChildContent>
-        <div class="content">
-            <h3>Copy Terrain Materials</h3>
-            <MudExpansionPanels @ref="FileSelect">
+<ChildContent>
+    <div class="content">
+        <h3>Copy Terrain Materials</h3>
+            
+        @if (WizardMode && WizardState != null)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Assistant">
+                <MudText Typo="Typo.h6">Create Level Wizard - Step 3: Select Terrain Materials</MudText>
+                <MudText Typo="Typo.body2">
+                    Source: <b>@WizardState.SourceLevelName</b> ? Target: <b>@WizardState.LevelName</b>
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mt-2">
+                    Select the terrain materials you want to copy to your new level.
+                </MudText>
+            </MudAlert>
+        }
+            
+        @if (!WizardMode)
+        {
+        <MudExpansionPanels @ref="FileSelect">
                 <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
                                          Description="The game install directory. If empty some features are missing.">
@@ -65,8 +82,9 @@
                     }
                 </MudExpansionPanel>
             </MudExpansionPanels>
+            }
 
-            @if (!string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
+            @if (!WizardMode && !string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
             {
                 <MudButton @onclick="ResetPage" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Refresh" Style="margin-top: 16px;">
                     Reset and Select Different Maps
@@ -194,41 +212,87 @@
             {
                 <MudText>Terrain Materials: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
             }
-            <MudStack Row="true" Justify="Justify.SpaceBetween">
-                @if (_selectedItems.Any())
-                {
-                    <MudButton @onclick="CopyDialog" Color="Color.Primary">Copy Terrain Materials</MudButton>
-                }
-                @if (_errors.Any())
-                {
-                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
-                }
-                @if (_warnings.Any())
-                {
-                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
-                }
-                @if (_messages.Any())
-                {
-                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
-                }
-                @if (_showDeployButton)
-                {
-                    <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                               @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
-                    </MudSelect>
-                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
-                }
-            </MudStack>
+            
+            @if (WizardMode)
+            {
+                <!-- Wizard mode: Different button layout -->
+                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                    <MudButton OnClick="@CancelWizard" 
+                              Variant="Variant.Outlined"
+                              StartIcon="@Icons.Material.Filled.ArrowBack">
+                        Back to Create Level
+                    </MudButton>
+                    
+                    @if (_selectedItems.Any())
+                    {
+                        <MudButton @onclick="CopyDialogWizardMode" 
+                                  Color="Color.Primary"
+                                  Variant="Variant.Filled"
+                                  StartIcon="@Icons.Material.Filled.Check">
+                            Copy Selected Materials (@_selectedItems.Count)
+                        </MudButton>
+                    }
+                    
+                    @if (_errors.Any())
+                    {
+                        <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
+                    }
+                    @if (_warnings.Any())
+                    {
+                        <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
+                    }
+                    @if (_messages.Any())
+                    {
+                        <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
+                    }
+                </MudStack>
+            }
+            else
+            {
+                <!-- Standard mode: Existing footer -->
+                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                    @if (_selectedItems.Any())
+                    {
+                        <MudButton @onclick="CopyDialog" Color="Color.Primary">Copy Terrain Materials</MudButton>
+                    }
+                    @if (_errors.Any())
+                    {
+                        <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
+                    }
+                    @if (_warnings.Any())
+                    {
+                        <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
+                    }
+                    @if (_messages.Any())
+                    {
+                        <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
+                    }
+                    @if (_showDeployButton)
+                    {
+                        <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
+                                   @bind-Value="_compressionLevel">
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
+                        </MudSelect>
+                        <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
+                    }
+                </MudStack>
+            }
             @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
             {
                 <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Working Directory: @ZipFileHandler.WorkingDirectory</MudButton>
                 <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Logfiles</MudButton>
             }
         </footer>
+        
+        @if (WizardMode && WizardState != null)
+        {
+            <CascadingValue Value="WizardState">
+                <CreateLevelAssistant />
+            </CascadingValue>
+        }
     </ChildContent>
     <ErrorContent>
         <CustomErrorContent/>
@@ -236,10 +300,18 @@
 </ErrorBoundary>
 
 @code {
-    private string _levelName { get; set; }
-    private string _levelPath { get; set; }
-    private string _levelNameCopyFrom { get; set; }
-    private string _levelPathCopyFrom { get; set; }
+[Parameter]
+[SupplyParameterFromQuery(Name = "wizardMode")]
+public bool WizardMode { get; set; }
+
+// Note: CascadingParameter doesn't work across page navigation
+// We'll get the wizard state from CreateLevel's static field instead
+private CreateLevelWizardState WizardState { get; set; }
+    
+private string _levelName { get; set; }
+private string _levelPath { get; set; }
+private string _levelNameCopyFrom { get; set; }
+private string _levelPathCopyFrom { get; set; }
     private string _beamLogFilePath { get; set; } = string.Empty;
     private List<string> _missingFiles { get; set; } = new();
     private List<string> _errors { get; set; } = new();
@@ -521,6 +593,9 @@
         });
         FillCopyList();
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Scanning Terrain Materials finished. Please select materials to copy.");
+        
+        // Force UI update after scanning completes
+        await InvokeAsync(StateHasChanged);
     }
 
     protected override void OnInitialized()
@@ -552,6 +627,172 @@
                 }
             }
         });
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // In wizard mode, get the wizard state from CreateLevel's static field
+        if (WizardMode)
+        {
+            WizardState = CreateLevel.GetWizardState();
+            
+            if (WizardState == null || !WizardState.IsActive)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                    "Wizard state not available. Please start from the Create Level page.");
+                return;
+            }
+            
+            await LoadLevelsFromWizardState();
+        }
+        
+        await base.OnParametersSetAsync();
+    }
+
+    private async Task LoadLevelsFromWizardState()
+    {
+        try
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Wizard mode: Loading levels automatically...");
+            
+            // 1. Set source level (from wizard state) - already extracted in _copyFrom
+            // WizardState.SourceLevelPath should be the _levelPath from CreateLevel (pointing to the _copyFrom directory)
+            // We need to find the actual level name path within it
+            var sourceLevelPath = WizardState.SourceLevelPath;
+            _levelNameCopyFrom = WizardState.SourceLevelName;
+            
+            // Find the actual level directory with info.json (e.g., WorkingDirectory/_copyFrom/levels/driver_training)
+            _levelPathCopyFrom = ZipFileHandler.GetLevelPath(sourceLevelPath);
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Source level path: {_levelPathCopyFrom}");
+            
+            // 2. Set target level (newly created level in _unpacked)
+            // WizardState.TargetLevelRootPath is: WorkingDirectory/_unpacked/levels/targetLevelPath
+            // This is already the full path to the level directory, we just need to get the parent (levels folder)
+            var targetLevelRootPath = WizardState.TargetLevelRootPath;
+            _levelName = WizardState.LevelName; // This is the display name
+            
+            // The target path should be the parent directory (the "levels" folder)
+            var targetLevelNamePath = targetLevelRootPath;
+            _levelPath = Directory.GetParent(targetLevelRootPath)?.FullName;
+            
+            if (_levelPath == null || !Directory.Exists(_levelPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                    $"Target level path not found: {_levelPath}");
+                return;
+            }
+            
+            // Set working directory from the wizard state path
+            // Extract the working directory from the target path (remove /_unpacked/levels/targetLevelPath)
+            if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+            {
+                var unpackedIndex = _levelPath.IndexOf("_unpacked", StringComparison.OrdinalIgnoreCase);
+                if (unpackedIndex > 0)
+                {
+                    ZipFileHandler.WorkingDirectory = _levelPath.Substring(0, unpackedIndex - 1);
+                }
+                else
+                {
+                    // Fallback: go up from levels folder
+                    var levelsParent = Directory.GetParent(_levelPath);
+                    if (levelsParent != null)
+                    {
+                        ZipFileHandler.WorkingDirectory = Directory.GetParent(levelsParent.FullName)?.FullName;
+                    }
+                }
+            }
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Target level path: {_levelPath}");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Working directory: {ZipFileHandler.WorkingDirectory}");
+            
+            // 3. Initialize BeamFileReader with both paths
+            // Both paths should point to the "levels" directories
+            Reader = new BeamFileReader(_levelPath, null, _levelPathCopyFrom);
+            
+            // 4. Scan assets (call existing method)
+            await ScanAssets();
+            
+            // 5. Force UI update after loading completes
+            await InvokeAsync(StateHasChanged);
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                "Wizard mode: Levels loaded successfully");
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                $"Failed to load levels in wizard mode: {ex.Message}");
+            
+            // Force UI update even on error
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task CopyDialogWizardMode()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true };
+        var parameters = new DialogParameters();
+        
+        var replaceCount = _selectedItems.Count(x => x.CopyAsset.IsReplaceMode);
+        var addCount = _selectedItems.Count - replaceCount;
+        
+        var messageText = $"Copy {addCount} new material(s) and replace {replaceCount} existing material(s)?";
+        
+        parameters.Add("ContentText", messageText);
+        parameters.Add("ButtonText", "Copy Materials");
+        parameters.Add("Color", Color.Primary);
+        
+        var dialog = await DialogService.ShowAsync<SimpleDialog>("Copy Terrain Materials", parameters, options);
+        var result = await dialog.Result;
+        
+        if (!result.Canceled)
+        {
+            _staticSnackbar = Snackbar.Add("Copying terrain materials...", Severity.Normal, 
+                config => { config.VisibleStateDuration = int.MaxValue; });
+                
+            await Task.Run(() =>
+            {
+                var selected = _selectedItems.Select(y => y.Identifier).ToList();
+                Reader.DoCopyAssets(selected);
+            });
+            
+            Snackbar.Remove(_staticSnackbar);
+            
+            // Update wizard state
+            UpdateWizardStateAfterCopy();
+            
+            // Navigate back to CreateLevel
+            Navigation.NavigateTo("/CreateLevel");
+        }
+    }
+
+    private void UpdateWizardStateAfterCopy()
+    {
+        if (WizardState == null) return;
+        
+        // Collect copied terrain materials
+        var copiedMaterials = _selectedItems
+            .Where(x => x.CopyAsset.CopyAssetType == CopyAssetType.Terrain)
+            .SelectMany(x => x.CopyAsset.Materials)
+            .ToList();
+        
+        WizardState.CopiedTerrainMaterials = copiedMaterials;
+        WizardState.Step3_TerrainMaterialsSelected = true;
+        WizardState.CurrentStep = 2; // Keep on step 2 to show completion
+        
+        PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            $"Copied {copiedMaterials.Count} terrain material(s) to {WizardState.LevelName}");
+    }
+
+    private void CancelWizard()
+    {
+        // Navigate back to CreateLevel without making changes
+        Navigation.NavigateTo("/CreateLevel");
     }
 
     void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
