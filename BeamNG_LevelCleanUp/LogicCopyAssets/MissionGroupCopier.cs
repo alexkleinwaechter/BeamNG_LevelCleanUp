@@ -96,7 +96,7 @@ public class MissionGroupCopier
     {
         if (_sourceMaterials == null || !_sourceMaterials.Any())
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
                 "No source materials available for referenced material copying", true);
             return;
         }
@@ -112,7 +112,7 @@ public class MissionGroupCopier
 
         if (copiedMaterials.Any())
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Copied {copiedMaterials.Count} referenced material(s): {string.Join(", ", copiedMaterials)}");
         }
     }
@@ -288,7 +288,7 @@ public class MissionGroupCopier
             // BeamNG stores these in subdirectories under Level_object/
             var sourceMissionGroupPath = Path.Join(_sourceLevelNamePath, "main", "MissionGroup");
             var sourceLevelObjectPath = Path.Join(sourceMissionGroupPath, "Level_object");
-            
+
             // Check if Level_object directory exists
             if (!Directory.Exists(sourceLevelObjectPath))
             {
@@ -296,20 +296,20 @@ public class MissionGroupCopier
                 sourceLevelObjectPath = sourceMissionGroupPath;
             }
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Reading source MissionGroup from: {sourceLevelObjectPath}", true);
 
             // Find all items.level.json files in subdirectories
             var itemsFiles = Directory.GetFiles(sourceLevelObjectPath, "items.level.json", SearchOption.AllDirectories);
-            
+
             if (itemsFiles.Length == 0)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     "No items.level.json files found in source MissionGroup");
                 return;
             }
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Found {itemsFiles.Length} items.level.json file(s) in source MissionGroup", true);
 
             // Filter to only include lines for our allowed classes
@@ -333,8 +333,8 @@ public class MissionGroupCopier
             {
                 var sourceLines = File.ReadAllLines(itemsFile);
                 totalLines += sourceLines.Length;
-                
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Reading {sourceLines.Length} lines from {Path.GetFileName(Path.GetDirectoryName(itemsFile))}/items.level.json", true);
 
                 foreach (var line in sourceLines)
@@ -357,9 +357,9 @@ public class MissionGroupCopier
                                 skippedCount++;
                                 continue; // Skip classes we don't want to copy
                             }
-                            
+
                             processedCount++;
-                            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                            PubSubChannel.SendMessage(PubSubMessageType.Info,
                                 $"Processing {className} object", true);
                         }
                         else
@@ -385,9 +385,9 @@ public class MissionGroupCopier
                         UpdatePathField(jsonDict, "nightCubemap", sourceLevelName, _targetLevelName);
                         UpdatePathField(jsonDict, "globalEnviromentMap", sourceLevelName, _targetLevelName);
                         UpdatePathField(jsonDict, "moonMat", sourceLevelName, _targetLevelName);
-                        
+
                         // Special handling for CloudLayer texture - update to new location in art/skies
-                        if (jsonDict.TryGetValue("class", out var classElement) && 
+                        if (jsonDict.TryGetValue("class", out var classElement) &&
                             classElement.GetString() == "CloudLayer" &&
                             jsonDict.TryGetValue("texture", out var textureElement))
                         {
@@ -397,31 +397,31 @@ public class MissionGroupCopier
                                 var textureFileName = Path.GetFileName(texturePath);
                                 var newTexturePath = $"/levels/{_targetLevelName}/art/skies/{textureFileName}";
                                 jsonDict["texture"] = JsonSerializer.SerializeToElement(newTexturePath);
-                                
-                                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                                PubSubChannel.SendMessage(PubSubMessageType.Info,
                                     $"Updated CloudLayer texture: {textureFileName}", true);
                             }
                         }
-
+                        jsonDict["__parent"] = JsonSerializer.SerializeToElement("Level_object");
                         // Serialize back to JSON (one line, preserving all original fields)
                         var updatedJson = JsonSerializer.Serialize(jsonDict, BeamJsonOptions.GetJsonSerializerOneLineOptions());
                         lines.Add(updatedJson);
                     }
                     catch (JsonException ex)
                     {
-                        PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                        PubSubChannel.SendMessage(PubSubMessageType.Warning,
                             $"Could not parse MissionGroup line: {ex.Message}");
                         continue;
                     }
                 }
             }
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Read {totalLines} total lines, processed {processedCount} objects, skipped {skippedCount} objects");
 
             if (lines.Count == 0)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     "No allowed classes found in source files");
                 return;
             }
