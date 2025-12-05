@@ -21,50 +21,50 @@
             <MudText Typo="Typo.body2" Class="mb-4">
                 Generate a BeamNG terrain (.ter) file from terrain materials and a heightmap.
             </MudText>
-            
+
             <!-- Folder Selection -->
             <MudExpansionPanels @ref="FileSelect">
                 <MudExpansionPanel Text="@GetWorkingDirectoryTitle()" Expanded="@(!_hasWorkingDirectory)">
-                    <FileSelectComponent OnFileSelected="OnWorkingDirectorySelected" 
-                                        SelectFolder="true"
-                                        Description="Select the unpacked level folder (contains info.json and art/terrains)">
+                    <FileSelectComponent OnFileSelected="OnWorkingDirectorySelected"
+                                         SelectFolder="true"
+                                         Description="Select the unpacked level folder (contains info.json and art/terrains)">
                     </FileSelectComponent>
                 </MudExpansionPanel>
             </MudExpansionPanels>
 
             @if (_hasWorkingDirectory && !string.IsNullOrEmpty(_levelName))
             {
-                <MudButton @onclick="ResetPage" 
-                          Color="Color.Warning" 
-                          StartIcon="@Icons.Material.Filled.Refresh" 
-                          Style="margin-top: 16px;">
+                <MudButton @onclick="ResetPage"
+                           Color="Color.Warning"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           Style="margin-top: 16px;">
                     Reset and Select Different Folder
                 </MudButton>
-                
+
                 <!-- Terrain Parameters Section -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
                     <MudText Typo="Typo.h6" Class="mb-4">
-                        <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2"/>
+                        <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2" />
                         Terrain Parameters
                     </MudText>
-                    
+
                     <MudGrid Spacing="3">
                         <!-- Heightmap Selection -->
                         <MudItem xs="12">
                             <MudText Typo="Typo.subtitle2" Class="mb-2">Heightmap File (Required)</MudText>
                             <div class="d-flex align-center gap-2">
-                                <MudTextField @bind-Value="_heightmapPath" 
-                                             Label="Heightmap Path" 
-                                             Variant="Variant.Outlined"
-                                             ReadOnly="true"
-                                             Placeholder="Select a 16-bit grayscale PNG..."
-                                             Class="flex-grow-1"
-                                             Error="@(string.IsNullOrEmpty(_heightmapPath))"
-                                             ErrorText="Heightmap is required"/>
-                                <MudButton Variant="Variant.Filled" 
-                                          Color="Color.Primary"
-                                          StartIcon="@Icons.Material.Filled.Image"
-                                          OnClick="SelectHeightmap">
+                                <MudTextField @bind-Value="_heightmapPath"
+                                              Label="Heightmap Path"
+                                              Variant="Variant.Outlined"
+                                              ReadOnly="true"
+                                              Placeholder="Select a 16-bit grayscale PNG..."
+                                              Class="flex-grow-1"
+                                              Error="@(string.IsNullOrEmpty(_heightmapPath))"
+                                              ErrorText="Heightmap is required" />
+                                <MudButton Variant="Variant.Filled"
+                                           Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Image"
+                                           OnClick="SelectHeightmap">
                                     Browse
                                 </MudButton>
                             </div>
@@ -72,14 +72,14 @@
                                 16-bit grayscale PNG. Image dimensions should match terrain size.
                             </MudText>
                         </MudItem>
-                        
+
                         <!-- Terrain Size -->
                         <MudItem xs="12" sm="6" md="3">
-                            <MudSelect T="int" 
-                                      @bind-Value="_terrainSize" 
-                                      Label="Terrain Size" 
-                                      Variant="Variant.Outlined"
-                                      HelperText="Size in pixels (power of 2)">
+                            <MudSelect T="int"
+                                       @bind-Value="_terrainSize"
+                                       Label="Terrain Size"
+                                       Variant="Variant.Outlined"
+                                       HelperText="Size in pixels (power of 2)">
                                 <MudSelectItem Value="256">256 x 256</MudSelectItem>
                                 <MudSelectItem Value="512">512 x 512</MudSelectItem>
                                 <MudSelectItem Value="1024">1024 x 1024</MudSelectItem>
@@ -89,47 +89,47 @@
                                 <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
                             </MudSelect>
                         </MudItem>
-                        
+
                         <!-- Max Height -->
                         <MudItem xs="12" sm="6" md="3">
-                            <MudNumericField @bind-Value="_maxHeight" 
-                                            Label="Max Height (m)" 
-                                            Variant="Variant.Outlined"
-                                            Min="1.0f" Max="10000.0f" Step="10.0f"
-                                            HelperText="Maximum terrain elevation"/>
+                            <MudNumericField @bind-Value="_maxHeight"
+                                             Label="Max Height (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="1.0f" Max="10000.0f" Step="10.0f"
+                                             HelperText="Maximum terrain elevation" />
                         </MudItem>
-                        
+
                         <!-- Meters Per Pixel -->
                         <MudItem xs="12" sm="6" md="3">
-                            <MudNumericField @bind-Value="_metersPerPixel" 
-                                            Label="Meters Per Pixel" 
-                                            Variant="Variant.Outlined"
-                                            Min="0.1f" Max="10.0f" Step="0.1f"
-                                            HelperText="World scale factor"/>
+                            <MudNumericField @bind-Value="_metersPerPixel"
+                                             Label="Meters Per Pixel"
+                                             Variant="Variant.Outlined"
+                                             Min="0.1f" Max="10.0f" Step="0.1f"
+                                             HelperText="World scale factor" />
                         </MudItem>
-                        
+
                         <!-- Terrain Name -->
                         <MudItem xs="12" sm="6" md="3">
-                            <MudTextField @bind-Value="_terrainName" 
-                                         Label="Terrain Name" 
-                                         Variant="Variant.Outlined"
-                                         HelperText="Output filename (without .ter)"/>
+                            <MudTextField @bind-Value="_terrainName"
+                                          Label="Terrain Name"
+                                          Variant="Variant.Outlined"
+                                          HelperText="Output filename (without .ter)" />
                         </MudItem>
-                        
+
                         <!-- Terrain Base Height -->
                         <MudItem xs="12" sm="6" md="3">
-                            <MudNumericField @bind-Value="_terrainBaseHeight" 
-                                            Label="Base Height (m)" 
-                                            Variant="Variant.Outlined"
-                                            Min="-1000.0f" Max="1000.0f" Step="1.0f"
-                                            HelperText="Z position offset for terrain"/>
+                            <MudNumericField @bind-Value="_terrainBaseHeight"
+                                             Label="Base Height (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="-1000.0f" Max="1000.0f" Step="1.0f"
+                                             HelperText="Z position offset for terrain" />
                         </MudItem>
-                        
+
                         <!-- Update TerrainBlock Checkbox -->
                         <MudItem xs="12" sm="6" md="3">
-                            <MudCheckBox @bind-Value="_updateTerrainBlock" 
-                                        Label="Update TerrainBlock"
-                                        Color="Color.Primary"/>
+                            <MudCheckBox @bind-Value="_updateTerrainBlock"
+                                         Label="Update TerrainBlock"
+                                         Color="Color.Primary" />
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
                                 Update MissionGroup items.level.json
                             </MudText>
@@ -143,42 +143,42 @@
                 <!-- Materials Section with Drag-Drop -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
                     <MudText Typo="Typo.h6" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2"/>
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2" />
                         Terrain Materials (@_terrainMaterials.Count)
                     </MudText>
                     <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
                         Drag and drop to change the order. Material at index 0 is the default/fallback material.
                         Expand each material to configure layer maps and road smoothing.
                     </MudText>
-                    
-                    <MudDropContainer T="TerrainMaterialItemExtended" 
-                                     @ref="_dropContainer"
-                                     Items="@_terrainMaterials" 
-                                     ItemsSelector="@((item, dropzone) => item.Selector == dropzone)"
-                                     ItemDropped="OnMaterialDropped"
-                                     Class="d-flex flex-column">
+
+                    <MudDropContainer T="TerrainMaterialItemExtended"
+                                      @ref="_dropContainer"
+                                      Items="@_terrainMaterials"
+                                      ItemsSelector="@((item, dropzone) => item.Selector == dropzone)"
+                                      ItemDropped="OnMaterialDropped"
+                                      Class="d-flex flex-column">
                         <ChildContent>
-                            <MudDropZone T="TerrainMaterialItemExtended" 
-                                        Identifier="materials" 
-                                        Class="mud-height-full"
-                                        AllowReorder="true">
+                            <MudDropZone T="TerrainMaterialItemExtended"
+                                         Identifier="materials"
+                                         Class="mud-height-full"
+                                         AllowReorder="true">
                             </MudDropZone>
                         </ChildContent>
                         <ItemRenderer>
                             <div class="d-flex align-center mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.DragIndicator" 
-                                        Class="mr-2" 
-                                        Style="cursor: move;"
-                                        Color="Color.Default"/>
+                                <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                                         Class="mr-2"
+                                         Style="cursor: move;"
+                                         Color="Color.Default" />
                                 <div class="flex-grow-1">
-                                    <TerrainMaterialSettings Material="@context" 
-                                                            OnMaterialChanged="OnMaterialSettingsChanged"/>
+                                    <TerrainMaterialSettings Material="@context"
+                                                             OnMaterialChanged="OnMaterialSettingsChanged" />
                                 </div>
                             </div>
                         </ItemRenderer>
                     </MudDropContainer>
                 </MudPaper>
-                
+
                 <!-- Generate Button -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
                     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
@@ -190,15 +190,15 @@
                                 Debug files will be saved to: @GetDebugPath()
                             </MudText>
                         </div>
-                        <MudButton Variant="Variant.Filled" 
-                                  Color="Color.Primary"
-                                  Size="Size.Large"
-                                  StartIcon="@Icons.Material.Filled.Build"
-                                  OnClick="ExecuteTerrainGeneration"
-                                  Disabled="@(!CanGenerate() || _isGenerating)">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Size="Size.Large"
+                                   StartIcon="@Icons.Material.Filled.Build"
+                                   OnClick="ExecuteTerrainGeneration"
+                                   Disabled="@(!CanGenerate() || _isGenerating)">
                             @if (_isGenerating)
                             {
-                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2"/>
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
                                 <span>Generating...</span>
                             }
                             else
@@ -212,23 +212,23 @@
             else if (_hasWorkingDirectory && !_isLoading && !_errors.Any())
             {
                 <MudAlert Severity="Severity.Warning" Class="mt-4">
-                    No terrain materials found in the selected folder. 
+                    No terrain materials found in the selected folder.
                     Make sure the folder contains <code>art/terrains/main.materials.json</code>.
                 </MudAlert>
             }
 
             @if (_isLoading)
             {
-                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4"/>
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
                 <MudText Typo="Typo.body2" Class="mt-2">Loading terrain materials...</MudText>
             }
 
-            <MudDrawer @bind-Open="@_openDrawer" 
-                      Width="@_drawerWidth" 
-                      Height="@_drawerHeight" 
-                      Anchor="@_anchor" 
-                      Elevation="1" 
-                      Variant="@DrawerVariant.Temporary">
+            <MudDrawer @bind-Open="@_openDrawer"
+                       Width="@_drawerWidth"
+                       Height="@_drawerHeight"
+                       Anchor="@_anchor"
+                       Elevation="1"
+                       Variant="@DrawerVariant.Temporary">
                 <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
                         var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
@@ -242,45 +242,45 @@
                 </MudList>
             </MudDrawer>
         </div>
-        
+
         <footer>
             <MudStack Row="true" Justify="Justify.SpaceBetween">
                 @if (_errors.Any())
                 {
-                    <MudButton Color="Color.Error" 
-                              OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">
+                    <MudButton Color="Color.Error"
+                               OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">
                         Errors (@_errors.Count)
                     </MudButton>
                 }
                 @if (_warnings.Any())
                 {
-                    <MudButton Color="Color.Warning" 
-                              OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">
+                    <MudButton Color="Color.Warning"
+                               OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">
                         Warnings (@_warnings.Count)
                     </MudButton>
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Color="Color.Info" 
-                              OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">
+                    <MudButton Color="Color.Info"
+                               OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">
                         Messages (@_messages.Count)
                     </MudButton>
                 }
             </MudStack>
-            
+
             @if (!string.IsNullOrEmpty(_workingDirectory))
             {
-                <MudButton @onclick="OpenWorkingDirectory" 
-                          StartIcon="@Icons.Material.Filled.FolderOpen" 
-                          Variant="Variant.Text" 
-                          Color="Color.Primary">
+                <MudButton @onclick="OpenWorkingDirectory"
+                           StartIcon="@Icons.Material.Filled.FolderOpen"
+                           Variant="Variant.Text"
+                           Color="Color.Primary">
                     Working Directory: @_workingDirectory
                 </MudButton>
             }
         </footer>
     </ChildContent>
     <ErrorContent>
-        <CustomErrorContent/>
+        <CustomErrorContent />
     </ErrorContent>
 </ErrorBoundary>
 
@@ -291,7 +291,7 @@
     private bool _hasWorkingDirectory;
     private bool _isLoading;
     private bool _isGenerating;
-    
+
     // Terrain parameters
     private string? _heightmapPath;
     private int _terrainSize = 2048;
@@ -300,19 +300,19 @@
     private string _terrainName = "theTerrain";
     private float _terrainBaseHeight = 0.0f;
     private bool _updateTerrainBlock = true;
-    
+
     // Terrain materials list
     private List<TerrainMaterialItemExtended> _terrainMaterials = new();
-    
+
     // UI references
     [AllowNull] private MudExpansionPanels FileSelect { get; set; }
     private MudDropContainer<TerrainMaterialItemExtended> _dropContainer = null!;
-    
+
     // Message lists
     private List<string> _errors = new();
     private List<string> _messages = new();
     private List<string> _warnings = new();
-    
+
     // Drawer state
     private bool _openDrawer;
     private Anchor _anchor;
@@ -377,7 +377,7 @@
 
     private bool CanGenerate()
     {
-        return !string.IsNullOrEmpty(_heightmapPath) && 
+        return !string.IsNullOrEmpty(_heightmapPath) &&
                File.Exists(_heightmapPath) &&
                _terrainMaterials.Any() &&
                !string.IsNullOrEmpty(_terrainName);
@@ -414,7 +414,7 @@
         _warnings.Clear();
         _messages.Clear();
         _terrainMaterials.Clear();
-        
+
         StateHasChanged();
 
         await Task.Run(() =>
@@ -432,7 +432,7 @@
                     }
                     else
                     {
-                        PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                        PubSubChannel.SendMessage(PubSubMessageType.Error,
                             "Selected folder does not appear to be a valid BeamNG level. " +
                             "Please select a folder containing info.json.");
                         return;
@@ -448,11 +448,11 @@
 
                 // Scan for terrain materials
                 ScanTerrainMaterials(levelPath);
-                
+
                 // Try to read existing terrain size from terrain.json
                 LoadTerrainSettings(levelPath);
-                
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Loaded {_terrainMaterials.Count} terrain materials from {_levelName}");
             }
             catch (Exception ex)
@@ -469,7 +469,7 @@
         {
             await FileSelect.Panels[0].CollapseAsync();
         }
-        
+
         StateHasChanged();
     }
 
@@ -484,14 +484,14 @@
                 var terrainJsonPath = terrainFiles[0];
                 var jsonContent = File.ReadAllText(terrainJsonPath);
                 var jsonNode = JsonUtils.GetValidJsonNodeFromString(jsonContent, terrainJsonPath);
-                
+
                 if (jsonNode != null)
                 {
                     if (jsonNode["size"] != null)
                     {
                         _terrainSize = jsonNode["size"]!.GetValue<int>();
                     }
-                    
+
                     // Extract terrain name from filename
                     _terrainName = Path.GetFileNameWithoutExtension(terrainJsonPath)
                         .Replace(".terrain", "");
@@ -507,10 +507,10 @@
     private void ScanTerrainMaterials(string levelPath)
     {
         var terrainMaterialsPath = Path.Join(levelPath, "art", "terrains", "main.materials.json");
-        
+
         if (!File.Exists(terrainMaterialsPath))
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Terrain materials file not found at: {terrainMaterialsPath}");
             return;
         }
@@ -519,10 +519,10 @@
         {
             var jsonContent = File.ReadAllText(terrainMaterialsPath);
             var jsonNode = JsonUtils.GetValidJsonNodeFromString(jsonContent, terrainMaterialsPath);
-            
+
             if (jsonNode == null)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
                     "Failed to parse terrain materials JSON.");
                 return;
             }
@@ -531,7 +531,7 @@
             foreach (var property in jsonNode.AsObject())
             {
                 var materialClass = property.Value?["class"]?.ToString();
-                
+
                 if (materialClass != "TerrainMaterial")
                     continue;
 
@@ -549,13 +549,13 @@
                     JsonKey = property.Key,
                     IsRoadMaterial = isRoad
                 });
-                
+
                 order++;
             }
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Error, 
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
                 $"Error reading terrain materials: {ex.Message}");
         }
     }
@@ -563,8 +563,8 @@
     private bool DetectRoadMaterial(string name)
     {
         var lowerName = name.ToLowerInvariant();
-        return lowerName.Contains("asphalt") || 
-               lowerName.Contains("road") || 
+        return lowerName.Contains("asphalt") ||
+               lowerName.Contains("road") ||
                lowerName.Contains("tarmac") ||
                lowerName.Contains("concrete") ||
                lowerName.Contains("pavement");
@@ -591,7 +591,7 @@
         StateHasChanged();
 
         var success = false;
-        
+
         try
         {
             // Create debug directory
@@ -609,7 +609,7 @@
                 foreach (var mat in orderedMaterials)
                 {
                     RoadSmoothingParameters? roadParams = null;
-                    
+
                     if (mat.IsRoadMaterial)
                     {
                         roadParams = new RoadSmoothingParameters
@@ -639,8 +639,8 @@
                 };
 
                 var outputPath = GetOutputPath();
-                
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Starting terrain generation: {_terrainSize}x{_terrainSize}, {materialDefinitions.Count} materials...");
 
                 success = await creator.CreateTerrainFileAsync(outputPath, parameters);
@@ -649,9 +649,9 @@
             if (success)
             {
                 Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Terrain file saved to: {GetOutputPath()}");
-                
+
                 // Update TerrainBlock in items.level.json if requested
                 if (_updateTerrainBlock)
                 {
@@ -661,7 +661,7 @@
                         _terrainSize,
                         _maxHeight,
                         _terrainBaseHeight);
-                    
+
                     if (terrainBlockUpdated)
                     {
                         Snackbar.Add("TerrainBlock updated in items.level.json", Severity.Success);
@@ -705,12 +705,12 @@
         _terrainName = "theTerrain";
         _terrainBaseHeight = 0.0f;
         _updateTerrainBlock = true;
-        
+
         if (FileSelect?.Panels.Count > 0)
         {
             await FileSelect.Panels[0].ExpandAsync();
         }
-        
+
         StateHasChanged();
         Snackbar.Add("Page reset. You can now select a different folder.", Severity.Info);
     }

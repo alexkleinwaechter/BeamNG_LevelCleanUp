@@ -289,26 +289,267 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f
         }
     };
+    
+    /// <summary>
+    /// HIGHWAY: Professional highway-quality roads (8m wide).
+    /// Creates smooth terrain-following roads suitable for main highways.
+    /// - 8 meters wide (standard 2-lane highway)
+    /// - Gentle 6° max slope
+    /// - Large smoothing window for professional quality
+    /// Processing time: ~3-4 seconds for 4096x4096
+    /// Quality: Professional highway standard
+    /// </summary>
+    public static RoadSmoothingParameters Highway => new()
+    {
+        Approach = RoadSmoothingApproach.Spline,
+        EnableTerrainBlending = true,
+        
+        // ROAD GEOMETRY - Highway (8m wide)
+        RoadWidthMeters = 8.0f,
+        TerrainAffectedRangeMeters = 6.0f,        // Shoulder for smooth transition
+        CrossSectionIntervalMeters = 0.5f,        // High quality sampling
+        
+        // SLOPE CONSTRAINTS - Gentle highway grades
+        RoadMaxSlopeDegrees = 6.0f,               // Highway standard
+        SideMaxSlopeDegrees = 45.0f,              // Standard embankment
+        
+        // BLENDING
+        BlendFunctionType = BlendFunctionType.Cosine,
+        
+        // POST-PROCESSING SMOOTHING - Eliminates staircase artifacts
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 7,                  // Medium smoothing
+        SmoothingSigma = 1.5f,
+        SmoothingMaskExtensionMeters = 6.0f,      // Smooth into shoulder
+        SmoothingIterations = 1,
+        
+        // DEBUG VISUALIZATION
+        ExportSmoothedHeightmapWithOutlines = true,
+        
+        // SPLINE-SPECIFIC SETTINGS
+        SplineParameters = new SplineRoadParameters
+        {
+            // Skeletonization
+            SkeletonDilationRadius = 0,
+            
+            // Junction handling - disabled for continuous curves
+            PreferStraightThroughJunctions = false,
+            JunctionAngleThreshold = 90.0f,
+            MinPathLengthPixels = 100.0f,
+            
+            // Connectivity & path extraction
+            BridgeEndpointMaxDistancePixels = 40.0f,
+            DensifyMaxSpacingPixels = 1.5f,
+            SimplifyTolerancePixels = 0.5f,
+            UseGraphOrdering = true,
+            OrderingNeighborRadiusPixels = 2.5f,
+            
+            // Spline curve fitting
+            SplineTension = 0.2f,                 // Loose for smooth curves
+            SplineContinuity = 0.7f,              // Very smooth corners
+            SplineBias = 0.0f,
+            
+            // Elevation smoothing
+            SmoothingWindowSize = 301,            // ~150m smoothing window
+            UseButterworthFilter = true,          // Butterworth filter
+            ButterworthFilterOrder = 4,           // Aggressive flatness
+            GlobalLevelingStrength = 0.0f,        // Terrain-following
+            
+            // Debug output
+            ExportSplineDebugImage = true,
+            ExportSkeletonDebugImage = true,
+            ExportSmoothedElevationDebugImage = true
+        }
+    };
+    
+    /// <summary>
+    /// MOUNTAIN ROAD: Narrow steep roads for mountainous terrain (6m wide).
+    /// Creates terrain-following roads suitable for winding mountain passes.
+    /// - 6 meters wide (narrower than highways)
+    /// - Steeper 8° max slope allowed
+    /// - Tighter curves for mountainous terrain
+    /// Processing time: ~3-4 seconds for 4096x4096
+    /// Quality: Authentic mountain road character
+    /// </summary>
+    public static RoadSmoothingParameters MountainRoad => new()
+    {
+        Approach = RoadSmoothingApproach.Spline,
+        EnableTerrainBlending = true,
+        
+        // ROAD GEOMETRY - Narrow mountain road (6m wide)
+        RoadWidthMeters = 6.0f,                   // Narrower road
+        TerrainAffectedRangeMeters = 8.0f,        // Tighter shoulder (road hugs terrain)
+        CrossSectionIntervalMeters = 0.5f,        // High quality sampling
+        
+        // SLOPE CONSTRAINTS - Steeper for mountains
+        RoadMaxSlopeDegrees = 8.0f,               // Steeper mountain grade
+        SideMaxSlopeDegrees = 35.0f,              // Steeper embankment
+        
+        // BLENDING
+        BlendFunctionType = BlendFunctionType.Cosine,
+        
+        // POST-PROCESSING SMOOTHING - Light smoothing to preserve mountain character
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 5,                  // Lighter smoothing
+        SmoothingSigma = 1.0f,                    // Less aggressive
+        SmoothingMaskExtensionMeters = 4.0f,      // Smaller extension
+        SmoothingIterations = 1,
+        
+        // SPLINE-SPECIFIC SETTINGS
+        SplineParameters = new SplineRoadParameters
+        {
+            // Skeletonization
+            SkeletonDilationRadius = 0,
+            
+            // Junction handling
+            PreferStraightThroughJunctions = false,
+            JunctionAngleThreshold = 90.0f,
+            MinPathLengthPixels = 50.0f,          // Allow shorter segments
+            
+            // Connectivity & path extraction
+            BridgeEndpointMaxDistancePixels = 30.0f,
+            DensifyMaxSpacingPixels = 1.5f,
+            SimplifyTolerancePixels = 0.5f,
+            UseGraphOrdering = true,
+            OrderingNeighborRadiusPixels = 2.5f,
+            
+            // Spline curve fitting - tighter for mountain curves
+            SplineTension = 0.3f,                 // Tighter following
+            SplineContinuity = 0.5f,              // Allow sharper corners
+            SplineBias = 0.0f,
+            
+            // Elevation smoothing
+            SmoothingWindowSize = 201,            // ~100m smoothing window
+            UseButterworthFilter = true,          // Butterworth filter
+            ButterworthFilterOrder = 3,           // Less aggressive
+            GlobalLevelingStrength = 0.0f,        // Follow terrain closely
+            
+            // Debug output
+            ExportSplineDebugImage = true,
+            ExportSkeletonDebugImage = true,
+            ExportSmoothedElevationDebugImage = true
+        }
+    };
+    
+    /// <summary>
+    /// DIRT ROAD: Rustic dirt roads with minimal smoothing (5m wide).
+    /// Creates natural-looking unpaved roads that follow terrain closely.
+    /// - 5 meters wide (narrow, rustic)
+    /// - Minimal smoothing (preserve natural terrain character)
+    /// - Higher tolerance for bumps and irregularities
+    /// Processing time: ~2-3 seconds for 4096x4096
+    /// Quality: Authentic unpaved road character
+    /// </summary>
+    public static RoadSmoothingParameters DirtRoad => new()
+    {
+        Approach = RoadSmoothingApproach.Spline,
+        EnableTerrainBlending = true,
+        
+        // ROAD GEOMETRY - Narrow dirt road (5m wide)
+        RoadWidthMeters = 5.0f,                   // Narrow dirt road
+        TerrainAffectedRangeMeters = 6.0f,        // Minimal shoulder
+        CrossSectionIntervalMeters = 0.75f,       // Standard quality (faster)
+        
+        // SLOPE CONSTRAINTS - Relaxed for dirt roads
+        RoadMaxSlopeDegrees = 10.0f,              // Allow steep sections
+        SideMaxSlopeDegrees = 40.0f,              // Natural embankment
+        
+        // BLENDING
+        BlendFunctionType = BlendFunctionType.Cosine,
+        
+        // POST-PROCESSING SMOOTHING - Minimal smoothing to preserve rustic character
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 5,                  // Light smoothing only
+        SmoothingSigma = 0.8f,                    // Very gentle
+        SmoothingMaskExtensionMeters = 3.0f,      // Minimal extension
+        SmoothingIterations = 1,
+        
+        // SPLINE-SPECIFIC SETTINGS
+        SplineParameters = new SplineRoadParameters
+        {
+            // Skeletonization
+            SkeletonDilationRadius = 0,
+            
+            // Junction handling
+            PreferStraightThroughJunctions = false,
+            JunctionAngleThreshold = 90.0f,
+            MinPathLengthPixels = 40.0f,          // Allow short segments
+            
+            // Connectivity & path extraction
+            BridgeEndpointMaxDistancePixels = 25.0f,
+            DensifyMaxSpacingPixels = 2.0f,       // Less dense
+            SimplifyTolerancePixels = 0.75f,      // More simplification
+            UseGraphOrdering = true,
+            OrderingNeighborRadiusPixels = 2.5f,
+            
+            // Spline curve fitting - preserve character
+            SplineTension = 0.4f,                 // Follow terrain more closely
+            SplineContinuity = 0.3f,              // Allow natural bumps
+            SplineBias = 0.0f,
+            
+            // Elevation smoothing
+            SmoothingWindowSize = 51,             // ~40m smoothing window
+            UseButterworthFilter = false,         // Use simple Gaussian
+            ButterworthFilterOrder = 2,           // Not used (UseButterworthFilter=false)
+            GlobalLevelingStrength = 0.0f,        // Follow terrain very closely
+            
+            // Debug output
+            ExportSplineDebugImage = true,
+            ExportSkeletonDebugImage = true,
+            ExportSmoothedElevationDebugImage = true
+        }
+    };
 }
 
 // USAGE IN PROGRAM.CS:
 /*
 
-// Instead of manually configuring parameters, use a preset:
-if (info.MaterialName.Contains("GROUNDMODEL_ASPHALT1", StringComparison.OrdinalIgnoreCase))
+// Instead of manually configuring parameters, use a preset based on material type:
+static RoadSmoothingParameters GetRoadSmoothingParameters(string materialName, int layerIndex)
 {
-    Console.WriteLine($"Configuring road smoothing for layer {info.Index}");
-    
-    // Choose the appropriate preset:
-    roadParameters = RoadSmoothingPresets.MountainousUltraSmooth;  // ? Your current terrain
-    
-    // OR customize a preset:
-    roadParameters = RoadSmoothingPresets.HillyAggressive;
-    roadParameters.SmoothingWindowSize = 151;  // Tweak specific values
-    roadParameters.DebugOutputDirectory = @"d:\temp\TestMappingTools\_output";
-    roadParameters.ExportSplineDebugImage = true;
-    roadParameters.ExportSmoothedElevationDebugImage = true;
-    roadParameters.ExportSkeletonDebugImage = true;
+    // Main highways (8m wide, smooth)
+    if (materialName.Equals("GROUNDMODEL_ASPHALT1", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"Configuring HIGHWAY road smoothing for layer {layerIndex}");
+        var preset = RoadSmoothingPresets.Highway;
+        preset.DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\highway";
+        return preset;
+    }
+
+    // Narrow steep roads (6m wide, mountainous)
+    if (materialName.Equals("BeamNG_DriverTrainingETK_Asphalt", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"Configuring MOUNTAIN road smoothing for layer {layerIndex}");
+        var preset = RoadSmoothingPresets.MountainRoad;
+        preset.DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\mountain";
+        return preset;
+    }
+
+    // Dirt roads (5m wide, terrain-following)
+    if (materialName.Equals("Dirt", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"Configuring DIRT road smoothing for layer {layerIndex}");
+        var preset = RoadSmoothingPresets.DirtRoad;
+        preset.DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\dirt";
+        return preset;
+    }
+
+    // Not a road material
+    return null;
 }
+
+// Available presets by terrain type:
+// - RoadSmoothingPresets.Highway              // 8m wide, professional highway quality
+// - RoadSmoothingPresets.MountainRoad         // 6m wide, steeper grades for mountain passes
+// - RoadSmoothingPresets.DirtRoad             // 5m wide, minimal smoothing for rustic character
+// - RoadSmoothingPresets.TerrainFollowingSmooth  // Butterworth filter, gentle terrain following
+// - RoadSmoothingPresets.MountainousUltraSmooth  // Aggressive leveling for very hilly terrain
+// - RoadSmoothingPresets.HillyAggressive         // Balanced for moderately hilly terrain
+// - RoadSmoothingPresets.FlatModerate            // Light smoothing for flat terrain
+// - RoadSmoothingPresets.FastTesting             // Quick testing with DirectMask approach
+// - RoadSmoothingPresets.ExtremeNuclear          // Maximum smoothing for extreme cases
 
 */
