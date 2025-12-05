@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Processing;
@@ -139,6 +140,10 @@ public class TerrainCreator
             
             // Save synchronously (the Save method is synchronous)
             await Task.Run(() => terrain.Save(outputPath, parameters.MaxHeight));
+            
+            // 8. Write terrain.json metadata file
+            Console.WriteLine("Writing terrain.json metadata file...");
+            await WriteTerrainJsonAsync(outputPath, parameters);
             
             // 7a. Save modified heightmap if road smoothing was applied
             if (smoothingResult != null)
@@ -365,5 +370,74 @@ public class TerrainCreator
         }
         
         Console.WriteLine("================================\n");
+    }
+    
+    /// <summary>
+    /// Writes the terrain.json metadata file alongside the .ter file.
+    /// </summary>
+    private async Task WriteTerrainJsonAsync(string terFilePath, TerrainCreationParameters parameters)
+    {
+        try
+        {
+            // Extract level name from the output path
+            // Expected structure: .../levels/levelname/theTerrain.ter
+            var levelName = ExtractLevelName(terFilePath);
+            
+            // Create the metadata
+            var metadata = TerrainJsonMetadata.FromParameters(parameters, levelName);
+            
+            // Build the output path for terrain.json
+            var outputDir = Path.GetDirectoryName(terFilePath)!;
+            var terrainJsonPath = Path.Combine(outputDir, $"{parameters.TerrainName}.terrain.json");
+            
+            // Serialize with pretty printing
+            var jsonOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true
+            };
+            
+            var jsonContent = JsonSerializer.Serialize(metadata, jsonOptions);
+            await File.WriteAllTextAsync(terrainJsonPath, jsonContent);
+            
+            Console.WriteLine($"Wrote terrain metadata to: {terrainJsonPath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Failed to write terrain.json: {ex.Message}");
+            // Don't throw - this is optional output, the .ter file is the critical one
+        }
+    }
+    
+    /// <summary>
+    /// Extracts the level name from a file path.
+    /// Looks for "levels" folder and takes the folder name after it.
+    /// Falls back to parent folder name if "levels" pattern not found.
+    /// </summary>
+    private string ExtractLevelName(string filePath)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(filePath);
+            if (string.IsNullOrEmpty(directory))
+                return "unknown";
+            
+            // Split path and look for "levels" folder
+            var parts = directory.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            
+            for (int i = 0; i < parts.Length - 1; i++)
+            {
+                if (parts[i].Equals("levels", StringComparison.OrdinalIgnoreCase))
+                {
+                    return parts[i + 1];
+                }
+            }
+            
+            // Fallback: use the immediate parent folder name
+            return new DirectoryInfo(directory).Name;
+        }
+        catch
+        {
+            return "unknown";
+        }
     }
 }
