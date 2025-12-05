@@ -203,32 +203,142 @@ var jsonContent = JsonUtils.ReadJsonFromFile(filePath);
 
 ## File Format Reference
 
+### Level Directory Structure
+```
+levels/{levelname}/
+├── info.json                      # Level metadata (title, description, spawn points)
+├── main.materials.json            # General materials (non-terrain)
+├── main.decals.json               # Decal instance data
+├── main.forestbrushes4.json       # Forest brush definitions (NDJSON format)
+├── mainLevel.lua                  # Level initialization script
+├── theTerrain.ter                 # Binary terrain heightmap data
+├── theTerrain.terrain.json        # Terrain configuration
+├── {levelname}_preview.jpg        # Level preview images
+├── {levelname}_minimap.png        # Minimap image
+├── art/                           # Art assets
+│   ├── terrains/                  # Terrain textures and materials
+│   │   ├── main.materials.json    # Terrain materials (TerrainMaterial class)
+│   │   └── *.png                  # Texture files (_b, _nm, _r, _h, _ao suffixes)
+│   ├── shapes/                    # 3D models (.dae, .cdae)
+│   ├── decals/                    # Decal textures
+│   ├── road/                      # Road materials
+│   ├── forest/                    # Forest item definitions
+│   ├── prefabs/                   # Prefab files (.prefab)
+│   ├── skies/                     # Skybox textures
+│   ├── cubemaps/                  # Environment cubemaps
+│   └── water/                     # Water materials
+├── forest/                        # Forest item instance data
+│   └── *.forest4.json             # Forest placement data (NDJSON format)
+├── main/                          # Scene hierarchy
+│   └── MissionGroup/              # Root scene group
+│       ├── items.level.json       # Group objects (NDJSON format)
+│       └── {subgroup}/            # Nested groups (DecalRoads, StaticObjects, etc.)
+│           └── items.level.json   # Subgroup objects
+└── quickrace/                     # Quick race track definitions (optional)
+```
+
+### Level Info File (`info.json`)
+```json
+{
+  "title": "levels.levelname.info.title",
+  "description": "levels.levelname.info.description",
+  "previews": ["levelname_preview.jpg"],
+  "size": [1024, 1024],
+  "defaultSpawnPointName": "spawn_default",
+  "spawnPoints": [
+    {
+      "translationId": "levels.levelname.spawnpoints.spawn_name",
+      "objectname": "spawn_name",
+      "preview": "spawn_preview.jpg"
+    }
+  ]
+}
+```
+
 ### Materials File (`.materials.json`)
+Standard JSON format with material definitions keyed by name:
 ```json
 {
   "MaterialName": {
     "name": "MaterialName",
     "internalName": "MaterialName",
-    "class": "TerrainMaterial",
+    "class": "Material",
     "persistentId": "guid-here",
-    "baseColorTex": "/levels/levelname/art/terrains/texture.png"
+    "Stages": [{ "colorMap": "/levels/levelname/texture.png" }]
   }
 }
 ```
 
-### Level File (`.level.json`)
+### Terrain Materials File (`art/terrains/main.materials.json`)
 ```json
 {
-  "objects": [
-    {
-      "name": "ObjectName",
-      "class": "TSStatic",
-      "position": [0, 0, 0],
-      "shapeName": "/levels/levelname/art/shapes/mesh.dae"
-    }
-  ]
+  "MaterialName-{guid}": {
+    "name": "MaterialName-{guid}",
+    "internalName": "MaterialName",
+    "class": "TerrainMaterial",
+    "persistentId": "guid-here",
+    "baseColorDetailTex": "/levels/levelname/art/terrains/texture_b.png",
+    "normalDetailTex": "/levels/levelname/art/terrains/texture_nm.png",
+    "roughnessDetailTex": "/levels/levelname/art/terrains/texture_r.png",
+    "heightDetailTex": "/levels/levelname/art/terrains/texture_h.png",
+    "aoDetailTex": "/levels/levelname/art/terrains/texture_ao.png",
+    "groundmodelName": "GROUNDMODEL_ASPHALT1"
+  }
 }
 ```
+
+### Terrain Configuration (`theTerrain.terrain.json`)
+```json
+{
+  "datafile": "/levels/levelname/theTerrain.ter",
+  "heightmapImage": "/levels/levelname/theTerrain.terrainheightmap.png",
+  "size": 1024,
+  "materials": ["Grass", "Asphalt", "Dirt"],
+  "version": 9
+}
+```
+
+### Level Files (`items.level.json`) - NDJSON Format
+**Important**: These files use Newline Delimited JSON (NDJSON), not standard JSON arrays. Each line is a separate JSON object:
+```json
+{"name":"GroupName","class":"SimGroup","persistentId":"guid","__parent":"MissionGroup"}
+{"class":"TSStatic","persistentId":"guid","__parent":"GroupName","position":[0,0,0],"shapeName":"/levels/levelname/art/shapes/mesh.dae"}
+{"class":"DecalRoad","persistentId":"guid","__parent":"DecalRoads","position":[0,0,0],"material":"road_material","nodes":[[x,y,z,width],...]}
+{"class":"Prefab","persistentId":"guid","__parent":"StaticObjects","position":[0,0,0],"filename":"/levels/levelname/art/prefabs/item.prefab"}
+```
+
+### Forest Files (`.forest4.json`) - NDJSON Format
+Individual forest item placements, one JSON object per line:
+```json
+{"pos":[x,y,z],"rotationMatrix":[9 floats],"scale":1.0,"type":"tree_type_name"}
+```
+
+### Forest Brushes (`main.forestbrushes4.json`) - NDJSON Format
+Forest brush element definitions:
+```json
+{"internalName":"brush_name","class":"ForestBrushElement","persistentId":"guid","__parent":"ParentBrush","forestItemData":"item_type","scaleMin":0.8,"scaleMax":1.2}
+```
+
+### Decals File (`main.decals.json`)
+```json
+{
+  "header": { "name": "DecalData File", "version": 2 },
+  "instances": {
+    "decal_material_name": [
+      [rectIdx, size, renderPriority, posX, posY, posZ, normX, normY, normZ, tanX, tanY, tanZ, uid]
+    ]
+  }
+}
+```
+
+### Common Object Classes
+- **SimGroup** - Container for organizing objects hierarchically
+- **TSStatic** - Static 3D mesh (references `.dae`/`.cdae` files)
+- **Prefab** - Prefab instance (references `.prefab` files)
+- **DecalRoad** - Road/marking decal with node path
+- **TerrainBlock** - Terrain reference
+- **ForestBrushElement** - Forest brush configuration
+- **SpawnSphere** - Player spawn point
 
 ## Dependencies
 
