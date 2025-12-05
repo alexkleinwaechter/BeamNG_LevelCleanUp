@@ -1,0 +1,449 @@
+@page "/GenerateTerrain"
+@using System.Diagnostics.CodeAnalysis
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@using MudBlazor.Utilities
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<ErrorBoundary>
+    <ChildContent>
+        <div class="content">
+            <h3>Generate Terrain</h3>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Generate a BeamNG terrain (.ter) file from terrain materials and a heightmap.
+            </MudText>
+            
+            <MudExpansionPanels @ref="FileSelect">
+                <MudExpansionPanel Text="@GetWorkingDirectoryTitle()" Expanded="@(!_hasWorkingDirectory)">
+                    <FileSelectComponent OnFileSelected="OnWorkingDirectorySelected" 
+                                        SelectFolder="true"
+                                        Description="Select the unpacked level folder (contains info.json and art/terrains)">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            @if (_hasWorkingDirectory && !string.IsNullOrEmpty(_levelName))
+            {
+                <MudButton @onclick="ResetPage" 
+                          Color="Color.Warning" 
+                          StartIcon="@Icons.Material.Filled.Refresh" 
+                          Style="margin-top: 16px;">
+                    Reset and Select Different Folder
+                </MudButton>
+            }
+
+            @if (_terrainMaterials.Any())
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2"/>
+                        Terrain Materials (@_terrainMaterials.Count)
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
+                        Drag and drop to change the order. The order determines the material index in the terrain file.
+                        Material at index 0 is the default/fallback material.
+                    </MudText>
+                    
+                    <MudDropContainer T="TerrainMaterialItem" 
+                                     @ref="_dropContainer"
+                                     Items="@_terrainMaterials" 
+                                     ItemsSelector="@((item, dropzone) => item.Selector == dropzone)"
+                                     ItemDropped="OnMaterialDropped"
+                                     Class="d-flex flex-column">
+                        <ChildContent>
+                            <MudDropZone T="TerrainMaterialItem" 
+                                        Identifier="materials" 
+                                        Class="mud-height-full"
+                                        AllowReorder="true">
+                            </MudDropZone>
+                        </ChildContent>
+                        <ItemRenderer>
+                            <MudPaper Elevation="1" 
+                                     Class="pa-3 mb-2 d-flex align-center" 
+                                     Style="cursor: move; background-color: var(--mud-palette-background-gray);">
+                                <MudIcon Icon="@Icons.Material.Filled.DragIndicator" 
+                                        Class="mr-2" 
+                                        Color="Color.Default"/>
+                                <MudText Typo="Typo.body1" Class="flex-grow-1">
+                                    <strong>[@context.Order]</strong> @context.InternalName
+                                </MudText>
+                            </MudPaper>
+                        </ItemRenderer>
+                    </MudDropContainer>
+                </MudPaper>
+            }
+            else if (_hasWorkingDirectory && !_isLoading && !_errors.Any())
+            {
+                <MudAlert Severity="Severity.Warning" Class="mt-4">
+                    No terrain materials found in the selected folder. 
+                    Make sure the folder contains <code>art/terrains/main.materials.json</code>.
+                </MudAlert>
+            }
+
+            @if (_isLoading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4"/>
+                <MudText Typo="Typo.body2" Class="mt-2">Loading terrain materials...</MudText>
+            }
+
+            <MudDrawer @bind-Open="@_openDrawer" 
+                      Width="@_drawerWidth" 
+                      Height="@_drawerHeight" 
+                      Anchor="@_anchor" 
+                      Elevation="1" 
+                      Variant="@DrawerVariant.Temporary">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                    @{
+                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
+                        @foreach (var item in list)
+                        {
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                                <MudText Typo="Typo.h6">@item</MudText>
+                            </MudListItem>
+                        }
+                    }
+                </MudList>
+            </MudDrawer>
+        </div>
+        
+        <footer>
+            <MudStack Row="true" Justify="Justify.SpaceBetween">
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" 
+                              OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">
+                        Errors (@_errors.Count)
+                    </MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" 
+                              OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">
+                        Warnings (@_warnings.Count)
+                    </MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" 
+                              OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">
+                        Messages (@_messages.Count)
+                    </MudButton>
+                }
+            </MudStack>
+            
+            @if (!string.IsNullOrEmpty(_workingDirectory))
+            {
+                <MudButton @onclick="OpenWorkingDirectory" 
+                          StartIcon="@Icons.Material.Filled.FolderOpen" 
+                          Variant="Variant.Text" 
+                          Color="Color.Primary">
+                    Working Directory: @_workingDirectory
+                </MudButton>
+            }
+        </footer>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent/>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+// State variables
+private string _workingDirectory = string.Empty;
+private string _levelName = string.Empty;
+private bool _hasWorkingDirectory;
+private bool _isLoading;
+    
+// Terrain materials list
+private List<TerrainMaterialItem> _terrainMaterials = new();
+    
+// UI references
+[AllowNull] private MudExpansionPanels FileSelect { get; set; }
+private MudDropContainer<TerrainMaterialItem> _dropContainer = null!;
+    
+// Message lists
+private List<string> _errors = new();
+private List<string> _messages = new();
+private List<string> _warnings = new();
+    
+// Drawer state
+private bool _openDrawer;
+private Anchor _anchor;
+private string _drawerWidth = "100%";
+private string _drawerHeight = "200px";
+private bool _showErrorLog;
+private bool _showWarningLog;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe to PubSub messages
+        var consumer = Task.Run(async () =>
+        {
+            while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
+            {
+                var msg = await PubSubChannel.ch.Reader.ReadAsync();
+                if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
+                {
+                    switch (msg.MessageType)
+                    {
+                        case PubSubMessageType.Info:
+                            _messages.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Info);
+                            break;
+                        case PubSubMessageType.Warning:
+                            _warnings.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Warning);
+                            break;
+                        case PubSubMessageType.Error:
+                            _errors.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Error);
+                            break;
+                    }
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        });
+    }
+
+    private string GetWorkingDirectoryTitle()
+    {
+        if (!string.IsNullOrEmpty(_levelName))
+            return $"Working Directory > {_levelName}";
+        if (!string.IsNullOrEmpty(_workingDirectory))
+            return $"Working Directory > {_workingDirectory}";
+        return "Select Level Folder";
+    }
+
+    private async Task OnWorkingDirectorySelected(string folder)
+    {
+        _isLoading = true;
+        _errors.Clear();
+        _warnings.Clear();
+        _messages.Clear();
+        _terrainMaterials.Clear();
+        
+        StateHasChanged();
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                // Validate the folder contains expected level structure
+                var levelPath = ZipFileHandler.GetNamePath(folder);
+                if (string.IsNullOrEmpty(levelPath))
+                {
+                    // Try to find info.json directly in the folder
+                    var infoJsonPath = Path.Join(folder, "info.json");
+                    if (File.Exists(infoJsonPath))
+                    {
+                        levelPath = folder;
+                    }
+                    else
+                    {
+                        PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                            "Selected folder does not appear to be a valid BeamNG level. " +
+                            "Please select a folder containing info.json.");
+                        return;
+                    }
+                }
+
+                _workingDirectory = levelPath;
+                _hasWorkingDirectory = true;
+
+                // Get level name from info.json
+                var reader = new BeamFileReader(levelPath, null);
+                _levelName = reader.GetLevelName();
+
+                // Scan for terrain materials
+                ScanTerrainMaterials(levelPath);
+                
+                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                    $"Loaded {_terrainMaterials.Count} terrain materials from {_levelName}");
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+            finally
+            {
+                _isLoading = false;
+            }
+        });
+
+        // Collapse the folder selection panel after successful selection
+        if (_hasWorkingDirectory && FileSelect?.Panels.Count > 0)
+        {
+            await FileSelect.Panels[0].CollapseAsync();
+        }
+        
+        StateHasChanged();
+    }
+
+    private void ScanTerrainMaterials(string levelPath)
+    {
+        var terrainMaterialsPath = Path.Join(levelPath, "art", "terrains", "main.materials.json");
+        
+        if (!File.Exists(terrainMaterialsPath))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                $"Terrain materials file not found at: {terrainMaterialsPath}");
+            return;
+        }
+
+        try
+        {
+            var jsonContent = File.ReadAllText(terrainMaterialsPath);
+            var jsonNode = JsonUtils.GetValidJsonNodeFromString(jsonContent, terrainMaterialsPath);
+            
+            if (jsonNode == null)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                    "Failed to parse terrain materials JSON.");
+                return;
+            }
+
+            var order = 0;
+            foreach (var property in jsonNode.AsObject())
+            {
+                var materialClass = property.Value?["class"]?.ToString();
+                
+                // Skip non-TerrainMaterial entries (like TerrainMaterialTextureSet)
+                if (materialClass != "TerrainMaterial")
+                    continue;
+
+                var materialName = property.Value?["name"]?.ToString() ?? property.Key;
+                var internalName = property.Value?["internalName"]?.ToString() ?? materialName;
+
+                _terrainMaterials.Add(new TerrainMaterialItem
+                {
+                    Order = order,
+                    MaterialName = materialName,
+                    InternalName = internalName,
+                    JsonKey = property.Key
+                });
+                
+                order++;
+            }
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Error, 
+                $"Error reading terrain materials: {ex.Message}");
+        }
+    }
+
+    private void OnMaterialDropped(MudItemDropInfo<TerrainMaterialItem> dropItem)
+    {
+        if (dropItem.Item == null) return;
+
+        // Update the selector to match the dropzone (required for MudDropContainer)
+        dropItem.Item.Selector = dropItem.DropzoneIdentifier;
+        
+        // Use MudBlazor's built-in UpdateOrder extension method
+        _terrainMaterials.UpdateOrder(dropItem, item => item.Order);
+    }
+
+    /// <summary>
+    /// Gets the terrain materials sorted by their current order
+    /// </summary>
+    public List<TerrainMaterialItem> GetOrderedMaterials()
+    {
+        return _terrainMaterials.OrderBy(x => x.Order).ToList();
+    }
+
+    private void RefreshContainer()
+    {
+        StateHasChanged();
+        _dropContainer?.Refresh();
+    }
+
+    private async Task ResetPage()
+    {
+        _workingDirectory = string.Empty;
+        _levelName = string.Empty;
+        _hasWorkingDirectory = false;
+        _terrainMaterials.Clear();
+        _errors.Clear();
+        _warnings.Clear();
+        _messages.Clear();
+        
+        // Expand the folder selection panel
+        if (FileSelect?.Panels.Count > 0)
+        {
+            await FileSelect.Panels[0].ExpandAsync();
+        }
+        
+        StateHasChanged();
+        Snackbar.Add("Page reset. You can now select a different folder.", Severity.Info);
+    }
+
+    private void OpenWorkingDirectory()
+    {
+        if (!string.IsNullOrEmpty(_workingDirectory))
+        {
+            System.Diagnostics.Process.Start("explorer.exe", _workingDirectory);
+        }
+    }
+
+    private void ShowException(Exception ex)
+    {
+        var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
+        Snackbar.Add(message, Severity.Error);
+        _errors.Add(message);
+    }
+
+    private void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
+    {
+        _showErrorLog = msgType == PubSubMessageType.Error;
+        _showWarningLog = msgType == PubSubMessageType.Warning;
+        _openDrawer = true;
+        _anchor = anchor;
+
+        switch (anchor)
+        {
+            case Anchor.Bottom:
+                _drawerWidth = "100%";
+                _drawerHeight = "200px";
+                break;
+            default:
+                _drawerWidth = "400px";
+                _drawerHeight = "100%";
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Represents a terrain material item for the drag-and-drop list
+    /// </summary>
+    public class TerrainMaterialItem
+    {
+        /// <summary>
+        /// The current order of the material (0-based), updated by drag-and-drop
+        /// </summary>
+        public int Order { get; set; }
+        
+        /// <summary>
+        /// The material name (from "name" property or JSON key)
+        /// </summary>
+        public string MaterialName { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// The internal name of the material (from "internalName" property)
+        /// </summary>
+        public string InternalName { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// The original JSON key for this material
+        /// </summary>
+        public string JsonKey { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// The dropzone selector for MudDropContainer (all items use "materials")
+        /// </summary>
+        public string Selector { get; set; } = "materials";
+    }
+}
