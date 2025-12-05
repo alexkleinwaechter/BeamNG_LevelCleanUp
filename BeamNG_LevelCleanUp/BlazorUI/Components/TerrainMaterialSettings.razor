@@ -1,0 +1,230 @@
+@using DialogResult = System.Windows.Forms.DialogResult
+@using BeamNgTerrainPoc.Terrain.Models
+
+<MudExpansionPanel Text="@GetPanelTitle()" 
+                   IsInitiallyExpanded="false"
+                   Class="mb-2">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Layers" Size="Size.Small"/>
+            <MudText Typo="Typo.body1">
+                <strong>[@Material.Order]</strong> @Material.InternalName
+            </MudText>
+            @if (Material.HasLayerMap)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                    Layer Map
+                </MudChip>
+            }
+            @if (Material.IsRoadMaterial)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                    Road
+                </MudChip>
+            }
+        </div>
+    </TitleContent>
+    <ChildContent>
+        <MudGrid Spacing="2" Class="pa-2">
+            <!-- Layer Map Selection -->
+            <MudItem xs="12">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Layer Map (Optional)</MudText>
+                <div class="d-flex align-center gap-2">
+                    <MudTextField @bind-Value="Material.LayerMapPath" 
+                                 Label="Layer Map Path" 
+                                 Variant="Variant.Outlined"
+                                 ReadOnly="true"
+                                 Placeholder="No layer map selected"
+                                 Class="flex-grow-1"/>
+                    <MudButton Variant="Variant.Outlined" 
+                              Color="Color.Primary"
+                              StartIcon="@Icons.Material.Filled.Image"
+                              OnClick="SelectLayerMap">
+                        Browse
+                    </MudButton>
+                    @if (!string.IsNullOrEmpty(Material.LayerMapPath))
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Clear" 
+                                      Color="Color.Error"
+                                      OnClick="ClearLayerMap"/>
+                    }
+                </div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                    8-bit grayscale PNG. White = material present, Black = absent.
+                </MudText>
+            </MudItem>
+            
+            <!-- Road Material Toggle -->
+            <MudItem xs="12" sm="6">
+                <MudSwitch @bind-Value="Material.IsRoadMaterial" 
+                          Color="Color.Primary"
+                          Label="Enable Road Smoothing"/>
+            </MudItem>
+            
+            @if (Material.IsRoadMaterial)
+            {
+                <!-- Road Parameters -->
+                <MudItem xs="12">
+                    <MudDivider Class="my-2"/>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.EditRoad" Size="Size.Small" Class="mr-1"/>
+                        Road Smoothing Parameters
+                    </MudText>
+                </MudItem>
+                
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="Material.RoadWidthMeters" 
+                                    Label="Road Width (meters)" 
+                                    Variant="Variant.Outlined"
+                                    Min="1.0f" Max="50.0f" Step="0.5f"
+                                    HelperText="Width of the road surface"/>
+                </MudItem>
+                
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="Material.TerrainAffectedRangeMeters" 
+                                    Label="Blend Range (meters)" 
+                                    Variant="Variant.Outlined"
+                                    Min="0.0f" Max="50.0f" Step="1.0f"
+                                    HelperText="Shoulder/transition zone width"/>
+                </MudItem>
+                
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="Material.RoadMaxSlopeDegrees" 
+                                    Label="Max Road Slope (°)" 
+                                    Variant="Variant.Outlined"
+                                    Min="0.0f" Max="45.0f" Step="0.5f"
+                                    HelperText="Maximum road gradient"/>
+                </MudItem>
+                
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="Material.SideMaxSlopeDegrees" 
+                                    Label="Max Side Slope (°)" 
+                                    Variant="Variant.Outlined"
+                                    Min="0.0f" Max="90.0f" Step="1.0f"
+                                    HelperText="Maximum embankment slope"/>
+                </MudItem>
+                
+                <MudItem xs="12">
+                    <MudSelect T="RoadPreset" 
+                              @bind-Value="@_selectedPreset"
+                              Label="Apply Preset"
+                              Variant="Variant.Outlined"
+                              AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem Value="RoadPreset.Custom">Custom</MudSelectItem>
+                        <MudSelectItem Value="RoadPreset.Highway">Highway (8m, smooth)</MudSelectItem>
+                        <MudSelectItem Value="RoadPreset.MountainRoad">Mountain Road (6m, steep)</MudSelectItem>
+                        <MudSelectItem Value="RoadPreset.DirtRoad">Dirt Road (5m, rough)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            }
+        </MudGrid>
+    </ChildContent>
+</MudExpansionPanel>
+
+@code {
+    [Parameter] public TerrainMaterialItemExtended Material { get; set; } = null!;
+    [Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
+    
+    private RoadPreset _selectedPreset = RoadPreset.Custom;
+
+    private string GetPanelTitle()
+    {
+        return $"[{Material.Order}] {Material.InternalName}";
+    }
+
+    private async Task SelectLayerMap()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new OpenFileDialog();
+            dialog.Filter = "PNG Images (*.png)|*.png|All Files (*.*)|*.*";
+            dialog.Title = $"Select Layer Map for {Material.InternalName}";
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                selectedPath = dialog.FileName;
+            }
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            Material.LayerMapPath = selectedPath;
+            await OnMaterialChanged.InvokeAsync(Material);
+        }
+    }
+
+    private async Task ClearLayerMap()
+    {
+        Material.LayerMapPath = null;
+        await OnMaterialChanged.InvokeAsync(Material);
+    }
+
+    private RoadPreset SelectedPreset
+    {
+        get => _selectedPreset;
+        set
+        {
+            _selectedPreset = value;
+            ApplyPreset(value);
+        }
+    }
+
+    private void ApplyPreset(RoadPreset preset)
+    {
+        switch (preset)
+        {
+            case RoadPreset.Highway:
+                Material.RoadWidthMeters = 8.0f;
+                Material.TerrainAffectedRangeMeters = 12.0f;
+                Material.RoadMaxSlopeDegrees = 6.0f;
+                Material.SideMaxSlopeDegrees = 45.0f;
+                break;
+            case RoadPreset.MountainRoad:
+                Material.RoadWidthMeters = 6.0f;
+                Material.TerrainAffectedRangeMeters = 8.0f;
+                Material.RoadMaxSlopeDegrees = 10.0f;
+                Material.SideMaxSlopeDegrees = 35.0f;
+                break;
+            case RoadPreset.DirtRoad:
+                Material.RoadWidthMeters = 5.0f;
+                Material.TerrainAffectedRangeMeters = 6.0f;
+                Material.RoadMaxSlopeDegrees = 12.0f;
+                Material.SideMaxSlopeDegrees = 40.0f;
+                break;
+        }
+    }
+
+    public enum RoadPreset
+    {
+        Custom,
+        Highway,
+        MountainRoad,
+        DirtRoad
+    }
+    
+    /// <summary>
+    /// Extended terrain material item with additional properties for terrain generation
+    /// </summary>
+    public class TerrainMaterialItemExtended
+    {
+        public int Order { get; set; }
+        public string MaterialName { get; set; } = string.Empty;
+        public string InternalName { get; set; } = string.Empty;
+        public string JsonKey { get; set; } = string.Empty;
+        public string Selector { get; set; } = "materials";
+        
+        // Layer map
+        public string? LayerMapPath { get; set; }
+        public bool HasLayerMap => !string.IsNullOrEmpty(LayerMapPath);
+        
+        // Road smoothing
+        public bool IsRoadMaterial { get; set; }
+        public float RoadWidthMeters { get; set; } = 8.0f;
+        public float TerrainAffectedRangeMeters { get; set; } = 12.0f;
+        public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
+        public float SideMaxSlopeDegrees { get; set; } = 45.0f;
+    }
+}

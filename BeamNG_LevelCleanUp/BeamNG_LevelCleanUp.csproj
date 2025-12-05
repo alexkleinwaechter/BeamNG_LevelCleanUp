@@ -19,19 +19,24 @@
     <PackageReference Include="Autoupdater.NET.Official" Version="1.9.2" />
     <PackageReference Include="Blazor3D" Version="0.1.42" />
     <PackageReference Include="JsonRepairUtils" Version="0.0.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="9.0.11" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="9.0.111" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="9.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
     <PackageReference Include="MudBlazor" Version="8.14.0" />
     <PackageReference Include="Pfim" Version="0.11.3" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
-    <PackageReference Include="System.Text.Json" Version="9.0.11" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="9.0.0" />
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <Folder Include="BlazorUI\Interfaces\" />
     <Folder Include="BlazorUI\Services\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BeamNgTerrainPoc\BeamNgTerrainPoc.csproj" />
   </ItemGroup>
 
 </Project>
