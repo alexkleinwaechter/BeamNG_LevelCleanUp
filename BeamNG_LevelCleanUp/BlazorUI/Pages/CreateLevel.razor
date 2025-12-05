@@ -338,6 +338,7 @@
             await Task.Run(() =>
             {
                 // 1. Create target directory structure
+                // targetRoot will be: WorkingDirectory/_unpacked/levels/targetLevelPath
                 var targetRoot = Path.Join(
                     ZipFileHandler.WorkingDirectory, 
                     "_unpacked", 
@@ -345,7 +346,8 @@
                     _targetLevelPath);
                     
                 _wizardState.TargetLevelRootPath = targetRoot;
-                var targetLevelNamePath = Path.Join(targetRoot.Replace("\\levels", ""), "levels", _targetLevelPath);
+                // targetLevelNamePath is the same as targetRoot since we're already in levels/levelname
+                var targetLevelNamePath = targetRoot;
                 _wizardState.TargetLevelPath = _targetLevelPath;
                 _wizardState.LevelName = _targetLevelName;
                 
