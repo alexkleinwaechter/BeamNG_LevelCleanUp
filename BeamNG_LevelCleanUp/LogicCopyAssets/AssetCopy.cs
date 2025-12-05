@@ -197,13 +197,20 @@ public class AssetCopy
     /// </summary>
     private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
     {
-        // Check if user wants to upgrade to PBR and add TerrainMaterialTextureSet if needed
-        if (BeamFileReader.UpgradeTerrainMaterialsToPbr && terrainMaterials.Any())
-        {
-            // Get the target materials.json file path from the first terrain material
-            // All terrain materials should have the same target path
-            var targetMaterialsPath = Path.Join(terrainMaterials.First().TargetPath, "main.materials.json");
+        // Get the target materials.json file path from the first terrain material
+        // All terrain materials should have the same target path
+        var targetMaterialsPath = Path.Join(terrainMaterials.First().TargetPath, "main.materials.json");
+        var targetMaterialsFile = new FileInfo(targetMaterialsPath);
+        
+        // Check if target JSON is empty or doesn't exist
+        bool isTargetJsonEmpty = !targetMaterialsFile.Exists || 
+                                  targetMaterialsFile.Length == 0 ||
+                                  IsJsonEmptyOrOnlyWhitespace(targetMaterialsFile.FullName);
 
+        // If target JSON is empty, we need to add TerrainMaterialTextureSet regardless of user preference
+        // to ensure proper terrain material setup
+        if (isTargetJsonEmpty || (BeamFileReader.UpgradeTerrainMaterialsToPbr && terrainMaterials.Any()))
+        {
             var pbrUpgradeHandler = new PbrUpgradeHandler(
                 targetMaterialsPath,
                 PathResolver.LevelName,
@@ -212,6 +219,7 @@ public class AssetCopy
             // Get texture sizes from SOURCE level's TerrainMaterialTextureSet
             var sourceSizes = TerrainTextureHelper.GetAllTextureSizes(PathResolver.LevelNamePathCopyFrom);
             var terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(PathResolver.LevelNamePath) ?? 1024;
+            
             if (sourceSizes != null)
             {
                 // Use source sizes
@@ -224,8 +232,6 @@ public class AssetCopy
             }
             else
             {
-
-
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"No TerrainMaterialTextureSet found in source level. Using fallback size: {terrainSize}");
                 pbrUpgradeHandler.AddTerrainMaterialTextureSet(terrainSize, terrainSize, terrainSize);
@@ -274,5 +280,31 @@ public class AssetCopy
         if (materialsToAdd.Any()) _groundCoverCopier.WriteAllGroundCovers();
 
         return true;
+    }
+
+    /// <summary>
+    ///     Checks if a JSON file is empty, contains only whitespace, or contains only an empty object
+    /// </summary>
+    private bool IsJsonEmptyOrOnlyWhitespace(string filePath)
+    {
+        try
+        {
+            var content = File.ReadAllText(filePath).Trim();
+            
+            // Empty or only whitespace
+            if (string.IsNullOrWhiteSpace(content))
+                return true;
+            
+            // Only contains empty object
+            if (content == "{}" || content == "{ }")
+                return true;
+            
+            return false;
+        }
+        catch
+        {
+            // If we can't read the file, treat it as empty
+            return true;
+        }
     }
 }
