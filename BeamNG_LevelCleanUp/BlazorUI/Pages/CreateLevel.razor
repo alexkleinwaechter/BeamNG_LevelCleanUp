@@ -68,6 +68,21 @@
                                  Immediate="true"
                                  Class="mb-4"/>
                     
+                    <MudSelect T="int" 
+                              @bind-Value="_wizardState.TerrainSize" 
+                              Label="Terrain Size" 
+                              HelperText="Size of the terrain in meters (power of 2)"
+                              Variant="Variant.Outlined"
+                              Class="mb-4">
+                        <MudSelectItem Value="256">256 x 256</MudSelectItem>
+                        <MudSelectItem Value="512">512 x 512</MudSelectItem>
+                        <MudSelectItem Value="1024">1024 x 1024</MudSelectItem>
+                        <MudSelectItem Value="2048">2048 x 2048 (Default)</MudSelectItem>
+                        <MudSelectItem Value="4096">4096 x 4096</MudSelectItem>
+                        <MudSelectItem Value="8192">8192 x 8192</MudSelectItem>
+                        <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
+                    </MudSelect>
+                    
                     <MudButton OnClick="@InitializeNewLevel" 
                               Color="Color.Primary" 
                               Variant="Variant.Filled"
@@ -442,6 +457,9 @@ public static CreateLevelWizardState GetWizardState() => _wizardState;
             
             Snackbar.Remove(_staticSnackbar);
             Snackbar.Add($"Deployment file created for {_targetLevelName}", Severity.Success);
+            
+            // Optionally reset wizard after successful deployment
+            // (User can click "Create Another Level" button instead)
         }
         catch (Exception ex)
         {
@@ -450,10 +468,25 @@ public static CreateLevelWizardState GetWizardState() => _wizardState;
             ShowException(ex);
         }
     }
+    
+    /// <summary>
+    ///     Cleanup method to clear all wizard-related static state
+    /// </summary>
+    private void CleanupWizardState()
+    {
+        PathResolver.WizardTerrainSize = null;
+        // Add other PathResolver cleanup if needed in the future
+    }
 
     private void ResetWizard()
     {
+        // Clear wizard state
         _wizardState.Reset();
+        
+        // Clear all wizard-related static state
+        CleanupWizardState();
+        
+        // Clear local page variables
         _sourceLevelName = null;
         _sourceLevelPath = null;
         _targetLevelPath = null;

@@ -8,6 +8,11 @@ internal static class PathResolver
     public static string LevelNamePath;
     public static string LevelPath { get; set; }
     public static string LevelPathCopyFrom { get; set; }
+    
+    /// <summary>
+    ///     Target terrain size for wizard mode level creation (power of 2, e.g., 2048)
+    /// </summary>
+    public static int? WizardTerrainSize { get; set; }
 
     public static string ResolvePath(string levelPath, string resourcePath, bool concatDistinctStrategy)
     {

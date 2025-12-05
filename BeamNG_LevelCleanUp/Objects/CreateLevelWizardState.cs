@@ -16,6 +16,11 @@ public class CreateLevelWizardState
     public string LevelName { get; set; }
 
     /// <summary>
+    ///     Planned terrain size (power of 2, e.g., 1024, 2048, 4096)
+    /// </summary>
+    public int TerrainSize { get; set; } = 2048; // Default to 2048
+
+    /// <summary>
     ///     Full path to the source level directory
     /// </summary>
     public string SourceLevelPath { get; set; }

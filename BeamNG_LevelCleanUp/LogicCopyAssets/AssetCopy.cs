@@ -218,7 +218,11 @@ public class AssetCopy
 
             // Get texture sizes from SOURCE level's TerrainMaterialTextureSet
             var sourceSizes = TerrainTextureHelper.GetAllTextureSizes(PathResolver.LevelNamePathCopyFrom);
-            var terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(PathResolver.LevelNamePath) ?? 1024;
+            
+            // Get terrain size - use wizard size if available, otherwise read from JSON
+            var terrainSize = PathResolver.WizardTerrainSize 
+                ?? TerrainTextureHelper.GetTerrainSizeFromJson(PathResolver.LevelNamePath) 
+                ?? 1024;
             
             if (sourceSizes != null)
             {

@@ -14,7 +14,7 @@
 
 <ErrorBoundary>
 <ChildContent>
-    <div class="content">
+    <div class="content" style="@(WizardMode ? "padding-bottom: 250px;" : "")">
         <h3>Copy Terrain Materials</h3>
             
         @if (WizardMode && WizardState != null)
@@ -207,7 +207,7 @@
                 </MudList>
             </MudDrawer>
         </div>
-        <footer>
+        <footer style="@(WizardMode ? "position: relative; z-index: 1100; background: var(--mud-palette-surface); padding: 16px;" : "")">
             @if (_selectedItems.Any())
             {
                 <MudText>Terrain Materials: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
@@ -754,12 +754,21 @@ private string _levelPathCopyFrom { get; set; }
         {
             _staticSnackbar = Snackbar.Add("Copying terrain materials...", Severity.Normal, 
                 config => { config.VisibleStateDuration = int.MaxValue; });
+            
+            // Set wizard terrain size in PathResolver before copying
+            if (WizardState != null)
+            {
+                PathResolver.WizardTerrainSize = WizardState.TerrainSize;
+            }
                 
             await Task.Run(() =>
             {
                 var selected = _selectedItems.Select(y => y.Identifier).ToList();
                 Reader.DoCopyAssets(selected);
             });
+            
+            // Clear wizard terrain size after copying
+            PathResolver.WizardTerrainSize = null;
             
             Snackbar.Remove(_staticSnackbar);
             
@@ -791,6 +800,9 @@ private string _levelPathCopyFrom { get; set; }
 
     private void CancelWizard()
     {
+        // Clear wizard terrain size when canceling
+        PathResolver.WizardTerrainSize = null;
+        
         // Navigate back to CreateLevel without making changes
         Navigation.NavigateTo("/CreateLevel");
     }
