@@ -1,0 +1,548 @@
+@page "/CreateLevel"
+@using System.IO.Compression
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.LogicCopyAssets
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+
+<ErrorBoundary>
+    <ChildContent>
+        <div class="content">
+            <h3>Create New BeamNG Level</h3>
+            
+            <MudExpansionPanels @ref="FileSelect">
+                <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
+                    <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
+                                        Description="The game install directory. If empty some features are missing.">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
+                
+                <MudExpansionPanel Text="@GetSourceMapTitle()" Expanded="@(!_wizardState.Step1_SetupComplete)">
+                    <FileSelectComponent OnFileSelected="OnSourceMapSelected"
+                                        Description="Select a source map to copy base level data from"
+                                        Disabled="@(_wizardState.Step1_SetupComplete)">
+                    </FileSelectComponent>
+                    
+                    @if (_vanillaLevels.Any())
+                    {
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                  ValueChanged="OnVanillaSourceSelected"
+                                  Value="@_vanillaLevelSourceSelected"
+                                  Label="Or select a vanilla level" 
+                                  AnchorOrigin="Origin.BottomCenter" 
+                                  Variant="Variant.Outlined" 
+                                  Clearable
+                                  Disabled="@(_wizardState.Step1_SetupComplete)">
+                            @foreach (var item in _vanillaLevels)
+                            {
+                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            @if (!string.IsNullOrEmpty(_sourceLevelName) && !_wizardState.Step1_SetupComplete)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">New Level Configuration</MudText>
+                    
+                    <MudTextField @bind-Value="_targetLevelPath" 
+                                 Label="Level Path (folder name)" 
+                                 HelperText="e.g., my_custom_map (lowercase, no spaces)"
+                                 Variant="Variant.Outlined"
+                                 Required="true"
+                                 Immediate="true"
+                                 Class="mb-4"/>
+                    
+                    <MudTextField @bind-Value="_targetLevelName" 
+                                 Label="Level Display Name" 
+                                 HelperText="e.g., My Custom Map"
+                                 Variant="Variant.Outlined"
+                                 Required="true"
+                                 Immediate="true"
+                                 Class="mb-4"/>
+                    
+                    <MudButton OnClick="@InitializeNewLevel" 
+                              Color="Color.Primary" 
+                              Variant="Variant.Filled"
+                              Disabled="@(!CanInitialize())"
+                              StartIcon="@Icons.Material.Filled.Create">
+                        Initialize New Level
+                    </MudButton>
+                </MudPaper>
+            }
+
+            @if (_wizardState.Step2_MissionGroupsCopied)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-2"/>
+                        Level Initialized Successfully
+                    </MudText>
+                    
+                    <MudText Typo="Typo.body1" Class="mb-4">
+                        Your new level "@_wizardState.LevelName" has been created at: <b>@_wizardState.TargetLevelPath</b>
+                    </MudText>
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudText Typo="Typo.h6" Class="mb-2">Copied Base Level Objects:</MudText>
+                    <MudList T="string" Dense="true">
+                        @foreach(var assetGroup in _wizardState.CopiedMissionGroupAssets.GroupBy(a => a.Class))
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Layers">
+                                <b>@assetGroup.Key</b>: @assetGroup.Count() object(s)
+                            </MudListItem>
+                        }
+                    </MudList>
+                    
+                    @if (_wizardState.CopiedFiles.Any())
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2">
+                            <MudIcon Icon="@Icons.Material.Filled.FileCopy" Size="Size.Small" Class="mr-1"/>
+                            @_wizardState.CopiedFiles.Count file(s) copied
+                        </MudText>
+                    }
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudAlert Severity="Severity.Info" Class="mb-4">
+                        <b>Next Step:</b> Select terrain materials for your level. Click "Select Terrain Materials" in the wizard below.
+                    </MudAlert>
+                </MudPaper>
+            }
+
+            @if (_wizardState.Step3_TerrainMaterialsSelected)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Color="Color.Success" Class="mr-2"/>
+                        Terrain Materials Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var material in _wizardState.CopiedTerrainMaterials)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Landscape">
+                                @material.Name
+                            </MudListItem>
+                        }
+                    </MudList>
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudAlert Severity="Severity.Success" Class="mb-4">
+                        <b>Level Creation Complete!</b> Your level is ready. You can now build a deployment file or copy it to the BeamNG levels folder.
+                    </MudAlert>
+                    
+                    <MudStack Row="true" Class="mt-4">
+                        <MudButton OnClick="@ZipAndDeploy" 
+                                  Color="Color.Primary" 
+                                  Variant="Variant.Filled"
+                                  StartIcon="@Icons.Material.Filled.Archive">
+                            Build Deployment ZIP
+                        </MudButton>
+                        
+                        <MudButton OnClick="@ResetWizard" 
+                                  Color="Color.Default" 
+                                  Variant="Variant.Outlined"
+                                  StartIcon="@Icons.Material.Filled.Refresh">
+                            Create Another Level
+                        </MudButton>
+                    </MudStack>
+                </MudPaper>
+            }
+
+            <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                    @{
+                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
+                        @foreach (var item in list)
+                        {
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                                <MudText Typo="Typo.h6">@item</MudText>
+                            </MudListItem>
+                        }
+                    }
+                </MudList>
+            </MudDrawer>
+        </div>
+        
+        <footer>
+            <MudStack Row="true" Justify="Justify.SpaceBetween">
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">
+                        Errors (@_errors.Count)
+                    </MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">
+                        Warnings (@_warnings.Count)
+                    </MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">
+                        Messages (@_messages.Count)
+                    </MudButton>
+                }
+            </MudStack>
+            
+            @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+            {
+                <MudButton @onclick="ZipFileHandler.OpenExplorer" 
+                          StartIcon="@Icons.Material.Filled.FolderOpen" 
+                          Variant="Variant.Text" 
+                          Color="Color.Primary">
+                    Working Directory: @ZipFileHandler.WorkingDirectory
+                </MudButton>
+            }
+        </footer>
+        
+        <!-- Wizard Assistant Component -->
+        <CascadingValue Value="_wizardState">
+            <CreateLevelAssistant />
+        </CascadingValue>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent/>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    private static CreateLevelWizardState _wizardState = new();
+    
+    private string _sourceLevelName;
+    private string _sourceLevelPath;
+    private string _targetLevelPath;
+    private string _targetLevelName;
+    private BeamFileReader _reader;
+    
+    private List<string> _errors = new();
+    private List<string> _messages = new();
+    private List<string> _warnings = new();
+    private Snackbar _staticSnackbar;
+    private bool _openDrawer;
+    private Anchor _anchor;
+    private string width, height;
+    private bool _showErrorLog;
+    private bool _showWarningLog;
+    
+    private List<FileInfo> _vanillaLevels = new();
+    private FileInfo _vanillaLevelSourceSelected;
+    private string _beamInstallDir;
+    private MudExpansionPanels FileSelect;
+    private CompressionLevel _compressionLevel = CompressionLevel.Optimal;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe to PubSub messages
+        var consumer = Task.Run(async () =>
+        {
+            while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
+            {
+                var msg = await PubSubChannel.ch.Reader.ReadAsync();
+                if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
+                {
+                    switch (msg.MessageType)
+                    {
+                        case PubSubMessageType.Info:
+                            _messages.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Info);
+                            break;
+                        case PubSubMessageType.Warning:
+                            _warnings.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Warning);
+                            break;
+                        case PubSubMessageType.Error:
+                            _errors.Add(msg.Message);
+                            Snackbar.Add(msg.Message, Severity.Error);
+                            break;
+                    }
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        });
+    }
+
+    protected async Task OnSourceMapSelected(string file)
+    {
+        SetDefaultWorkingDirectory();
+        
+        await Task.Run(() =>
+        {
+            try
+            {
+                _staticSnackbar = Snackbar.Add("Unzipping source level...", Severity.Normal, 
+                    config => { config.VisibleStateDuration = int.MaxValue; });
+                    
+                _sourceLevelPath = ZipFileHandler.ExtractToDirectory(
+                    Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), 
+                    "_copyFrom", 
+                    true);
+                    
+                _reader = new BeamFileReader(_sourceLevelPath, null);
+                _sourceLevelName = _reader.GetLevelName();
+                
+                _wizardState.SourceLevelPath = _sourceLevelPath;
+                _wizardState.SourceLevelName = _sourceLevelName;
+                
+                Snackbar.Add("Source level loaded successfully", Severity.Success);
+                Snackbar.Remove(_staticSnackbar);
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+        });
+        
+        StateHasChanged();
+    }
+
+    protected async Task OnVanillaSourceSelected(FileInfo file)
+    {
+        if (file == null)
+        {
+            _vanillaLevelSourceSelected = null;
+            return;
+        }
+
+        SetDefaultWorkingDirectory();
+        _vanillaLevelSourceSelected = file;
+        var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
+        
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
+        File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
+        
+        await OnSourceMapSelected(target);
+    }
+
+    protected async Task InitializeNewLevel()
+    {
+        if (!CanInitialize())
+            return;
+
+        try
+        {
+            _staticSnackbar = Snackbar.Add("Initializing new level...", Severity.Normal, 
+                config => { config.VisibleStateDuration = int.MaxValue; });
+
+            await Task.Run(() =>
+            {
+                // 1. Create target directory structure
+                var targetRoot = Path.Join(
+                    ZipFileHandler.WorkingDirectory, 
+                    "_unpacked", 
+                    "levels", 
+                    _targetLevelPath);
+                    
+                _wizardState.TargetLevelRootPath = targetRoot;
+                var targetLevelNamePath = Path.Join(targetRoot.Replace("\\levels", ""), "levels", _targetLevelPath);
+                _wizardState.TargetLevelPath = _targetLevelPath;
+                _wizardState.LevelName = _targetLevelName;
+                
+                Directory.CreateDirectory(targetRoot);
+                Directory.CreateDirectory(Path.Join(targetLevelNamePath, "art", "terrains"));
+                Directory.CreateDirectory(Path.Join(targetLevelNamePath, "art", "shapes", "groundcover"));
+                Directory.CreateDirectory(Path.Join(targetLevelNamePath, "main", "MissionGroup"));
+                
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Created directory structure");
+                
+                // 2. Create empty terrain material files
+                File.WriteAllText(
+                    Path.Join(targetLevelNamePath, "art", "terrains", "main.materials.json"), 
+                    "{}");
+                File.WriteAllText(
+                    Path.Join(targetLevelNamePath, "art", "shapes", "groundcover", "main.materials.json"), 
+                    "{}");
+                    
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Created empty material files");
+                
+                // 3. Create info.json and mainLevel.lua
+                InfoJsonGenerator.CreateInfoJson(targetLevelNamePath, _targetLevelName);
+                InfoJsonGenerator.CreateMainLevelLua(targetLevelNamePath);
+                
+                // 4. Copy MissionGroup data
+                _reader.ReadMissionGroupsForCreateLevel();
+                
+                var sourceLevelNamePath = ZipFileHandler.GetNamePath(_sourceLevelPath);
+                
+                var missionGroupCopier = new MissionGroupCopier(
+                    BeamFileReader.Assets,
+                    _sourceLevelPath,
+                    sourceLevelNamePath,
+                    targetRoot,
+                    targetLevelNamePath,
+                    _targetLevelPath);
+                    
+                missionGroupCopier.CopyMissionGroupData();
+                
+                // 5. Update wizard state
+                _wizardState.CopiedMissionGroupAssets = new List<Asset>(BeamFileReader.Assets);
+                _wizardState.Step1_SetupComplete = true;
+                _wizardState.Step2_MissionGroupsCopied = true;
+                _wizardState.IsActive = true;
+                _wizardState.CurrentStep = 1;
+            });
+
+            Snackbar.Remove(_staticSnackbar);
+            Snackbar.Add("Level initialization complete!", Severity.Success);
+            
+            // Collapse source selection panel
+            if (FileSelect?.Panels.Count > 1)
+            {
+                await FileSelect.Panels[1].CollapseAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_staticSnackbar != null)
+                Snackbar.Remove(_staticSnackbar);
+            ShowException(ex);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task ZipAndDeploy()
+    {
+        try
+        {
+            var path = Path.Join(ZipFileHandler.WorkingDirectory, "_unpacked");
+            _staticSnackbar = Snackbar.Add("Building deployment file...", Severity.Normal, 
+                config => { config.VisibleStateDuration = int.MaxValue; });
+                
+            await Task.Run(() =>
+            {
+                ZipFileHandler.BuildDeploymentFile(path, _targetLevelPath, _compressionLevel);
+            });
+            
+            Snackbar.Remove(_staticSnackbar);
+            Snackbar.Add($"Deployment file created for {_targetLevelName}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            if (_staticSnackbar != null)
+                Snackbar.Remove(_staticSnackbar);
+            ShowException(ex);
+        }
+    }
+
+    private void ResetWizard()
+    {
+        _wizardState.Reset();
+        _sourceLevelName = null;
+        _sourceLevelPath = null;
+        _targetLevelPath = null;
+        _targetLevelName = null;
+        _reader = null;
+        _errors.Clear();
+        _warnings.Clear();
+        _messages.Clear();
+        
+        StateHasChanged();
+        Snackbar.Add("Wizard reset. You can create a new level now.", Severity.Info);
+    }
+
+    private bool CanInitialize()
+    {
+        return !string.IsNullOrWhiteSpace(_targetLevelPath) && 
+               !string.IsNullOrWhiteSpace(_targetLevelName) &&
+               !string.IsNullOrEmpty(_sourceLevelName);
+    }
+
+    private string GetSourceMapTitle()
+    {
+        if (!string.IsNullOrEmpty(_sourceLevelName))
+            return $"Source Map > {_sourceLevelName}";
+        return "Select Source Map";
+    }
+
+    private void SetBeamInstallDir(string file)
+    {
+        if (file != Steam.BeamInstallDir)
+        {
+            Steam.BeamInstallDir = file;
+            GetVanillaLevels();
+        }
+    }
+
+    private string GetBeamInstallDir()
+    {
+        if (Steam.BeamInstallDir != _beamInstallDir)
+        {
+            _beamInstallDir = Steam.GetBeamInstallDir();
+            GetVanillaLevels();
+        }
+        return "BeamNG install directory: " + _beamInstallDir;
+    }
+
+    private void GetVanillaLevels()
+    {
+        if (!string.IsNullOrEmpty(_beamInstallDir))
+        {
+            var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
+            try
+            {
+                _vanillaLevels = Directory.GetFiles(dir)
+                    .Where(x => x.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                    .Select(x => new FileInfo(x)).ToList();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                // Silently fail - vanilla levels are optional
+            }
+        }
+    }
+
+    private void SetDefaultWorkingDirectory()
+    {
+        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+        {
+            ZipFileHandler.WorkingDirectory = Path.Join(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+                "BeamNgMT");
+            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
+        }
+    }
+
+    private void ShowException(Exception ex)
+    {
+        var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
+        Snackbar.Add(message, Severity.Error);
+        _errors.Add(message);
+    }
+
+    private void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
+    {
+        _showErrorLog = msgType == PubSubMessageType.Error;
+        _showWarningLog = msgType == PubSubMessageType.Warning;
+        _openDrawer = true;
+        _anchor = anchor;
+
+        switch (anchor)
+        {
+            case Anchor.Bottom:
+                width = "100%";
+                height = "200px";
+                break;
+            default:
+                width = "400px";
+                height = "100%";
+                break;
+        }
+    }
+
+    readonly Func<FileInfo, string> converter = p => p?.Name;
+}

@@ -169,6 +169,48 @@ internal class BeamFileReader
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
     }
 
+    /// <summary>
+    ///     Reads MissionGroup data specifically for Create Level wizard.
+    ///     Focuses on essential level setup classes and their file references.
+    /// </summary>
+    internal void ReadMissionGroupsForCreateLevel()
+    {
+        Reset();
+        
+        var allowedClasses = new List<string>
+        {
+            "LevelInfo",
+            "TerrainBlock",
+            "TimeOfDay",
+            "CloudLayer",
+            "ScatterSky",
+            "ForestWindEmitter",
+            "Forest"
+        };
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Reading MissionGroup data for new level creation...");
+        
+        // Read all mission group files
+        ReadMissionGroup();
+        
+        // Filter to only include allowed classes
+        var filteredAssets = Assets
+            .Where(asset => allowedClasses.Contains(asset.Class))
+            .ToList();
+        
+        Assets = filteredAssets;
+        
+        PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            $"Found {Assets.Count} essential level objects to copy");
+        
+        // Log what was found
+        foreach (var assetClass in Assets.GroupBy(a => a.Class))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"  - {assetClass.Key}: {assetClass.Count()} object(s)", true);
+        }
+    }
+
     private void RemoveDuplicateMaterials(bool fromJsonFile)
     {
         var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _levelNamePath);
@@ -891,5 +933,64 @@ internal class BeamFileReader
         CopyTerrainMaterials = 21,
         FindTerrainMaterialFiles = 22,
         FindGroundCoverFiles = 23
+    }
+
+    /// <summary>
+    ///     Extracts all file references from MissionGroup assets for Create Level wizard
+    /// </summary>
+    internal List<string> GetFileReferencesFromMissionGroupAssets()
+    {
+        var fileReferences = new List<string>();
+
+        foreach (var asset in Assets)
+        {
+            // TerrainBlock files
+            if (!string.IsNullOrEmpty(asset.TerrainFile))
+            {
+                fileReferences.Add(asset.TerrainFile);
+                
+                // Also add corresponding .terrain.json file
+                var terrainJsonPath = asset.TerrainFile.Replace(".ter", ".terrain.json");
+                fileReferences.Add(terrainJsonPath);
+            }
+
+            // ScatterSky gradient files
+            if (!string.IsNullOrEmpty(asset.AmbientScaleGradientFile))
+                fileReferences.Add(asset.AmbientScaleGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.ColorizeGradientFile))
+                fileReferences.Add(asset.ColorizeGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.FogScaleGradientFile))
+                fileReferences.Add(asset.FogScaleGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.NightFogGradientFile))
+                fileReferences.Add(asset.NightFogGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.NightGradientFile))
+                fileReferences.Add(asset.NightGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.SunScaleGradientFile))
+                fileReferences.Add(asset.SunScaleGradientFile);
+
+            // CloudLayer textures
+            if (!string.IsNullOrEmpty(asset.Texture))
+                fileReferences.Add(asset.Texture);
+
+            // Material references (these will be handled by MaterialCopier)
+            if (!string.IsNullOrEmpty(asset.FlareType))
+                fileReferences.Add(asset.FlareType); // This is actually a material reference
+            
+            if (!string.IsNullOrEmpty(asset.NightCubemap))
+                fileReferences.Add(asset.NightCubemap); // Material reference
+            
+            if (!string.IsNullOrEmpty(asset.GlobalEnviromentMap))
+                fileReferences.Add(asset.GlobalEnviromentMap); // Material reference
+            
+            if (!string.IsNullOrEmpty(asset.MoonMat))
+                fileReferences.Add(asset.MoonMat); // Material reference
+        }
+
+        return fileReferences.Distinct().ToList();
     }
 }
