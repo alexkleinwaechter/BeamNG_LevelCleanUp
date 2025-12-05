@@ -52,12 +52,12 @@ public class MissionGroupCopier
             // 3. Write MissionGroup items to target
             WriteMissionGroupItems();
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Successfully copied {_missionGroupAssets.Count} MissionGroup objects");
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Error, 
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
                 $"Error copying MissionGroup data: {ex.Message}");
             throw;
         }
@@ -70,7 +70,7 @@ public class MissionGroupCopier
     {
         var directories = new[]
         {
-            Path.Join(_targetLevelNamePath, "main", "MissionGroup"),
+            Path.Join(_targetLevelNamePath, "main", "MissionGroup", "Level_object"),
             Path.Join(_targetLevelNamePath, "art", "skies"),
             Path.Join(_targetLevelNamePath, "art", "terrains")
         };
@@ -115,7 +115,7 @@ public class MissionGroupCopier
             // (FlareType, NightCubemap, GlobalEnviromentMap, MoonMat)
         }
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info, 
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Copied {copiedFiles.Count} referenced file(s)");
     }
 
@@ -128,7 +128,7 @@ public class MissionGroupCopier
         {
             // Resolve the source path
             var sourceTerrainPath = PathResolver.ResolvePath(_sourceLevelPath, terrainFilePath, false);
-            
+
             if (File.Exists(sourceTerrainPath))
             {
                 // Copy .ter file
@@ -136,39 +136,39 @@ public class MissionGroupCopier
                 var targetPath = Path.Join(_targetLevelNamePath, fileName);
                 File.Copy(sourceTerrainPath, targetPath, true);
                 copiedFiles.Add(terrainFilePath);
-                
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Copied terrain file: {fileName}", true);
 
                 // Copy corresponding .terrain.json file
                 var terrainJsonPath = terrainFilePath.Replace(".ter", ".terrain.json");
                 var sourceTerrainJsonPath = PathResolver.ResolvePath(_sourceLevelPath, terrainJsonPath, false);
-                
+
                 if (File.Exists(sourceTerrainJsonPath))
                 {
                     var targetJsonPath = Path.Join(_targetLevelNamePath, Path.GetFileName(terrainJsonPath));
-                    
+
                     // Read, update paths, and write .terrain.json
                     var jsonContent = File.ReadAllText(sourceTerrainJsonPath);
                     var sourceLevelName = new DirectoryInfo(_sourceLevelNamePath).Name;
                     jsonContent = jsonContent.Replace($"/levels/{sourceLevelName}/", $"/levels/{_targetLevelName}/");
-                    
+
                     File.WriteAllText(targetJsonPath, jsonContent);
                     copiedFiles.Add(terrainJsonPath);
-                    
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
                         $"Copied terrain config: {Path.GetFileName(terrainJsonPath)}", true);
                 }
             }
             else
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Terrain file not found: {terrainFilePath}");
             }
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Error, 
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
                 $"Error copying terrain file {terrainFilePath}: {ex.Message}");
         }
     }
@@ -184,21 +184,21 @@ public class MissionGroupCopier
         try
         {
             var sourcePath = PathResolver.ResolvePath(_sourceLevelPath, gradientFilePath, false);
-            
+
             if (File.Exists(sourcePath))
             {
                 var targetPath = Path.Join(_targetLevelNamePath, "art", "skies", Path.GetFileName(gradientFilePath));
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
                 File.Copy(sourcePath, targetPath, true);
                 copiedFiles.Add(gradientFilePath);
-                
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Copied gradient: {Path.GetFileName(gradientFilePath)}", true);
             }
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Could not copy gradient file {gradientFilePath}: {ex.Message}");
         }
     }
@@ -214,24 +214,24 @@ public class MissionGroupCopier
         try
         {
             var sourcePath = PathResolver.ResolvePath(_sourceLevelPath, textureFilePath, false);
-            
+
             if (File.Exists(sourcePath))
             {
                 // Extract just the filename and put it in art/skies folder
                 var fileName = Path.GetFileName(textureFilePath);
                 var targetPath = Path.Join(_targetLevelNamePath, "art", "skies", fileName);
-                
+
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
                 File.Copy(sourcePath, targetPath, true);
                 copiedFiles.Add(textureFilePath);
-                
-                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Copied texture: {fileName}", true);
             }
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Could not copy texture file {textureFilePath}: {ex.Message}");
         }
     }
@@ -243,48 +243,182 @@ public class MissionGroupCopier
     {
         try
         {
-            var missionGroupPath = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "items.level.json");
+            var missionGroupPath = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "Level_object", "items.level.json");
             var lines = new List<string>();
 
             // Get source level name for path replacement
             var sourceLevelName = new DirectoryInfo(_sourceLevelNamePath).Name;
 
-            foreach (var asset in _missionGroupAssets)
+            // Read the original MissionGroup items.level.json files from source
+            // BeamNG stores these in subdirectories under Level_object/
+            var sourceMissionGroupPath = Path.Join(_sourceLevelNamePath, "main", "MissionGroup");
+            var sourceLevelObjectPath = Path.Join(sourceMissionGroupPath, "Level_object");
+            
+            // Check if Level_object directory exists
+            if (!Directory.Exists(sourceLevelObjectPath))
             {
-                // Serialize asset to JSON
-                var json = JsonSerializer.Serialize(asset, BeamJsonOptions.GetJsonSerializerOneLineOptions());
-                
-                // Replace source level paths with target level paths
-                json = json.Replace($"/levels/{sourceLevelName}/", $"/levels/{_targetLevelName}/");
-                
-                // Also handle texture paths that might reference other levels (CloudLayer textures)
-                // Replace any /levels/xxx/art/skies/ pattern with our target level path
-                if (asset.Class == "CloudLayer" && !string.IsNullOrEmpty(asset.Texture))
-                {
-                    var textureFileName = Path.GetFileName(asset.Texture);
-                    var newTexturePath = $"/levels/{_targetLevelName}/art/skies/{textureFileName}";
-                    
-                    // Replace the old texture path with the new one
-                    if (asset.Texture != newTexturePath)
-                    {
-                        json = json.Replace($"\"{asset.Texture}\"", $"\"{newTexturePath}\"");
-                    }
-                }
-                
-                lines.Add(json);
+                // Fallback: try direct MissionGroup path
+                sourceLevelObjectPath = sourceMissionGroupPath;
             }
 
-            // Write all lines to file
-            File.WriteAllLines(missionGroupPath, lines);
-            
             PubSubChannel.SendMessage(PubSubMessageType.Info, 
-                $"Wrote {lines.Count} MissionGroup items to items.level.json");
+                $"Reading source MissionGroup from: {sourceLevelObjectPath}", true);
+
+            // Find all items.level.json files in subdirectories
+            var itemsFiles = Directory.GetFiles(sourceLevelObjectPath, "items.level.json", SearchOption.AllDirectories);
+            
+            if (itemsFiles.Length == 0)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                    "No items.level.json files found in source MissionGroup");
+                return;
+            }
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Found {itemsFiles.Length} items.level.json file(s) in source MissionGroup", true);
+
+            // Filter to only include lines for our allowed classes
+            var allowedClasses = new HashSet<string>
+            {
+                "LevelInfo",
+                "TerrainBlock",
+                "TimeOfDay",
+                "CloudLayer",
+                "ScatterSky",
+                "ForestWindEmitter",
+                "Forest"
+            };
+
+            int totalLines = 0;
+            int processedCount = 0;
+            int skippedCount = 0;
+
+            // Read from all items.level.json files
+            foreach (var itemsFile in itemsFiles)
+            {
+                var sourceLines = File.ReadAllLines(itemsFile);
+                totalLines += sourceLines.Length;
+                
+                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                    $"Reading {sourceLines.Length} lines from {Path.GetFileName(Path.GetDirectoryName(itemsFile))}/items.level.json", true);
+
+                foreach (var line in sourceLines)
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    try
+                    {
+                        // Parse as JsonDocument to preserve all original fields
+                        using var doc = JsonDocument.Parse(line);
+                        var root = doc.RootElement;
+
+                        // Check if this is one of our allowed classes
+                        if (root.TryGetProperty("class", out var classProperty))
+                        {
+                            var className = classProperty.GetString();
+                            if (!allowedClasses.Contains(className))
+                            {
+                                skippedCount++;
+                                continue; // Skip classes we don't want to copy
+                            }
+                            
+                            processedCount++;
+                            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                                $"Processing {className} object", true);
+                        }
+                        else
+                        {
+                            continue; // Skip if no class property
+                        }
+
+                        // Convert to mutable dictionary
+                        var jsonDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(line);
+                        if (jsonDict == null)
+                            continue;
+
+                        // Update path fields - replace source level name with target level name
+                        UpdatePathField(jsonDict, "terrainFile", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "texture", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "ambientScaleGradientFile", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "colorizeGradientFile", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "fogScaleGradientFile", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "nightFogGradientFile", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "nightGradientFile", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "sunScaleGradientFile", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "flareType", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "nightCubemap", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "globalEnviromentMap", sourceLevelName, _targetLevelName);
+                        UpdatePathField(jsonDict, "moonMat", sourceLevelName, _targetLevelName);
+                        
+                        // Special handling for CloudLayer texture - update to new location in art/skies
+                        if (jsonDict.TryGetValue("class", out var classElement) && 
+                            classElement.GetString() == "CloudLayer" &&
+                            jsonDict.TryGetValue("texture", out var textureElement))
+                        {
+                            var texturePath = textureElement.GetString();
+                            if (!string.IsNullOrEmpty(texturePath))
+                            {
+                                var textureFileName = Path.GetFileName(texturePath);
+                                var newTexturePath = $"/levels/{_targetLevelName}/art/skies/{textureFileName}";
+                                jsonDict["texture"] = JsonSerializer.SerializeToElement(newTexturePath);
+                                
+                                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                                    $"Updated CloudLayer texture: {textureFileName}", true);
+                            }
+                        }
+
+                        // Serialize back to JSON (one line, preserving all original fields)
+                        var updatedJson = JsonSerializer.Serialize(jsonDict, BeamJsonOptions.GetJsonSerializerOneLineOptions());
+                        lines.Add(updatedJson);
+                    }
+                    catch (JsonException ex)
+                    {
+                        PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                            $"Could not parse MissionGroup line: {ex.Message}");
+                        continue;
+                    }
+                }
+            }
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Read {totalLines} total lines, processed {processedCount} objects, skipped {skippedCount} objects");
+
+            if (lines.Count == 0)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                    "No allowed classes found in source files");
+                return;
+            }
+
+            // Write all lines to single file
+            File.WriteAllLines(missionGroupPath, lines);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Wrote {lines.Count} MissionGroup items to: {missionGroupPath}");
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Error, 
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
                 $"Error writing MissionGroup items: {ex.Message}");
             throw;
+        }
+    }
+
+    /// <summary>
+    ///     Updates a path field in the JSON dictionary if it exists
+    /// </summary>
+    private void UpdatePathField(Dictionary<string, JsonElement> jsonDict, string fieldName, string oldLevelName, string newLevelName)
+    {
+        if (jsonDict.TryGetValue(fieldName, out var element) && element.ValueKind == JsonValueKind.String)
+        {
+            var value = element.GetString();
+            if (!string.IsNullOrEmpty(value))
+            {
+                // Replace old level name with new level name in path
+                var updatedValue = value.Replace($"/levels/{oldLevelName}/", $"/levels/{newLevelName}/");
+                jsonDict[fieldName] = JsonSerializer.SerializeToElement(updatedValue);
+            }
         }
     }
 }
