@@ -217,14 +217,16 @@ public class MissionGroupCopier
             
             if (File.Exists(sourcePath))
             {
-                var relativePath = textureFilePath.TrimStart('/');
-                var targetPath = Path.Join(_targetLevelPath, relativePath);
+                // Extract just the filename and put it in art/skies folder
+                var fileName = Path.GetFileName(textureFilePath);
+                var targetPath = Path.Join(_targetLevelNamePath, "art", "skies", fileName);
+                
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
                 File.Copy(sourcePath, targetPath, true);
                 copiedFiles.Add(textureFilePath);
                 
                 PubSubChannel.SendMessage(PubSubMessageType.Info, 
-                    $"Copied texture: {Path.GetFileName(textureFilePath)}", true);
+                    $"Copied texture: {fileName}", true);
             }
         }
         catch (Exception ex)
@@ -254,6 +256,20 @@ public class MissionGroupCopier
                 
                 // Replace source level paths with target level paths
                 json = json.Replace($"/levels/{sourceLevelName}/", $"/levels/{_targetLevelName}/");
+                
+                // Also handle texture paths that might reference other levels (CloudLayer textures)
+                // Replace any /levels/xxx/art/skies/ pattern with our target level path
+                if (asset.Class == "CloudLayer" && !string.IsNullOrEmpty(asset.Texture))
+                {
+                    var textureFileName = Path.GetFileName(asset.Texture);
+                    var newTexturePath = $"/levels/{_targetLevelName}/art/skies/{textureFileName}";
+                    
+                    // Replace the old texture path with the new one
+                    if (asset.Texture != newTexturePath)
+                    {
+                        json = json.Replace($"\"{asset.Texture}\"", $"\"{newTexturePath}\"");
+                    }
+                }
                 
                 lines.Add(json);
             }
