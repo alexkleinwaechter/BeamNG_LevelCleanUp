@@ -1,4 +1,4 @@
-// Road Smoothing Parameter Presets
+﻿// Road Smoothing Parameter Presets
 // Copy the appropriate preset into your Program.cs based on your terrain type
 //
 // IMPORTANT PARAMETER RELATIONSHIPS (validated by TerrainMaterialSettings):
@@ -25,7 +25,6 @@ namespace BeamNgTerrainPoc.Examples;
 /// <summary>
 ///     Pre-configured road smoothing parameter presets for different terrain types.
 ///     These settings are validated against parameter dependency rules.
-///     
 ///     KEY DESIGN PRINCIPLES:
 ///     - Road surface within RoadWidthMeters is PERFECTLY FLAT (no terrain bleed-through)
 ///     - Butterworth filter ensures maximally flat elevation along road length
@@ -38,7 +37,6 @@ public static class RoadSmoothingPresets
     ///     RECOMMENDED: Terrain-following smooth roads with Butterworth filter.
     ///     Creates smooth roads that gently follow terrain elevation without massive cutting/filling.
     ///     Road surface is perfectly flat across its width, with smooth longitudinal elevation changes.
-    ///     
     ///     Best for: General-purpose roads that need to integrate naturally with terrain.
     ///     Processing time: ~3-4 seconds for 4096x4096
     ///     Quality: Professional highway standard with natural terrain integration
@@ -53,7 +51,7 @@ public static class RoadSmoothingPresets
         TerrainAffectedRangeMeters = 12.0f,
         // CrossSectionIntervalMeters validation: (8/2 + 12) / 3 = 5.3m max, using 0.5m ?
         CrossSectionIntervalMeters = 0.5f,
-        
+
         // SLOPE CONSTRAINTS
         RoadMaxSlopeDegrees = 4.0f,
         SideMaxSlopeDegrees = 30.0f,
@@ -98,14 +96,11 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     MOUNTAINOUS WITH GLOBAL LEVELING: For networks where all roads should be at similar elevation.
     ///     Creates flat road surfaces that are pulled toward a network-average elevation.
-    ///     
     ///     REQUIRES wide TerrainAffectedRangeMeters (?20m) to prevent disconnected "dotted" roads!
     ///     Use this when you want roads to ignore terrain and form a flat network.
-    ///     
     ///     Best for: Race tracks, industrial areas, or artificial road networks.
     ///     Processing time: ~3-4 seconds for 4096x4096
     ///     Quality: Ultra-smooth artificial road network
-    ///     
     ///     ?? NOT for natural mountain roads - use MountainRoad preset instead!
     /// </summary>
     public static RoadSmoothingParameters MountainousUltraSmooth => new()
@@ -118,7 +113,7 @@ public static class RoadSmoothingPresets
         TerrainAffectedRangeMeters = 22.0f, // >= 20m for GlobalLevelingStrength 0.5 ?
         // CrossSectionIntervalMeters validation: (8/2 + 22) / 3 = 8.7m max, using 0.4m ?
         CrossSectionIntervalMeters = 0.4f,
-        
+
         RoadMaxSlopeDegrees = 2.0f,
         SideMaxSlopeDegrees = 25.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
@@ -158,7 +153,6 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     HILLY TERRAIN: Balanced settings for moderately hilly terrain.
     ///     Roads follow terrain elevation but with smooth transitions.
-    ///     
     ///     Best for: Rolling hills, countryside roads.
     ///     Processing time: ~3 seconds for 4096x4096
     ///     Quality: High-quality highway standard
@@ -173,7 +167,7 @@ public static class RoadSmoothingPresets
         TerrainAffectedRangeMeters = 15.0f, // >= 15m for GlobalLevelingStrength 0.4 ?
         // CrossSectionIntervalMeters validation: (8/2 + 15) / 3 = 6.3m max, using 0.5m ?
         CrossSectionIntervalMeters = 0.5f,
-        
+
         RoadMaxSlopeDegrees = 5.0f,
         SideMaxSlopeDegrees = 28.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
@@ -191,7 +185,7 @@ public static class RoadSmoothingPresets
             UseButterworthFilter = true,
             ButterworthFilterOrder = 3,
             SmoothingWindowSize = 151, // Odd number ?
-            
+
             // GlobalLevelingStrength 0.4 is safe with 15m blend zone
             GlobalLevelingStrength = 0.4f, // Reduced from 0.5 to stay safely under warning threshold
 
@@ -204,7 +198,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.75f,
 
             SplineTension = 0.3f,
-            SplineContinuity = 0.5f,
+            SplineContinuity = 0.7f,
             SplineBias = 0.0f
         }
     };
@@ -212,7 +206,6 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     FLAT TERRAIN: Light smoothing for relatively flat terrain with gentle hills.
     ///     Preserves natural elevation flow while ensuring smooth road surface.
-    ///     
     ///     Best for: Plains, coastal areas, gentle rolling terrain.
     ///     Processing time: ~2-3 seconds for 4096x4096
     ///     Quality: Good quality local road standard
@@ -227,7 +220,7 @@ public static class RoadSmoothingPresets
         TerrainAffectedRangeMeters = 10.0f,
         // CrossSectionIntervalMeters validation: (8/2 + 10) / 3 = 4.7m max, using 0.75m ?
         CrossSectionIntervalMeters = 0.75f,
-        
+
         RoadMaxSlopeDegrees = 6.0f,
         SideMaxSlopeDegrees = 30.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
@@ -264,7 +257,6 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     FAST TESTING: Quick testing with DirectMask approach.
     ///     Robust, handles intersections well, faster than Spline.
-    ///     
     ///     Best for: Development iteration, complex road networks with many intersections.
     ///     Processing time: ~2-3 seconds for 4096x4096
     ///     Quality: Good for testing, may have minor artifacts on curves
@@ -279,7 +271,7 @@ public static class RoadSmoothingPresets
         TerrainAffectedRangeMeters = 12.0f,
         // CrossSectionIntervalMeters validation: (8/2 + 12) / 3 = 5.3m max, using 1.5m ?
         CrossSectionIntervalMeters = 1.5f,
-        
+
         RoadMaxSlopeDegrees = 8.0f,
         SideMaxSlopeDegrees = 30.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
@@ -303,9 +295,7 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     EXTREME NUCLEAR: Maximum possible smoothing for very difficult terrain.
     ///     Roads will be EXTREMELY flat - may look artificial.
-    ///     
     ///     REQUIRES very wide TerrainAffectedRangeMeters (?25m) for global leveling!
-    ///     
     ///     Best for: When nothing else works, artificial environments.
     ///     Processing time: ~3-4 seconds for 4096x4096
     ///     Quality: Perfectly smooth but artificial-looking
@@ -320,7 +310,7 @@ public static class RoadSmoothingPresets
         TerrainAffectedRangeMeters = 30.0f, // >= 25m for GlobalLevelingStrength 0.5 ?
         // CrossSectionIntervalMeters validation: (8/2 + 30) / 3 = 11.3m max, using 0.25m ?
         CrossSectionIntervalMeters = 0.25f,
-        
+
         RoadMaxSlopeDegrees = 1.0f,
         SideMaxSlopeDegrees = 20.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
@@ -338,7 +328,7 @@ public static class RoadSmoothingPresets
             UseButterworthFilter = true,
             ButterworthFilterOrder = 5, // High order for maximum flatness
             SmoothingWindowSize = 401, // Odd number ?
-            
+
             // Even with 30m blend, keep leveling at 0.5 maximum
             GlobalLevelingStrength = 0.5f, // Reduced from 0.95 - higher causes artifacts
 
@@ -359,12 +349,10 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     HIGHWAY: Professional highway-quality roads (8m wide).
     ///     Creates perfectly flat road surfaces that follow terrain elevation smoothly.
-    ///     
     ///     Key features:
     ///     - Road surface is FLAT across its 8m width (no terrain bleed-through)
     ///     - Smooth elevation changes along road length (Butterworth filter)
     ///     - Moderate blend zone for natural integration
-    ///     
     ///     Best for: Main highways, well-maintained roads.
     ///     Processing time: ~3-4 seconds for 4096x4096
     ///     Quality: Professional highway standard
@@ -429,14 +417,12 @@ public static class RoadSmoothingPresets
     ///     MOUNTAIN ROAD: Narrow roads for steep mountainous terrain (6m wide).
     ///     Creates perfectly flat road surfaces with STEEP terrain falling away on sides.
     ///     Optimized for tight hairpin turns and switchbacks.
-    ///     
     ///     Key features:
     ///     - Narrow 6m road width for authentic mountain passes
     ///     - SMALL TerrainAffectedRangeMeters (4m) for steep terrain beside road
     ///     - GlobalLevelingStrength = 0 (required for narrow blend zones)
     ///     - Strong Butterworth filter ensures flat road despite terrain changes
     ///     - Tighter spline fitting for accurate hairpin tracking
-    ///     
     ///     Best for: Mountain passes, winding cliff roads, steep hillside routes, hairpin turns.
     ///     Processing time: ~3-4 seconds for 4096x4096
     ///     Quality: Authentic mountain road with steep embankments
@@ -470,7 +456,10 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             PreferStraightThroughJunctions = false,
             JunctionAngleThreshold = 90.0f,
-            MinPathLengthPixels = 30.0f, // Allow short segments for hairpins
+            // IMPORTANT: MinPathLengthPixels must be high enough to filter skeleton artifacts
+            // Too low (30px) causes spikes from short isolated skeleton fragments
+            // 80px filters noise while keeping valid hairpin segments
+            MinPathLengthPixels = 80.0f,
 
             // HIGH PRECISION path extraction for tight curves
             BridgeEndpointMaxDistancePixels = 30.0f,
@@ -488,10 +477,10 @@ public static class RoadSmoothingPresets
 
             // CRITICAL: Strong Butterworth filter ensures FLAT road surface
             // even with narrow blend zone and steep terrain
-            SmoothingWindowSize = 101, // Odd number ?, smaller for responsive curves
+            SmoothingWindowSize = 101, // Odd number ✓, smaller for responsive curves
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4, // Aggressive for flat road surface
-            
+
             // MUST be 0 for narrow TerrainAffectedRangeMeters!
             GlobalLevelingStrength = 0.0f, // Terrain-following, no global leveling
 
@@ -504,19 +493,16 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     RACING CIRCUIT: Ultra-precise spline for racing tracks with tight hairpins.
     ///     Creates perfectly flat, glass-smooth road surfaces optimized for tight turns.
-    ///     
     ///     Key features:
     ///     - Wide 10m road width for racing (allows overtaking)
     ///     - Ultra-dense cross-section sampling (0.25m)
     ///     - Maximum spline precision for hairpin accuracy
     ///     - Very tight spline following with sharp corner capability
     ///     - Heavy post-processing for glass-smooth surface
-    ///     
     ///     Spline parameters optimized for:
-    ///     - Hairpin turns (180� direction change)
+    ///     - Hairpin turns (180° direction change)
     ///     - Chicanes (quick left-right sequences)
     ///     - Sweeping curves that must be followed precisely
-    ///     
     ///     Best for: Racing circuits, karting tracks, autocross courses.
     ///     Processing time: ~4-5 seconds for 4096x4096 (high precision)
     ///     Quality: Professional racing circuit standard
@@ -550,7 +536,9 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             PreferStraightThroughJunctions = false,
             JunctionAngleThreshold = 90.0f,
-            MinPathLengthPixels = 20.0f, // Keep even short track segments
+            // Racing circuits need higher MinPathLength to filter skeleton noise
+            // but lower than Highway since track segments may be shorter
+            MinPathLengthPixels = 60.0f,
 
             // MAXIMUM PRECISION path extraction
             BridgeEndpointMaxDistancePixels = 50.0f, // Connect track sections
@@ -582,12 +570,10 @@ public static class RoadSmoothingPresets
     ///     DIRT ROAD: Rustic unpaved roads with minimal smoothing (5m wide).
     ///     Creates natural-looking roads that follow terrain closely.
     ///     Road surface is flat but preserves some terrain character.
-    ///     
     ///     Key features:
     ///     - Narrow 5m width for rustic character
     ///     - Minimal smoothing preserves natural bumps
     ///     - Box filter instead of Butterworth for organic feel
-    ///     
     ///     Best for: Forest trails, rural roads, unpaved paths.
     ///     Processing time: ~2-3 seconds for 4096x4096
     ///     Quality: Authentic unpaved road character
