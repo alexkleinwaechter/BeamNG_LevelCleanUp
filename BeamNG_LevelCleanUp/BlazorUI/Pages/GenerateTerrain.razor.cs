@@ -7,6 +7,7 @@ using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using MudBlazor;
 using MudBlazor.Utilities;
@@ -43,6 +44,18 @@ public partial class GenerateTerrain
 
     protected override void OnInitialized()
     {
+        // Configure TerrainLogger to forward messages to PubSub
+        TerrainLogger.SetLogHandler((level, message) =>
+        {
+            var pubSubType = level switch
+            {
+                TerrainLogLevel.Warning => PubSubMessageType.Warning,
+                TerrainLogLevel.Error => PubSubMessageType.Error,
+                _ => PubSubMessageType.Info
+            };
+            PubSubChannel.SendMessage(pubSubType, message);
+        });
+
         // Subscribe to PubSub messages
         var consumer = Task.Run(async () =>
         {

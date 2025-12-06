@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Processing;
@@ -33,18 +34,18 @@ public class TerrainCreator
         TerrainCreationParameters parameters)
     {
         // 1. Validate inputs
-        Console.WriteLine("Validating parameters...");
+        TerrainLogger.Info("Validating parameters...");
         var validation = TerrainValidator.Validate(parameters);
 
         if (!validation.IsValid)
         {
-            Console.WriteLine("Validation failed:");
-            foreach (var error in validation.Errors) Console.WriteLine($"  ERROR: {error}");
+            TerrainLogger.Error("Validation failed:");
+            foreach (var error in validation.Errors) TerrainLogger.Error($"  {error}");
             return false;
         }
 
         // Show warnings
-        foreach (var warning in validation.Warnings) Console.WriteLine($"  WARNING: {warning}");
+        foreach (var warning in validation.Warnings) TerrainLogger.Warning($"  {warning}");
 
         Image<L16>? heightmapImage = null;
         var shouldDisposeHeightmap = false;
@@ -59,18 +60,18 @@ public class TerrainCreator
             }
             else if (!string.IsNullOrWhiteSpace(parameters.HeightmapPath))
             {
-                Console.WriteLine($"Loading heightmap from: {parameters.HeightmapPath}");
+                TerrainLogger.Info($"Loading heightmap from: {parameters.HeightmapPath}");
                 heightmapImage = Image.Load<L16>(parameters.HeightmapPath);
                 shouldDisposeHeightmap = true; // We loaded it, we dispose it
             }
             else
             {
-                Console.WriteLine("ERROR: No heightmap provided (HeightmapImage or HeightmapPath required)");
+                TerrainLogger.Error("No heightmap provided (HeightmapImage or HeightmapPath required)");
                 return false;
             }
 
             // 3. Process heightmap
-            Console.WriteLine("Processing heightmap...");
+            TerrainLogger.Info("Processing heightmap...");
             var heights = HeightmapProcessor.ProcessHeightmap(
                 heightmapImage,
                 parameters.MaxHeight);
@@ -79,7 +80,7 @@ public class TerrainCreator
             SmoothingResult? smoothingResult = null;
             if (parameters.Materials.Any(m => m.RoadParameters != null))
             {
-                Console.WriteLine("Applying road smoothing...");
+                TerrainLogger.Info("Applying road smoothing...");
 
                 smoothingResult = ApplyRoadSmoothing(
                     heights,
@@ -90,18 +91,18 @@ public class TerrainCreator
                 if (smoothingResult != null)
                 {
                     heights = ConvertTo1DArray(smoothingResult.ModifiedHeightMap);
-                    Console.WriteLine("Road smoothing completed successfully!");
+                    TerrainLogger.Info("Road smoothing completed successfully!");
                 }
             }
 
             // 4. Process material layers
-            Console.WriteLine("Processing material layers...");
+            TerrainLogger.Info("Processing material layers...");
             var materialIndices = MaterialLayerProcessor.ProcessMaterialLayers(
                 parameters.Materials,
                 parameters.Size);
 
             // 5. Create Grille.BeamNG.Lib Terrain object
-            Console.WriteLine("Building terrain data structure...");
+            TerrainLogger.Info("Building terrain data structure...");
             var materialNames = parameters.Materials
                 .Select(m => m.MaterialName)
                 .ToList();
@@ -111,7 +112,7 @@ public class TerrainCreator
                 materialNames);
 
             // 6. Fill terrain data
-            Console.WriteLine("Filling terrain data...");
+            TerrainLogger.Info("Filling terrain data...");
             for (var i = 0; i < terrain.Data.Length; i++)
                 terrain.Data[i] = new TerrainData
                 {
@@ -121,7 +122,7 @@ public class TerrainCreator
                 };
 
             // 7. Save using Grille.BeamNG.Lib
-            Console.WriteLine($"Writing terrain file to {outputPath}...");
+            TerrainLogger.Info($"Writing terrain file to {outputPath}...");
 
             // Ensure output directory exists
             var outputDir = Path.GetDirectoryName(outputPath);
@@ -131,13 +132,13 @@ public class TerrainCreator
             await Task.Run(() => terrain.Save(outputPath, parameters.MaxHeight));
 
             // 8. Write terrain.json metadata file
-            Console.WriteLine("Writing terrain.json metadata file...");
+            TerrainLogger.Info("Writing terrain.json metadata file...");
             await WriteTerrainJsonAsync(outputPath, parameters);
 
             // 7a. Save modified heightmap if road smoothing was applied
             if (smoothingResult != null)
             {
-                Console.WriteLine("Saving modified heightmap...");
+                TerrainLogger.Info("Saving modified heightmap...");
                 SaveModifiedHeightmap(
                     smoothingResult.ModifiedHeightMap,
                     outputPath,
@@ -145,14 +146,14 @@ public class TerrainCreator
                     parameters.Size);
             }
 
-            Console.WriteLine("Terrain file created successfully!");
+            TerrainLogger.Info("Terrain file created successfully!");
 
             // Display statistics
             var fileInfo = new FileInfo(outputPath);
-            Console.WriteLine($"File size: {fileInfo.Length:N0} bytes");
-            Console.WriteLine($"Terrain size: {parameters.Size}x{parameters.Size}");
-            Console.WriteLine($"Max height: {parameters.MaxHeight}");
-            Console.WriteLine($"Materials: {materialNames.Count}");
+            TerrainLogger.Info($"File size: {fileInfo.Length:N0} bytes");
+            TerrainLogger.Info($"Terrain size: {parameters.Size}x{parameters.Size}");
+            TerrainLogger.Info($"Max height: {parameters.MaxHeight}");
+            TerrainLogger.Info($"Materials: {materialNames.Count}");
 
             // Display road smoothing statistics if available
             if (smoothingResult != null) DisplaySmoothingStatistics(smoothingResult.Statistics);
@@ -161,8 +162,8 @@ public class TerrainCreator
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"ERROR: Failed to create terrain file: {ex.Message}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            TerrainLogger.Error($"Failed to create terrain file: {ex.Message}");
+            TerrainLogger.Error($"Stack trace: {ex.StackTrace}");
             return false;
         }
         finally
@@ -200,7 +201,7 @@ public class TerrainCreator
         {
             if (string.IsNullOrEmpty(material.LayerImagePath))
             {
-                Console.WriteLine($"Warning: Road material '{material.MaterialName}' has no layer image path");
+                TerrainLogger.Warning($"Road material '{material.MaterialName}' has no layer image path");
                 continue;
             }
 
@@ -219,11 +220,11 @@ public class TerrainCreator
                 heightMap2D = result.ModifiedHeightMap;
                 finalResult = result;
 
-                Console.WriteLine($"Applied road smoothing for material: {material.MaterialName}");
+                TerrainLogger.Info($"Applied road smoothing for material: {material.MaterialName}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error smoothing road '{material.MaterialName}': {ex.Message}");
+                TerrainLogger.Error($"Error smoothing road '{material.MaterialName}': {ex.Message}");
             }
         }
 
@@ -310,32 +311,32 @@ public class TerrainCreator
             }
 
             heightmapImage.SaveAsPng(heightmapOutputPath);
-            Console.WriteLine($"Saved modified heightmap to: {heightmapOutputPath}");
+            TerrainLogger.Info($"Saved modified heightmap to: {heightmapOutputPath}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Failed to save modified heightmap: {ex.Message}");
+            TerrainLogger.Warning($"Failed to save modified heightmap: {ex.Message}");
             // Don't throw - this is optional output
         }
     }
 
     private void DisplaySmoothingStatistics(SmoothingStatistics stats)
     {
-        Console.WriteLine("\n=== Road Smoothing Statistics ===");
-        Console.WriteLine($"Pixels modified: {stats.PixelsModified:N0}");
-        Console.WriteLine($"Max road slope: {stats.MaxRoadSlope:F2}°");
-        Console.WriteLine($"Max discontinuity: {stats.MaxDiscontinuity:F3}m");
-        Console.WriteLine($"Cut volume: {stats.TotalCutVolume:F2} m³");
-        Console.WriteLine($"Fill volume: {stats.TotalFillVolume:F2} m³");
-        Console.WriteLine($"Constraints met: {stats.MeetsAllConstraints}");
+        TerrainLogger.Info("=== Road Smoothing Statistics ===");
+        TerrainLogger.Info($"Pixels modified: {stats.PixelsModified:N0}");
+        TerrainLogger.Info($"Max road slope: {stats.MaxRoadSlope:F2}°");
+        TerrainLogger.Info($"Max discontinuity: {stats.MaxDiscontinuity:F3}m");
+        TerrainLogger.Info($"Cut volume: {stats.TotalCutVolume:F2} m³");
+        TerrainLogger.Info($"Fill volume: {stats.TotalFillVolume:F2} m³");
+        TerrainLogger.Info($"Constraints met: {stats.MeetsAllConstraints}");
 
         if (stats.ConstraintViolations.Any())
         {
-            Console.WriteLine("Constraint violations:");
-            foreach (var violation in stats.ConstraintViolations) Console.WriteLine($"  - {violation}");
+            TerrainLogger.Warning("Constraint violations:");
+            foreach (var violation in stats.ConstraintViolations) TerrainLogger.Warning($"  - {violation}");
         }
 
-        Console.WriteLine("================================\n");
+        TerrainLogger.Info("================================");
     }
 
     /// <summary>
@@ -365,11 +366,11 @@ public class TerrainCreator
             var jsonContent = JsonSerializer.Serialize(metadata, jsonOptions);
             await File.WriteAllTextAsync(terrainJsonPath, jsonContent);
 
-            Console.WriteLine($"Wrote terrain metadata to: {terrainJsonPath}");
+            TerrainLogger.Info($"Wrote terrain metadata to: {terrainJsonPath}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Failed to write terrain.json: {ex.Message}");
+            TerrainLogger.Warning($"Failed to write terrain.json: {ex.Message}");
             // Don't throw - this is optional output, the .ter file is the critical one
         }
     }
