@@ -335,6 +335,17 @@
                                                 <MudGrid Spacing="2">
                                                     <MudItem xs="12" sm="4">
                                                         <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="int" @bind-Value="Material.SkeletonDilationRadius" 
+                                                                            Label="Skeleton Dilation (px)" 
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="0" Max="5" Step="1"
+                                                                            HelperText="0=hairpin-friendly, 1+=connectivity"
+                                                                            Class="flex-grow-1"/>
+                                                            <HelpAdornment TooltipText="@SkeletonDilationRadius"/>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-start gap-1">
                                                             <MudNumericField T="float" @bind-Value="Material.DensifyMaxSpacingPixels" 
                                                                             Label="Densify Spacing (px)" 
                                                                             Variant="Variant.Outlined"

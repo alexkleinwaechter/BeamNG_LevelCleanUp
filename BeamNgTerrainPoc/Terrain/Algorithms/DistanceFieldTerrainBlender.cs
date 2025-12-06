@@ -240,6 +240,12 @@ public class DistanceFieldTerrainBlender
     private float[,] BuildElevationMap(RoadGeometry geometry, int width, int height, float metersPerPixel, float roadWidth, float blendRange)
     {
         var elevations = new float[height, width];
+        
+        // Initialize to NaN to distinguish "not set" from valid zero elevation
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                elevations[y, x] = float.NaN;
+        
         float maxDist = roadWidth / 2.0f + blendRange;
 
         // Build spatial index
@@ -358,7 +364,7 @@ public class DistanceFieldTerrainBlender
                 float originalH = heightMap[y, x];
                 float targetH = elevationMap[y, x];
 
-                if (targetH == 0) continue; // Outside road corridor
+                if (float.IsNaN(targetH)) continue; // Outside road corridor (no cross-section found)
 
                 float newH;
 

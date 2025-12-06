@@ -168,6 +168,20 @@ public static class RoadParameterTooltips
     // SPLINE: PATH EXTRACTION
     // ========================================
 
+    public const string SkeletonDilationRadius = """
+        Default: 1 | Range: 0 to 5
+        Status: ? ACTIVELY USED
+
+        Dilation radius (pixels) applied to road mask before skeletonization. Helps bridge small gaps and improve connectivity.
+
+        ? 0 - No dilation (cleanest skeleton, hairpin-friendly, may miss disconnected fragments)
+        ? 1 - Minimal dilation (default, good balance, minimal tail artifacts)
+        ? 2 - Moderate dilation (better connectivity, minor blobs at curves)
+        ? 3+ - Heavy dilation (maximum connectivity, SIGNIFICANT tail artifacts at hairpins)
+
+        ?? For tight hairpin turns, use 0 to avoid "tail" artifacts that mess up curves!
+        """;
+
     public const string UseGraphOrdering = """
         Default: true
         Status: ? ACTIVELY USED

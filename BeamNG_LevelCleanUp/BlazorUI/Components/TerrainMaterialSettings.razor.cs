@@ -303,6 +303,7 @@ public partial class TerrainMaterialSettings
         public float MinPathLengthPixels { get; set; } = 100.0f;
         public float JunctionAngleThreshold { get; set; } = 90.0f;
         public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
+        public int SkeletonDilationRadius { get; set; } = 0;
 
         // Elevation smoothing (Spline)
         public int SplineSmoothingWindowSize { get; set; } = 301;
@@ -378,6 +379,7 @@ public partial class TerrainMaterialSettings
                 MinPathLengthPixels = preset.SplineParameters.MinPathLengthPixels;
                 JunctionAngleThreshold = preset.SplineParameters.JunctionAngleThreshold;
                 OrderingNeighborRadiusPixels = preset.SplineParameters.OrderingNeighborRadiusPixels;
+                SkeletonDilationRadius = preset.SplineParameters.SkeletonDilationRadius;
                 SplineSmoothingWindowSize = preset.SplineParameters.SmoothingWindowSize;
                 SplineUseButterworthFilter = preset.SplineParameters.UseButterworthFilter;
                 SplineButterworthFilterOrder = preset.SplineParameters.ButterworthFilterOrder;
@@ -443,6 +445,7 @@ public partial class TerrainMaterialSettings
                 MinPathLengthPixels = MinPathLengthPixels,
                 JunctionAngleThreshold = JunctionAngleThreshold,
                 OrderingNeighborRadiusPixels = OrderingNeighborRadiusPixels,
+                SkeletonDilationRadius = SkeletonDilationRadius,
                 SmoothingWindowSize = SplineSmoothingWindowSize,
                 UseButterworthFilter = SplineUseButterworthFilter,
                 ButterworthFilterOrder = SplineButterworthFilterOrder,

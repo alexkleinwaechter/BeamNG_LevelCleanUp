@@ -281,7 +281,7 @@ public class RoadSmoothingService
         // Color code the road based on smoothed target elevations
         foreach (var cs in geometry.CrossSections)
         {
-            if (cs.TargetElevation <= 0) continue;
+            if (float.IsNaN(cs.TargetElevation) || cs.TargetElevation <= -1000f) continue; // Skip uninitialized or invalid elevations
 
             float normalizedElevation = (cs.TargetElevation - minElev) / range;
             var color = GetColorForValue(normalizedElevation);
