@@ -84,7 +84,7 @@ public static class RoadSmoothingPresets
             GlobalLevelingStrength = 0.0f,
 
             BridgeEndpointMaxDistancePixels = 40.0f,
-            DensifyMaxSpacingPixels = 1.5f,
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
             SimplifyTolerancePixels = 0.5f,
 
             SplineTension = 0.2f,
@@ -141,7 +141,7 @@ public static class RoadSmoothingPresets
             MinPathLengthPixels = 50.0f,
 
             BridgeEndpointMaxDistancePixels = 40.0f,
-            DensifyMaxSpacingPixels = 1.5f,
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
             SimplifyTolerancePixels = 0.5f,
 
             SplineTension = 0.2f,
@@ -194,7 +194,7 @@ public static class RoadSmoothingPresets
             MinPathLengthPixels = 50.0f,
 
             BridgeEndpointMaxDistancePixels = 40.0f,
-            DensifyMaxSpacingPixels = 2.0f,
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
             SimplifyTolerancePixels = 0.75f,
 
             SplineTension = 0.3f,
@@ -245,7 +245,7 @@ public static class RoadSmoothingPresets
             MinPathLengthPixels = 40.0f,
 
             BridgeEndpointMaxDistancePixels = 30.0f,
-            DensifyMaxSpacingPixels = 2.5f,
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
             SimplifyTolerancePixels = 1.0f,
 
             SplineTension = 0.4f,
@@ -337,7 +337,7 @@ public static class RoadSmoothingPresets
             MinPathLengthPixels = 60.0f,
 
             BridgeEndpointMaxDistancePixels = 50.0f,
-            DensifyMaxSpacingPixels = 1.0f,
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
             SimplifyTolerancePixels = 0.25f,
 
             SplineTension = 0.1f,
@@ -392,7 +392,7 @@ public static class RoadSmoothingPresets
             MinPathLengthPixels = 100.0f,
 
             BridgeEndpointMaxDistancePixels = 40.0f,
-            DensifyMaxSpacingPixels = 1.5f,
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
             SimplifyTolerancePixels = 0.5f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -463,8 +463,8 @@ public static class RoadSmoothingPresets
 
             // HIGH PRECISION path extraction for tight curves
             BridgeEndpointMaxDistancePixels = 30.0f,
-            DensifyMaxSpacingPixels = 1.0f, // Dense points for accurate curves
-            SimplifyTolerancePixels = 0.25f, // Preserve hairpin shape detail
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
+            SimplifyTolerancePixels = 0.5f, // Balance detail vs spike prevention
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
 
@@ -477,7 +477,7 @@ public static class RoadSmoothingPresets
 
             // CRITICAL: Strong Butterworth filter ensures FLAT road surface
             // even with narrow blend zone and steep terrain
-            SmoothingWindowSize = 101, // Odd number ✓, smaller for responsive curves
+            SmoothingWindowSize = 201, // Odd number ✓, smaller for responsive curves
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4, // Aggressive for flat road surface
 
@@ -542,8 +542,8 @@ public static class RoadSmoothingPresets
 
             // MAXIMUM PRECISION path extraction
             BridgeEndpointMaxDistancePixels = 50.0f, // Connect track sections
-            DensifyMaxSpacingPixels = 0.75f, // Very dense control points
-            SimplifyTolerancePixels = 0.1f, // Almost no simplification
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
+            SimplifyTolerancePixels = 0.5f, // Balance detail vs spike prevention
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
 
@@ -610,7 +610,7 @@ public static class RoadSmoothingPresets
             MinPathLengthPixels = 40.0f,
 
             BridgeEndpointMaxDistancePixels = 25.0f,
-            DensifyMaxSpacingPixels = 2.0f,
+            DensifyMaxSpacingPixels = 2.0f, // Higher = fewer spikes from skeleton noise
             SimplifyTolerancePixels = 0.75f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,

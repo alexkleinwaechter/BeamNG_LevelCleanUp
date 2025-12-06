@@ -20,10 +20,11 @@ public class SplineRoadParameters
     
     /// <summary>
     /// Maximum spacing (pixels) after densification. Larger gaps will be filled with intermediate points.
-    /// Smaller = smoother splines, but more processing time.
-    /// Default: 1.5
+    /// Higher values = fewer control points = less sensitivity to skeleton noise = fewer spikes.
+    /// Lower values = more control points = follows skeleton more closely = may amplify noise.
+    /// Default: 2.0 (good balance between accuracy and spike prevention)
     /// </summary>
-    public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
+    public float DensifyMaxSpacingPixels { get; set; } = 2.0f;
     
     /// <summary>
     /// Maximum neighbor link distance (pixels) when building adjacency graph.
