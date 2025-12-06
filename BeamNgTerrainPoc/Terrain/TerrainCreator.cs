@@ -11,19 +11,19 @@ using SixLabors.ImageSharp.PixelFormats;
 namespace BeamNgTerrainPoc.Terrain;
 
 /// <summary>
-/// Main API for creating BeamNG terrain (.ter) files.
+///     Main API for creating BeamNG terrain (.ter) files.
 /// </summary>
 public class TerrainCreator
 {
     private readonly RoadSmoothingService _roadSmoothingService;
-    
+
     public TerrainCreator()
     {
         _roadSmoothingService = new RoadSmoothingService();
     }
-    
+
     /// <summary>
-    /// Creates a BeamNG terrain file from the provided parameters (async version).
+    ///     Creates a BeamNG terrain file from the provided parameters (async version).
     /// </summary>
     /// <param name="outputPath">Path where the .ter file will be saved</param>
     /// <param name="parameters">Terrain creation parameters</param>
@@ -35,26 +35,20 @@ public class TerrainCreator
         // 1. Validate inputs
         Console.WriteLine("Validating parameters...");
         var validation = TerrainValidator.Validate(parameters);
-        
+
         if (!validation.IsValid)
         {
             Console.WriteLine("Validation failed:");
-            foreach (var error in validation.Errors)
-            {
-                Console.WriteLine($"  ERROR: {error}");
-            }
+            foreach (var error in validation.Errors) Console.WriteLine($"  ERROR: {error}");
             return false;
         }
-        
+
         // Show warnings
-        foreach (var warning in validation.Warnings)
-        {
-            Console.WriteLine($"  WARNING: {warning}");
-        }
-        
+        foreach (var warning in validation.Warnings) Console.WriteLine($"  WARNING: {warning}");
+
         Image<L16>? heightmapImage = null;
-        bool shouldDisposeHeightmap = false;
-        
+        var shouldDisposeHeightmap = false;
+
         try
         {
             // 2. Load or use heightmap
@@ -74,77 +68,72 @@ public class TerrainCreator
                 Console.WriteLine("ERROR: No heightmap provided (HeightmapImage or HeightmapPath required)");
                 return false;
             }
-            
+
             // 3. Process heightmap
             Console.WriteLine("Processing heightmap...");
             var heights = HeightmapProcessor.ProcessHeightmap(
                 heightmapImage,
                 parameters.MaxHeight);
-            
+
             // 3a. Apply road smoothing if road materials exist
             SmoothingResult? smoothingResult = null;
             if (parameters.Materials.Any(m => m.RoadParameters != null))
             {
                 Console.WriteLine("Applying road smoothing...");
-                
+
                 smoothingResult = ApplyRoadSmoothing(
-                    heights, 
-                    parameters.Materials, 
+                    heights,
+                    parameters.Materials,
                     parameters.MetersPerPixel,
                     parameters.Size);
-                
+
                 if (smoothingResult != null)
                 {
                     heights = ConvertTo1DArray(smoothingResult.ModifiedHeightMap);
                     Console.WriteLine("Road smoothing completed successfully!");
                 }
             }
-            
+
             // 4. Process material layers
             Console.WriteLine("Processing material layers...");
             var materialIndices = MaterialLayerProcessor.ProcessMaterialLayers(
                 parameters.Materials,
                 parameters.Size);
-            
+
             // 5. Create Grille.BeamNG.Lib Terrain object
             Console.WriteLine("Building terrain data structure...");
             var materialNames = parameters.Materials
                 .Select(m => m.MaterialName)
                 .ToList();
-            
+
             var terrain = new Grille.BeamNG.Terrain(
                 parameters.Size,
                 materialNames);
-            
+
             // 6. Fill terrain data
             Console.WriteLine("Filling terrain data...");
-            for (int i = 0; i < terrain.Data.Length; i++)
-            {
+            for (var i = 0; i < terrain.Data.Length; i++)
                 terrain.Data[i] = new TerrainData
                 {
                     Height = heights[i],
                     Material = materialIndices[i],
                     IsHole = false
                 };
-            }
-            
+
             // 7. Save using Grille.BeamNG.Lib
             Console.WriteLine($"Writing terrain file to {outputPath}...");
-            
+
             // Ensure output directory exists
             var outputDir = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrEmpty(outputDir))
-            {
-                Directory.CreateDirectory(outputDir);
-            }
-            
+            if (!string.IsNullOrEmpty(outputDir)) Directory.CreateDirectory(outputDir);
+
             // Save synchronously (the Save method is synchronous)
             await Task.Run(() => terrain.Save(outputPath, parameters.MaxHeight));
-            
+
             // 8. Write terrain.json metadata file
             Console.WriteLine("Writing terrain.json metadata file...");
             await WriteTerrainJsonAsync(outputPath, parameters);
-            
+
             // 7a. Save modified heightmap if road smoothing was applied
             if (smoothingResult != null)
             {
@@ -155,22 +144,19 @@ public class TerrainCreator
                     parameters.MaxHeight,
                     parameters.Size);
             }
-            
+
             Console.WriteLine("Terrain file created successfully!");
-            
+
             // Display statistics
             var fileInfo = new FileInfo(outputPath);
             Console.WriteLine($"File size: {fileInfo.Length:N0} bytes");
             Console.WriteLine($"Terrain size: {parameters.Size}x{parameters.Size}");
             Console.WriteLine($"Max height: {parameters.MaxHeight}");
             Console.WriteLine($"Materials: {materialNames.Count}");
-            
+
             // Display road smoothing statistics if available
-            if (smoothingResult != null)
-            {
-                DisplaySmoothingStatistics(smoothingResult.Statistics);
-            }
-            
+            if (smoothingResult != null) DisplaySmoothingStatistics(smoothingResult.Statistics);
+
             return true;
         }
         catch (Exception ex)
@@ -182,15 +168,12 @@ public class TerrainCreator
         finally
         {
             // Dispose heightmap if we loaded it
-            if (shouldDisposeHeightmap && heightmapImage != null)
-            {
-                heightmapImage.Dispose();
-            }
+            if (shouldDisposeHeightmap && heightmapImage != null) heightmapImage.Dispose();
         }
     }
-    
+
     /// <summary>
-    /// Creates a BeamNG terrain file from the provided parameters (synchronous version).
+    ///     Creates a BeamNG terrain file from the provided parameters (synchronous version).
     /// </summary>
     /// <param name="outputPath">Path where the .ter file will be saved</param>
     /// <param name="parameters">Terrain creation parameters</param>
@@ -201,7 +184,7 @@ public class TerrainCreator
     {
         return CreateTerrainFileAsync(outputPath, parameters).GetAwaiter().GetResult();
     }
-    
+
     private SmoothingResult? ApplyRoadSmoothing(
         float[] heightMap1D,
         List<MaterialDefinition> materials,
@@ -210,9 +193,9 @@ public class TerrainCreator
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
-        
+
         SmoothingResult? finalResult = null;
-        
+
         foreach (var material in materials.Where(m => m.RoadParameters != null))
         {
             if (string.IsNullOrEmpty(material.LayerImagePath))
@@ -220,22 +203,22 @@ public class TerrainCreator
                 Console.WriteLine($"Warning: Road material '{material.MaterialName}' has no layer image path");
                 continue;
             }
-            
+
             try
             {
                 // Load road layer
                 var roadLayer = LoadLayerImage(material.LayerImagePath, size);
-                
+
                 // Apply smoothing
                 var result = _roadSmoothingService.SmoothRoadsInHeightmap(
                     heightMap2D,
                     roadLayer,
                     material.RoadParameters!,
                     metersPerPixel);
-                
+
                 heightMap2D = result.ModifiedHeightMap;
                 finalResult = result;
-                
+
                 Console.WriteLine($"Applied road smoothing for material: {material.MaterialName}");
             }
             catch (Exception ex)
@@ -243,70 +226,58 @@ public class TerrainCreator
                 Console.WriteLine($"Error smoothing road '{material.MaterialName}': {ex.Message}");
             }
         }
-        
+
         return finalResult;
     }
-    
+
     private byte[,] LoadLayerImage(string layerPath, int expectedSize)
     {
         using var image = Image.Load<L8>(layerPath);
-        
+
         if (image.Width != expectedSize || image.Height != expectedSize)
-        {
             throw new InvalidOperationException(
                 $"Layer image size ({image.Width}x{image.Height}) does not match terrain size ({expectedSize}x{expectedSize})");
-        }
-        
+
         var layer = new byte[expectedSize, expectedSize];
-        
+
         // ImageSharp is top-down, BeamNG is bottom-up
         // Flip Y to match HeightmapProcessor behavior
-        for (int y = 0; y < expectedSize; y++)
+        for (var y = 0; y < expectedSize; y++)
+        for (var x = 0; x < expectedSize; x++)
         {
-            for (int x = 0; x < expectedSize; x++)
-            {
-                int flippedY = expectedSize - 1 - y;
-                layer[flippedY, x] = image[x, y].PackedValue;
-            }
+            var flippedY = expectedSize - 1 - y;
+            layer[flippedY, x] = image[x, y].PackedValue;
         }
-        
+
         return layer;
     }
-    
+
     private float[,] ConvertTo2DArray(float[] array1D, int size)
     {
         var array2D = new float[size, size];
-        
+
         // array1D is already flipped by HeightmapProcessor (bottom-up)
         // Just unpack it into 2D with same orientation
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                array2D[y, x] = array1D[y * size + x];
-            }
-        }
-        
+        for (var y = 0; y < size; y++)
+        for (var x = 0; x < size; x++)
+            array2D[y, x] = array1D[y * size + x];
+
         return array2D;
     }
-    
+
     private float[] ConvertTo1DArray(float[,] array2D)
     {
-        int size = array2D.GetLength(0);
+        var size = array2D.GetLength(0);
         var array1D = new float[size * size];
-        
+
         // Pack 2D into 1D maintaining the orientation
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                array1D[y * size + x] = array2D[y, x];
-            }
-        }
-        
+        for (var y = 0; y < size; y++)
+        for (var x = 0; x < size; x++)
+            array1D[y * size + x] = array2D[y, x];
+
         return array1D;
     }
-    
+
     private void SaveModifiedHeightmap(
         float[,] modifiedHeights,
         string outputPath,
@@ -319,27 +290,25 @@ public class TerrainCreator
             var outputDir = Path.GetDirectoryName(outputPath);
             var terrainName = Path.GetFileNameWithoutExtension(outputPath);
             var heightmapOutputPath = Path.Combine(outputDir!, $"{terrainName}_smoothed_heightmap.png");
-            
+
             // Convert float heights back to 16-bit heightmap
             using var heightmapImage = new Image<L16>(size, size);
-            
+
             // modifiedHeights is in BeamNG orientation (bottom-up)
             // ImageSharp expects top-down, so flip Y when writing
-            for (int y = 0; y < size; y++)
+            for (var y = 0; y < size; y++)
+            for (var x = 0; x < size; x++)
             {
-                for (int x = 0; x < size; x++)
-                {
-                    // Flip Y to convert from bottom-up (BeamNG) to top-down (ImageSharp)
-                    int flippedY = size - 1 - y;
-                    
-                    // Convert height (0.0 to maxHeight) to 16-bit value (0 to 65535)
-                    float normalizedHeight = modifiedHeights[y, x] / maxHeight;
-                    ushort pixelValue = (ushort)Math.Clamp(normalizedHeight * 65535f, 0, 65535);
-                    
-                    heightmapImage[x, flippedY] = new L16(pixelValue);
-                }
+                // Flip Y to convert from bottom-up (BeamNG) to top-down (ImageSharp)
+                var flippedY = size - 1 - y;
+
+                // Convert height (0.0 to maxHeight) to 16-bit value (0 to 65535)
+                var normalizedHeight = modifiedHeights[y, x] / maxHeight;
+                var pixelValue = (ushort)Math.Clamp(normalizedHeight * 65535f, 0, 65535);
+
+                heightmapImage[x, flippedY] = new L16(pixelValue);
             }
-            
+
             heightmapImage.SaveAsPng(heightmapOutputPath);
             Console.WriteLine($"Saved modified heightmap to: {heightmapOutputPath}");
         }
@@ -349,7 +318,7 @@ public class TerrainCreator
             // Don't throw - this is optional output
         }
     }
-    
+
     private void DisplaySmoothingStatistics(SmoothingStatistics stats)
     {
         Console.WriteLine("\n=== Road Smoothing Statistics ===");
@@ -359,21 +328,18 @@ public class TerrainCreator
         Console.WriteLine($"Cut volume: {stats.TotalCutVolume:F2} m³");
         Console.WriteLine($"Fill volume: {stats.TotalFillVolume:F2} m³");
         Console.WriteLine($"Constraints met: {stats.MeetsAllConstraints}");
-        
+
         if (stats.ConstraintViolations.Any())
         {
             Console.WriteLine("Constraint violations:");
-            foreach (var violation in stats.ConstraintViolations)
-            {
-                Console.WriteLine($"  - {violation}");
-            }
+            foreach (var violation in stats.ConstraintViolations) Console.WriteLine($"  - {violation}");
         }
-        
+
         Console.WriteLine("================================\n");
     }
-    
+
     /// <summary>
-    /// Writes the terrain.json metadata file alongside the .ter file.
+    ///     Writes the terrain.json metadata file alongside the .ter file.
     /// </summary>
     private async Task WriteTerrainJsonAsync(string terFilePath, TerrainCreationParameters parameters)
     {
@@ -382,23 +348,23 @@ public class TerrainCreator
             // Extract level name from the output path
             // Expected structure: .../levels/levelname/theTerrain.ter
             var levelName = ExtractLevelName(terFilePath);
-            
+
             // Create the metadata
             var metadata = TerrainJsonMetadata.FromParameters(parameters, levelName);
-            
+
             // Build the output path for terrain.json
             var outputDir = Path.GetDirectoryName(terFilePath)!;
             var terrainJsonPath = Path.Combine(outputDir, $"{parameters.TerrainName}.terrain.json");
-            
+
             // Serialize with pretty printing
             var jsonOptions = new JsonSerializerOptions
             {
                 WriteIndented = true
             };
-            
+
             var jsonContent = JsonSerializer.Serialize(metadata, jsonOptions);
             await File.WriteAllTextAsync(terrainJsonPath, jsonContent);
-            
+
             Console.WriteLine($"Wrote terrain metadata to: {terrainJsonPath}");
         }
         catch (Exception ex)
@@ -407,11 +373,11 @@ public class TerrainCreator
             // Don't throw - this is optional output, the .ter file is the critical one
         }
     }
-    
+
     /// <summary>
-    /// Extracts the level name from a file path.
-    /// Looks for "levels" folder and takes the folder name after it.
-    /// Falls back to parent folder name if "levels" pattern not found.
+    ///     Extracts the level name from a file path.
+    ///     Looks for "levels" folder and takes the folder name after it.
+    ///     Falls back to parent folder name if "levels" pattern not found.
     /// </summary>
     private string ExtractLevelName(string filePath)
     {
@@ -420,18 +386,14 @@ public class TerrainCreator
             var directory = Path.GetDirectoryName(filePath);
             if (string.IsNullOrEmpty(directory))
                 return "unknown";
-            
+
             // Split path and look for "levels" folder
             var parts = directory.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            
-            for (int i = 0; i < parts.Length - 1; i++)
-            {
+
+            for (var i = 0; i < parts.Length - 1; i++)
                 if (parts[i].Equals("levels", StringComparison.OrdinalIgnoreCase))
-                {
                     return parts[i + 1];
-                }
-            }
-            
+
             // Fallback: use the immediate parent folder name
             return new DirectoryInfo(directory).Name;
         }
