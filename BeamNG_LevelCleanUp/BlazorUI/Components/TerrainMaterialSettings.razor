@@ -73,6 +73,31 @@
                     </MudText>
                 </MudItem>
                 
+                <!-- Preset Selection -->
+                <MudItem xs="12">
+                    <MudSelect T="RoadPresetType" 
+                              Value="@Material.SelectedPreset"
+                              ValueChanged="@OnPresetChanged"
+                              Label="Road Preset"
+                              Variant="Variant.Outlined"
+                              AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem Value="RoadPresetType.Custom">Custom</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.Highway">Highway (8m, professional quality)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, steep grades)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.DirtRoad">Dirt Road (5m, rustic)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.TerrainFollowingSmooth">Terrain Following (Butterworth filter)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.MountainousUltraSmooth">Mountainous Ultra Smooth (aggressive leveling)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.HillyAggressive">Hilly Aggressive (moderate leveling)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.FlatModerate">Flat Moderate (light smoothing)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.FastTesting">Fast Testing (DirectMask)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.ExtremeNuclear">Extreme Nuclear (maximum smoothing)</MudSelectItem>
+                    </MudSelect>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                        Select a preset to apply optimized settings. You can customize individual parameters below.
+                    </MudText>
+                </MudItem>
+                
+                <!-- Primary Parameters (always visible) -->
                 <MudItem xs="12" sm="6">
                     <MudNumericField @bind-Value="Material.RoadWidthMeters" 
                                     Label="Road Width (meters)" 
@@ -105,27 +130,403 @@
                                     HelperText="Maximum embankment slope"/>
                 </MudItem>
                 
+                <!-- Advanced Settings (Nerd Mode) -->
                 <MudItem xs="12">
-                    <MudSelect T="RoadPresetType" 
-                              Value="@Material.SelectedPreset"
-                              ValueChanged="@OnPresetChanged"
-                              Label="Road Preset"
-                              Variant="Variant.Outlined"
-                              AnchorOrigin="Origin.BottomCenter">
-                        <MudSelectItem Value="RoadPresetType.Custom">Custom</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.Highway">Highway (8m, professional quality)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, steep grades)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.DirtRoad">Dirt Road (5m, rustic)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.TerrainFollowingSmooth">Terrain Following (Butterworth filter)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.MountainousUltraSmooth">Mountainous Ultra Smooth (aggressive leveling)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.HillyAggressive">Hilly Aggressive (moderate leveling)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.FlatModerate">Flat Moderate (light smoothing)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.FastTesting">Fast Testing (DirectMask)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.ExtremeNuclear">Extreme Nuclear (maximum smoothing)</MudSelectItem>
-                    </MudSelect>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                        Select a preset to use optimized settings. The 4 parameters above will override preset values.
-                    </MudText>
+                    <MudExpansionPanels Class="mt-2">
+                        <MudExpansionPanel Text="Advanced Settings (Nerd Mode)" 
+                                          IsInitiallyExpanded="false"
+                                          Class="mud-elevation-1">
+                            <TitleContent>
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.Science" Size="Size.Small" Color="Color.Secondary"/>
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                        Advanced Settings (Nerd Mode)
+                                    </MudText>
+                                </div>
+                            </TitleContent>
+                            <ChildContent>
+                                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="mt-2">
+                                    <!-- Algorithm Tab -->
+                                    <MudTabPanel Text="Algorithm" Icon="@Icons.Material.Filled.Memory">
+                                        <div class="pa-3">
+                                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                                                Choose the smoothing algorithm approach and core settings.
+                                            </MudAlert>
+                                            
+                                            <MudPaper Class="pa-3" Elevation="1">
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSelect T="RoadSmoothingApproach" 
+                                                                  @bind-Value="Material.Approach"
+                                                                  Label="Smoothing Approach"
+                                                                  Variant="Variant.Outlined"
+                                                                  HelperText="Spline = curved roads, DirectMask = intersections">
+                                                            <MudSelectItem Value="RoadSmoothingApproach.Spline">Spline (recommended)</MudSelectItem>
+                                                            <MudSelectItem Value="RoadSmoothingApproach.DirectMask">DirectMask (robust)</MudSelectItem>
+                                                        </MudSelect>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSelect T="BlendFunctionType" 
+                                                                  @bind-Value="Material.BlendFunctionType"
+                                                                  Label="Blend Function"
+                                                                  Variant="Variant.Outlined"
+                                                                  HelperText="Terrain transition curve type">
+                                                            <MudSelectItem Value="BlendFunctionType.Linear">Linear</MudSelectItem>
+                                                            <MudSelectItem Value="BlendFunctionType.Cosine">Cosine (smoothest)</MudSelectItem>
+                                                            <MudSelectItem Value="BlendFunctionType.Cubic">Cubic</MudSelectItem>
+                                                            <MudSelectItem Value="BlendFunctionType.Quintic">Quintic</MudSelectItem>
+                                                        </MudSelect>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudNumericField T="float" @bind-Value="Material.CrossSectionIntervalMeters" 
+                                                                        Label="Cross-Section Interval (m)" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.1f" Max="5.0f" Step="0.1f"
+                                                                        Format="F1"
+                                                                        HelperText="Smaller = more detail, slower"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSwitch T="bool" @bind-Value="Material.EnableTerrainBlending" 
+                                                                  Color="Color.Primary"
+                                                                  Label="Enable Terrain Blending"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                        </div>
+                                    </MudTabPanel>
+                                    
+                                    <!-- Spline Tab -->
+                                    <MudTabPanel Text="Spline" Icon="@Icons.Material.Filled.Timeline" Disabled="@(Material.Approach != RoadSmoothingApproach.Spline)">
+                                        <div class="pa-3">
+                                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                                                Spline extraction, curve fitting, and elevation smoothing parameters.
+                                            </MudAlert>
+                                            
+                                            <!-- Curve Fitting Card -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.ShowChart" Size="Size.Small" Class="mr-1"/>
+                                                    Curve Fitting
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how the spline curve follows the road centerline.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="float" @bind-Value="Material.SplineTension" 
+                                                                        Label="Tension" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.0f" Max="1.0f" Step="0.1f"
+                                                                        Format="F1"
+                                                                        HelperText="0=loose curves, 1=tight"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="float" @bind-Value="Material.SplineContinuity" 
+                                                                        Label="Continuity" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="-1.0f" Max="1.0f" Step="0.1f"
+                                                                        Format="F1"
+                                                                        HelperText="-1=sharp corners, 1=smooth"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="float" @bind-Value="Material.SplineBias" 
+                                                                        Label="Bias" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="-1.0f" Max="1.0f" Step="0.1f"
+                                                                        Format="F1"
+                                                                        HelperText="Curve direction bias"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                            
+                                            <!-- Path Extraction Card -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Route" Size="Size.Small" Class="mr-1"/>
+                                                    Path Extraction
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how road centerlines are extracted from the layer map.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="float" @bind-Value="Material.DensifyMaxSpacingPixels" 
+                                                                        Label="Densify Spacing (px)" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.5f" Max="10.0f" Step="0.5f"
+                                                                        Format="F1"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="float" @bind-Value="Material.SimplifyTolerancePixels" 
+                                                                        Label="Simplify Tolerance (px)" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.0f" Max="5.0f" Step="0.25f"
+                                                                        Format="F2"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="float" @bind-Value="Material.BridgeEndpointMaxDistancePixels" 
+                                                                        Label="Bridge Distance (px)" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.0f" Max="100.0f" Step="5.0f"
+                                                                        Format="F0"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudNumericField T="float" @bind-Value="Material.MinPathLengthPixels" 
+                                                                        Label="Min Path Length (px)" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="10.0f" Max="200.0f" Step="10.0f"
+                                                                        Format="F0"
+                                                                        HelperText="Shorter paths are filtered out"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                                
+                                                <!-- Graph Ordering sub-section -->
+                                                <MudDivider Class="my-3"/>
+                                                <div class="d-flex align-center gap-3 mb-2">
+                                                    <MudSwitch T="bool" @bind-Value="Material.UseGraphOrdering" 
+                                                              Color="Color.Primary"
+                                                              Label="Use Graph Ordering"/>
+                                                    <MudNumericField T="float" @bind-Value="Material.OrderingNeighborRadiusPixels" 
+                                                                    Label="Neighbor Radius (px)" 
+                                                                    Variant="Variant.Outlined"
+                                                                    Min="1.0f" Max="10.0f" Step="0.5f"
+                                                                    Format="F1"
+                                                                    Disabled="@(!Material.UseGraphOrdering)"
+                                                                    Style="max-width: 200px;"/>
+                                                </div>
+                                            </MudPaper>
+                                            
+                                            <!-- Junction Handling Card -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.CallSplit" Size="Size.Small" Class="mr-1"/>
+                                                    Junction Handling
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls behavior at road intersections.
+                                                </MudText>
+                                                <div class="d-flex align-center gap-3">
+                                                    <MudSwitch T="bool" @bind-Value="Material.PreferStraightThroughJunctions" 
+                                                              Color="Color.Primary"
+                                                              Label="Prefer Straight Through Junctions"/>
+                                                    <MudNumericField T="float" @bind-Value="Material.JunctionAngleThreshold" 
+                                                                    Label="Angle Threshold (°)" 
+                                                                    Variant="Variant.Outlined"
+                                                                    Min="10.0f" Max="90.0f" Step="5.0f"
+                                                                    Format="F0"
+                                                                    Disabled="@(!Material.PreferStraightThroughJunctions)"
+                                                                    HelperText="Max angle for 'straight through'"
+                                                                    Style="max-width: 200px;"/>
+                                                </div>
+                                            </MudPaper>
+                                            
+                                            <!-- Elevation Smoothing Card -->
+                                            <MudPaper Class="pa-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Terrain" Size="Size.Small" Class="mr-1"/>
+                                                    Elevation Smoothing
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how road elevation is smoothed along its length.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudNumericField T="int" @bind-Value="Material.SplineSmoothingWindowSize" 
+                                                                        Label="Window Size" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="11" Max="501" Step="10"
+                                                                        HelperText="Must be odd number"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudNumericField T="float" @bind-Value="Material.GlobalLevelingStrength" 
+                                                                        Label="Global Leveling Strength" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.0f" Max="1.0f" Step="0.05f"
+                                                                        Format="F2"
+                                                                        HelperText="0=follow terrain, 1=flat network"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                                
+                                                <!-- Butterworth sub-section -->
+                                                <MudDivider Class="my-3"/>
+                                                <div class="d-flex align-center gap-3">
+                                                    <MudSwitch T="bool" @bind-Value="Material.SplineUseButterworthFilter" 
+                                                              Color="Color.Primary"
+                                                              Label="Butterworth Filter"/>
+                                                    <MudNumericField T="int" @bind-Value="Material.SplineButterworthFilterOrder" 
+                                                                    Label="Filter Order" 
+                                                                    Variant="Variant.Outlined"
+                                                                    Min="1" Max="8" Step="1"
+                                                                    Disabled="@(!Material.SplineUseButterworthFilter)"
+                                                                    HelperText="Higher = flatter"
+                                                                    Style="max-width: 150px;"/>
+                                                </div>
+                                            </MudPaper>
+                                        </div>
+                                    </MudTabPanel>
+                                    
+                                    <!-- DirectMask Tab -->
+                                    <MudTabPanel Text="DirectMask" Icon="@Icons.Material.Filled.GridOn" Disabled="@(Material.Approach != RoadSmoothingApproach.DirectMask)">
+                                        <div class="pa-3">
+                                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                                                DirectMask approach parameters for grid-aligned sampling. Best for complex intersections.
+                                            </MudAlert>
+                                            
+                                            <!-- Sampling Card -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.GridOn" Size="Size.Small" Class="mr-1"/>
+                                                    Sampling
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudNumericField T="int" @bind-Value="Material.DirectMaskSmoothingWindowSize" 
+                                                                        Label="Smoothing Window Size" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="3" Max="100" Step="1"
+                                                                        HelperText="Larger = smoother"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudNumericField T="int" @bind-Value="Material.RoadPixelSearchRadius" 
+                                                                        Label="Road Pixel Search Radius" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="1" Max="20" Step="1"
+                                                                        HelperText="Search distance for road pixels"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                            
+                                            <!-- Filter Card -->
+                                            <MudPaper Class="pa-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.FilterAlt" Size="Size.Small" Class="mr-1"/>
+                                                    Butterworth Filter
+                                                </MudText>
+                                                <div class="d-flex align-center gap-3">
+                                                    <MudSwitch T="bool" @bind-Value="Material.DirectMaskUseButterworthFilter" 
+                                                              Color="Color.Primary"
+                                                              Label="Enable Butterworth Filter"/>
+                                                    <MudNumericField T="int" @bind-Value="Material.DirectMaskButterworthFilterOrder" 
+                                                                    Label="Filter Order" 
+                                                                    Variant="Variant.Outlined"
+                                                                    Min="1" Max="8" Step="1"
+                                                                    Disabled="@(!Material.DirectMaskUseButterworthFilter)"
+                                                                    HelperText="Higher = flatter passband"
+                                                                    Style="max-width: 150px;"/>
+                                                </div>
+                                            </MudPaper>
+                                        </div>
+                                    </MudTabPanel>
+                                    
+                                    <!-- Post-Processing Tab -->
+                                    <MudTabPanel Text="Post-Processing" Icon="@Icons.Material.Filled.AutoFixHigh">
+                                        <div class="pa-3">
+                                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                                                Post-processing smoothing to eliminate staircase artifacts on the road surface.
+                                            </MudAlert>
+                                            
+                                            <MudPaper Class="pa-3" Elevation="1">
+                                                <div class="d-flex align-center gap-3 mb-3">
+                                                    <MudSwitch T="bool" @bind-Value="Material.EnablePostProcessingSmoothing" 
+                                                              Color="Color.Primary"
+                                                              Label="Enable Post-Processing Smoothing"/>
+                                                </div>
+                                                
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSelect T="PostProcessingSmoothingType" 
+                                                                  @bind-Value="Material.SmoothingType"
+                                                                  Label="Smoothing Type"
+                                                                  Variant="Variant.Outlined"
+                                                                  Disabled="@(!Material.EnablePostProcessingSmoothing)">
+                                                            <MudSelectItem Value="PostProcessingSmoothingType.Gaussian">Gaussian (best quality)</MudSelectItem>
+                                                            <MudSelectItem Value="PostProcessingSmoothingType.Box">Box (fast)</MudSelectItem>
+                                                            <MudSelectItem Value="PostProcessingSmoothingType.Bilateral">Bilateral (edge-preserving)</MudSelectItem>
+                                                        </MudSelect>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudNumericField T="float" @bind-Value="Material.SmoothingMaskExtensionMeters" 
+                                                                        Label="Mask Extension (m)" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.0f" Max="20.0f" Step="1.0f"
+                                                                        Format="F1"
+                                                                        Disabled="@(!Material.EnablePostProcessingSmoothing)"
+                                                                        HelperText="Smooth beyond road edge"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="int" @bind-Value="Material.SmoothingKernelSize" 
+                                                                        Label="Kernel Size" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="3" Max="21" Step="2"
+                                                                        Disabled="@(!Material.EnablePostProcessingSmoothing)"
+                                                                        HelperText="Must be odd"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="float" @bind-Value="Material.SmoothingSigma" 
+                                                                        Label="Sigma" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="0.1f" Max="5.0f" Step="0.1f"
+                                                                        Format="F1"
+                                                                        Disabled="@(!Material.EnablePostProcessingSmoothing)"
+                                                                        HelperText="Blur strength"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <MudNumericField T="int" @bind-Value="Material.SmoothingIterations" 
+                                                                        Label="Iterations" 
+                                                                        Variant="Variant.Outlined"
+                                                                        Min="1" Max="5" Step="1"
+                                                                        Disabled="@(!Material.EnablePostProcessingSmoothing)"
+                                                                        HelperText="More = smoother"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                        </div>
+                                    </MudTabPanel>
+                                    
+                                    <!-- Debug Tab -->
+                                    <MudTabPanel Text="Debug" Icon="@Icons.Material.Filled.BugReport">
+                                        <div class="pa-3">
+                                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                                                Debug output options. These create additional image files for troubleshooting.
+                                            </MudAlert>
+                                            
+                                            <MudPaper Class="pa-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Small" Class="mr-1"/>
+                                                    Export Debug Images
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSwitch T="bool" @bind-Value="Material.ExportSmoothedHeightmapWithOutlines" 
+                                                                  Color="Color.Secondary"
+                                                                  Label="Heightmap with Road Outlines"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSwitch T="bool" @bind-Value="Material.ExportSplineDebugImage" 
+                                                                  Color="Color.Secondary"
+                                                                  Label="Spline Visualization"
+                                                                  Disabled="@(Material.Approach != RoadSmoothingApproach.Spline)"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSwitch T="bool" @bind-Value="Material.ExportSkeletonDebugImage" 
+                                                                  Color="Color.Secondary"
+                                                                  Label="Skeleton Extraction"
+                                                                  Disabled="@(Material.Approach != RoadSmoothingApproach.Spline)"/>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <MudSwitch T="bool" @bind-Value="Material.ExportSmoothedElevationDebugImage" 
+                                                                  Color="Color.Secondary"
+                                                                  Label="Elevation Profile"
+                                                                  Disabled="@(Material.Approach != RoadSmoothingApproach.Spline)"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                        </div>
+                                    </MudTabPanel>
+                                </MudTabs>
+                            </ChildContent>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
                 </MudItem>
             }
         </MudGrid>
@@ -133,101 +534,98 @@
 </MudExpansionPanel>
 
 @code {
-[Parameter] public TerrainMaterialItemExtended Material { get; set; } = null!;
-[Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
+    [Parameter] public TerrainMaterialItemExtended Material { get; set; } = null!;
+    [Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
 
-private string GetPanelTitle()
-{
-    return $"[{Material.Order}] {Material.InternalName}";
-}
-
-private async Task SelectLayerMap()
-{
-    string? selectedPath = null;
-    var staThread = new Thread(() =>
+    private string GetPanelTitle()
     {
-        using var dialog = new OpenFileDialog();
-        dialog.Filter = "PNG Images (*.png)|*.png|All Files (*.*)|*.*";
-        dialog.Title = $"Select Layer Map for {Material.InternalName}";
-        if (dialog.ShowDialog() == DialogResult.OK)
+        return $"[{Material.Order}] {Material.InternalName}";
+    }
+
+    private async Task SelectLayerMap()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
         {
-            selectedPath = dialog.FileName;
-        }
-    });
-    staThread.SetApartmentState(ApartmentState.STA);
-    staThread.Start();
-    staThread.Join();
+            using var dialog = new OpenFileDialog();
+            dialog.Filter = "PNG Images (*.png)|*.png|All Files (*.*)|*.*";
+            dialog.Title = $"Select Layer Map for {Material.InternalName}";
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                selectedPath = dialog.FileName;
+            }
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
 
-    if (!string.IsNullOrEmpty(selectedPath))
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            Material.LayerMapPath = selectedPath;
+            await OnMaterialChanged.InvokeAsync(Material);
+        }
+    }
+
+    private async Task ClearLayerMap()
     {
-        Material.LayerMapPath = selectedPath;
+        Material.LayerMapPath = null;
         await OnMaterialChanged.InvokeAsync(Material);
     }
-}
 
-private async Task ClearLayerMap()
-{
-    Material.LayerMapPath = null;
-    await OnMaterialChanged.InvokeAsync(Material);
-}
-
-private async Task OnPresetChanged(RoadPresetType preset)
-{
-    Material.SelectedPreset = preset;
-        
-    // Apply preset values to the 4 prominent parameters
-    var presetParams = GetPresetParameters(preset);
-    if (presetParams != null)
+    private async Task OnPresetChanged(RoadPresetType preset)
     {
-        Material.RoadWidthMeters = presetParams.RoadWidthMeters;
-        Material.TerrainAffectedRangeMeters = presetParams.TerrainAffectedRangeMeters;
-        Material.RoadMaxSlopeDegrees = presetParams.RoadMaxSlopeDegrees;
-        Material.SideMaxSlopeDegrees = presetParams.SideMaxSlopeDegrees;
+        Material.SelectedPreset = preset;
+        
+        // Apply ALL preset values
+        var presetParams = GetPresetParameters(preset);
+        if (presetParams != null)
+        {
+            Material.ApplyPreset(presetParams);
+        }
+        
+        await OnMaterialChanged.InvokeAsync(Material);
     }
-        
-    await OnMaterialChanged.InvokeAsync(Material);
-}
 
-/// <summary>
-/// Gets the RoadSmoothingParameters for a given preset type.
-/// Returns null for Custom preset.
-/// </summary>
-public static RoadSmoothingParameters? GetPresetParameters(RoadPresetType preset)
-{
-    return preset switch
+    /// <summary>
+    /// Gets the RoadSmoothingParameters for a given preset type.
+    /// Returns null for Custom preset.
+    /// </summary>
+    public static RoadSmoothingParameters? GetPresetParameters(RoadPresetType preset)
     {
-        RoadPresetType.Highway => RoadSmoothingPresets.Highway,
-        RoadPresetType.MountainRoad => RoadSmoothingPresets.MountainRoad,
-        RoadPresetType.DirtRoad => RoadSmoothingPresets.DirtRoad,
-        RoadPresetType.TerrainFollowingSmooth => RoadSmoothingPresets.TerrainFollowingSmooth,
-        RoadPresetType.MountainousUltraSmooth => RoadSmoothingPresets.MountainousUltraSmooth,
-        RoadPresetType.HillyAggressive => RoadSmoothingPresets.HillyAggressive,
-        RoadPresetType.FlatModerate => RoadSmoothingPresets.FlatModerate,
-        RoadPresetType.FastTesting => RoadSmoothingPresets.FastTesting,
-        RoadPresetType.ExtremeNuclear => RoadSmoothingPresets.ExtremeNuclear,
-        _ => null
-    };
-}
+        return preset switch
+        {
+            RoadPresetType.Highway => RoadSmoothingPresets.Highway,
+            RoadPresetType.MountainRoad => RoadSmoothingPresets.MountainRoad,
+            RoadPresetType.DirtRoad => RoadSmoothingPresets.DirtRoad,
+            RoadPresetType.TerrainFollowingSmooth => RoadSmoothingPresets.TerrainFollowingSmooth,
+            RoadPresetType.MountainousUltraSmooth => RoadSmoothingPresets.MountainousUltraSmooth,
+            RoadPresetType.HillyAggressive => RoadSmoothingPresets.HillyAggressive,
+            RoadPresetType.FlatModerate => RoadSmoothingPresets.FlatModerate,
+            RoadPresetType.FastTesting => RoadSmoothingPresets.FastTesting,
+            RoadPresetType.ExtremeNuclear => RoadSmoothingPresets.ExtremeNuclear,
+            _ => null
+        };
+    }
 
-/// <summary>
-/// Available road smoothing presets from RoadSmoothingPresets class
-/// </summary>
-public enum RoadPresetType
-{
-    Custom,
-    Highway,
-    MountainRoad,
-    DirtRoad,
-    TerrainFollowingSmooth,
-    MountainousUltraSmooth,
-    HillyAggressive,
-    FlatModerate,
-    FastTesting,
-    ExtremeNuclear
-}
+    /// <summary>
+    /// Available road smoothing presets from RoadSmoothingPresets class
+    /// </summary>
+    public enum RoadPresetType
+    {
+        Custom,
+        Highway,
+        MountainRoad,
+        DirtRoad,
+        TerrainFollowingSmooth,
+        MountainousUltraSmooth,
+        HillyAggressive,
+        FlatModerate,
+        FastTesting,
+        ExtremeNuclear
+    }
     
     /// <summary>
-    /// Extended terrain material item with additional properties for terrain generation
+    /// Extended terrain material item with ALL road smoothing properties for terrain generation
     /// </summary>
     public class TerrainMaterialItemExtended
     {
@@ -241,91 +639,200 @@ public enum RoadPresetType
         public string? LayerMapPath { get; set; }
         public bool HasLayerMap => !string.IsNullOrEmpty(LayerMapPath);
         
-        // Road smoothing
+        // Road smoothing enabled
         public bool IsRoadMaterial { get; set; }
         public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.Highway;
         
-        // Prominent parameters (override preset values)
+        // ========================================
+        // PRIMARY PARAMETERS (always visible)
+        // ========================================
         public float RoadWidthMeters { get; set; } = 8.0f;
         public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
         public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
         public float SideMaxSlopeDegrees { get; set; } = 45.0f;
         
+        // ========================================
+        // ALGORITHM SETTINGS
+        // ========================================
+        public RoadSmoothingApproach Approach { get; set; } = RoadSmoothingApproach.Spline;
+        public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
+        public float CrossSectionIntervalMeters { get; set; } = 0.5f;
+        public bool EnableTerrainBlending { get; set; } = true;
+        
+        // ========================================
+        // SPLINE PARAMETERS
+        // ========================================
+        // Curve fitting
+        public float SplineTension { get; set; } = 0.2f;
+        public float SplineContinuity { get; set; } = 0.7f;
+        public float SplineBias { get; set; } = 0.0f;
+        
+        // Path extraction
+        public bool UseGraphOrdering { get; set; } = true;
+        public bool PreferStraightThroughJunctions { get; set; } = false;
+        public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
+        public float SimplifyTolerancePixels { get; set; } = 0.5f;
+        public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
+        public float MinPathLengthPixels { get; set; } = 100.0f;
+        public float JunctionAngleThreshold { get; set; } = 90.0f;
+        public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
+        
+        // Elevation smoothing (Spline)
+        public int SplineSmoothingWindowSize { get; set; } = 301;
+        public bool SplineUseButterworthFilter { get; set; } = true;
+        public int SplineButterworthFilterOrder { get; set; } = 4;
+        public float GlobalLevelingStrength { get; set; } = 0.0f;
+        
+        // ========================================
+        // DIRECTMASK PARAMETERS
+        // ========================================
+        public int DirectMaskSmoothingWindowSize { get; set; } = 10;
+        public int RoadPixelSearchRadius { get; set; } = 3;
+        public bool DirectMaskUseButterworthFilter { get; set; } = true;
+        public int DirectMaskButterworthFilterOrder { get; set; } = 3;
+        
+        // ========================================
+        // POST-PROCESSING SMOOTHING
+        // ========================================
+        public bool EnablePostProcessingSmoothing { get; set; } = true;
+        public PostProcessingSmoothingType SmoothingType { get; set; } = PostProcessingSmoothingType.Gaussian;
+        public int SmoothingKernelSize { get; set; } = 7;
+        public float SmoothingSigma { get; set; } = 1.5f;
+        public int SmoothingIterations { get; set; } = 1;
+        public float SmoothingMaskExtensionMeters { get; set; } = 6.0f;
+        
+        // ========================================
+        // DEBUG OUTPUT
+        // ========================================
+        public bool ExportSmoothedHeightmapWithOutlines { get; set; } = false;
+        public bool ExportSplineDebugImage { get; set; } = false;
+        public bool ExportSkeletonDebugImage { get; set; } = false;
+        public bool ExportSmoothedElevationDebugImage { get; set; } = false;
+        
         /// <summary>
-        /// Builds the full RoadSmoothingParameters by starting with the selected preset
-        /// and overriding the 4 prominent parameters.
+        /// Applies all values from a preset to this material's settings.
+        /// </summary>
+        public void ApplyPreset(RoadSmoothingParameters preset)
+        {
+            // Primary parameters
+            RoadWidthMeters = preset.RoadWidthMeters;
+            TerrainAffectedRangeMeters = preset.TerrainAffectedRangeMeters;
+            RoadMaxSlopeDegrees = preset.RoadMaxSlopeDegrees;
+            SideMaxSlopeDegrees = preset.SideMaxSlopeDegrees;
+            
+            // Algorithm settings
+            Approach = preset.Approach;
+            BlendFunctionType = preset.BlendFunctionType;
+            CrossSectionIntervalMeters = preset.CrossSectionIntervalMeters;
+            EnableTerrainBlending = preset.EnableTerrainBlending;
+            
+            // Post-processing
+            EnablePostProcessingSmoothing = preset.EnablePostProcessingSmoothing;
+            SmoothingType = preset.SmoothingType;
+            SmoothingKernelSize = preset.SmoothingKernelSize;
+            SmoothingSigma = preset.SmoothingSigma;
+            SmoothingIterations = preset.SmoothingIterations;
+            SmoothingMaskExtensionMeters = preset.SmoothingMaskExtensionMeters;
+            
+            // Debug
+            ExportSmoothedHeightmapWithOutlines = preset.ExportSmoothedHeightmapWithOutlines;
+            
+            // Spline parameters
+            if (preset.SplineParameters != null)
+            {
+                SplineTension = preset.SplineParameters.SplineTension;
+                SplineContinuity = preset.SplineParameters.SplineContinuity;
+                SplineBias = preset.SplineParameters.SplineBias;
+                UseGraphOrdering = preset.SplineParameters.UseGraphOrdering;
+                PreferStraightThroughJunctions = preset.SplineParameters.PreferStraightThroughJunctions;
+                DensifyMaxSpacingPixels = preset.SplineParameters.DensifyMaxSpacingPixels;
+                SimplifyTolerancePixels = preset.SplineParameters.SimplifyTolerancePixels;
+                BridgeEndpointMaxDistancePixels = preset.SplineParameters.BridgeEndpointMaxDistancePixels;
+                MinPathLengthPixels = preset.SplineParameters.MinPathLengthPixels;
+                JunctionAngleThreshold = preset.SplineParameters.JunctionAngleThreshold;
+                OrderingNeighborRadiusPixels = preset.SplineParameters.OrderingNeighborRadiusPixels;
+                SplineSmoothingWindowSize = preset.SplineParameters.SmoothingWindowSize;
+                SplineUseButterworthFilter = preset.SplineParameters.UseButterworthFilter;
+                SplineButterworthFilterOrder = preset.SplineParameters.ButterworthFilterOrder;
+                GlobalLevelingStrength = preset.SplineParameters.GlobalLevelingStrength;
+                ExportSplineDebugImage = preset.SplineParameters.ExportSplineDebugImage;
+                ExportSkeletonDebugImage = preset.SplineParameters.ExportSkeletonDebugImage;
+                ExportSmoothedElevationDebugImage = preset.SplineParameters.ExportSmoothedElevationDebugImage;
+            }
+            
+            // DirectMask parameters
+            if (preset.DirectMaskParameters != null)
+            {
+                DirectMaskSmoothingWindowSize = preset.DirectMaskParameters.SmoothingWindowSize;
+                RoadPixelSearchRadius = preset.DirectMaskParameters.RoadPixelSearchRadius;
+                DirectMaskUseButterworthFilter = preset.DirectMaskParameters.UseButterworthFilter;
+                DirectMaskButterworthFilterOrder = preset.DirectMaskParameters.ButterworthFilterOrder;
+            }
+        }
+        
+        /// <summary>
+        /// Builds the full RoadSmoothingParameters from all stored values.
         /// </summary>
         public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null)
         {
-            // Start with preset or create default
-            var baseParams = TerrainMaterialSettings.GetPresetParameters(SelectedPreset);
-            
-            // Clone the preset to avoid modifying the static instance
             var result = new RoadSmoothingParameters
             {
-                // Copy all settings from preset (or use defaults for Custom)
-                Approach = baseParams?.Approach ?? RoadSmoothingApproach.Spline,
-                EnableTerrainBlending = baseParams?.EnableTerrainBlending ?? true,
-                CrossSectionIntervalMeters = baseParams?.CrossSectionIntervalMeters ?? 0.5f,
-                BlendFunctionType = baseParams?.BlendFunctionType ?? BlendFunctionType.Cosine,
-                
-                // Post-processing smoothing
-                EnablePostProcessingSmoothing = baseParams?.EnablePostProcessingSmoothing ?? true,
-                SmoothingType = baseParams?.SmoothingType ?? PostProcessingSmoothingType.Gaussian,
-                SmoothingKernelSize = baseParams?.SmoothingKernelSize ?? 7,
-                SmoothingSigma = baseParams?.SmoothingSigma ?? 1.5f,
-                SmoothingMaskExtensionMeters = baseParams?.SmoothingMaskExtensionMeters ?? 6.0f,
-                SmoothingIterations = baseParams?.SmoothingIterations ?? 1,
-                
-                // Debug
-                DebugOutputDirectory = debugOutputDirectory,
-                ExportSmoothedHeightmapWithOutlines = baseParams?.ExportSmoothedHeightmapWithOutlines ?? false,
-                
-                // Override with prominent parameters
+                // Primary parameters
                 RoadWidthMeters = RoadWidthMeters,
                 TerrainAffectedRangeMeters = TerrainAffectedRangeMeters,
                 RoadMaxSlopeDegrees = RoadMaxSlopeDegrees,
-                SideMaxSlopeDegrees = SideMaxSlopeDegrees
+                SideMaxSlopeDegrees = SideMaxSlopeDegrees,
+                
+                // Algorithm settings
+                Approach = Approach,
+                BlendFunctionType = BlendFunctionType,
+                CrossSectionIntervalMeters = CrossSectionIntervalMeters,
+                EnableTerrainBlending = EnableTerrainBlending,
+                
+                // Post-processing
+                EnablePostProcessingSmoothing = EnablePostProcessingSmoothing,
+                SmoothingType = SmoothingType,
+                SmoothingKernelSize = SmoothingKernelSize,
+                SmoothingSigma = SmoothingSigma,
+                SmoothingIterations = SmoothingIterations,
+                SmoothingMaskExtensionMeters = SmoothingMaskExtensionMeters,
+                
+                // Debug
+                DebugOutputDirectory = debugOutputDirectory,
+                ExportSmoothedHeightmapWithOutlines = ExportSmoothedHeightmapWithOutlines
             };
             
-            // Copy SplineParameters if preset has them
-            if (baseParams?.SplineParameters != null)
+            // Spline parameters
+            result.SplineParameters = new SplineRoadParameters
             {
-                result.SplineParameters = new SplineRoadParameters
-                {
-                    SkeletonDilationRadius = baseParams.SplineParameters.SkeletonDilationRadius,
-                    PreferStraightThroughJunctions = baseParams.SplineParameters.PreferStraightThroughJunctions,
-                    JunctionAngleThreshold = baseParams.SplineParameters.JunctionAngleThreshold,
-                    MinPathLengthPixels = baseParams.SplineParameters.MinPathLengthPixels,
-                    BridgeEndpointMaxDistancePixels = baseParams.SplineParameters.BridgeEndpointMaxDistancePixels,
-                    DensifyMaxSpacingPixels = baseParams.SplineParameters.DensifyMaxSpacingPixels,
-                    SimplifyTolerancePixels = baseParams.SplineParameters.SimplifyTolerancePixels,
-                    UseGraphOrdering = baseParams.SplineParameters.UseGraphOrdering,
-                    OrderingNeighborRadiusPixels = baseParams.SplineParameters.OrderingNeighborRadiusPixels,
-                    SplineTension = baseParams.SplineParameters.SplineTension,
-                    SplineContinuity = baseParams.SplineParameters.SplineContinuity,
-                    SplineBias = baseParams.SplineParameters.SplineBias,
-                    SmoothingWindowSize = baseParams.SplineParameters.SmoothingWindowSize,
-                    UseButterworthFilter = baseParams.SplineParameters.UseButterworthFilter,
-                    ButterworthFilterOrder = baseParams.SplineParameters.ButterworthFilterOrder,
-                    GlobalLevelingStrength = baseParams.SplineParameters.GlobalLevelingStrength,
-                    ExportSplineDebugImage = baseParams.SplineParameters.ExportSplineDebugImage,
-                    ExportSkeletonDebugImage = baseParams.SplineParameters.ExportSkeletonDebugImage,
-                    ExportSmoothedElevationDebugImage = baseParams.SplineParameters.ExportSmoothedElevationDebugImage
-                };
-            }
+                SplineTension = SplineTension,
+                SplineContinuity = SplineContinuity,
+                SplineBias = SplineBias,
+                UseGraphOrdering = UseGraphOrdering,
+                PreferStraightThroughJunctions = PreferStraightThroughJunctions,
+                DensifyMaxSpacingPixels = DensifyMaxSpacingPixels,
+                SimplifyTolerancePixels = SimplifyTolerancePixels,
+                BridgeEndpointMaxDistancePixels = BridgeEndpointMaxDistancePixels,
+                MinPathLengthPixels = MinPathLengthPixels,
+                JunctionAngleThreshold = JunctionAngleThreshold,
+                OrderingNeighborRadiusPixels = OrderingNeighborRadiusPixels,
+                SmoothingWindowSize = SplineSmoothingWindowSize,
+                UseButterworthFilter = SplineUseButterworthFilter,
+                ButterworthFilterOrder = SplineButterworthFilterOrder,
+                GlobalLevelingStrength = GlobalLevelingStrength,
+                ExportSplineDebugImage = ExportSplineDebugImage,
+                ExportSkeletonDebugImage = ExportSkeletonDebugImage,
+                ExportSmoothedElevationDebugImage = ExportSmoothedElevationDebugImage
+            };
             
-            // Copy DirectMaskParameters if preset has them
-            if (baseParams?.DirectMaskParameters != null)
+            // DirectMask parameters
+            result.DirectMaskParameters = new DirectMaskRoadParameters
             {
-                result.DirectMaskParameters = new DirectMaskRoadParameters
-                {
-                    SmoothingWindowSize = baseParams.DirectMaskParameters.SmoothingWindowSize,
-                    RoadPixelSearchRadius = baseParams.DirectMaskParameters.RoadPixelSearchRadius,
-                    UseButterworthFilter = baseParams.DirectMaskParameters.UseButterworthFilter,
-                    ButterworthFilterOrder = baseParams.DirectMaskParameters.ButterworthFilterOrder
-                };
-            }
+                SmoothingWindowSize = DirectMaskSmoothingWindowSize,
+                RoadPixelSearchRadius = RoadPixelSearchRadius,
+                UseButterworthFilter = DirectMaskUseButterworthFilter,
+                ButterworthFilterOrder = DirectMaskButterworthFilterOrder
+            };
             
             return result;
         }
