@@ -428,14 +428,16 @@ public static class RoadSmoothingPresets
     /// <summary>
     ///     MOUNTAIN ROAD: Narrow roads for steep mountainous terrain (6m wide).
     ///     Creates perfectly flat road surfaces with STEEP terrain falling away on sides.
+    ///     Optimized for tight hairpin turns and switchbacks.
     ///     
     ///     Key features:
     ///     - Narrow 6m road width for authentic mountain passes
     ///     - SMALL TerrainAffectedRangeMeters (4m) for steep terrain beside road
     ///     - GlobalLevelingStrength = 0 (required for narrow blend zones)
     ///     - Strong Butterworth filter ensures flat road despite terrain changes
+    ///     - Tighter spline fitting for accurate hairpin tracking
     ///     
-    ///     Best for: Mountain passes, winding cliff roads, steep hillside routes.
+    ///     Best for: Mountain passes, winding cliff roads, steep hillside routes, hairpin turns.
     ///     Processing time: ~3-4 seconds for 4096x4096
     ///     Quality: Authentic mountain road with steep embankments
     /// </summary>
@@ -447,8 +449,8 @@ public static class RoadSmoothingPresets
         // ROAD GEOMETRY - Narrow road with steep sides
         RoadWidthMeters = 6.0f,
         TerrainAffectedRangeMeters = 4.0f, // SMALL for steep terrain beside road
-        // CrossSectionIntervalMeters validation: (6/2 + 4) / 3 = 2.3m max, using 0.4m ?
-        CrossSectionIntervalMeters = 0.4f, // Dense sampling for accuracy
+        // CrossSectionIntervalMeters validation: (6/2 + 4) / 3 = 2.3m max, using 0.3m ?
+        CrossSectionIntervalMeters = 0.3f, // Dense sampling for hairpin accuracy
 
         // SLOPE CONSTRAINTS - Steep grades allowed
         RoadMaxSlopeDegrees = 10.0f, // Steep mountain grade
@@ -460,7 +462,7 @@ public static class RoadSmoothingPresets
         SmoothingType = PostProcessingSmoothingType.Gaussian,
         SmoothingKernelSize = 5, // Odd number ?, small to preserve detail
         SmoothingSigma = 0.8f, // Light sigma
-        SmoothingMaskExtensionMeters = 1.0f, // >= 0.4 * 2 = 0.8m ?, minimal extension
+        SmoothingMaskExtensionMeters = 1.0f, // >= 0.3 * 2 = 0.6m ?, minimal extension
         SmoothingIterations = 1,
 
         SplineParameters = new SplineRoadParameters
@@ -468,27 +470,107 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             PreferStraightThroughJunctions = false,
             JunctionAngleThreshold = 90.0f,
-            MinPathLengthPixels = 50.0f,
+            MinPathLengthPixels = 30.0f, // Allow short segments for hairpins
 
+            // HIGH PRECISION path extraction for tight curves
             BridgeEndpointMaxDistancePixels = 30.0f,
-            DensifyMaxSpacingPixels = 1.5f,
-            SimplifyTolerancePixels = 0.5f,
+            DensifyMaxSpacingPixels = 1.0f, // Dense points for accurate curves
+            SimplifyTolerancePixels = 0.25f, // Preserve hairpin shape detail
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
 
-            // Spline fitting - tighter for mountain curves
-            SplineTension = 0.3f,
-            SplineContinuity = 0.5f,
+            // TIGHT SPLINE FITTING for hairpins
+            // Higher tension = follows control points more closely
+            // Lower continuity = allows sharper direction changes
+            SplineTension = 0.5f, // Tight following (was 0.3)
+            SplineContinuity = 0.2f, // Allow sharp corners (was 0.5)
             SplineBias = 0.0f,
 
             // CRITICAL: Strong Butterworth filter ensures FLAT road surface
             // even with narrow blend zone and steep terrain
-            SmoothingWindowSize = 151, // Odd number ?, ~75m smoothing window
+            SmoothingWindowSize = 101, // Odd number ?, smaller for responsive curves
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4, // Aggressive for flat road surface
             
             // MUST be 0 for narrow TerrainAffectedRangeMeters!
             GlobalLevelingStrength = 0.0f, // Terrain-following, no global leveling
+
+            ExportSplineDebugImage = false,
+            ExportSkeletonDebugImage = false,
+            ExportSmoothedElevationDebugImage = false
+        }
+    };
+
+    /// <summary>
+    ///     RACING CIRCUIT: Ultra-precise spline for racing tracks with tight hairpins.
+    ///     Creates perfectly flat, glass-smooth road surfaces optimized for tight turns.
+    ///     
+    ///     Key features:
+    ///     - Wide 10m road width for racing (allows overtaking)
+    ///     - Ultra-dense cross-section sampling (0.25m)
+    ///     - Maximum spline precision for hairpin accuracy
+    ///     - Very tight spline following with sharp corner capability
+    ///     - Heavy post-processing for glass-smooth surface
+    ///     
+    ///     Spline parameters optimized for:
+    ///     - Hairpin turns (180° direction change)
+    ///     - Chicanes (quick left-right sequences)
+    ///     - Sweeping curves that must be followed precisely
+    ///     
+    ///     Best for: Racing circuits, karting tracks, autocross courses.
+    ///     Processing time: ~4-5 seconds for 4096x4096 (high precision)
+    ///     Quality: Professional racing circuit standard
+    /// </summary>
+    public static RoadSmoothingParameters RacingCircuit => new()
+    {
+        Approach = RoadSmoothingApproach.Spline,
+        EnableTerrainBlending = true,
+
+        // ROAD GEOMETRY - Wide racing surface
+        RoadWidthMeters = 10.0f, // Wide for racing
+        TerrainAffectedRangeMeters = 8.0f, // Moderate runoff area
+        // CrossSectionIntervalMeters validation: (10/2 + 8) / 3 = 4.3m max, using 0.25m ?
+        CrossSectionIntervalMeters = 0.25f, // Ultra-dense for maximum precision
+
+        // SLOPE CONSTRAINTS - Racing standard (nearly flat)
+        RoadMaxSlopeDegrees = 3.0f, // Gentle racing grade
+        SideMaxSlopeDegrees = 25.0f, // Runoff areas slope gently
+        BlendFunctionType = BlendFunctionType.Cosine,
+
+        // POST-PROCESSING - Heavy for glass-smooth surface
+        EnablePostProcessingSmoothing = true,
+        SmoothingType = PostProcessingSmoothingType.Gaussian,
+        SmoothingKernelSize = 9, // Odd number ?
+        SmoothingSigma = 2.0f, // Aggressive smoothing
+        SmoothingMaskExtensionMeters = 1.0f, // >= 0.25 * 2 = 0.5m ?
+        SmoothingIterations = 2, // Multiple passes for perfection
+
+        SplineParameters = new SplineRoadParameters
+        {
+            SkeletonDilationRadius = 0,
+            PreferStraightThroughJunctions = false,
+            JunctionAngleThreshold = 90.0f,
+            MinPathLengthPixels = 20.0f, // Keep even short track segments
+
+            // MAXIMUM PRECISION path extraction
+            BridgeEndpointMaxDistancePixels = 50.0f, // Connect track sections
+            DensifyMaxSpacingPixels = 0.75f, // Very dense control points
+            SimplifyTolerancePixels = 0.1f, // Almost no simplification
+            UseGraphOrdering = true,
+            OrderingNeighborRadiusPixels = 2.5f,
+
+            // HAIRPIN-OPTIMIZED SPLINE FITTING
+            // SplineTension: 0.5-0.6 follows the centerline tightly without cutting corners
+            // SplineContinuity: 0.1-0.2 allows sharp direction changes at hairpins
+            SplineTension = 0.55f, // Very tight following
+            SplineContinuity = 0.15f, // Allow very sharp corners
+            SplineBias = 0.0f, // Symmetric curves
+
+            // Elevation smoothing - large window for perfectly flat track
+            SmoothingWindowSize = 201, // Odd number ?
+            UseButterworthFilter = true,
+            ButterworthFilterOrder = 4,
+            GlobalLevelingStrength = 0.0f, // Follow terrain (most tracks have elevation changes)
 
             ExportSplineDebugImage = false,
             ExportSkeletonDebugImage = false,

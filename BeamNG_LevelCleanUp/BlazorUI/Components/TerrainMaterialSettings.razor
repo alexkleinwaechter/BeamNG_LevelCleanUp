@@ -97,7 +97,8 @@
                               AnchorOrigin="Origin.BottomCenter">
                         <MudSelectItem Value="RoadPresetType.Custom">Custom</MudSelectItem>
                         <MudSelectItem Value="RoadPresetType.Highway">Highway (8m, professional quality)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, steep grades)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, hairpins)</MudSelectItem>
+                        <MudSelectItem Value="RoadPresetType.RacingCircuit">Racing Circuit (10m, tight turns)</MudSelectItem>
                         <MudSelectItem Value="RoadPresetType.DirtRoad">Dirt Road (5m, rustic)</MudSelectItem>
                         <MudSelectItem Value="RoadPresetType.TerrainFollowingSmooth">Terrain Following (Butterworth filter)</MudSelectItem>
                         <MudSelectItem Value="RoadPresetType.MountainousUltraSmooth">Mountainous Ultra Smooth (aggressive leveling)</MudSelectItem>
@@ -813,6 +814,7 @@ private record ValidationWarning(
         {
             RoadPresetType.Highway => RoadSmoothingPresets.Highway,
             RoadPresetType.MountainRoad => RoadSmoothingPresets.MountainRoad,
+            RoadPresetType.RacingCircuit => RoadSmoothingPresets.RacingCircuit,
             RoadPresetType.DirtRoad => RoadSmoothingPresets.DirtRoad,
             RoadPresetType.TerrainFollowingSmooth => RoadSmoothingPresets.TerrainFollowingSmooth,
             RoadPresetType.MountainousUltraSmooth => RoadSmoothingPresets.MountainousUltraSmooth,
@@ -832,6 +834,7 @@ private record ValidationWarning(
         Custom,
         Highway,
         MountainRoad,
+        RacingCircuit,
         DirtRoad,
         TerrainFollowingSmooth,
         MountainousUltraSmooth,
