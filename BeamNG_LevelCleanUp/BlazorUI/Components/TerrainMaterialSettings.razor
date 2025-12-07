@@ -871,6 +871,17 @@ Class="my-0">
                                                             <HelpAdornment TooltipText="@ExportSmoothedElevationDebugImage"/>
                                                         </div>
                                                     </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-center gap-1">
+                                                            <MudSwitch T="bool" @bind-Value="Material.ExportJunctionDebugImage" 
+                                                                      Color="Color.Secondary"
+                                                                      Label="Junction Harmonization"
+                                                                      Disabled="@(Material.Approach != RoadSmoothingApproach.Spline || !Material.EnableJunctionHarmonization)"/>
+                                                            <MudTooltip Text="Exports debug image showing detected junctions, endpoints, and elevation changes from harmonization. Blue=lowered, Red=raised, Green circles=multi-path junctions, Yellow=isolated endpoints.">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
                                                 </MudGrid>
                                             </MudPaper>
                                         </div>

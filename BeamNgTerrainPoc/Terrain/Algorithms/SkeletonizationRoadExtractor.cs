@@ -368,11 +368,6 @@ public class SkeletonizationRoadExtractor
             .OrderBy(x => x.Angle) // Smallest angle first (most aligned with incoming direction)
             .ToList();
 
-        // Debug output for first junction only
-        if (scored.Count > 1 && scored[0].Angle < angleThreshold)
-            TerrainLogger.Info(
-                $"  Junction: preferred path at {scored[0].Angle:F1}° vs alternatives at {string.Join(", ", scored.Skip(1).Select(s => $"{s.Angle:F1}°"))}");
-
         return scored.Select(x => x.Neighbor).ToList();
     }
 
@@ -576,12 +571,9 @@ public class SkeletonizationRoadExtractor
                 result[p.y, p.x] = false;
                 changed = true;
             }
-
-            if (iteration % 10 == 0)
-                Console.WriteLine($"  Thinning iteration {iteration}...");
         } while (changed && iteration < 100);
 
-        Console.WriteLine($"Thinning complete after {iteration} iterations");
+        TerrainLogger.Info($"Thinning complete after {iteration} iterations");
         return result;
     }
 
@@ -681,6 +673,6 @@ public class SkeletonizationRoadExtractor
         Directory.CreateDirectory(dir);
         var fp = Path.Combine(dir, "skeleton_debug.png");
         img.SaveAsPng(fp);
-        Console.WriteLine($"Exported skeleton debug image: {fp}");
+        TerrainLogger.Info($"Exported skeleton debug image: {fp}");
     }
 }

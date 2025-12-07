@@ -24,17 +24,20 @@ public class JunctionHarmonizationParameters
     // ========================================
     
     /// <summary>
-    /// Maximum distance (in meters) between path endpoints to consider them part of the same junction.
-    /// Larger values will merge more endpoints into single junctions.
+    /// Maximum distance (in meters) between a path endpoint and another road to detect a junction.
+    /// This should be small - just enough to account for the road width + small tolerance.
+    /// 
+    /// For T-junctions: An endpoint touching the side of another road will be detected
+    /// if the distance is within this radius.
     /// 
     /// Typical values:
-    /// - 10-15m: Small intersections, tight curves
-    /// - 15-25m: Standard road intersections (DEFAULT)
-    /// - 25-40m: Large intersections, highway ramps
+    /// - 5-8m: Narrow roads (single lane)
+    /// - 8-12m: Standard roads (DEFAULT - covers ~8m road width + tolerance)
+    /// - 12-15m: Wide roads (highways)
     /// 
-    /// Default: 20.0
+    /// Default: 10.0
     /// </summary>
-    public float JunctionDetectionRadiusMeters { get; set; } = 20.0f;
+    public float JunctionDetectionRadiusMeters { get; set; } = 10.0f;
     
     // ========================================
     // JUNCTION BLENDING
@@ -42,16 +45,17 @@ public class JunctionHarmonizationParameters
     
     /// <summary>
     /// Distance (in meters) over which to blend from junction elevation back to path elevation.
-    /// Larger values create smoother transitions but affect more of the road.
+    /// This affects the SIDE ROAD that joins the main road - the side road's elevation
+    /// will smoothly transition from the main road's elevation back to its own calculated elevation.
     /// 
     /// Typical values:
-    /// - 20-30m: Tight blending (urban roads)
-    /// - 30-50m: Standard blending (DEFAULT)
-    /// - 50-100m: Very smooth blending (highways)
+    /// - 15-25m: Tight blending (urban roads)
+    /// - 25-40m: Standard blending (DEFAULT)
+    /// - 40-60m: Smooth blending (highways)
     /// 
-    /// Default: 40.0
+    /// Default: 30.0
     /// </summary>
-    public float JunctionBlendDistanceMeters { get; set; } = 40.0f;
+    public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
     
     /// <summary>
     /// Blend function type for junction transitions.
@@ -72,16 +76,16 @@ public class JunctionHarmonizationParameters
     
     /// <summary>
     /// Distance (in meters) over which to taper endpoint elevation back toward terrain.
-    /// Only applies to isolated endpoints (not junctions).
+    /// Only applies to truly isolated endpoints (not T-junctions).
     /// 
     /// Typical values:
     /// - 10-20m: Short taper (abrupt ending)
-    /// - 20-40m: Standard taper (DEFAULT)
-    /// - 40-80m: Long taper (gradual ending)
+    /// - 20-30m: Standard taper (DEFAULT)
+    /// - 30-50m: Long taper (gradual ending)
     /// 
-    /// Default: 30.0
+    /// Default: 25.0
     /// </summary>
-    public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
+    public float EndpointTaperDistanceMeters { get; set; } = 25.0f;
     
     /// <summary>
     /// How much to blend endpoint elevation toward terrain (0-1).

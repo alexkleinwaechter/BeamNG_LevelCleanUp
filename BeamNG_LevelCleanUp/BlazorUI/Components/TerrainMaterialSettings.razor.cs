@@ -345,6 +345,8 @@ public partial class TerrainMaterialSettings
                     Material.ExportSkeletonDebugImage = debug["exportSkeletonDebugImage"]!.GetValue<bool>();
                 if (debug["exportSmoothedElevationDebugImage"] != null)
                     Material.ExportSmoothedElevationDebugImage = debug["exportSmoothedElevationDebugImage"]!.GetValue<bool>();
+                if (debug["exportJunctionDebugImage"] != null)
+                    Material.ExportJunctionDebugImage = debug["exportJunctionDebugImage"]!.GetValue<bool>();
             }
 
             // Import junction harmonization settings
@@ -507,6 +509,7 @@ public partial class TerrainMaterialSettings
         public bool ExportSplineDebugImage { get; set; }
         public bool ExportSkeletonDebugImage { get; set; }
         public bool ExportSmoothedElevationDebugImage { get; set; }
+        public bool ExportJunctionDebugImage { get; set; }
 
         // ========================================
         // JUNCTION HARMONIZATION
@@ -591,6 +594,7 @@ public partial class TerrainMaterialSettings
                 EnableEndpointTaper = preset.JunctionHarmonizationParameters.EnableEndpointTaper;
                 EndpointTaperDistanceMeters = preset.JunctionHarmonizationParameters.EndpointTaperDistanceMeters;
                 EndpointTerrainBlendStrength = preset.JunctionHarmonizationParameters.EndpointTerrainBlendStrength;
+                ExportJunctionDebugImage = preset.JunctionHarmonizationParameters.ExportJunctionDebugImage;
             }
         }
 
@@ -679,7 +683,8 @@ public partial class TerrainMaterialSettings
                 BlendFunctionType = JunctionBlendFunction,
                 EnableEndpointTaper = EnableEndpointTaper,
                 EndpointTaperDistanceMeters = EndpointTaperDistanceMeters,
-                EndpointTerrainBlendStrength = EndpointTerrainBlendStrength
+                EndpointTerrainBlendStrength = EndpointTerrainBlendStrength,
+                ExportJunctionDebugImage = ExportJunctionDebugImage
             };
 
             return result;

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
@@ -12,16 +13,16 @@ public class MedialAxisRoadExtractor : IRoadExtractor
     public RoadGeometry ExtractRoadGeometry(byte[,] roadLayer, RoadSmoothingParameters parameters, float metersPerPixel)
     {
         var geometry = new RoadGeometry(roadLayer, parameters);
-        Console.WriteLine("Extracting road geometry with skeletonization-based spline approach...");
+        TerrainLogger.Info("Extracting road geometry with skeletonization-based spline approach...");
 
         // 1) Get raw paths from skeleton
         var centerlinePathsPixels = _skeletonExtractor.ExtractCenterlinePaths(roadLayer, parameters);
-        if(centerlinePathsPixels.Count==0){ Console.WriteLine("Warning: No centerline paths extracted"); return geometry; }
-        Console.WriteLine($"Extracted {centerlinePathsPixels.Count} raw skeleton path(s).");
+        if(centerlinePathsPixels.Count==0){ TerrainLogger.Warning("No centerline paths extracted"); return geometry; }
+        TerrainLogger.Info($"Extracted {centerlinePathsPixels.Count} raw skeleton path(s).");
 
         // 2) Merge broken curves inside the same corridor to avoid path splits in tight bends
         var mergedPathPixels = MergeBrokenCurves(centerlinePathsPixels, roadLayer, parameters);
-        Console.WriteLine($"Merged to {mergedPathPixels.Count} path(s) after continuity pass.");
+        TerrainLogger.Info($"Merged to {mergedPathPixels.Count} path(s) after continuity pass.");
 
         // Convert back to Vector2 for the rest of the processing
         var mergedPathsVector = mergedPathPixels
@@ -32,6 +33,7 @@ public class MedialAxisRoadExtractor : IRoadExtractor
         var allCrossSections=new List<CrossSection>();
         int globalIndex=0;
         int pathId=0;
+        int skippedPaths=0;
 
         foreach(var pathPixels in mergedPathsVector)
         {
@@ -48,12 +50,10 @@ public class MedialAxisRoadExtractor : IRoadExtractor
                 const int MinCrossSectionsPerPath = 10; // Minimum to form a meaningful road segment
                 if (estimatedCrossSections < MinCrossSectionsPerPath)
                 {
-                    Console.WriteLine($"  Skipping Path {pathId}: too short ({pathSpline.TotalLength:F1}m, ~{estimatedCrossSections} cross-sections < {MinCrossSectionsPerPath} min)");
+                    skippedPaths++;
                     pathId++;
                     continue;
                 }
-                
-                Console.WriteLine($"  Processed Path {pathId}: spline length {pathSpline.TotalLength:F1}m, points {worldPoints.Count}");
                 
                 var splineSamples = pathSpline.SampleByDistance(parameters.CrossSectionIntervalMeters);
                 int localIndex=0;
@@ -82,13 +82,16 @@ public class MedialAxisRoadExtractor : IRoadExtractor
             } 
             catch(Exception ex)
             { 
-                Console.WriteLine($"  Warning: Failed to create spline for path {pathId}: {ex.Message}"); 
+                TerrainLogger.Warning($"Failed to create spline for path {pathId}: {ex.Message}"); 
             }
             pathId++;
         }
         
         geometry.CrossSections = allCrossSections;
-        Console.WriteLine($"Generated {totalCrossSections} total cross-sections from {mergedPathPixels.Count} paths");
+        
+        if (skippedPaths > 0)
+            TerrainLogger.Info($"Skipped {skippedPaths} short path(s)");
+        TerrainLogger.Info($"Generated {totalCrossSections} total cross-sections from {mergedPathPixels.Count - skippedPaths} paths");
         return geometry;
     }
 
@@ -144,10 +147,10 @@ public class MedialAxisRoadExtractor : IRoadExtractor
                 }
             }
 
-            if (merged)
-                Console.WriteLine($"  Path continuity pass {pass}: merged, remaining {paths.Count} paths");
-
         } while (merged && paths.Count > 1);
+
+        if (pass > 1)
+            TerrainLogger.Info($"  Path continuity: {pass - 1} merge(s), remaining {paths.Count} paths");
 
         return paths;
     }
