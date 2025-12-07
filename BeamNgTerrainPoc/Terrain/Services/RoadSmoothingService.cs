@@ -2,9 +2,6 @@ using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 
 namespace BeamNgTerrainPoc.Terrain.Services;
 
@@ -103,11 +100,18 @@ public class RoadSmoothingService
             parameters,
             metersPerPixel);
         
-        // Optional spline debug export
-        if (parameters.Approach == RoadSmoothingApproach.Spline && parameters.ExportSplineDebugImage)
+        // Export spline masks and initial debug images (before elevation calculation)
+        // Note: Smoothed elevation and heightmap with outlines are exported later after blending
+        if (parameters.Approach == RoadSmoothingApproach.Spline && geometry.CrossSections.Count > 0)
         {
-            try { ExportSplineDebugImage(geometry, metersPerPixel, parameters, "spline_debug.png"); }
-            catch (Exception ex) { TerrainLogger.Warning($"Spline debug export failed: {ex.Message}"); }
+            try { RoadDebugExporter.ExportSplineMasks(geometry, metersPerPixel, parameters); }
+            catch (Exception ex) { TerrainLogger.Warning($"Spline mask export failed: {ex.Message}"); }
+            
+            if (parameters.ExportSplineDebugImage)
+            {
+                try { RoadDebugExporter.ExportSplineDebugImage(geometry, metersPerPixel, parameters, "spline_debug.png"); }
+                catch (Exception ex) { TerrainLogger.Warning($"Spline debug export failed: {ex.Message}"); }
+            }
         }
         
         float[,] newHeightMap = heightMap; // default no change
@@ -145,7 +149,7 @@ public class RoadSmoothingService
                     // Export smoothed elevation debug image if enabled
                     if (parameters.ExportSmoothedElevationDebugImage)
                     {
-                        try { ExportSmoothedElevationDebugImage(geometry, metersPerPixel, parameters); }
+                        try { RoadDebugExporter.ExportSmoothedElevationDebugImage(geometry, metersPerPixel, parameters); }
                         catch (Exception ex) { TerrainLogger.Warning($"Smoothed elevation debug export failed: {ex.Message}"); }
                     }
                 }
@@ -171,7 +175,7 @@ public class RoadSmoothingService
                 // Export heightmap with road outlines if enabled
                 if (parameters.ExportSmoothedHeightmapWithOutlines)
                 {
-                    try { ExportSmoothedHeightmapWithRoadOutlines(newHeightMap, geometry, distanceFieldBlender.GetLastDistanceField(), metersPerPixel, parameters); }
+                    try { RoadDebugExporter.ExportSmoothedHeightmapWithRoadOutlines(newHeightMap, geometry, distanceFieldBlender.GetLastDistanceField(), metersPerPixel, parameters); }
                     catch (Exception ex) { TerrainLogger.Warning($"Smoothed heightmap with outlines export failed: {ex.Message}"); }
                 }
             }
@@ -201,237 +205,6 @@ public class RoadSmoothingService
             _roadExtractor = new MedialAxisRoadExtractor();
             _heightCalculator = new OptimizedElevationSmoother(); // O(N) prefix-sum smoothing
             _terrainBlender = new DistanceFieldTerrainBlender(); // Global EDT-based blending
-        }
-    }
-    
-    private void ExportSplineDebugImage(RoadGeometry geometry, float metersPerPixel, RoadSmoothingParameters parameters, string fileName)
-    {
-        int width = geometry.Width;
-        int height = geometry.Height;
-        using var image = new Image<Rgba32>(width, height, new Rgba32(0,0,0,255));
-        
-        // Draw road mask faintly
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (geometry.RoadMask[y, x] > 128)
-                {
-                    image[x, height - 1 - y] = new Rgba32(32,32,32,255); // flip Y for visualization
-                }
-            }
-        }
-        
-        // Draw spline centerline samples
-        float sampleInterval = parameters.CrossSectionIntervalMeters;
-        for (float d = 0; d <= geometry.Spline.TotalLength; d += sampleInterval)
-        {
-            var p = geometry.Spline.GetPointAtDistance(d);
-            int px = (int)(p.X / metersPerPixel);
-            int py = (int)(p.Y / metersPerPixel);
-            if (px >=0 && px < width && py >=0 && py < height)
-            {
-                image[px, height - 1 - py] = new Rgba32(255,255,0,255); // yellow centerline
-            }
-        }
-        
-        // Draw road width (perpendicular segments) for a subset of cross-sections
-        int step = Math.Max(1, (int)(2.0f * parameters.CrossSectionIntervalMeters));
-        foreach (var cs in geometry.CrossSections.Where(c => c.LocalIndex % step == 0))
-        {
-            var center = cs.CenterPoint;
-            float halfWidth = parameters.RoadWidthMeters / 2.0f;
-            var left = center - cs.NormalDirection * halfWidth;
-            var right = center + cs.NormalDirection * halfWidth;
-            int lx = (int)(left.X / metersPerPixel);
-            int ly = (int)(left.Y / metersPerPixel);
-            int rx = (int)(right.X / metersPerPixel);
-            int ry = (int)(right.Y / metersPerPixel);
-            DrawLine(image, lx, ly, rx, ry, new Rgba32(0,255,0,255)); // green road width
-        }
-        
-        var dir = parameters.DebugOutputDirectory;
-        if (string.IsNullOrWhiteSpace(dir)) dir = Directory.GetCurrentDirectory();
-        Directory.CreateDirectory(dir);
-        string filePath = Path.Combine(dir, fileName);
-        image.SaveAsPng(filePath);
-        TerrainLogger.Info($"Exported spline debug image: {filePath}");
-    }
-
-    private void ExportSmoothedElevationDebugImage(RoadGeometry geometry, float metersPerPixel, RoadSmoothingParameters parameters)
-    {
-        int width = geometry.Width;
-        int height = geometry.Height;
-        using var image = new Image<Rgba32>(width, height, new Rgba32(0, 0, 0, 255));
-
-        var elevations = geometry.CrossSections.Select(cs => cs.TargetElevation).Where(e => e > 0).ToList();
-        if (!elevations.Any())
-        {
-            TerrainLogger.Warning("No valid elevations to create smoothed debug image.");
-            return;
-        }
-        float minElev = elevations.Min();
-        float maxElev = elevations.Max();
-        float range = maxElev - minElev;
-        if (range < 0.01f) range = 1f;
-
-        // Draw road mask
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                if (geometry.RoadMask[y, x] > 128)
-                {
-                    image[x, height - 1 - y] = new Rgba32(32, 32, 32, 255);
-                }
-            }
-        }
-
-        // Color code the road based on smoothed target elevations
-        foreach (var cs in geometry.CrossSections)
-        {
-            if (float.IsNaN(cs.TargetElevation) || cs.TargetElevation <= -1000f) continue; // Skip uninitialized or invalid elevations
-
-            float normalizedElevation = (cs.TargetElevation - minElev) / range;
-            var color = GetColorForValue(normalizedElevation);
-
-            var center = cs.CenterPoint;
-            float halfWidth = parameters.RoadWidthMeters / 2.0f;
-            var left = center - cs.NormalDirection * halfWidth;
-            var right = center + cs.NormalDirection * halfWidth;
-            int lx = (int)(left.X / metersPerPixel);
-            int ly = (int)(left.Y / metersPerPixel);
-            int rx = (int)(right.X / metersPerPixel);
-            int ry = (int)(right.Y / metersPerPixel);
-            DrawLine(image, lx, ly, rx, ry, color);
-        }
-
-        var dir = parameters.DebugOutputDirectory;
-        if (string.IsNullOrWhiteSpace(dir)) dir = Directory.GetCurrentDirectory();
-        Directory.CreateDirectory(dir);
-        string filePath = Path.Combine(dir, "spline_smoothed_elevation_debug.png");
-        image.SaveAsPng(filePath);
-        TerrainLogger.Info($"Exported smoothed elevation debug image: {filePath}");
-        TerrainLogger.Info($"  Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
-    }
-
-    private Rgba32 GetColorForValue(float value)
-    {
-        // Blue -> Cyan -> Green -> Yellow -> Red gradient
-        value = Math.Clamp(value, 0f, 1f);
-        float r = Math.Clamp(value * 2.0f, 0f, 1f);
-        float b = Math.Clamp((1.0f - value) * 2.0f, 0f, 1f);
-        float g = 1.0f - Math.Abs(value - 0.5f) * 2.0f;
-        return new Rgba32(r, g, b);
-    }
-
-    /// <summary>
-    /// Exports the smoothed heightmap as a grayscale image with road outlines overlaid.
-    /// Shows:
-    /// - Smoothed heightmap as grayscale background
-    /// - Thin cyan outline at road edges (± roadWidth/2)
-    /// - Thin magenta outline at terrain blending edges (± roadWidth/2 + terrainAffectedRange)
-    /// </summary>
-    private void ExportSmoothedHeightmapWithRoadOutlines(
-        float[,] smoothedHeightMap, 
-        RoadGeometry geometry, 
-        float[,] distanceField,
-        float metersPerPixel, 
-        RoadSmoothingParameters parameters)
-    {
-        int width = smoothedHeightMap.GetLength(1);
-        int height = smoothedHeightMap.GetLength(0);
-        
-        TerrainLogger.Info($"Exporting smoothed heightmap with road outlines ({width}x{height})...");
-
-        // Step 1: Find height range for grayscale normalization
-        float minHeight = float.MaxValue;
-        float maxHeight = float.MinValue;
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                float h = smoothedHeightMap[y, x];
-                if (h < minHeight) minHeight = h;
-                if (h > maxHeight) maxHeight = h;
-            }
-        }
-        float heightRange = maxHeight - minHeight;
-        if (heightRange < 0.01f) heightRange = 1f; // Avoid division by zero
-
-        // Step 2: Create grayscale heightmap image
-        using var image = new Image<Rgba32>(width, height);
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                float normalizedHeight = (smoothedHeightMap[y, x] - minHeight) / heightRange;
-                byte gray = (byte)(normalizedHeight * 255f);
-                image[x, height - 1 - y] = new Rgba32(gray, gray, gray, 255); // Flip Y for visualization
-            }
-        }
-
-        // Step 3: Draw road outlines (thin lines at road edges and blend zone edges)
-        float roadHalfWidth = parameters.RoadWidthMeters / 2.0f;
-        float blendZoneMaxDist = roadHalfWidth + parameters.TerrainAffectedRangeMeters;
-        
-        // Tolerance for edge detection (in meters) - makes lines 1-2 pixels wide
-        float edgeTolerance = metersPerPixel * 0.75f;
-
-        int roadEdgePixels = 0;
-        int blendEdgePixels = 0;
-
-        // Scan all pixels and check distance field
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                float dist = distanceField[y, x];
-
-                // Road edge outline (cyan) - thin line at roadHalfWidth
-                if (Math.Abs(dist - roadHalfWidth) < edgeTolerance)
-                {
-                    image[x, height - 1 - y] = new Rgba32(0, 255, 255, 255); // Cyan
-                    roadEdgePixels++;
-                }
-                // Blend zone edge outline (magenta) - thin line at max blend distance
-                else if (Math.Abs(dist - blendZoneMaxDist) < edgeTolerance)
-                {
-                    image[x, height - 1 - y] = new Rgba32(255, 0, 255, 255); // Magenta
-                    blendEdgePixels++;
-                }
-            }
-        }
-
-        // Step 4: Save image
-        var dir = parameters.DebugOutputDirectory;
-        if (string.IsNullOrWhiteSpace(dir)) dir = Directory.GetCurrentDirectory();
-        Directory.CreateDirectory(dir);
-        string filePath = Path.Combine(dir, "smoothed_heightmap_with_road_outlines.png");
-        image.SaveAsPng(filePath);
-        
-        TerrainLogger.Info($"Exported smoothed heightmap with outlines: {filePath}");
-        TerrainLogger.Info($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");
-        TerrainLogger.Info($"  Road edge outline (cyan): {roadEdgePixels:N0} pixels at ±{roadHalfWidth:F1}m from centerline");
-        TerrainLogger.Info($"  Blend zone edge outline (magenta): {blendEdgePixels:N0} pixels at ±{blendZoneMaxDist:F1}m from centerline");
-    }
-    
-    private void DrawLine(Image<Rgba32> img, int x0, int y0, int x1, int y1, Rgba32 color)
-    {
-        int height = img.Height;
-        // Flip Y input -> image coordinates
-        y0 = height - 1 - y0;
-        y1 = height - 1 - y1;
-        int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-        int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1; int err = dx + dy;
-        while (true)
-        {
-            if (x0 >=0 && x0 < img.Width && y0 >=0 && y0 < img.Height)
-                img[x0, y0] = color;
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 >= dy) { err += dy; x0 += sx; }
-            if (e2 <= dx) { err += dx; y0 += sy; }
         }
     }
     

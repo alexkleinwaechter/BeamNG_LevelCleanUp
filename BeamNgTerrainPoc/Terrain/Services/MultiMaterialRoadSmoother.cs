@@ -180,6 +180,26 @@ public class MultiMaterialRoadSmoother
                     _junctionHarmonizer.HarmonizeElevations(geometry, heightMap, parameters, metersPerPixel);
                 }
                 
+                // Export spline masks and spline debug image (before blending)
+                if (parameters.Approach == RoadSmoothingApproach.Spline && geometry.CrossSections.Count > 0)
+                {
+                    try { RoadDebugExporter.ExportSplineMasks(geometry, metersPerPixel, parameters); }
+                    catch (Exception ex) { TerrainLogger.Warning($"Spline mask export failed for {material.MaterialName}: {ex.Message}"); }
+                    
+                    if (parameters.ExportSplineDebugImage)
+                    {
+                        try { RoadDebugExporter.ExportSplineDebugImage(geometry, metersPerPixel, parameters, "spline_debug.png"); }
+                        catch (Exception ex) { TerrainLogger.Warning($"Spline debug export failed for {material.MaterialName}: {ex.Message}"); }
+                    }
+                    
+                    // Export smoothed elevation debug image (after harmonization, before blending)
+                    if (parameters.ExportSmoothedElevationDebugImage)
+                    {
+                        try { RoadDebugExporter.ExportSmoothedElevationDebugImage(geometry, metersPerPixel, parameters); }
+                        catch (Exception ex) { TerrainLogger.Warning($"Smoothed elevation debug export failed for {material.MaterialName}: {ex.Message}"); }
+                    }
+                }
+                
                 allMaterialData.Add(new MaterialRoadData
                 {
                     Material = material,
@@ -477,6 +497,13 @@ public class MultiMaterialRoadSmoother
                     blender.GetLastDistanceField(),
                     parameters,
                     metersPerPixel);
+            }
+            
+            // Export heightmap with road outlines if enabled
+            if (parameters.ExportSmoothedHeightmapWithOutlines)
+            {
+                try { RoadDebugExporter.ExportSmoothedHeightmapWithRoadOutlines(result, geometry, blender.GetLastDistanceField(), metersPerPixel, parameters); }
+                catch (Exception ex) { TerrainLogger.Warning($"Smoothed heightmap with outlines export failed: {ex.Message}"); }
             }
             
             // Calculate statistics
