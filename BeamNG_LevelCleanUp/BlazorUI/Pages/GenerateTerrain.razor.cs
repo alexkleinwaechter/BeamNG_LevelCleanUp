@@ -158,6 +158,11 @@ public partial class GenerateTerrain
         if (!string.IsNullOrEmpty(result.HeightmapPath))
             _heightmapPath = result.HeightmapPath;
 
+        // CRITICAL: Renormalize order values to be contiguous (0, 1, 2, 3...)
+        // The preset import may have set non-contiguous order values
+        RenormalizeMaterialOrder();
+
+        // Refresh the drop container to reflect the new order in the UI
         _dropContainer?.Refresh();
         StateHasChanged();
     }
@@ -287,8 +292,8 @@ public partial class GenerateTerrain
                 var materialName = property.Value?["name"]?.ToString() ?? property.Key;
                 var internalName = property.Value?["internalName"]?.ToString() ?? materialName;
 
-                // Auto-detect road materials
-                var isRoad = DetectRoadMaterial(internalName);
+                // Auto-detect road materials - disabled, let user decide
+                var isRoad = false;
 
                 _terrainMaterials.Add(new TerrainMaterialSettings.TerrainMaterialItemExtended
                 {
@@ -309,13 +314,6 @@ public partial class GenerateTerrain
         }
     }
 
-    private bool DetectRoadMaterial(string name)
-    {
-        var lowerName = name.ToLowerInvariant();
-        // Only auto-enable for asphalt materials
-        return lowerName.Contains("asphalt");
-    }
-
     private void ToggleRoadSmoothing(TerrainMaterialSettings.TerrainMaterialItemExtended material)
     {
         material.IsRoadMaterial = !material.IsRoadMaterial;
@@ -329,6 +327,26 @@ public partial class GenerateTerrain
 
         dropItem.Item.Selector = dropItem.DropzoneIdentifier;
         _terrainMaterials.UpdateOrder(dropItem, item => item.Order);
+        
+        // CRITICAL: Renormalize order values to be contiguous (0, 1, 2, 3...)
+        // This ensures material indices in the .ter file are correct
+        RenormalizeMaterialOrder();
+    }
+
+    /// <summary>
+    /// Renormalizes material order values to be contiguous starting from 0.
+    /// This is critical because the material index in the .ter file must match the order.
+    /// </summary>
+    private void RenormalizeMaterialOrder()
+    {
+        var sorted = _terrainMaterials.OrderBy(m => m.Order).ToList();
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            sorted[i].Order = i;
+        }
+        
+        _terrainMaterials.Clear();
+        _terrainMaterials.AddRange(sorted);
     }
 
     private void OnMaterialSettingsChanged(TerrainMaterialSettings.TerrainMaterialItemExtended material)
@@ -349,10 +367,8 @@ public partial class GenerateTerrain
         // Set the moved material to order 0
         material.Order = 0;
 
-        // Sort the list by Order to reflect the new positions
-        var sorted = _terrainMaterials.OrderBy(m => m.Order).ToList();
-        _terrainMaterials.Clear();
-        _terrainMaterials.AddRange(sorted);
+        // Renormalize and sort
+        RenormalizeMaterialOrder();
 
         _dropContainer?.Refresh();
         StateHasChanged();
@@ -372,10 +388,8 @@ public partial class GenerateTerrain
         // Set the moved material to the maximum order
         material.Order = maxOrder;
 
-        // Sort the list by Order to reflect the new positions
-        var sorted = _terrainMaterials.OrderBy(m => m.Order).ToList();
-        _terrainMaterials.Clear();
-        _terrainMaterials.AddRange(sorted);
+        // Renormalize and sort
+        RenormalizeMaterialOrder();
 
         _dropContainer?.Refresh();
         StateHasChanged();

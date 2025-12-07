@@ -1,3 +1,4 @@
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -11,11 +12,12 @@ public static class MaterialLayerProcessor
 {
     /// <summary>
     /// Processes material layer images and generates material indices for each terrain point.
-    /// Materials with layer images are processed in reverse order (last = highest priority).
-    /// Materials without layer images are skipped during auto-placement.
-    /// Images are loaded from file paths and automatically disposed after processing.
+    /// Materials are processed in order of their index (0, 1, 2...).
+    /// For each pixel, the HIGHEST index material with a white pixel in its layer wins.
+    /// Materials without layer images are treated as having no coverage (all black) -
+    /// they don't claim any pixels but their index position is preserved for the .ter file.
     /// </summary>
-    /// <param name="materials">List of material definitions</param>
+    /// <param name="materials">List of material definitions in order</param>
     /// <param name="size">Terrain size (width and height)</param>
     /// <returns>Array of material indices in BeamNG coordinate system (bottom-left to top-right)</returns>
     public static byte[] ProcessMaterialLayers(List<MaterialDefinition> materials, int size)
@@ -25,47 +27,64 @@ public static class MaterialLayerProcessor
         // Initialize all to material 0 (default/fallback)
         Array.Fill(materialIndices, (byte)0);
         
-        // Get materials that have layer image paths
-        var materialsWithImages = materials
-            .Select((mat, index) => new { Material = mat, Index = index })
-            .Where(x => !string.IsNullOrWhiteSpace(x.Material.LayerImagePath))
-            .ToList();
-        
-        // If no materials have images, return all zeros (material index 0)
-        if (materialsWithImages.Count == 0)
+        // Log material order for debugging
+        TerrainLogger.Info($"Processing {materials.Count} materials for layer assignment:");
+        for (int i = 0; i < materials.Count; i++)
         {
-            return materialIndices;
+            var mat = materials[i];
+            var hasLayer = !string.IsNullOrWhiteSpace(mat.LayerImagePath);
+            TerrainLogger.Info($"  [{i}] {mat.MaterialName} - {(hasLayer ? "has layer map" : "NO layer map (won't claim pixels)")}");
         }
         
-        // Load all images first (need to validate they exist and are correct size)
-        var loadedImages = new List<(int Index, Image<L8> Image)>();
+        // Build list of (materialIndex, image) pairs for materials that have layer images
+        // The materialIndex is the position in the original list - this is critical!
+        var loadedImages = new List<(int MaterialIndex, Image<L8> Image)>();
         
         try
         {
-            foreach (var matWithPath in materialsWithImages)
+            for (int i = 0; i < materials.Count; i++)
             {
+                var mat = materials[i];
+                
+                // Skip materials without layer images - they don't claim any pixels
+                // but their index position is still valid for the .ter file
+                if (string.IsNullOrWhiteSpace(mat.LayerImagePath))
+                {
+                    continue;
+                }
+                
                 try
                 {
-                    var image = Image.Load<L8>(matWithPath.Material.LayerImagePath!);
+                    var image = Image.Load<L8>(mat.LayerImagePath!);
                     
                     // Validate size matches terrain size
                     if (image.Width != size || image.Height != size)
                     {
-                        Console.WriteLine($"WARNING: Layer image for '{matWithPath.Material.MaterialName}' " +
+                        TerrainLogger.Warning($"Layer image for '{mat.MaterialName}' " +
                                         $"has size {image.Width}x{image.Height} but terrain is {size}x{size}. Skipping.");
                         image.Dispose();
                         continue;
                     }
                     
-                    loadedImages.Add((matWithPath.Index, image));
+                    // Store with the ORIGINAL material index, not the loadedImages index
+                    loadedImages.Add((i, image));
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"WARNING: Failed to load layer image for '{matWithPath.Material.MaterialName}': {ex.Message}");
+                    TerrainLogger.Warning($"Failed to load layer image for '{mat.MaterialName}': {ex.Message}");
                 }
             }
             
-            // Process bottom-up (BeamNG coordinate system)
+            TerrainLogger.Info($"Loaded {loadedImages.Count} layer images for processing");
+            
+            // If no materials have images, return all zeros (material index 0)
+            if (loadedImages.Count == 0)
+            {
+                TerrainLogger.Info("No layer images loaded - all pixels will use material index 0");
+                return materialIndices;
+            }
+            
+            // Process each pixel
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
@@ -75,21 +94,21 @@ public static class MaterialLayerProcessor
                     int arrayIndex = flippedY * size + x;
                     
                     // Find which material should be at this pixel
-                    // IMPORTANT: Process layers in REVERSE order
-                    // Last material layer with white pixel wins (highest priority)
+                    // IMPORTANT: Process layers in REVERSE order of material index
+                    // Highest material index with white pixel wins (highest priority)
                     for (int i = loadedImages.Count - 1; i >= 0; i--)
                     {
-                        var (index, image) = loadedImages[i];
+                        var (materialIndex, image) = loadedImages[i];
                         var pixel = image[x, y];
                         
-                        // White pixel (255) means material is present
-                        // Threshold at mid-gray (127) to handle anti-aliasing
+                        // White pixel (>127) means material is present at this location
                         if (pixel.PackedValue > 127)
                         {
-                            materialIndices[arrayIndex] = (byte)index;
-                            break; // Found highest priority material
+                            materialIndices[arrayIndex] = (byte)materialIndex;
+                            break; // Found highest priority material for this pixel
                         }
                     }
+                    // If no material claimed this pixel, it stays at 0 (default/fallback)
                 }
             }
         }

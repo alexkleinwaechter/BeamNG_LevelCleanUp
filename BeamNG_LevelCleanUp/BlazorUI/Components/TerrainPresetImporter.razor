@@ -2,6 +2,7 @@
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
+@using BeamNgTerrainPoc.Terrain.Models
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
 @inject ISnackbar Snackbar
 
@@ -244,6 +245,14 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     (notFoundCount > 0 ? $", {notFoundCount} files not found" : ""));
             }
 
+            // Import road smoothing settings for materials that have preset files
+            var roadSmoothingImported = await ImportRoadSmoothingPresets(result.TerrainName);
+            if (roadSmoothingImported > 0)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Imported {roadSmoothingImported} road smoothing preset(s)");
+            }
+
             await OnPresetImported.InvokeAsync(result);
             Snackbar.Add($"Terrain preset imported: {result.TerrainName}", Severity.Success);
             StateHasChanged();
@@ -450,5 +459,233 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
         HoleMapPath = null;
         _presetDirectory = null;
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Imports road smoothing presets for all materials that have matching preset files in the preset directory.
+    /// </summary>
+    private async Task<int> ImportRoadSmoothingPresets(string? terrainName)
+    {
+        if (string.IsNullOrEmpty(_presetDirectory))
+            return 0;
+
+        var importedCount = 0;
+
+        foreach (var material in Materials)
+        {
+            // Look for road smoothing preset file matching this material
+            var presetFile = FindRoadSmoothingPresetFile(terrainName, material);
+            
+            if (!string.IsNullOrEmpty(presetFile) && File.Exists(presetFile))
+            {
+                var success = await ImportRoadSmoothingForMaterial(presetFile, material);
+                if (success)
+                {
+                    importedCount++;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Imported road smoothing settings for '{material.InternalName}'");
+                }
+            }
+        }
+
+        return importedCount;
+    }
+
+    /// <summary>
+    /// Finds a road smoothing preset file for the given material.
+    /// Searches for patterns like: *_roadSmoothing_*_{materialName}.json
+    /// </summary>
+    private string? FindRoadSmoothingPresetFile(string? terrainName, TerrainMaterialItemExtended material)
+    {
+        if (string.IsNullOrEmpty(_presetDirectory))
+            return null;
+
+        var sanitizedName = SanitizeFileName(material.InternalName);
+
+        // Try exact match with terrain name and material name
+        if (!string.IsNullOrEmpty(terrainName))
+        {
+            // Pattern: {terrainName}_roadSmoothing_{order}_{materialName}.json
+            var files = Directory.GetFiles(_presetDirectory, $"{terrainName}_roadSmoothing_*_{sanitizedName}.json");
+            if (files.Length > 0)
+                return files[0];
+        }
+
+        // Search for any road smoothing file that ends with the material name
+        try
+        {
+            var allFiles = Directory.GetFiles(_presetDirectory, "*_roadSmoothing_*.json");
+            foreach (var file in allFiles)
+            {
+                var fileName = Path.GetFileNameWithoutExtension(file);
+                
+                // Check if filename ends with the material name (after the last underscore in _roadSmoothing_X_MaterialName)
+                if (fileName.EndsWith($"_{sanitizedName}", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.EndsWith($"_{material.InternalName}", StringComparison.OrdinalIgnoreCase))
+                {
+                    return file;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore directory access errors
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Imports road smoothing settings from a JSON file into the material.
+    /// </summary>
+    private async Task<bool> ImportRoadSmoothingForMaterial(string filePath, TerrainMaterialItemExtended material)
+    {
+        try
+        {
+            var jsonContent = await File.ReadAllTextAsync(filePath);
+            var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(jsonContent);
+            
+            if (jsonNode == null)
+                return false;
+
+            // Enable road smoothing for this material
+            material.IsRoadMaterial = true;
+
+            // Import primary parameters
+            if (jsonNode["roadWidthMeters"] != null)
+                material.RoadWidthMeters = jsonNode["roadWidthMeters"]!.GetValue<float>();
+            if (jsonNode["terrainAffectedRangeMeters"] != null)
+                material.TerrainAffectedRangeMeters = jsonNode["terrainAffectedRangeMeters"]!.GetValue<float>();
+            if (jsonNode["enableMaxSlopeConstraint"] != null)
+                material.EnableMaxSlopeConstraint = jsonNode["enableMaxSlopeConstraint"]!.GetValue<bool>();
+            if (jsonNode["roadMaxSlopeDegrees"] != null)
+                material.RoadMaxSlopeDegrees = jsonNode["roadMaxSlopeDegrees"]!.GetValue<float>();
+            if (jsonNode["sideMaxSlopeDegrees"] != null)
+                material.SideMaxSlopeDegrees = jsonNode["sideMaxSlopeDegrees"]!.GetValue<float>();
+
+            // Import algorithm settings
+            if (jsonNode["approach"] != null && Enum.TryParse<RoadSmoothingApproach>(jsonNode["approach"]!.GetValue<string>(), out var approach))
+                material.Approach = approach;
+            if (jsonNode["blendFunctionType"] != null && Enum.TryParse<BlendFunctionType>(jsonNode["blendFunctionType"]!.GetValue<string>(), out var blendType))
+                material.BlendFunctionType = blendType;
+            if (jsonNode["crossSectionIntervalMeters"] != null)
+                material.CrossSectionIntervalMeters = jsonNode["crossSectionIntervalMeters"]!.GetValue<float>();
+            if (jsonNode["enableTerrainBlending"] != null)
+                material.EnableTerrainBlending = jsonNode["enableTerrainBlending"]!.GetValue<bool>();
+
+            // Import spline parameters
+            var splineParams = jsonNode["splineParameters"];
+            if (splineParams != null)
+            {
+                if (splineParams["tension"] != null)
+                    material.SplineTension = splineParams["tension"]!.GetValue<float>();
+                if (splineParams["continuity"] != null)
+                    material.SplineContinuity = splineParams["continuity"]!.GetValue<float>();
+                if (splineParams["bias"] != null)
+                    material.SplineBias = splineParams["bias"]!.GetValue<float>();
+                if (splineParams["useGraphOrdering"] != null)
+                    material.UseGraphOrdering = splineParams["useGraphOrdering"]!.GetValue<bool>();
+                if (splineParams["preferStraightThroughJunctions"] != null)
+                    material.PreferStraightThroughJunctions = splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
+                if (splineParams["densifyMaxSpacingPixels"] != null)
+                    material.DensifyMaxSpacingPixels = splineParams["densifyMaxSpacingPixels"]!.GetValue<float>();
+                if (splineParams["simplifyTolerancePixels"] != null)
+                    material.SimplifyTolerancePixels = splineParams["simplifyTolerancePixels"]!.GetValue<float>();
+                if (splineParams["bridgeEndpointMaxDistancePixels"] != null)
+                    material.BridgeEndpointMaxDistancePixels = splineParams["bridgeEndpointMaxDistancePixels"]!.GetValue<float>();
+                if (splineParams["minPathLengthPixels"] != null)
+                    material.MinPathLengthPixels = splineParams["minPathLengthPixels"]!.GetValue<float>();
+                if (splineParams["junctionAngleThreshold"] != null)
+                    material.JunctionAngleThreshold = splineParams["junctionAngleThreshold"]!.GetValue<float>();
+                if (splineParams["orderingNeighborRadiusPixels"] != null)
+                    material.OrderingNeighborRadiusPixels = splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
+                if (splineParams["skeletonDilationRadius"] != null)
+                    material.SkeletonDilationRadius = splineParams["skeletonDilationRadius"]!.GetValue<int>();
+                if (splineParams["smoothingWindowSize"] != null)
+                    material.SplineSmoothingWindowSize = splineParams["smoothingWindowSize"]!.GetValue<int>();
+                if (splineParams["useButterworthFilter"] != null)
+                    material.SplineUseButterworthFilter = splineParams["useButterworthFilter"]!.GetValue<bool>();
+                if (splineParams["butterworthFilterOrder"] != null)
+                    material.SplineButterworthFilterOrder = splineParams["butterworthFilterOrder"]!.GetValue<int>();
+                if (splineParams["globalLevelingStrength"] != null)
+                    material.GlobalLevelingStrength = splineParams["globalLevelingStrength"]!.GetValue<float>();
+            }
+
+            // Import DirectMask parameters
+            var directMaskParams = jsonNode["directMaskParameters"];
+            if (directMaskParams != null)
+            {
+                if (directMaskParams["smoothingWindowSize"] != null)
+                    material.DirectMaskSmoothingWindowSize = directMaskParams["smoothingWindowSize"]!.GetValue<int>();
+                if (directMaskParams["roadPixelSearchRadius"] != null)
+                    material.RoadPixelSearchRadius = directMaskParams["roadPixelSearchRadius"]!.GetValue<int>();
+                if (directMaskParams["useButterworthFilter"] != null)
+                    material.DirectMaskUseButterworthFilter = directMaskParams["useButterworthFilter"]!.GetValue<bool>();
+                if (directMaskParams["butterworthFilterOrder"] != null)
+                    material.DirectMaskButterworthFilterOrder = directMaskParams["butterworthFilterOrder"]!.GetValue<int>();
+            }
+
+            // Import post-processing settings
+            var postProcessing = jsonNode["postProcessing"];
+            if (postProcessing != null)
+            {
+                if (postProcessing["enabled"] != null)
+                    material.EnablePostProcessingSmoothing = postProcessing["enabled"]!.GetValue<bool>();
+                if (postProcessing["smoothingType"] != null && Enum.TryParse<PostProcessingSmoothingType>(postProcessing["smoothingType"]!.GetValue<string>(), out var smoothingType))
+                    material.SmoothingType = smoothingType;
+                if (postProcessing["kernelSize"] != null)
+                    material.SmoothingKernelSize = postProcessing["kernelSize"]!.GetValue<int>();
+                if (postProcessing["sigma"] != null)
+                    material.SmoothingSigma = postProcessing["sigma"]!.GetValue<float>();
+                if (postProcessing["iterations"] != null)
+                    material.SmoothingIterations = postProcessing["iterations"]!.GetValue<int>();
+                if (postProcessing["maskExtensionMeters"] != null)
+                    material.SmoothingMaskExtensionMeters = postProcessing["maskExtensionMeters"]!.GetValue<float>();
+            }
+
+            // Import debug settings
+            var debug = jsonNode["debug"];
+            if (debug != null)
+            {
+                if (debug["exportSmoothedHeightmapWithOutlines"] != null)
+                    material.ExportSmoothedHeightmapWithOutlines = debug["exportSmoothedHeightmapWithOutlines"]!.GetValue<bool>();
+                if (debug["exportSplineDebugImage"] != null)
+                    material.ExportSplineDebugImage = debug["exportSplineDebugImage"]!.GetValue<bool>();
+                if (debug["exportSkeletonDebugImage"] != null)
+                    material.ExportSkeletonDebugImage = debug["exportSkeletonDebugImage"]!.GetValue<bool>();
+                if (debug["exportSmoothedElevationDebugImage"] != null)
+                    material.ExportSmoothedElevationDebugImage = debug["exportSmoothedElevationDebugImage"]!.GetValue<bool>();
+            }
+
+            // Set preset to Custom since we imported custom values
+            material.SelectedPreset = RoadPresetType.Custom;
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Failed to import road smoothing for '{material.InternalName}': {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Sanitizes a filename by removing invalid characters (same as exporter).
+    /// </summary>
+    private string SanitizeFileName(string fileName)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var result = fileName;
+        
+        foreach (var c in invalidChars)
+        {
+            result = result.Replace(c, '_');
+        }
+        
+        result = result.Replace(' ', '_');
+        result = result.Replace('-', '_');
+        
+        return result;
     }
 }
