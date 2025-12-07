@@ -17,28 +17,28 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Pages;
 
 public partial class GenerateTerrain
 {
+    private readonly List<string> _errors = new();
+    private readonly List<string> _messages = new();
+    private readonly List<TerrainMaterialSettings.TerrainMaterialItemExtended> _terrainMaterials = new();
+    private readonly List<string> _warnings = new();
     private Anchor _anchor;
     private string _drawerHeight = "200px";
     private string _drawerWidth = "100%";
     private MudDropContainer<TerrainMaterialSettings.TerrainMaterialItemExtended> _dropContainer = null!;
-    private readonly List<string> _errors = new();
     private bool _hasWorkingDirectory;
     private string? _heightmapPath;
     private bool _isGenerating;
     private bool _isLoading;
     private string _levelName = string.Empty;
     private float _maxHeight = 500.0f;
-    private readonly List<string> _messages = new();
     private float _metersPerPixel = 1.0f;
     private bool _openDrawer;
     private bool _showErrorLog;
     private bool _showWarningLog;
     private float _terrainBaseHeight;
-    private readonly List<TerrainMaterialSettings.TerrainMaterialItemExtended> _terrainMaterials = new();
     private string _terrainName = "theTerrain";
     private int _terrainSize = 2048;
     private bool _updateTerrainBlock = true;
-    private readonly List<string> _warnings = new();
     private string _workingDirectory = string.Empty;
     [AllowNull] private MudExpansionPanels FileSelect { get; set; }
 
@@ -288,11 +288,15 @@ public partial class GenerateTerrain
     private bool DetectRoadMaterial(string name)
     {
         var lowerName = name.ToLowerInvariant();
-        return lowerName.Contains("asphalt") ||
-               lowerName.Contains("road") ||
-               lowerName.Contains("tarmac") ||
-               lowerName.Contains("concrete") ||
-               lowerName.Contains("pavement");
+        // Only auto-enable for asphalt materials
+        return lowerName.Contains("asphalt");
+    }
+
+    private void ToggleRoadSmoothing(TerrainMaterialSettings.TerrainMaterialItemExtended material)
+    {
+        material.IsRoadMaterial = !material.IsRoadMaterial;
+        _dropContainer?.Refresh();
+        StateHasChanged();
     }
 
     private void OnMaterialDropped(MudItemDropInfo<TerrainMaterialSettings.TerrainMaterialItemExtended> dropItem)
@@ -305,6 +309,51 @@ public partial class GenerateTerrain
 
     private void OnMaterialSettingsChanged(TerrainMaterialSettings.TerrainMaterialItemExtended material)
     {
+        StateHasChanged();
+    }
+
+    private void MoveToTop(TerrainMaterialSettings.TerrainMaterialItemExtended material)
+    {
+        var currentOrder = material.Order;
+
+        // If already at top, nothing to do
+        if (currentOrder == 0) return;
+
+        // Increment the order of all materials that were above this one
+        foreach (var mat in _terrainMaterials.Where(m => m.Order < currentOrder)) mat.Order++;
+
+        // Set the moved material to order 0
+        material.Order = 0;
+
+        // Sort the list by Order to reflect the new positions
+        var sorted = _terrainMaterials.OrderBy(m => m.Order).ToList();
+        _terrainMaterials.Clear();
+        _terrainMaterials.AddRange(sorted);
+
+        _dropContainer?.Refresh();
+        StateHasChanged();
+    }
+
+    private void MoveToBottom(TerrainMaterialSettings.TerrainMaterialItemExtended material)
+    {
+        var currentOrder = material.Order;
+        var maxOrder = _terrainMaterials.Max(m => m.Order);
+
+        // If already at bottom, nothing to do
+        if (currentOrder == maxOrder) return;
+
+        // Decrement the order of all materials that were below this one
+        foreach (var mat in _terrainMaterials.Where(m => m.Order > currentOrder)) mat.Order--;
+
+        // Set the moved material to the maximum order
+        material.Order = maxOrder;
+
+        // Sort the list by Order to reflect the new positions
+        var sorted = _terrainMaterials.OrderBy(m => m.Order).ToList();
+        _terrainMaterials.Clear();
+        _terrainMaterials.AddRange(sorted);
+
+        _dropContainer?.Refresh();
         StateHasChanged();
     }
 

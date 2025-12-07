@@ -165,16 +165,36 @@
                             </MudDropZone>
                         </ChildContent>
                         <ItemRenderer>
-                            <div class="d-flex align-center mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
-                                         Class="mr-2"
-                                         Style="cursor: move;"
-                                         Color="Color.Default" />
-                                <div class="flex-grow-1">
-                                    <TerrainMaterialSettings Material="@context"
-                                                             OnMaterialChanged="OnMaterialSettingsChanged" />
+                            <MudPaper Class="pa-1 mb-1" Elevation="0" Outlined="true">
+                                <div class="d-flex align-center">
+                                    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                                             Class="mr-1"
+                                             Style="cursor: move;"
+                                             Color="Color.Default" />
+                                    <div class="flex-grow-1">
+                                        <TerrainMaterialSettings Material="@context"
+                                                                 OnMaterialChanged="OnMaterialSettingsChanged" />
+                                    </div>
+                                    <MudMenu Icon="@Icons.Material.Filled.MoreVert"
+                                             Size="Size.Small"
+                                             AnchorOrigin="Origin.BottomRight"
+                                             TransformOrigin="Origin.TopRight">
+                                        <MudMenuItem OnClick="@(() => ToggleRoadSmoothing(context))"
+                                                     Icon="@(context.IsRoadMaterial ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)">
+                                            @(context.IsRoadMaterial ? "Disable Road Smoothing" : "Enable Road Smoothing")
+                                        </MudMenuItem>
+                                        <MudDivider />
+                                        <MudMenuItem OnClick="@(() => MoveToTop(context))"
+                                                     Icon="@Icons.Material.Filled.VerticalAlignTop">
+                                            Move to Top
+                                        </MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => MoveToBottom(context))"
+                                                     Icon="@Icons.Material.Filled.VerticalAlignBottom">
+                                            Move to Bottom
+                                        </MudMenuItem>
+                                    </MudMenu>
                                 </div>
-                            </div>
+                            </MudPaper>
                         </ItemRenderer>
                     </MudDropContainer>
                 </MudPaper>
