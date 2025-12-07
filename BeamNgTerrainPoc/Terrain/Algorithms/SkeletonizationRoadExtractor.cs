@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -9,7 +10,7 @@ public class SkeletonizationRoadExtractor
 {
     public List<List<Vector2>> ExtractCenterlinePaths(byte[,] roadMask, RoadSmoothingParameters? parameters = null)
     {
-        Console.WriteLine("Extracting road centerline using skeletonization...");
+        TerrainLogger.Info("Extracting road centerline using skeletonization...");
         int height = roadMask.GetLength(0);
         int width = roadMask.GetLength(1);
         
@@ -18,7 +19,7 @@ public class SkeletonizationRoadExtractor
         for (int y = 0; y < height; y++) 
             for (int x = 0; x < width; x++) 
                 if (binaryMask[y,x]) roadPixels++;
-        Console.WriteLine($"Input: {roadPixels:N0} road pixels");
+        TerrainLogger.Info($"Input: {roadPixels:N0} road pixels");
         
         // Use configurable dilation radius (default: 0 for hairpin-friendly skeletonization)
         var sp = parameters?.SplineParameters ?? new SplineRoadParameters();
@@ -27,11 +28,11 @@ public class SkeletonizationRoadExtractor
         if (dilationRadius > 0)
         {
             binaryMask = DilateMask(binaryMask, dilationRadius);
-            Console.WriteLine($"After dilation (radius={dilationRadius}px): mask prepared for skeletonization");
+            TerrainLogger.Info($"After dilation (radius={dilationRadius}px): mask prepared for skeletonization");
         }
         else
         {
-            Console.WriteLine($"Dilation disabled (radius=0) - using original mask for hairpin-friendly skeletonization");
+            TerrainLogger.Info($"Dilation disabled (radius=0) - using original mask for hairpin-friendly skeletonization");
         }
         
         var skeleton = ApplyZhangSuenThinning(binaryMask);
@@ -39,7 +40,7 @@ public class SkeletonizationRoadExtractor
         for (int y = 0; y < height; y++) 
             for (int x = 0; x < width; x++) 
                 if (skeleton[y,x]) skeletonPixels++;
-        Console.WriteLine($"Skeleton: {skeletonPixels:N0} centerline pixels");
+        TerrainLogger.Info($"Skeleton: {skeletonPixels:N0} centerline pixels");
         
         // PRUNE SHORT SPURS: Remove dead-end branches shorter than threshold
         // Use more aggressive pruning for hairpins: MinPathLength instead of /4
@@ -49,25 +50,25 @@ public class SkeletonizationRoadExtractor
         for (int y = 0; y < height; y++) 
             for (int x = 0; x < width; x++) 
                 if (skeleton[y,x]) prunedPixels++;
-        Console.WriteLine($"After pruning: {prunedPixels:N0} pixels (removed {skeletonPixels - prunedPixels} spur pixels)");
+        TerrainLogger.Info($"After pruning: {prunedPixels:N0} pixels (removed {skeletonPixels - prunedPixels} spur pixels)");
         
         // Detect keypoints (endpoints and junctions)
         var (endpoints, junctions, classifications) = DetectKeypoints(skeleton);
-        Console.WriteLine($"Found {endpoints.Count} endpoints and {junctions.Count} junctions");
+        TerrainLogger.Info($"Found {endpoints.Count} endpoints and {junctions.Count} junctions");
         
         // Extract paths using BeamNG-style algorithm with junction awareness
         var rawPaths = ExtractPathsFromEndpointsAndJunctions(skeleton, endpoints, junctions, classifications, parameters);
-        Console.WriteLine($"Extracted {rawPaths.Count} raw paths");
+        TerrainLogger.Info($"Extracted {rawPaths.Count} raw paths");
         
         // Join close paths (use parameter or default to 40 pixels)
         float joinThreshold = parameters?.BridgeEndpointMaxDistancePixels ?? 40.0f;
         rawPaths = JoinClosePaths(rawPaths, joinThreshold);
-        Console.WriteLine($"After joining: {rawPaths.Count} paths");
+        TerrainLogger.Info($"After joining: {rawPaths.Count} paths");
         
         // Filter short paths (use parameter or default to 20 pixels)
         float minLength = parameters?.MinPathLengthPixels ?? 20.0f;
         rawPaths = FilterShortPaths(rawPaths, minLength);
-        Console.WriteLine($"After filtering: {rawPaths.Count} paths");
+        TerrainLogger.Info($"After filtering: {rawPaths.Count} paths");
         
         var orderedPaths = new List<List<Vector2>>();
         foreach (var path in rawPaths)
@@ -79,7 +80,7 @@ public class SkeletonizationRoadExtractor
         if (parameters?.ExportSkeletonDebugImage == true)
         {
             try { ExportSkeletonDebugImage(roadMask, skeleton, orderedPaths, parameters); } 
-            catch (Exception ex) { Console.WriteLine($"Skeleton debug export failed: {ex.Message}"); }
+            catch (Exception ex) { TerrainLogger.Warning($"Skeleton debug export failed: {ex.Message}"); }
         }
         
         return orderedPaths;
@@ -117,7 +118,7 @@ public class SkeletonizationRoadExtractor
             }
         }
         
-        Console.WriteLine($"  Spur pruning: {iterations} iteration(s), max spur length: {maxSpurLength}px");
+        TerrainLogger.Info($"  Spur pruning: {iterations} iteration(s), max spur length: {maxSpurLength}px");
         return result;
     }
     
@@ -233,7 +234,7 @@ public class SkeletonizationRoadExtractor
         
         if (preferStraight)
         {
-            Console.WriteLine($"Junction awareness enabled: preferring paths within {angleThreshold}° of current direction");
+            TerrainLogger.Info($"Junction awareness enabled: preferring paths within {angleThreshold}° of current direction");
         }
         
         // Mark arm as walked
@@ -267,7 +268,7 @@ public class SkeletonizationRoadExtractor
             }
         }
         
-        Console.WriteLine($"Found {controlPoints.Count} total skeleton pixels to process (includes {endpoints.Count} endpoints, {junctions.Count} junctions)");
+        TerrainLogger.Info($"Found {controlPoints.Count} total skeleton pixels to process (includes {endpoints.Count} endpoints, {junctions.Count} junctions)");
         
         // From each control point, walk in all unwalked directions
         foreach (var pt in controlPoints)
@@ -377,7 +378,7 @@ public class SkeletonizationRoadExtractor
         // Debug output for first junction only
         if (scored.Count > 1 && scored[0].Angle < angleThreshold)
         {
-            Console.WriteLine($"  Junction: preferred path at {scored[0].Angle:F1}° vs alternatives at {string.Join(", ", scored.Skip(1).Select(s => $"{s.Angle:F1}°"))}");
+            TerrainLogger.Info($"  Junction: preferred path at {scored[0].Angle:F1}° vs alternatives at {string.Join(", ", scored.Skip(1).Select(s => $"{s.Angle:F1}°"))}");
         }
         
         return scored.Select(x => x.Neighbor).ToList();

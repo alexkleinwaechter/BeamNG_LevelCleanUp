@@ -56,4 +56,18 @@ public class TerrainCreationParameters
     /// This defines the world-space scale of the terrain.
     /// </summary>
     public float MetersPerPixel { get; set; } = 2.0f;
+    
+    /// <summary>
+    /// Enable cross-material junction harmonization.
+    /// When enabled AND multiple materials have road smoothing, the system will detect
+    /// where roads from different materials (e.g., highway and local road) meet and
+    /// harmonize their elevations for smooth transitions.
+    /// 
+    /// This is a GLOBAL setting that applies to all road materials.
+    /// Individual materials still control their own within-material junction harmonization
+    /// via JunctionHarmonizationParameters.EnableJunctionHarmonization.
+    /// 
+    /// Default: true
+    /// </summary>
+    public bool EnableCrossMaterialHarmonization { get; set; } = true;
 }

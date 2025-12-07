@@ -63,6 +63,14 @@ public class RoadSmoothingParameters
     /// </summary>
     public DirectMaskRoadParameters? DirectMaskParameters { get; set; }
 
+    /// <summary>
+    /// Junction and endpoint harmonization parameters.
+    /// Controls how road elevations are blended at intersections and endpoints
+    /// to eliminate discontinuities between road segments.
+    /// Null = use defaults. Set this to customize junction blending behavior.
+    /// </summary>
+    public JunctionHarmonizationParameters? JunctionHarmonizationParameters { get; set; }
+
     // ========================================
     // COMMON ROAD GEOMETRY (All Approaches)
     // ========================================
@@ -420,6 +428,14 @@ public class RoadSmoothingParameters
     }
 
     /// <summary>
+    /// Gets or creates the JunctionHarmonizationParameters object (auto-creates with defaults if null).
+    /// </summary>
+    public JunctionHarmonizationParameters GetJunctionHarmonizationParameters()
+    {
+        return JunctionHarmonizationParameters ??= new JunctionHarmonizationParameters();
+    }
+
+    /// <summary>
     /// Validates all parameters and returns any errors.
     /// Includes validation for approach-specific parameters.
     /// </summary>
@@ -470,6 +486,12 @@ public class RoadSmoothingParameters
         else if (Approach == RoadSmoothingApproach.DirectMask && DirectMaskParameters != null)
         {
             errors.AddRange(DirectMaskParameters.Validate());
+        }
+
+        // Validate junction harmonization parameters
+        if (JunctionHarmonizationParameters != null)
+        {
+            errors.AddRange(JunctionHarmonizationParameters.Validate());
         }
 
         // Warn about problematic combinations (Spline approach only)

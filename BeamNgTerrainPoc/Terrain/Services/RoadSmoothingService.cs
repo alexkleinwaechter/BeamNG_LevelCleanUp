@@ -17,6 +17,7 @@ public class RoadSmoothingService
     private IRoadExtractor? _roadExtractor;
     private IHeightCalculator? _heightCalculator;
     private ExclusionZoneProcessor? _exclusionProcessor;
+    private JunctionElevationHarmonizer? _junctionHarmonizer;
     private object? _terrainBlender; // Can be TerrainBlender or DirectTerrainBlender
     
     public RoadSmoothingService(
@@ -29,6 +30,7 @@ public class RoadSmoothingService
         _heightCalculator = heightCalculator ?? throw new ArgumentNullException(nameof(heightCalculator));
         _exclusionProcessor = exclusionProcessor ?? throw new ArgumentNullException(nameof(exclusionProcessor));
         _terrainBlender = terrainBlender ?? throw new ArgumentNullException(nameof(terrainBlender));
+        _junctionHarmonizer = new JunctionElevationHarmonizer();
     }
     
     /// <summary>
@@ -37,6 +39,7 @@ public class RoadSmoothingService
     public RoadSmoothingService()
     {
         _exclusionProcessor = new ExclusionZoneProcessor();
+        _junctionHarmonizer = new JunctionElevationHarmonizer();
     }
     
     public SmoothingResult SmoothRoadsInHeightmap(
@@ -132,6 +135,12 @@ public class RoadSmoothingService
                 {
                     TerrainLogger.Info("Calculating target elevations for cross-sections...");
                     _heightCalculator!.CalculateTargetElevations(geometry, heightMap, metersPerPixel);
+
+                    // Apply junction/endpoint elevation harmonization
+                    if (_junctionHarmonizer != null)
+                    {
+                        _junctionHarmonizer.HarmonizeElevations(geometry, heightMap, parameters, metersPerPixel);
+                    }
 
                     // Export smoothed elevation debug image if enabled
                     if (parameters.ExportSmoothedElevationDebugImage)

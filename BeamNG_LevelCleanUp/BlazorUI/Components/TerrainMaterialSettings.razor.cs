@@ -347,6 +347,26 @@ public partial class TerrainMaterialSettings
                     Material.ExportSmoothedElevationDebugImage = debug["exportSmoothedElevationDebugImage"]!.GetValue<bool>();
             }
 
+            // Import junction harmonization settings
+            var junctionParams = jsonNode["junctionHarmonization"];
+            if (junctionParams != null)
+            {
+                if (junctionParams["enableJunctionHarmonization"] != null)
+                    Material.EnableJunctionHarmonization = junctionParams["enableJunctionHarmonization"]!.GetValue<bool>();
+                if (junctionParams["junctionDetectionRadiusMeters"] != null)
+                    Material.JunctionDetectionRadiusMeters = junctionParams["junctionDetectionRadiusMeters"]!.GetValue<float>();
+                if (junctionParams["junctionBlendDistanceMeters"] != null)
+                    Material.JunctionBlendDistanceMeters = junctionParams["junctionBlendDistanceMeters"]!.GetValue<float>();
+                if (junctionParams["blendFunctionType"] != null && Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(), out var junctionBlendType))
+                    Material.JunctionBlendFunction = junctionBlendType;
+                if (junctionParams["enableEndpointTaper"] != null)
+                    Material.EnableEndpointTaper = junctionParams["enableEndpointTaper"]!.GetValue<bool>();
+                if (junctionParams["endpointTaperDistanceMeters"] != null)
+                    Material.EndpointTaperDistanceMeters = junctionParams["endpointTaperDistanceMeters"]!.GetValue<float>();
+                if (junctionParams["endpointTerrainBlendStrength"] != null)
+                    Material.EndpointTerrainBlendStrength = junctionParams["endpointTerrainBlendStrength"]!.GetValue<float>();
+            }
+
             // Set preset to Custom since we imported custom values
             Material.SelectedPreset = RoadPresetType.Custom;
 
@@ -488,6 +508,17 @@ public partial class TerrainMaterialSettings
         public bool ExportSkeletonDebugImage { get; set; }
         public bool ExportSmoothedElevationDebugImage { get; set; }
 
+        // ========================================
+        // JUNCTION HARMONIZATION
+        // ========================================
+        public bool EnableJunctionHarmonization { get; set; } = true;
+        public float JunctionDetectionRadiusMeters { get; set; } = 20.0f;
+        public float JunctionBlendDistanceMeters { get; set; } = 40.0f;
+        public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.Cosine;
+        public bool EnableEndpointTaper { get; set; } = true;
+        public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
+        public float EndpointTerrainBlendStrength { get; set; } = 0.3f;
+
         /// <summary>
         ///     Applies all values from a preset to this material's settings.
         /// </summary>
@@ -548,6 +579,18 @@ public partial class TerrainMaterialSettings
                 RoadPixelSearchRadius = preset.DirectMaskParameters.RoadPixelSearchRadius;
                 DirectMaskUseButterworthFilter = preset.DirectMaskParameters.UseButterworthFilter;
                 DirectMaskButterworthFilterOrder = preset.DirectMaskParameters.ButterworthFilterOrder;
+            }
+
+            // Junction harmonization parameters
+            if (preset.JunctionHarmonizationParameters != null)
+            {
+                EnableJunctionHarmonization = preset.JunctionHarmonizationParameters.EnableJunctionHarmonization;
+                JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
+                JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
+                JunctionBlendFunction = preset.JunctionHarmonizationParameters.BlendFunctionType;
+                EnableEndpointTaper = preset.JunctionHarmonizationParameters.EnableEndpointTaper;
+                EndpointTaperDistanceMeters = preset.JunctionHarmonizationParameters.EndpointTaperDistanceMeters;
+                EndpointTerrainBlendStrength = preset.JunctionHarmonizationParameters.EndpointTerrainBlendStrength;
             }
         }
 
@@ -625,6 +668,18 @@ public partial class TerrainMaterialSettings
                 RoadPixelSearchRadius = RoadPixelSearchRadius,
                 UseButterworthFilter = DirectMaskUseButterworthFilter,
                 ButterworthFilterOrder = DirectMaskButterworthFilterOrder
+            };
+
+            // Junction harmonization parameters
+            result.JunctionHarmonizationParameters = new JunctionHarmonizationParameters
+            {
+                EnableJunctionHarmonization = EnableJunctionHarmonization,
+                JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
+                JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,
+                BlendFunctionType = JunctionBlendFunction,
+                EnableEndpointTaper = EnableEndpointTaper,
+                EndpointTaperDistanceMeters = EndpointTaperDistanceMeters,
+                EndpointTerrainBlendStrength = EndpointTerrainBlendStrength
             };
 
             return result;

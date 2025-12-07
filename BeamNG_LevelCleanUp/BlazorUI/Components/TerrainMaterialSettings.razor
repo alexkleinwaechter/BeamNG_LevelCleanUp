@@ -678,6 +678,151 @@ Class="my-0">
                                         </div>
                                     </MudTabPanel>
                                     
+                                    <!-- Junction Harmonization Tab -->
+                                    <MudTabPanel Text="Junctions" Icon="@Icons.Material.Filled.CallSplit">
+                                        <div class="pa-3">
+                                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                                                Junction and endpoint harmonization smooths road elevations where paths meet or end.
+                                                Cross-material harmonization is controlled at the terrain level (Terrain Parameters section).
+                                            </MudAlert>
+                                            
+                                            <!-- Master Enable -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.ToggleOn" Size="Size.Small" Class="mr-1"/>
+                                                    Enable Harmonization
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12">
+                                                        <div class="d-flex align-center gap-1">
+                                                            <MudSwitch T="bool" @bind-Value="Material.EnableJunctionHarmonization" 
+                                                                      Color="Color.Primary"
+                                                                      Label="Enable Junction Harmonization (within this material)"/>
+                                                            <MudTooltip Text="Smooths road elevations at intersections and endpoints to eliminate discontinuities within this material's road network">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                            
+                                            <!-- Junction Detection & Blending -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Adjust" Size="Size.Small" Class="mr-1"/>
+                                                    Junction Detection & Blending
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how junctions are detected and how elevations blend at intersections.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.JunctionDetectionRadiusMeters" 
+                                                                            Label="Detection Radius (m)" 
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="5.0f" Max="50.0f" Step="5.0f"
+                                                                            Format="F0"
+                                                                            Disabled="@(!Material.EnableJunctionHarmonization)"
+                                                                            HelperText="Endpoints within this distance form a junction"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="Maximum distance between path endpoints to consider them part of the same junction. Larger = merge more endpoints.">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.JunctionBlendDistanceMeters" 
+                                                                            Label="Blend Distance (m)" 
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="10.0f" Max="100.0f" Step="5.0f"
+                                                                            Format="F0"
+                                                                            Disabled="@(!Material.EnableJunctionHarmonization)"
+                                                                            HelperText="Distance to blend along each path"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="Distance over which to blend from junction elevation back to path elevation. Larger = smoother but affects more road.">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudSelect T="JunctionBlendFunctionType" 
+                                                                      @bind-Value="Material.JunctionBlendFunction"
+                                                                      Label="Blend Function"
+                                                                      Variant="Variant.Outlined"
+                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"
+                                                                      Class="flex-grow-1">
+                                                                <MudSelectItem Value="JunctionBlendFunctionType.Linear">Linear</MudSelectItem>
+                                                                <MudSelectItem Value="JunctionBlendFunctionType.Cosine">Cosine (smooth)</MudSelectItem>
+                                                                <MudSelectItem Value="JunctionBlendFunctionType.Cubic">Cubic</MudSelectItem>
+                                                                <MudSelectItem Value="JunctionBlendFunctionType.Quintic">Quintic (smoothest)</MudSelectItem>
+                                                            </MudSelect>
+                                                            <MudTooltip Text="Blend curve type. Cosine recommended for natural transitions.">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                            
+                                            <!-- Endpoint Tapering -->
+                                            <MudPaper Class="pa-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Size="Size.Small" Class="mr-1"/>
+                                                    Endpoint Tapering (Dead Ends)
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how isolated road endpoints (dead ends) transition back to terrain.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-center gap-1">
+                                                            <MudSwitch T="bool" @bind-Value="Material.EnableEndpointTaper" 
+                                                                      Color="Color.Primary"
+                                                                      Label="Enable Taper"
+                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"/>
+                                                            <MudTooltip Text="Gradually transition dead-end roads back toward terrain elevation">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.EndpointTaperDistanceMeters" 
+                                                                            Label="Taper Distance (m)" 
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="5.0f" Max="100.0f" Step="5.0f"
+                                                                            Format="F0"
+                                                                            Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableEndpointTaper)"
+                                                                            HelperText="Distance to taper at dead ends"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="Distance over which to taper elevation back toward terrain at dead ends">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.EndpointTerrainBlendStrength" 
+                                                                            Label="Terrain Blend" 
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="0.0f" Max="1.0f" Step="0.1f"
+                                                                            Format="F1"
+                                                                            Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableEndpointTaper)"
+                                                                            HelperText="0=keep road elev, 1=match terrain"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="How strongly to blend toward terrain: 0.0=road keeps elevation, 0.3=subtle, 1.0=fully match terrain">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+                                        </div>
+                                    </MudTabPanel>
+                                    
                                     <!-- Debug Tab -->
                                     <MudTabPanel Text="Debug" Icon="@Icons.Material.Filled.BugReport">
                                         <div class="pa-3">

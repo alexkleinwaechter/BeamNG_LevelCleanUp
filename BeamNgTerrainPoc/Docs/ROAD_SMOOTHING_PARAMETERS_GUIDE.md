@@ -13,11 +13,12 @@ This guide explains every parameter available in `RoadSmoothingParameters` in si
 4. [Slope Constraint Parameters](#slope-constraint-parameters)
 5. [Blending Parameters](#blending-parameters)
 6. [Post-Processing Smoothing Parameters](#post-processing-smoothing-parameters)
-7. [Exclusion Zone Parameters](#exclusion-zone-parameters)
-8. [Debug Output Parameters](#debug-output-parameters)
-9. [Spline-Specific Parameters](#spline-specific-parameters)
-10. [DirectMask-Specific Parameters](#directmask-specific-parameters)
-11. [Parameter Validation Rules](#parameter-validation-rules)
+7. [Junction Harmonization Parameters](#junction-harmonization-parameters)
+8. [Exclusion Zone Parameters](#exclusion-zone-parameters)
+9. [Debug Output Parameters](#debug-output-parameters)
+10. [Spline-Specific Parameters](#spline-specific-parameters)
+11. [DirectMask-Specific Parameters](#directmask-specific-parameters)
+12. [Parameter Validation Rules](#parameter-validation-rules)
 
 ---
 

@@ -411,6 +411,18 @@ public static class RoadSmoothingPresets
             ExportSplineDebugImage = false,
             ExportSkeletonDebugImage = false,
             ExportSmoothedElevationDebugImage = false
+        },
+
+        // Junction harmonization for smooth intersections
+        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
+        {
+            EnableJunctionHarmonization = true,
+            JunctionDetectionRadiusMeters = 25.0f, // Larger radius for highway interchanges
+            JunctionBlendDistanceMeters = 50.0f, // Long blend for smooth highway transitions
+            BlendFunctionType = JunctionBlendFunctionType.Cosine,
+            EnableEndpointTaper = true,
+            EndpointTaperDistanceMeters = 40.0f,
+            EndpointTerrainBlendStrength = 0.2f
         }
     };
 
@@ -488,6 +500,18 @@ public static class RoadSmoothingPresets
             ExportSplineDebugImage = false,
             ExportSkeletonDebugImage = false,
             ExportSmoothedElevationDebugImage = false
+        },
+
+        // Junction harmonization for mountain road intersections
+        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
+        {
+            EnableJunctionHarmonization = true,
+            JunctionDetectionRadiusMeters = 15.0f, // Tighter radius for mountain roads
+            JunctionBlendDistanceMeters = 30.0f, // Shorter blend for responsive curves
+            BlendFunctionType = JunctionBlendFunctionType.Quintic, // Smoothest blend
+            EnableEndpointTaper = true,
+            EndpointTaperDistanceMeters = 20.0f,
+            EndpointTerrainBlendStrength = 0.4f // Stronger blend back to terrain at dead ends
         }
     };
 
@@ -565,6 +589,19 @@ public static class RoadSmoothingPresets
             ExportSplineDebugImage = false,
             ExportSkeletonDebugImage = false,
             ExportSmoothedElevationDebugImage = false
+        },
+
+        // Junction harmonization for racing circuits
+        // Critical for pit lane entries/exits and track crossings
+        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
+        {
+            EnableJunctionHarmonization = true,
+            JunctionDetectionRadiusMeters = 20.0f, // Match track width for pit entries
+            JunctionBlendDistanceMeters = 60.0f, // Long blend for racing smoothness
+            BlendFunctionType = JunctionBlendFunctionType.Quintic, // Maximum smoothness
+            EnableEndpointTaper = true,
+            EndpointTaperDistanceMeters = 50.0f, // Long taper at track ends
+            EndpointTerrainBlendStrength = 0.15f // Subtle blend - track ends should stay elevated
         }
     };
 

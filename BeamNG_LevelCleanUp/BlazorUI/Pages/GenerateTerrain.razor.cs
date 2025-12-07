@@ -39,6 +39,7 @@ public partial class GenerateTerrain
     private string _terrainName = "theTerrain";
     private int _terrainSize = 2048;
     private bool _updateTerrainBlock = true;
+    private bool _enableCrossMaterialHarmonization = true;
     private string _workingDirectory = string.Empty;
     private TerrainPresetImporter? _presetImporter;
     private TerrainPresetExporter? _presetExporter;
@@ -525,7 +526,8 @@ public partial class GenerateTerrain
                     MetersPerPixel = _metersPerPixel,
                     HeightmapPath = _heightmapPath,
                     TerrainName = _terrainName,
-                    Materials = materialDefinitions
+                    Materials = materialDefinitions,
+                    EnableCrossMaterialHarmonization = _enableCrossMaterialHarmonization
                 };
 
                 var outputPath = GetOutputPath();
@@ -591,6 +593,7 @@ public partial class GenerateTerrain
         _terrainName = "theTerrain";
         _terrainBaseHeight = 0.0f;
         _updateTerrainBlock = true;
+        _enableCrossMaterialHarmonization = true;
         _presetImporter?.Reset();
         _presetExporter?.Reset();
 
