@@ -41,11 +41,35 @@ public static class RoadParameterTooltips
         ?? If using GlobalLevelingStrength > 0.5, increase to 20-25m!
         """;
 
-    public const string RoadMaxSlopeDegrees = """
-        Default: 4.0 | Range: 1.0 to 45.0
+    public const string EnableMaxSlopeConstraint = """
+        Default: false
         Status: ? ACTIVELY USED
 
+        Enable enforcement of the maximum road slope constraint.
+        
+        When ENABLED:
+        • Road elevations are adjusted to ensure no segment exceeds RoadMaxSlopeDegrees
+        • Uses forward-backward passes to "shave off" excessive slopes
+        • Creates flatter roads but may disconnect from terrain
+        
+        When DISABLED (default):
+        • Road follows smoothed terrain elevation naturally
+        • RoadMaxSlopeDegrees value is ignored
+        • More natural terrain integration
+        
+        Recommended:
+        • Enable for racing circuits requiring strict slope limits
+        • Enable for ultra-flat artificial road networks
+        • Disable for natural mountain roads that follow terrain
+        """;
+
+    public const string RoadMaxSlopeDegrees = """
+        Default: 4.0 | Range: 1.0 to 45.0
+        Status: ?? CONDITIONALLY USED (only when EnableMaxSlopeConstraint = true)
+
         Maximum steepness allowed on the road surface itself. Think of it as the "incline warning" on highway signs.
+        
+        ?? Only enforced when EnableMaxSlopeConstraint is enabled!
 
         Example values:
         • 1.0 - Ultra-flat race track

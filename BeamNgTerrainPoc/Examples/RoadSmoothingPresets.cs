@@ -311,6 +311,7 @@ public static class RoadSmoothingPresets
         // CrossSectionIntervalMeters validation: (8/2 + 30) / 3 = 11.3m max, using 0.25m ?
         CrossSectionIntervalMeters = 0.25f,
 
+        EnableMaxSlopeConstraint = true, // Enforce ultra-flat road surface
         RoadMaxSlopeDegrees = 1.0f,
         SideMaxSlopeDegrees = 20.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
@@ -519,6 +520,7 @@ public static class RoadSmoothingPresets
         CrossSectionIntervalMeters = 0.25f, // Ultra-dense for maximum precision
 
         // SLOPE CONSTRAINTS - Racing standard (nearly flat)
+        EnableMaxSlopeConstraint = true, // Enforce strict slope limits for racing
         RoadMaxSlopeDegrees = 3.0f, // Gentle racing grade
         SideMaxSlopeDegrees = 25.0f, // Runoff areas slope gently
         BlendFunctionType = BlendFunctionType.Cosine,

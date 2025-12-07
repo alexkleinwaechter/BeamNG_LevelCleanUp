@@ -16,6 +16,12 @@ public class OptimizedElevationSmoother : IHeightCalculator
     /// <summary>
     /// Calculates target elevations for road cross-sections using optimized smoothing.
     /// Supports both Box filter (prefix-sum) and Butterworth low-pass filter based on parameters.
+    /// 
+    /// Processing pipeline:
+    /// 1. Sample terrain elevations at cross-section centers
+    /// 2. Apply longitudinal smoothing (Box or Butterworth filter)
+    /// 3. Apply GlobalLevelingStrength (blend toward network average elevation)
+    /// 4. Enforce RoadMaxSlopeDegrees constraint (limit maximum grade)
     /// </summary>
     public void CalculateTargetElevations(RoadGeometry geometry, float[,] heightMap, float metersPerPixel)
     {
@@ -25,6 +31,11 @@ public class OptimizedElevationSmoother : IHeightCalculator
         int butterworthOrder = geometry.Parameters?.ButterworthFilterOrder ?? 3;
         float crossSectionSpacing = geometry.Parameters?.CrossSectionIntervalMeters ?? 0.5f;
         float smoothingRadiusMeters = (windowSize / 2.0f) * crossSectionSpacing;
+        
+        // Get global leveling and slope constraint parameters
+        float globalLevelingStrength = geometry.Parameters?.GlobalLevelingStrength ?? 0.0f;
+        bool enableMaxSlopeConstraint = geometry.Parameters?.EnableMaxSlopeConstraint ?? false;
+        float roadMaxSlopeDegrees = geometry.Parameters?.RoadMaxSlopeDegrees ?? 4.0f;
 
         string filterType = useButterworthFilter 
             ? $"Butterworth (order {butterworthOrder})" 
@@ -32,6 +43,12 @@ public class OptimizedElevationSmoother : IHeightCalculator
         
         Console.WriteLine($"Calculating target elevations using {filterType} filter...");
         Console.WriteLine($"  Smoothing window: {windowSize} cross-sections (~{smoothingRadiusMeters:F1}m radius)");
+        
+        if (globalLevelingStrength > 0.001f)
+            Console.WriteLine($"  Global leveling strength: {globalLevelingStrength:P0}");
+        
+        if (enableMaxSlopeConstraint)
+            Console.WriteLine($"  Max road slope constraint: {roadMaxSlopeDegrees:F1}° (ENABLED)");
 
         // Group by PathId for per-path processing
         var pathGroups = geometry.CrossSections
@@ -40,7 +57,12 @@ public class OptimizedElevationSmoother : IHeightCalculator
             .ToList();
 
         int totalSections = 0;
+        
+        // Collect all smoothed elevations for global average calculation
+        var allSmoothedElevations = new List<float>();
+        var pathSmoothedArrays = new Dictionary<int, (List<CrossSection> sections, float[] smoothed)>();
 
+        // First pass: Apply longitudinal smoothing to each path
         foreach (var pathGroup in pathGroups)
         {
             var sections = pathGroup.OrderBy(cs => cs.LocalIndex).ToList();
@@ -67,16 +89,119 @@ public class OptimizedElevationSmoother : IHeightCalculator
                 ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
                 : BoxFilterPrefixSum(rawElevations, windowSize);
 
-            // Step 3: Assign smoothed elevations
+            pathSmoothedArrays[pathGroup.Key] = (sections, smoothed);
+            allSmoothedElevations.AddRange(smoothed);
+            totalSections += sections.Count;
+        }
+
+        // Step 3: Apply GlobalLevelingStrength (blend toward network average)
+        if (globalLevelingStrength > 0.001f && allSmoothedElevations.Count > 0)
+        {
+            float globalAverage = allSmoothedElevations.Average();
+            Console.WriteLine($"  Network average elevation: {globalAverage:F2}m");
+            
+            foreach (var kvp in pathSmoothedArrays)
+            {
+                var smoothed = kvp.Value.smoothed;
+                for (int i = 0; i < smoothed.Length; i++)
+                {
+                    // Blend local elevation toward global average
+                    smoothed[i] = smoothed[i] * (1.0f - globalLevelingStrength) 
+                                + globalAverage * globalLevelingStrength;
+                }
+            }
+            
+            Console.WriteLine($"  Applied global leveling: {globalLevelingStrength:P0} toward {globalAverage:F1}m");
+        }
+
+        // Step 4: Enforce RoadMaxSlopeDegrees constraint (only if enabled)
+        if (enableMaxSlopeConstraint)
+        {
+            int constrainedSections = 0;
+            
+            foreach (var kvp in pathSmoothedArrays)
+            {
+                var smoothed = kvp.Value.smoothed;
+                int modified = EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
+                constrainedSections += modified;
+            }
+            
+            if (constrainedSections > 0)
+                Console.WriteLine($"  Slope constraint modified {constrainedSections:N0} cross-sections");
+        }
+
+        // Step 5: Assign final elevations to cross-sections
+        foreach (var kvp in pathSmoothedArrays)
+        {
+            var (sections, smoothed) = kvp.Value;
             for (int i = 0; i < sections.Count; i++)
             {
                 sections[i].TargetElevation = smoothed[i];
             }
-
-            totalSections += sections.Count;
         }
 
         Console.WriteLine($"  Smoothed elevations for {totalSections:N0} cross-sections across {pathGroups.Count} path(s)");
+    }
+
+    /// <summary>
+    /// Enforces maximum road slope constraint using iterative forward-backward passes.
+    /// This ensures no segment exceeds the specified maximum grade.
+    /// 
+    /// Algorithm:
+    /// 1. Calculate max rise per cross-section from slope angle
+    /// 2. Forward pass: limit uphill slope (each point can't be too high relative to previous)
+    /// 3. Backward pass: limit downhill slope (each point can't be too high relative to next)
+    /// 4. Repeat until no changes needed (converges quickly, usually 2-3 iterations)
+    /// </summary>
+    /// <param name="elevations">Array of elevations to modify in-place</param>
+    /// <param name="crossSectionSpacing">Distance between cross-sections in meters</param>
+    /// <param name="maxSlopeDegrees">Maximum allowed slope in degrees</param>
+    /// <returns>Number of elevations that were modified</returns>
+    private int EnforceMaxSlopeConstraint(float[] elevations, float crossSectionSpacing, float maxSlopeDegrees)
+    {
+        int n = elevations.Length;
+        if (n < 2) return 0;
+
+        // Convert slope angle to max rise per cross-section
+        float maxSlopeRatio = MathF.Tan(maxSlopeDegrees * MathF.PI / 180.0f);
+        float maxRise = maxSlopeRatio * crossSectionSpacing;
+
+        int totalModified = 0;
+        bool changed = true;
+        int iterations = 0;
+        const int maxIterations = 10; // Safety limit
+
+        while (changed && iterations < maxIterations)
+        {
+            changed = false;
+            iterations++;
+
+            // Forward pass: limit uphill slope
+            for (int i = 1; i < n; i++)
+            {
+                float maxAllowed = elevations[i - 1] + maxRise;
+                if (elevations[i] > maxAllowed)
+                {
+                    elevations[i] = maxAllowed;
+                    changed = true;
+                    totalModified++;
+                }
+            }
+
+            // Backward pass: limit downhill slope (from the other direction)
+            for (int i = n - 2; i >= 0; i--)
+            {
+                float maxAllowed = elevations[i + 1] + maxRise;
+                if (elevations[i] > maxAllowed)
+                {
+                    elevations[i] = maxAllowed;
+                    changed = true;
+                    totalModified++;
+                }
+            }
+        }
+
+        return totalModified;
     }
 
     /// <summary>

@@ -275,6 +275,7 @@ public partial class TerrainMaterialSettings
         // ========================================
         public float RoadWidthMeters { get; set; } = 8.0f;
         public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
+        public bool EnableMaxSlopeConstraint { get; set; } = false;
         public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
         public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
@@ -345,6 +346,7 @@ public partial class TerrainMaterialSettings
             // Primary parameters
             RoadWidthMeters = preset.RoadWidthMeters;
             TerrainAffectedRangeMeters = preset.TerrainAffectedRangeMeters;
+            EnableMaxSlopeConstraint = preset.EnableMaxSlopeConstraint;
             RoadMaxSlopeDegrees = preset.RoadMaxSlopeDegrees;
             SideMaxSlopeDegrees = preset.SideMaxSlopeDegrees;
 
@@ -409,6 +411,7 @@ public partial class TerrainMaterialSettings
                 // Primary parameters
                 RoadWidthMeters = RoadWidthMeters,
                 TerrainAffectedRangeMeters = TerrainAffectedRangeMeters,
+                EnableMaxSlopeConstraint = EnableMaxSlopeConstraint,
                 RoadMaxSlopeDegrees = RoadMaxSlopeDegrees,
                 SideMaxSlopeDegrees = SideMaxSlopeDegrees,
 

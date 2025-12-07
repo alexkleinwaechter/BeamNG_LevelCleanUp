@@ -139,12 +139,22 @@
                 </MudItem>
                 
                 <MudItem xs="12" sm="6">
+                    <div class="d-flex align-center gap-1">
+                        <MudSwitch @bind-Value="Material.EnableMaxSlopeConstraint" 
+                                  Color="Color.Primary"
+                                  Label="Enforce Max Road Slope"/>
+                        <HelpAdornment TooltipText="@EnableMaxSlopeConstraint"/>
+                    </div>
+                </MudItem>
+                
+                <MudItem xs="12" sm="6">
                     <div class="d-flex align-start gap-1">
                         <MudNumericField @bind-Value="Material.RoadMaxSlopeDegrees" 
                                         Label="Max Road Slope (°)" 
                                         Variant="Variant.Outlined"
                                         Min="0.0f" Max="45.0f" Step="0.5f"
-                                        HelperText="Maximum road gradient"
+                                        HelperText="@(Material.EnableMaxSlopeConstraint ? "Maximum road gradient (enforced)" : "Not enforced - enable switch")"
+                                        Disabled="@(!Material.EnableMaxSlopeConstraint)"
                                         Class="flex-grow-1"/>
                         <HelpAdornment TooltipText="@RoadMaxSlopeDegrees"/>
                     </div>
