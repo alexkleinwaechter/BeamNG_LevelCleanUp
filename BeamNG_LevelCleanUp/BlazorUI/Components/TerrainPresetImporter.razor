@@ -1,0 +1,454 @@
+@using System.Text.RegularExpressions
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
+@inject ISnackbar Snackbar
+
+<MudPaper Class="@CssClass" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+        <div>
+            <MudText Typo="Typo.h6" Class="mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.FileUpload" Class="mr-2" />
+                Import BeamNG Terrain Preset
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Load settings from a BeamNG terrain preset file (*_terrainPreset.json).
+                This will set heightmap, terrain size, and layer map assignments.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.Upload"
+                   OnClick="SelectAndImportPreset">
+            Import Preset
+        </MudButton>
+    </MudStack>
+    @if (!string.IsNullOrEmpty(PresetFilePath))
+    {
+        <MudAlert Severity="Severity.Success" Class="mt-3" Dense="true">
+            <strong>Preset loaded:</strong> @Path.GetFileName(PresetFilePath)
+        </MudAlert>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+            Layer maps assigned: @Materials.Count(m => m.HasLayerMap) / @Materials.Count materials
+            @if (!string.IsNullOrEmpty(HoleMapPath))
+            {
+                <text> | Hole map: ?</text>
+            }
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+/// <summary>
+/// Additional CSS classes to apply to the component.
+/// </summary>
+[Parameter]
+public string? Class { get; set; }
+
+private string CssClass => string.IsNullOrEmpty(Class) ? "pa-4" : $"pa-4 {Class}";
+
+/// <summary>
+/// The list of terrain materials to assign layer maps to.
+/// </summary>
+[Parameter]
+public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
+
+    /// <summary>
+    /// The working directory of the level (used for path resolution fallback).
+    /// </summary>
+    [Parameter]
+    public string WorkingDirectory { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Callback when preset import is complete with the imported settings.
+    /// </summary>
+    [Parameter]
+    public EventCallback<TerrainPresetResult> OnPresetImported { get; set; }
+
+    /// <summary>
+    /// The path to the loaded preset file (for display).
+    /// </summary>
+    public string? PresetFilePath { get; private set; }
+
+    /// <summary>
+    /// The resolved hole map path (if found).
+    /// </summary>
+    public string? HoleMapPath { get; private set; }
+
+    private string? _presetDirectory;
+
+    private async Task SelectAndImportPreset()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new OpenFileDialog();
+            dialog.Filter = "Terrain Preset (*_terrainPreset.json)|*_terrainPreset.json|All JSON Files (*.json)|*.json";
+            dialog.Title = "Select BeamNG Terrain Preset";
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK) 
+                selectedPath = dialog.FileName;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            await ImportTerrainPreset(selectedPath);
+        }
+    }
+
+    private async Task ImportTerrainPreset(string presetPath)
+    {
+        try
+        {
+            PresetFilePath = presetPath;
+            _presetDirectory = Path.GetDirectoryName(presetPath);
+
+            var jsonContent = await File.ReadAllTextAsync(presetPath);
+            var jsonNode = JsonUtils.GetValidJsonNodeFromString(jsonContent, presetPath);
+
+            if (jsonNode == null)
+            {
+                Snackbar.Add("Failed to parse terrain preset JSON.", Severity.Error);
+                return;
+            }
+
+            var result = new TerrainPresetResult();
+
+            // Extract terrain name
+            var terrainName = jsonNode["name"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(terrainName))
+            {
+                result.TerrainName = terrainName;
+            }
+
+            // Extract heightScale (maps to maxHeight)
+            if (jsonNode["heightScale"] != null)
+            {
+                result.MaxHeight = jsonNode["heightScale"]!.GetValue<float>();
+            }
+
+            // Extract squareSize (maps to metersPerPixel)
+            if (jsonNode["squareSize"] != null)
+            {
+                result.MetersPerPixel = jsonNode["squareSize"]!.GetValue<float>();
+            }
+
+            // Extract base height from pos.z
+            if (jsonNode["pos"]?["z"] != null)
+            {
+                result.TerrainBaseHeight = jsonNode["pos"]!["z"]!.GetValue<float>();
+            }
+
+            // Resolve heightmap path
+            var heightMapPath = jsonNode["heightMapPath"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(heightMapPath))
+            {
+                var resolvedHeightmap = ResolvePresetFilePath(heightMapPath);
+                if (File.Exists(resolvedHeightmap))
+                {
+                    result.HeightmapPath = resolvedHeightmap;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Heightmap found: {result.HeightmapPath}");
+                }
+                else
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Heightmap not found at: {resolvedHeightmap}");
+                }
+            }
+
+            // Resolve holemap path
+            var holeMapPath = jsonNode["holeMapPath"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(holeMapPath))
+            {
+                var resolvedHolemap = ResolvePresetFilePath(holeMapPath);
+                if (File.Exists(resolvedHolemap))
+                {
+                    HoleMapPath = resolvedHolemap;
+                    result.HoleMapPath = resolvedHolemap;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Holemap found: {HoleMapPath}");
+                }
+            }
+
+            // Process opacity maps (layer maps)
+            var opacityMaps = jsonNode["opacityMaps"]?.AsArray();
+            if (opacityMaps != null)
+            {
+                var assignedCount = 0;
+                var notFoundCount = 0;
+                var orderUpdatedCount = 0;
+
+                foreach (var mapPath in opacityMaps)
+                {
+                    var mapPathStr = mapPath?.GetValue<string>();
+                    if (string.IsNullOrEmpty(mapPathStr)) continue;
+
+                    var resolvedPath = ResolvePresetFilePath(mapPathStr);
+                    var (order, materialName) = ParseLayerMapFileName(Path.GetFileName(mapPathStr));
+
+                    if (order.HasValue && !string.IsNullOrEmpty(materialName))
+                    {
+                        // Try to match with existing terrain materials
+                        var matchedMaterial = FindMatchingMaterial(materialName, order.Value);
+
+                        if (matchedMaterial != null)
+                        {
+                            if (File.Exists(resolvedPath))
+                            {
+                                matchedMaterial.LayerMapPath = resolvedPath;
+                                
+                                // CRITICAL: Update the material order to match the preset order
+                                // The order in the preset filename is the index used in the binary .ter file
+                                if (matchedMaterial.Order != order.Value)
+                                {
+                                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                        $"Updating order for '{matchedMaterial.InternalName}': {matchedMaterial.Order} -> {order.Value}");
+                                    matchedMaterial.Order = order.Value;
+                                    orderUpdatedCount++;
+                                }
+                                
+                                assignedCount++;
+                            }
+                            else
+                            {
+                                notFoundCount++;
+                                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                    $"Layer map file not found: {resolvedPath}");
+                            }
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"No matching material found for: {materialName} (order {order})");
+                        }
+                    }
+                }
+
+                // After processing all opacity maps, re-sort materials by their new order
+                if (orderUpdatedCount > 0)
+                {
+                    // Sort the Materials list by Order to reflect preset order
+                    var sorted = Materials.OrderBy(m => m.Order).ToList();
+                    Materials.Clear();
+                    Materials.AddRange(sorted);
+                    
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Reordered {orderUpdatedCount} material(s) to match preset order");
+                }
+
+                result.AssignedLayerMapsCount = assignedCount;
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Preset import complete: {assignedCount} layer maps assigned" +
+                    (orderUpdatedCount > 0 ? $", {orderUpdatedCount} materials reordered" : "") +
+                    (notFoundCount > 0 ? $", {notFoundCount} files not found" : ""));
+            }
+
+            await OnPresetImported.InvokeAsync(result);
+            Snackbar.Add($"Terrain preset imported: {result.TerrainName}", Severity.Success);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
+            Snackbar.Add($"Error importing preset: {message}", Severity.Error);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Preset import error: {message}");
+        }
+    }
+
+    /// <summary>
+    /// Resolves a BeamNG relative path (like "/levels/kattenes/import/...") to an absolute file path.
+    /// First tries the preset directory, then uses working directory as fallback.
+    /// </summary>
+    private string ResolvePresetFilePath(string beamngPath)
+    {
+        // Extract just the filename
+        var fileName = Path.GetFileName(beamngPath);
+
+        // First, try the preset directory (where the *_terrainPreset.json was loaded from)
+        if (!string.IsNullOrEmpty(_presetDirectory))
+        {
+            var presetDirPath = Path.Combine(_presetDirectory, fileName);
+            if (File.Exists(presetDirPath))
+            {
+                return presetDirPath;
+            }
+        }
+
+        // Try to resolve from working directory using the full relative path
+        if (!string.IsNullOrEmpty(WorkingDirectory))
+        {
+            // Try multiple patterns:
+            // 1. Direct path in working directory
+            var directPath = Path.Combine(WorkingDirectory, fileName);
+            if (File.Exists(directPath))
+            {
+                return directPath;
+            }
+
+            // 2. If path contains /import/, look in import subfolder
+            if (beamngPath.Contains("/import/"))
+            {
+                var importPath = Path.Combine(WorkingDirectory, "import", fileName);
+                if (File.Exists(importPath))
+                {
+                    return importPath;
+                }
+            }
+
+            // 3. Try to reconstruct relative path from levels/levelname/...
+            var match = Regex.Match(beamngPath, @"/levels/[^/]+/(.+)");
+            if (match.Success)
+            {
+                var relativePath = match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar);
+                var reconstructedPath = Path.Combine(WorkingDirectory, relativePath);
+                if (File.Exists(reconstructedPath))
+                {
+                    return reconstructedPath;
+                }
+            }
+        }
+
+        // Return best guess path (preset directory + filename)
+        if (!string.IsNullOrEmpty(_presetDirectory))
+        {
+            return Path.Combine(_presetDirectory, fileName);
+        }
+
+        return beamngPath;
+    }
+
+    /// <summary>
+    /// Parses a layer map filename like "theTerrain_layerMap_12_BeamNG_DriverTrainingETK_Asphalt.png"
+    /// Returns the order index and material name.
+    /// </summary>
+    private (int? order, string? materialName) ParseLayerMapFileName(string fileName)
+    {
+        // Pattern: {terrainName}_layerMap_{order}_{materialName}.png
+        var match = Regex.Match(fileName, @"^.+_layerMap_(\d+)_(.+)\.png$", RegexOptions.IgnoreCase);
+
+        if (match.Success && int.TryParse(match.Groups[1].Value, out var order))
+        {
+            return (order, match.Groups[2].Value);
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Finds a matching terrain material by name, with fuzzy matching for level name prefixes/suffixes.
+    /// </summary>
+    private TerrainMaterialItemExtended? FindMatchingMaterial(string layerMaterialName, int presetOrder)
+    {
+        // Normalize the layer material name
+        var normalizedLayerName = NormalizeMaterialName(layerMaterialName);
+
+        // Try exact match first (case-insensitive)
+        var exactMatch = Materials.FirstOrDefault(m =>
+            string.Equals(m.InternalName, layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(m.MaterialName, layerMaterialName, StringComparison.OrdinalIgnoreCase));
+
+        if (exactMatch != null)
+        {
+            return exactMatch;
+        }
+
+        // Try normalized match (strips level name prefixes like "BeamNG_DriverTrainingETK_")
+        var normalizedMatch = Materials.FirstOrDefault(m =>
+        {
+            var normalizedInternalName = NormalizeMaterialName(m.InternalName);
+            var normalizedMaterialName = NormalizeMaterialName(m.MaterialName);
+
+            return string.Equals(normalizedInternalName, normalizedLayerName, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalizedMaterialName, normalizedLayerName, StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (normalizedMatch != null)
+        {
+            return normalizedMatch;
+        }
+
+        // Try suffix match (e.g., "_Asphalt" in "BeamNG_DriverTrainingETK_Asphalt")
+        var suffixMatch = Materials.FirstOrDefault(m =>
+        {
+            // Check if either ends with the layer name (ignoring case)
+            return m.InternalName.EndsWith(layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
+                   m.MaterialName.EndsWith(layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
+                   layerMaterialName.EndsWith(m.InternalName, StringComparison.OrdinalIgnoreCase) ||
+                   layerMaterialName.EndsWith(m.MaterialName, StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (suffixMatch != null)
+        {
+            return suffixMatch;
+        }
+
+        // Try contains match as last resort
+        var containsMatch = Materials.FirstOrDefault(m =>
+        {
+            return m.InternalName.Contains(normalizedLayerName, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedLayerName.Contains(NormalizeMaterialName(m.InternalName), StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (containsMatch != null)
+        {
+            return containsMatch;
+        }
+
+        // Try matching by order if it's within bounds
+        if (presetOrder >= 0 && presetOrder < Materials.Count)
+        {
+            var orderMatch = Materials.FirstOrDefault(m => m.Order == presetOrder);
+            if (orderMatch != null)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Matched '{layerMaterialName}' to '{orderMatch.InternalName}' by order ({presetOrder})");
+                return orderMatch;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Normalizes a material name by removing common prefixes like level names.
+    /// Examples:
+    ///   "BeamNG_DriverTrainingETK_Asphalt" -> "Asphalt"
+    ///   "Grass_driver_training" -> "Grass"
+    /// </summary>
+    private string NormalizeMaterialName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+
+        // Remove common BeamNG prefixes
+        var patterns = new[]
+        {
+            @"^BeamNG_[^_]+_",      // BeamNG_LevelName_
+            @"^[^_]+_[^_]+_",       // Generic_Prefix_
+            @"_[^_]+$"              // _suffix (like _driver_training)
+        };
+
+        var result = name;
+        foreach (var pattern in patterns)
+        {
+            var normalized = Regex.Replace(result, pattern, "", RegexOptions.IgnoreCase);
+            if (!string.IsNullOrEmpty(normalized) && normalized.Length >= 3)
+            {
+                result = normalized;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resets the component state.
+    /// </summary>
+    public void Reset()
+    {
+        PresetFilePath = null;
+        HoleMapPath = null;
+        _presetDirectory = null;
+        StateHasChanged();
+    }
+}

@@ -4,12 +4,10 @@
 @using BeamNG_LevelCleanUp.BlazorUI.Components
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Logic
-@using BeamNG_LevelCleanUp.LogicCopyAssets
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
 @using BeamNgTerrainPoc.Terrain
 @using BeamNgTerrainPoc.Terrain.Models
-@using MudBlazor.Utilities
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
@@ -34,12 +32,32 @@
 
             @if (_hasWorkingDirectory && !string.IsNullOrEmpty(_levelName))
             {
-                <MudButton @onclick="ResetPage"
-                           Color="Color.Warning"
-                           StartIcon="@Icons.Material.Filled.Refresh"
-                           Style="margin-top: 16px;">
-                    Reset and Select Different Folder
-                </MudButton>
+                <MudStack Row="true" Spacing="2" Class="mt-4">
+                    <MudButton @onclick="ResetPage"
+                               Color="Color.Warning"
+                               StartIcon="@Icons.Material.Filled.Refresh">
+                        Reset and Select Different Folder
+                    </MudButton>
+                </MudStack>
+
+                <!-- Import Preset Section -->
+                <TerrainPresetImporter @ref="_presetImporter"
+                                       Materials="_terrainMaterials"
+                                       WorkingDirectory="@_workingDirectory"
+                                       OnPresetImported="OnPresetImported"
+                                       Class="mt-4" />
+
+                <!-- Export Preset Section -->
+                <TerrainPresetExporter @ref="_presetExporter"
+                                       Materials="_terrainMaterials"
+                                       WorkingDirectory="@_workingDirectory"
+                                       TerrainName="@_terrainName"
+                                       TerrainSize="@_terrainSize"
+                                       MaxHeight="@_maxHeight"
+                                       MetersPerPixel="@_metersPerPixel"
+                                       TerrainBaseHeight="@_terrainBaseHeight"
+                                       HeightmapPath="@_heightmapPath"
+                                       Class="mt-4" />
 
                 <!-- Terrain Parameters Section -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">

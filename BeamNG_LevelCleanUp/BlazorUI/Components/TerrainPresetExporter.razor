@@ -1,0 +1,478 @@
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@using BeamNgTerrainPoc.Terrain.Models
+@using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
+@inject ISnackbar Snackbar
+
+<MudPaper Class="@CssClass" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+        <div>
+            <MudText Typo="Typo.h6" Class="mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.FileDownload" Class="mr-2" />
+                Export Terrain Preset
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Export all settings to a BeamNG-compatible preset file and road smoothing configurations.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Download"
+                   OnClick="SelectExportFolder"
+                   Disabled="@(!CanExport)">
+            Export Preset
+        </MudButton>
+    </MudStack>
+    @if (!string.IsNullOrEmpty(LastExportPath))
+    {
+        <MudAlert Severity="Severity.Success" Class="mt-3" Dense="true">
+            <strong>Exported to:</strong> @LastExportPath
+        </MudAlert>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+            Files exported: Terrain preset, @_roadSmoothingFilesExported road smoothing config(s)
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+    /// <summary>
+    /// Additional CSS classes to apply to the component.
+    /// </summary>
+    [Parameter]
+    public string? Class { get; set; }
+
+    private string CssClass => string.IsNullOrEmpty(Class) ? "pa-4" : $"pa-4 {Class}";
+
+    /// <summary>
+    /// The list of terrain materials to export.
+    /// </summary>
+    [Parameter]
+    public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
+
+    /// <summary>
+    /// The working directory of the level.
+    /// </summary>
+    [Parameter]
+    public string WorkingDirectory { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The terrain name.
+    /// </summary>
+    [Parameter]
+    public string TerrainName { get; set; } = "theTerrain";
+
+    /// <summary>
+    /// The terrain size.
+    /// </summary>
+    [Parameter]
+    public int TerrainSize { get; set; } = 2048;
+
+    /// <summary>
+    /// The maximum height.
+    /// </summary>
+    [Parameter]
+    public float MaxHeight { get; set; } = 500.0f;
+
+    /// <summary>
+    /// Meters per pixel.
+    /// </summary>
+    [Parameter]
+    public float MetersPerPixel { get; set; } = 1.0f;
+
+    /// <summary>
+    /// The terrain base height (Z offset).
+    /// </summary>
+    [Parameter]
+    public float TerrainBaseHeight { get; set; }
+
+    /// <summary>
+    /// Path to the heightmap file.
+    /// </summary>
+    [Parameter]
+    public string? HeightmapPath { get; set; }
+
+    /// <summary>
+    /// The last export path (for display).
+    /// </summary>
+    public string? LastExportPath { get; private set; }
+
+    private int _roadSmoothingFilesExported;
+
+    private bool CanExport => Materials.Any() && !string.IsNullOrEmpty(TerrainName);
+
+    private async Task SelectExportFolder()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new FolderBrowserDialog();
+            dialog.Description = "Select folder to export terrain preset";
+            dialog.ShowNewFolderButton = true;
+            
+            // Default to working directory if available
+            if (!string.IsNullOrEmpty(WorkingDirectory) && Directory.Exists(WorkingDirectory))
+            {
+                dialog.SelectedPath = WorkingDirectory;
+            }
+            
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                selectedPath = dialog.SelectedPath;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            await ExportPreset(selectedPath);
+        }
+    }
+
+    private async Task ExportPreset(string exportFolder)
+    {
+        try
+        {
+            _roadSmoothingFilesExported = 0;
+            
+            // 1. Export BeamNG-compatible terrain preset file
+            await ExportTerrainPresetFile(exportFolder);
+            
+            // 2. Export road smoothing settings for each road material
+            await ExportRoadSmoothingSettings(exportFolder);
+            
+            LastExportPath = exportFolder;
+            Snackbar.Add($"Terrain preset exported successfully to {exportFolder}", Severity.Success);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Exported terrain preset with {_roadSmoothingFilesExported} road smoothing config(s) to {exportFolder}");
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
+            Snackbar.Add($"Error exporting preset: {message}", Severity.Error);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Export error: {message}");
+        }
+    }
+
+    /// <summary>
+    /// Exports a BeamNG-compatible terrain preset file (*_terrainPreset.json).
+    /// </summary>
+    private async Task ExportTerrainPresetFile(string exportFolder)
+    {
+        var presetFileName = $"{TerrainName}_terrainPreset.json";
+        var presetFilePath = Path.Combine(exportFolder, presetFileName);
+        var levelName = GetLevelName();
+        
+        // Build the preset JSON structure to match BeamNG format exactly
+        var preset = new JsonObject
+        {
+            ["name"] = TerrainName,
+            ["type"] = "TerrainData",
+            ["heightScale"] = MaxHeight,
+            ["squareSize"] = MetersPerPixel,
+            ["pos"] = new JsonObject
+            {
+                // Calculate position based on terrain size and meters per pixel
+                // BeamNG centers terrain at negative half-size
+                ["x"] = -(TerrainSize * MetersPerPixel / 2.0f),
+                ["y"] = -(TerrainSize * MetersPerPixel / 2.0f),
+                ["z"] = TerrainBaseHeight
+            }
+        };
+        
+        // Add heightmap path (relative BeamNG path format)
+        if (!string.IsNullOrEmpty(HeightmapPath) && File.Exists(HeightmapPath))
+        {
+            var heightmapFileName = Path.GetFileName(HeightmapPath);
+            // Copy heightmap to export folder
+            var targetHeightmapPath = Path.Combine(exportFolder, heightmapFileName);
+            File.Copy(HeightmapPath, targetHeightmapPath, true);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copied heightmap to export folder");
+            
+            // Use relative path format that BeamNG expects
+            preset["heightMapPath"] = $"/levels/{levelName}/import/{heightmapFileName}";
+        }
+        
+        // Add holemap path if it exists (check for common holemap naming patterns)
+        var possibleHolemapPaths = new[]
+        {
+            Path.Combine(Path.GetDirectoryName(HeightmapPath) ?? "", $"{TerrainName}_holemap.png"),
+            Path.Combine(WorkingDirectory, $"{TerrainName}_holemap.png"),
+            Path.Combine(WorkingDirectory, "import", $"{TerrainName}_holemap.png")
+        };
+        
+        foreach (var holemapPath in possibleHolemapPaths)
+        {
+            if (File.Exists(holemapPath))
+            {
+                var holemapFileName = Path.GetFileName(holemapPath);
+                var targetHolemapPath = Path.Combine(exportFolder, holemapFileName);
+                File.Copy(holemapPath, targetHolemapPath, true);
+                preset["holeMapPath"] = $"/levels/{levelName}/import/{holemapFileName}";
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copied holemap to export folder");
+                break;
+            }
+        }
+        
+        // Add opacity maps (layer maps) in order - CRITICAL: rename with current order!
+        var opacityMaps = new JsonArray();
+        var orderedMaterials = Materials.OrderBy(m => m.Order).ToList();
+        var layerMapsCopied = 0;
+        
+        foreach (var mat in orderedMaterials)
+        {
+            if (!string.IsNullOrEmpty(mat.LayerMapPath) && File.Exists(mat.LayerMapPath))
+            {
+                // Generate new filename with CURRENT order: {terrainName}_layerMap_{order}_{internalName}.png
+                var safeInternalName = SanitizeFileName(mat.InternalName);
+                var newLayerMapFileName = $"{TerrainName}_layerMap_{mat.Order}_{safeInternalName}.png";
+                var targetLayerMapPath = Path.Combine(exportFolder, newLayerMapFileName);
+                
+                // Copy and rename layer map to export folder
+                File.Copy(mat.LayerMapPath, targetLayerMapPath, true);
+                layerMapsCopied++;
+                
+                PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                    $"Exported layer map [{mat.Order}]: {newLayerMapFileName}");
+                
+                // Add to opacity maps array with BeamNG-style relative path using NEW filename
+                opacityMaps.Add($"/levels/{levelName}/import/{newLayerMapFileName}");
+            }
+        }
+        
+        if (layerMapsCopied > 0)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"Exported {layerMapsCopied} layer map(s) with updated order in filenames");
+        }
+        
+        if (opacityMaps.Count > 0)
+        {
+            preset["opacityMaps"] = opacityMaps;
+        }
+        
+        // Write the BeamNG-compatible preset file (without custom extensions)
+        var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+        var jsonContent = preset.ToJsonString(jsonOptions);
+        await File.WriteAllTextAsync(presetFilePath, jsonContent);
+        
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported terrain preset: {presetFileName}");
+        
+        // Write a separate metadata file with material order and settings (for our tool's import)
+        await ExportMaterialsMetadataFile(exportFolder, orderedMaterials, levelName);
+    }
+
+    /// <summary>
+    /// Exports a metadata file with material order and settings for reimporting.
+    /// This is separate from the BeamNG preset to keep that file clean.
+    /// </summary>
+    private async Task ExportMaterialsMetadataFile(string exportFolder, List<TerrainMaterialItemExtended> orderedMaterials, string levelName)
+    {
+        var metadataFileName = $"{TerrainName}_materials_metadata.json";
+        var metadataFilePath = Path.Combine(exportFolder, metadataFileName);
+        
+        var metadata = new JsonObject
+        {
+            ["_info"] = "This file contains material metadata for BeamNG MapTools. It is used for reimporting settings.",
+            ["terrainName"] = TerrainName,
+            ["terrainSize"] = TerrainSize,
+            ["exportedAt"] = DateTime.UtcNow.ToString("O"),
+            ["version"] = "1.0"
+        };
+        
+        // Add materials array with full order information
+        var materialsArray = new JsonArray();
+        foreach (var mat in orderedMaterials)
+        {
+            materialsArray.Add(new JsonObject
+            {
+                ["order"] = mat.Order,
+                ["name"] = mat.MaterialName,
+                ["internalName"] = mat.InternalName,
+                ["jsonKey"] = mat.JsonKey,
+                ["hasLayerMap"] = mat.HasLayerMap,
+                ["isRoadMaterial"] = mat.IsRoadMaterial,
+                ["layerMapFileName"] = mat.HasLayerMap 
+                    ? $"{TerrainName}_layerMap_{mat.Order}_{SanitizeFileName(mat.InternalName)}.png" 
+                    : null
+            });
+        }
+        metadata["materials"] = materialsArray;
+        
+        var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+        var jsonContent = metadata.ToJsonString(jsonOptions);
+        await File.WriteAllTextAsync(metadataFilePath, jsonContent);
+        
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported materials metadata: {metadataFileName}");
+    }
+
+    /// <summary>
+    /// Exports road smoothing settings for each material that has road smoothing enabled.
+    /// </summary>
+    private async Task ExportRoadSmoothingSettings(string exportFolder)
+    {
+        var orderedMaterials = Materials.OrderBy(m => m.Order).ToList();
+        
+        foreach (var mat in orderedMaterials.Where(m => m.IsRoadMaterial))
+        {
+            await ExportRoadSmoothingForMaterial(exportFolder, mat);
+            _roadSmoothingFilesExported++;
+        }
+    }
+
+    /// <summary>
+    /// Exports road smoothing settings for a single material.
+    /// </summary>
+    private async Task ExportRoadSmoothingForMaterial(string exportFolder, TerrainMaterialItemExtended material)
+    {
+        // Create filename: {terrainName}_roadSmoothing_{order}_{materialName}.json
+        var safeInternalName = SanitizeFileName(material.InternalName);
+        var fileName = $"{TerrainName}_roadSmoothing_{material.Order}_{safeInternalName}.json";
+        var filePath = Path.Combine(exportFolder, fileName);
+        
+        // Build the road smoothing settings JSON
+        var settings = new JsonObject
+        {
+            // Metadata
+            ["_metadata"] = new JsonObject
+            {
+                ["terrainName"] = TerrainName,
+                ["materialOrder"] = material.Order,
+                ["materialName"] = material.MaterialName,
+                ["internalName"] = material.InternalName,
+                ["exportedAt"] = DateTime.UtcNow.ToString("O"),
+                ["version"] = "1.0"
+            },
+            
+            // Preset selection
+            ["selectedPreset"] = material.SelectedPreset.ToString(),
+            
+            // Primary parameters
+            ["roadWidthMeters"] = material.RoadWidthMeters,
+            ["terrainAffectedRangeMeters"] = material.TerrainAffectedRangeMeters,
+            ["enableMaxSlopeConstraint"] = material.EnableMaxSlopeConstraint,
+            ["roadMaxSlopeDegrees"] = material.RoadMaxSlopeDegrees,
+            ["sideMaxSlopeDegrees"] = material.SideMaxSlopeDegrees,
+            
+            // Algorithm settings
+            ["approach"] = material.Approach.ToString(),
+            ["blendFunctionType"] = material.BlendFunctionType.ToString(),
+            ["crossSectionIntervalMeters"] = material.CrossSectionIntervalMeters,
+            ["enableTerrainBlending"] = material.EnableTerrainBlending,
+            
+            // Spline parameters
+            ["splineParameters"] = new JsonObject
+            {
+                ["tension"] = material.SplineTension,
+                ["continuity"] = material.SplineContinuity,
+                ["bias"] = material.SplineBias,
+                ["useGraphOrdering"] = material.UseGraphOrdering,
+                ["preferStraightThroughJunctions"] = material.PreferStraightThroughJunctions,
+                ["densifyMaxSpacingPixels"] = material.DensifyMaxSpacingPixels,
+                ["simplifyTolerancePixels"] = material.SimplifyTolerancePixels,
+                ["bridgeEndpointMaxDistancePixels"] = material.BridgeEndpointMaxDistancePixels,
+                ["minPathLengthPixels"] = material.MinPathLengthPixels,
+                ["junctionAngleThreshold"] = material.JunctionAngleThreshold,
+                ["orderingNeighborRadiusPixels"] = material.OrderingNeighborRadiusPixels,
+                ["skeletonDilationRadius"] = material.SkeletonDilationRadius,
+                ["smoothingWindowSize"] = material.SplineSmoothingWindowSize,
+                ["useButterworthFilter"] = material.SplineUseButterworthFilter,
+                ["butterworthFilterOrder"] = material.SplineButterworthFilterOrder,
+                ["globalLevelingStrength"] = material.GlobalLevelingStrength
+            },
+            
+            // DirectMask parameters
+            ["directMaskParameters"] = new JsonObject
+            {
+                ["smoothingWindowSize"] = material.DirectMaskSmoothingWindowSize,
+                ["roadPixelSearchRadius"] = material.RoadPixelSearchRadius,
+                ["useButterworthFilter"] = material.DirectMaskUseButterworthFilter,
+                ["butterworthFilterOrder"] = material.DirectMaskButterworthFilterOrder
+            },
+            
+            // Post-processing smoothing
+            ["postProcessing"] = new JsonObject
+            {
+                ["enabled"] = material.EnablePostProcessingSmoothing,
+                ["smoothingType"] = material.SmoothingType.ToString(),
+                ["kernelSize"] = material.SmoothingKernelSize,
+                ["sigma"] = material.SmoothingSigma,
+                ["iterations"] = material.SmoothingIterations,
+                ["maskExtensionMeters"] = material.SmoothingMaskExtensionMeters
+            },
+            
+            // Debug settings
+            ["debug"] = new JsonObject
+            {
+                ["exportSmoothedHeightmapWithOutlines"] = material.ExportSmoothedHeightmapWithOutlines,
+                ["exportSplineDebugImage"] = material.ExportSplineDebugImage,
+                ["exportSkeletonDebugImage"] = material.ExportSkeletonDebugImage,
+                ["exportSmoothedElevationDebugImage"] = material.ExportSmoothedElevationDebugImage
+            }
+        };
+        
+        // Write the settings file
+        var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+        var jsonContent = settings.ToJsonString(jsonOptions);
+        await File.WriteAllTextAsync(filePath, jsonContent);
+        
+        PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            $"Exported road smoothing config: {fileName}");
+    }
+
+    /// <summary>
+    /// Extracts the level name from the working directory.
+    /// </summary>
+    private string GetLevelName()
+    {
+        if (string.IsNullOrEmpty(WorkingDirectory))
+            return "unknown";
+        
+        // Try to extract level name from path pattern: .../levels/levelname/...
+        var parts = WorkingDirectory.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            if (parts[i].Equals("levels", StringComparison.OrdinalIgnoreCase))
+            {
+                return parts[i + 1];
+            }
+        }
+        
+        // Fallback: use the folder name
+        return new DirectoryInfo(WorkingDirectory).Name;
+    }
+
+    /// <summary>
+    /// Sanitizes a filename by removing invalid characters.
+    /// </summary>
+    private string SanitizeFileName(string fileName)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var result = fileName;
+        
+        foreach (var c in invalidChars)
+        {
+            result = result.Replace(c, '_');
+        }
+        
+        // Also replace spaces and other problematic characters
+        result = result.Replace(' ', '_');
+        result = result.Replace('-', '_');
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Resets the component state.
+    /// </summary>
+    public void Reset()
+    {
+        LastExportPath = null;
+        _roadSmoothingFilesExported = 0;
+        StateHasChanged();
+    }
+}

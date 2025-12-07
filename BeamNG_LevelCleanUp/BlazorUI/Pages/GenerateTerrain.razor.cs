@@ -40,6 +40,8 @@ public partial class GenerateTerrain
     private int _terrainSize = 2048;
     private bool _updateTerrainBlock = true;
     private string _workingDirectory = string.Empty;
+    private TerrainPresetImporter? _presetImporter;
+    private TerrainPresetExporter? _presetExporter;
     [AllowNull] private MudExpansionPanels FileSelect { get; set; }
 
     protected override void OnInitialized()
@@ -136,6 +138,28 @@ public partial class GenerateTerrain
             _heightmapPath = selectedPath;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private void OnPresetImported(TerrainPresetResult result)
+    {
+        // Apply imported settings to the page
+        if (!string.IsNullOrEmpty(result.TerrainName))
+            _terrainName = result.TerrainName;
+
+        if (result.MaxHeight.HasValue)
+            _maxHeight = result.MaxHeight.Value;
+
+        if (result.MetersPerPixel.HasValue)
+            _metersPerPixel = result.MetersPerPixel.Value;
+
+        if (result.TerrainBaseHeight.HasValue)
+            _terrainBaseHeight = result.TerrainBaseHeight.Value;
+
+        if (!string.IsNullOrEmpty(result.HeightmapPath))
+            _heightmapPath = result.HeightmapPath;
+
+        _dropContainer?.Refresh();
+        StateHasChanged();
     }
 
     private async Task OnWorkingDirectorySelected(string folder)
@@ -467,6 +491,8 @@ public partial class GenerateTerrain
         _terrainName = "theTerrain";
         _terrainBaseHeight = 0.0f;
         _updateTerrainBlock = true;
+        _presetImporter?.Reset();
+        _presetExporter?.Reset();
 
         if (FileSelect?.Panels.Count > 0) await FileSelect.Panels[0].ExpandAsync();
 
