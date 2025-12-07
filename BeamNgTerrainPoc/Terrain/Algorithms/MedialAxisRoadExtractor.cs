@@ -41,6 +41,18 @@ public class MedialAxisRoadExtractor : IRoadExtractor
             try 
             {
                 var pathSpline = new RoadSpline(worldPoints);
+                
+                // FILTER: Skip paths that would generate too few cross-sections
+                // This prevents isolated spikes from short skeleton fragments
+                int estimatedCrossSections = (int)(pathSpline.TotalLength / parameters.CrossSectionIntervalMeters);
+                const int MinCrossSectionsPerPath = 10; // Minimum to form a meaningful road segment
+                if (estimatedCrossSections < MinCrossSectionsPerPath)
+                {
+                    Console.WriteLine($"  Skipping Path {pathId}: too short ({pathSpline.TotalLength:F1}m, ~{estimatedCrossSections} cross-sections < {MinCrossSectionsPerPath} min)");
+                    pathId++;
+                    continue;
+                }
+                
                 Console.WriteLine($"  Processed Path {pathId}: spline length {pathSpline.TotalLength:F1}m, points {worldPoints.Count}");
                 
                 var splineSamples = pathSpline.SampleByDistance(parameters.CrossSectionIntervalMeters);

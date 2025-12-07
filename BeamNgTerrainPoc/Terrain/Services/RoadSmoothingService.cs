@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.Algorithms;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using SixLabors.ImageSharp;
@@ -44,7 +45,7 @@ public class RoadSmoothingService
         RoadSmoothingParameters parameters,
         float metersPerPixel)
     {
-        Console.WriteLine($"Starting road smoothing (Approach: {parameters.Approach})...");
+        TerrainLogger.Info($"Starting road smoothing (Approach: {parameters.Approach})...");
         
         // Validate parameters
         var validationErrors = parameters.Validate();
@@ -59,19 +60,19 @@ public class RoadSmoothingService
         
         if (parameters.CrossSectionIntervalMeters > recommendedMaxInterval)
         {
-            Console.WriteLine($"  ?? WARNING: CrossSectionIntervalMeters ({parameters.CrossSectionIntervalMeters}m) may cause gaps!");
-            Console.WriteLine($"  Recommended max: {recommendedMaxInterval:F2}m for {totalImpactRadius:F1}m impact radius");
-            Console.WriteLine($"  Auto-adjusting to prevent dotted roads...");
+            TerrainLogger.Warning($"CrossSectionIntervalMeters ({parameters.CrossSectionIntervalMeters}m) may cause gaps!");
+            TerrainLogger.Warning($"Recommended max: {recommendedMaxInterval:F2}m for {totalImpactRadius:F1}m impact radius");
+            TerrainLogger.Info("Auto-adjusting to prevent dotted roads...");
             parameters.CrossSectionIntervalMeters = recommendedMaxInterval * 0.8f; // Use 80% for safety margin
-            Console.WriteLine($"  ? Adjusted to: {parameters.CrossSectionIntervalMeters:F2}m");
+            TerrainLogger.Info($"Adjusted to: {parameters.CrossSectionIntervalMeters:F2}m");
         }
         
         // Warn about global leveling with small blend zones
         if (parameters.GlobalLevelingStrength > 0.5f && parameters.TerrainAffectedRangeMeters < 15.0f)
         {
-            Console.WriteLine($"  ?? WARNING: High GlobalLevelingStrength ({parameters.GlobalLevelingStrength:F2}) + small blend range ({parameters.TerrainAffectedRangeMeters}m)");
-            Console.WriteLine($"  This combination may create disconnected road segments (dots)!");
-            Console.WriteLine($"  Consider: GlobalLevelingStrength=0 (terrain-following) OR TerrainAffectedRangeMeters?15m");
+            TerrainLogger.Warning($"High GlobalLevelingStrength ({parameters.GlobalLevelingStrength:F2}) + small blend range ({parameters.TerrainAffectedRangeMeters}m)");
+            TerrainLogger.Warning("This combination may create disconnected road segments (dots)!");
+            TerrainLogger.Warning("Consider: GlobalLevelingStrength=0 (terrain-following) OR TerrainAffectedRangeMeters?15m");
         }
         
         // Initialize components based on approach
@@ -81,7 +82,7 @@ public class RoadSmoothingService
         byte[,]? exclusionMask = null;
         if (parameters.ExclusionLayerPaths?.Any() == true)
         {
-            Console.WriteLine($"Processing {parameters.ExclusionLayerPaths.Count} exclusion layers...");
+            TerrainLogger.Info($"Processing {parameters.ExclusionLayerPaths.Count} exclusion layers...");
             exclusionMask = _exclusionProcessor!.CombineExclusionLayers(
                 parameters.ExclusionLayerPaths,
                 roadLayer.GetLength(1),
@@ -93,7 +94,7 @@ public class RoadSmoothingService
             ? _exclusionProcessor!.ApplyExclusionsToRoadMask(roadLayer, exclusionMask)
             : roadLayer;
         
-        Console.WriteLine("Extracting road geometry...");
+        TerrainLogger.Info("Extracting road geometry...");
         var geometry = _roadExtractor!.ExtractRoadGeometry(
             smoothingMask,
             parameters,
@@ -103,14 +104,14 @@ public class RoadSmoothingService
         if (parameters.Approach == RoadSmoothingApproach.Spline && parameters.ExportSplineDebugImage)
         {
             try { ExportSplineDebugImage(geometry, metersPerPixel, parameters, "spline_debug.png"); }
-            catch (Exception ex) { Console.WriteLine($"Spline debug export failed: {ex.Message}"); }
+            catch (Exception ex) { TerrainLogger.Warning($"Spline debug export failed: {ex.Message}"); }
         }
         
         float[,] newHeightMap = heightMap; // default no change
         
         if (!parameters.EnableTerrainBlending)
         {
-            Console.WriteLine("Terrain blending disabled (debug mode). Returning original heightmap with geometry only.");
+            TerrainLogger.Info("Terrain blending disabled (debug mode). Returning original heightmap with geometry only.");
         }
         else
         {
@@ -129,14 +130,14 @@ public class RoadSmoothingService
                 // Spline approach - calculate elevations first, then use distance field blending
                 if (geometry.CrossSections.Count > 0)
                 {
-                    Console.WriteLine("Calculating target elevations for cross-sections...");
+                    TerrainLogger.Info("Calculating target elevations for cross-sections...");
                     _heightCalculator!.CalculateTargetElevations(geometry, heightMap, metersPerPixel);
 
                     // Export smoothed elevation debug image if enabled
                     if (parameters.ExportSmoothedElevationDebugImage)
                     {
                         try { ExportSmoothedElevationDebugImage(geometry, metersPerPixel, parameters); }
-                        catch (Exception ex) { Console.WriteLine($"Smoothed elevation debug export failed: {ex.Message}"); }
+                        catch (Exception ex) { TerrainLogger.Warning($"Smoothed elevation debug export failed: {ex.Message}"); }
                     }
                 }
                 
@@ -150,7 +151,7 @@ public class RoadSmoothingService
                 // Apply post-processing smoothing if enabled (Spline approach only)
                 if (parameters.EnablePostProcessingSmoothing)
                 {
-                    Console.WriteLine("Applying post-processing smoothing to eliminate staircase artifacts...");
+                    TerrainLogger.Info("Applying post-processing smoothing to eliminate staircase artifacts...");
                     distanceFieldBlender.ApplyPostProcessingSmoothing(
                         newHeightMap,
                         distanceFieldBlender.GetLastDistanceField(),
@@ -162,7 +163,7 @@ public class RoadSmoothingService
                 if (parameters.ExportSmoothedHeightmapWithOutlines)
                 {
                     try { ExportSmoothedHeightmapWithRoadOutlines(newHeightMap, geometry, distanceFieldBlender.GetLastDistanceField(), metersPerPixel, parameters); }
-                    catch (Exception ex) { Console.WriteLine($"Smoothed heightmap with outlines export failed: {ex.Message}"); }
+                    catch (Exception ex) { TerrainLogger.Warning($"Smoothed heightmap with outlines export failed: {ex.Message}"); }
                 }
             }
         }
@@ -171,7 +172,7 @@ public class RoadSmoothingService
         var deltaMap = CalculateDeltaMap(heightMap, newHeightMap);
         var statistics = CalculateStatistics(heightMap, newHeightMap, parameters, metersPerPixel);
         
-        Console.WriteLine("Road smoothing complete!");
+        TerrainLogger.Info("Road smoothing complete!");
         
         return new SmoothingResult(newHeightMap, deltaMap, statistics, geometry);
     }
@@ -180,14 +181,14 @@ public class RoadSmoothingService
     {
         if (approach == RoadSmoothingApproach.DirectMask)
         {
-            Console.WriteLine("Using DIRECT road mask approach (robust, handles intersections)");
+            TerrainLogger.Info("Using DIRECT road mask approach (robust, handles intersections)");
             _roadExtractor = new DirectRoadExtractor();
             _terrainBlender = new DirectTerrainBlender();
             _heightCalculator = null; // Not needed for direct approach
         }
         else // RoadSmoothingApproach.Spline
         {
-            Console.WriteLine("Using OPTIMIZED SPLINE approach (fast, smooth, EDT-based)");
+            TerrainLogger.Info("Using OPTIMIZED SPLINE approach (fast, smooth, EDT-based)");
             _roadExtractor = new MedialAxisRoadExtractor();
             _heightCalculator = new OptimizedElevationSmoother(); // O(N) prefix-sum smoothing
             _terrainBlender = new DistanceFieldTerrainBlender(); // Global EDT-based blending
@@ -245,7 +246,7 @@ public class RoadSmoothingService
         Directory.CreateDirectory(dir);
         string filePath = Path.Combine(dir, fileName);
         image.SaveAsPng(filePath);
-        Console.WriteLine($"Exported spline debug image: {filePath}");
+        TerrainLogger.Info($"Exported spline debug image: {filePath}");
     }
 
     private void ExportSmoothedElevationDebugImage(RoadGeometry geometry, float metersPerPixel, RoadSmoothingParameters parameters)
@@ -257,7 +258,7 @@ public class RoadSmoothingService
         var elevations = geometry.CrossSections.Select(cs => cs.TargetElevation).Where(e => e > 0).ToList();
         if (!elevations.Any())
         {
-            Console.WriteLine("No valid elevations to create smoothed debug image.");
+            TerrainLogger.Warning("No valid elevations to create smoothed debug image.");
             return;
         }
         float minElev = elevations.Min();
@@ -280,7 +281,7 @@ public class RoadSmoothingService
         // Color code the road based on smoothed target elevations
         foreach (var cs in geometry.CrossSections)
         {
-            if (cs.TargetElevation <= 0) continue;
+            if (float.IsNaN(cs.TargetElevation) || cs.TargetElevation <= -1000f) continue; // Skip uninitialized or invalid elevations
 
             float normalizedElevation = (cs.TargetElevation - minElev) / range;
             var color = GetColorForValue(normalizedElevation);
@@ -301,8 +302,8 @@ public class RoadSmoothingService
         Directory.CreateDirectory(dir);
         string filePath = Path.Combine(dir, "spline_smoothed_elevation_debug.png");
         image.SaveAsPng(filePath);
-        Console.WriteLine($"Exported smoothed elevation debug image: {filePath}");
-        Console.WriteLine($"  Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
+        TerrainLogger.Info($"Exported smoothed elevation debug image: {filePath}");
+        TerrainLogger.Info($"  Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
     }
 
     private Rgba32 GetColorForValue(float value)
@@ -332,7 +333,7 @@ public class RoadSmoothingService
         int width = smoothedHeightMap.GetLength(1);
         int height = smoothedHeightMap.GetLength(0);
         
-        Console.WriteLine($"Exporting smoothed heightmap with road outlines ({width}x{height})...");
+        TerrainLogger.Info($"Exporting smoothed heightmap with road outlines ({width}x{height})...");
 
         // Step 1: Find height range for grayscale normalization
         float minHeight = float.MaxValue;
@@ -400,10 +401,10 @@ public class RoadSmoothingService
         string filePath = Path.Combine(dir, "smoothed_heightmap_with_road_outlines.png");
         image.SaveAsPng(filePath);
         
-        Console.WriteLine($"Exported smoothed heightmap with outlines: {filePath}");
-        Console.WriteLine($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");
-        Console.WriteLine($"  Road edge outline (cyan): {roadEdgePixels:N0} pixels at ±{roadHalfWidth:F1}m from centerline");
-        Console.WriteLine($"  Blend zone edge outline (magenta): {blendEdgePixels:N0} pixels at ±{blendZoneMaxDist:F1}m from centerline");
+        TerrainLogger.Info($"Exported smoothed heightmap with outlines: {filePath}");
+        TerrainLogger.Info($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");
+        TerrainLogger.Info($"  Road edge outline (cyan): {roadEdgePixels:N0} pixels at ±{roadHalfWidth:F1}m from centerline");
+        TerrainLogger.Info($"  Blend zone edge outline (magenta): {blendEdgePixels:N0} pixels at ±{blendZoneMaxDist:F1}m from centerline");
     }
     
     private void DrawLine(Image<Rgba32> img, int x0, int y0, int x1, int y1, Rgba32 color)

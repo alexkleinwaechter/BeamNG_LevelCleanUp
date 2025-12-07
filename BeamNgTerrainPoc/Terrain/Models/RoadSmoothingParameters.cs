@@ -117,7 +117,15 @@ public class RoadSmoothingParameters
     // ========================================
 
     /// <summary>
+    /// Enable enforcement of the maximum road slope constraint.
+    /// When enabled, road elevations are adjusted to ensure no segment exceeds RoadMaxSlopeDegrees.
+    /// Default: false (disabled - road follows smoothed terrain)
+    /// </summary>
+    public bool EnableMaxSlopeConstraint { get; set; } = false;
+
+    /// <summary>
     /// Maximum allowed road surface slope in degrees.
+    /// Only enforced when EnableMaxSlopeConstraint = true.
     /// Prevents unrealistic steepness on the road itself.
     /// 
     /// Typical values:
