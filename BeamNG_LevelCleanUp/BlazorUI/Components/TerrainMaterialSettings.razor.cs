@@ -553,9 +553,19 @@ public partial class TerrainMaterialSettings
 
         /// <summary>
         ///     Builds the full RoadSmoothingParameters from all stored values.
+        ///     Creates a subfolder per material name to avoid overwriting debug images.
         /// </summary>
         public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null)
         {
+            // Create a subfolder for this material's debug output to avoid overwriting other materials' images
+            string? materialDebugDirectory = null;
+            if (!string.IsNullOrWhiteSpace(debugOutputDirectory))
+            {
+                // Sanitize material name for use as folder name
+                var safeMaterialName = SanitizeFolderName(InternalName);
+                materialDebugDirectory = Path.Combine(debugOutputDirectory, safeMaterialName);
+            }
+
             var result = new RoadSmoothingParameters
             {
                 // Primary parameters
@@ -579,8 +589,8 @@ public partial class TerrainMaterialSettings
                 SmoothingIterations = SmoothingIterations,
                 SmoothingMaskExtensionMeters = SmoothingMaskExtensionMeters,
 
-                // Debug
-                DebugOutputDirectory = debugOutputDirectory,
+                // Debug - use material-specific subfolder
+                DebugOutputDirectory = materialDebugDirectory,
                 ExportSmoothedHeightmapWithOutlines = ExportSmoothedHeightmapWithOutlines
             };
 
@@ -618,6 +628,27 @@ public partial class TerrainMaterialSettings
             };
 
             return result;
+        }
+
+        /// <summary>
+        ///     Sanitizes a material name for use as a folder name by removing invalid characters.
+        /// </summary>
+        private static string SanitizeFolderName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return "unknown_material";
+
+            // Get invalid path characters
+            var invalidChars = Path.GetInvalidFileNameChars();
+            
+            // Replace invalid characters with underscores
+            var sanitized = string.Join("_", name.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries));
+            
+            // Remove any leading/trailing whitespace and dots (which can cause issues)
+            sanitized = sanitized.Trim().Trim('.');
+            
+            // If result is empty, use a default name
+            return string.IsNullOrWhiteSpace(sanitized) ? "unknown_material" : sanitized;
         }
     }
 }
