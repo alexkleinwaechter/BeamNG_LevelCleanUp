@@ -95,6 +95,13 @@
     public string? HeightmapPath { get; set; }
 
     /// <summary>
+    /// Callback invoked to request material reordering before export.
+    /// Returns true if materials were reordered.
+    /// </summary>
+    [Parameter]
+    public Func<bool>? OnRequestMaterialReorder { get; set; }
+
+    /// <summary>
     /// The last export path (for display).
     /// </summary>
     public string? LastExportPath { get; private set; }
@@ -135,6 +142,22 @@
     {
         try
         {
+            // Request material reordering before export
+            if (OnRequestMaterialReorder != null)
+            {
+                var wasReordered = OnRequestMaterialReorder.Invoke();
+                if (wasReordered)
+                {
+                    var movedCount = Materials.Skip(1).Count(m => !m.HasLayerMap);
+                    Snackbar.Add(
+                        $"Reordered {movedCount} material(s) without layer maps to end of list before export. " +
+                        "Materials without layers at positions > 0 cannot claim pixels.",
+                        Severity.Info);
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Moved {movedCount} material(s) without layer maps to end of list for export.");
+                }
+            }
+
             _roadSmoothingFilesExported = 0;
             
             // 1. Export BeamNG-compatible terrain preset file

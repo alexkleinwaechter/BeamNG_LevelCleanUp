@@ -349,6 +349,78 @@ public partial class GenerateTerrain
         _terrainMaterials.AddRange(sorted);
     }
 
+    /// <summary>
+    /// Reorders materials so that those without layer maps (except the one at index 0) are moved to the end.
+    /// Materials without layer maps at positions > 0 will never claim pixels in terrain generation,
+    /// so they should be at the end to avoid confusion with material indices.
+    /// </summary>
+    /// <returns>True if any materials were reordered, false otherwise.</returns>
+    private bool ReorderMaterialsWithoutLayerMapsToEnd()
+    {
+        // First, normalize the current order
+        RenormalizeMaterialOrder();
+        
+        var sorted = _terrainMaterials.OrderBy(m => m.Order).ToList();
+        
+        // Separate materials:
+        // - Material at index 0 stays (regardless of having layer map)
+        // - Materials with layer maps (indices 1+)
+        // - Materials without layer maps (indices 1+)
+        var firstMaterial = sorted.FirstOrDefault();
+        var remainingWithLayerMaps = sorted.Skip(1).Where(m => m.HasLayerMap).ToList();
+        var remainingWithoutLayerMaps = sorted.Skip(1).Where(m => !m.HasLayerMap).ToList();
+        
+        // Check if any reordering is needed
+        if (!remainingWithoutLayerMaps.Any())
+            return false; // Nothing to reorder
+        
+        // Check if materials without layer maps are already at the end
+        var expectedOrder = new List<TerrainMaterialSettings.TerrainMaterialItemExtended>();
+        if (firstMaterial != null)
+            expectedOrder.Add(firstMaterial);
+        expectedOrder.AddRange(remainingWithLayerMaps);
+        expectedOrder.AddRange(remainingWithoutLayerMaps);
+        
+        // Compare with current order
+        var currentOrder = sorted.ToList();
+        var needsReorder = false;
+        for (var i = 0; i < expectedOrder.Count; i++)
+        {
+            if (expectedOrder[i] != currentOrder[i])
+            {
+                needsReorder = true;
+                break;
+            }
+        }
+        
+        if (!needsReorder)
+            return false;
+        
+        // Apply new order
+        _terrainMaterials.Clear();
+        for (var i = 0; i < expectedOrder.Count; i++)
+        {
+            expectedOrder[i].Order = i;
+            _terrainMaterials.Add(expectedOrder[i]);
+        }
+        
+        return true;
+    }
+
+    /// <summary>
+    /// Handles the request from TerrainPresetExporter to reorder materials before export.
+    /// </summary>
+    private bool HandleMaterialReorderRequest()
+    {
+        var wasReordered = ReorderMaterialsWithoutLayerMapsToEnd();
+        if (wasReordered)
+        {
+            _dropContainer?.Refresh();
+            StateHasChanged();
+        }
+        return wasReordered;
+    }
+
     private void OnMaterialSettingsChanged(TerrainMaterialSettings.TerrainMaterialItemExtended material)
     {
         StateHasChanged();
@@ -398,6 +470,20 @@ public partial class GenerateTerrain
     private async Task ExecuteTerrainGeneration()
     {
         if (!CanGenerate()) return;
+
+        // Reorder materials: move those without layer maps (except index 0) to end
+        if (ReorderMaterialsWithoutLayerMapsToEnd())
+        {
+            var movedCount = _terrainMaterials.Skip(1).Count(m => !m.HasLayerMap);
+            Snackbar.Add(
+                $"Reordered {movedCount} material(s) without layer maps to end of list. " +
+                "Materials without layers at positions > 0 cannot claim pixels.",
+                Severity.Info);
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Moved {movedCount} material(s) without layer maps to end of list for correct terrain generation.");
+            _dropContainer?.Refresh();
+            StateHasChanged();
+        }
 
         _isGenerating = true;
         StateHasChanged();
