@@ -255,59 +255,12 @@
             preset["opacityMaps"] = opacityMaps;
         }
         
-        // Write the BeamNG-compatible preset file (without custom extensions)
+        // Write the BeamNG-compatible preset file
         var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
         var jsonContent = preset.ToJsonString(jsonOptions);
         await File.WriteAllTextAsync(presetFilePath, jsonContent);
         
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported terrain preset: {presetFileName}");
-        
-        // Write a separate metadata file with material order and settings (for our tool's import)
-        await ExportMaterialsMetadataFile(exportFolder, orderedMaterials, levelName);
-    }
-
-    /// <summary>
-    /// Exports a metadata file with material order and settings for reimporting.
-    /// This is separate from the BeamNG preset to keep that file clean.
-    /// </summary>
-    private async Task ExportMaterialsMetadataFile(string exportFolder, List<TerrainMaterialItemExtended> orderedMaterials, string levelName)
-    {
-        var metadataFileName = $"{TerrainName}_materials_metadata.json";
-        var metadataFilePath = Path.Combine(exportFolder, metadataFileName);
-        
-        var metadata = new JsonObject
-        {
-            ["_info"] = "This file contains material metadata for BeamNG MapTools. It is used for reimporting settings.",
-            ["terrainName"] = TerrainName,
-            ["terrainSize"] = TerrainSize,
-            ["exportedAt"] = DateTime.UtcNow.ToString("O"),
-            ["version"] = "1.0"
-        };
-        
-        // Add materials array with full order information
-        var materialsArray = new JsonArray();
-        foreach (var mat in orderedMaterials)
-        {
-            materialsArray.Add(new JsonObject
-            {
-                ["order"] = mat.Order,
-                ["name"] = mat.MaterialName,
-                ["internalName"] = mat.InternalName,
-                ["jsonKey"] = mat.JsonKey,
-                ["hasLayerMap"] = mat.HasLayerMap,
-                ["isRoadMaterial"] = mat.IsRoadMaterial,
-                ["layerMapFileName"] = mat.HasLayerMap 
-                    ? $"{TerrainName}_layerMap_{mat.Order}_{SanitizeFileName(mat.InternalName)}.png" 
-                    : null
-            });
-        }
-        metadata["materials"] = materialsArray;
-        
-        var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
-        var jsonContent = metadata.ToJsonString(jsonOptions);
-        await File.WriteAllTextAsync(metadataFilePath, jsonContent);
-        
-        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported materials metadata: {metadataFileName}");
     }
 
     /// <summary>

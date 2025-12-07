@@ -91,26 +91,36 @@ Class="my-0">
                 
                 <!-- Preset Selection -->
                 <MudItem xs="12">
-                    <MudSelect T="RoadPresetType" 
-                              Value="@Material.SelectedPreset"
-                              ValueChanged="@OnPresetChanged"
-                              Label="Road Preset"
-                              Variant="Variant.Outlined"
-                              AnchorOrigin="Origin.BottomCenter">
-                        <MudSelectItem Value="RoadPresetType.Custom">Custom</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.Highway">Highway (8m, professional quality)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, hairpins)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.RacingCircuit">Racing Circuit (10m, tight turns)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.DirtRoad">Dirt Road (5m, rustic)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.TerrainFollowingSmooth">Terrain Following (Butterworth filter)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.MountainousUltraSmooth">Mountainous Ultra Smooth (aggressive leveling)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.HillyAggressive">Hilly Aggressive (moderate leveling)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.FlatModerate">Flat Moderate (light smoothing)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.FastTesting">Fast Testing (DirectMask)</MudSelectItem>
-                        <MudSelectItem Value="RoadPresetType.ExtremeNuclear">Extreme Nuclear (maximum smoothing)</MudSelectItem>
-                    </MudSelect>
+                    <div class="d-flex align-center gap-2">
+                        <MudSelect T="RoadPresetType" 
+                                  Value="@Material.SelectedPreset"
+                                  ValueChanged="@OnPresetChanged"
+                                  Label="Road Preset"
+                                  Variant="Variant.Outlined"
+                                  AnchorOrigin="Origin.BottomCenter"
+                                  Class="flex-grow-1">
+                            <MudSelectItem Value="RoadPresetType.Custom">Custom</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.Highway">Highway (8m, professional quality)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, hairpins)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.RacingCircuit">Racing Circuit (10m, tight turns)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.DirtRoad">Dirt Road (5m, rustic)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.TerrainFollowingSmooth">Terrain Following (Butterworth filter)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.MountainousUltraSmooth">Mountainous Ultra Smooth (aggressive leveling)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.HillyAggressive">Hilly Aggressive (moderate leveling)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.FlatModerate">Flat Moderate (light smoothing)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.FastTesting">Fast Testing (DirectMask)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.ExtremeNuclear">Extreme Nuclear (maximum smoothing)</MudSelectItem>
+                        </MudSelect>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.FileUpload"
+                                   OnClick="ImportRoadSettings"
+                                   Size="Size.Small">
+                            Import
+                        </MudButton>
+                    </div>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                        Select a preset to apply optimized settings. You can customize individual parameters below.
+                        Select a preset or import settings from a previously exported road smoothing JSON file.
                     </MudText>
                 </MudItem>
                 
