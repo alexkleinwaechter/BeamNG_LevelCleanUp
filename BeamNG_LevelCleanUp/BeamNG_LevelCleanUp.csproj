@@ -18,6 +18,8 @@
   <ItemGroup>
     <PackageReference Include="Autoupdater.NET.Official" Version="1.9.2" />
     <PackageReference Include="Blazor3D" Version="0.1.42" />
+    <PackageReference Include="GDAL" Version="3.11.3" />
+    <PackageReference Include="GDAL.Native" Version="3.11.3" />
     <PackageReference Include="JsonRepairUtils" Version="0.0.2" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="9.0.0" />

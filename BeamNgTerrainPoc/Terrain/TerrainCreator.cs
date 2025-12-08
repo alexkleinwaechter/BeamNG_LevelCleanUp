@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -52,7 +53,7 @@ public class TerrainCreator
 
         try
         {
-            // 2. Load or use heightmap
+            // 2. Load or use heightmap (priority: HeightmapImage > HeightmapPath > GeoTiffPath > GeoTiffDirectory)
             if (parameters.HeightmapImage != null)
             {
                 heightmapImage = parameters.HeightmapImage;
@@ -60,13 +61,29 @@ public class TerrainCreator
             }
             else if (!string.IsNullOrWhiteSpace(parameters.HeightmapPath))
             {
-                TerrainLogger.Info($"Loading heightmap from: {parameters.HeightmapPath}");
+                TerrainLogger.Info($"Loading heightmap from PNG: {parameters.HeightmapPath}");
                 heightmapImage = Image.Load<L16>(parameters.HeightmapPath);
+                shouldDisposeHeightmap = true; // We loaded it, we dispose it
+            }
+            else if (!string.IsNullOrWhiteSpace(parameters.GeoTiffPath))
+            {
+                // Load from single GeoTIFF file
+                TerrainLogger.Info($"Loading heightmap from GeoTIFF: {parameters.GeoTiffPath}");
+                var geoTiffResult = await LoadFromGeoTiffAsync(parameters.GeoTiffPath, parameters);
+                heightmapImage = geoTiffResult;
+                shouldDisposeHeightmap = true; // We loaded it, we dispose it
+            }
+            else if (!string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory))
+            {
+                // Combine and load from multiple GeoTIFF tiles
+                TerrainLogger.Info($"Loading heightmap from GeoTIFF directory: {parameters.GeoTiffDirectory}");
+                var geoTiffResult = await LoadFromGeoTiffDirectoryAsync(parameters.GeoTiffDirectory, parameters);
+                heightmapImage = geoTiffResult;
                 shouldDisposeHeightmap = true; // We loaded it, we dispose it
             }
             else
             {
-                TerrainLogger.Error("No heightmap provided (HeightmapImage or HeightmapPath required)");
+                TerrainLogger.Error("No heightmap provided (HeightmapImage, HeightmapPath, GeoTiffPath, or GeoTiffDirectory required)");
                 return false;
             }
 
@@ -156,6 +173,19 @@ public class TerrainCreator
             TerrainLogger.Info($"Max height: {parameters.MaxHeight}");
             TerrainLogger.Info($"Materials: {materialNames.Count}");
 
+            // Display GeoTIFF info if available
+            if (parameters.GeoBoundingBox != null)
+            {
+                TerrainLogger.Info("=== GeoTIFF Import Info ===");
+                TerrainLogger.Info($"Bounding box: {parameters.GeoBoundingBox}");
+                TerrainLogger.Info($"Overpass API bbox: {parameters.GeoBoundingBox.ToOverpassBBox()}");
+                if (parameters.GeoTiffMinElevation.HasValue && parameters.GeoTiffMaxElevation.HasValue)
+                {
+                    TerrainLogger.Info($"Elevation range: {parameters.GeoTiffMinElevation:F1}m - {parameters.GeoTiffMaxElevation:F1}m");
+                }
+                TerrainLogger.Info("===========================");
+            }
+
             // Display road smoothing statistics if available
             if (smoothingResult != null) DisplaySmoothingStatistics(smoothingResult.Statistics);
 
@@ -206,6 +236,75 @@ public class TerrainCreator
             enableCrossMaterialHarmonization);
 
         return result;
+    }
+
+    /// <summary>
+    /// Loads heightmap from a single GeoTIFF file and populates parameters with geo-metadata.
+    /// </summary>
+    private async Task<Image<L16>> LoadFromGeoTiffAsync(string geoTiffPath, TerrainCreationParameters parameters)
+    {
+        var reader = new GeoTiffReader();
+        
+        // Run on background thread since GDAL operations can be slow
+        // Pass the target terrain size so the heightmap gets resized appropriately
+        var result = await Task.Run(() => reader.ReadGeoTiff(geoTiffPath, parameters.Size));
+        
+        // Populate parameters with geo-metadata
+        parameters.GeoBoundingBox = result.BoundingBox;
+        parameters.GeoTiffMinElevation = result.MinElevation;
+        parameters.GeoTiffMaxElevation = result.MaxElevation;
+        
+        // If MaxHeight wasn't explicitly set (<=0), use the elevation range from GeoTIFF
+        if (parameters.MaxHeight <= 0)
+        {
+            parameters.MaxHeight = (float)result.ElevationRange;
+            TerrainLogger.Info($"Using GeoTIFF elevation range as MaxHeight: {parameters.MaxHeight:F1}m");
+            
+            // Also auto-set the base height to the minimum elevation
+            if (parameters.AutoSetBaseHeightFromGeoTiff)
+            {
+                parameters.TerrainBaseHeight = (float)result.MinElevation;
+                TerrainLogger.Info($"Using GeoTIFF minimum elevation as TerrainBaseHeight: {parameters.TerrainBaseHeight:F1}m");
+            }
+        }
+        
+        TerrainLogger.Info($"GeoTIFF bounding box for Overpass API: {result.BoundingBox.ToOverpassBBox()}");
+        
+        return result.HeightmapImage;
+    }
+
+    /// <summary>
+    /// Combines multiple GeoTIFF tiles from a directory and loads as heightmap.
+    /// </summary>
+    private async Task<Image<L16>> LoadFromGeoTiffDirectoryAsync(string geoTiffDirectory, TerrainCreationParameters parameters)
+    {
+        var combiner = new GeoTiffCombiner();
+        
+        // Combine and import in one operation, passing the target terrain size
+        var result = await combiner.CombineAndImportAsync(geoTiffDirectory, parameters.Size);
+        
+        // Populate parameters with geo-metadata
+        parameters.GeoBoundingBox = result.BoundingBox;
+        parameters.GeoTiffMinElevation = result.MinElevation;
+        parameters.GeoTiffMaxElevation = result.MaxElevation;
+        
+        // If MaxHeight wasn't explicitly set (<=0), use the elevation range from GeoTIFF
+        if (parameters.MaxHeight <= 0)
+        {
+            parameters.MaxHeight = (float)result.ElevationRange;
+            TerrainLogger.Info($"Using combined GeoTIFF elevation range as MaxHeight: {parameters.MaxHeight:F1}m");
+            
+            // Also auto-set the base height to the minimum elevation
+            if (parameters.AutoSetBaseHeightFromGeoTiff)
+            {
+                parameters.TerrainBaseHeight = (float)result.MinElevation;
+                TerrainLogger.Info($"Using combined GeoTIFF minimum elevation as TerrainBaseHeight: {parameters.TerrainBaseHeight:F1}m");
+            }
+        }
+        
+        TerrainLogger.Info($"Combined GeoTIFF bounding box for Overpass API: {result.BoundingBox.ToOverpassBBox()}");
+        
+        return result.HeightmapImage;
     }
 
     private float[,] ConvertTo2DArray(float[] array1D, int size)

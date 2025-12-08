@@ -31,10 +31,16 @@ public static class TerrainValidator
             result.IsValid = false;
         }
         
-        // 3. Heightmap must be provided (either image or path)
-        if (parameters.HeightmapImage == null && string.IsNullOrWhiteSpace(parameters.HeightmapPath))
+        // 3. Heightmap must be provided (either image, path, or GeoTIFF)
+        bool hasHeightmapSource = 
+            parameters.HeightmapImage != null || 
+            !string.IsNullOrWhiteSpace(parameters.HeightmapPath) ||
+            !string.IsNullOrWhiteSpace(parameters.GeoTiffPath) ||
+            !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory);
+            
+        if (!hasHeightmapSource)
         {
-            result.Errors.Add("Heightmap is required (provide HeightmapImage or HeightmapPath)");
+            result.Errors.Add("Heightmap is required (provide HeightmapImage, HeightmapPath, GeoTiffPath, or GeoTiffDirectory)");
             result.IsValid = false;
         }
         
@@ -42,6 +48,20 @@ public static class TerrainValidator
         if (!string.IsNullOrWhiteSpace(parameters.HeightmapPath) && !File.Exists(parameters.HeightmapPath))
         {
             result.Errors.Add($"Heightmap file not found: {parameters.HeightmapPath}");
+            result.IsValid = false;
+        }
+        
+        // Validate GeoTIFF path exists if provided
+        if (!string.IsNullOrWhiteSpace(parameters.GeoTiffPath) && !File.Exists(parameters.GeoTiffPath))
+        {
+            result.Errors.Add($"GeoTIFF file not found: {parameters.GeoTiffPath}");
+            result.IsValid = false;
+        }
+        
+        // Validate GeoTIFF directory exists if provided
+        if (!string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory) && !Directory.Exists(parameters.GeoTiffDirectory))
+        {
+            result.Errors.Add($"GeoTIFF directory not found: {parameters.GeoTiffDirectory}");
             result.IsValid = false;
         }
         
@@ -91,11 +111,19 @@ public static class TerrainValidator
             }
         }
         
-        // 7. Max height must be positive
-        if (parameters.MaxHeight <= 0)
+        // 7. Max height must be positive (unless using GeoTIFF which auto-calculates)
+        bool isUsingGeoTiff = !string.IsNullOrWhiteSpace(parameters.GeoTiffPath) || 
+                              !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory);
+        if (parameters.MaxHeight <= 0 && !isUsingGeoTiff)
         {
-            result.Errors.Add("MaxHeight must be positive");
+            result.Errors.Add("MaxHeight must be positive (or use GeoTIFF import which auto-calculates height)");
             result.IsValid = false;
+        }
+        
+        // Warning if using GeoTIFF without explicit MaxHeight
+        if (parameters.MaxHeight <= 0 && isUsingGeoTiff)
+        {
+            result.Warnings.Add("MaxHeight not specified - will use elevation range from GeoTIFF data");
         }
         
         // Warnings

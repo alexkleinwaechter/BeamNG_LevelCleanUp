@@ -7,6 +7,7 @@ using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain;
+using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using MudBlazor;
@@ -43,7 +44,26 @@ public partial class GenerateTerrain
     private string _workingDirectory = string.Empty;
     private TerrainPresetImporter? _presetImporter;
     private TerrainPresetExporter? _presetExporter;
+    
+    // GeoTIFF import fields
+    private HeightmapSourceType _heightmapSourceType = HeightmapSourceType.Png;
+    private string? _geoTiffPath;
+    private string? _geoTiffDirectory;
+    private GeoBoundingBox? _geoBoundingBox;
+    private double? _geoTiffMinElevation;
+    private double? _geoTiffMaxElevation;
+    
     [AllowNull] private MudExpansionPanels FileSelect { get; set; }
+    
+    /// <summary>
+    /// Enum to track which heightmap source type is selected
+    /// </summary>
+    private enum HeightmapSourceType
+    {
+        Png,
+        GeoTiffFile,
+        GeoTiffDirectory
+    }
 
     protected override void OnInitialized()
     {
@@ -114,8 +134,16 @@ public partial class GenerateTerrain
 
     private bool CanGenerate()
     {
-        return !string.IsNullOrEmpty(_heightmapPath) &&
-               File.Exists(_heightmapPath) &&
+        // Check if we have a valid heightmap source based on selected type
+        var hasValidHeightmapSource = _heightmapSourceType switch
+        {
+            HeightmapSourceType.Png => !string.IsNullOrEmpty(_heightmapPath) && File.Exists(_heightmapPath),
+            HeightmapSourceType.GeoTiffFile => !string.IsNullOrEmpty(_geoTiffPath) && File.Exists(_geoTiffPath),
+            HeightmapSourceType.GeoTiffDirectory => !string.IsNullOrEmpty(_geoTiffDirectory) && Directory.Exists(_geoTiffDirectory),
+            _ => false
+        };
+        
+        return hasValidHeightmapSource &&
                _terrainMaterials.Any() &&
                !string.IsNullOrEmpty(_terrainName);
     }
@@ -139,6 +167,80 @@ public partial class GenerateTerrain
             _heightmapPath = selectedPath;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private async Task SelectGeoTiffFile()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new OpenFileDialog();
+            dialog.Filter = "GeoTIFF Files (*.tif;*.tiff;*.geotiff)|*.tif;*.tiff;*.geotiff|All Files (*.*)|*.*";
+            dialog.Title = "Select GeoTIFF Elevation File";
+            if (dialog.ShowDialog() == DialogResult.OK) selectedPath = dialog.FileName;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            _geoTiffPath = selectedPath;
+            // Clear directory selection when file is selected
+            _geoTiffDirectory = null;
+            // Clear previous geo metadata
+            ClearGeoMetadata();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SelectGeoTiffDirectory()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new FolderBrowserDialog();
+            dialog.Description = "Select folder containing GeoTIFF tiles";
+            dialog.UseDescriptionForTitle = true;
+            if (dialog.ShowDialog() == DialogResult.OK) selectedPath = dialog.SelectedPath;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            _geoTiffDirectory = selectedPath;
+            // Clear file selection when directory is selected
+            _geoTiffPath = null;
+            // Clear previous geo metadata
+            ClearGeoMetadata();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ClearGeoMetadata()
+    {
+        _geoBoundingBox = null;
+        _geoTiffMinElevation = null;
+        _geoTiffMaxElevation = null;
+    }
+
+    private void OnHeightmapSourceTypeChanged(HeightmapSourceType newType)
+    {
+        _heightmapSourceType = newType;
+        StateHasChanged();
+    }
+
+    private string GetHeightmapSourceDescription()
+    {
+        return _heightmapSourceType switch
+        {
+            HeightmapSourceType.Png => "16-bit grayscale PNG heightmap",
+            HeightmapSourceType.GeoTiffFile => "Single GeoTIFF elevation file with geographic coordinates",
+            HeightmapSourceType.GeoTiffDirectory => "Directory with multiple GeoTIFF tiles to combine",
+            _ => "Unknown"
+        };
     }
 
     private void OnPresetImported(TerrainPresetResult result)
@@ -524,11 +626,27 @@ public partial class GenerateTerrain
                     Size = _terrainSize,
                     MaxHeight = _maxHeight,
                     MetersPerPixel = _metersPerPixel,
-                    HeightmapPath = _heightmapPath,
                     TerrainName = _terrainName,
+                    TerrainBaseHeight = _terrainBaseHeight,
                     Materials = materialDefinitions,
-                    EnableCrossMaterialHarmonization = _enableCrossMaterialHarmonization
+                    EnableCrossMaterialHarmonization = _enableCrossMaterialHarmonization,
+                    // Enable auto-setting base height from GeoTIFF when MaxHeight is 0
+                    AutoSetBaseHeightFromGeoTiff = _maxHeight <= 0
                 };
+
+                // Set heightmap source based on selected type
+                switch (_heightmapSourceType)
+                {
+                    case HeightmapSourceType.Png:
+                        parameters.HeightmapPath = _heightmapPath;
+                        break;
+                    case HeightmapSourceType.GeoTiffFile:
+                        parameters.GeoTiffPath = _geoTiffPath;
+                        break;
+                    case HeightmapSourceType.GeoTiffDirectory:
+                        parameters.GeoTiffDirectory = _geoTiffDirectory;
+                        break;
+                }
 
                 var outputPath = GetOutputPath();
 
@@ -536,6 +654,36 @@ public partial class GenerateTerrain
                     $"Starting terrain generation: {_terrainSize}x{_terrainSize}, {materialDefinitions.Count} materials...");
 
                 success = await creator.CreateTerrainFileAsync(outputPath, parameters);
+                
+                // Capture geo-metadata from parameters (populated during GeoTIFF import)
+                if (parameters.GeoBoundingBox != null)
+                {
+                    _geoBoundingBox = parameters.GeoBoundingBox;
+                    _geoTiffMinElevation = parameters.GeoTiffMinElevation;
+                    _geoTiffMaxElevation = parameters.GeoTiffMaxElevation;
+                    
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"GeoTIFF Bounding Box for OSM Overpass: {_geoBoundingBox.ToOverpassBBox()}");
+                }
+                
+                // Update _maxHeight with the auto-calculated value from GeoTIFF if it was 0
+                // This ensures TerrainBlockUpdater uses the correct value
+                if (_maxHeight <= 0 && parameters.MaxHeight > 0)
+                {
+                    _maxHeight = parameters.MaxHeight;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Max height auto-calculated from GeoTIFF: {_maxHeight:F1}m");
+                }
+                
+                // Update _terrainBaseHeight with the auto-calculated value from GeoTIFF
+                // The base height should be set to the minimum elevation so the terrain
+                // sits at the correct world height
+                if (parameters.TerrainBaseHeight != _terrainBaseHeight && parameters.GeoTiffMinElevation.HasValue)
+                {
+                    _terrainBaseHeight = parameters.TerrainBaseHeight;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Base height auto-calculated from GeoTIFF min elevation: {_terrainBaseHeight:F1}m");
+                }
             });
 
             if (success)
@@ -596,6 +744,12 @@ public partial class GenerateTerrain
         _enableCrossMaterialHarmonization = true;
         _presetImporter?.Reset();
         _presetExporter?.Reset();
+        
+        // Reset GeoTIFF fields
+        _heightmapSourceType = HeightmapSourceType.Png;
+        _geoTiffPath = null;
+        _geoTiffDirectory = null;
+        ClearGeoMetadata();
 
         if (FileSelect?.Panels.Count > 0) await FileSelect.Panels[0].ExpandAsync();
 

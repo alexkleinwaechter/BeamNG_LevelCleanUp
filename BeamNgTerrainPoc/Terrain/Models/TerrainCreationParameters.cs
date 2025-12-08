@@ -1,3 +1,4 @@
+using BeamNgTerrainPoc.Terrain.GeoTiff;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -70,4 +71,55 @@ public class TerrainCreationParameters
     /// Default: true
     /// </summary>
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
+
+    /// <summary>
+    /// Path to a GeoTIFF heightmap file.
+    /// Use this as an alternative to HeightmapPath for importing elevation data with geographic coordinates.
+    /// When set, the GeoTIFF will be read and the bounding box will be extracted.
+    /// Priority: HeightmapImage > HeightmapPath > GeoTiffPath
+    /// </summary>
+    public string? GeoTiffPath { get; set; }
+
+    /// <summary>
+    /// Path to a directory containing multiple GeoTIFF tiles to combine.
+    /// When set, all .tif, .tiff, and .geotiff files in the directory will be combined.
+    /// Use this for terrain data that spans multiple tiles (e.g., SRTM tiles).
+    /// Priority: HeightmapImage > HeightmapPath > GeoTiffPath > GeoTiffDirectory
+    /// </summary>
+    public string? GeoTiffDirectory { get; set; }
+
+    /// <summary>
+    /// Geographic bounding box of the terrain.
+    /// Automatically populated when importing from GeoTIFF.
+    /// Can be used for OSM Overpass API queries to fetch roads, buildings, etc.
+    /// </summary>
+    public GeoBoundingBox? GeoBoundingBox { get; set; }
+
+    /// <summary>
+    /// Minimum elevation from GeoTIFF data (in meters).
+    /// Automatically populated when importing from GeoTIFF.
+    /// This is the base elevation - terrain heights are relative to this.
+    /// </summary>
+    public double? GeoTiffMinElevation { get; set; }
+
+    /// <summary>
+    /// Maximum elevation from GeoTIFF data (in meters).
+    /// Automatically populated when importing from GeoTIFF.
+    /// </summary>
+    public double? GeoTiffMaxElevation { get; set; }
+
+    /// <summary>
+    /// Base height (Z position) for the terrain in world units.
+    /// When importing from GeoTIFF, this should be set to the minimum elevation
+    /// so the terrain sits at the correct world height.
+    /// Default is 0.
+    /// </summary>
+    public float TerrainBaseHeight { get; set; } = 0.0f;
+
+    /// <summary>
+    /// When true and importing from GeoTIFF with MaxHeight=0, the TerrainBaseHeight
+    /// will be automatically set to the minimum elevation from the GeoTIFF.
+    /// Default is true.
+    /// </summary>
+    public bool AutoSetBaseHeightFromGeoTiff { get; set; } = true;
 }

@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Grille.BeamNG.Lib_Tests", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeamNgTerrainPoc", "BeamNgTerrainPoc\BeamNgTerrainPoc.csproj", "{CA8A4997-77E4-4D23-853D-A72E193D5FCA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GeoTiff2BeamNG", "GeoTiff2BeamNG\GeoTiff2BeamNG.csproj", "{F761AC07-9C43-3E5E-75AB-35C12E1FC71C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -57,6 +59,10 @@ Global
 		{CA8A4997-77E4-4D23-853D-A72E193D5FCA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CA8A4997-77E4-4D23-853D-A72E193D5FCA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CA8A4997-77E4-4D23-853D-A72E193D5FCA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F761AC07-9C43-3E5E-75AB-35C12E1FC71C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F761AC07-9C43-3E5E-75AB-35C12E1FC71C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F761AC07-9C43-3E5E-75AB-35C12E1FC71C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F761AC07-9C43-3E5E-75AB-35C12E1FC71C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
