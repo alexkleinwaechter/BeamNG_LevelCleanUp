@@ -387,7 +387,20 @@
                 ["exportSmoothedHeightmapWithOutlines"] = material.ExportSmoothedHeightmapWithOutlines,
                 ["exportSplineDebugImage"] = material.ExportSplineDebugImage,
                 ["exportSkeletonDebugImage"] = material.ExportSkeletonDebugImage,
-                ["exportSmoothedElevationDebugImage"] = material.ExportSmoothedElevationDebugImage
+                ["exportSmoothedElevationDebugImage"] = material.ExportSmoothedElevationDebugImage,
+                ["exportJunctionDebugImage"] = material.ExportJunctionDebugImage
+            },
+            
+            // Junction harmonization settings
+            ["junctionHarmonization"] = new JsonObject
+            {
+                ["enableJunctionHarmonization"] = material.EnableJunctionHarmonization,
+                ["junctionDetectionRadiusMeters"] = material.JunctionDetectionRadiusMeters,
+                ["junctionBlendDistanceMeters"] = material.JunctionBlendDistanceMeters,
+                ["blendFunctionType"] = material.JunctionBlendFunction.ToString(),
+                ["enableEndpointTaper"] = material.EnableEndpointTaper,
+                ["endpointTaperDistanceMeters"] = material.EndpointTaperDistanceMeters,
+                ["endpointTerrainBlendStrength"] = material.EndpointTerrainBlendStrength
             }
         };
         

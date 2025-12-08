@@ -1,3 +1,4 @@
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Models;
 
@@ -41,14 +42,14 @@ public class OptimizedElevationSmoother : IHeightCalculator
             ? $"Butterworth (order {butterworthOrder})" 
             : "Box (prefix-sum)";
         
-        Console.WriteLine($"Calculating target elevations using {filterType} filter...");
-        Console.WriteLine($"  Smoothing window: {windowSize} cross-sections (~{smoothingRadiusMeters:F1}m radius)");
+        TerrainLogger.Info($"Calculating target elevations using {filterType} filter...");
+        TerrainLogger.Info($"  Smoothing window: {windowSize} cross-sections (~{smoothingRadiusMeters:F1}m radius)");
         
         if (globalLevelingStrength > 0.001f)
-            Console.WriteLine($"  Global leveling strength: {globalLevelingStrength:P0}");
+            TerrainLogger.Info($"  Global leveling strength: {globalLevelingStrength:P0}");
         
         if (enableMaxSlopeConstraint)
-            Console.WriteLine($"  Max road slope constraint: {roadMaxSlopeDegrees:F1}° (ENABLED)");
+            TerrainLogger.Info($"  Max road slope constraint: {roadMaxSlopeDegrees:F1}° (ENABLED)");
 
         // Group by PathId for per-path processing
         var pathGroups = geometry.CrossSections
@@ -98,7 +99,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
         if (globalLevelingStrength > 0.001f && allSmoothedElevations.Count > 0)
         {
             float globalAverage = allSmoothedElevations.Average();
-            Console.WriteLine($"  Network average elevation: {globalAverage:F2}m");
+            TerrainLogger.Info($"  Network average elevation: {globalAverage:F2}m");
             
             foreach (var kvp in pathSmoothedArrays)
             {
@@ -111,7 +112,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
                 }
             }
             
-            Console.WriteLine($"  Applied global leveling: {globalLevelingStrength:P0} toward {globalAverage:F1}m");
+            TerrainLogger.Info($"  Applied global leveling: {globalLevelingStrength:P0} toward {globalAverage:F1}m");
         }
 
         // Step 4: Enforce RoadMaxSlopeDegrees constraint (only if enabled)
@@ -127,7 +128,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
             }
             
             if (constrainedSections > 0)
-                Console.WriteLine($"  Slope constraint modified {constrainedSections:N0} cross-sections");
+                TerrainLogger.Info($"  Slope constraint modified {constrainedSections:N0} cross-sections");
         }
 
         // Step 5: Assign final elevations to cross-sections
@@ -140,7 +141,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
             }
         }
 
-        Console.WriteLine($"  Smoothed elevations for {totalSections:N0} cross-sections across {pathGroups.Count} path(s)");
+        TerrainLogger.Info($"  Smoothed elevations for {totalSections:N0} cross-sections across {pathGroups.Count} path(s)");
     }
 
     /// <summary>

@@ -16,11 +16,11 @@ namespace BeamNgTerrainPoc.Terrain;
 /// </summary>
 public class TerrainCreator
 {
-    private readonly RoadSmoothingService _roadSmoothingService;
+    private readonly MultiMaterialRoadSmoother _multiMaterialSmoother;
 
     public TerrainCreator()
     {
-        _roadSmoothingService = new RoadSmoothingService();
+        _multiMaterialSmoother = new MultiMaterialRoadSmoother();
     }
 
     /// <summary>
@@ -86,7 +86,8 @@ public class TerrainCreator
                     heights,
                     parameters.Materials,
                     parameters.MetersPerPixel,
-                    parameters.Size);
+                    parameters.Size,
+                    parameters.EnableCrossMaterialHarmonization);
 
                 if (smoothingResult != null)
                 {
@@ -190,67 +191,21 @@ public class TerrainCreator
         float[] heightMap1D,
         List<MaterialDefinition> materials,
         float metersPerPixel,
-        int size)
+        int size,
+        bool enableCrossMaterialHarmonization)
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
 
-        SmoothingResult? finalResult = null;
+        // Use the multi-material smoother for cross-material junction harmonization
+        var result = _multiMaterialSmoother.SmoothAllRoads(
+            heightMap2D,
+            materials,
+            metersPerPixel,
+            size,
+            enableCrossMaterialHarmonization);
 
-        foreach (var material in materials.Where(m => m.RoadParameters != null))
-        {
-            if (string.IsNullOrEmpty(material.LayerImagePath))
-            {
-                TerrainLogger.Warning($"Road material '{material.MaterialName}' has no layer image path");
-                continue;
-            }
-
-            try
-            {
-                // Load road layer
-                var roadLayer = LoadLayerImage(material.LayerImagePath, size);
-
-                // Apply smoothing
-                var result = _roadSmoothingService.SmoothRoadsInHeightmap(
-                    heightMap2D,
-                    roadLayer,
-                    material.RoadParameters!,
-                    metersPerPixel);
-
-                heightMap2D = result.ModifiedHeightMap;
-                finalResult = result;
-
-                TerrainLogger.Info($"Applied road smoothing for material: {material.MaterialName}");
-            }
-            catch (Exception ex)
-            {
-                TerrainLogger.Error($"Error smoothing road '{material.MaterialName}': {ex.Message}");
-            }
-        }
-
-        return finalResult;
-    }
-
-    private byte[,] LoadLayerImage(string layerPath, int expectedSize)
-    {
-        using var image = Image.Load<L8>(layerPath);
-
-        if (image.Width != expectedSize || image.Height != expectedSize)
-            throw new InvalidOperationException(
-                $"Layer image size ({image.Width}x{image.Height}) does not match terrain size ({expectedSize}x{expectedSize})");
-
-        var layer = new byte[expectedSize, expectedSize];
-
-        // ImageSharp is top-down, BeamNG is bottom-up
-        // Flip Y to match HeightmapProcessor behavior
-        for (var y = 0; y < expectedSize; y++)
-        for (var x = 0; x < expectedSize; x++)
-        {
-            var flippedY = expectedSize - 1 - y;
-            layer[flippedY, x] = image[x, y].PackedValue;
-        }
-
-        return layer;
+        return result;
     }
 
     private float[,] ConvertTo2DArray(float[] array1D, int size)
