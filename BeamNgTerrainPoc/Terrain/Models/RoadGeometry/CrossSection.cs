@@ -23,9 +23,10 @@ public class CrossSection
     public Vector2 TangentDirection { get; set; }
     
     /// <summary>
-    /// Calculated target elevation for this cross-section in world units
+    /// Calculated target elevation for this cross-section in world units.
+    /// Initialized to NaN to distinguish "not set" from valid zero elevation.
     /// </summary>
-    public float TargetElevation { get; set; }
+    public float TargetElevation { get; set; } = float.NaN;
     
     /// <summary>
     /// Road width at this point in meters

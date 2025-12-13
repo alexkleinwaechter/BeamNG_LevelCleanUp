@@ -1,0 +1,554 @@
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@using BeamNgTerrainPoc.Terrain.Models
+@using BeamNgTerrainPoc.Terrain.Osm.Models
+@using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
+@inject ISnackbar Snackbar
+
+<MudPaper Class="@CssClass" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+        <div>
+            <MudText Typo="Typo.h6" Class="mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.FileDownload" Class="mr-2" />
+                Export Terrain Preset
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Export all settings and files to a portable BeamNG-compatible preset folder.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Download"
+                   OnClick="SelectExportFolder"
+                   Disabled="@(!CanExport)">
+            Export Preset
+        </MudButton>
+    </MudStack>
+    @if (!CanExport && Materials.Any())
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-3" Dense="true">
+            Run terrain generation first to enable preset export.
+        </MudAlert>
+    }
+    @if (!string.IsNullOrEmpty(LastExportPath))
+    {
+        <MudAlert Severity="Severity.Success" Class="mt-3" Dense="true">
+            <strong>Exported to:</strong> @LastExportPath
+        </MudAlert>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+            Terrain preset with @_roadMaterialsExported road smoothing config(s) embedded
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+    private string CssClass => string.IsNullOrEmpty(Class) ? "pa-4" : $"pa-4 {Class}";
+
+    [Parameter] public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
+    [Parameter] public string WorkingDirectory { get; set; } = string.Empty;
+    [Parameter] public string TerrainName { get; set; } = "theTerrain";
+    [Parameter] public int TerrainSize { get; set; } = 2048;
+    [Parameter] public float MaxHeight { get; set; } = 500.0f;
+    [Parameter] public float MetersPerPixel { get; set; } = 1.0f;
+    [Parameter] public float TerrainBaseHeight { get; set; }
+    [Parameter] public string? HeightmapPath { get; set; }
+    [Parameter] public HeightmapSourceType HeightmapSourceType { get; set; } = HeightmapSourceType.Png;
+    [Parameter] public string? GeoTiffPath { get; set; }
+    [Parameter] public string? GeoTiffDirectory { get; set; }
+    [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
+    [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
+    [Parameter] public int CropOffsetX { get; set; }
+    [Parameter] public int CropOffsetY { get; set; }
+    [Parameter] public int CropWidth { get; set; }
+    [Parameter] public int CropHeight { get; set; }
+    [Parameter] public int GeoTiffOriginalWidth { get; set; }
+    [Parameter] public int GeoTiffOriginalHeight { get; set; }
+    [Parameter] public string? GeoTiffProjectionName { get; set; }
+    [Parameter] public float NativePixelSizeMeters { get; set; }
+    [Parameter] public Func<bool>? OnRequestMaterialReorder { get; set; }
+
+    public string? LastExportPath { get; private set; }
+    private int _roadMaterialsExported;
+    
+    /// <summary>
+    /// Export is only enabled after terrain generation has been run.
+    /// We check for the existence of the .ter file which is created during generation.
+    /// </summary>
+    private bool CanExport => Materials.Any() && 
+                              !string.IsNullOrEmpty(TerrainName) && 
+                              !string.IsNullOrEmpty(WorkingDirectory) &&
+                              File.Exists(Path.Combine(WorkingDirectory, $"{TerrainName}.ter"));
+
+    private async Task SelectExportFolder()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new FolderBrowserDialog();
+            dialog.Description = "Select folder to export terrain preset";
+            dialog.ShowNewFolderButton = true;
+            if (!string.IsNullOrEmpty(WorkingDirectory) && Directory.Exists(WorkingDirectory))
+                dialog.SelectedPath = WorkingDirectory;
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                selectedPath = dialog.SelectedPath;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+            await ExportPreset(selectedPath);
+    }
+
+    private async Task ExportPreset(string exportFolder)
+    {
+        try
+        {
+            if (OnRequestMaterialReorder != null)
+            {
+                var wasReordered = OnRequestMaterialReorder.Invoke();
+                if (wasReordered)
+                {
+                    var movedCount = Materials.Skip(1).Count(m => !m.HasLayerMap);
+                    Snackbar.Add($"Reordered {movedCount} material(s) without layer maps to end of list.", Severity.Info);
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Moved {movedCount} material(s) without layer maps to end.");
+                }
+            }
+
+            _roadMaterialsExported = Materials.Count(m => m.IsRoadMaterial);
+            await ExportTerrainPresetFile(exportFolder);
+            
+            LastExportPath = exportFolder;
+            Snackbar.Add($"Terrain preset exported to {exportFolder}", Severity.Success);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported terrain preset with {_roadMaterialsExported} road smoothing config(s)");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            var message = ex.InnerException != null ? $"{ex.Message} {ex.InnerException}" : ex.Message;
+            Snackbar.Add($"Error exporting preset: {message}", Severity.Error);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Export error: {message}");
+        }
+    }
+
+    private async Task ExportTerrainPresetFile(string exportFolder)
+    {
+        var presetFileName = $"{TerrainName}_terrainPreset.json";
+        var presetFilePath = Path.Combine(exportFolder, presetFileName);
+        var levelName = GetLevelName();
+        var debugPath = Path.Combine(WorkingDirectory, "MT_TerrainGeneration");
+        
+        var preset = new JsonObject
+        {
+            ["name"] = TerrainName,
+            ["type"] = "TerrainData",
+            ["heightScale"] = MaxHeight,
+            ["squareSize"] = MetersPerPixel,
+            ["pos"] = new JsonObject
+            {
+                ["x"] = -(TerrainSize * MetersPerPixel / 2.0f),
+                ["y"] = -(TerrainSize * MetersPerPixel / 2.0f),
+                ["z"] = TerrainBaseHeight
+            }
+        };
+        
+        // ========================================
+        // 1. HEIGHTMAP (16-bit grayscale PNG)
+        // ========================================
+        // Prefer the smoothed heightmap if it exists (road smoothing was applied)
+        // Otherwise fall back to the generated heightmap, then the source heightmap
+        var smoothedHeightmapPath = Path.Combine(WorkingDirectory, $"{TerrainName}_smoothed_heightmap.png");
+        var generatedHeightmapPath = Path.Combine(WorkingDirectory, $"{TerrainName}_heightmap.png");
+        var heightmapExportName = $"{TerrainName}_heightmap.png";
+        
+        string? sourceHeightmapPath = null;
+        if (File.Exists(smoothedHeightmapPath))
+        {
+            sourceHeightmapPath = smoothedHeightmapPath;
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Using smoothed heightmap as primary heightmap");
+        }
+        else if (File.Exists(generatedHeightmapPath))
+        {
+            sourceHeightmapPath = generatedHeightmapPath;
+        }
+        else if (!string.IsNullOrEmpty(HeightmapPath) && File.Exists(HeightmapPath))
+        {
+            sourceHeightmapPath = HeightmapPath;
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Using source heightmap (no generated heightmap found)");
+        }
+        
+        if (!string.IsNullOrEmpty(sourceHeightmapPath))
+        {
+            File.Copy(sourceHeightmapPath, Path.Combine(exportFolder, heightmapExportName), true);
+            preset["heightMapPath"] = $"/levels/{levelName}/import/{heightmapExportName}";
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported heightmap: {heightmapExportName}");
+        }
+        
+        // ========================================
+        // 2. HOLEMAP (required by BeamNG - generate black if not exists)
+        // ========================================
+        var holemapExportName = $"{TerrainName}_holemap.png";
+        var holemapExportPath = Path.Combine(exportFolder, holemapExportName);
+        var possibleHolemapPaths = new[]
+        {
+            Path.Combine(WorkingDirectory, $"{TerrainName}_holemap.png"),
+            Path.Combine(WorkingDirectory, "import", $"{TerrainName}_holemap.png"),
+            Path.Combine(Path.GetDirectoryName(HeightmapPath) ?? "", $"{TerrainName}_holemap.png")
+        };
+        
+        var holemapFound = false;
+        foreach (var holemapPath in possibleHolemapPaths)
+        {
+            if (File.Exists(holemapPath))
+            {
+                File.Copy(holemapPath, holemapExportPath, true);
+                holemapFound = true;
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported holemap: {holemapExportName}");
+                break;
+            }
+        }
+        
+        // Generate black holemap if none exists (BeamNG requires it)
+        if (!holemapFound)
+        {
+            GenerateBlackLayerMap(holemapExportPath, TerrainSize);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Generated empty holemap: {holemapExportName}");
+        }
+        
+        // Always include holemap in preset JSON
+        preset["holeMapPath"] = $"/levels/{levelName}/import/{holemapExportName}";
+        
+        // ========================================
+        // 3. GEOTIFF SOURCE FILE(S) - for portability
+        // ========================================
+        if (HeightmapSourceType == HeightmapSourceType.GeoTiffFile && !string.IsNullOrEmpty(GeoTiffPath) && File.Exists(GeoTiffPath))
+        {
+            var geoTiffExportName = Path.GetFileName(GeoTiffPath);
+            File.Copy(GeoTiffPath, Path.Combine(exportFolder, geoTiffExportName), true);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported GeoTIFF source: {geoTiffExportName}");
+        }
+        else if (HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory && !string.IsNullOrEmpty(GeoTiffDirectory) && Directory.Exists(GeoTiffDirectory))
+        {
+            // For tile directories, export the combined GeoTIFF if it was created
+            var combinedGeoTiffPath = Path.Combine(debugPath, $"{TerrainName}_combined.tif");
+            if (File.Exists(combinedGeoTiffPath))
+            {
+                var combinedExportName = $"{TerrainName}_combined.tif";
+                File.Copy(combinedGeoTiffPath, Path.Combine(exportFolder, combinedExportName), true);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported combined GeoTIFF: {combinedExportName}");
+            }
+            else
+            {
+                // Copy individual tiles to a subfolder
+                var tilesExportFolder = Path.Combine(exportFolder, "geotiff_tiles");
+                Directory.CreateDirectory(tilesExportFolder);
+                var tiffFiles = Directory.GetFiles(GeoTiffDirectory, "*.tif", SearchOption.TopDirectoryOnly)
+                    .Concat(Directory.GetFiles(GeoTiffDirectory, "*.tiff", SearchOption.TopDirectoryOnly))
+                    .Distinct();
+                var tileCount = 0;
+                foreach (var tiffFile in tiffFiles)
+                {
+                    File.Copy(tiffFile, Path.Combine(tilesExportFolder, Path.GetFileName(tiffFile)), true);
+                    tileCount++;
+                }
+                if (tileCount > 0)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported {tileCount} GeoTIFF tile(s) to geotiff_tiles/");
+                }
+            }
+        }
+        
+        // ========================================
+        // 4. LAYER MAPS (opacity maps) - ALL materials
+        // ========================================
+        var opacityMaps = new JsonArray();
+        var orderedMaterials = Materials.OrderBy(m => m.Order).ToList();
+        var materialsWithLayerMap = 0;
+        var materialsWithOsmLayerMap = 0;
+        var materialsWithGeneratedBlack = 0;
+        
+        foreach (var mat in orderedMaterials)
+        {
+            var safeInternalName = SanitizeFileName(mat.InternalName);
+            var layerMapExportName = $"{TerrainName}_layerMap_{mat.Order}_{safeInternalName}.png";
+            var targetLayerMapPath = Path.Combine(exportFolder, layerMapExportName);
+            
+            // Try to find the layer map from different sources:
+            // 1. Explicit LayerMapPath (for PNG file source)
+            // 2. OSM-generated layer map in debug folder (for OSM features source)
+            // 3. Generate black (empty) PNG as fallback
+            
+            string? sourceLayerMapPath = null;
+            
+            // Source 1: Explicit LayerMapPath (PNG file source)
+            if (!string.IsNullOrEmpty(mat.LayerMapPath) && File.Exists(mat.LayerMapPath))
+            {
+                sourceLayerMapPath = mat.LayerMapPath;
+            }
+            // Source 2: OSM-generated layer map from terrain generation
+            else if (mat.LayerSourceType == LayerSourceType.OsmFeatures && Directory.Exists(debugPath))
+            {
+                var osmLayerMapPath = Path.Combine(debugPath, $"{safeInternalName}_osm_layer.png");
+                if (File.Exists(osmLayerMapPath))
+                {
+                    sourceLayerMapPath = osmLayerMapPath;
+                }
+            }
+            
+            if (!string.IsNullOrEmpty(sourceLayerMapPath) && File.Exists(sourceLayerMapPath))
+            {
+                File.Copy(sourceLayerMapPath, targetLayerMapPath, true);
+                
+                if (mat.LayerSourceType == LayerSourceType.OsmFeatures)
+                {
+                    materialsWithOsmLayerMap++;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported OSM layer map [{mat.Order}]: {layerMapExportName}");
+                }
+                else
+                {
+                    materialsWithLayerMap++;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported layer map [{mat.Order}]: {layerMapExportName}");
+                }
+            }
+            else
+            {
+                // No layer map found - generate a black (empty) PNG
+                GenerateBlackLayerMap(targetLayerMapPath, TerrainSize);
+                materialsWithGeneratedBlack++;
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Generated empty layer map [{mat.Order}]: {layerMapExportName}");
+            }
+            
+            opacityMaps.Add($"/levels/{levelName}/import/{layerMapExportName}");
+        }
+        
+        if (opacityMaps.Count > 0)
+        {
+            preset["opacityMaps"] = opacityMaps;
+            var summary = $"Total layer maps: {opacityMaps.Count}";
+            if (materialsWithLayerMap > 0) summary += $", {materialsWithLayerMap} from PNG";
+            if (materialsWithOsmLayerMap > 0) summary += $", {materialsWithOsmLayerMap} from OSM";
+            if (materialsWithGeneratedBlack > 0) summary += $", {materialsWithGeneratedBlack} empty/black";
+            PubSubChannel.SendMessage(PubSubMessageType.Info, summary);
+        }
+        
+        // ========================================
+        // 5. APP SETTINGS (material settings, road smoothing, etc.)
+        // ========================================
+        preset["_appSettings"] = BuildAppSettings(orderedMaterials, exportFolder);
+        
+        // Write the preset JSON file
+        var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+        await File.WriteAllTextAsync(presetFilePath, preset.ToJsonString(jsonOptions));
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported terrain preset: {presetFileName}");
+    }
+
+    private JsonObject BuildAppSettings(List<TerrainMaterialItemExtended> orderedMaterials, string exportFolder)
+    {
+        // Store relative paths (just filenames) for portability
+        // When importing, the importer should look in the same folder as the preset JSON
+        
+        var appSettings = new JsonObject
+        {
+            ["version"] = "2.0",
+            ["heightmapSource"] = new JsonObject
+            {
+                ["type"] = HeightmapSourceType.ToString(),
+                // Store original paths for reference, but exported files are in the preset folder
+                ["originalGeoTiffPath"] = GeoTiffPath,
+                ["originalGeoTiffDirectory"] = GeoTiffDirectory
+            },
+            ["terrainOptions"] = new JsonObject
+            {
+                ["terrainSize"] = TerrainSize,
+                ["maxHeight"] = MaxHeight,
+                ["metersPerPixel"] = MetersPerPixel,
+                ["terrainBaseHeight"] = TerrainBaseHeight,
+                ["updateTerrainBlock"] = UpdateTerrainBlock,
+                ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization
+            },
+            ["cropSettings"] = new JsonObject
+            {
+                ["offsetX"] = CropOffsetX,
+                ["offsetY"] = CropOffsetY,
+                ["width"] = CropWidth,
+                ["height"] = CropHeight
+            },
+            ["geoTiffMetadata"] = new JsonObject
+            {
+                ["originalWidth"] = GeoTiffOriginalWidth,
+                ["originalHeight"] = GeoTiffOriginalHeight,
+                ["projectionName"] = GeoTiffProjectionName,
+                ["nativePixelSizeMeters"] = NativePixelSizeMeters
+            }
+        };
+        
+        // Per-material settings including road smoothing
+        var materialSettings = new JsonObject();
+        foreach (var mat in orderedMaterials)
+        {
+            materialSettings[mat.InternalName] = BuildMaterialSettings(mat);
+        }
+        appSettings["materialSettings"] = materialSettings;
+        
+        return appSettings;
+    }
+
+    private JsonObject BuildMaterialSettings(TerrainMaterialItemExtended mat)
+    {
+        var matSettings = new JsonObject
+        {
+            ["order"] = mat.Order,
+            ["layerSourceType"] = mat.LayerSourceType.ToString(),
+            ["layerMapPath"] = mat.LayerMapPath,
+            ["isRoadMaterial"] = mat.IsRoadMaterial
+        };
+        
+        // OSM feature selections
+        if (mat.LayerSourceType == LayerSourceType.OsmFeatures && mat.SelectedOsmFeatures?.Any() == true)
+        {
+            var osmFeatures = new JsonArray();
+            foreach (var feature in mat.SelectedOsmFeatures)
+            {
+                osmFeatures.Add(new JsonObject
+                {
+                    ["featureId"] = feature.FeatureId,
+                    ["displayName"] = feature.DisplayName,
+                    ["category"] = feature.Category,
+                    ["subCategory"] = feature.SubCategory,
+                    ["geometryType"] = feature.GeometryType.ToString()
+                });
+            }
+            matSettings["osmFeatureSelections"] = osmFeatures;
+        }
+        
+        // Road smoothing settings (only if road material)
+        if (mat.IsRoadMaterial)
+        {
+            matSettings["roadSmoothing"] = BuildRoadSmoothingSettings(mat);
+        }
+        
+        return matSettings;
+    }
+
+    private JsonObject BuildRoadSmoothingSettings(TerrainMaterialItemExtended mat)
+    {
+        return new JsonObject
+        {
+            ["selectedPreset"] = mat.SelectedPreset.ToString(),
+            ["roadWidthMeters"] = mat.RoadWidthMeters,
+            ["roadSurfaceWidthMeters"] = mat.RoadSurfaceWidthMeters,
+            ["terrainAffectedRangeMeters"] = mat.TerrainAffectedRangeMeters,
+            ["enableMaxSlopeConstraint"] = mat.EnableMaxSlopeConstraint,
+            ["roadMaxSlopeDegrees"] = mat.RoadMaxSlopeDegrees,
+            ["sideMaxSlopeDegrees"] = mat.SideMaxSlopeDegrees,
+            ["approach"] = mat.Approach.ToString(),
+            ["blendFunctionType"] = mat.BlendFunctionType.ToString(),
+            ["crossSectionIntervalMeters"] = mat.CrossSectionIntervalMeters,
+            ["enableTerrainBlending"] = mat.EnableTerrainBlending,
+            ["splineParameters"] = new JsonObject
+            {
+                ["tension"] = mat.SplineTension,
+                ["continuity"] = mat.SplineContinuity,
+                ["bias"] = mat.SplineBias,
+                ["useGraphOrdering"] = mat.UseGraphOrdering,
+                ["preferStraightThroughJunctions"] = mat.PreferStraightThroughJunctions,
+                ["densifyMaxSpacingPixels"] = mat.DensifyMaxSpacingPixels,
+                ["simplifyTolerancePixels"] = mat.SimplifyTolerancePixels,
+                ["bridgeEndpointMaxDistancePixels"] = mat.BridgeEndpointMaxDistancePixels,
+                ["minPathLengthPixels"] = mat.MinPathLengthPixels,
+                ["junctionAngleThreshold"] = mat.JunctionAngleThreshold,
+                ["orderingNeighborRadiusPixels"] = mat.OrderingNeighborRadiusPixels,
+                ["skeletonDilationRadius"] = mat.SkeletonDilationRadius,
+                ["smoothingWindowSize"] = mat.SplineSmoothingWindowSize,
+                ["useButterworthFilter"] = mat.SplineUseButterworthFilter,
+                ["butterworthFilterOrder"] = mat.SplineButterworthFilterOrder,
+                ["globalLevelingStrength"] = mat.GlobalLevelingStrength
+            },
+            ["directMaskParameters"] = new JsonObject
+            {
+                ["smoothingWindowSize"] = mat.DirectMaskSmoothingWindowSize,
+                ["roadPixelSearchRadius"] = mat.RoadPixelSearchRadius,
+                ["useButterworthFilter"] = mat.DirectMaskUseButterworthFilter,
+                ["butterworthFilterOrder"] = mat.DirectMaskButterworthFilterOrder
+            },
+            ["postProcessing"] = new JsonObject
+            {
+                ["enabled"] = mat.EnablePostProcessingSmoothing,
+                ["smoothingType"] = mat.SmoothingType.ToString(),
+                ["kernelSize"] = mat.SmoothingKernelSize,
+                ["sigma"] = mat.SmoothingSigma,
+                ["iterations"] = mat.SmoothingIterations,
+                ["maskExtensionMeters"] = mat.SmoothingMaskExtensionMeters
+            },
+            ["debug"] = new JsonObject
+            {
+                ["exportSmoothedHeightmapWithOutlines"] = mat.ExportSmoothedHeightmapWithOutlines,
+                ["exportSplineDebugImage"] = mat.ExportSplineDebugImage,
+                ["exportSkeletonDebugImage"] = mat.ExportSkeletonDebugImage,
+                ["exportSmoothedElevationDebugImage"] = mat.ExportSmoothedElevationDebugImage,
+                ["exportJunctionDebugImage"] = mat.ExportJunctionDebugImage
+            },
+            ["junctionHarmonization"] = new JsonObject
+            {
+                ["enableJunctionHarmonization"] = mat.EnableJunctionHarmonization,
+                ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
+                ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,
+                ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
+                ["enableEndpointTaper"] = mat.EnableEndpointTaper,
+                ["endpointTaperDistanceMeters"] = mat.EndpointTaperDistanceMeters,
+                ["endpointTerrainBlendStrength"] = mat.EndpointTerrainBlendStrength
+            }
+        };
+    }
+
+    private string GetLevelName()
+    {
+        if (string.IsNullOrEmpty(WorkingDirectory)) return "unknown";
+        var parts = WorkingDirectory.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (var i = 0; i < parts.Length - 1; i++)
+            if (parts[i].Equals("levels", StringComparison.OrdinalIgnoreCase))
+                return parts[i + 1];
+        return new DirectoryInfo(WorkingDirectory).Name;
+    }
+
+    private string SanitizeFileName(string fileName)
+    {
+        var result = fileName;
+        foreach (var c in Path.GetInvalidFileNameChars())
+            result = result.Replace(c, '_');
+        return result.Replace(' ', '_').Replace('-', '_');
+    }
+
+    /// <summary>
+    /// Generates a black (empty) layer map PNG file.
+    /// BeamNG requires ALL terrain materials to have a corresponding opacity/layer map entry.
+    /// Materials without actual painted data get a black (0) image which means "no coverage".
+    /// </summary>
+    /// <param name="outputPath">Full path where the PNG should be saved</param>
+    /// <param name="size">Width and height of the image (should match terrain size)</param>
+    /// <summary>
+    /// Generates a black (empty) layer map PNG file.
+    /// BeamNG requires ALL terrain materials to have a corresponding opacity/layer map entry.
+    /// Materials without actual painted data get a black (0) image which means "no coverage".
+    /// </summary>
+    /// <param name="outputPath">Full path where the PNG should be saved</param>
+    /// <param name="size">Width and height of the image (should match terrain size)</param>
+    private void GenerateBlackLayerMap(string outputPath, int size)
+    {
+        // Use 8-bit grayscale (L8) - black (0) means no coverage for this material
+        using var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.L8>(size, size);
+        // Image is already initialized to black (all zeros) by default
+        SixLabors.ImageSharp.ImageExtensions.SaveAsPng(image, outputPath);
+    }
+
+    public void Reset()
+    {
+        LastExportPath = null;
+        _roadMaterialsExported = 0;
+        StateHasChanged();
+    }
+}

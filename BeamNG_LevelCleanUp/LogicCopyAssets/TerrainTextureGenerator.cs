@@ -56,13 +56,26 @@ public class TerrainTextureGenerator
             var g = Convert.ToByte(hexColor.Substring(3, 2), 16);
             var b = Convert.ToByte(hexColor.Substring(5, 2), 16);
 
-            // For baseColorBaseTex, use the actual hex color as filename
-            // For other textures, use the predefined filename
-            var needsColorInName = baseFileName.Equals("#base_color", StringComparison.OrdinalIgnoreCase) ||
-                                   baseFileName.Equals("#base_r", StringComparison.OrdinalIgnoreCase);
-            var actualFileName = needsColorInName
-                ? $"{baseFileName}_{hexColor}{fileNameSuffix}"
-                : $"{baseFileName}{fileNameSuffix}";
+            // Determine filename based on texture type:
+            // - baseColorBaseTex: include hex color in filename
+            // - roughnessBaseTex: include grayscale value in filename (when customGreyscaleValue is provided)
+            // - other textures: use predefined filename only
+            string actualFileName;
+            if (baseFileName.Equals("#base_color", StringComparison.OrdinalIgnoreCase))
+            {
+                // Base color uses hex color in filename
+                actualFileName = $"{baseFileName}_{hexColor}{fileNameSuffix}";
+            }
+            else if (baseFileName.Equals("#base_r", StringComparison.OrdinalIgnoreCase) && customGreyscaleValue.HasValue)
+            {
+                // Roughness uses custom grayscale value in filename to ensure unique textures per roughness level
+                actualFileName = $"{baseFileName}_{customGreyscaleValue.Value}{fileNameSuffix}";
+            }
+            else
+            {
+                // Other textures (ao, height, normal) use predefined filename
+                actualFileName = $"{baseFileName}{fileNameSuffix}";
+            }
 
             // Create the output file path
             var outputPath = Path.Join(_terrainFolderPath, $"{actualFileName}.png");

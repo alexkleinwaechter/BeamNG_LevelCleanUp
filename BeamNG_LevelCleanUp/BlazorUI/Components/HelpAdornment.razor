@@ -1,0 +1,25 @@
+@* 
+    Helper component that renders a help icon with tooltip.
+    Place this next to input fields in a flex container for help tooltips.
+*@
+
+<MudTooltip Placement="Placement.Right" Arrow="true">
+    <TooltipContent>
+        <div style="text-align: left; white-space: pre-wrap; max-width: 400px;">
+            @TooltipText
+        </div>
+    </TooltipContent>
+    <ChildContent>
+        <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" 
+                       Size="Size.Small" 
+                       Color="Color.Default"
+                       Class="mt-2"
+                       Style="opacity: 0.6;"
+                       aria-label="Help"/>
+    </ChildContent>
+</MudTooltip>
+
+@code {
+    [Parameter, EditorRequired]
+    public string TooltipText { get; set; } = string.Empty;
+}

@@ -15,10 +15,33 @@
     overflow-y: auto;
 }
 
+/* Create Level Wizard Assistant Panel */
+.assistant-panel {
+    position: fixed;
+    bottom: 0;
+    left: 260px; /* Match drawer width */
+    right: 0;
+    padding: 16px;
+    z-index: 1000;
+    background: var(--mud-palette-surface);
+    border-top: 2px solid var(--mud-palette-primary);
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+}
+
+/* Adjust content padding when assistant is visible */
+.content-with-assistant {
+    padding-bottom: 180px !important; /* Space for assistant panel */
+}
 
 @media (min-width: 641px) {
     .sidebar {
         max-height: 100vh;
         overflow-y: auto;
+    }
+}
+
+@media (max-width: 640px) {
+    .assistant-panel {
+        left: 0; /* Full width on mobile */
     }
 }

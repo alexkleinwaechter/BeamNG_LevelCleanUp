@@ -1,3 +1,5 @@
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+
 namespace BeamNgTerrainPoc.Terrain.Models;
 
 /// <summary>
@@ -63,6 +65,14 @@ public class RoadSmoothingParameters
     /// </summary>
     public DirectMaskRoadParameters? DirectMaskParameters { get; set; }
 
+    /// <summary>
+    /// Junction and endpoint harmonization parameters.
+    /// Controls how road elevations are blended at intersections and endpoints
+    /// to eliminate discontinuities between road segments.
+    /// Null = use defaults. Set this to customize junction blending behavior.
+    /// </summary>
+    public JunctionHarmonizationParameters? JunctionHarmonizationParameters { get; set; }
+
     // ========================================
     // COMMON ROAD GEOMETRY (All Approaches)
     // ========================================
@@ -70,9 +80,33 @@ public class RoadSmoothingParameters
     /// <summary>
     /// Width of the road surface in meters.
     /// This is the area that will be completely flattened to target elevation.
+    /// Used for elevation smoothing corridor width.
     /// Default: 8.0 (typical 2-lane road)
     /// </summary>
     public float RoadWidthMeters { get; set; } = 8.0f;
+
+    /// <summary>
+    /// Width of the road surface for material/layer map drawing in meters.
+    /// This controls how wide the terrain material (e.g., asphalt texture) is painted.
+    /// When null or 0, defaults to RoadWidthMeters for backward compatibility.
+    /// 
+    /// Use cases:
+    /// - Set smaller than RoadWidthMeters to paint narrow road on wider smoothed corridor
+    /// - Set larger than RoadWidthMeters to paint wider texture with narrower smoothing
+    /// 
+    /// Example: RoadWidthMeters=20m (elevation corridor), RoadSurfaceWidthMeters=8m (painted asphalt)
+    /// Default: null (uses RoadWidthMeters)
+    /// </summary>
+    public float? RoadSurfaceWidthMeters { get; set; }
+
+    /// <summary>
+    /// Gets the effective road surface width for material drawing.
+    /// Returns RoadSurfaceWidthMeters if set and > 0, otherwise falls back to RoadWidthMeters.
+    /// </summary>
+    public float EffectiveRoadSurfaceWidthMeters => 
+        RoadSurfaceWidthMeters.HasValue && RoadSurfaceWidthMeters.Value > 0 
+            ? RoadSurfaceWidthMeters.Value 
+            : RoadWidthMeters;
 
     /// <summary>
     /// Distance from road edge to blend terrain in meters.
@@ -117,7 +151,15 @@ public class RoadSmoothingParameters
     // ========================================
 
     /// <summary>
+    /// Enable enforcement of the maximum road slope constraint.
+    /// When enabled, road elevations are adjusted to ensure no segment exceeds RoadMaxSlopeDegrees.
+    /// Default: false (disabled - road follows smoothed terrain)
+    /// </summary>
+    public bool EnableMaxSlopeConstraint { get; set; } = false;
+
+    /// <summary>
     /// Maximum allowed road surface slope in degrees.
+    /// Only enforced when EnableMaxSlopeConstraint = true.
     /// Prevents unrealistic steepness on the road itself.
     /// 
     /// Typical values:
@@ -227,6 +269,22 @@ public class RoadSmoothingParameters
     public List<string>? ExclusionLayerPaths { get; set; }
 
     // ========================================
+    // PRE-BUILT SPLINES (OSM Integration)
+    // ========================================
+
+    /// <summary>
+    /// Pre-built road splines from external sources (e.g., OSM Overpass API).
+    /// When set, these splines are used directly instead of extracting from layer map.
+    /// This bypasses skeleton extraction and path finding for road materials.
+    /// </summary>
+    public List<RoadSpline>? PreBuiltSplines { get; set; }
+
+    /// <summary>
+    /// When true, the service should use PreBuiltSplines instead of extracting from layer map.
+    /// </summary>
+    public bool UsePreBuiltSplines => PreBuiltSplines?.Count > 0;
+
+    // ========================================
     // DEBUG OUTPUT (All Approaches)
     // ========================================
 
@@ -249,149 +307,6 @@ public class RoadSmoothingParameters
     public bool ExportSmoothedHeightmapWithOutlines { get; set; } = false;
 
     // ========================================
-    // BACKWARD COMPATIBILITY PROPERTIES
-    // THESE PROVIDE DIRECT ACCESS TO SUB-PARAMETERS FOR SIMPLER API
-    // ========================================
-
-    #region Backward Compatibility - Spline Properties
-
-    public bool UseGraphOrdering
-    {
-        get => GetSplineParameters().UseGraphOrdering;
-        set => GetSplineParameters().UseGraphOrdering = value;
-    }
-
-    public float DensifyMaxSpacingPixels
-    {
-        get => GetSplineParameters().DensifyMaxSpacingPixels;
-        set => GetSplineParameters().DensifyMaxSpacingPixels = value;
-    }
-
-    public float OrderingNeighborRadiusPixels
-    {
-        get => GetSplineParameters().OrderingNeighborRadiusPixels;
-        set => GetSplineParameters().OrderingNeighborRadiusPixels = value;
-    }
-
-    public float BridgeEndpointMaxDistancePixels
-    {
-        get => GetSplineParameters().BridgeEndpointMaxDistancePixels;
-        set => GetSplineParameters().BridgeEndpointMaxDistancePixels = value;
-    }
-
-    public bool PreferStraightThroughJunctions
-    {
-        get => GetSplineParameters().PreferStraightThroughJunctions;
-        set => GetSplineParameters().PreferStraightThroughJunctions = value;
-    }
-
-    public float JunctionAngleThreshold
-    {
-        get => GetSplineParameters().JunctionAngleThreshold;
-        set => GetSplineParameters().JunctionAngleThreshold = value;
-    }
-
-    public float MinPathLengthPixels
-    {
-        get => GetSplineParameters().MinPathLengthPixels;
-        set => GetSplineParameters().MinPathLengthPixels = value;
-    }
-
-    public float SimplifyTolerancePixels
-    {
-        get => GetSplineParameters().SimplifyTolerancePixels;
-        set => GetSplineParameters().SimplifyTolerancePixels = value;
-    }
-
-    public float SplineTension
-    {
-        get => GetSplineParameters().SplineTension;
-        set => GetSplineParameters().SplineTension = value;
-    }
-
-    public float SplineContinuity
-    {
-        get => GetSplineParameters().SplineContinuity;
-        set => GetSplineParameters().SplineContinuity = value;
-    }
-
-    public float SplineBias
-    {
-        get => GetSplineParameters().SplineBias;
-        set => GetSplineParameters().SplineBias = value;
-    }
-
-    public int SmoothingWindowSize
-    {
-        get => GetSplineParameters().SmoothingWindowSize;
-        set => GetSplineParameters().SmoothingWindowSize = value;
-    }
-
-    public bool UseButterworthFilter
-    {
-        get => Approach == RoadSmoothingApproach.Spline
-            ? GetSplineParameters().UseButterworthFilter
-            : GetDirectMaskParameters().UseButterworthFilter;
-        set
-        {
-            if (Approach == RoadSmoothingApproach.Spline)
-                GetSplineParameters().UseButterworthFilter = value;
-            else
-                GetDirectMaskParameters().UseButterworthFilter = value;
-        }
-    }
-
-    public int ButterworthFilterOrder
-    {
-        get => Approach == RoadSmoothingApproach.Spline
-            ? GetSplineParameters().ButterworthFilterOrder
-            : GetDirectMaskParameters().ButterworthFilterOrder;
-        set
-        {
-            if (Approach == RoadSmoothingApproach.Spline)
-                GetSplineParameters().ButterworthFilterOrder = value;
-            else
-                GetDirectMaskParameters().ButterworthFilterOrder = value;
-        }
-    }
-
-    public float GlobalLevelingStrength
-    {
-        get => GetSplineParameters().GlobalLevelingStrength;
-        set => GetSplineParameters().GlobalLevelingStrength = value;
-    }
-
-    public bool ExportSplineDebugImage
-    {
-        get => GetSplineParameters().ExportSplineDebugImage;
-        set => GetSplineParameters().ExportSplineDebugImage = value;
-    }
-
-    public bool ExportSkeletonDebugImage
-    {
-        get => GetSplineParameters().ExportSkeletonDebugImage;
-        set => GetSplineParameters().ExportSkeletonDebugImage = value;
-    }
-
-    public bool ExportSmoothedElevationDebugImage
-    {
-        get => GetSplineParameters().ExportSmoothedElevationDebugImage;
-        set => GetSplineParameters().ExportSmoothedElevationDebugImage = value;
-    }
-
-    #endregion
-
-    #region Backward Compatibility - DirectMask Properties
-
-    public int RoadPixelSearchRadius
-    {
-        get => GetDirectMaskParameters().RoadPixelSearchRadius;
-        set => GetDirectMaskParameters().RoadPixelSearchRadius = value;
-    }
-
-    #endregion
-
-    // ========================================
     // HELPER METHODS
     // ========================================
 
@@ -412,6 +327,14 @@ public class RoadSmoothingParameters
     }
 
     /// <summary>
+    /// Gets or creates the JunctionHarmonizationParameters object (auto-creates with defaults if null).
+    /// </summary>
+    public JunctionHarmonizationParameters GetJunctionHarmonizationParameters()
+    {
+        return JunctionHarmonizationParameters ??= new JunctionHarmonizationParameters();
+    }
+
+    /// <summary>
     /// Validates all parameters and returns any errors.
     /// Includes validation for approach-specific parameters.
     /// </summary>
@@ -422,6 +345,9 @@ public class RoadSmoothingParameters
         // Validate common parameters
         if (RoadWidthMeters <= 0)
             errors.Add("RoadWidthMeters must be greater than 0");
+
+        if (RoadSurfaceWidthMeters.HasValue && RoadSurfaceWidthMeters.Value < 0)
+            errors.Add("RoadSurfaceWidthMeters must be >= 0 when specified");
 
         if (TerrainAffectedRangeMeters < 0)
             errors.Add("TerrainAffectedRangeMeters must be >= 0");
@@ -462,6 +388,12 @@ public class RoadSmoothingParameters
         else if (Approach == RoadSmoothingApproach.DirectMask && DirectMaskParameters != null)
         {
             errors.AddRange(DirectMaskParameters.Validate());
+        }
+
+        // Validate junction harmonization parameters
+        if (JunctionHarmonizationParameters != null)
+        {
+            errors.AddRange(JunctionHarmonizationParameters.Validate());
         }
 
         // Warn about problematic combinations (Spline approach only)

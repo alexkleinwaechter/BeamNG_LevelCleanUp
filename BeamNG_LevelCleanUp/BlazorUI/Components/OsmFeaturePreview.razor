@@ -1,0 +1,177 @@
+@using System.Globalization
+@using System.Numerics
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@using BeamNgTerrainPoc.Terrain.Osm.Models
+
+<div class="osm-preview-container" style="width: 100%; height: 100%; position: relative;">
+    @if (Features != null && Features.Any() && BoundingBox != null)
+    {
+        <svg width="100%" height="100%" viewBox="0 0 @TerrainSize @TerrainSize"
+             preserveAspectRatio="xMidYMid meet"
+             style="background: #2d2d3a; border-radius: 4px;">
+            
+            @* Grid lines *@
+            @for (var i = 0; i <= TerrainSize; i += TerrainSize / 8)
+            {
+                <line x1="@i" y1="0" x2="@i" y2="@TerrainSize" 
+                      stroke="#444" stroke-width="1" />
+                <line x1="0" y1="@i" x2="@TerrainSize" y2="@i" 
+                      stroke="#444" stroke-width="1" />
+            }
+            
+            @* Features *@
+            @foreach (var feature in Features)
+            {
+                var pixelCoords = TransformToPixel(feature.Coordinates);
+                var pointsString = GetPointsString(pixelCoords);
+                
+                @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
+                {
+                    <polygon points="@pointsString" 
+                             fill="@GetFillColor(feature)" 
+                             stroke="@GetStrokeColor(feature)"
+                             stroke-width="2"
+                             opacity="0.6" />
+                }
+                else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
+                {
+                    <polyline points="@pointsString"
+                              fill="none"
+                              stroke="@GetStrokeColor(feature)"
+                              stroke-width="3"
+                              stroke-linecap="round"
+                              stroke-linejoin="round" />
+                }
+            }
+            
+            @* Border *@
+            <rect x="0" y="0" width="@TerrainSize" height="@TerrainSize"
+                  fill="none" stroke="#666" stroke-width="2" />
+        </svg>
+        
+        @* Legend *@
+        <div class="legend" style="position: absolute; bottom: 8px; left: 8px; font-size: 10px; color: #aaa;">
+            @Features.Count() features
+        </div>
+    }
+    else
+    {
+        <div class="d-flex align-center justify-center" style="height: 100%; color: #666;">
+            <MudText Typo="Typo.body2">No features selected</MudText>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IEnumerable<OsmFeature>? Features { get; set; }
+    [Parameter] public GeoBoundingBox? BoundingBox { get; set; }
+    [Parameter] public int TerrainSize { get; set; } = 512;
+    
+    /// <summary>
+    /// Transforms geographic coordinates to pixel coordinates for SVG rendering.
+    /// </summary>
+    private List<(float X, float Y)> TransformToPixel(List<GeoCoordinate> coords)
+    {
+        if (BoundingBox == null || coords == null || !coords.Any())
+            return new List<(float, float)>();
+        
+        var result = new List<(float X, float Y)>();
+        
+        // Calculate bounding box dimensions
+        var bboxWidth = BoundingBox.MaxLongitude - BoundingBox.MinLongitude;
+        var bboxHeight = BoundingBox.MaxLatitude - BoundingBox.MinLatitude;
+        
+        // Avoid division by zero
+        if (Math.Abs(bboxWidth) < 1e-10 || Math.Abs(bboxHeight) < 1e-10)
+            return result;
+        
+        foreach (var coord in coords)
+        {
+            // Normalize to 0-1 range within the bounding box
+            var normalizedX = (coord.Longitude - BoundingBox.MinLongitude) / bboxWidth;
+            var normalizedY = (coord.Latitude - BoundingBox.MinLatitude) / bboxHeight;
+            
+            // Convert to pixel coordinates
+            // Y is inverted: SVG has Y increasing downward, but latitude increases upward
+            var pixelX = (float)(normalizedX * TerrainSize);
+            var pixelY = (float)((1.0 - normalizedY) * TerrainSize);
+            
+            // Clamp to valid range (features might extend slightly outside bbox)
+            pixelX = Math.Clamp(pixelX, -100, TerrainSize + 100);
+            pixelY = Math.Clamp(pixelY, -100, TerrainSize + 100);
+            
+            result.Add((pixelX, pixelY));
+        }
+        
+        return result;
+    }
+    
+    private string GetPointsString(List<(float X, float Y)> coords)
+    {
+        if (coords == null || coords.Count < 2)
+            return string.Empty;
+        
+        // Use InvariantCulture to ensure decimal point (not comma) in SVG
+        return string.Join(" ", coords.Select(c => 
+            string.Format(CultureInfo.InvariantCulture, "{0:F1},{1:F1}", c.X, c.Y)));
+    }
+    
+    private string GetFillColor(OsmFeature feature)
+    {
+        return feature.Category switch
+        {
+            "landuse" => feature.SubCategory switch
+            {
+                "forest" => "#2d5a3d",
+                "grass" => "#4a7c4e",
+                "meadow" => "#5a8c5e",
+                "farmland" => "#8b7355",
+                "residential" => "#6a6a6a",
+                "industrial" => "#5a5a5a",
+                "commercial" => "#6a5a5a",
+                _ => "#5a5a6a"
+            },
+            "natural" => feature.SubCategory switch
+            {
+                "wood" => "#2d5a3d",
+                "water" => "#3d5a8d",
+                "wetland" => "#4a6a7a",
+                "grassland" => "#5a8c5e",
+                "scrub" => "#5a7a5a",
+                "sand" => "#c2b280",
+                "rock" => "#7a7a7a",
+                _ => "#5a6a5a"
+            },
+            "building" => "#7a5a5a",
+            "waterway" => "#3d5a8d",
+            _ => "#5a5a5a"
+        };
+    }
+    
+    private string GetStrokeColor(OsmFeature feature)
+    {
+        return feature.Category switch
+        {
+            "highway" => feature.SubCategory switch
+            {
+                "motorway" => "#e8a030",
+                "trunk" => "#e8a030",
+                "primary" => "#e8a030",
+                "secondary" => "#f0d040",
+                "tertiary" => "#ffffff",
+                "residential" => "#cccccc",
+                "service" => "#aaaaaa",
+                "track" => "#8b7355",
+                "path" => "#8b7355",
+                "footway" => "#8b8b8b",
+                _ => "#cccccc"
+            },
+            "railway" => "#8a8a8a",
+            "waterway" => "#5080c0",
+            "landuse" => "#4a6a4a",
+            "natural" => "#4a6a5a",
+            "building" => "#8a5a5a",
+            _ => "#8a8a8a"
+        };
+    }
+}

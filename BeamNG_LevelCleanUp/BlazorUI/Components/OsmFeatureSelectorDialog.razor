@@ -1,0 +1,442 @@
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@using BeamNgTerrainPoc.Terrain.Osm.Models
+@using BeamNgTerrainPoc.Terrain.Osm.Services
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center">
+            <MudIcon Icon="@Icons.Material.Filled.Map" Class="mr-2" />
+            <MudText Typo="Typo.h6">Select OSM Features for @MaterialName</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        @if (_isLoading)
+        {
+            <MudStack AlignItems="AlignItems.Center" Class="pa-8">
+                <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+                <MudText Typo="Typo.body1" Class="mt-4">Fetching OSM data from Overpass API...</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">This may take a moment for large areas</MudText>
+            </MudStack>
+        }
+        else if (!string.IsNullOrEmpty(_error))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">
+                @_error
+            </MudAlert>
+            <MudButton Variant="Variant.Outlined" OnClick="RetryFetch" StartIcon="@Icons.Material.Filled.Refresh">
+                Retry
+            </MudButton>
+        }
+        else if (_queryResult != null)
+        {
+            <MudGrid Spacing="2">
+                @* Left side: Filters and List *@
+                <MudItem xs="12" md="6">
+                    @* Category Filter *@
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Filter by Category</MudText>
+                    <MudChipSet T="string" @bind-SelectedValues="_selectedCategories" 
+                                SelectionMode="SelectionMode.MultiSelection"
+                                Class="mb-3">
+                        @foreach (var category in _availableCategories)
+                        {
+                            <MudChip Value="@category" 
+                                     Color="@GetCategoryColor(category)"
+                                     Variant="Variant.Outlined">
+                                @GetCategoryDisplayName(category)
+                            </MudChip>
+                        }
+                    </MudChipSet>
+                    
+                    @* Geometry Type Filter *@
+                    <MudStack Row="true" Class="mb-3" Spacing="3">
+                        <MudCheckBox @bind-Value="_showLines" Label="Lines (Roads)" Color="Color.Primary" />
+                        <MudCheckBox @bind-Value="_showPolygons" Label="Polygons (Areas)" Color="Color.Secondary" />
+                    </MudStack>
+                    
+                    @* Search *@
+                    <MudTextField @bind-Value="_searchText"
+                                  Placeholder="Search feature types..."
+                                  Variant="Variant.Outlined"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  Class="mb-3"
+                                  Clearable="true" />
+                    
+                    @* Grouped Feature List *@
+                    <MudPaper Elevation="0" Outlined="true" Style="max-height: 350px; overflow-y: auto;">
+                        <MudList T="FeatureGroup" @bind-SelectedValues="_selectedGroups"
+                                 SelectionMode="SelectionMode.MultiSelection"
+                                 Dense="true">
+                            @foreach (var group in FilteredGroups)
+                            {
+                                <MudListItem Value="@group">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIcon Icon="@GetGroupIcon(group)" 
+                                                 Size="Size.Small" 
+                                                 Color="@GetGroupIconColor(group)" />
+                                        <MudText Typo="Typo.body2" Style="flex: 1;">
+                                            @group.DisplayName
+                                        </MudText>
+                                        <MudChip T="string" 
+                                                 Size="Size.Small" 
+                                                 Color="Color.Default"
+                                                 Variant="Variant.Text">
+                                            @group.FeatureCount
+                                        </MudChip>
+                                        <MudChip T="string" 
+                                                 Size="Size.Small" 
+                                                 Color="@GetGeometryColorForGroup(group)"
+                                                 Variant="Variant.Filled">
+                                            @group.GeometryType
+                                        </MudChip>
+                                    </MudStack>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    </MudPaper>
+                    
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                        @FilteredGroups.Count() types available • @_selectedGroups.Sum(g => g.FeatureCount) features in @_selectedGroups.Count selected types
+                    </MudText>
+                </MudItem>
+                
+                @* Right side: Preview *@
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Preview</MudText>
+                    <MudPaper Class="pa-2" Elevation="1" Style="height: 400px; background: #1a1a2e;">
+                        <OsmFeaturePreview Features="@GetSelectedOsmFeatures()"
+                                           BoundingBox="@BoundingBox"
+                                           TerrainSize="@PreviewSize" />
+                    </MudPaper>
+                    
+                    @* Quick Actions *@
+                    <MudStack Row="true" Spacing="2" Class="mt-3">
+                        <MudButton Variant="Variant.Text" 
+                                   Size="Size.Small" 
+                                   OnClick="SelectAllFiltered"
+                                   StartIcon="@Icons.Material.Filled.SelectAll">
+                            Select All Visible
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" 
+                                   Size="Size.Small" 
+                                   OnClick="ClearSelection"
+                                   StartIcon="@Icons.Material.Filled.Clear">
+                            Clear Selection
+                        </MudButton>
+                    </MudStack>
+                </MudItem>
+            </MudGrid>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" 
+                   Variant="Variant.Filled"
+                   OnClick="Confirm" 
+                   Disabled="@(!_selectedGroups.Any())">
+            Select @_selectedGroups.Sum(g => g.FeatureCount) Feature@(_selectedGroups.Sum(g => g.FeatureCount) != 1 ? "s" : "")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    
+    [Parameter] public string MaterialName { get; set; } = string.Empty;
+    [Parameter] public GeoBoundingBox? BoundingBox { get; set; }
+    [Parameter] public int TerrainSize { get; set; } = 2048;
+    [Parameter] public bool IsRoadMaterial { get; set; }
+    [Parameter] public List<OsmFeatureSelection>? ExistingSelections { get; set; }
+    
+    private OsmQueryResult? _queryResult;
+    private List<FeatureGroup> _featureGroups = new();
+    private IReadOnlyCollection<FeatureGroup> _selectedGroups = new List<FeatureGroup>();
+    private IReadOnlyCollection<string> _selectedCategories = new List<string>();
+    private bool _showLines = true;
+    private bool _showPolygons = true;
+    private bool _isLoading = true;
+    private string? _error;
+    private string _searchText = string.Empty;
+    
+    private int PreviewSize => Math.Min(512, TerrainSize);
+    
+    private string[] _availableCategories = 
+    [
+        "highway", "landuse", "natural", "building", "waterway", "railway"
+    ];
+    
+    /// <summary>
+    /// Represents a group of features with the same category + subcategory + geometry type.
+    /// </summary>
+    public class FeatureGroup
+    {
+        public string Category { get; set; } = string.Empty;
+        public string SubCategory { get; set; } = string.Empty;
+        public OsmGeometryType GeometryType { get; set; }
+        public List<OsmFeature> Features { get; set; } = new();
+        
+        public int FeatureCount => Features.Count;
+        
+        public string DisplayName => string.IsNullOrEmpty(SubCategory) 
+            ? $"{GetCategoryName(Category)}" 
+            : $"{GetCategoryName(Category)}: {FormatSubCategory(SubCategory)}";
+        
+        public string GroupKey => $"{Category}|{SubCategory}|{GeometryType}";
+        
+        private static string GetCategoryName(string category) => category switch
+        {
+            "highway" => "Road",
+            "landuse" => "Landuse",
+            "natural" => "Natural",
+            "building" => "Building",
+            "waterway" => "Water",
+            "railway" => "Railway",
+            _ => category
+        };
+        
+        private static string FormatSubCategory(string subCategory)
+        {
+            // Convert snake_case to Title Case
+            return string.Join(" ", subCategory.Split('_')
+                .Select(w => char.ToUpper(w[0]) + w[1..].ToLower()));
+        }
+        
+        public override bool Equals(object? obj) => 
+            obj is FeatureGroup other && GroupKey == other.GroupKey;
+        
+        public override int GetHashCode() => GroupKey.GetHashCode();
+    }
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await FetchOsmData();
+    }
+    
+    private async Task FetchOsmData()
+    {
+        if (BoundingBox == null)
+        {
+            _error = "No geographic bounding box available. Please load a GeoTIFF file first.";
+            _isLoading = false;
+            return;
+        }
+        
+        _isLoading = true;
+        _error = null;
+        StateHasChanged();
+        
+        try
+        {
+            // Check cache first
+            var cache = new OsmQueryCache();
+            _queryResult = await cache.GetAsync(BoundingBox);
+            
+            if (_queryResult == null)
+            {
+                // Fetch from API
+                var service = new OverpassApiService();
+                _queryResult = await service.QueryAllFeaturesAsync(BoundingBox);
+                
+                // Cache the result
+                await cache.SetAsync(BoundingBox, _queryResult);
+            }
+            
+            // Build feature groups
+            BuildFeatureGroups();
+            
+            // Pre-filter based on material type
+            if (IsRoadMaterial)
+            {
+                _showLines = true;
+                _showPolygons = false;
+                _selectedCategories = new List<string> { "highway" };
+            }
+            else
+            {
+                _showLines = false;
+                _showPolygons = true;
+                _selectedCategories = new List<string> { "landuse", "natural" };
+            }
+            
+            // Restore existing selections by finding matching groups
+            if (ExistingSelections?.Any() == true)
+            {
+                var existingIds = ExistingSelections.Select(s => s.FeatureId).ToHashSet();
+                _selectedGroups = _featureGroups
+                    .Where(g => g.Features.Any(f => existingIds.Contains(f.Id)))
+                    .ToList();
+            }
+            
+            Snackbar.Add($"Loaded {_queryResult.Features.Count} OSM features in {_featureGroups.Count} types", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to fetch OSM data: {ex.Message}";
+            Snackbar.Add(_error, Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private void BuildFeatureGroups()
+    {
+        if (_queryResult == null) return;
+        
+        _featureGroups = _queryResult.Features
+            .GroupBy(f => new { f.Category, f.SubCategory, f.GeometryType })
+            .Select(g => new FeatureGroup
+            {
+                Category = g.Key.Category,
+                SubCategory = g.Key.SubCategory,
+                GeometryType = g.Key.GeometryType,
+                Features = g.ToList()
+            })
+            .OrderBy(g => g.Category)
+            .ThenBy(g => g.SubCategory)
+            .ToList();
+    }
+    
+    private async Task RetryFetch()
+    {
+        // Clear cache and retry
+        if (BoundingBox != null)
+        {
+            var cache = new OsmQueryCache();
+            cache.Invalidate(BoundingBox);
+        }
+        await FetchOsmData();
+    }
+    
+    private IEnumerable<FeatureGroup> FilteredGroups
+    {
+        get
+        {
+            var filtered = _featureGroups.AsEnumerable();
+            
+            // Filter by geometry type
+            if (_showLines && !_showPolygons)
+                filtered = filtered.Where(g => g.GeometryType == OsmGeometryType.LineString);
+            else if (!_showLines && _showPolygons)
+                filtered = filtered.Where(g => g.GeometryType == OsmGeometryType.Polygon);
+            else if (!_showLines && !_showPolygons)
+                return Enumerable.Empty<FeatureGroup>();
+            
+            // Filter by category
+            if (_selectedCategories.Any())
+                filtered = filtered.Where(g => _selectedCategories.Contains(g.Category));
+            
+            // Filter by search text
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                var searchLower = _searchText.ToLowerInvariant();
+                filtered = filtered.Where(g => 
+                    g.DisplayName.Contains(searchLower, StringComparison.OrdinalIgnoreCase) ||
+                    g.Category.Contains(searchLower, StringComparison.OrdinalIgnoreCase) ||
+                    g.SubCategory.Contains(searchLower, StringComparison.OrdinalIgnoreCase));
+            }
+            
+            return filtered;
+        }
+    }
+    
+    private IEnumerable<OsmFeature> GetSelectedOsmFeatures()
+    {
+        return _selectedGroups.SelectMany(g => g.Features);
+    }
+    
+    private void SelectAllFiltered()
+    {
+        _selectedGroups = FilteredGroups.ToList();
+        StateHasChanged();
+    }
+    
+    private void ClearSelection()
+    {
+        _selectedGroups = new List<FeatureGroup>();
+        StateHasChanged();
+    }
+    
+    private string GetGroupIcon(FeatureGroup group)
+    {
+        return group.Category switch
+        {
+            "highway" => Icons.Material.Filled.Route,
+            "landuse" => Icons.Material.Filled.Landscape,
+            "natural" => Icons.Material.Filled.Park,
+            "building" => Icons.Material.Filled.Home,
+            "waterway" => Icons.Material.Filled.Water,
+            "railway" => Icons.Material.Filled.Train,
+            _ => Icons.Material.Filled.Place
+        };
+    }
+    
+    private Color GetGroupIconColor(FeatureGroup group)
+    {
+        return group.Category switch
+        {
+            "highway" => Color.Warning,
+            "landuse" => Color.Success,
+            "natural" => Color.Success,
+            "building" => Color.Default,
+            "waterway" => Color.Info,
+            "railway" => Color.Secondary,
+            _ => Color.Default
+        };
+    }
+    
+    private Color GetGeometryColorForGroup(FeatureGroup group)
+    {
+        return group.GeometryType switch
+        {
+            OsmGeometryType.LineString => Color.Warning,
+            OsmGeometryType.Polygon => Color.Info,
+            _ => Color.Default
+        };
+    }
+    
+    private Color GetCategoryColor(string category)
+    {
+        return category switch
+        {
+            "highway" => Color.Warning,
+            "landuse" => Color.Success,
+            "natural" => Color.Success,
+            "building" => Color.Default,
+            "waterway" => Color.Info,
+            "railway" => Color.Secondary,
+            _ => Color.Default
+        };
+    }
+    
+    private string GetCategoryDisplayName(string category)
+    {
+        return category switch
+        {
+            "highway" => "Roads",
+            "landuse" => "Landuse",
+            "natural" => "Natural",
+            "building" => "Buildings",
+            "waterway" => "Water",
+            "railway" => "Railways",
+            _ => category
+        };
+    }
+    
+    private void Confirm()
+    {
+        // Convert all features in selected groups to selections
+        var selections = _selectedGroups
+            .SelectMany(g => g.Features)
+            .Select(OsmFeatureSelection.FromFeature)
+            .ToList();
+        
+        MudDialog.Close(DialogResult.Ok(selections));
+    }
+    
+    private void Cancel() => MudDialog.Cancel();
+}

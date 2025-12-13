@@ -1,0 +1,159 @@
+@using BeamNG_LevelCleanUp.Objects
+@inject NavigationManager Navigation
+
+@if (WizardState?.IsActive == true)
+{
+    <div class="assistant-panel">
+        <MudPaper Elevation="0">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudStack Row="true" Spacing="4">
+                    <MudChip T="string" Color="@GetStepColor(0)" Icon="@Icons.Material.Filled.Settings">Setup</MudChip>
+                    <MudChip T="string" Color="@GetStepColor(1)" Icon="@Icons.Material.Filled.Layers">MissionGroups</MudChip>
+                    <MudChip T="string" Color="@GetStepColor(2)" Icon="@Icons.Material.Filled.Terrain">Terrain Materials</MudChip>
+                </MudStack>
+                
+                <MudText Typo="Typo.body2" Color="Color.Primary">
+                    @WizardState.GetProgressSummary()
+                </MudText>
+            </MudStack>
+            
+            <MudPaper Class="pa-3 mb-4" Elevation="1">
+                @if (WizardState.CurrentStep == 0)
+                {
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.body2"><b>Level:</b> @WizardState.LevelName</MudText>
+                        <MudText Typo="Typo.body2"><b>Path:</b> @WizardState.TargetLevelPath</MudText>
+                        <MudText Typo="Typo.body2"><b>Source:</b> @WizardState.SourceLevelName</MudText>
+                    </MudStack>
+                }
+                else if (WizardState.CurrentStep == 1)
+                {
+                    <MudText Typo="Typo.body2">
+                        @WizardState.CopiedMissionGroupAssets.Count essential object(s) copied
+                    </MudText>
+                    @if (WizardState.CopiedFiles.Any())
+                    {
+                        <MudText Typo="Typo.body2">
+                            @WizardState.CopiedFiles.Count file(s) copied
+                        </MudText>
+                    }
+                }
+                else if (WizardState.CurrentStep == 2)
+                {
+                    @if (WizardState.Step3_TerrainMaterialsSelected)
+                    {
+                        <MudText Typo="Typo.body2">
+                            @WizardState.CopiedTerrainMaterials.Count material(s) selected
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">
+                            Ready to select terrain materials
+                        </MudText>
+                    }
+                }
+            </MudPaper>
+            
+            <MudStack Row="true" Justify="Justify.SpaceBetween">
+                <MudButton OnClick="@PreviousStep" 
+                          Disabled="@(WizardState.CurrentStep == 0)"
+                          StartIcon="@Icons.Material.Filled.ArrowBack"
+                          Variant="Variant.Outlined">
+                    Back
+                </MudButton>
+                
+                <MudButton OnClick="@NextStep" 
+                          Variant="Variant.Filled" 
+                          Color="Color.Primary"
+                          EndIcon="@Icons.Material.Filled.ArrowForward"
+                          Disabled="@(!CanProceedToNextStep())">
+                    @GetNextButtonText()
+                </MudButton>
+                
+                <MudButton OnClick="@FinishWizard"
+                          Variant="Variant.Filled"
+                          Color="Color.Success"
+                          StartIcon="@Icons.Material.Filled.Check"
+                          Style="@(WizardState.Step3_TerrainMaterialsSelected ? "" : "display:none")">
+                    Finish
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    </div>
+}
+
+@code {
+    [CascadingParameter]
+    public CreateLevelWizardState WizardState { get; set; }
+
+    private Color GetStepColor(int step)
+    {
+        if (step < WizardState.CurrentStep)
+            return Color.Success;
+        if (step == WizardState.CurrentStep)
+            return Color.Primary;
+        return Color.Default;
+    }
+
+    private void PreviousStep()
+    {
+        if (WizardState.CurrentStep == 1)
+        {
+            Navigation.NavigateTo("/CreateLevel");
+        }
+        else if (WizardState.CurrentStep == 2)
+        {
+            Navigation.NavigateTo("/CreateLevel");
+        }
+        
+        WizardState.CurrentStep = Math.Max(0, WizardState.CurrentStep - 1);
+    }
+
+    private void NextStep()
+    {
+        if (WizardState.CurrentStep == 0 && WizardState.Step1_SetupComplete)
+        {
+            Navigation.NavigateTo("/CreateLevel");
+            WizardState.CurrentStep = 1;
+        }
+        else if (WizardState.CurrentStep == 1 && WizardState.Step2_MissionGroupsCopied)
+        {
+            Navigation.NavigateTo("/CopyTerrains?wizardMode=true");
+            WizardState.CurrentStep = 2;
+        }
+        else if (WizardState.CurrentStep == 2 && WizardState.Step3_TerrainMaterialsSelected)
+        {
+            Navigation.NavigateTo("/CreateLevel");
+        }
+    }
+
+    private void FinishWizard()
+    {
+        WizardState.IsActive = false;
+        Navigation.NavigateTo("/CreateLevel");
+    }
+
+    private bool CanProceedToNextStep()
+    {
+        return WizardState.CurrentStep switch
+        {
+            0 => WizardState.Step1_SetupComplete,
+            1 => WizardState.Step2_MissionGroupsCopied,
+            2 => WizardState.Step3_TerrainMaterialsSelected,
+            _ => false
+        };
+    }
+
+    private string GetNextButtonText()
+    {
+        return WizardState.CurrentStep switch
+        {
+            0 => "Review",
+            1 => "Select Terrain Materials",
+            2 => "Back to Review",
+            _ => "Next"
+        };
+    }
+}
+

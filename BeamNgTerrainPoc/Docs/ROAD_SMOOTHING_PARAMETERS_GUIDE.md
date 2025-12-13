@@ -2,18 +2,47 @@
 
 This guide explains every parameter available in `RoadSmoothingParameters` in simple terms, with value ranges and usage information.
 
+**Last Updated:** January 2025 (Butterworth filter, RacingCircuit preset, hairpin optimization)
+
 ---
 
 ## Table of Contents
-1. [Approach Selection](#approach-selection)
-2. [Road Geometry Parameters](#road-geometry-parameters)
-3. [Slope Constraint Parameters](#slope-constraint-parameters)
-4. [Blending Parameters](#blending-parameters)
-5. [Post-Processing Smoothing Parameters](#post-processing-smoothing-parameters)
-6. [Exclusion Zone Parameters](#exclusion-zone-parameters)
-7. [Debug Output Parameters](#debug-output-parameters)
-8. [Spline-Specific Parameters](#spline-specific-parameters)
-9. [DirectMask-Specific Parameters](#directmask-specific-parameters)
+1. [Quick Start - Presets](#quick-start---presets)
+2. [Approach Selection](#approach-selection)
+3. [Road Geometry Parameters](#road-geometry-parameters)
+4. [Slope Constraint Parameters](#slope-constraint-parameters)
+5. [Blending Parameters](#blending-parameters)
+6. [Post-Processing Smoothing Parameters](#post-processing-smoothing-parameters)
+7. [Junction Harmonization Parameters](#junction-harmonization-parameters)
+8. [Exclusion Zone Parameters](#exclusion-zone-parameters)
+9. [Debug Output Parameters](#debug-output-parameters)
+10. [Spline-Specific Parameters](#spline-specific-parameters)
+11. [DirectMask-Specific Parameters](#directmask-specific-parameters)
+12. [Parameter Validation Rules](#parameter-validation-rules)
+
+---
+
+## Quick Start - Presets
+
+Before diving into individual parameters, consider using a pre-configured preset from `RoadSmoothingPresets`:
+
+| Preset | Width | Blend Range | Best For |
+|--------|-------|-------------|----------|
+| `RacingCircuit` | 10m | 8m | Racing tracks, tight hairpins, karting |
+| `MountainRoad` | 6m | 4m | Steep cliffs, switchbacks, hairpin turns |
+| `Highway` | 8m | 10m | Main highways, well-maintained roads |
+| `DirtRoad` | 5m | 3m | Forest trails, rustic unpaved paths |
+| `TerrainFollowingSmooth` | 8m | 12m | General purpose, natural terrain |
+| `HillyAggressive` | 8m | 15m | Rolling hills, moderate leveling |
+| `MountainousUltraSmooth` | 8m | 22m | Flat road networks, race facilities |
+| `ExtremeNuclear` | 8m | 30m | Maximum smoothing, artificial environments |
+| `FastTesting` | 8m | 12m | Development iteration, intersections |
+
+```csharp
+// Using a preset
+var parameters = RoadSmoothingPresets.Highway;
+parameters.DebugOutputDirectory = @"d:\temp\output";
+```
 
 ---
 
@@ -687,22 +716,24 @@ Prevents processing tiny road fragments that aren't significant (like parking lo
 **What it does (simple explanation):**  
 Controls how tightly the spline curve follows the skeleton points:
 
-- 0.0 = very loose (smooth but may deviate from path)
-- 0.5 = balanced
+- 0.0 = very loose (smooth but may deviate from path, cuts corners)
+- 0.5 = balanced (follows path while maintaining smoothness)
 - 1.0 = very tight (follows path closely but may be jagged)
 
 Think of it as string tension:
-- Loose string (0.0) = gentle curve
-- Tight string (1.0) = sharp curve
+- Loose string (0.0) = gentle curve that may miss tight turns
+- Tight string (1.0) = sharp curve that follows every point
 
 **Why it's necessary:**  
-Allows control over the smoothness vs. accuracy trade-off. Race tracks want loose (smooth), while technical roads want tighter (accurate).
+Allows control over the smoothness vs. accuracy trade-off. Highways want loose (smooth), while hairpin turns need tighter (accurate).
 
-**Example values:**
-- `0.1` - Very loose (ultra-smooth, for race tracks)
-- `0.3` - Balanced (default)
-- `0.5` - Moderate tension
-- `0.8` - Tight (follows skeleton closely)
+**Example values by road type:**
+- `0.1-0.2` - Very loose (ultra-smooth highways, long sweeping curves)
+- `0.2-0.3` - Balanced (default, general purpose)
+- `0.4-0.5` - Moderate tension (mountain roads with curves)
+- `0.5-0.6` - Tight following (hairpins, racing circuits with sharp turns)
+
+**Hairpin Optimization:** For tight hairpin turns, use `0.5-0.55` to prevent the spline from cutting inside corners.
 
 ---
 
@@ -715,23 +746,25 @@ Allows control over the smoothness vs. accuracy trade-off. Race tracks want loos
 **What it does (simple explanation):**  
 Controls how smooth the curve is at corner points:
 
-- -1.0 = sharp corners (allows kinks)
+- -1.0 = sharp corners (allows kinks, direction changes)
 - 0.0 = balanced
-- 1.0 = very smooth corners (no kinks)
+- 1.0 = very smooth corners (no kinks, may miss sharp turns)
 
 Think of it as corner rounding:
-- Sharp (-1.0) = angular corners
-- Smooth (1.0) = rounded corners
+- Sharp (-1.0) = angular corners, can handle 180 deg hairpins
+- Smooth (1.0) = rounded corners, but may skip over tight turns
 
 **Why it's necessary:**  
-Determines whether roads have sharp corners or smooth curves. Racing circuits want high continuity (smooth), while city streets might want lower values.
+Determines whether roads have sharp corners or smooth curves. Racing circuits with hairpins need LOW continuity, highways need HIGH continuity.
 
-**Example values:**
-- `-0.5` - Sharp corners (city streets)
-- `0.0` - Balanced corners
-- `0.5` - Smooth corners (default)
-- `0.8` - Very smooth corners (highways)
-- `1.0` - Maximum smoothness (race tracks)
+**Example values by road type:**
+- `-0.5 to 0.0` - Sharp corners (city streets, chicanes)
+- `0.0 to 0.2` - Allow direction changes (hairpin turns, switchbacks)
+- `0.3 to 0.5` - Smooth corners (default, balanced)
+- `0.5 to 0.8` - Very smooth corners (highways, gentle curves)
+- `1.0` - Maximum smoothness (may miss hairpins!)
+
+**Hairpin Optimization:** For tight hairpin turns, use `0.1-0.2` to allow the spline to make sharp direction changes without overshooting.
 
 ---
 
@@ -1056,22 +1089,40 @@ Same as the Spline version - controls Butterworth filter aggressiveness.
 ## Common Scenarios and Settings
 
 ### 1. Racing Circuit (Maximum Smoothness)
+
+**Best for:** Professional racing tracks, karting circuits, tight hairpin turns.
+
+**Key optimizations for hairpins:**
+- High `SplineTension` (0.55) prevents corner cutting
+- Low `SplineContinuity` (0.15) allows sharp direction changes
+- Dense path extraction (`DensifyMaxSpacingPixels = 0.75`)
+- Minimal simplification (`SimplifyTolerancePixels = 0.1`)
+
 ```csharp
 Approach = RoadSmoothingApproach.Spline,
-RoadWidthMeters = 12.0f,
-TerrainAffectedRangeMeters = 15.0f,
-CrossSectionIntervalMeters = 0.3f,
-RoadMaxSlopeDegrees = 2.0f,
+RoadWidthMeters = 10.0f,          // Wide for overtaking
+TerrainAffectedRangeMeters = 8.0f,
+CrossSectionIntervalMeters = 0.25f,  // Ultra-dense sampling
+RoadMaxSlopeDegrees = 3.0f,
 EnablePostProcessingSmoothing = true,
 SmoothingKernelSize = 9,
 SmoothingSigma = 2.0f,
 SmoothingIterations = 2,
 SplineParameters = new SplineRoadParameters {
-    SmoothingWindowSize = 301,
+    // HAIRPIN-OPTIMIZED CURVE FITTING
+    SplineTension = 0.55f,         // Tight following (prevents corner cutting)
+    SplineContinuity = 0.15f,      // Allows sharp direction changes
+    SplineBias = 0.0f,
+    
+    // HIGH PRECISION PATH EXTRACTION
+    DensifyMaxSpacingPixels = 0.75f,   // Very dense control points
+    SimplifyTolerancePixels = 0.1f,    // Almost no simplification
+    MinPathLengthPixels = 20.0f,       // Keep short track segments
+    
+    SmoothingWindowSize = 201,
     UseButterworthFilter = true,
-    ButterworthFilterOrder = 6,
-    SplineTension = 0.1f,
-    SplineContinuity = 0.9f
+    ButterworthFilterOrder = 4,
+    GlobalLevelingStrength = 0.0f  // Terrain-following
 }
 ```
 
@@ -1092,21 +1143,44 @@ SplineParameters = new SplineRoadParameters {
 }
 ```
 
-### 3. Mountain Road (Terrain-Following)
+### 3. Mountain Road (Terrain-Following with Hairpins)
+
+**Best for:** Mountain passes, winding cliff roads, switchbacks with tight hairpin turns.
+
+**Key optimizations:**
+- Small `TerrainAffectedRangeMeters` (4m) for steep terrain beside road
+- `GlobalLevelingStrength = 0` (REQUIRED for narrow blend zones)
+- High `SplineTension` (0.5) for accurate hairpin tracking
+- Low `SplineContinuity` (0.2) to allow direction changes
+
 ```csharp
 Approach = RoadSmoothingApproach.Spline,
-RoadWidthMeters = 6.0f,
-TerrainAffectedRangeMeters = 8.0f,
-CrossSectionIntervalMeters = 0.5f,
-RoadMaxSlopeDegrees = 8.0f,
+RoadWidthMeters = 6.0f,           // Narrow mountain road
+TerrainAffectedRangeMeters = 4.0f, // SMALL for steep terrain beside road
+CrossSectionIntervalMeters = 0.3f,
+RoadMaxSlopeDegrees = 10.0f,       // Steep mountain grade
+SideMaxSlopeDegrees = 50.0f,       // Very steep embankments
 EnablePostProcessingSmoothing = true,
 SmoothingKernelSize = 5,
-SmoothingSigma = 1.0f,
+SmoothingSigma = 0.8f,
+SmoothingMaskExtensionMeters = 1.0f, // Minimal - preserve steep embankments
 SplineParameters = new SplineRoadParameters {
-    SmoothingWindowSize = 101,
+    // TIGHT SPLINE FITTING FOR HAIRPINS
+    SplineTension = 0.5f,          // Tight following
+    SplineContinuity = 0.2f,       // Allow sharp corners
+    SplineBias = 0.0f,
+    
+    // HIGH PRECISION PATH EXTRACTION
+    DensifyMaxSpacingPixels = 1.0f,
+    SimplifyTolerancePixels = 0.25f,
+    MinPathLengthPixels = 30.0f,
+    
+    SmoothingWindowSize = 101,     // Smaller window for responsive curves
     UseButterworthFilter = true,
-    ButterworthFilterOrder = 3,
-    GlobalLevelingStrength = 0.0f  // Follow terrain
+    ButterworthFilterOrder = 4,
+    
+    // MUST be 0 for narrow TerrainAffectedRangeMeters!
+    GlobalLevelingStrength = 0.0f
 }
 ```
 
@@ -1205,6 +1279,15 @@ SplineContinuity = 0.8f  // Increase from 0.5
 SplineTension = 0.2f     // Decrease from 0.3
 ```
 
+### Problem: Spline cuts corners on tight hairpins
+**Solution:** Increase tension and decrease continuity for tighter following:
+```csharp
+SplineTension = 0.55f      // Increase from 0.3 (tighter following)
+SplineContinuity = 0.15f   // Decrease from 0.5 (allow sharp direction changes)
+DensifyMaxSpacingPixels = 0.75f   // Denser control points
+SimplifyTolerancePixels = 0.1f    // Preserve hairpin shape
+```
+
 ---
 
 ## Summary
@@ -1217,3 +1300,78 @@ This document covers **ALL 40+ parameters** in the road smoothing system. Most u
 - ? **Enable post-processing smoothing** to eliminate staircase artifacts
 - ?? **Watch for critical warnings** (global leveling + narrow blend = dotted roads!)
 - ?? **Fine-tune only when needed** - defaults work well for most cases
+
+---
+
+## Parameter Validation Rules
+
+The UI component (`TerrainMaterialSettings.razor`) validates parameter combinations in real-time. Here are the rules enforced:
+
+### Critical Rules (Errors)
+
+| Rule | Condition | Impact |
+|------|-----------|--------|
+| **Disconnected Road Risk** | `GlobalLevelingStrength > 0.5` AND `TerrainAffectedRangeMeters < 15m` | Creates "dotted" disconnected road segments |
+
+### Warning Rules
+
+| Rule | Condition | Recommendation |
+|------|-----------|----------------|
+| **Narrow Blend Zone** | `GlobalLevelingStrength > 0.3` AND `TerrainAffectedRangeMeters < 12m` | Increase blend to >= 12m |
+| **Cross-Section Gaps** | `CrossSectionIntervalMeters > (RoadWidth/2 + BlendRange) / 3` | Reduce interval or increase blend |
+| **Kernel Size Must Be Odd** | `SmoothingKernelSize` is even | Use 3, 5, 7, 9, 11... |
+
+### Info Rules
+
+| Rule | Condition | Suggestion |
+|------|-----------|------------|
+| **Window Size Should Be Odd** | `SmoothingWindowSize` is even | Change to next odd number |
+| **Mask Extension Insufficient** | `SmoothingMaskExtensionMeters < CrossSectionIntervalMeters x 2` | Increase extension |
+| **Consider Butterworth** | Large window (>150) but Butterworth disabled | Enable for better results |
+| **High Butterworth Order** | Order > 6 | Order 3-4 is usually optimal |
+| **Narrow Road** | `RoadWidthMeters < 3m` | Confirm intentional (footpath?) |
+| **Steep Road Grade** | `RoadMaxSlopeDegrees > 12 degrees` | May feel unrealistic for paved roads |
+
+### Preset Validation Summary
+
+All presets in `RoadSmoothingPresets` are validated against these rules:
+
+| Preset | TerrainAffectedRangeMeters | GlobalLevelingStrength | Status |
+|--------|---------------------------|------------------------|--------|
+| `RacingCircuit` | 8m | 0.0 | Valid |
+| `MountainRoad` | 4m | 0.0 | Valid |
+| `DirtRoad` | 3m | 0.0 | Valid |
+| `Highway` | 10m | 0.0 | Valid |
+| `TerrainFollowingSmooth` | 12m | 0.0 | Valid |
+| `HillyAggressive` | 15m | 0.4 | Valid |
+| `MountainousUltraSmooth` | 22m | 0.5 | Valid |
+| `ExtremeNuclear` | 30m | 0.5 | Valid |
+| `FastTesting` | 12m | N/A (DirectMask) | Valid |
+
+---
+
+## Spline Parameters for Tight Turns (Hairpins)
+
+When dealing with hairpin turns, switchbacks, or tight curves, these parameters are critical:
+
+### Parameter Impact on Turn Accuracy
+
+| Parameter | Effect on Tight Turns |
+|-----------|----------------------|
+| **SplineTension** (higher) | Follows centerline tighter (prevents corner cutting) |
+| **SplineContinuity** (lower) | Allows sharper direction changes |
+| **DensifyMaxSpacingPixels** (smaller) | More control points for accuracy |
+| **SimplifyTolerancePixels** (smaller) | Preserves hairpin shape detail |
+| **MinPathLengthPixels** (smaller) | Keeps short hairpin segments |
+| **CrossSectionIntervalMeters** (smaller) | Denser road sampling |
+
+### Recommended Settings by Turn Type
+
+| Turn Type | SplineTension | SplineContinuity | DensifyMaxSpacing | SimplifyTolerance |
+|-----------|--------------|------------------|-------------------|-------------------|
+| **Highway (sweeping)** | 0.2 | 0.7 | 1.5 | 0.5 |
+| **Mountain Road** | 0.5 | 0.2 | 1.0 | 0.25 |
+| **Hairpin (180 deg)** | 0.55 | 0.15 | 0.75 | 0.1 |
+| **Chicane (S-curve)** | 0.5 | 0.2 | 1.0 | 0.25 |
+| **Dirt Road** | 0.4 | 0.3 | 2.0 | 0.75 |
+

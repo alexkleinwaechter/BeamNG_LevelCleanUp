@@ -1,6 +1,8 @@
 ﻿@using Microsoft.AspNetCore.Components.Routing
 <MudNavMenu>
     <MudNavLink Href="/" Match="NavLinkMatch.Prefix">Start</MudNavLink>
+    <MudNavLink Href="/CreateLevel" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AddCircle">Create New Level</MudNavLink>
+    <MudNavLink Href="/GenerateTerrain" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Terrain">Generate Terrain</MudNavLink>
     <MudNavLink Href="/MapShrink" Match="NavLinkMatch.Prefix">Map Shrinker</MudNavLink>
     <MudNavLink Href="/RenameMap" Match="NavLinkMatch.Prefix">Rename Map</MudNavLink>
     <MudNavLink Href="/CopyAssets" Match="NavLinkMatch.Prefix">Copy Assets</MudNavLink>

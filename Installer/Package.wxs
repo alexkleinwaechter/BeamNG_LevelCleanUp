@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BeamNG Tools for Mapbuilders  WiX v5 Installer
+  
+  This installer packages the application with GDAL native libraries in a proper folder structure,
+  which is required for GDAL to find its drivers and projection data (proj.db).
+  
+  Build: dotnet build Installer\BeamNG_LevelCleanUp.Installer.wixproj -c Release
+  
+  Installs to: C:\Program Files\BeamNG Tools for Mapbuilders
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="BeamNG Tools for Mapbuilders" 
+           Manufacturer="Alex Kleinwaechter" 
+           Version="1.3.3.0" 
+           UpgradeCode="E9D4C8B2-1A5F-4C7E-B8D9-3E6F2A8C5D1B"
+           Scope="perMachine"
+           InstallerVersion="500">
+    
+    <SummaryInformation Description="BeamNG.drive Map Building Tools with GeoTIFF Support" 
+                        Manufacturer="Alex Kleinwaechter" />
+    
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." 
+                  Schedule="afterInstallInitialize" />
+    
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    
+    <!-- UI with launch application checkbox -->
+    <UI Id="UI">
+      <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+      <Property Id="WixShellExecTarget" Value="[#MainExecutable]" />
+    </UI>
+    
+    <!-- Custom license file for the license agreement dialog -->
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+    
+    <!-- Checkbox text on the finish dialog -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch BeamNG Tools for Mapbuilders" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+
+    <!-- Custom action to launch the application after install using WiX Util extension -->
+    <CustomAction Id="LaunchApplication"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes" />
+    
+    <Feature Id="MainApplication" Title="BeamNG Tools for Mapbuilders" Level="1">
+      <ComponentGroupRef Id="AppComponents" />
+      <ComponentRef Id="MainExeComponent" />
+      <ComponentRef Id="ProgramMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+    
+  </Package>
+
+  <!-- Directory structure -->
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="BeamNG Tools for Mapbuilders" />
+    </StandardDirectory>
+    
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="BeamNG Tools for Mapbuilders" />
+    </StandardDirectory>
+    
+    <StandardDirectory Id="DesktopFolder" />
+  </Fragment>
+
+  <!-- Main executable component with known ID for launch action -->
+  <Fragment>
+    <Component Id="MainExeComponent" Guid="C3D4E5F6-A7B8-9012-C3D4-E5F6A7B89012" Directory="INSTALLFOLDER" Bitness="always64">
+      <File Id="MainExecutable" 
+            Source="..\BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\BeamNG_LevelCleanUp.exe"
+            KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+  <!-- Shortcut components with Bitness set to always64 -->
+  <Fragment>
+    <Component Id="ProgramMenuShortcut" Guid="A1B2C3D4-E5F6-7890-A1B2-C3D4E5F67890" Directory="ApplicationProgramsFolder" Bitness="always64">
+      <Shortcut Id="ApplicationStartMenuShortcut"
+                Name="BeamNG Tools for Mapbuilders"
+                Description="Tools for BeamNG.drive map building with GeoTIFF support"
+                Target="[INSTALLFOLDER]BeamNG_LevelCleanUp.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="CleanUpShortcut" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\BeamNG_LevelCleanUp" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    
+    <Component Id="DesktopShortcut" Guid="B2C3D4E5-F6A7-8901-B2C3-D4E5F6A78901" Directory="DesktopFolder" Bitness="always64">
+      <Shortcut Id="ApplicationDesktopShortcut"
+                Name="BeamNG Tools for Mapbuilders"
+                Description="Tools for BeamNG.drive map building with GeoTIFF support"
+                Target="[INSTALLFOLDER]BeamNG_LevelCleanUp.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="Software\BeamNG_LevelCleanUp" Name="desktopshortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+  <!-- Harvest all files from the publish output (excluding the main exe which is defined separately) -->
+  <Fragment>
+    <ComponentGroup Id="AppComponents" Directory="INSTALLFOLDER">
+      <Files Include="..\BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\**">
+        <Exclude Files="..\BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\BeamNG_LevelCleanUp.exe" />
+      </Files>
+    </ComponentGroup>
+  </Fragment>
+
+</Wix>
+

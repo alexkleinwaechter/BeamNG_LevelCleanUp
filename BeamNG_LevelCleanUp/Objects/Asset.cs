@@ -27,6 +27,16 @@ public class Asset
     public string NightFogGradientFile { get; set; }
     public string NightGradientFile { get; set; }
     public string SunScaleGradientFile { get; set; }
+    
+    /// <summary>
+    ///     TerrainBlock: Path to the terrain file (.ter)
+    /// </summary>
+    public string TerrainFile { get; set; }
+    
+    /// <summary>
+    ///     ScatterSky: FlareType resource reference
+    /// </summary>
+    public string FlareType { get; set; }
 
     //public List<MaterialJson> MaterialsJson { get; set; } = new List<MaterialJson>();
     public List<MaterialsDae> MaterialsDae { get; set; } = new();

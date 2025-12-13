@@ -15,6 +15,11 @@ public class RoadSpline
     private readonly float _totalLength;
     
     /// <summary>
+    /// Minimum points required for Akima spline interpolation.
+    /// </summary>
+    private const int MinPointsForAkima = 5;
+    
+    /// <summary>
     /// Control points used to create the spline
     /// </summary>
     public List<Vector2> ControlPoints { get; }
@@ -40,14 +45,36 @@ public class RoadSpline
         }
         _totalLength = _distances[_distances.Count - 1];
         
+        // Handle zero-length splines (duplicate points)
+        if (_totalLength < 0.001f)
+        {
+            throw new ArgumentException("Control points result in zero-length spline", nameof(controlPoints));
+        }
+        
         // Create separate splines for X and Y coordinates
-        // Using Akima spline (good for avoiding overshoot, smooth for roads)
         var t = _distances.Select(d => (double)d).ToArray();
         var x = controlPoints.Select(p => (double)p.X).ToArray();
         var y = controlPoints.Select(p => (double)p.Y).ToArray();
         
-        _splineX = CubicSpline.InterpolateAkimaSorted(t, x);
-        _splineY = CubicSpline.InterpolateAkimaSorted(t, y);
+        // Choose interpolation method based on number of points
+        if (controlPoints.Count >= MinPointsForAkima)
+        {
+            // Akima spline - good for avoiding overshoot, smooth for roads
+            _splineX = CubicSpline.InterpolateAkimaSorted(t, x);
+            _splineY = CubicSpline.InterpolateAkimaSorted(t, y);
+        }
+        else if (controlPoints.Count >= 3)
+        {
+            // Natural cubic spline for 3-4 points
+            _splineX = CubicSpline.InterpolateNaturalSorted(t, x);
+            _splineY = CubicSpline.InterpolateNaturalSorted(t, y);
+        }
+        else
+        {
+            // Linear interpolation for 2 points
+            _splineX = LinearSpline.InterpolateSorted(t, x);
+            _splineY = LinearSpline.InterpolateSorted(t, y);
+        }
     }
     
     /// <summary>

@@ -94,14 +94,14 @@ public class CopyAsset
         return RoughnessPreset switch
         {
             TerrainRoughnessPreset.WetAsphalt => 20,
-            TerrainRoughnessPreset.Asphalt => 120,
+            TerrainRoughnessPreset.Asphalt => 140,
             TerrainRoughnessPreset.WetSurface => 40,
-            TerrainRoughnessPreset.Concrete => 130,
+            TerrainRoughnessPreset.Concrete => 170,
             TerrainRoughnessPreset.Rock => 140,
-            TerrainRoughnessPreset.DirtRoad => 170,
-            TerrainRoughnessPreset.Grass => 180,
-            TerrainRoughnessPreset.Mud => 60,
-            TerrainRoughnessPreset.Forest => 190,
+            TerrainRoughnessPreset.DirtRoad => 200,
+            TerrainRoughnessPreset.Grass => 220,
+            TerrainRoughnessPreset.Mud => 100,
+            TerrainRoughnessPreset.Forest => 230,
             TerrainRoughnessPreset.Custom => RoughnessValue,
             _ => 128 // Default medium roughness
         };
@@ -128,7 +128,8 @@ public class CopyAsset
         if (normalized.Contains("asphalt") || normalized.Contains("tarmac"))
             return TerrainRoughnessPreset.Asphalt;
 
-        if (normalized.Contains("wet") || normalized.Contains("rain") || normalized.Contains("water") || normalized.Contains("ive") || normalized.Contains("snow"))
+        if (normalized.Contains("wet") || normalized.Contains("rain") || normalized.Contains("water") ||
+            normalized.Contains("ive") || normalized.Contains("snow"))
             return TerrainRoughnessPreset.WetSurface;
 
         if (normalized.Contains("concrete") || normalized.Contains("cement") || normalized.Contains("pavement"))
