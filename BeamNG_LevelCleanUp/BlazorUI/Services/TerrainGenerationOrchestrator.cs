@@ -311,11 +311,11 @@ public class TerrainGenerationOrchestrator
         {
             layerImagePath = mat.LayerMapPath;
             if (mat.IsRoadMaterial)
-                roadParams = mat.BuildRoadSmoothingParameters(debugPath);
+                roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
         }
         else if (mat.IsRoadMaterial)
         {
-            roadParams = mat.BuildRoadSmoothingParameters(debugPath);
+            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
         }
 
         return (layerImagePath, roadParams);
@@ -404,7 +404,7 @@ public class TerrainGenerationOrchestrator
             var osmDebugPath = Path.Combine(debugPath, $"{mat.InternalName}_osm_splines_debug.png");
             processor.ExportOsmSplineDebugImage(splines, state.TerrainSize, state.MetersPerPixel, osmDebugPath);
 
-            roadParams = mat.BuildRoadSmoothingParameters(debugPath);
+            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
             roadParams.PreBuiltSplines = splines;
         }
 

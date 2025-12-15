@@ -532,4 +532,32 @@ public static class RoadParameterTooltips
 
         Output: spline_smoothed_elevation_debug.png
         """;
+
+    // ========================================
+    // MASTER SPLINE EXPORT
+    // ========================================
+
+    public const string MasterSplineNodeDistanceMeters = """
+        Default: 15.0 | Range: 5.0 to 100.0
+        Status: ? ACTIVELY USED
+
+        Distance between nodes in the exported master_splines.json file (in meters).
+        
+        This controls how many control points (nodes) are generated for BeamNG's
+        Master Spline tool. Each node appears as a handle in the BeamNG editor.
+
+        • Lower values = More nodes = Finer control but cluttered UI
+        • Higher values = Fewer nodes = Cleaner editor but less detail on curves
+
+        Recommended by road type:
+        • 5-10m - High detail (tight curves, hairpins, racing circuits)
+        • 10-20m - Standard roads (default: 15m is a good balance)
+        • 20-50m - Low detail (long straight highways)
+        • 50-100m - Minimal detail (very long straights)
+
+        ?? For BeamNG import:
+        The exported master_splines.json can be imported into BeamNG using the
+        Master Spline Tool mod. More nodes = more handles to adjust in the editor,
+        so choose a balance between precision and usability.
+        """;
 }

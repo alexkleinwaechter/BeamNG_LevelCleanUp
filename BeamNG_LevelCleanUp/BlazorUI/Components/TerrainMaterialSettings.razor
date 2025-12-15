@@ -320,6 +320,28 @@ Class="my-0">
                     </MudItem>
                 }
                 
+                <!-- Master Spline Export -->
+                <MudItem xs="12">
+                    <MudDivider Class="my-2"/>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Route" Size="Size.Small" Class="mr-1"/>
+                        Master Spline Export (BeamNG)
+                    </MudText>
+                </MudItem>
+                
+                <MudItem xs="12" sm="6">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField T="float" @bind-Value="Material.MasterSplineNodeDistanceMeters" 
+                                        Label="Node Distance (meters)" 
+                                        Variant="Variant.Outlined"
+                                        Min="5.0f" Max="100.0f" Step="5.0f"
+                                        Format="F0"
+                                        HelperText="Distance between spline nodes in exported JSON"
+                                        Class="flex-grow-1"/>
+                        <HelpAdornment TooltipText="@MasterSplineNodeDistanceMeters"/>
+                    </div>
+                </MudItem>
+                
                 <!-- Advanced Settings (Nerd Mode) -->
                 <MudItem xs="12">
                     <MudExpansionPanels Class="mt-2">

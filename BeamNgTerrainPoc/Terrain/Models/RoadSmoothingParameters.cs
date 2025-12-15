@@ -280,9 +280,45 @@ public class RoadSmoothingParameters
     public List<RoadSpline>? PreBuiltSplines { get; set; }
 
     /// <summary>
+    /// Names corresponding to each pre-built spline (e.g., OSM feature display names).
+    /// Used when exporting to BeamNG master splines JSON format.
+    /// Index matches PreBuiltSplines list. If null or shorter than PreBuiltSplines,
+    /// missing names will be auto-generated.
+    /// </summary>
+    public List<string>? PreBuiltSplineNames { get; set; }
+
+    /// <summary>
     /// When true, the service should use PreBuiltSplines instead of extracting from layer map.
     /// </summary>
     public bool UsePreBuiltSplines => PreBuiltSplines?.Count > 0;
+
+    // ========================================
+    // TERRAIN CONTEXT (for export operations)
+    // ========================================
+
+    /// <summary>
+    /// Base height (Z position) for the terrain in world units.
+    /// This offset is added to all Z coordinates when exporting splines to BeamNG format.
+    /// Should match TerrainCreationParameters.TerrainBaseHeight.
+    /// Default: 0
+    /// </summary>
+    public float TerrainBaseHeight { get; set; } = 0.0f;
+
+    /// <summary>
+    /// Distance between nodes in the exported master spline JSON (in meters).
+    /// Controls how many control points are generated for BeamNG's Master Spline tool.
+    /// 
+    /// Lower values = more nodes = finer control but cluttered UI in BeamNG editor.
+    /// Higher values = fewer nodes = cleaner editor, but less detail on curves.
+    /// 
+    /// Typical values:
+    /// - 5-10m: High detail (tight curves, hairpins)
+    /// - 10-20m: Standard (recommended for most roads)
+    /// - 20-50m: Low detail (long straight highways)
+    /// 
+    /// Default: 15.0 (good balance between detail and usability)
+    /// </summary>
+    public float MasterSplineNodeDistanceMeters { get; set; } = 15.0f;
 
     // ========================================
     // DEBUG OUTPUT (All Approaches)

@@ -641,6 +641,15 @@ public partial class TerrainMaterialSettings
         public bool ExportJunctionDebugImage { get; set; }
 
         // ========================================
+        // MASTER SPLINE EXPORT
+        // ========================================
+        /// <summary>
+        /// Distance between nodes in the exported master spline JSON (in meters).
+        /// Controls node density for BeamNG's Master Spline tool import.
+        /// </summary>
+        public float MasterSplineNodeDistanceMeters { get; set; } = 15.0f;
+
+        // ========================================
         // JUNCTION HARMONIZATION
         // ========================================
         public bool EnableJunctionHarmonization { get; set; } = true;
@@ -732,7 +741,9 @@ public partial class TerrainMaterialSettings
         ///     Builds the full RoadSmoothingParameters from all stored values.
         ///     Creates a subfolder per material name to avoid overwriting debug images.
         /// </summary>
-        public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null)
+        /// <param name="debugOutputDirectory">Base directory for debug output files.</param>
+        /// <param name="terrainBaseHeight">Base height (Z offset) for the terrain in world units.</param>
+        public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null, float terrainBaseHeight = 0.0f)
         {
             // Create a subfolder for this material's debug output to avoid overwriting other materials' images
             string? materialDebugDirectory = null;
@@ -766,6 +777,10 @@ public partial class TerrainMaterialSettings
                 SmoothingSigma = SmoothingSigma,
                 SmoothingIterations = SmoothingIterations,
                 SmoothingMaskExtensionMeters = SmoothingMaskExtensionMeters,
+
+                // Terrain context
+                TerrainBaseHeight = terrainBaseHeight,
+                MasterSplineNodeDistanceMeters = MasterSplineNodeDistanceMeters,
 
                 // Debug - use material-specific subfolder
                 DebugOutputDirectory = materialDebugDirectory,

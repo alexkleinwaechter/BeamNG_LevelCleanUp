@@ -272,8 +272,8 @@ public static class TerrainTextureHelper
                     if (!string.IsNullOrEmpty(fullPath) && File.Exists(fullPath))
                     {
                         texturePaths.Add(fullPath);
-                        PubSubChannel.SendMessage(PubSubMessageType.Info,
-                            $"  Found {propName} in '{materialName}': {Path.GetFileName(fullPath)}");
+                        // Note: Individual "Found" messages removed to reduce UI spam.
+                        // Summary is logged at the end of the scan.
                     }
                     else
                     {

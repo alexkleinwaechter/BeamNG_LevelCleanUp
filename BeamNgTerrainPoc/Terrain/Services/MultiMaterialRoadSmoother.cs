@@ -198,6 +198,32 @@ public class MultiMaterialRoadSmoother
                     {
                         TerrainLogger.Warning($"Spline mask export failed for {material.MaterialName}: {ex.Message}");
                     }
+                    
+                    // Export master splines JSON for BeamNG import
+                    // Use OSM pre-built splines if available, otherwise export from geometry cross-sections
+                    try
+                    {
+                        if (parameters.UsePreBuiltSplines)
+                        {
+                            // OSM splines - export with feature names
+                            RoadDebugExporter.ExportPreBuiltMasterSplinesJson(
+                                parameters.PreBuiltSplines!,
+                                heightMap,
+                                metersPerPixel,
+                                size,
+                                parameters,
+                                parameters.PreBuiltSplineNames);
+                        }
+                        else
+                        {
+                            // PNG layer mask splines - export from geometry
+                            RoadDebugExporter.ExportMasterSplinesJson(geometry, heightMap, metersPerPixel, size, parameters);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        TerrainLogger.Warning($"Master splines JSON export failed for {material.MaterialName}: {ex.Message}");
+                    }
 
                     var splineParams = parameters.GetSplineParameters();
                     if (splineParams.ExportSplineDebugImage)
