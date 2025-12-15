@@ -34,7 +34,6 @@
 
   <ItemGroup>
     <Folder Include="BlazorUI\Interfaces\" />
-    <Folder Include="BlazorUI\Services\" />
   </ItemGroup>
 
   <ItemGroup>
