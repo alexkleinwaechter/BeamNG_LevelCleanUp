@@ -4,7 +4,7 @@
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 
 <div class="osm-preview-container" style="width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;">
-    @if (Features != null && Features.Any() && BoundingBox != null)
+    @if (BoundingBox != null)
     {
         @* Main preview area - fills all available space *@
         <div class="osm-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 0;">
@@ -36,28 +36,31 @@
                         }
                     }
                     
-                    @* Features *@
-                    @foreach (var feature in Features)
+                    @* Features (if any selected) *@
+                    @if (Features != null)
                     {
-                        var pixelCoords = TransformToPixel(feature.Coordinates);
-                        var pointsString = GetPointsString(pixelCoords);
-                        
-                        @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
+                        @foreach (var feature in Features)
                         {
-                            <polygon points="@pointsString" 
-                                     fill="@GetFillColor(feature)" 
-                                     stroke="@GetStrokeColor(feature)"
-                                     stroke-width="2"
-                                     opacity="@(ShowMapBackground ? "0.8" : "0.6")" />
-                        }
-                        else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
-                        {
-                            <polyline points="@pointsString"
-                                      fill="none"
-                                      stroke="@GetStrokeColor(feature)"
-                                      stroke-width="@(ShowMapBackground ? "3" : "2")"
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round" />
+                            var pixelCoords = TransformToPixel(feature.Coordinates);
+                            var pointsString = GetPointsString(pixelCoords);
+                            
+                            @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
+                            {
+                                <polygon points="@pointsString" 
+                                         fill="@GetFillColor(feature)" 
+                                         stroke="@GetStrokeColor(feature)"
+                                         stroke-width="2"
+                                         opacity="@(ShowMapBackground ? "0.8" : "0.6")" />
+                            }
+                            else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
+                            {
+                                <polyline points="@pointsString"
+                                          fill="none"
+                                          stroke="@GetStrokeColor(feature)"
+                                          stroke-width="@(ShowMapBackground ? "3" : "2")"
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round" />
+                            }
                         }
                     }
                     
@@ -87,7 +90,7 @@
                 }
             </div>
             <MudText Typo="Typo.caption" Style="color: #aaa;">
-                @Features.Count() features
+                @(Features?.Count() ?? 0) features
             </MudText>
         </div>
         
@@ -101,7 +104,7 @@
     else
     {
         <div class="d-flex align-center justify-center" style="height: 100%; color: #666;">
-            <MudText Typo="Typo.body2">No features selected</MudText>
+            <MudText Typo="Typo.body2">No bounding box available</MudText>
         </div>
     }
 </div>
@@ -115,9 +118,9 @@ private float _mapOpacity = 0.7f;
 [Parameter] public int TerrainSize { get; set; } = 512;
     
     /// <summary>
-    /// Whether to show the OSM map tile background. Defaults to false.
+    /// Whether to show the OSM map tile background. Defaults to true.
     /// </summary>
-    [Parameter] public bool ShowMapBackground { get; set; } = false;
+    [Parameter] public bool ShowMapBackground { get; set; } = true;
     
     /// <summary>
     /// Fixed pixel size for the preview. Both SVG and map tiles use this exact size.
