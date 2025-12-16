@@ -68,10 +68,30 @@ public class OsmQueryCache
     
     /// <summary>
     /// Tries to get a cached result for a bounding box.
+    /// First tries exact match, then checks if any cached bbox contains the requested one.
     /// </summary>
     /// <param name="bbox">The bounding box to look up.</param>
     /// <returns>Cached result if found and valid, null otherwise.</returns>
     public async Task<OsmQueryResult?> GetAsync(GeoBoundingBox bbox)
+    {
+        // 1. Try exact match first (fastest path)
+        var exactResult = await GetExactMatchAsync(bbox);
+        if (exactResult != null)
+            return exactResult;
+        
+        // 2. Check if any cached bbox CONTAINS the requested one
+        //    This allows reusing cached data when user shrinks the crop region
+        var containingResult = await GetFromContainingCacheAsync(bbox);
+        if (containingResult != null)
+            return containingResult;
+        
+        return null;
+    }
+    
+    /// <summary>
+    /// Tries to get an exact cache match for a bounding box.
+    /// </summary>
+    private async Task<OsmQueryResult?> GetExactMatchAsync(GeoBoundingBox bbox)
     {
         var cacheKey = GetCacheKey(bbox);
         
@@ -80,7 +100,7 @@ public class OsmQueryCache
         {
             if (DateTime.UtcNow - memoryResult.QueryTime < _cacheExpiry)
             {
-                TerrainLogger.Info($"OSM cache hit (memory): {cacheKey}");
+                TerrainLogger.Info($"OSM cache hit (memory, exact): {cacheKey}");
                 return memoryResult;
             }
             
@@ -112,7 +132,7 @@ public class OsmQueryCache
             {
                 result.IsFromCache = true;
                 _memoryCache[cacheKey] = result;
-                TerrainLogger.Info($"OSM cache hit (disk): {cacheKey}");
+                TerrainLogger.Info($"OSM cache hit (disk, exact): {cacheKey}");
                 return result;
             }
         }
@@ -124,6 +144,131 @@ public class OsmQueryCache
         }
         
         return null;
+    }
+    
+    /// <summary>
+    /// Checks if any cached bounding box contains the requested one.
+    /// If found, filters features to only those intersecting the requested bbox.
+    /// </summary>
+    private async Task<OsmQueryResult?> GetFromContainingCacheAsync(GeoBoundingBox requestedBbox)
+    {
+        // Check memory cache for containing bbox
+        foreach (var (_, cachedResult) in _memoryCache)
+        {
+            if (cachedResult.BoundingBox != null && 
+                cachedResult.BoundingBox.Contains(requestedBbox) &&
+                DateTime.UtcNow - cachedResult.QueryTime < _cacheExpiry)
+            {
+                var filtered = FilterFeaturesToBbox(cachedResult, requestedBbox);
+                TerrainLogger.Info($"OSM cache hit (memory, containing): filtered {filtered.Features.Count} features from larger cached region");
+                return filtered;
+            }
+        }
+        
+        // Check disk cache for containing bbox
+        try
+        {
+            var cacheFiles = Directory.GetFiles(_cacheDirectory, "osm_v*.json");
+            foreach (var filePath in cacheFiles)
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiry)
+                        continue; // Skip expired
+                    
+                    var json = await File.ReadAllTextAsync(filePath);
+                    var cachedResult = JsonSerializer.Deserialize<OsmQueryResult>(json, JsonOptions);
+                    
+                    if (cachedResult?.BoundingBox != null && 
+                        cachedResult.BoundingBox.Contains(requestedBbox))
+                    {
+                        // Found a containing cache! Filter and return
+                        var filtered = FilterFeaturesToBbox(cachedResult, requestedBbox);
+                        TerrainLogger.Info($"OSM cache hit (disk, containing): filtered {filtered.Features.Count} features from larger cached region");
+                        
+                        // Also add to memory cache for faster subsequent lookups
+                        var cacheKey = GetCacheKey(cachedResult.BoundingBox);
+                        _memoryCache[cacheKey] = cachedResult;
+                        
+                        return filtered;
+                    }
+                }
+                catch
+                {
+                    // Skip corrupted files
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            TerrainLogger.Warning($"Error scanning disk cache for containing bbox: {ex.Message}");
+        }
+        
+        return null;
+    }
+    
+    /// <summary>
+    /// Filters cached features to only those that intersect the requested bounding box.
+    /// </summary>
+    private static OsmQueryResult FilterFeaturesToBbox(OsmQueryResult cachedResult, GeoBoundingBox requestedBbox)
+    {
+        var filteredFeatures = cachedResult.Features
+            .Where(f => FeatureIntersectsBbox(f, requestedBbox))
+            .ToList();
+        
+        return new OsmQueryResult
+        {
+            BoundingBox = requestedBbox,
+            Features = filteredFeatures,
+            QueryTime = cachedResult.QueryTime,
+            IsFromCache = true,
+            NodeCount = filteredFeatures.Count,
+            WayCount = cachedResult.WayCount,
+            RelationCount = cachedResult.RelationCount
+        };
+    }
+    
+    /// <summary>
+    /// Checks if a feature intersects with a bounding box.
+    /// A feature intersects if any of its coordinates are within the bbox.
+    /// </summary>
+    private static bool FeatureIntersectsBbox(OsmFeature feature, GeoBoundingBox bbox)
+    {
+        // Check if any coordinate is within the bbox
+        if (feature.Coordinates.Any(coord => bbox.Contains(coord)))
+            return true;
+        
+        // For line features, also check if the line crosses the bbox even if no point is inside
+        // This handles cases where a road passes through the bbox without any vertex inside it
+        if (feature.GeometryType == OsmGeometryType.LineString && feature.Coordinates.Count >= 2)
+        {
+            for (var i = 0; i < feature.Coordinates.Count - 1; i++)
+            {
+                if (LineSegmentIntersectsBbox(feature.Coordinates[i], feature.Coordinates[i + 1], bbox))
+                    return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /// <summary>
+    /// Checks if a line segment intersects a bounding box.
+    /// </summary>
+    private static bool LineSegmentIntersectsBbox(GeoCoordinate p1, GeoCoordinate p2, GeoBoundingBox bbox)
+    {
+        // Quick reject: if both points are on the same side of any bbox edge, no intersection
+        if ((p1.Longitude < bbox.MinLongitude && p2.Longitude < bbox.MinLongitude) ||
+            (p1.Longitude > bbox.MaxLongitude && p2.Longitude > bbox.MaxLongitude) ||
+            (p1.Latitude < bbox.MinLatitude && p2.Latitude < bbox.MinLatitude) ||
+            (p1.Latitude > bbox.MaxLatitude && p2.Latitude > bbox.MaxLatitude))
+            return false;
+        
+        // Line segment might intersect - for simplicity, we'll be conservative and return true
+        // A more precise check would test intersection with each bbox edge, but this is sufficient
+        // for our use case (we'd rather include a feature than miss it)
+        return true;
     }
     
     /// <summary>
@@ -217,5 +362,56 @@ public class OsmQueryCache
         }
         
         return (memoryCount, diskCount, diskSize);
+    }
+    
+    /// <summary>
+    /// Gets the cache directory path.
+    /// </summary>
+    public string CacheDirectory => _cacheDirectory;
+    
+    /// <summary>
+    /// Gets the cache expiry duration.
+    /// </summary>
+    public TimeSpan CacheExpiry => _cacheExpiry;
+    
+    /// <summary>
+    /// Cleans up expired cache files from disk.
+    /// Returns the number of files deleted.
+    /// </summary>
+    public int CleanupExpired()
+    {
+        var deletedCount = 0;
+        
+        try
+        {
+            var files = Directory.GetFiles(_cacheDirectory, "osm_*.json");
+            foreach (var file in files)
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(file);
+                    if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiry)
+                    {
+                        File.Delete(file);
+                        deletedCount++;
+                    }
+                }
+                catch
+                {
+                    // Skip files that can't be deleted
+                }
+            }
+            
+            if (deletedCount > 0)
+            {
+                TerrainLogger.Info($"OSM cache cleanup: {deletedCount} expired files deleted");
+            }
+        }
+        catch (Exception ex)
+        {
+            TerrainLogger.Warning($"Failed to cleanup OSM cache: {ex.Message}");
+        }
+        
+        return deletedCount;
     }
 }

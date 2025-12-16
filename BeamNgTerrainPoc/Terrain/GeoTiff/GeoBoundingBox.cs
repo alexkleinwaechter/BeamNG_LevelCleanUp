@@ -100,6 +100,32 @@ public class GeoBoundingBox
     }
 
     /// <summary>
+    /// Checks if another bounding box is completely contained within this bounding box.
+    /// </summary>
+    /// <param name="other">The bounding box to check</param>
+    /// <returns>True if the other box is completely within this box</returns>
+    public bool Contains(GeoBoundingBox other)
+    {
+        return other.MinLongitude >= MinLongitude &&
+               other.MaxLongitude <= MaxLongitude &&
+               other.MinLatitude >= MinLatitude &&
+               other.MaxLatitude <= MaxLatitude;
+    }
+
+    /// <summary>
+    /// Checks if this bounding box intersects with another bounding box.
+    /// </summary>
+    /// <param name="other">The bounding box to check</param>
+    /// <returns>True if the boxes overlap</returns>
+    public bool Intersects(GeoBoundingBox other)
+    {
+        return MinLongitude <= other.MaxLongitude &&
+               MaxLongitude >= other.MinLongitude &&
+               MinLatitude <= other.MaxLatitude &&
+               MaxLatitude >= other.MinLatitude;
+    }
+
+    /// <summary>
     /// Returns the bounding box in OSM Overpass API format: (south,west,north,east)
     /// </summary>
     /// <returns>Bounding box string for Overpass API queries</returns>

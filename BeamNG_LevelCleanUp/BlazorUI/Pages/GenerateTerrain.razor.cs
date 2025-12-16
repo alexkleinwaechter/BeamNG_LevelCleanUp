@@ -952,22 +952,22 @@ public partial class GenerateTerrain
     }
 
     private void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
-    {
-        _showErrorLog = msgType == PubSubMessageType.Error;
-        _showWarningLog = msgType == PubSubMessageType.Warning;
-        _openDrawer = true;
-        _anchor = anchor;
-
-        switch (anchor)
         {
-            case Anchor.Bottom:
-                _drawerWidth = "100%";
-                _drawerHeight = "200px";
-                break;
-            default:
-                _drawerWidth = "400px";
-                _drawerHeight = "100%";
-                break;
+            _showErrorLog = msgType == PubSubMessageType.Error;
+            _showWarningLog = msgType == PubSubMessageType.Warning;
+            _openDrawer = true;
+            _anchor = anchor;
+
+            switch (anchor)
+            {
+                case Anchor.Bottom:
+                    _drawerWidth = "100%";
+                    _drawerHeight = "200px";
+                    break;
+                default:
+                    _drawerWidth = "400px";
+                    _drawerHeight = "100%";
+                    break;
+            }
         }
     }
-}

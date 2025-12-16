@@ -509,6 +509,9 @@
                 <MudText Typo="Typo.body2" Class="mt-2">Loading terrain materials...</MudText>
             }
 
+            <!-- OSM Cache Management -->
+            <OsmCacheManager Class="mt-4" />
+
             <MudDrawer @bind-Open="@_openDrawer"
                        Width="@_drawerWidth"
                        Height="@_drawerHeight"
@@ -517,10 +520,10 @@
                        Variant="@DrawerVariant.Temporary">
                 <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
-                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
+                        var list = (_showErrorLog ? _errors : _showWarningLog ? _warnings : _messages).ToList();
                         @foreach (var item in list)
                         {
-                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@item.GetHashCode()" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
