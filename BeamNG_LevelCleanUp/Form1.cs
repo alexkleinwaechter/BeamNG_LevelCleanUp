@@ -77,7 +77,7 @@ public partial class Form1 : Form
     }
 
     /// <summary>
-    /// Restores window size, position, and state from saved settings.
+    ///     Restores window size, position, and state from saved settings.
     /// </summary>
     private void RestoreWindowSettings()
     {
@@ -86,7 +86,7 @@ public partial class Form1 : Form
     }
 
     /// <summary>
-    /// Saves current window size, position, and state to settings file.
+    ///     Saves current window size, position, and state to settings file.
     /// </summary>
     private void SaveWindowSettings()
     {
