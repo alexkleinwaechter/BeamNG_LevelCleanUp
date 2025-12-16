@@ -15,7 +15,7 @@
                                       DisplayWidth="@PreviewPixelSize"
                                       DisplayHeight="@PreviewPixelSize"
                                       IsVisible="@ShowMapBackground"
-                                      Opacity="0.7f"
+                                      Opacity="@_mapOpacity"
                                       ShowAttribution="false"
                                       ZIndex="0" />
                 
@@ -68,14 +68,23 @@
             </div>
         </div>
         
-        @* Footer with toggle and legend - fixed height *@
+        @* Footer with toggle, opacity slider, and legend - fixed height *@
         <div class="d-flex align-center justify-space-between" style="height: 28px; padding: 0 4px; flex-shrink: 0;">
-            <div class="d-flex align-center gap-2">
+            <div class="d-flex align-center gap-1" style="flex: 1;">
                 <MudSwitch T="bool" @bind-Value="ShowMapBackground" 
                            Color="Color.Primary" 
                            Size="Size.Small"
                            Style="margin: 0;" />
-                <MudText Typo="Typo.caption" Color="Color.Secondary">Map</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="width: 28px;">Map</MudText>
+                @if (ShowMapBackground)
+                {
+                    <MudSlider T="float" @bind-Value="_mapOpacity"
+                               Size="Size.Small"
+                               Min="0.1f" Max="1.0f" Step="0.1f"
+                               Style="width: 80px; margin: 0;"
+                               Immediate="true" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Style="width: 32px;">@(_mapOpacity.ToString("P0"))</MudText>
+                }
             </div>
             <MudText Typo="Typo.caption" Style="color: #aaa;">
                 @Features.Count() features
@@ -98,11 +107,12 @@
 </div>
 
 @code {
-    private ElementReference _previewSquare;
+private ElementReference _previewSquare;
+private float _mapOpacity = 0.7f;
     
-    [Parameter] public IEnumerable<OsmFeature>? Features { get; set; }
-    [Parameter] public GeoBoundingBox? BoundingBox { get; set; }
-    [Parameter] public int TerrainSize { get; set; } = 512;
+[Parameter] public IEnumerable<OsmFeature>? Features { get; set; }
+[Parameter] public GeoBoundingBox? BoundingBox { get; set; }
+[Parameter] public int TerrainSize { get; set; } = 512;
     
     /// <summary>
     /// Whether to show the OSM map tile background. Defaults to false.
