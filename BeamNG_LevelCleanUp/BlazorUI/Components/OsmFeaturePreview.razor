@@ -6,32 +6,32 @@
 <div class="osm-preview-container" style="width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;">
     @if (Features != null && Features.Any() && BoundingBox != null)
     {
-        @* Main preview area - use flexbox to center the square preview *@
-        <div class="osm-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-            @* Fixed-size square container for both map and features *@
-            <div class="osm-preview-square" style="position: relative; width: @(PreviewSize)px; height: @(PreviewSize)px;">
-                @* OSM Map Tile Background - now matches the square exactly *@
+        @* Main preview area - fills all available space *@
+        <div class="osm-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 0;">
+            @* Fixed-size square container - calculate size to fit in container *@
+            <div class="osm-preview-square" @ref="_previewSquare" style="position: relative; width: @(PreviewPixelSize)px; height: @(PreviewPixelSize)px;">
+                @* OSM Map Tile Background - exact same pixel size *@
                 <OsmMapTileBackground BoundingBox="@BoundingBox"
-                                      DisplayWidth="@PreviewSize"
-                                      DisplayHeight="@PreviewSize"
+                                      DisplayWidth="@PreviewPixelSize"
+                                      DisplayHeight="@PreviewPixelSize"
                                       IsVisible="@ShowMapBackground"
                                       Opacity="0.7f"
                                       ShowAttribution="false"
                                       ZIndex="0" />
                 
-                @* SVG overlay for features - exact same size as map tiles *@
-                <svg width="@PreviewSize" height="@PreviewSize" 
-                     viewBox="0 0 @PreviewSize @PreviewSize"
+                @* SVG overlay for features - exact same pixel size, no scaling *@
+                <svg width="@PreviewPixelSize" height="@PreviewPixelSize" 
+                     viewBox="0 0 @PreviewPixelSize @PreviewPixelSize"
                      style="position: absolute; top: 0; left: 0; background: @(ShowMapBackground ? "transparent" : "#2d2d3a"); border-radius: 4px; z-index: 1;">
                     
                     @* Grid lines (only show when map is off) *@
                     @if (!ShowMapBackground)
                     {
-                        @for (var i = 0; i <= PreviewSize; i += PreviewSize / 8)
+                        @for (var i = 0; i <= PreviewPixelSize; i += PreviewPixelSize / 8)
                         {
-                            <line x1="@i" y1="0" x2="@i" y2="@PreviewSize" 
+                            <line x1="@i" y1="0" x2="@i" y2="@PreviewPixelSize" 
                                   stroke="#444" stroke-width="1" />
-                            <line x1="0" y1="@i" x2="@PreviewSize" y2="@i" 
+                            <line x1="0" y1="@i" x2="@PreviewPixelSize" y2="@i" 
                                   stroke="#444" stroke-width="1" />
                         }
                     }
@@ -62,13 +62,13 @@
                     }
                     
                     @* Border *@
-                    <rect x="0" y="0" width="@PreviewSize" height="@PreviewSize"
+                    <rect x="0" y="0" width="@PreviewPixelSize" height="@PreviewPixelSize"
                           fill="none" stroke="@(ShowMapBackground ? "#fff" : "#666")" stroke-width="2" />
                 </svg>
             </div>
         </div>
         
-        @* Footer with toggle and legend *@
+        @* Footer with toggle and legend - fixed height *@
         <div class="d-flex align-center justify-space-between" style="height: 28px; padding: 0 4px; flex-shrink: 0;">
             <div class="d-flex align-center gap-2">
                 <MudSwitch T="bool" @bind-Value="ShowMapBackground" 
@@ -84,7 +84,7 @@
         
         @if (ShowMapBackground)
         {
-            <div style="position: absolute; bottom: 30px; right: 4px; font-size: 9px; color: #888; background: rgba(0,0,0,0.5); padding: 1px 4px; border-radius: 2px;">
+            <div style="position: absolute; bottom: 30px; right: 4px; font-size: 9px; color: #888; background: rgba(0,0,0,0.5); padding: 1px 4px; border-radius: 2px; z-index: 10;">
                 © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color: #aaa;">OpenStreetMap</a>
             </div>
         }
@@ -98,6 +98,8 @@
 </div>
 
 @code {
+    private ElementReference _previewSquare;
+    
     [Parameter] public IEnumerable<OsmFeature>? Features { get; set; }
     [Parameter] public GeoBoundingBox? BoundingBox { get; set; }
     [Parameter] public int TerrainSize { get; set; } = 512;
@@ -108,13 +110,14 @@
     [Parameter] public bool ShowMapBackground { get; set; } = false;
     
     /// <summary>
-    /// Fixed preview size in pixels. Both map tiles and SVG use this exact size.
+    /// Fixed pixel size for the preview. Both SVG and map tiles use this exact size.
+    /// This ensures perfect alignment between the two layers.
     /// </summary>
-    private int PreviewSize => Math.Min(350, Math.Max(200, TerrainSize / 2));
+    private int PreviewPixelSize => 420;
     
     /// <summary>
     /// Transforms geographic coordinates to pixel coordinates for SVG rendering.
-    /// Uses PreviewSize for the output coordinate space.
+    /// Uses PreviewPixelSize for the output coordinate space.
     /// </summary>
     private List<(float X, float Y)> TransformToPixel(List<GeoCoordinate> coords)
     {
@@ -137,14 +140,14 @@
             var normalizedX = (coord.Longitude - BoundingBox.MinLongitude) / bboxWidth;
             var normalizedY = (coord.Latitude - BoundingBox.MinLatitude) / bboxHeight;
             
-            // Convert to pixel coordinates using PreviewSize (not TerrainSize)
+            // Convert to pixel coordinates using PreviewPixelSize
             // Y is inverted: SVG has Y increasing downward, but latitude increases upward
-            var pixelX = (float)(normalizedX * PreviewSize);
-            var pixelY = (float)((1.0 - normalizedY) * PreviewSize);
+            var pixelX = (float)(normalizedX * PreviewPixelSize);
+            var pixelY = (float)((1.0 - normalizedY) * PreviewPixelSize);
             
             // Clamp to valid range (features might extend slightly outside bbox)
-            pixelX = Math.Clamp(pixelX, -50, PreviewSize + 50);
-            pixelY = Math.Clamp(pixelY, -50, PreviewSize + 50);
+            pixelX = Math.Clamp(pixelX, -50, PreviewPixelSize + 50);
+            pixelY = Math.Clamp(pixelY, -50, PreviewPixelSize + 50);
             
             result.Add((pixelX, pixelY));
         }
