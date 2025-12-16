@@ -44,7 +44,8 @@
                                 {
                                     <MudChip Value="@category" 
                                              Color="@GetCategoryColor(category)"
-                                             Variant="Variant.Outlined">
+                                             Variant="@(IsCategorySelected(category) ? Variant.Filled : Variant.Outlined)"
+                                             SelectedColor="@GetCategoryColor(category)">
                                         @GetCategoryDisplayName(category)
                                     </MudChip>
                                 }
@@ -418,6 +419,11 @@
             "railway" => Color.Secondary,
             _ => Color.Default
         };
+    }
+    
+    private bool IsCategorySelected(string category)
+    {
+        return _selectedCategories.Contains(category);
     }
     
     private string GetCategoryDisplayName(string category)

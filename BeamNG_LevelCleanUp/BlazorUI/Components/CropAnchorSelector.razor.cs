@@ -16,6 +16,10 @@ public partial class CropAnchorSelector
     // Minimap display constants
     private const int MaxMinimapSize = 300;
     private const int MinMinimapSize = 200;
+    
+    // Enlarged view constants
+    private const int EnlargedMaxSize = 700;
+    
     private int _dragStartOffsetX;
     private int _dragStartOffsetY;
     private double _dragStartX;
@@ -23,13 +27,18 @@ public partial class CropAnchorSelector
 
     // Dragging state
     private bool _isDragging;
+    private bool _isDraggingEnlarged;
     private ElementReference _minimapElement;
 
     // Calculated selection bounding box (updated on offset change)
     private GeoBoundingBox? _selectionBoundingBox;
 
-    // OSM map background toggle
+    // OSM map background toggle and opacity
     private bool _showOsmBackground = true;
+    private float _mapOpacity = 0.85f;
+    
+    // Enlarged view state
+    private bool _showEnlargedView;
 
     // Track previous parameter values to detect changes
     private int _previousOriginalWidth;
@@ -488,6 +497,137 @@ public partial class CropAnchorSelector
 
         return $"width: {displayWidth}px; height: {displayHeight}px; left: {displayLeft}px; top: {displayTop}px;";
     }
+
+    #endregion
+
+    #region Enlarged View
+
+    /// <summary>
+    ///     Opens the enlarged view overlay for more precise selection.
+    /// </summary>
+    private void OpenEnlargedView()
+    {
+        _showEnlargedView = true;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Closes the enlarged view overlay.
+    /// </summary>
+    private void CloseEnlargedView()
+    {
+        _showEnlargedView = false;
+        _isDraggingEnlarged = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Gets the scale factor for the enlarged view.
+    /// </summary>
+    private double GetEnlargedScale()
+    {
+        var maxDimension = Math.Max(OriginalWidth, OriginalHeight);
+        if (maxDimension <= 0) return 1.0;
+        return (double)EnlargedMaxSize / maxDimension;
+    }
+
+    /// <summary>
+    ///     Gets the style for the enlarged map container.
+    /// </summary>
+    private string GetEnlargedMapStyle()
+    {
+        var scale = GetEnlargedScale();
+        var displayWidth = (int)(OriginalWidth * scale);
+        var displayHeight = (int)(OriginalHeight * scale);
+        return $"width: {displayWidth}px; height: {displayHeight}px;";
+    }
+
+    /// <summary>
+    ///     Gets the display width for the enlarged view (for OsmMapTileBackground).
+    /// </summary>
+    private int GetEnlargedDisplayWidth()
+    {
+        var scale = GetEnlargedScale();
+        return (int)(OriginalWidth * scale);
+    }
+
+    /// <summary>
+    ///     Gets the display height for the enlarged view (for OsmMapTileBackground).
+    /// </summary>
+    private int GetEnlargedDisplayHeight()
+    {
+        var scale = GetEnlargedScale();
+        return (int)(OriginalHeight * scale);
+    }
+
+    /// <summary>
+    ///     Gets the selection rectangle style for the enlarged view.
+    /// </summary>
+    private string GetEnlargedSelectionStyle()
+    {
+        var scale = GetEnlargedScale();
+
+        var selW = SelectionWidthPixels;
+        var selH = SelectionHeightPixels;
+        var displayWidth = Math.Max(20, (int)(selW * scale));
+        var displayHeight = Math.Max(20, (int)(selH * scale));
+
+        var displayLeft = (int)(CropOffsetX * scale);
+        var displayTop = (int)(CropOffsetY * scale);
+
+        return $"width: {displayWidth}px; height: {displayHeight}px; left: {displayLeft}px; top: {displayTop}px;";
+    }
+
+    #region Enlarged View Mouse Handling
+
+    private void OnEnlargedMouseDown(MouseEventArgs e)
+    {
+        _isDraggingEnlarged = true;
+        _dragStartX = e.ClientX;
+        _dragStartY = e.ClientY;
+        _dragStartOffsetX = CropOffsetX;
+        _dragStartOffsetY = CropOffsetY;
+    }
+
+    private async Task OnEnlargedMouseMove(MouseEventArgs e)
+    {
+        if (!_isDraggingEnlarged) return;
+
+        var deltaX = e.ClientX - _dragStartX;
+        var deltaY = e.ClientY - _dragStartY;
+
+        var scale = GetEnlargedScale();
+        var sourcePixelDeltaX = (int)(deltaX / scale);
+        var sourcePixelDeltaY = (int)(deltaY / scale);
+
+        CropOffsetX = _dragStartOffsetX + sourcePixelDeltaX;
+        CropOffsetY = _dragStartOffsetY + sourcePixelDeltaY;
+
+        ClampOffsets();
+        RecalculateSelectionBoundingBox();
+
+        StateHasChanged();
+    }
+
+    private async Task OnEnlargedMouseUp(MouseEventArgs e)
+    {
+        if (_isDraggingEnlarged)
+        {
+            _isDraggingEnlarged = false;
+            await NotifyCropResultChanged();
+        }
+    }
+
+    private async Task OnEnlargedMouseLeave(MouseEventArgs e)
+    {
+        if (_isDraggingEnlarged)
+        {
+            _isDraggingEnlarged = false;
+            await NotifyCropResultChanged();
+        }
+    }
+
+    #endregion
 
     #endregion
 
