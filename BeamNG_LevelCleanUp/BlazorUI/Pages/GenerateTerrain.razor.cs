@@ -551,6 +551,10 @@ public partial class GenerateTerrain
             // Just refresh UI for other changes
             await InvokeAsync(StateHasChanged);
         }
+        
+        // IMPORTANT: Refresh the drop container to ensure child TerrainMaterialSettings 
+        // components receive the updated EffectiveBoundingBox for OSM queries
+        _dropContainer?.Refresh();
     }
 
     /// <summary>

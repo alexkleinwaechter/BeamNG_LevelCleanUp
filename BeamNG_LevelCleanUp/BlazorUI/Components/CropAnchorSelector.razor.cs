@@ -16,7 +16,6 @@ public partial class CropAnchorSelector
     // Minimap display constants
     private const int MaxMinimapSize = 300;
     private const int MinMinimapSize = 200;
-    private const int OsmTileSize = 256; // Standard OSM tile size
     private int _dragStartOffsetX;
     private int _dragStartOffsetY;
     private double _dragStartX;
@@ -454,6 +453,24 @@ public partial class CropAnchorSelector
 
         return $"width: {displayWidth}px; height: {displayHeight}px;";
     }
+    
+    /// <summary>
+    /// Gets the minimap display width in pixels (for OsmMapTileBackground component).
+    /// </summary>
+    private int GetMinimapDisplayWidth()
+    {
+        var scale = GetMinimapScale();
+        return (int)(OriginalWidth * scale);
+    }
+    
+    /// <summary>
+    /// Gets the minimap display height in pixels (for OsmMapTileBackground component).
+    /// </summary>
+    private int GetMinimapDisplayHeight()
+    {
+        var scale = GetMinimapScale();
+        return (int)(OriginalHeight * scale);
+    }
 
     private string GetSelectionStyle()
     {
@@ -470,148 +487,6 @@ public partial class CropAnchorSelector
         var displayTop = (int)(CropOffsetY * scale);
 
         return $"width: {displayWidth}px; height: {displayHeight}px; left: {displayLeft}px; top: {displayTop}px;";
-    }
-
-    #endregion
-
-    #region OSM Tile Background
-
-    /// <summary>
-    ///     Represents a single OSM tile to render.
-    /// </summary>
-    private record OsmTileInfo(string Url, string Style);
-
-    /// <summary>
-    ///     Gets the list of OSM tiles needed to cover the bounding box.
-    /// </summary>
-    private List<OsmTileInfo> GetVisibleTiles()
-    {
-        var tiles = new List<OsmTileInfo>();
-        
-        if (OriginalBoundingBox == null || OriginalWidth <= 0 || OriginalHeight <= 0)
-            return tiles;
-
-        var bbox = OriginalBoundingBox;
-        var scale = GetMinimapScale();
-        var displayWidth = (int)(OriginalWidth * scale);
-        var displayHeight = (int)(OriginalHeight * scale);
-
-        // Calculate optimal zoom level based on the bounding box size and display size
-        var zoom = CalculateOptimalZoom(bbox, displayWidth, displayHeight);
-        
-        // Clamp zoom to reasonable levels (avoid too many tiles or too few details)
-        zoom = Math.Clamp(zoom, 1, 18);
-
-        // Get tile coordinates for the bounding box corners
-        var (minTileX, minTileY) = LatLonToTile(bbox.MaxLatitude, bbox.MinLongitude, zoom);
-        var (maxTileX, maxTileY) = LatLonToTile(bbox.MinLatitude, bbox.MaxLongitude, zoom);
-
-        // Limit the number of tiles to prevent performance issues
-        var tileCountX = maxTileX - minTileX + 1;
-        var tileCountY = maxTileY - minTileY + 1;
-        
-        if (tileCountX * tileCountY > 25)
-        {
-            // Too many tiles, reduce zoom level
-            zoom = Math.Max(1, zoom - 2);
-            (minTileX, minTileY) = LatLonToTile(bbox.MaxLatitude, bbox.MinLongitude, zoom);
-            (maxTileX, maxTileY) = LatLonToTile(bbox.MinLatitude, bbox.MaxLongitude, zoom);
-        }
-
-        // Calculate the geographic bounds of the tile grid
-        var (tileGridMinLat, tileGridMinLon) = TileToLatLon(minTileX, maxTileY + 1, zoom);
-        var (tileGridMaxLat, tileGridMaxLon) = TileToLatLon(maxTileX + 1, minTileY, zoom);
-
-        // Calculate how the tile grid maps to display pixels
-        var bboxLonRange = bbox.MaxLongitude - bbox.MinLongitude;
-        var bboxLatRange = bbox.MaxLatitude - bbox.MinLatitude;
-
-        for (var tileY = minTileY; tileY <= maxTileY; tileY++)
-        {
-            for (var tileX = minTileX; tileX <= maxTileX; tileX++)
-            {
-                // Get the geographic bounds of this tile
-                var (tileSouthLat, tileWestLon) = TileToLatLon(tileX, tileY + 1, zoom);
-                var (tileNorthLat, tileEastLon) = TileToLatLon(tileX + 1, tileY, zoom);
-
-                // Calculate position in display pixels relative to the minimap
-                var leftPx = (tileWestLon - bbox.MinLongitude) / bboxLonRange * displayWidth;
-                var topPx = (bbox.MaxLatitude - tileNorthLat) / bboxLatRange * displayHeight;
-                var tileLonSpan = tileEastLon - tileWestLon;
-                var tileLatSpan = tileNorthLat - tileSouthLat;
-                var widthPx = tileLonSpan / bboxLonRange * displayWidth;
-                var heightPx = tileLatSpan / bboxLatRange * displayHeight;
-
-                // Build tile URL (using OpenStreetMap tile server)
-                var url = $"https://tile.openstreetmap.org/{zoom}/{tileX}/{tileY}.png";
-                
-                // Build CSS style for positioning
-                var style = string.Format(CultureInfo.InvariantCulture,
-                    "left: {0:F1}px; top: {1:F1}px; width: {2:F1}px; height: {3:F1}px;",
-                    leftPx, topPx, widthPx, heightPx);
-
-                tiles.Add(new OsmTileInfo(url, style));
-            }
-        }
-
-        return tiles;
-    }
-
-    /// <summary>
-    ///     Calculates the optimal zoom level to fit the bounding box in the display area.
-    /// </summary>
-    private int CalculateOptimalZoom(GeoBoundingBox bbox, int displayWidth, int displayHeight)
-    {
-        // Calculate the span in degrees
-        var lonSpan = bbox.MaxLongitude - bbox.MinLongitude;
-        var latSpan = bbox.MaxLatitude - bbox.MinLatitude;
-
-        // Calculate zoom level based on the larger span
-        // At zoom 0, the world is 256px wide (1 tile), at zoom 1 it's 512px (2 tiles), etc.
-        // Each zoom level doubles the resolution
-        
-        // Calculate zoom for longitude
-        var zoomLon = Math.Log2(360.0 / lonSpan * displayWidth / OsmTileSize);
-        
-        // Calculate zoom for latitude (using Mercator projection approximation)
-        var centerLat = (bbox.MinLatitude + bbox.MaxLatitude) / 2.0;
-        var latRadians = centerLat * Math.PI / 180.0;
-        var mercatorLatSpan = Math.Log(Math.Tan(Math.PI / 4 + latRadians / 2)) - 
-                              Math.Log(Math.Tan(Math.PI / 4 + (centerLat - latSpan / 2) * Math.PI / 180.0 / 2));
-        var worldMercatorHeight = 2 * Math.PI; // Full Mercator world height
-        var zoomLat = Math.Log2(worldMercatorHeight / Math.Abs(mercatorLatSpan) * displayHeight / OsmTileSize);
-
-        // Use the smaller zoom to ensure the entire area fits
-        return (int)Math.Floor(Math.Min(zoomLon, zoomLat));
-    }
-
-    /// <summary>
-    ///     Converts latitude/longitude to OSM tile coordinates.
-    /// </summary>
-    private (int tileX, int tileY) LatLonToTile(double lat, double lon, int zoom)
-    {
-        var n = Math.Pow(2, zoom);
-        var tileX = (int)Math.Floor((lon + 180.0) / 360.0 * n);
-        var latRad = lat * Math.PI / 180.0;
-        var tileY = (int)Math.Floor((1.0 - Math.Log(Math.Tan(latRad) + 1.0 / Math.Cos(latRad)) / Math.PI) / 2.0 * n);
-        
-        // Clamp to valid tile range
-        tileX = Math.Clamp(tileX, 0, (int)n - 1);
-        tileY = Math.Clamp(tileY, 0, (int)n - 1);
-        
-        return (tileX, tileY);
-    }
-
-    /// <summary>
-    ///     Converts OSM tile coordinates to latitude/longitude (northwest corner of tile).
-    /// </summary>
-    private (double lat, double lon) TileToLatLon(int tileX, int tileY, int zoom)
-    {
-        var n = Math.Pow(2, zoom);
-        var lon = tileX / n * 360.0 - 180.0;
-        var latRad = Math.Atan(Math.Sinh(Math.PI * (1.0 - 2.0 * tileY / n)));
-        var lat = latRad * 180.0 / Math.PI;
-        return (lat, lon);
     }
 
     #endregion

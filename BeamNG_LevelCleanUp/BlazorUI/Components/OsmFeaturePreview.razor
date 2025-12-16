@@ -3,56 +3,91 @@
 @using BeamNgTerrainPoc.Terrain.GeoTiff
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 
-<div class="osm-preview-container" style="width: 100%; height: 100%; position: relative;">
+<div class="osm-preview-container" style="width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;">
     @if (Features != null && Features.Any() && BoundingBox != null)
     {
-        <svg width="100%" height="100%" viewBox="0 0 @TerrainSize @TerrainSize"
-             preserveAspectRatio="xMidYMid meet"
-             style="background: #2d2d3a; border-radius: 4px;">
-            
-            @* Grid lines *@
-            @for (var i = 0; i <= TerrainSize; i += TerrainSize / 8)
-            {
-                <line x1="@i" y1="0" x2="@i" y2="@TerrainSize" 
-                      stroke="#444" stroke-width="1" />
-                <line x1="0" y1="@i" x2="@TerrainSize" y2="@i" 
-                      stroke="#444" stroke-width="1" />
-            }
-            
-            @* Features *@
-            @foreach (var feature in Features)
-            {
-                var pixelCoords = TransformToPixel(feature.Coordinates);
-                var pointsString = GetPointsString(pixelCoords);
+        @* Main preview area - use flexbox to center the square preview *@
+        <div class="osm-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            @* Fixed-size square container for both map and features *@
+            <div class="osm-preview-square" style="position: relative; width: @(PreviewSize)px; height: @(PreviewSize)px;">
+                @* OSM Map Tile Background - now matches the square exactly *@
+                <OsmMapTileBackground BoundingBox="@BoundingBox"
+                                      DisplayWidth="@PreviewSize"
+                                      DisplayHeight="@PreviewSize"
+                                      IsVisible="@ShowMapBackground"
+                                      Opacity="0.7f"
+                                      ShowAttribution="false"
+                                      ZIndex="0" />
                 
-                @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
-                {
-                    <polygon points="@pointsString" 
-                             fill="@GetFillColor(feature)" 
-                             stroke="@GetStrokeColor(feature)"
-                             stroke-width="2"
-                             opacity="0.6" />
-                }
-                else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
-                {
-                    <polyline points="@pointsString"
-                              fill="none"
-                              stroke="@GetStrokeColor(feature)"
-                              stroke-width="3"
-                              stroke-linecap="round"
-                              stroke-linejoin="round" />
-                }
-            }
-            
-            @* Border *@
-            <rect x="0" y="0" width="@TerrainSize" height="@TerrainSize"
-                  fill="none" stroke="#666" stroke-width="2" />
-        </svg>
-        
-        @* Legend *@
-        <div class="legend" style="position: absolute; bottom: 8px; left: 8px; font-size: 10px; color: #aaa;">
-            @Features.Count() features
+                @* SVG overlay for features - exact same size as map tiles *@
+                <svg width="@PreviewSize" height="@PreviewSize" 
+                     viewBox="0 0 @PreviewSize @PreviewSize"
+                     style="position: absolute; top: 0; left: 0; background: @(ShowMapBackground ? "transparent" : "#2d2d3a"); border-radius: 4px; z-index: 1;">
+                    
+                    @* Grid lines (only show when map is off) *@
+                    @if (!ShowMapBackground)
+                    {
+                        @for (var i = 0; i <= PreviewSize; i += PreviewSize / 8)
+                        {
+                            <line x1="@i" y1="0" x2="@i" y2="@PreviewSize" 
+                                  stroke="#444" stroke-width="1" />
+                            <line x1="0" y1="@i" x2="@PreviewSize" y2="@i" 
+                                  stroke="#444" stroke-width="1" />
+                        }
+                    }
+                    
+                    @* Features *@
+                    @foreach (var feature in Features)
+                    {
+                        var pixelCoords = TransformToPixel(feature.Coordinates);
+                        var pointsString = GetPointsString(pixelCoords);
+                        
+                        @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
+                        {
+                            <polygon points="@pointsString" 
+                                     fill="@GetFillColor(feature)" 
+                                     stroke="@GetStrokeColor(feature)"
+                                     stroke-width="2"
+                                     opacity="@(ShowMapBackground ? "0.8" : "0.6")" />
+                        }
+                        else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
+                        {
+                            <polyline points="@pointsString"
+                                      fill="none"
+                                      stroke="@GetStrokeColor(feature)"
+                                      stroke-width="@(ShowMapBackground ? "3" : "2")"
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round" />
+                        }
+                    }
+                    
+                    @* Border *@
+                    <rect x="0" y="0" width="@PreviewSize" height="@PreviewSize"
+                          fill="none" stroke="@(ShowMapBackground ? "#fff" : "#666")" stroke-width="2" />
+                </svg>
+            </div>
         </div>
+        
+        @* Footer with toggle and legend *@
+        <div class="d-flex align-center justify-space-between" style="height: 28px; padding: 0 4px; flex-shrink: 0;">
+            <div class="d-flex align-center gap-2">
+                <MudSwitch T="bool" @bind-Value="ShowMapBackground" 
+                           Color="Color.Primary" 
+                           Size="Size.Small"
+                           Style="margin: 0;" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Map</MudText>
+            </div>
+            <MudText Typo="Typo.caption" Style="color: #aaa;">
+                @Features.Count() features
+            </MudText>
+        </div>
+        
+        @if (ShowMapBackground)
+        {
+            <div style="position: absolute; bottom: 30px; right: 4px; font-size: 9px; color: #888; background: rgba(0,0,0,0.5); padding: 1px 4px; border-radius: 2px;">
+                © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color: #aaa;">OpenStreetMap</a>
+            </div>
+        }
     }
     else
     {
@@ -68,7 +103,18 @@
     [Parameter] public int TerrainSize { get; set; } = 512;
     
     /// <summary>
+    /// Whether to show the OSM map tile background. Defaults to false.
+    /// </summary>
+    [Parameter] public bool ShowMapBackground { get; set; } = false;
+    
+    /// <summary>
+    /// Fixed preview size in pixels. Both map tiles and SVG use this exact size.
+    /// </summary>
+    private int PreviewSize => Math.Min(350, Math.Max(200, TerrainSize / 2));
+    
+    /// <summary>
     /// Transforms geographic coordinates to pixel coordinates for SVG rendering.
+    /// Uses PreviewSize for the output coordinate space.
     /// </summary>
     private List<(float X, float Y)> TransformToPixel(List<GeoCoordinate> coords)
     {
@@ -91,14 +137,14 @@
             var normalizedX = (coord.Longitude - BoundingBox.MinLongitude) / bboxWidth;
             var normalizedY = (coord.Latitude - BoundingBox.MinLatitude) / bboxHeight;
             
-            // Convert to pixel coordinates
+            // Convert to pixel coordinates using PreviewSize (not TerrainSize)
             // Y is inverted: SVG has Y increasing downward, but latitude increases upward
-            var pixelX = (float)(normalizedX * TerrainSize);
-            var pixelY = (float)((1.0 - normalizedY) * TerrainSize);
+            var pixelX = (float)(normalizedX * PreviewSize);
+            var pixelY = (float)((1.0 - normalizedY) * PreviewSize);
             
             // Clamp to valid range (features might extend slightly outside bbox)
-            pixelX = Math.Clamp(pixelX, -100, TerrainSize + 100);
-            pixelY = Math.Clamp(pixelY, -100, TerrainSize + 100);
+            pixelX = Math.Clamp(pixelX, -50, PreviewSize + 50);
+            pixelY = Math.Clamp(pixelY, -50, PreviewSize + 50);
             
             result.Add((pixelX, pixelY));
         }

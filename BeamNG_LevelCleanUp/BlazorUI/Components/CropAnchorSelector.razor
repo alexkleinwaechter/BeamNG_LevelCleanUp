@@ -106,20 +106,16 @@
                          @onmouseup="OnMinimapMouseUp"
                          @onmouseleave="OnMinimapMouseLeave">
                         
-                        @* OSM tile background *@
-                        @if (_showOsmBackground && OriginalBoundingBox != null)
+                        @* OSM tile background using shared component *@
+                        @if (OriginalBoundingBox != null)
                         {
-                            <div class="osm-tile-container">
-                                @foreach (var tile in GetVisibleTiles())
-                                {
-                                    <img src="@tile.Url" 
-                                         alt="OSM Tile"
-                                         class="osm-tile"
-                                         style="@tile.Style"
-                                         loading="lazy"
-                                         @onerror="@(() => { /* Tile failed to load, ignore */ })" />
-                                }
-                            </div>
+                            <OsmMapTileBackground BoundingBox="@OriginalBoundingBox"
+                                                  DisplayWidth="@GetMinimapDisplayWidth()"
+                                                  DisplayHeight="@GetMinimapDisplayHeight()"
+                                                  IsVisible="@_showOsmBackground"
+                                                  Opacity="0.85f"
+                                                  ShowAttribution="false"
+                                                  ZIndex="1" />
                         }
                         
                         <!-- Selection rectangle -->
@@ -178,22 +174,6 @@
         border-radius: 2px;
         cursor: crosshair;
         overflow: hidden;
-    }
-    
-    .osm-tile-container {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        pointer-events: none;
-    }
-    
-    .osm-tile {
-        position: absolute;
-        pointer-events: none;
-        opacity: 0.85;
     }
     
     .minimap-selection {
