@@ -32,6 +32,18 @@ public class TerrainGenerationState
     public bool UpdateTerrainBlock { get; set; } = true;
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
     
+    /// <summary>
+    /// Global junction detection radius in meters.
+    /// Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
+    /// </summary>
+    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 10.0f;
+    
+    /// <summary>
+    /// Global junction blend distance in meters.
+    /// Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
+    /// </summary>
+    public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
+    
     // ========================================
     // HEIGHTMAP SOURCE
     // ========================================
@@ -258,6 +270,8 @@ public class TerrainGenerationState
         TerrainBaseHeight = 0.0f;
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
+        GlobalJunctionDetectionRadiusMeters = 10.0f;
+        GlobalJunctionBlendDistanceMeters = 30.0f;
         
         HeightmapSourceType = HeightmapSourceType.Png;
         GeoTiffPath = null;

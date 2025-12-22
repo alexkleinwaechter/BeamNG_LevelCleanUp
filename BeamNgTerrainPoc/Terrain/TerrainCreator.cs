@@ -18,11 +18,11 @@ namespace BeamNgTerrainPoc.Terrain;
 /// </summary>
 public class TerrainCreator
 {
-    private readonly MultiMaterialRoadSmoother _multiMaterialSmoother;
+    private readonly UnifiedRoadSmoother _unifiedRoadSmoother;
 
     public TerrainCreator()
     {
-        _multiMaterialSmoother = new MultiMaterialRoadSmoother();
+        _unifiedRoadSmoother = new UnifiedRoadSmoother();
     }
 
     /// <summary>
@@ -162,7 +162,9 @@ public class TerrainCreator
                     parameters.Materials,
                     parameters.MetersPerPixel,
                     parameters.Size,
-                    parameters.EnableCrossMaterialHarmonization);
+                    parameters.EnableCrossMaterialHarmonization,
+                    parameters.GlobalJunctionDetectionRadiusMeters,
+                    parameters.GlobalJunctionBlendDistanceMeters);
 
                 if (smoothingResult != null)
                 {
@@ -323,20 +325,34 @@ public class TerrainCreator
         List<MaterialDefinition> materials,
         float metersPerPixel,
         int size,
-        bool enableCrossMaterialHarmonization)
+        bool enableCrossMaterialHarmonization,
+        float globalJunctionDetectionRadius,
+        float globalJunctionBlendDistance)
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
 
-        // Use the multi-material smoother for cross-material junction harmonization
-        var result = _multiMaterialSmoother.SmoothAllRoads(
+        // Use the unified road smoother for network-centric processing
+        var unifiedResult = _unifiedRoadSmoother.SmoothAllRoads(
             heightMap2D,
             materials,
             metersPerPixel,
             size,
-            enableCrossMaterialHarmonization);
+            enableCrossMaterialHarmonization,
+            globalJunctionDetectionRadius,
+            globalJunctionBlendDistance);
 
-        return result;
+        if (unifiedResult == null)
+            return null;
+
+        // Convert to SmoothingResult for compatibility with existing terrain creation flow
+        // Create a minimal road mask for the geometry wrapper
+        var minimalRoadMask = new byte[size, size];
+        var defaultParams = materials
+            .FirstOrDefault(m => m.RoadParameters != null)?.RoadParameters
+            ?? new RoadSmoothingParameters();
+
+        return unifiedResult.ToSmoothingResult(minimalRoadMask, defaultParams);
     }
 
     /// <summary>

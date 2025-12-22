@@ -62,6 +62,8 @@
                                        GeoTiffDirectory="@_geoTiffDirectory"
                                        UpdateTerrainBlock="@_updateTerrainBlock"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
+                                       GlobalJunctionDetectionRadiusMeters="@_globalJunctionDetectionRadiusMeters"
+                                       GlobalJunctionBlendDistanceMeters="@_globalJunctionBlendDistanceMeters"
                                        CropOffsetX="@(_cropResult?.OffsetX ?? 0)"
                                        CropOffsetY="@(_cropResult?.OffsetY ?? 0)"
                                        CropWidth="@(_cropResult?.CropWidth ?? 0)"
@@ -398,6 +400,37 @@
                                 Smooth transitions between road types
                             </MudText>
                         </MudItem>
+                        
+                        @* Global Junction Settings - only visible when cross-material harmonization is enabled *@
+                        @if (_enableCrossMaterialHarmonization)
+                        {
+                            <MudItem xs="12">
+                                <MudDivider Class="my-2" />
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.CallSplit" Size="Size.Small" Class="mr-1"/>
+                                    Global Junction Settings
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                    Default values for cross-material junction handling. Individual materials can override these.
+                                </MudText>
+                            </MudItem>
+                            
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField @bind-Value="_globalJunctionDetectionRadiusMeters"
+                                                Label="Global Junction Detection Radius (m)"
+                                                Variant="Variant.Outlined"
+                                                Min="1.0f" Max="50.0f" Step="1.0f"
+                                                HelperText="Distance to detect road intersections" />
+                            </MudItem>
+                            
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField @bind-Value="_globalJunctionBlendDistanceMeters"
+                                                Label="Global Junction Blend Distance (m)"
+                                                Variant="Variant.Outlined"
+                                                Min="5.0f" Max="100.0f" Step="5.0f"
+                                                HelperText="Distance to blend elevations at junctions" />
+                            </MudItem>
+                        }
                     </MudGrid>
                 </MudPaper>
             }

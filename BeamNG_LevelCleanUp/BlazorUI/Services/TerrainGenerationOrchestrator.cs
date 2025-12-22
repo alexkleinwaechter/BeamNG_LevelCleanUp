@@ -391,35 +391,40 @@ public class TerrainGenerationOrchestrator
         {
             var minPathLengthMeters = mat.MinPathLengthPixels * state.MetersPerPixel;
 
+            // Get the interpolation type from material settings
+            var interpolationType = mat.SplineInterpolationType;
+
             var splines = processor.ConvertLinesToSplines(
                 lineFeatures,
                 effectiveBoundingBox,
                 state.TerrainSize,
                 state.MetersPerPixel,
+                interpolationType,
                 minPathLengthMeters);
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Created {splines.Count} splines from {lineFeatures.Count} OSM line features");
+                $"Created {splines.Count} splines from {lineFeatures.Count} OSM line features (interpolation: {interpolationType})");
 
             var osmDebugPath = Path.Combine(debugPath, $"{mat.InternalName}_osm_splines_debug.png");
             processor.ExportOsmSplineDebugImage(splines, state.TerrainSize, state.MetersPerPixel, osmDebugPath);
 
             roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
             roadParams.PreBuiltSplines = splines;
+            
+            // Rasterize layer map FROM THE SPLINES (not from OSM line features)
+            // This ensures the layer map matches the interpolated spline path used for elevation smoothing
+            var effectiveRoadSurfaceWidth = mat.RoadSurfaceWidthMeters is > 0
+                ? mat.RoadSurfaceWidthMeters.Value
+                : mat.RoadWidthMeters;
+
+            var roadMask = processor.RasterizeSplinesToLayerMap(
+                splines,
+                state.TerrainSize,
+                state.MetersPerPixel,
+                effectiveRoadSurfaceWidth);
+
+            layerImagePath = await SaveLayerMapToPngAsync(roadMask, debugPath, mat.InternalName);
         }
-
-        // Rasterize for road mask
-        var effectiveRoadSurfaceWidth = mat.RoadSurfaceWidthMeters is > 0
-            ? mat.RoadSurfaceWidthMeters.Value
-            : mat.RoadWidthMeters;
-
-        var roadMask = processor.RasterizeLinesToLayerMap(
-            lineFeatures,
-            effectiveBoundingBox,
-            state.TerrainSize,
-            effectiveRoadSurfaceWidth / state.MetersPerPixel);
-
-        layerImagePath = await SaveLayerMapToPngAsync(roadMask, debugPath, mat.InternalName);
 
         return (layerImagePath, roadParams);
     }
@@ -465,6 +470,8 @@ public class TerrainGenerationOrchestrator
             TerrainBaseHeight = state.TerrainBaseHeight,
             Materials = materialDefinitions,
             EnableCrossMaterialHarmonization = state.EnableCrossMaterialHarmonization,
+            GlobalJunctionDetectionRadiusMeters = state.GlobalJunctionDetectionRadiusMeters,
+            GlobalJunctionBlendDistanceMeters = state.GlobalJunctionBlendDistanceMeters,
             AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0
         };
 

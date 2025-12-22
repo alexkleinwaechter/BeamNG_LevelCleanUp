@@ -61,6 +61,8 @@
     [Parameter] public string? GeoTiffDirectory { get; set; }
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
+    [Parameter] public float GlobalJunctionDetectionRadiusMeters { get; set; } = 10.0f;
+    [Parameter] public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
     [Parameter] public int CropOffsetX { get; set; }
     [Parameter] public int CropOffsetY { get; set; }
     [Parameter] public int CropWidth { get; set; }
@@ -368,7 +370,9 @@
                 ["metersPerPixel"] = MetersPerPixel,
                 ["terrainBaseHeight"] = TerrainBaseHeight,
                 ["updateTerrainBlock"] = UpdateTerrainBlock,
-                ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization
+                ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization,
+                ["globalJunctionDetectionRadiusMeters"] = GlobalJunctionDetectionRadiusMeters,
+                ["globalJunctionBlendDistanceMeters"] = GlobalJunctionBlendDistanceMeters
             },
             ["cropSettings"] = new JsonObject
             {
@@ -445,12 +449,12 @@
             ["enableMaxSlopeConstraint"] = mat.EnableMaxSlopeConstraint,
             ["roadMaxSlopeDegrees"] = mat.RoadMaxSlopeDegrees,
             ["sideMaxSlopeDegrees"] = mat.SideMaxSlopeDegrees,
-            ["approach"] = mat.Approach.ToString(),
             ["blendFunctionType"] = mat.BlendFunctionType.ToString(),
             ["crossSectionIntervalMeters"] = mat.CrossSectionIntervalMeters,
             ["enableTerrainBlending"] = mat.EnableTerrainBlending,
             ["splineParameters"] = new JsonObject
             {
+                ["splineInterpolationType"] = mat.SplineInterpolationType.ToString(),
                 ["tension"] = mat.SplineTension,
                 ["continuity"] = mat.SplineContinuity,
                 ["bias"] = mat.SplineBias,
@@ -467,13 +471,6 @@
                 ["useButterworthFilter"] = mat.SplineUseButterworthFilter,
                 ["butterworthFilterOrder"] = mat.SplineButterworthFilterOrder,
                 ["globalLevelingStrength"] = mat.GlobalLevelingStrength
-            },
-            ["directMaskParameters"] = new JsonObject
-            {
-                ["smoothingWindowSize"] = mat.DirectMaskSmoothingWindowSize,
-                ["roadPixelSearchRadius"] = mat.RoadPixelSearchRadius,
-                ["useButterworthFilter"] = mat.DirectMaskUseButterworthFilter,
-                ["butterworthFilterOrder"] = mat.DirectMaskButterworthFilterOrder
             },
             ["postProcessing"] = new JsonObject
             {
@@ -494,6 +491,7 @@
             },
             ["junctionHarmonization"] = new JsonObject
             {
+                ["useGlobalSettings"] = mat.UseGlobalJunctionSettings,
                 ["enableJunctionHarmonization"] = mat.EnableJunctionHarmonization,
                 ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
                 ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,

@@ -357,10 +357,6 @@ internal class Program
         {
             return new RoadSmoothingParameters
             {
-                // ========================================
-                // APPROACH: SPLINE (OPTIMIZED)
-                // ========================================
-                Approach = RoadSmoothingApproach.Spline,
                 EnableTerrainBlending = true,
                 DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\highway",
 
@@ -447,10 +443,6 @@ internal class Program
         {
             return new RoadSmoothingParameters
             {
-                // ========================================
-                // APPROACH: SPLINE (OPTIMIZED)
-                // ========================================
-                Approach = RoadSmoothingApproach.Spline,
                 EnableTerrainBlending = true,
                 DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\mountain",
 
@@ -532,10 +524,6 @@ internal class Program
         {
             return new RoadSmoothingParameters
             {
-                // ========================================
-                // APPROACH: SPLINE (OPTIMIZED)
-                // ========================================
-                Approach = RoadSmoothingApproach.Spline,
                 EnableTerrainBlending = true,
                 DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\dirt",
 

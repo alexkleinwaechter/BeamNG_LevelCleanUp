@@ -5,6 +5,7 @@ using BeamNgTerrainPoc.Terrain.Osm.Models;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using DialogResult = System.Windows.Forms.DialogResult;
+using SplineInterpolationType = BeamNgTerrainPoc.Terrain.Models.SplineInterpolationType;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Components;
 
@@ -24,7 +25,6 @@ public partial class TerrainMaterialSettings
         MountainousUltraSmooth,
         HillyAggressive,
         FlatModerate,
-        FastTesting,
         ExtremeNuclear,
         OsmRoads,
         OsmHighway,
@@ -109,9 +109,9 @@ public partial class TerrainMaterialSettings
                 Icons.Material.Filled.SpaceBar));
 
         // ========================================
-        // SmoothingWindowSize (odd number check for Spline)
+        // SmoothingWindowSize (odd number check)
         // ========================================
-        if (Material.Approach == RoadSmoothingApproach.Spline && Material.SplineSmoothingWindowSize % 2 == 0)
+        if (Material.SplineSmoothingWindowSize % 2 == 0)
             warnings.Add(new ValidationWarning(
                 Severity.Info,
                 "Window Size Should Be Odd",
@@ -145,8 +145,7 @@ public partial class TerrainMaterialSettings
         // ========================================
         // Butterworth not enabled for hilly terrain (high window size suggests hilly)
         // ========================================
-        if (Material.Approach == RoadSmoothingApproach.Spline &&
-            !Material.SplineUseButterworthFilter &&
+        if (!Material.SplineUseButterworthFilter &&
             Material.SplineSmoothingWindowSize > 150)
             warnings.Add(new ValidationWarning(
                 Severity.Info,
@@ -158,18 +157,11 @@ public partial class TerrainMaterialSettings
         // ========================================
         // High Butterworth order warning
         // ========================================
-        var butterworthOrder = Material.Approach == RoadSmoothingApproach.Spline
-            ? Material.SplineButterworthFilterOrder
-            : Material.DirectMaskButterworthFilterOrder;
-        var butterworthEnabled = Material.Approach == RoadSmoothingApproach.Spline
-            ? Material.SplineUseButterworthFilter
-            : Material.DirectMaskUseButterworthFilter;
-
-        if (butterworthEnabled && butterworthOrder > 6)
+        if (Material.SplineUseButterworthFilter && Material.SplineButterworthFilterOrder > 6)
             warnings.Add(new ValidationWarning(
                 Severity.Info,
                 "High Butterworth Order",
-                $"Filter order {butterworthOrder} is very aggressive. While it provides maximum flatness, it may introduce subtle ringing at sharp transitions.",
+                $"Filter order {Material.SplineButterworthFilterOrder} is very aggressive. While it provides maximum flatness, it may introduce subtle ringing at sharp transitions.",
                 "Order 3-4 is usually optimal for most terrain types",
                 Icons.Material.Filled.TrendingFlat));
 
@@ -370,9 +362,7 @@ public partial class TerrainMaterialSettings
             if (jsonNode["sideMaxSlopeDegrees"] != null)
                 Material.SideMaxSlopeDegrees = jsonNode["sideMaxSlopeDegrees"]!.GetValue<float>();
 
-            // Import algorithm settings
-            if (jsonNode["approach"] != null && Enum.TryParse<RoadSmoothingApproach>(jsonNode["approach"]!.GetValue<string>(), out var approach))
-                Material.Approach = approach;
+            // Import algorithm settings (ignore legacy 'approach' field - spline is now only option)
             if (jsonNode["blendFunctionType"] != null && Enum.TryParse<BlendFunctionType>(jsonNode["blendFunctionType"]!.GetValue<string>(), out var blendType))
                 Material.BlendFunctionType = blendType;
             if (jsonNode["crossSectionIntervalMeters"] != null)
@@ -384,6 +374,8 @@ public partial class TerrainMaterialSettings
             var splineParams = jsonNode["splineParameters"];
             if (splineParams != null)
             {
+                if (splineParams["splineInterpolationType"] != null && Enum.TryParse<SplineInterpolationType>(splineParams["splineInterpolationType"]!.GetValue<string>(), out var interpType))
+                    Material.SplineInterpolationType = interpType;
                 if (splineParams["tension"] != null)
                     Material.SplineTension = splineParams["tension"]!.GetValue<float>();
                 if (splineParams["continuity"] != null)
@@ -418,19 +410,9 @@ public partial class TerrainMaterialSettings
                     Material.GlobalLevelingStrength = splineParams["globalLevelingStrength"]!.GetValue<float>();
             }
 
-            // Import DirectMask parameters
-            var directMaskParams = jsonNode["directMaskParameters"];
-            if (directMaskParams != null)
-            {
-                if (directMaskParams["smoothingWindowSize"] != null)
-                    Material.DirectMaskSmoothingWindowSize = directMaskParams["smoothingWindowSize"]!.GetValue<int>();
-                if (directMaskParams["roadPixelSearchRadius"] != null)
-                    Material.RoadPixelSearchRadius = directMaskParams["roadPixelSearchRadius"]!.GetValue<int>();
-                if (directMaskParams["useButterworthFilter"] != null)
-                    Material.DirectMaskUseButterworthFilter = directMaskParams["useButterworthFilter"]!.GetValue<bool>();
-                if (directMaskParams["butterworthFilterOrder"] != null)
-                    Material.DirectMaskButterworthFilterOrder = directMaskParams["butterworthFilterOrder"]!.GetValue<int>();
-            }
+            // Legacy DirectMask parameters - ignore (graceful handling for old presets)
+            // var directMaskParams = jsonNode["directMaskParameters"];
+            // DirectMask is no longer supported - skip this section
 
             // Import post-processing settings
             var postProcessing = jsonNode["postProcessing"];
@@ -470,6 +452,8 @@ public partial class TerrainMaterialSettings
             var junctionParams = jsonNode["junctionHarmonization"];
             if (junctionParams != null)
             {
+                if (junctionParams["useGlobalSettings"] != null)
+                    Material.UseGlobalJunctionSettings = junctionParams["useGlobalSettings"]!.GetValue<bool>();
                 if (junctionParams["enableJunctionHarmonization"] != null)
                     Material.EnableJunctionHarmonization = junctionParams["enableJunctionHarmonization"]!.GetValue<bool>();
                 if (junctionParams["junctionDetectionRadiusMeters"] != null)
@@ -524,7 +508,6 @@ public partial class TerrainMaterialSettings
             RoadPresetType.MountainousUltraSmooth => RoadSmoothingPresets.MountainousUltraSmooth,
             RoadPresetType.HillyAggressive => RoadSmoothingPresets.HillyAggressive,
             RoadPresetType.FlatModerate => RoadSmoothingPresets.FlatModerate,
-            RoadPresetType.FastTesting => RoadSmoothingPresets.FastTesting,
             RoadPresetType.ExtremeNuclear => RoadSmoothingPresets.ExtremeNuclear,
             RoadPresetType.OsmRoads => RoadSmoothingPresets.OsmRoads,
             RoadPresetType.OsmHighway => RoadSmoothingPresets.OsmHighway,
@@ -583,7 +566,6 @@ public partial class TerrainMaterialSettings
         // ========================================
         // ALGORITHM SETTINGS
         // ========================================
-        public RoadSmoothingApproach Approach { get; set; } = RoadSmoothingApproach.Spline;
         public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
         public float CrossSectionIntervalMeters { get; set; } = 0.5f;
         public bool EnableTerrainBlending { get; set; } = true;
@@ -591,6 +573,9 @@ public partial class TerrainMaterialSettings
         // ========================================
         // SPLINE PARAMETERS
         // ========================================
+        // Spline interpolation type
+        public SplineInterpolationType SplineInterpolationType { get; set; } = SplineInterpolationType.SmoothInterpolated;
+        
         // Curve fitting
         public float SplineTension { get; set; } = 0.2f;
         public float SplineContinuity { get; set; } = 0.7f;
@@ -612,14 +597,6 @@ public partial class TerrainMaterialSettings
         public bool SplineUseButterworthFilter { get; set; } = true;
         public int SplineButterworthFilterOrder { get; set; } = 4;
         public float GlobalLevelingStrength { get; set; }
-
-        // ========================================
-        // DIRECTMASK PARAMETERS
-        // ========================================
-        public int DirectMaskSmoothingWindowSize { get; set; } = 10;
-        public int RoadPixelSearchRadius { get; set; } = 3;
-        public bool DirectMaskUseButterworthFilter { get; set; } = true;
-        public int DirectMaskButterworthFilterOrder { get; set; } = 3;
 
         // ========================================
         // POST-PROCESSING SMOOTHING
@@ -652,6 +629,13 @@ public partial class TerrainMaterialSettings
         // ========================================
         // JUNCTION HARMONIZATION
         // ========================================
+        
+        /// <summary>
+        /// When true, uses global junction settings from TerrainGenerationState.
+        /// When false, uses the per-material values specified below.
+        /// </summary>
+        public bool UseGlobalJunctionSettings { get; set; } = true;
+        
         public bool EnableJunctionHarmonization { get; set; } = true;
         public float JunctionDetectionRadiusMeters { get; set; } = 20.0f;
         public float JunctionBlendDistanceMeters { get; set; } = 40.0f;
@@ -674,7 +658,6 @@ public partial class TerrainMaterialSettings
             SideMaxSlopeDegrees = preset.SideMaxSlopeDegrees;
 
             // Algorithm settings
-            Approach = preset.Approach;
             BlendFunctionType = preset.BlendFunctionType;
             CrossSectionIntervalMeters = preset.CrossSectionIntervalMeters;
             EnableTerrainBlending = preset.EnableTerrainBlending;
@@ -693,6 +676,7 @@ public partial class TerrainMaterialSettings
             // Spline parameters
             if (preset.SplineParameters != null)
             {
+                SplineInterpolationType = preset.SplineParameters.SplineInterpolationType;
                 SplineTension = preset.SplineParameters.SplineTension;
                 SplineContinuity = preset.SplineParameters.SplineContinuity;
                 SplineBias = preset.SplineParameters.SplineBias;
@@ -714,18 +698,10 @@ public partial class TerrainMaterialSettings
                 ExportSmoothedElevationDebugImage = preset.SplineParameters.ExportSmoothedElevationDebugImage;
             }
 
-            // DirectMask parameters
-            if (preset.DirectMaskParameters != null)
-            {
-                DirectMaskSmoothingWindowSize = preset.DirectMaskParameters.SmoothingWindowSize;
-                RoadPixelSearchRadius = preset.DirectMaskParameters.RoadPixelSearchRadius;
-                DirectMaskUseButterworthFilter = preset.DirectMaskParameters.UseButterworthFilter;
-                DirectMaskButterworthFilterOrder = preset.DirectMaskParameters.ButterworthFilterOrder;
-            }
-
             // Junction harmonization parameters
             if (preset.JunctionHarmonizationParameters != null)
             {
+                UseGlobalJunctionSettings = preset.JunctionHarmonizationParameters.UseGlobalSettings;
                 EnableJunctionHarmonization = preset.JunctionHarmonizationParameters.EnableJunctionHarmonization;
                 JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
                 JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
@@ -765,7 +741,6 @@ public partial class TerrainMaterialSettings
                 SideMaxSlopeDegrees = SideMaxSlopeDegrees,
 
                 // Algorithm settings
-                Approach = Approach,
                 BlendFunctionType = BlendFunctionType,
                 CrossSectionIntervalMeters = CrossSectionIntervalMeters,
                 EnableTerrainBlending = EnableTerrainBlending,
@@ -790,6 +765,7 @@ public partial class TerrainMaterialSettings
             // Spline parameters
             result.SplineParameters = new SplineRoadParameters
             {
+                SplineInterpolationType = SplineInterpolationType,
                 SplineTension = SplineTension,
                 SplineContinuity = SplineContinuity,
                 SplineBias = SplineBias,
@@ -811,18 +787,10 @@ public partial class TerrainMaterialSettings
                 ExportSmoothedElevationDebugImage = ExportSmoothedElevationDebugImage
             };
 
-            // DirectMask parameters
-            result.DirectMaskParameters = new DirectMaskRoadParameters
-            {
-                SmoothingWindowSize = DirectMaskSmoothingWindowSize,
-                RoadPixelSearchRadius = RoadPixelSearchRadius,
-                UseButterworthFilter = DirectMaskUseButterworthFilter,
-                ButterworthFilterOrder = DirectMaskButterworthFilterOrder
-            };
-
             // Junction harmonization parameters
             result.JunctionHarmonizationParameters = new JunctionHarmonizationParameters
             {
+                UseGlobalSettings = UseGlobalJunctionSettings,
                 EnableJunctionHarmonization = EnableJunctionHarmonization,
                 JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
                 JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,

@@ -7,6 +7,39 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Components;
 public static class RoadParameterTooltips
 {
     // ========================================
+    // SPLINE INTERPOLATION TYPE
+    // ========================================
+
+    public const string SplineInterpolationType = """
+        Default: Smooth Interpolated
+        Status: ? ACTIVELY USED
+
+        Controls how road centerlines are interpolated between control points.
+        This affects both elevation smoothing AND material painting consistency.
+
+        Options:
+        • Smooth Interpolated (default) - Uses Akima/cubic spline interpolation
+          for smooth, natural curves. Best for highways, racing circuits, and
+          scenic roads where smooth curves are important.
+          Trade-off: May deviate slightly from original skeleton/OSM path.
+
+        • Linear Control Points - Uses linear interpolation between original
+          control points. Best for accurate adherence to source geometry
+          (skeleton extraction or OSM vectors).
+          Trade-off: Less smooth curves, may have visible segments at corners.
+
+        Recommended by use case:
+        • Smooth Interpolated - Racing circuits, highways, mountain roads
+        • Linear Control Points - When source geometry must be followed exactly,
+          debugging spline extraction issues, or when smooth interpolation
+          causes roads to "cut corners" on tight turns.
+
+        ?? IMPORTANT: This setting ensures elevation smoothing and material
+        painting use the SAME spline path. If roads appear to "cut corners"
+        in the terrain but not in the painted texture, try Linear Control Points.
+        """;
+
+    // ========================================
     // PRIMARY PARAMETERS
     // ========================================
 
@@ -119,16 +152,6 @@ public static class RoadParameterTooltips
     // ========================================
     // ALGORITHM SETTINGS
     // ========================================
-
-    public const string Approach = """
-        Default: DirectMask
-        Status: ? ACTIVELY USED
-
-        Choose the smoothing method:
-
-        • DirectMask - Like a paint roller. Simple, works everywhere, handles complex road intersections well. Good for city streets.
-        • Spline - Like a precision airbrush. Creates super smooth curves, perfect for highways and race tracks. Not recommended for complex intersections.
-        """;
 
     public const string BlendFunction = """
         Default: Cosine
@@ -375,47 +398,6 @@ public static class RoadParameterTooltips
         """;
 
     // ========================================
-    // DIRECTMASK PARAMETERS
-    // ========================================
-
-    public const string DirectMaskSmoothingWindowSize = """
-        Default: 10 | Range: 5 to 100
-        Status: ? ACTIVELY USED (DirectMask approach)
-
-        Number of elevation samples to average when smoothing road elevation.
-
-        • 5 - Minimal smoothing
-        • 10 - Balanced (default)
-        • 20 - Heavy smoothing
-        • 50 - Very heavy smoothing
-        """;
-
-    public const string RoadPixelSearchRadius = """
-        Default: 3 | Range: 1 to 10
-        Status: ? ACTIVELY USED (DirectMask approach)
-
-        Search distance (pixels) for finding road pixels when sampling elevation.
-
-        • 1 - Minimal search (fast but may miss gaps)
-        • 3 - Balanced (default)
-        • 5 - Wide search (robust to gaps)
-        """;
-
-    public const string DirectMaskUseButterworthFilter = """
-        Default: false
-        Status: ? ACTIVELY USED (DirectMask approach)
-
-        Same as Spline version. Default is false for DirectMask because it's used for fast testing.
-        """;
-
-    public const string DirectMaskButterworthFilterOrder = """
-        Default: 3 | Range: 1 to 8
-        Status: ?? CONDITIONALLY USED (when Butterworth enabled)
-
-        Same as Spline version - controls filter aggressiveness.
-        """;
-
-    // ========================================
     // POST-PROCESSING SMOOTHING
     // ========================================
 
@@ -492,38 +474,53 @@ public static class RoadParameterTooltips
         Default: false
         Status: ? ACTIVELY USED
 
-        Saves smoothed heightmap as grayscale with road outlines overlaid:
+        Saves the UNIFIED smoothed heightmap as grayscale with road outlines overlaid.
+        Shows the combined result of all road materials processed as a single network.
+        
         • Cyan outline - Road edges
         • Magenta outline - Terrain blending edges
 
         Output: smoothed_heightmap_with_road_outlines.png
+        
+        Note: This shows the final unified network result after all materials 
+        have been processed together, not individual material outputs.
         """;
 
     public const string ExportSplineDebugImage = """
         Default: false
-        Status: ? ACTIVELY USED (Spline only)
+        Status: ? ACTIVELY USED
 
-        Saves debug image showing spline centerline and road width:
+        Saves debug image showing spline centerline and road width for THIS material.
+        Each material's spline debug is saved to a subfolder.
+        
         • Yellow line - Road centerline
         • Green lines - Road edges (cross-sections)
 
-        Output: spline_debug.png
+        Output: spline_debug.png (in material-specific subfolder)
+        
+        Note: This is per-material debug output. The unified network result
+        can be seen in the heightmap with outlines export.
         """;
 
     public const string ExportSkeletonDebugImage = """
         Default: false
-        Status: ? ACTIVELY USED (Spline only)
+        Status: ? ACTIVELY USED (PNG layer source only)
 
-        Saves raw skeleton (road centerline) before spline fitting. White lines on black background.
+        Saves raw skeleton (road centerline) before spline fitting.
+        White lines on black background.
 
-        Helps diagnose skeleton extraction issues.
+        ?? PNG LAYER SOURCE ONLY - Not available for OSM splines!
+        OSM splines are generated directly from vector data and bypass
+        skeleton extraction entirely.
+
+        Helps diagnose skeleton extraction issues when using PNG layer maps.
 
         Output: skeleton_debug.png
         """;
 
     public const string ExportSmoothedElevationDebugImage = """
         Default: false
-        Status: ? ACTIVELY USED (Spline only)
+        Status: ? ACTIVELY USED
 
         Saves road colored by elevation:
         • Blue - Low elevation
@@ -531,6 +528,25 @@ public static class RoadParameterTooltips
         • Red - High elevation
 
         Output: spline_smoothed_elevation_debug.png
+        """;
+
+    public const string ExportJunctionDebugImage = """
+        Default: false
+        Status: ? ACTIVELY USED
+
+        Exports debug image showing detected junctions including CROSS-MATERIAL connections.
+        The unified pipeline detects junctions across all road materials.
+        
+        Color coding:
+        • Blue regions - Elevation was lowered
+        • Red regions - Elevation was raised
+        • Green circles - Multi-path junctions (where roads meet)
+        • Yellow markers - Isolated endpoints (dead ends)
+        
+        When cross-material harmonization is enabled, this shows where highways
+        connect to dirt roads, where different road types meet, etc.
+
+        Output: junction_debug.png
         """;
 
     // ========================================

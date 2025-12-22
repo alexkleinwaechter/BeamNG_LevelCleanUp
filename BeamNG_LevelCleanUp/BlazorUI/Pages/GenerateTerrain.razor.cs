@@ -53,6 +53,18 @@ public partial class GenerateTerrain
         set => _state.EnableCrossMaterialHarmonization = value;
     }
 
+    private float _globalJunctionDetectionRadiusMeters
+    {
+        get => _state.GlobalJunctionDetectionRadiusMeters;
+        set => _state.GlobalJunctionDetectionRadiusMeters = value;
+    }
+
+    private float _globalJunctionBlendDistanceMeters
+    {
+        get => _state.GlobalJunctionBlendDistanceMeters;
+        set => _state.GlobalJunctionBlendDistanceMeters = value;
+    }
+
     private GeoBoundingBox? _geoBoundingBox
     {
         get => _state.GeoBoundingBox;
@@ -717,6 +729,12 @@ public partial class GenerateTerrain
 
         if (result.EnableCrossMaterialHarmonization.HasValue)
             _enableCrossMaterialHarmonization = result.EnableCrossMaterialHarmonization.Value;
+
+        if (result.GlobalJunctionDetectionRadiusMeters.HasValue)
+            _globalJunctionDetectionRadiusMeters = result.GlobalJunctionDetectionRadiusMeters.Value;
+
+        if (result.GlobalJunctionBlendDistanceMeters.HasValue)
+            _globalJunctionBlendDistanceMeters = result.GlobalJunctionBlendDistanceMeters.Value;
 
         // Apply crop settings (for GeoTIFF mode)
         // Note: The CropAnchorSelector component will need to be notified of these changes

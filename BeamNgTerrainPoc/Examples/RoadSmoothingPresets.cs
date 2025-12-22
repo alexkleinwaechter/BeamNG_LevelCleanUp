@@ -43,7 +43,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters TerrainFollowingSmooth => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY
@@ -117,7 +116,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters MountainousUltraSmooth => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Wide blend required for GlobalLevelingStrength > 0.5!
@@ -183,7 +181,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters HillyAggressive => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY
@@ -248,7 +245,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters FlatModerate => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY
@@ -303,56 +299,6 @@ public static class RoadSmoothingPresets
     };
 
     /// <summary>
-    ///     FAST TESTING: Quick testing with DirectMask approach.
-    ///     Robust, handles intersections well, faster than Spline.
-    ///     Best for: Development iteration, complex road networks with many intersections.
-    ///     Processing time: ~2-3 seconds for 4096x4096
-    ///     Quality: Good for testing, may have minor artifacts on curves
-    /// </summary>
-    public static RoadSmoothingParameters FastTesting => new()
-    {
-        Approach = RoadSmoothingApproach.DirectMask,
-        EnableTerrainBlending = true,
-
-        // ROAD GEOMETRY
-        RoadWidthMeters = 8.0f,
-        TerrainAffectedRangeMeters = 12.0f,
-        // CrossSectionIntervalMeters validation: (8/2 + 12) / 3 = 5.3m max, using 1.5m ?
-        CrossSectionIntervalMeters = 1.5f,
-
-        RoadMaxSlopeDegrees = 8.0f,
-        SideMaxSlopeDegrees = 30.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
-
-        // POST-PROCESSING - Light to preserve speed
-        EnablePostProcessingSmoothing = true,
-        SmoothingType = PostProcessingSmoothingType.Box, // Faster than Gaussian
-        SmoothingKernelSize = 5, // Odd number ?
-        SmoothingSigma = 1.0f,
-        SmoothingMaskExtensionMeters = 3.0f, // >= 1.5 * 2 = 3.0m ?
-        SmoothingIterations = 1,
-
-        DirectMaskParameters = new DirectMaskRoadParameters
-        {
-            SmoothingWindowSize = 11, // Odd number ?
-            RoadPixelSearchRadius = 3,
-            UseButterworthFilter = false // Simple moving average for speed
-        },
-
-        // Junction harmonization (works with DirectMask too)
-        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
-        {
-            EnableJunctionHarmonization = true,
-            JunctionDetectionRadiusMeters = 15.0f,
-            JunctionBlendDistanceMeters = 25.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 20.0f,
-            EndpointTerrainBlendStrength = 0.3f
-        }
-    };
-
-    /// <summary>
     ///     EXTREME NUCLEAR: Maximum possible smoothing for very difficult terrain.
     ///     Roads will be EXTREMELY flat - may look artificial.
     ///     REQUIRES very wide TerrainAffectedRangeMeters (?25m) for global leveling!
@@ -362,7 +308,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters ExtremeNuclear => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Very wide blend for extreme leveling
@@ -432,7 +377,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters Highway => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Standard 2-lane highway
@@ -514,7 +458,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters MountainRoad => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Narrow road with steep sides
@@ -606,7 +549,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters RacingCircuit => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Wide racing surface
@@ -691,7 +633,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters DirtRoad => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Narrow dirt road
@@ -772,7 +713,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmRoads => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Wider smoothing corridor, narrower painted surface
@@ -855,7 +795,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmHighway => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Wide highway with wider smoothing corridor
@@ -930,7 +869,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmTrack => new()
     {
-        Approach = RoadSmoothingApproach.Spline,
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Narrow track

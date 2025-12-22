@@ -3,67 +3,20 @@ using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 namespace BeamNgTerrainPoc.Terrain.Models;
 
 /// <summary>
-/// Approach to use for road smoothing
-/// </summary>
-public enum RoadSmoothingApproach
-{
-    /// <summary>
-    /// Direct road mask approach - simple, robust, works with intersections.
-    /// Grid-aligned sampling (may have slight tilt on curves).
-    /// Best for: Complex road networks, intersections, general use.
-    /// </summary>
-    DirectMask,
-
-    /// <summary>
-    /// SPLINE-BASED approach - RECOMMENDED for smooth roads (highways, racing circuits).
-    /// Uses centerline extraction + global Euclidean Distance Transform (EDT) + analytical blending.
-    /// 
-    /// FEATURES:
-    /// - Perpendicular sampling (perfectly level on curves)
-    /// - Exact EDT (Felzenszwalb & Huttenlocher) in O(W*H)
-    /// - Prefix-sum elevation smoothing in O(N)
-    /// - No per-pixel cross-section iteration
-    /// 
-    /// PERFORMANCE: Fast, scales linearly with terrain size (3s for 4096x4096).
-    /// QUALITY: Eliminates jagged edges, stairs, blocky artifacts.
-    /// 
-    /// Best for: Curved roads, highways, racing circuits.
-    /// Note: Use DirectMask for complex intersections.
-    /// </summary>
-    Spline
-}
-
-/// <summary>
 /// Main parameters for road smoothing algorithm applied to heightmaps.
 /// Contains COMMON parameters for all approaches, plus approach-specific sub-parameters.
 /// </summary>
 public class RoadSmoothingParameters
 {
     // ========================================
-    // APPROACH SELECTION
+    // SPLINE PARAMETERS
     // ========================================
 
     /// <summary>
-    /// Which approach to use for road smoothing.
-    /// Default: DirectMask (most robust, handles intersections)
-    /// </summary>
-    public RoadSmoothingApproach Approach { get; set; } = RoadSmoothingApproach.DirectMask;
-
-    // ========================================
-    // APPROACH-SPECIFIC PARAMETERS
-    // ========================================
-
-    /// <summary>
-    /// Spline-specific parameters (only used when Approach = SplineBased).
+    /// Spline-specific parameters for road extraction and smoothing.
     /// Null = use defaults. Set this to customize spline extraction and smoothing.
     /// </summary>
     public SplineRoadParameters? SplineParameters { get; set; }
-
-    /// <summary>
-    /// DirectMask-specific parameters (only used when Approach = DirectMask).
-    /// Null = use defaults. Set this to customize direct mask sampling.
-    /// </summary>
-    public DirectMaskRoadParameters? DirectMaskParameters { get; set; }
 
     /// <summary>
     /// Junction and endpoint harmonization parameters.
@@ -355,14 +308,6 @@ public class RoadSmoothingParameters
     }
 
     /// <summary>
-    /// Gets or creates the DirectMaskParameters object (auto-creates with defaults if null).
-    /// </summary>
-    public DirectMaskRoadParameters GetDirectMaskParameters()
-    {
-        return DirectMaskParameters ??= new DirectMaskRoadParameters();
-    }
-
-    /// <summary>
     /// Gets or creates the JunctionHarmonizationParameters object (auto-creates with defaults if null).
     /// </summary>
     public JunctionHarmonizationParameters GetJunctionHarmonizationParameters()
@@ -416,14 +361,10 @@ public class RoadSmoothingParameters
                 errors.Add("SmoothingIterations must be >= 1");
         }
 
-        // Validate approach-specific parameters
-        if (Approach == RoadSmoothingApproach.Spline && SplineParameters != null)
+        // Validate spline parameters
+        if (SplineParameters != null)
         {
             errors.AddRange(SplineParameters.Validate());
-        }
-        else if (Approach == RoadSmoothingApproach.DirectMask && DirectMaskParameters != null)
-        {
-            errors.AddRange(DirectMaskParameters.Validate());
         }
 
         // Validate junction harmonization parameters
@@ -432,8 +373,7 @@ public class RoadSmoothingParameters
             errors.AddRange(JunctionHarmonizationParameters.Validate());
         }
 
-        // Warn about problematic combinations (Spline approach only)
-        if (Approach == RoadSmoothingApproach.Spline)
+        // Warn about problematic combinations
         {
             var splineParams = GetSplineParameters();
 

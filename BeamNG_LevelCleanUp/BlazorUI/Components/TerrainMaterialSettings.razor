@@ -3,6 +3,7 @@
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 @using BeamNgTerrainPoc.Terrain.GeoTiff
 @using BeamNgTerrainPoc.Examples
+@using SplineInterpolationType = BeamNgTerrainPoc.Terrain.Models.SplineInterpolationType
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.RoadParameterTooltips
 
 <MudExpansionPanel Text="@GetPanelTitle()" 
@@ -362,25 +363,11 @@ Class="my-0">
                                     <MudTabPanel Text="Algorithm" Icon="@Icons.Material.Filled.Memory">
                                         <div class="pa-3">
                                             <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-                                                Choose the smoothing algorithm approach and core settings.
+                                                Core algorithm settings for spline-based road smoothing.
                                             </MudAlert>
                                             
                                             <MudPaper Class="pa-3" Elevation="1">
                                                 <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudSelect T="RoadSmoothingApproach" 
-                                                                      @bind-Value="Material.Approach"
-                                                                      Label="Smoothing Approach"
-                                                                      Variant="Variant.Outlined"
-                                                                      HelperText="Spline = curved roads, DirectMask = intersections"
-                                                                      Class="flex-grow-1">
-                                                                <MudSelectItem Value="RoadSmoothingApproach.Spline">Spline (recommended)</MudSelectItem>
-                                                                <MudSelectItem Value="RoadSmoothingApproach.DirectMask">DirectMask (robust)</MudSelectItem>
-                                                            </MudSelect>
-                                                            <HelpAdornment TooltipText="@Approach"/>
-                                                        </div>
-                                                    </MudItem>
                                                     <MudItem xs="12" sm="6">
                                                         <div class="d-flex align-start gap-1">
                                                             <MudSelect T="BlendFunctionType" 
@@ -423,7 +410,7 @@ Class="my-0">
                                     </MudTabPanel>
                                     
                                     <!-- Spline Tab -->
-                                    <MudTabPanel Text="Spline" Icon="@Icons.Material.Filled.Timeline" Disabled="@(Material.Approach != RoadSmoothingApproach.Spline)">
+                                    <MudTabPanel Text="Spline" Icon="@Icons.Material.Filled.Timeline">
                                         <div class="pa-3">
                                             @if (IsUsingOsmSplines)
                                             {
@@ -440,6 +427,34 @@ Class="my-0">
                                                     Spline extraction, curve fitting, and elevation smoothing parameters.
                                                 </MudAlert>
                                             }
+                                            
+                                            <!-- Spline Interpolation Type Card -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1"/>
+                                                    Spline Interpolation
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how the spline curve is interpolated between control points.
+                                                    Affects both elevation smoothing and material painting consistency.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudSelect T="SplineInterpolationType" 
+                                                                      @bind-Value="Material.SplineInterpolationType"
+                                                                      Label="Interpolation Type"
+                                                                      Variant="Variant.Outlined"
+                                                                      HelperText="Smooth curves vs accurate geometry"
+                                                                      Class="flex-grow-1">
+                                                                <MudSelectItem Value="SplineInterpolationType.SmoothInterpolated">Smooth Interpolated (recommended)</MudSelectItem>
+                                                                <MudSelectItem Value="SplineInterpolationType.LinearControlPoints">Linear Control Points</MudSelectItem>
+                                                            </MudSelect>
+                                                            <HelpAdornment TooltipText="@RoadParameterTooltips.SplineInterpolationType"/>
+                                                        </div>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
                                             
                                             <!-- Curve Fitting Card (PNG layer map only - not used for OSM) -->
                                             <MudPaper Class="pa-3 mb-3" Elevation="1" Style="@(IsUsingOsmSplines ? "opacity: 0.5;" : "")">
@@ -711,73 +726,6 @@ Class="my-0">
                                         </div>
                                     </MudTabPanel>
                                     
-                                    <!-- DirectMask Tab -->
-                                    <MudTabPanel Text="DirectMask" Icon="@Icons.Material.Filled.GridOn" Disabled="@(Material.Approach != RoadSmoothingApproach.DirectMask)">
-                                        <div class="pa-3">
-                                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-                                                DirectMask approach parameters for grid-aligned sampling. Best for complex intersections.
-                                            </MudAlert>
-                                            
-                                            <!-- Sampling Card -->
-                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.GridOn" Size="Size.Small" Class="mr-1"/>
-                                                    Sampling
-                                                </MudText>
-                                                <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="int" @bind-Value="Material.DirectMaskSmoothingWindowSize" 
-                                                                            Label="Smoothing Window Size" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="3" Max="100" Step="1"
-                                                                            HelperText="Larger = smoother"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@DirectMaskSmoothingWindowSize"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="int" @bind-Value="Material.RoadPixelSearchRadius" 
-                                                                            Label="Road Pixel Search Radius" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="1" Max="20" Step="1"
-                                                                            HelperText="Search distance for road pixels"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@RoadPixelSearchRadius"/>
-                                                        </div>
-                                                    </MudItem>
-                                                </MudGrid>
-                                            </MudPaper>
-                                            
-                                            <!-- Filter Card -->
-                                            <MudPaper Class="pa-3" Elevation="1">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.FilterAlt" Size="Size.Small" Class="mr-1"/>
-                                                    Butterworth Filter
-                                                </MudText>
-                                                <div class="d-flex align-center gap-3">
-                                                    <div class="d-flex align-center gap-1">
-                                                        <MudSwitch T="bool" @bind-Value="Material.DirectMaskUseButterworthFilter" 
-                                                                  Color="Color.Primary"
-                                                                  Label="Enable Butterworth Filter"/>
-                                                        <HelpAdornment TooltipText="@DirectMaskUseButterworthFilter"/>
-                                                    </div>
-                                                    <div class="d-flex align-start gap-1">
-                                                        <MudNumericField T="int" @bind-Value="Material.DirectMaskButterworthFilterOrder" 
-                                                                        Label="Filter Order" 
-                                                                        Variant="Variant.Outlined"
-                                                                        Min="1" Max="8" Step="1"
-                                                                        Disabled="@(!Material.DirectMaskUseButterworthFilter)"
-                                                                        HelperText="Higher = flatter passband"
-                                                                        Style="max-width: 150px;"/>
-                                                        <HelpAdornment TooltipText="@DirectMaskButterworthFilterOrder"/>
-                                                    </div>
-                                                </div>
-                                            </MudPaper>
-                                        </div>
-                                    </MudTabPanel>
-                                    
                                     <!-- Post-Processing Tab -->
                                     <MudTabPanel Text="Post-Processing" Icon="@Icons.Material.Filled.AutoFixHigh">
                                         <div class="pa-3">
@@ -904,36 +852,59 @@ Class="my-0">
                                                     Controls how junctions are detected and how elevations blend at intersections.
                                                 </MudText>
                                                 <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.JunctionDetectionRadiusMeters" 
-                                                                            Label="Detection Radius (m)" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="5.0f" Max="50.0f" Step="5.0f"
-                                                                            Format="F0"
-                                                                            Disabled="@(!Material.EnableJunctionHarmonization)"
-                                                                            HelperText="Endpoints within this distance form a junction"
-                                                                            Class="flex-grow-1"/>
-                                                            <MudTooltip Text="Maximum distance between path endpoints to consider them part of the same junction. Larger = merge more endpoints.">
+                                                    <MudItem xs="12">
+                                                        <div class="d-flex align-center gap-1">
+                                                            <MudSwitch T="bool" @bind-Value="Material.UseGlobalJunctionSettings"
+                                                                      Color="Color.Secondary"
+                                                                      Label="Use Global Junction Settings"
+                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"/>
+                                                            <MudTooltip Text="When enabled, uses the global junction detection radius and blend distance from Terrain Parameters. Disable to use custom per-material values.">
                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
                                                             </MudTooltip>
                                                         </div>
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-12">
+                                                            @(Material.UseGlobalJunctionSettings 
+                                                                ? "Using global junction detection and blend settings from Terrain Parameters" 
+                                                                : "Using custom junction settings for this material")
+                                                        </MudText>
                                                     </MudItem>
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.JunctionBlendDistanceMeters" 
-                                                                            Label="Blend Distance (m)" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="10.0f" Max="100.0f" Step="5.0f"
-                                                                            Format="F0"
-                                                                            Disabled="@(!Material.EnableJunctionHarmonization)"
-                                                                            HelperText="Distance to blend along each path"
-                                                                            Class="flex-grow-1"/>
-                                                            <MudTooltip Text="Distance over which to blend from junction elevation back to path elevation. Larger = smoother but affects more road.">
-                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                            </MudTooltip>
-                                                        </div>
-                                                    </MudItem>
+                                                    
+                                                    @* Show per-material detection/blend settings only when not using global *@
+                                                    @if (!Material.UseGlobalJunctionSettings)
+                                                    {
+                                                        <MudItem xs="12" sm="4">
+                                                            <div class="d-flex align-start gap-1">
+                                                                <MudNumericField T="float" @bind-Value="Material.JunctionDetectionRadiusMeters" 
+                                                                                Label="Detection Radius (m)" 
+                                                                                Variant="Variant.Outlined"
+                                                                                Min="5.0f" Max="50.0f" Step="5.0f"
+                                                                                Format="F0"
+                                                                                Disabled="@(!Material.EnableJunctionHarmonization)"
+                                                                                HelperText="Endpoints within this distance form a junction"
+                                                                                Class="flex-grow-1"/>
+                                                                <MudTooltip Text="Maximum distance between path endpoints to consider them part of the same junction. Larger = merge more endpoints.">
+                                                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                                </MudTooltip>
+                                                            </div>
+                                                        </MudItem>
+                                                        <MudItem xs="12" sm="4">
+                                                            <div class="d-flex align-start gap-1">
+                                                                <MudNumericField T="float" @bind-Value="Material.JunctionBlendDistanceMeters" 
+                                                                                Label="Blend Distance (m)" 
+                                                                                Variant="Variant.Outlined"
+                                                                                Min="10.0f" Max="100.0f" Step="5.0f"
+                                                                                Format="F0"
+                                                                                Disabled="@(!Material.EnableJunctionHarmonization)"
+                                                                                HelperText="Distance to blend along each path"
+                                                                                Class="flex-grow-1"/>
+                                                                <MudTooltip Text="Distance over which to blend from junction elevation back to path elevation. Larger = smoother but affects more road.">
+                                                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                                </MudTooltip>
+                                                            </div>
+                                                        </MudItem>
+                                                    }
+                                                    
+                                                    @* Blend function is always per-material *@
                                                     <MudItem xs="12" sm="4">
                                                         <div class="d-flex align-start gap-1">
                                                             <MudSelect T="JunctionBlendFunctionType" 
@@ -1023,12 +994,15 @@ Class="my-0">
                                                     <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Small" Class="mr-1"/>
                                                     Export Debug Images
                                                 </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                                                    Debug images are generated for the unified road network (all materials combined).
+                                                </MudText>
                                                 <MudGrid Spacing="2">
                                                     <MudItem xs="12" sm="6">
                                                         <div class="d-flex align-center gap-1">
                                                             <MudSwitch T="bool" @bind-Value="Material.ExportSmoothedHeightmapWithOutlines" 
                                                                       Color="Color.Secondary"
-                                                                      Label="Heightmap with Road Outlines"/>
+                                                                      Label="Unified Heightmap with Outlines"/>
                                                             <HelpAdornment TooltipText="@ExportSmoothedHeightmapWithOutlines"/>
                                                         </div>
                                                     </MudItem>
@@ -1036,8 +1010,7 @@ Class="my-0">
                                                         <div class="d-flex align-center gap-1">
                                                             <MudSwitch T="bool" @bind-Value="Material.ExportSplineDebugImage" 
                                                                       Color="Color.Secondary"
-                                                                      Label="Spline Visualization"
-                                                                      Disabled="@(Material.Approach != RoadSmoothingApproach.Spline)"/>
+                                                                      Label="Per-Material Spline Debug"/>
                                                             <HelpAdornment TooltipText="@ExportSplineDebugImage"/>
                                                         </div>
                                                     </MudItem>
@@ -1045,8 +1018,8 @@ Class="my-0">
                                                         <div class="d-flex align-center gap-1">
                                                             <MudSwitch T="bool" @bind-Value="Material.ExportSkeletonDebugImage" 
                                                                       Color="Color.Secondary"
-                                                                      Label="Skeleton Extraction"
-                                                                      Disabled="@(Material.Approach != RoadSmoothingApproach.Spline || IsUsingOsmSplines)"/>
+                                                                      Label="Skeleton Extraction (PNG only)"
+                                                                      Disabled="@IsUsingOsmSplines"/>
                                                             <HelpAdornment TooltipText="@ExportSkeletonDebugImage"/>
                                                         </div>
                                                     </MudItem>
@@ -1054,8 +1027,7 @@ Class="my-0">
                                                         <div class="d-flex align-center gap-1">
                                                             <MudSwitch T="bool" @bind-Value="Material.ExportSmoothedElevationDebugImage" 
                                                                       Color="Color.Secondary"
-                                                                      Label="Elevation Profile"
-                                                                      Disabled="@(Material.Approach != RoadSmoothingApproach.Spline)"/>
+                                                                      Label="Elevation Profile"/>
                                                             <HelpAdornment TooltipText="@ExportSmoothedElevationDebugImage"/>
                                                         </div>
                                                     </MudItem>
@@ -1063,11 +1035,9 @@ Class="my-0">
                                                         <div class="d-flex align-center gap-1">
                                                             <MudSwitch T="bool" @bind-Value="Material.ExportJunctionDebugImage" 
                                                                       Color="Color.Secondary"
-                                                                      Label="Junction Harmonization"
-                                                                      Disabled="@(Material.Approach != RoadSmoothingApproach.Spline || !Material.EnableJunctionHarmonization)"/>
-                                                            <MudTooltip Text="Exports debug image showing detected junctions, endpoints, and elevation changes from harmonization. Blue=lowered, Red=raised, Green circles=multi-path junctions, Yellow=isolated endpoints.">
-                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                            </MudTooltip>
+                                                                      Label="Cross-Material Junction Debug"
+                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"/>
+                                                            <HelpAdornment TooltipText="@ExportJunctionDebugImage"/>
                                                         </div>
                                                     </MudItem>
                                                 </MudGrid>

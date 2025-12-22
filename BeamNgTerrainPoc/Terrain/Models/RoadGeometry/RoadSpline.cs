@@ -3,6 +3,8 @@ using MathNet.Numerics.Interpolation;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
+using BeamNgTerrainPoc.Terrain.Models;
+
 /// <summary>
 /// Represents a smooth spline through road centerline points.
 /// Provides position, tangent, and normal calculations along the road.
@@ -25,16 +27,27 @@ public class RoadSpline
     public List<Vector2> ControlPoints { get; }
     
     /// <summary>
+    /// The interpolation type used for this spline
+    /// </summary>
+    public SplineInterpolationType InterpolationType { get; }
+    
+    /// <summary>
     /// Total arc length of the spline
     /// </summary>
     public float TotalLength => _totalLength;
     
-    public RoadSpline(List<Vector2> controlPoints)
+    /// <summary>
+    /// Creates a road spline with the specified interpolation type.
+    /// </summary>
+    /// <param name="controlPoints">Control points defining the road centerline.</param>
+    /// <param name="interpolationType">How to interpolate between control points.</param>
+    public RoadSpline(List<Vector2> controlPoints, SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated)
     {
         if (controlPoints == null || controlPoints.Count < 2)
             throw new ArgumentException("Need at least 2 control points for spline", nameof(controlPoints));
         
         ControlPoints = controlPoints;
+        InterpolationType = interpolationType;
         
         // Calculate cumulative arc lengths (parameter t for spline)
         _distances = new List<float> { 0 };
@@ -56,26 +69,50 @@ public class RoadSpline
         var x = controlPoints.Select(p => (double)p.X).ToArray();
         var y = controlPoints.Select(p => (double)p.Y).ToArray();
         
-        // Choose interpolation method based on number of points
-        if (controlPoints.Count >= MinPointsForAkima)
+        // Choose interpolation method based on type and number of points
+        if (interpolationType == SplineInterpolationType.LinearControlPoints)
         {
-            // Akima spline - good for avoiding overshoot, smooth for roads
-            _splineX = CubicSpline.InterpolateAkimaSorted(t, x);
-            _splineY = CubicSpline.InterpolateAkimaSorted(t, y);
-        }
-        else if (controlPoints.Count >= 3)
-        {
-            // Natural cubic spline for 3-4 points
-            _splineX = CubicSpline.InterpolateNaturalSorted(t, x);
-            _splineY = CubicSpline.InterpolateNaturalSorted(t, y);
-        }
-        else
-        {
-            // Linear interpolation for 2 points
+            // Linear interpolation - follows original control points exactly
             _splineX = LinearSpline.InterpolateSorted(t, x);
             _splineY = LinearSpline.InterpolateSorted(t, y);
         }
+        else // SmoothInterpolated (default)
+        {
+            // Choose smooth interpolation method based on number of points
+            if (controlPoints.Count >= MinPointsForAkima)
+            {
+                // Akima spline - good for avoiding overshoot, smooth for roads
+                _splineX = CubicSpline.InterpolateAkimaSorted(t, x);
+                _splineY = CubicSpline.InterpolateAkimaSorted(t, y);
+            }
+            else if (controlPoints.Count >= 3)
+            {
+                // Natural cubic spline for 3-4 points
+                _splineX = CubicSpline.InterpolateNaturalSorted(t, x);
+                _splineY = CubicSpline.InterpolateNaturalSorted(t, y);
+            }
+            else
+            {
+                // Linear interpolation for 2 points (fallback when smooth isn't possible)
+                _splineX = LinearSpline.InterpolateSorted(t, x);
+                _splineY = LinearSpline.InterpolateSorted(t, y);
+            }
+        }
     }
+    
+    /// <summary>
+    /// Creates a smooth interpolated road spline (Akima/cubic).
+    /// Best for nice curved roads, highways, racing circuits.
+    /// </summary>
+    public static RoadSpline CreateSmooth(List<Vector2> controlPoints)
+        => new(controlPoints, SplineInterpolationType.SmoothInterpolated);
+    
+    /// <summary>
+    /// Creates a linear road spline that follows control points exactly.
+    /// Best for accurate adherence to source skeleton/OSM geometry.
+    /// </summary>
+    public static RoadSpline CreateLinear(List<Vector2> controlPoints)
+        => new(controlPoints, SplineInterpolationType.LinearControlPoints);
     
     /// <summary>
     /// Get position along spline at distance d from start

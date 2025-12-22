@@ -22,17 +22,17 @@ public static class RoadDebugExporter
     /// <param name="smoothedHeightMap">Optional: smoothed heightmap for outline export and master spline Z values</param>
     /// <param name="distanceField">Optional: distance field for outline export</param>
     /// <param name="terrainSizePixels">Optional: terrain size for master spline coordinate transformation</param>
+    /// <param name="network">Optional: Unified road network for accurate spline debug visualization</param>
     public static void ExportAllDebugImages(
         RoadGeometry geometry,
         float metersPerPixel,
         RoadSmoothingParameters parameters,
         float[,]? smoothedHeightMap = null,
         float[,]? distanceField = null,
-        int terrainSizePixels = 0)
+        int terrainSizePixels = 0,
+        UnifiedRoadNetwork? network = null)
     {
-        if (parameters.Approach != RoadSmoothingApproach.Spline)
-            return;
-
+        // Spline approach is now the only approach - no need to check
         if (geometry.CrossSections.Count == 0)
             return;
 
@@ -57,12 +57,12 @@ public static class RoadDebugExporter
                 TerrainLogger.Warning($"Master splines JSON export failed: {ex.Message}");
             }
 
-        // Optional spline debug export
+        // Optional spline debug export - now uses network for accurate visualization
         var splineParams = parameters.GetSplineParameters();
         if (splineParams.ExportSplineDebugImage)
             try
             {
-                ExportSplineDebugImage(geometry, metersPerPixel, parameters, "spline_debug.png");
+                ExportSplineDebugImage(geometry, metersPerPixel, parameters, "spline_debug.png", network);
             }
             catch (Exception ex)
             {
@@ -268,9 +268,23 @@ public static class RoadDebugExporter
 
     /// <summary>
     ///     Exports a debug image showing spline centerlines and cross-section widths.
+    ///     
+    ///     IMPORTANT: This method now draws from the ACTUAL interpolated splines used for
+    ///     elevation smoothing and material painting, ensuring visual consistency.
+    ///     
+    ///     Color legend:
+    ///     - Dark gray: Road mask (source layer map)
+    ///     - Yellow: Interpolated spline centerline (same as used for smoothing)
+    ///     - Cyan: Original control points (skeleton extraction output)
+    ///     - Green: Cross-section width indicators
     /// </summary>
+    /// <param name="geometry">Road geometry with cross-sections</param>
+    /// <param name="metersPerPixel">Scale factor</param>
+    /// <param name="parameters">Road smoothing parameters</param>
+    /// <param name="fileName">Output filename</param>
+    /// <param name="network">Optional: Unified road network for drawing all splines</param>
     public static void ExportSplineDebugImage(RoadGeometry geometry, float metersPerPixel,
-        RoadSmoothingParameters parameters, string fileName)
+        RoadSmoothingParameters parameters, string fileName, UnifiedRoadNetwork? network = null)
     {
         var width = geometry.Width;
         var height = geometry.Height;
@@ -282,18 +296,72 @@ public static class RoadDebugExporter
             if (geometry.RoadMask[y, x] > 128)
                 image[x, height - 1 - y] = new Rgba32(32, 32, 32, 255); // flip Y for visualization
 
-        // Draw spline centerline samples (if spline is available)
-        if (geometry.Spline != null)
+        var sampleInterval = parameters.CrossSectionIntervalMeters;
+        var splinesDrawn = 0;
+
+        // PRIORITY 1: Draw from UnifiedRoadNetwork splines if available
+        // This ensures we draw the EXACT same interpolated path used for elevation smoothing
+        if (network != null && network.Splines.Count > 0)
         {
-            var sampleInterval = parameters.CrossSectionIntervalMeters;
+            foreach (var paramSpline in network.Splines)
+            {
+                var spline = paramSpline.Spline;
+                if (spline == null || spline.TotalLength < 1f) continue;
+
+                // Draw original control points in cyan (shows source skeleton/OSM data)
+                foreach (var cp in spline.ControlPoints)
+                {
+                    var cpx = (int)(cp.X / metersPerPixel);
+                    var cpy = (int)(cp.Y / metersPerPixel);
+                    if (cpx >= 1 && cpx < width - 1 && cpy >= 1 && cpy < height - 1)
+                    {
+                        // Draw 3x3 cyan dot for visibility
+                        for (var dy = -1; dy <= 1; dy++)
+                        for (var dx = -1; dx <= 1; dx++)
+                            image[cpx + dx, height - 1 - (cpy + dy)] = new Rgba32(0, 255, 255, 255);
+                    }
+                }
+
+                // Draw interpolated spline centerline in yellow (ACTUAL path used for smoothing)
+                for (float d = 0; d <= spline.TotalLength; d += sampleInterval)
+                {
+                    var p = spline.GetPointAtDistance(d);
+                    var px = (int)(p.X / metersPerPixel);
+                    var py = (int)(p.Y / metersPerPixel);
+                    if (px >= 0 && px < width && py >= 0 && py < height)
+                        image[px, height - 1 - py] = new Rgba32(255, 255, 0, 255);
+                }
+
+                splinesDrawn++;
+            }
+        }
+        // FALLBACK: Draw from geometry.Spline if network not available
+        else if (geometry.Spline != null)
+        {
+            // Draw original control points in cyan
+            foreach (var cp in geometry.Spline.ControlPoints)
+            {
+                var cpx = (int)(cp.X / metersPerPixel);
+                var cpy = (int)(cp.Y / metersPerPixel);
+                if (cpx >= 1 && cpx < width - 1 && cpy >= 1 && cpy < height - 1)
+                {
+                    for (var dy = -1; dy <= 1; dy++)
+                    for (var dx = -1; dx <= 1; dx++)
+                        image[cpx + dx, height - 1 - (cpy + dy)] = new Rgba32(0, 255, 255, 255);
+                }
+            }
+
+            // Draw interpolated centerline in yellow
             for (float d = 0; d <= geometry.Spline.TotalLength; d += sampleInterval)
             {
                 var p = geometry.Spline.GetPointAtDistance(d);
                 var px = (int)(p.X / metersPerPixel);
                 var py = (int)(p.Y / metersPerPixel);
                 if (px >= 0 && px < width && py >= 0 && py < height)
-                    image[px, height - 1 - py] = new Rgba32(255, 255, 0, 255); // yellow centerline
+                    image[px, height - 1 - py] = new Rgba32(255, 255, 0, 255);
             }
+
+            splinesDrawn = 1;
         }
 
         // Draw road width (perpendicular segments) for a subset of cross-sections
@@ -317,6 +385,7 @@ public static class RoadDebugExporter
         var filePath = Path.Combine(dir, fileName);
         image.SaveAsPng(filePath);
         TerrainLogger.Info($"Exported spline debug image: {filePath}");
+        TerrainLogger.Info($"  Splines drawn: {splinesDrawn} (yellow=interpolated path, cyan=control points)");
     }
 
     /// <summary>

@@ -8,6 +8,21 @@ namespace BeamNgTerrainPoc.Terrain.Models;
 public class JunctionHarmonizationParameters
 {
     // ========================================
+    // GLOBAL/PER-MATERIAL SETTINGS
+    // ========================================
+    
+    /// <summary>
+    /// When true, uses global junction settings from TerrainCreationParameters.
+    /// When false, uses the values specified in this instance.
+    /// 
+    /// This only affects JunctionDetectionRadiusMeters and JunctionBlendDistanceMeters.
+    /// Other settings (blend function, endpoint taper, etc.) are always per-material.
+    /// 
+    /// Default: true (use global settings)
+    /// </summary>
+    public bool UseGlobalSettings { get; set; } = true;
+    
+    // ========================================
     // MASTER ENABLE
     // ========================================
     

@@ -1,6 +1,7 @@
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using SixLabors.ImageSharp;
@@ -464,6 +465,8 @@ public class OsmGeometryProcessor
     
     /// <summary>
     /// Rasterizes line features to a binary mask with a specified width.
+    /// NOTE: For roads, this rasterizes from ORIGINAL OSM geometry (control points).
+    /// Use RasterizeSplinesFromLayerMap() instead for consistency with spline interpolation.
     /// </summary>
     public byte[,] RasterizeLinesToLayerMap(
         List<OsmFeature> lineFeatures,
@@ -483,6 +486,122 @@ public class OsmGeometryProcessor
         }
         
         return result;
+    }
+    
+    /// <summary>
+    /// Rasterizes road splines to a binary layer map.
+    /// This ensures the layer map matches the interpolated spline path used for elevation smoothing.
+    /// Use this instead of RasterizeLinesToLayerMap() for road materials with pre-built splines.
+    /// </summary>
+    /// <param name="splines">Road splines (in meter coordinates)</param>
+    /// <param name="terrainSize">Size of terrain in pixels</param>
+    /// <param name="metersPerPixel">Scale factor</param>
+    /// <param name="roadSurfaceWidthMeters">Road surface width in meters</param>
+    /// <returns>Binary mask where 255 = road surface, 0 = no road</returns>
+    public byte[,] RasterizeSplinesToLayerMap(
+        List<RoadSpline> splines,
+        int terrainSize,
+        float metersPerPixel,
+        float roadSurfaceWidthMeters)
+    {
+        var result = new byte[terrainSize, terrainSize];
+        var halfWidthMeters = roadSurfaceWidthMeters / 2f;
+        
+        // Fine sampling interval for accurate curve representation
+        var sampleIntervalMeters = Math.Min(0.25f, metersPerPixel * 0.5f);
+        
+        foreach (var spline in splines)
+        {
+            // Sample the spline at fine intervals (using the INTERPOLATED path)
+            var samples = spline.SampleByDistance(sampleIntervalMeters);
+            
+            if (samples.Count < 2)
+                continue;
+            
+            // Rasterize quads between consecutive samples
+            for (int i = 0; i < samples.Count - 1; i++)
+            {
+                var s1 = samples[i];
+                var s2 = samples[i + 1];
+                
+                // Calculate quad corners in meters, then convert to image-space pixels
+                var left1 = s1.Position - s1.Normal * halfWidthMeters;
+                var right1 = s1.Position + s1.Normal * halfWidthMeters;
+                var left2 = s2.Position - s2.Normal * halfWidthMeters;
+                var right2 = s2.Position + s2.Normal * halfWidthMeters;
+                
+                // Convert from terrain-space meters to image-space pixels
+                // Terrain-space: Y=0 at bottom, Image-space: Y=0 at top
+                var corners = new Vector2[]
+                {
+                    new(left1.X / metersPerPixel, terrainSize - 1 - left1.Y / metersPerPixel),
+                    new(right1.X / metersPerPixel, terrainSize - 1 - right1.Y / metersPerPixel),
+                    new(right2.X / metersPerPixel, terrainSize - 1 - right2.Y / metersPerPixel),
+                    new(left2.X / metersPerPixel, terrainSize - 1 - left2.Y / metersPerPixel)
+                };
+                
+                FillConvexPolygon(result, corners, terrainSize, terrainSize);
+            }
+        }
+        
+        TerrainLogger.Info($"Rasterized {splines.Count} splines to layer map (width={roadSurfaceWidthMeters}m, samples every {sampleIntervalMeters:F2}m)");
+        return result;
+    }
+    
+    /// <summary>
+    /// Fills a convex polygon using scanline rasterization.
+    /// </summary>
+    private void FillConvexPolygon(byte[,] mask, Vector2[] vertices, int width, int height)
+    {
+        if (vertices.Length < 3)
+            return;
+        
+        // Find bounding box
+        float minY = float.MaxValue, maxY = float.MinValue;
+        
+        foreach (var v in vertices)
+        {
+            minY = MathF.Min(minY, v.Y);
+            maxY = MathF.Max(maxY, v.Y);
+        }
+        
+        var startY = Math.Max(0, (int)MathF.Floor(minY));
+        var endY = Math.Min(height - 1, (int)MathF.Ceiling(maxY));
+        
+        // For each scanline
+        for (var y = startY; y <= endY; y++)
+        {
+            var scanY = y + 0.5f;
+            var intersections = new List<float>();
+            
+            // Find intersection points with polygon edges
+            for (var i = 0; i < vertices.Length; i++)
+            {
+                var v1 = vertices[i];
+                var v2 = vertices[(i + 1) % vertices.Length];
+                
+                if ((v1.Y <= scanY && v2.Y > scanY) || (v2.Y <= scanY && v1.Y > scanY))
+                {
+                    var t = (scanY - v1.Y) / (v2.Y - v1.Y);
+                    var xIntersect = v1.X + t * (v2.X - v1.X);
+                    intersections.Add(xIntersect);
+                }
+            }
+            
+            // Sort intersections and fill between pairs
+            intersections.Sort();
+            
+            for (var i = 0; i + 1 < intersections.Count; i += 2)
+            {
+                var xStart = Math.Max(0, (int)MathF.Floor(intersections[i]));
+                var xEnd = Math.Min(width - 1, (int)MathF.Ceiling(intersections[i + 1]));
+                
+                for (var x = xStart; x <= xEnd; x++)
+                {
+                    mask[y, x] = 255;
+                }
+            }
+        }
     }
     
     /// <summary>
@@ -547,6 +666,7 @@ public class OsmGeometryProcessor
     /// <param name="bbox">Geographic bounding box (WGS84).</param>
     /// <param name="terrainSize">Size of terrain in pixels.</param>
     /// <param name="metersPerPixel">Scale factor for meters per pixel.</param>
+    /// <param name="interpolationType">How to interpolate between control points (SmoothInterpolated or LinearControlPoints).</param>
     /// <param name="minPathLengthMeters">Minimum path length to include (default 1m). Paths shorter than this are skipped.</param>
     /// <param name="duplicatePointToleranceMeters">Tolerance for removing duplicate consecutive points (default 0.01m = 1cm).</param>
     /// <param name="endpointJoinToleranceMeters">Tolerance for joining endpoints of adjacent ways (default 1m).</param>
@@ -556,6 +676,7 @@ public class OsmGeometryProcessor
         GeoBoundingBox bbox,
         int terrainSize,
         float metersPerPixel,
+        SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated,
         float minPathLengthMeters = 1.0f,
         float duplicatePointToleranceMeters = 0.01f,
         float endpointJoinToleranceMeters = 1.0f)
@@ -628,7 +749,7 @@ public class OsmGeometryProcessor
             
             try
             {
-                var spline = new RoadSpline(cleanPath);
+                var spline = new RoadSpline(cleanPath, interpolationType);
                 splines.Add(spline);
             }
             catch (Exception ex)

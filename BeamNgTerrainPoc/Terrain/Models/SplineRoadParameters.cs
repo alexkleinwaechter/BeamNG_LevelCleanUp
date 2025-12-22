@@ -8,6 +8,18 @@ namespace BeamNgTerrainPoc.Terrain.Models;
 public class SplineRoadParameters
 {
     // ========================================
+    // SPLINE INTERPOLATION TYPE
+    // ========================================
+    
+    /// <summary>
+    /// Controls how splines are interpolated between control points.
+    /// SmoothInterpolated: Uses Akima/cubic spline for smooth curves (default)
+    /// LinearControlPoints: Uses linear interpolation for accurate source geometry adherence
+    /// Default: SmoothInterpolated
+    /// </summary>
+    public SplineInterpolationType SplineInterpolationType { get; set; } = SplineInterpolationType.SmoothInterpolated;
+    
+    // ========================================
     // SPLINE EXTRACTION & ORDERING
     // ========================================
     

@@ -73,6 +73,36 @@ public class TerrainCreationParameters
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
 
     /// <summary>
+    /// Global junction detection radius in meters.
+    /// Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
+    /// 
+    /// Maximum distance between path endpoints to consider them part of the same junction.
+    /// 
+    /// Typical values:
+    /// - 5-8m: Narrow roads (single lane)
+    /// - 8-12m: Standard roads
+    /// - 12-15m: Wide roads (highways)
+    /// 
+    /// Default: 10.0
+    /// </summary>
+    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 10.0f;
+
+    /// <summary>
+    /// Global junction blend distance in meters.
+    /// Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
+    /// 
+    /// Distance over which to blend from junction elevation back to path elevation.
+    /// 
+    /// Typical values:
+    /// - 15-25m: Tight blending (urban roads)
+    /// - 25-40m: Standard blending
+    /// - 40-60m: Smooth blending (highways)
+    /// 
+    /// Default: 30.0
+    /// </summary>
+    public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
+
+    /// <summary>
     /// Path to a GeoTIFF heightmap file.
     /// Use this as an alternative to HeightmapPath for importing elevation data with geographic coordinates.
     /// When set, the GeoTIFF will be read and the bounding box will be extracted.

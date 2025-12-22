@@ -4,7 +4,7 @@ using BeamNgTerrainPoc.Terrain.Osm.Models;
 namespace BeamNG_LevelCleanUp.BlazorUI.Components;
 
 /// <summary>
-/// Heightmap source type for terrain generation.
+///     Heightmap source type for terrain generation.
 /// </summary>
 public enum HeightmapSourceType
 {
@@ -14,171 +14,183 @@ public enum HeightmapSourceType
 }
 
 /// <summary>
-/// Result of importing a BeamNG terrain preset file.
-/// Contains the extracted settings that should be applied to the terrain generation page.
+///     Result of importing a BeamNG terrain preset file.
+///     Contains the extracted settings that should be applied to the terrain generation page.
 /// </summary>
 public class TerrainPresetResult
 {
     /// <summary>
-    /// The terrain name from the preset.
+    ///     The terrain name from the preset.
     /// </summary>
     public string? TerrainName { get; set; }
 
     /// <summary>
-    /// The maximum height (from heightScale in preset).
+    ///     The maximum height (from heightScale in preset).
     /// </summary>
     public float? MaxHeight { get; set; }
 
     /// <summary>
-    /// Meters per pixel (from squareSize in preset).
+    ///     Meters per pixel (from squareSize in preset).
     /// </summary>
     public float? MetersPerPixel { get; set; }
 
     /// <summary>
-    /// Terrain base height (from pos.z in preset).
+    ///     Terrain base height (from pos.z in preset).
     /// </summary>
     public float? TerrainBaseHeight { get; set; }
 
     /// <summary>
-    /// Resolved path to the heightmap file.
+    ///     Resolved path to the heightmap file.
     /// </summary>
     public string? HeightmapPath { get; set; }
 
     /// <summary>
-    /// Resolved path to the hole map file.
+    ///     Resolved path to the hole map file.
     /// </summary>
     public string? HoleMapPath { get; set; }
 
     /// <summary>
-    /// Number of layer maps that were successfully assigned to materials.
+    ///     Number of layer maps that were successfully assigned to materials.
     /// </summary>
     public int AssignedLayerMapsCount { get; set; }
 
     // ========== NEW: Heightmap Source Configuration ==========
 
     /// <summary>
-    /// The type of heightmap source (PNG, GeoTIFF file, or GeoTIFF directory).
+    ///     The type of heightmap source (PNG, GeoTIFF file, or GeoTIFF directory).
     /// </summary>
     public HeightmapSourceType? HeightmapSourceType { get; set; }
 
     /// <summary>
-    /// Path to GeoTIFF file (when HeightmapSourceType is GeoTiffFile).
+    ///     Path to GeoTIFF file (when HeightmapSourceType is GeoTiffFile).
     /// </summary>
     public string? GeoTiffPath { get; set; }
 
     /// <summary>
-    /// Path to GeoTIFF tiles directory (when HeightmapSourceType is GeoTiffDirectory).
+    ///     Path to GeoTIFF tiles directory (when HeightmapSourceType is GeoTiffDirectory).
     /// </summary>
     public string? GeoTiffDirectory { get; set; }
 
     // ========== NEW: Terrain Generation Options ==========
 
     /// <summary>
-    /// Whether to update the TerrainBlock in MissionGroup items.level.json.
+    ///     Whether to update the TerrainBlock in MissionGroup items.level.json.
     /// </summary>
     public bool? UpdateTerrainBlock { get; set; }
 
     /// <summary>
-    /// Whether to enable cross-material harmonization for road smoothing.
+    ///     Whether to enable cross-material harmonization for road smoothing.
     /// </summary>
     public bool? EnableCrossMaterialHarmonization { get; set; }
 
     /// <summary>
-    /// Terrain size in pixels (e.g., 1024, 2048, 4096).
+    ///     Global junction detection radius in meters.
+    ///     Used when a material's UseGlobalJunctionSettings is true.
+    /// </summary>
+    public float? GlobalJunctionDetectionRadiusMeters { get; set; }
+
+    /// <summary>
+    ///     Global junction blend distance in meters.
+    ///     Used when a material's UseGlobalJunctionSettings is true.
+    /// </summary>
+    public float? GlobalJunctionBlendDistanceMeters { get; set; }
+
+    /// <summary>
+    ///     Terrain size in pixels (e.g., 1024, 2048, 4096).
     /// </summary>
     public int? TerrainSize { get; set; }
 
     // ========== NEW: Crop/Selection Settings (for GeoTIFF) ==========
 
     /// <summary>
-    /// Crop offset X in source pixels.
+    ///     Crop offset X in source pixels.
     /// </summary>
     public int? CropOffsetX { get; set; }
 
     /// <summary>
-    /// Crop offset Y in source pixels.
+    ///     Crop offset Y in source pixels.
     /// </summary>
     public int? CropOffsetY { get; set; }
 
     /// <summary>
-    /// Crop width in source pixels.
+    ///     Crop width in source pixels.
     /// </summary>
     public int? CropWidth { get; set; }
 
     /// <summary>
-    /// Crop height in source pixels.
+    ///     Crop height in source pixels.
     /// </summary>
     public int? CropHeight { get; set; }
 
     // ========== NEW: GeoTIFF Metadata (for validation/UI) ==========
 
     /// <summary>
-    /// Original GeoTIFF width in pixels.
+    ///     Original GeoTIFF width in pixels.
     /// </summary>
     public int? GeoTiffOriginalWidth { get; set; }
 
     /// <summary>
-    /// Original GeoTIFF height in pixels.
+    ///     Original GeoTIFF height in pixels.
     /// </summary>
     public int? GeoTiffOriginalHeight { get; set; }
 
     /// <summary>
-    /// GeoTIFF projection/CRS name.
+    ///     GeoTIFF projection/CRS name.
     /// </summary>
     public string? GeoTiffProjectionName { get; set; }
 
     /// <summary>
-    /// Native pixel size in meters (average of X and Y).
+    ///     Native pixel size in meters (average of X and Y).
     /// </summary>
     public float? NativePixelSizeMeters { get; set; }
 
     // ========== NEW: Per-Material OSM Feature Selections ==========
 
     /// <summary>
-    /// Per-material layer source settings.
-    /// Key: Material internal name, Value: Layer source settings including OSM features.
+    ///     Per-material layer source settings.
+    ///     Key: Material internal name, Value: Layer source settings including OSM features.
     /// </summary>
     public Dictionary<string, MaterialLayerSettings>? MaterialLayerSettings { get; set; }
 }
 
 /// <summary>
-/// Per-material layer source configuration for preset export/import.
+///     Per-material layer source configuration for preset export/import.
 /// </summary>
 public class MaterialLayerSettings
 {
     /// <summary>
-    /// The type of layer source (None, PngFile, or OsmFeatures).
+    ///     The type of layer source (None, PngFile, or OsmFeatures).
     /// </summary>
     public LayerSourceType LayerSourceType { get; set; }
 
     /// <summary>
-    /// Selected OSM features (references only, data will be re-fetched on import).
+    ///     Selected OSM features (references only, data will be re-fetched on import).
     /// </summary>
     public List<OsmFeatureReference>? OsmFeatureSelections { get; set; }
 
     /// <summary>
-    /// Material order in the terrain layer stack.
+    ///     Material order in the terrain layer stack.
     /// </summary>
     public int? Order { get; set; }
 
     /// <summary>
-    /// Path to the layer map PNG file.
+    ///     Path to the layer map PNG file.
     /// </summary>
     public string? LayerMapPath { get; set; }
 
     /// <summary>
-    /// Whether this material has road smoothing enabled.
+    ///     Whether this material has road smoothing enabled.
     /// </summary>
     public bool IsRoadMaterial { get; set; }
 
     /// <summary>
-    /// Road smoothing settings (only populated if IsRoadMaterial is true).
+    ///     Road smoothing settings (only populated if IsRoadMaterial is true).
     /// </summary>
     public RoadSmoothingSettings? RoadSmoothing { get; set; }
 }
 
 /// <summary>
-/// Road smoothing settings for preset export/import.
+///     Road smoothing settings for preset export/import.
 /// </summary>
 public class RoadSmoothingSettings
 {
@@ -194,16 +206,12 @@ public class RoadSmoothingSettings
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
     // Algorithm settings
-    public string Approach { get; set; } = "Spline";
     public string BlendFunctionType { get; set; } = "Cosine";
     public float CrossSectionIntervalMeters { get; set; } = 0.5f;
     public bool EnableTerrainBlending { get; set; } = true;
 
     // Spline parameters
     public SplineParametersSettings? SplineParameters { get; set; }
-
-    // DirectMask parameters
-    public DirectMaskParametersSettings? DirectMaskParameters { get; set; }
 
     // Post-processing
     public PostProcessingSettings? PostProcessing { get; set; }
@@ -216,10 +224,11 @@ public class RoadSmoothingSettings
 }
 
 /// <summary>
-/// Spline parameters for road smoothing preset.
+///     Spline parameters for road smoothing preset.
 /// </summary>
 public class SplineParametersSettings
 {
+    public string SplineInterpolationType { get; set; } = "SmoothInterpolated";
     public float Tension { get; set; } = 0.2f;
     public float Continuity { get; set; } = 0.7f;
     public float Bias { get; set; }
@@ -239,18 +248,7 @@ public class SplineParametersSettings
 }
 
 /// <summary>
-/// DirectMask parameters for road smoothing preset.
-/// </summary>
-public class DirectMaskParametersSettings
-{
-    public int SmoothingWindowSize { get; set; } = 10;
-    public int RoadPixelSearchRadius { get; set; } = 3;
-    public bool UseButterworthFilter { get; set; } = true;
-    public int ButterworthFilterOrder { get; set; } = 3;
-}
-
-/// <summary>
-/// Post-processing settings for road smoothing preset.
+///     Post-processing settings for road smoothing preset.
 /// </summary>
 public class PostProcessingSettings
 {
@@ -263,7 +261,7 @@ public class PostProcessingSettings
 }
 
 /// <summary>
-/// Debug settings for road smoothing preset.
+///     Debug settings for road smoothing preset.
 /// </summary>
 public class DebugSettings
 {
@@ -275,10 +273,15 @@ public class DebugSettings
 }
 
 /// <summary>
-/// Junction harmonization settings for road smoothing preset.
+///     Junction harmonization settings for road smoothing preset.
 /// </summary>
 public class JunctionHarmonizationSettings
 {
+    /// <summary>
+    ///     When true, uses global junction settings. When false, uses per-material values.
+    /// </summary>
+    public bool UseGlobalSettings { get; set; } = true;
+
     public bool EnableJunctionHarmonization { get; set; } = true;
     public float JunctionDetectionRadiusMeters { get; set; } = 20.0f;
     public float JunctionBlendDistanceMeters { get; set; } = 40.0f;
@@ -289,38 +292,38 @@ public class JunctionHarmonizationSettings
 }
 
 /// <summary>
-/// Lightweight reference to an OSM feature for preset storage.
-/// Contains only the data needed to identify and re-fetch the feature.
+///     Lightweight reference to an OSM feature for preset storage.
+///     Contains only the data needed to identify and re-fetch the feature.
 /// </summary>
 public class OsmFeatureReference
 {
     /// <summary>
-    /// The OSM element ID.
+    ///     The OSM element ID.
     /// </summary>
     public long FeatureId { get; set; }
 
     /// <summary>
-    /// Human-readable display name.
+    ///     Human-readable display name.
     /// </summary>
     public string DisplayName { get; set; } = string.Empty;
 
     /// <summary>
-    /// The category (highway, landuse, natural, etc.).
+    ///     The category (highway, landuse, natural, etc.).
     /// </summary>
     public string Category { get; set; } = string.Empty;
 
     /// <summary>
-    /// The sub-category value (e.g., "primary" for highway=primary).
+    ///     The sub-category value (e.g., "primary" for highway=primary).
     /// </summary>
     public string SubCategory { get; set; } = string.Empty;
 
     /// <summary>
-    /// The geometry type of this feature.
+    ///     The geometry type of this feature.
     /// </summary>
     public OsmGeometryType GeometryType { get; set; }
 
     /// <summary>
-    /// Creates a reference from a full OsmFeatureSelection.
+    ///     Creates a reference from a full OsmFeatureSelection.
     /// </summary>
     public static OsmFeatureReference FromSelection(OsmFeatureSelection selection)
     {
@@ -335,7 +338,7 @@ public class OsmFeatureReference
     }
 
     /// <summary>
-    /// Converts back to OsmFeatureSelection (without full tags - those need to be re-fetched).
+    ///     Converts back to OsmFeatureSelection (without full tags - those need to be re-fetched).
     /// </summary>
     public OsmFeatureSelection ToSelection()
     {

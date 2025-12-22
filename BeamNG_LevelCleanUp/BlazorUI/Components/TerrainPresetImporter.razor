@@ -4,6 +4,7 @@
 @using BeamNG_LevelCleanUp.Utils
 @using BeamNgTerrainPoc.Terrain.Models
 @using BeamNgTerrainPoc.Terrain.Osm.Models
+@using SplineInterpolationType = BeamNgTerrainPoc.Terrain.Models.SplineInterpolationType
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
 @inject ISnackbar Snackbar
 
@@ -522,6 +523,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.UpdateTerrainBlock = terrainOptions["updateTerrainBlock"]!.GetValue<bool>();
                 if (terrainOptions["enableCrossMaterialHarmonization"] != null)
                     result.EnableCrossMaterialHarmonization = terrainOptions["enableCrossMaterialHarmonization"]!.GetValue<bool>();
+                if (terrainOptions["globalJunctionDetectionRadiusMeters"] != null)
+                    result.GlobalJunctionDetectionRadiusMeters = terrainOptions["globalJunctionDetectionRadiusMeters"]!.GetValue<float>();
+                if (terrainOptions["globalJunctionBlendDistanceMeters"] != null)
+                    result.GlobalJunctionBlendDistanceMeters = terrainOptions["globalJunctionBlendDistanceMeters"]!.GetValue<float>();
             }
 
             // Import crop/selection settings
@@ -716,9 +721,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             if (roadSmoothing["sideMaxSlopeDegrees"] != null)
                 settings.SideMaxSlopeDegrees = roadSmoothing["sideMaxSlopeDegrees"]!.GetValue<float>();
 
-            // Algorithm settings
-            if (roadSmoothing["approach"] != null)
-                settings.Approach = roadSmoothing["approach"]!.GetValue<string>();
+            // Algorithm settings (ignore legacy 'approach' field - spline is now only option)
             if (roadSmoothing["blendFunctionType"] != null)
                 settings.BlendFunctionType = roadSmoothing["blendFunctionType"]!.GetValue<string>();
             if (roadSmoothing["crossSectionIntervalMeters"] != null)
@@ -731,6 +734,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             if (splineParams != null)
             {
                 settings.SplineParameters = new SplineParametersSettings();
+                if (splineParams["splineInterpolationType"] != null)
+                    settings.SplineParameters.SplineInterpolationType = splineParams["splineInterpolationType"]!.GetValue<string>();
                 if (splineParams["tension"] != null)
                     settings.SplineParameters.Tension = splineParams["tension"]!.GetValue<float>();
                 if (splineParams["continuity"] != null)
@@ -765,20 +770,9 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.SplineParameters.GlobalLevelingStrength = splineParams["globalLevelingStrength"]!.GetValue<float>();
             }
 
-            // DirectMask parameters
-            var directMaskParams = roadSmoothing["directMaskParameters"];
-            if (directMaskParams != null)
-            {
-                settings.DirectMaskParameters = new DirectMaskParametersSettings();
-                if (directMaskParams["smoothingWindowSize"] != null)
-                    settings.DirectMaskParameters.SmoothingWindowSize = directMaskParams["smoothingWindowSize"]!.GetValue<int>();
-                if (directMaskParams["roadPixelSearchRadius"] != null)
-                    settings.DirectMaskParameters.RoadPixelSearchRadius = directMaskParams["roadPixelSearchRadius"]!.GetValue<int>();
-                if (directMaskParams["useButterworthFilter"] != null)
-                    settings.DirectMaskParameters.UseButterworthFilter = directMaskParams["useButterworthFilter"]!.GetValue<bool>();
-                if (directMaskParams["butterworthFilterOrder"] != null)
-                    settings.DirectMaskParameters.ButterworthFilterOrder = directMaskParams["butterworthFilterOrder"]!.GetValue<int>();
-            }
+            // DirectMask parameters - ignore (legacy, spline is now only approach)
+            // var directMaskParams = roadSmoothing["directMaskParameters"];
+            // DirectMask is no longer supported - skip this section
 
             // Post-processing settings
             var postProcessing = roadSmoothing["postProcessing"];
@@ -821,6 +815,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             if (junctionHarmonization != null)
             {
                 settings.JunctionHarmonization = new JunctionHarmonizationSettings();
+                if (junctionHarmonization["useGlobalSettings"] != null)
+                    settings.JunctionHarmonization.UseGlobalSettings = junctionHarmonization["useGlobalSettings"]!.GetValue<bool>();
                 if (junctionHarmonization["enableJunctionHarmonization"] != null)
                     settings.JunctionHarmonization.EnableJunctionHarmonization = junctionHarmonization["enableJunctionHarmonization"]!.GetValue<bool>();
                 if (junctionHarmonization["junctionDetectionRadiusMeters"] != null)
@@ -867,9 +863,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             material.RoadMaxSlopeDegrees = settings.RoadMaxSlopeDegrees;
             material.SideMaxSlopeDegrees = settings.SideMaxSlopeDegrees;
 
-            // Algorithm settings
-            if (Enum.TryParse<RoadSmoothingApproach>(settings.Approach, out var approach))
-                material.Approach = approach;
+            // Algorithm settings (ignore legacy Approach field - spline is now only option)
             if (Enum.TryParse<BlendFunctionType>(settings.BlendFunctionType, out var blendType))
                 material.BlendFunctionType = blendType;
             material.CrossSectionIntervalMeters = settings.CrossSectionIntervalMeters;
@@ -878,6 +872,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             // Spline parameters
             if (settings.SplineParameters != null)
             {
+                if (Enum.TryParse<SplineInterpolationType>(settings.SplineParameters.SplineInterpolationType, out var interpType))
+                    material.SplineInterpolationType = interpType;
                 material.SplineTension = settings.SplineParameters.Tension;
                 material.SplineContinuity = settings.SplineParameters.Continuity;
                 material.SplineBias = settings.SplineParameters.Bias;
@@ -896,14 +892,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.GlobalLevelingStrength = settings.SplineParameters.GlobalLevelingStrength;
             }
 
-            // DirectMask parameters
-            if (settings.DirectMaskParameters != null)
-            {
-                material.DirectMaskSmoothingWindowSize = settings.DirectMaskParameters.SmoothingWindowSize;
-                material.RoadPixelSearchRadius = settings.DirectMaskParameters.RoadPixelSearchRadius;
-                material.DirectMaskUseButterworthFilter = settings.DirectMaskParameters.UseButterworthFilter;
-                material.DirectMaskButterworthFilterOrder = settings.DirectMaskParameters.ButterworthFilterOrder;
-            }
+            // DirectMask parameters - ignore (legacy, spline is now only approach)
+            // if (settings.DirectMaskParameters != null) { ... }
 
             // Post-processing settings
             if (settings.PostProcessing != null)
@@ -930,6 +920,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             // Junction harmonization settings
             if (settings.JunctionHarmonization != null)
             {
+                material.UseGlobalJunctionSettings = settings.JunctionHarmonization.UseGlobalSettings;
                 material.EnableJunctionHarmonization = settings.JunctionHarmonization.EnableJunctionHarmonization;
                 material.JunctionDetectionRadiusMeters = settings.JunctionHarmonization.JunctionDetectionRadiusMeters;
                 material.JunctionBlendDistanceMeters = settings.JunctionHarmonization.JunctionBlendDistanceMeters;
