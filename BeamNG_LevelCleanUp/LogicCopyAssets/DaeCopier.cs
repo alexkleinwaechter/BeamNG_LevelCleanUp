@@ -1,4 +1,5 @@
 using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
@@ -43,13 +44,23 @@ public class DaeCopier
     private void CopyDaeFiles(string sourceDaePath, string targetDaePath)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(targetDaePath));
-        _fileCopyHandler.CopyFile(sourceDaePath, targetDaePath);
+        
+        // Resolve the source path if it's a BeamNG relative path (starts with / or doesn't have drive letter)
+        var resolvedSourcePath = sourceDaePath;
+        if (!Path.IsPathRooted(sourceDaePath) || !Path.IsPathFullyQualified(sourceDaePath))
+        {
+            // The source path is a BeamNG-style path like "/levels/levelname/art/shapes/..."
+            // Resolve it using the source level path from PathResolver
+            resolvedSourcePath = PathResolver.ResolvePath(PathResolver.LevelPathCopyFrom, sourceDaePath, true);
+        }
+        
+        _fileCopyHandler.CopyFile(resolvedSourcePath, targetDaePath);
 
         // Try to copy the compiled .cdae file as well
         try
         {
             _fileCopyHandler.CopyFile(
-                Path.ChangeExtension(sourceDaePath, ".cdae"),
+                Path.ChangeExtension(resolvedSourcePath, ".cdae"),
                 Path.ChangeExtension(targetDaePath, ".cdae")
             );
         }
