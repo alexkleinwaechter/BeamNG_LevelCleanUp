@@ -27,10 +27,10 @@
             Export Preset
         </MudButton>
     </MudStack>
-    @if (!CanExport && Materials.Any())
+    @if (!CanExport && !Materials.Any())
     {
-        <MudAlert Severity="Severity.Warning" Class="mt-3" Dense="true">
-            Run terrain generation first to enable preset export.
+        <MudAlert Severity="Severity.Info" Class="mt-3" Dense="true">
+            Load a level with terrain materials to enable preset export.
         </MudAlert>
     }
     @if (!string.IsNullOrEmpty(LastExportPath))
@@ -77,13 +77,12 @@
     private int _roadMaterialsExported;
     
     /// <summary>
-    /// Export is only enabled after terrain generation has been run.
-    /// We check for the existence of the .ter file which is created during generation.
+    /// Export is enabled when we have materials and a valid working directory.
+    /// Layer maps will be exported from MT_TerrainGeneration if available, otherwise black images are generated.
     /// </summary>
     private bool CanExport => Materials.Any() && 
                               !string.IsNullOrEmpty(TerrainName) && 
-                              !string.IsNullOrEmpty(WorkingDirectory) &&
-                              File.Exists(Path.Combine(WorkingDirectory, $"{TerrainName}.ter"));
+                              !string.IsNullOrEmpty(WorkingDirectory);
 
     private async Task SelectExportFolder()
     {
@@ -185,43 +184,25 @@
         
         if (!string.IsNullOrEmpty(sourceHeightmapPath))
         {
-            File.Copy(sourceHeightmapPath, Path.Combine(exportFolder, heightmapExportName), true);
+            var targetHeightmapPath = Path.Combine(exportFolder, heightmapExportName);
+            
+            // Only copy if source and target are different files
+            if (!string.Equals(Path.GetFullPath(sourceHeightmapPath), Path.GetFullPath(targetHeightmapPath), StringComparison.OrdinalIgnoreCase))
+            {
+                CopyFileWithRetry(sourceHeightmapPath, targetHeightmapPath);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported heightmap: {heightmapExportName}");
+            }
             preset["heightMapPath"] = $"/levels/{levelName}/import/{heightmapExportName}";
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported heightmap: {heightmapExportName}");
         }
         
         // ========================================
-        // 2. HOLEMAP (required by BeamNG - generate black if not exists)
+        // 2. HOLEMAP (required by BeamNG - always generate black)
         // ========================================
+        // BeamNG requires a holemap but we don't support hole editing, so always generate a black (no holes) image
         var holemapExportName = $"{TerrainName}_holemap.png";
         var holemapExportPath = Path.Combine(exportFolder, holemapExportName);
-        var possibleHolemapPaths = new[]
-        {
-            Path.Combine(WorkingDirectory, $"{TerrainName}_holemap.png"),
-            Path.Combine(WorkingDirectory, "import", $"{TerrainName}_holemap.png"),
-            Path.Combine(Path.GetDirectoryName(HeightmapPath) ?? "", $"{TerrainName}_holemap.png")
-        };
-        
-        var holemapFound = false;
-        foreach (var holemapPath in possibleHolemapPaths)
-        {
-            if (File.Exists(holemapPath))
-            {
-                File.Copy(holemapPath, holemapExportPath, true);
-                holemapFound = true;
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported holemap: {holemapExportName}");
-                break;
-            }
-        }
-        
-        // Generate black holemap if none exists (BeamNG requires it)
-        if (!holemapFound)
-        {
-            GenerateBlackLayerMap(holemapExportPath, TerrainSize);
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Generated empty holemap: {holemapExportName}");
-        }
-        
-        // Always include holemap in preset JSON
+        GenerateBlackLayerMap(holemapExportPath, TerrainSize);
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Generated holemap: {holemapExportName}");
         preset["holeMapPath"] = $"/levels/{levelName}/import/{holemapExportName}";
         
         // ========================================
@@ -230,8 +211,14 @@
         if (HeightmapSourceType == HeightmapSourceType.GeoTiffFile && !string.IsNullOrEmpty(GeoTiffPath) && File.Exists(GeoTiffPath))
         {
             var geoTiffExportName = Path.GetFileName(GeoTiffPath);
-            File.Copy(GeoTiffPath, Path.Combine(exportFolder, geoTiffExportName), true);
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported GeoTIFF source: {geoTiffExportName}");
+            var targetGeoTiffPath = Path.Combine(exportFolder, geoTiffExportName);
+            
+            // Only copy if source and target are different files
+            if (!string.Equals(Path.GetFullPath(GeoTiffPath), Path.GetFullPath(targetGeoTiffPath), StringComparison.OrdinalIgnoreCase))
+            {
+                CopyFileWithRetry(GeoTiffPath, targetGeoTiffPath);
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported GeoTIFF source: {geoTiffExportName}");
+            }
         }
         else if (HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory && !string.IsNullOrEmpty(GeoTiffDirectory) && Directory.Exists(GeoTiffDirectory))
         {
@@ -240,26 +227,37 @@
             if (File.Exists(combinedGeoTiffPath))
             {
                 var combinedExportName = $"{TerrainName}_combined.tif";
-                File.Copy(combinedGeoTiffPath, Path.Combine(exportFolder, combinedExportName), true);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported combined GeoTIFF: {combinedExportName}");
+                var targetCombinedPath = Path.Combine(exportFolder, combinedExportName);
+                
+                // Only copy if source and target are different files
+                if (!string.Equals(Path.GetFullPath(combinedGeoTiffPath), Path.GetFullPath(targetCombinedPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    CopyFileWithRetry(combinedGeoTiffPath, targetCombinedPath);
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported combined GeoTIFF: {combinedExportName}");
+                }
             }
             else
             {
-                // Copy individual tiles to a subfolder
+                // Copy individual tiles to a subfolder (only if source directory is different from target)
                 var tilesExportFolder = Path.Combine(exportFolder, "geotiff_tiles");
-                Directory.CreateDirectory(tilesExportFolder);
-                var tiffFiles = Directory.GetFiles(GeoTiffDirectory, "*.tif", SearchOption.TopDirectoryOnly)
-                    .Concat(Directory.GetFiles(GeoTiffDirectory, "*.tiff", SearchOption.TopDirectoryOnly))
-                    .Distinct();
-                var tileCount = 0;
-                foreach (var tiffFile in tiffFiles)
+                
+                // Only copy if source directory is different from target
+                if (!string.Equals(Path.GetFullPath(GeoTiffDirectory), Path.GetFullPath(tilesExportFolder), StringComparison.OrdinalIgnoreCase))
                 {
-                    File.Copy(tiffFile, Path.Combine(tilesExportFolder, Path.GetFileName(tiffFile)), true);
-                    tileCount++;
-                }
-                if (tileCount > 0)
-                {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported {tileCount} GeoTIFF tile(s) to geotiff_tiles/");
+                    Directory.CreateDirectory(tilesExportFolder);
+                    var tiffFiles = Directory.GetFiles(GeoTiffDirectory, "*.tif", SearchOption.TopDirectoryOnly)
+                        .Concat(Directory.GetFiles(GeoTiffDirectory, "*.tiff", SearchOption.TopDirectoryOnly))
+                        .Distinct();
+                    var tileCount = 0;
+                    foreach (var tiffFile in tiffFiles)
+                    {
+                        CopyFileWithRetry(tiffFile, Path.Combine(tilesExportFolder, Path.GetFileName(tiffFile)));
+                        tileCount++;
+                    }
+                    if (tileCount > 0)
+                    {
+                        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported {tileCount} GeoTIFF tile(s) to geotiff_tiles/");
+                    }
                 }
             }
         }
@@ -267,10 +265,13 @@
         // ========================================
         // 4. LAYER MAPS (opacity maps) - ALL materials
         // ========================================
+        // Layer maps come from different sources:
+        // 1. PNG file source: mat.LayerMapPath points to an external file
+        // 2. OSM features: generated during terrain generation in MT_TerrainGeneration folder
+        // 3. No source: generate black (empty) image
         var opacityMaps = new JsonArray();
         var orderedMaterials = Materials.OrderBy(m => m.Order).ToList();
         var materialsWithLayerMap = 0;
-        var materialsWithOsmLayerMap = 0;
         var materialsWithGeneratedBlack = 0;
         
         foreach (var mat in orderedMaterials)
@@ -279,42 +280,47 @@
             var layerMapExportName = $"{TerrainName}_layerMap_{mat.Order}_{safeInternalName}.png";
             var targetLayerMapPath = Path.Combine(exportFolder, layerMapExportName);
             
-            // Try to find the layer map from different sources:
-            // 1. Explicit LayerMapPath (for PNG file source)
-            // 2. OSM-generated layer map in debug folder (for OSM features source)
-            // 3. Generate black (empty) PNG as fallback
-            
             string? sourceLayerMapPath = null;
             
-            // Source 1: Explicit LayerMapPath (PNG file source)
-            if (!string.IsNullOrEmpty(mat.LayerMapPath) && File.Exists(mat.LayerMapPath))
+            // Source 1: Explicit LayerMapPath for PNG file source (external file)
+            if (mat.LayerSourceType == LayerSourceType.PngFile && 
+                !string.IsNullOrEmpty(mat.LayerMapPath) && 
+                File.Exists(mat.LayerMapPath))
             {
                 sourceLayerMapPath = mat.LayerMapPath;
             }
-            // Source 2: OSM-generated layer map from terrain generation
-            else if (mat.LayerSourceType == LayerSourceType.OsmFeatures && Directory.Exists(debugPath))
+            // Source 2: OSM-generated layer map in debug folder
+            else if (Directory.Exists(debugPath))
             {
                 var osmLayerMapPath = Path.Combine(debugPath, $"{safeInternalName}_osm_layer.png");
                 if (File.Exists(osmLayerMapPath))
                 {
                     sourceLayerMapPath = osmLayerMapPath;
                 }
-            }
-            
-            if (!string.IsNullOrEmpty(sourceLayerMapPath) && File.Exists(sourceLayerMapPath))
-            {
-                File.Copy(sourceLayerMapPath, targetLayerMapPath, true);
-                
-                if (mat.LayerSourceType == LayerSourceType.OsmFeatures)
-                {
-                    materialsWithOsmLayerMap++;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported OSM layer map [{mat.Order}]: {layerMapExportName}");
-                }
                 else
                 {
-                    materialsWithLayerMap++;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported layer map [{mat.Order}]: {layerMapExportName}");
+                    // Try generic layer map naming
+                    var genericLayerMapPath = Path.Combine(debugPath, $"{safeInternalName}_layer.png");
+                    if (File.Exists(genericLayerMapPath))
+                    {
+                        sourceLayerMapPath = genericLayerMapPath;
+                    }
                 }
+            }
+            
+            if (!string.IsNullOrEmpty(sourceLayerMapPath))
+            {
+                // Check if source and target are the same file (avoid copy-to-self)
+                var sourceFullPath = Path.GetFullPath(sourceLayerMapPath);
+                var targetFullPath = Path.GetFullPath(targetLayerMapPath);
+                
+                if (!string.Equals(sourceFullPath, targetFullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    CopyFileWithRetry(sourceLayerMapPath, targetLayerMapPath);
+                }
+                
+                materialsWithLayerMap++;
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported layer map [{mat.Order}]: {layerMapExportName}");
             }
             else
             {
@@ -331,8 +337,7 @@
         {
             preset["opacityMaps"] = opacityMaps;
             var summary = $"Total layer maps: {opacityMaps.Count}";
-            if (materialsWithLayerMap > 0) summary += $", {materialsWithLayerMap} from PNG";
-            if (materialsWithOsmLayerMap > 0) summary += $", {materialsWithOsmLayerMap} from OSM";
+            if (materialsWithLayerMap > 0) summary += $", {materialsWithLayerMap} from generation";
             if (materialsWithGeneratedBlack > 0) summary += $", {materialsWithGeneratedBlack} empty/black";
             PubSubChannel.SendMessage(PubSubMessageType.Info, summary);
         }
@@ -353,13 +358,37 @@
         // Store relative paths (just filenames) for portability
         // When importing, the importer should look in the same folder as the preset JSON
         
+        // Determine the exported GeoTIFF filename (stored in preset folder for portability)
+        string? exportedGeoTiffFileName = null;
+        if (HeightmapSourceType == HeightmapSourceType.GeoTiffFile && !string.IsNullOrEmpty(GeoTiffPath) && File.Exists(GeoTiffPath))
+        {
+            exportedGeoTiffFileName = Path.GetFileName(GeoTiffPath);
+        }
+        else if (HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
+        {
+            // For tile directories, we export the combined GeoTIFF
+            var debugPath = Path.Combine(WorkingDirectory, "MT_TerrainGeneration");
+            var combinedGeoTiffPath = Path.Combine(debugPath, $"{TerrainName}_combined.tif");
+            if (File.Exists(combinedGeoTiffPath))
+            {
+                exportedGeoTiffFileName = $"{TerrainName}_combined.tif";
+            }
+            else
+            {
+                // Tiles are in a subfolder
+                exportedGeoTiffFileName = "geotiff_tiles"; // Directory name
+            }
+        }
+        
         var appSettings = new JsonObject
         {
             ["version"] = "2.0",
             ["heightmapSource"] = new JsonObject
             {
                 ["type"] = HeightmapSourceType.ToString(),
-                // Store original paths for reference, but exported files are in the preset folder
+                // Store the exported filename for portable preset loading
+                ["exportedGeoTiffFileName"] = exportedGeoTiffFileName,
+                // Store original paths for reference (may not exist on another computer)
                 ["originalGeoTiffPath"] = GeoTiffPath,
                 ["originalGeoTiffDirectory"] = GeoTiffDirectory
             },
@@ -522,25 +551,102 @@
     }
 
     /// <summary>
-    /// Generates a black (empty) layer map PNG file.
-    /// BeamNG requires ALL terrain materials to have a corresponding opacity/layer map entry.
-    /// Materials without actual painted data get a black (0) image which means "no coverage".
+    /// Copies a file with retry logic to handle potential file locking issues.
+    /// This handles both source files locked by terrain generation and
+    /// destination files locked by Windows Explorer, antivirus, or previous exports.
     /// </summary>
-    /// <param name="outputPath">Full path where the PNG should be saved</param>
-    /// <param name="size">Width and height of the image (should match terrain size)</param>
-    /// <summary>
-    /// Generates a black (empty) layer map PNG file.
-    /// BeamNG requires ALL terrain materials to have a corresponding opacity/layer map entry.
-    /// Materials without actual painted data get a black (0) image which means "no coverage".
-    /// </summary>
-    /// <param name="outputPath">Full path where the PNG should be saved</param>
-    /// <param name="size">Width and height of the image (should match terrain size)</param>
-    private void GenerateBlackLayerMap(string outputPath, int size)
+    /// <param name="sourcePath">Source file path</param>
+    /// <param name="targetPath">Target file path</param>
+    /// <param name="maxRetries">Maximum number of retry attempts</param>
+    /// <param name="retryDelayMs">Base delay between retries in milliseconds</param>
+    private static void CopyFileWithRetry(string sourcePath, string targetPath, int maxRetries = 5, int retryDelayMs = 200)
     {
-        // Use 8-bit grayscale (L8) - black (0) means no coverage for this material
-        using var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.L8>(size, size);
-        // Image is already initialized to black (all zeros) by default
-        SixLabors.ImageSharp.ImageExtensions.SaveAsPng(image, outputPath);
+        Exception? lastException = null;
+        
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                // If destination exists and might be locked, try to delete it first
+                if (attempt > 0 && File.Exists(targetPath))
+                {
+                    try
+                    {
+                        File.Delete(targetPath);
+                    }
+                    catch (IOException)
+                    {
+                        // Ignore delete failure, the copy might still work
+                    }
+                }
+                
+                File.Copy(sourcePath, targetPath, true);
+                return; // Success
+            }
+            catch (IOException ex) when (attempt < maxRetries)
+            {
+                lastException = ex;
+                // File might be locked, wait with exponential backoff and retry
+                Thread.Sleep(retryDelayMs * (attempt + 1));
+            }
+        }
+        
+        // If we get here, all retries failed - throw the last exception
+        throw lastException ?? new IOException($"Failed to copy {sourcePath} to {targetPath} after {maxRetries} retries");
+    }
+
+    /// <summary>
+    /// Generates a black (empty) layer map PNG file with retry logic.
+    /// BeamNG requires ALL terrain materials to have a corresponding opacity/layer map entry.
+    /// Materials without actual painted data get a black (0) image which means "no coverage".
+    /// Uses explicit FileStream with FileShare.ReadWrite to prevent locking issues.
+    /// </summary>
+    /// <param name="outputPath">Full path where the PNG should be saved</param>
+    /// <param name="size">Width and height of the image (should match terrain size)</param>
+    private static void GenerateBlackLayerMap(string outputPath, int size)
+    {
+        Exception? lastException = null;
+        const int maxRetries = 5;
+        const int retryDelayMs = 200;
+        
+        for (var attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                // If destination exists and might be locked, try to delete it first
+                if (File.Exists(outputPath))
+                {
+                    try
+                    {
+                        File.Delete(outputPath);
+                    }
+                    catch (IOException)
+                    {
+                        // Ignore delete failure, the save might still work
+                    }
+                }
+                
+                // Use 8-bit grayscale (L8) - black (0) means no coverage for this material
+                using var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.L8>(size, size);
+                // Image is already initialized to black (all zeros) by default
+                
+                // Use explicit FileStream with FileShare.ReadWrite to prevent locking issues
+                // This allows other processes (Windows Explorer, etc.) to read the file while we write
+                using var stream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                SixLabors.ImageSharp.ImageExtensions.SaveAsPng(image, stream);
+                stream.Flush();
+                return; // Success
+            }
+            catch (IOException ex) when (attempt < maxRetries)
+            {
+                lastException = ex;
+                // File might be locked, wait with exponential backoff and retry
+                Thread.Sleep(retryDelayMs * (attempt + 1));
+            }
+        }
+        
+        // If we get here, all retries failed - throw the last exception
+        throw lastException ?? new IOException($"Failed to generate black layer map at {outputPath} after {maxRetries} retries");
     }
 
     public void Reset()

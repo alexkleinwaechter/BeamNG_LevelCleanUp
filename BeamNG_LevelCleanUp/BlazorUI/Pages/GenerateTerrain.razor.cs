@@ -38,8 +38,12 @@ public partial class GenerateTerrain
     private bool _openDrawer;
     private TerrainPresetExporter? _presetExporter;
     private TerrainPresetImporter? _presetImporter;
+    private CropAnchorSelector? _cropAnchorSelector;
     private bool _showErrorLog;
     private bool _showWarningLog;
+    
+    // Pending crop settings from preset import (applied after GeoTIFF metadata is loaded)
+    private (int offsetX, int offsetY)? _pendingCropOffsets;
 
     // Convenience accessors for state properties (to minimize razor changes)
     private List<string> _errors => _state.Errors;
@@ -699,29 +703,73 @@ public partial class GenerateTerrain
         if (!string.IsNullOrEmpty(result.HeightmapPath))
             _heightmapPath = result.HeightmapPath;
 
-        // ========== NEW: Apply enhanced preset settings ==========
+        // ========== Apply enhanced preset settings ==========
 
         // Apply heightmap source type
-        if (result.HeightmapSourceType.HasValue) _heightmapSourceType = result.HeightmapSourceType.Value;
+        if (result.HeightmapSourceType.HasValue) 
+            _heightmapSourceType = result.HeightmapSourceType.Value;
 
-        // Apply GeoTIFF paths and trigger metadata read
-        if (!string.IsNullOrEmpty(result.GeoTiffPath))
-        {
-            _geoTiffPath = result.GeoTiffPath;
-            if (File.Exists(result.GeoTiffPath))
-                // Read GeoTIFF metadata to restore bounding box and geo info
-                await ReadGeoTiffMetadata();
-        }
-
-        if (!string.IsNullOrEmpty(result.GeoTiffDirectory))
-        {
-            _geoTiffDirectory = result.GeoTiffDirectory;
-            if (Directory.Exists(result.GeoTiffDirectory)) await ReadGeoTiffMetadata();
-        }
-
-        // Apply terrain size (from preset)
+        // Apply terrain size BEFORE reading GeoTIFF (needed for crop calculations)
         if (result.TerrainSize.HasValue)
             _terrainSize = result.TerrainSize.Value;
+
+        // Store pending crop offsets (will be applied after GeoTIFF metadata is loaded)
+        // CRITICAL: We need to store these BEFORE calling ReadGeoTiffMetadata because
+        // the CropAnchorSelector component will recenter when it receives new GeoTIFF dimensions
+        if (result.CropOffsetX.HasValue && result.CropOffsetY.HasValue &&
+            result.CropWidth.HasValue && result.CropHeight.HasValue &&
+            result.CropWidth.Value > 0 && result.CropHeight.Value > 0)
+        {
+            _pendingCropOffsets = (result.CropOffsetX.Value, result.CropOffsetY.Value);
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Preset contains crop settings: offset ({result.CropOffsetX}, {result.CropOffsetY}), " +
+                $"size {result.CropWidth}x{result.CropHeight} - will apply after GeoTIFF loads");
+        }
+        else
+        {
+            _pendingCropOffsets = null;
+        }
+
+        // Apply GeoTIFF paths and trigger metadata read
+        // The GeoTIFF must be re-loaded to populate dimensions and bounding box
+        bool geoTiffLoaded = false;
+        
+        if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile && 
+            !string.IsNullOrEmpty(result.GeoTiffPath))
+        {
+            _geoTiffPath = result.GeoTiffPath;
+            _geoTiffDirectory = null; // Clear the other source
+            
+            if (File.Exists(result.GeoTiffPath))
+            {
+                // Read GeoTIFF metadata to restore bounding box and geo info
+                await ReadGeoTiffMetadata();
+                geoTiffLoaded = true;
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"GeoTIFF file not found: {result.GeoTiffPath}. Please browse to select the file.");
+            }
+        }
+        else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory && 
+                 !string.IsNullOrEmpty(result.GeoTiffDirectory))
+        {
+            _geoTiffDirectory = result.GeoTiffDirectory;
+            _geoTiffPath = null; // Clear the other source
+            
+            if (Directory.Exists(result.GeoTiffDirectory))
+            {
+                await ReadGeoTiffMetadata();
+                geoTiffLoaded = true;
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"GeoTIFF directory not found: {result.GeoTiffDirectory}. Please browse to select the folder.");
+            }
+        }
 
         // Apply terrain generation options
         if (result.UpdateTerrainBlock.HasValue)
@@ -736,36 +784,16 @@ public partial class GenerateTerrain
         if (result.GlobalJunctionBlendDistanceMeters.HasValue)
             _globalJunctionBlendDistanceMeters = result.GlobalJunctionBlendDistanceMeters.Value;
 
-        // Apply crop settings (for GeoTIFF mode)
-        // Note: The CropAnchorSelector component will need to be notified of these changes
-        if (result.CropOffsetX.HasValue && result.CropOffsetY.HasValue &&
-            result.CropWidth.HasValue && result.CropHeight.HasValue)
+        // Apply GeoTIFF metadata from preset (as fallback if GeoTIFF couldn't be loaded)
+        if (!geoTiffLoaded)
         {
-            // Create a CropResult from the imported settings
-            _cropResult = new CropResult
-            {
-                OffsetX = result.CropOffsetX.Value,
-                OffsetY = result.CropOffsetY.Value,
-                CropWidth = result.CropWidth.Value,
-                CropHeight = result.CropHeight.Value,
-                TargetSize = _terrainSize,
-                NeedsCropping = result.CropWidth.Value > 0 && result.CropHeight.Value > 0,
-                CroppedBoundingBox = null, // Will be recalculated when GeoTIFF is loaded
-                Anchor = _cropAnchor
-            };
-
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Restored crop settings: offset ({result.CropOffsetX}, {result.CropOffsetY}), " +
-                $"size {result.CropWidth}x{result.CropHeight}");
+            if (result.GeoTiffOriginalWidth.HasValue)
+                _geoTiffOriginalWidth = result.GeoTiffOriginalWidth.Value;
+            if (result.GeoTiffOriginalHeight.HasValue)
+                _geoTiffOriginalHeight = result.GeoTiffOriginalHeight.Value;
+            if (!string.IsNullOrEmpty(result.GeoTiffProjectionName))
+                _geoTiffProjectionName = result.GeoTiffProjectionName;
         }
-
-        // Apply GeoTIFF metadata (informational - actual values come from metadata read)
-        if (result.GeoTiffOriginalWidth.HasValue)
-            _geoTiffOriginalWidth = result.GeoTiffOriginalWidth.Value;
-        if (result.GeoTiffOriginalHeight.HasValue)
-            _geoTiffOriginalHeight = result.GeoTiffOriginalHeight.Value;
-        if (!string.IsNullOrEmpty(result.GeoTiffProjectionName))
-            _geoTiffProjectionName = result.GeoTiffProjectionName;
 
         // CRITICAL: Renormalize order values to be contiguous (0, 1, 2, 3...)
         // The preset import may have set non-contiguous order values
@@ -773,7 +801,45 @@ public partial class GenerateTerrain
 
         // Refresh the drop container to reflect the new order in the UI
         _dropContainer?.Refresh();
-        StateHasChanged();
+        
+        // Trigger UI refresh
+        await InvokeAsync(StateHasChanged);
+        
+        // If GeoTIFF was loaded and we have pending crop offsets, apply them now
+        // We need to wait for the UI to render the CropAnchorSelector first
+        if (geoTiffLoaded && _pendingCropOffsets.HasValue)
+        {
+            // Use a small delay to ensure the CropAnchorSelector component is rendered
+            await Task.Delay(100);
+            await ApplyPendingCropOffsets();
+        }
+    }
+    
+    /// <summary>
+    /// Applies pending crop offsets that were stored during preset import.
+    /// This should be called after the CropAnchorSelector component is rendered.
+    /// </summary>
+    private async Task ApplyPendingCropOffsets()
+    {
+        if (!_pendingCropOffsets.HasValue)
+            return;
+            
+        var (offsetX, offsetY) = _pendingCropOffsets.Value;
+        _pendingCropOffsets = null;
+        
+        if (_cropAnchorSelector != null)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Applying restored crop offsets: ({offsetX}, {offsetY})");
+            
+            await _cropAnchorSelector.SetCropOffsetsAsync(offsetX, offsetY, notifyChange: true);
+        }
+        else
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                "Could not apply crop offsets - CropAnchorSelector component not available yet. " +
+                "You may need to manually adjust the crop position.");
+        }
     }
 
     private async Task OnWorkingDirectorySelected(string folder)

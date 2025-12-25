@@ -16,10 +16,10 @@ public partial class CropAnchorSelector
     // Minimap display constants
     private const int MaxMinimapSize = 300;
     private const int MinMinimapSize = 200;
-    
+
     // Enlarged view constants
     private const int EnlargedMaxSize = 700;
-    
+
     private int _dragStartOffsetX;
     private int _dragStartOffsetY;
     private double _dragStartX;
@@ -28,30 +28,32 @@ public partial class CropAnchorSelector
     // Dragging state
     private bool _isDragging;
     private bool _isDraggingEnlarged;
+    private bool _isInitialized;
+    private float _mapOpacity = 0.85f;
     private ElementReference _minimapElement;
+
+    // Flag to track if we need to fire event after render
+    private bool _needsEventNotification;
+    private GeoBoundingBox? _previousBoundingBox;
+    private float _previousMetersPerPixel;
+    private float _previousNativePixelSizeMeters;
+    private int _previousOriginalHeight;
+
+    // Track previous parameter values to detect changes
+    private int _previousOriginalWidth;
+    private int _previousTargetSize;
 
     // Calculated selection bounding box (updated on offset change)
     private GeoBoundingBox? _selectionBoundingBox;
 
-    // OSM map background toggle and opacity
-    private bool _showOsmBackground = true;
-    private float _mapOpacity = 0.85f;
-    
     // Enlarged view state
     private bool _showEnlargedView;
 
-    // Track previous parameter values to detect changes
-    private int _previousOriginalWidth;
-    private int _previousOriginalHeight;
-    private int _previousTargetSize;
-    private float _previousMetersPerPixel;
-    private float _previousNativePixelSizeMeters;
-    private GeoBoundingBox? _previousBoundingBox;
-    private bool _isInitialized;
+    // OSM map background toggle and opacity
+    private bool _showOsmBackground = true;
 
     // Injected JS Runtime for clipboard and window.open
-    [Inject]
-    private IJSRuntime JS { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     /// <summary>
     ///     Title displayed at the top of the component.
@@ -149,10 +151,10 @@ public partial class CropAnchorSelector
     protected override void OnParametersSet()
     {
         // Detect if this is initial load or if key parameters changed
-        var isNewGeoTiff = OriginalWidth != _previousOriginalWidth || 
+        var isNewGeoTiff = OriginalWidth != _previousOriginalWidth ||
                            OriginalHeight != _previousOriginalHeight ||
                            !ReferenceEquals(OriginalBoundingBox, _previousBoundingBox);
-        
+
         var selectionSizeChanged = TargetSize != _previousTargetSize ||
                                    Math.Abs(MetersPerPixel - _previousMetersPerPixel) > 0.001f ||
                                    Math.Abs(NativePixelSizeMeters - _previousNativePixelSizeMeters) > 0.001f;
@@ -162,7 +164,7 @@ public partial class CropAnchorSelector
         var oldSelectionCenterX = 0.0;
         var oldSelectionCenterY = 0.0;
         var hadValidOldSelection = false;
-        
+
         if (selectionSizeChanged && _isInitialized && _previousOriginalWidth > 0 && _previousOriginalHeight > 0)
         {
             // Calculate old selection size using previous parameters
@@ -170,7 +172,7 @@ public partial class CropAnchorSelector
             var oldTargetMeters = _previousTargetSize * _previousMetersPerPixel;
             var oldSelectionSize = (int)Math.Ceiling(oldTargetMeters / oldNativePixelSize);
             oldSelectionSize = Math.Min(oldSelectionSize, Math.Min(_previousOriginalWidth, _previousOriginalHeight));
-            
+
             // Calculate the center of the old selection
             oldSelectionCenterX = CropOffsetX + oldSelectionSize / 2.0;
             oldSelectionCenterY = CropOffsetY + oldSelectionSize / 2.0;
@@ -196,26 +198,23 @@ public partial class CropAnchorSelector
         {
             // Selection size changed due to MetersPerPixel or TargetSize change
             // Try to keep the GEOGRAPHIC CENTER the same by adjusting offset
-            
+
             if (hadValidOldSelection)
             {
                 // Calculate new selection size
                 var newSelectionSize = CalculateSelectionSizePixels();
-                
+
                 // Calculate new offset to keep the same center
                 CropOffsetX = (int)Math.Round(oldSelectionCenterX - newSelectionSize / 2.0);
                 CropOffsetY = (int)Math.Round(oldSelectionCenterY - newSelectionSize / 2.0);
             }
-            
+
             // Clamp offsets to valid range (in case selection grew larger than source)
             ClampOffsets();
             RecalculateSelectionBoundingBox();
-            
+
             // Only notify if we have valid data to report
-            if (_isInitialized)
-            {
-                _needsEventNotification = true; // Mark for notification in OnAfterRenderAsync
-            }
+            if (_isInitialized) _needsEventNotification = true; // Mark for notification in OnAfterRenderAsync
         }
         else if (OriginalWidth > 0 && OriginalHeight > 0)
         {
@@ -223,9 +222,6 @@ public partial class CropAnchorSelector
             RecalculateSelectionBoundingBox();
         }
     }
-
-    // Flag to track if we need to fire event after render
-    private bool _needsEventNotification;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -462,18 +458,18 @@ public partial class CropAnchorSelector
 
         return $"width: {displayWidth}px; height: {displayHeight}px;";
     }
-    
+
     /// <summary>
-    /// Gets the minimap display width in pixels (for OsmMapTileBackground component).
+    ///     Gets the minimap display width in pixels (for OsmMapTileBackground component).
     /// </summary>
     private int GetMinimapDisplayWidth()
     {
         var scale = GetMinimapScale();
         return (int)(OriginalWidth * scale);
     }
-    
+
     /// <summary>
-    /// Gets the minimap display height in pixels (for OsmMapTileBackground component).
+    ///     Gets the minimap display height in pixels (for OsmMapTileBackground component).
     /// </summary>
     private int GetMinimapDisplayHeight()
     {
@@ -637,6 +633,25 @@ public partial class CropAnchorSelector
     {
         var result = CalculateCropResult();
         await CropResultChanged.InvokeAsync(result);
+    }
+
+    /// <summary>
+    ///     Sets the crop offsets programmatically from a preset import.
+    ///     This method allows external code to restore saved crop settings.
+    /// </summary>
+    /// <param name="offsetX">X offset in source pixels</param>
+    /// <param name="offsetY">Y offset in source pixels</param>
+    /// <param name="notifyChange">If true, fires the CropResultChanged event</param>
+    public async Task SetCropOffsetsAsync(int offsetX, int offsetY, bool notifyChange = true)
+    {
+        CropOffsetX = offsetX;
+        CropOffsetY = offsetY;
+        ClampOffsets();
+        RecalculateSelectionBoundingBox();
+
+        if (notifyChange) await NotifyCropResultChanged();
+
+        StateHasChanged();
     }
 
     /// <summary>

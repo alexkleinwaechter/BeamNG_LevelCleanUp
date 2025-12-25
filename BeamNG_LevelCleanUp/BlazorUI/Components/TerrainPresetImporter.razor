@@ -492,24 +492,91 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.HeightmapSourceType = sourceType;
                 }
 
-                result.GeoTiffPath = heightmapSource["geoTiffPath"]?.GetValue<string>();
-                result.GeoTiffDirectory = heightmapSource["geoTiffDirectory"]?.GetValue<string>();
-
-                // Validate GeoTIFF path exists
-                if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile &&
-                    !string.IsNullOrEmpty(result.GeoTiffPath) &&
-                    !File.Exists(result.GeoTiffPath))
+                // PORTABLE PRESET: First try to load the exported GeoTIFF from the preset folder
+                // The exporter saves the GeoTIFF file to the preset folder for portability
+                var exportedGeoTiffFileName = heightmapSource["exportedGeoTiffFileName"]?.GetValue<string>();
+                
+                if (!string.IsNullOrEmpty(exportedGeoTiffFileName) && !string.IsNullOrEmpty(_presetDirectory))
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"GeoTIFF file not found at saved path: {result.GeoTiffPath}");
+                    if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile)
+                    {
+                        // Single GeoTIFF file - look in preset folder
+                        var presetFolderGeoTiff = Path.Combine(_presetDirectory, exportedGeoTiffFileName);
+                        if (File.Exists(presetFolderGeoTiff))
+                        {
+                            result.GeoTiffPath = presetFolderGeoTiff;
+                            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                $"Found GeoTIFF in preset folder: {exportedGeoTiffFileName}");
+                        }
+                    }
+                    else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
+                    {
+                        // Combined GeoTIFF or tiles folder
+                        if (exportedGeoTiffFileName == "geotiff_tiles")
+                        {
+                            // Tiles were exported to a subfolder
+                            var tilesFolder = Path.Combine(_presetDirectory, "geotiff_tiles");
+                            if (Directory.Exists(tilesFolder))
+                            {
+                                result.GeoTiffDirectory = tilesFolder;
+                                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                    $"Found GeoTIFF tiles folder in preset: geotiff_tiles/");
+                            }
+                        }
+                        else
+                        {
+                            // Combined GeoTIFF file - treat as single file mode for loading
+                            var presetFolderGeoTiff = Path.Combine(_presetDirectory, exportedGeoTiffFileName);
+                            if (File.Exists(presetFolderGeoTiff))
+                            {
+                                // Switch to GeoTiffFile mode since we have the combined file
+                                result.HeightmapSourceType = HeightmapSourceType.GeoTiffFile;
+                                result.GeoTiffPath = presetFolderGeoTiff;
+                                result.GeoTiffDirectory = null;
+                                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                    $"Found combined GeoTIFF in preset folder: {exportedGeoTiffFileName}");
+                            }
+                        }
+                    }
                 }
-
-                if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
-                    !string.IsNullOrEmpty(result.GeoTiffDirectory) &&
-                    !Directory.Exists(result.GeoTiffDirectory))
+                
+                // FALLBACK: If not found in preset folder, try original paths
+                // (These may not exist on a different computer)
+                if (string.IsNullOrEmpty(result.GeoTiffPath) && string.IsNullOrEmpty(result.GeoTiffDirectory))
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"GeoTIFF directory not found at saved path: {result.GeoTiffDirectory}");
+                    var originalGeoTiffPath = heightmapSource["originalGeoTiffPath"]?.GetValue<string>();
+                    var originalGeoTiffDirectory = heightmapSource["originalGeoTiffDirectory"]?.GetValue<string>();
+                    
+                    if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile &&
+                        !string.IsNullOrEmpty(originalGeoTiffPath))
+                    {
+                        if (File.Exists(originalGeoTiffPath))
+                        {
+                            result.GeoTiffPath = originalGeoTiffPath;
+                            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                $"Using original GeoTIFF path: {originalGeoTiffPath}");
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"GeoTIFF not found in preset folder or original path: {originalGeoTiffPath}. Please browse to select the file.");
+                        }
+                    }
+                    else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
+                             !string.IsNullOrEmpty(originalGeoTiffDirectory))
+                    {
+                        if (Directory.Exists(originalGeoTiffDirectory))
+                        {
+                            result.GeoTiffDirectory = originalGeoTiffDirectory;
+                            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                $"Using original GeoTIFF directory: {originalGeoTiffDirectory}");
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"GeoTIFF directory not found in preset folder or original path: {originalGeoTiffDirectory}. Please browse to select the folder.");
+                        }
+                    }
                 }
             }
 

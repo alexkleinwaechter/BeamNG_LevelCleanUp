@@ -310,7 +310,8 @@
                              (_heightmapSourceType == HeightmapSourceType.GeoTiffFile || _heightmapSourceType == HeightmapSourceType.GeoTiffDirectory))
                         {
                             <MudItem xs="12">
-                                <CropAnchorSelector Title="GeoTIFF Selection Region"
+                                <CropAnchorSelector @ref="_cropAnchorSelector"
+                                                    Title="GeoTIFF Selection Region"
                                                     OriginalWidth="@_geoTiffOriginalWidth"
                                                     OriginalHeight="@_geoTiffOriginalHeight"
                                                     TargetSize="@_terrainSize"
