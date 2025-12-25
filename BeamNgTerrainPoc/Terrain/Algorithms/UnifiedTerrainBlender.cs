@@ -622,6 +622,11 @@ public class UnifiedTerrainBlender
         // Parallel processing for blend zone pixels only
         var options = new ParallelOptions { MaxDegreeOfParallelism = processorCount };
 
+        // Calculate maximum search radius based on largest road parameters
+        var maxRoadHalfWidth = network.Splines.Max(s => s.Parameters.RoadWidthMeters / 2.0f);
+        var maxBlendRange = network.Splines.Max(s => s.Parameters.TerrainAffectedRangeMeters);
+        var maxSearchRadius = maxRoadHalfWidth + maxBlendRange;
+
         Parallel.For(0, height, options, () => 0, (y, state, localPixelsSet) =>
         {
             for (var x = 0; x < width; x++)
@@ -632,29 +637,27 @@ public class UnifiedTerrainBlender
 
                 var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
 
-                // Find nearest cross-section for blend zone
-                var (nearest, nearestDist) = FindNearestCrossSection(worldPos, spatialIndex, metersPerPixel);
+                // Use interpolation from multiple nearby cross-sections for smoother hairpin curves
+                // This eliminates the "step" artifacts on inner curves where cross-sections overlap
+                var (interpolatedElevation, dominantOwner, blendRange, nearestDist) = 
+                    InterpolateNearbyCrossSections(worldPos, spatialIndex, metersPerPixel, maxSearchRadius);
 
-                if (nearest == null)
+                if (dominantOwner < 0 || float.IsNaN(interpolatedElevation))
                     continue;
 
-                // Get the maximum impact distance for this spline
-                var maxDist = nearest.EffectiveRoadWidth / 2.0f + nearest.EffectiveBlendRange;
+                // Get the maximum impact distance for the dominant owner
+                var maxDist = maxRoadHalfWidth + blendRange;
 
                 if (nearestDist > maxDist)
-                    continue;
-
-                // Validate elevation
-                if (float.IsNaN(nearest.TargetElevation) || float.IsInfinity(nearest.TargetElevation))
                     continue;
 
                 // Check if this is closer than any existing assignment
                 if (nearestDist < distances[y, x])
                 {
                     distances[y, x] = nearestDist;
-                    elevations[y, x] = nearest.TargetElevation;
-                    owners[y, x] = nearest.OwnerSplineId;
-                    maxBlendRanges[y, x] = nearest.EffectiveBlendRange;
+                    elevations[y, x] = interpolatedElevation;
+                    owners[y, x] = dominantOwner;
+                    maxBlendRanges[y, x] = blendRange;
                     localPixelsSet++;
                 }
             }
@@ -747,6 +750,77 @@ public class UnifiedTerrainBlender
         }
 
         return (nearest, minDist);
+    }
+
+    /// <summary>
+    ///     Interpolates elevation from multiple nearby cross-sections using inverse-distance weighting.
+    ///     This smooths inner curve artifacts at hairpin turns where cross-sections overlap.
+    ///     
+    ///     Algorithm:
+    ///     1. Find all cross-sections within the search radius
+    ///     2. Weight each by 1/distance (closer = more influence)
+    ///     3. Return weighted average elevation and dominant owner (nearest cross-section)
+    /// </summary>
+    /// <param name="worldPos">World position to interpolate for</param>
+    /// <param name="index">Spatial index of cross-sections</param>
+    /// <param name="metersPerPixel">Scale factor</param>
+    /// <param name="searchRadius">Maximum distance to search for cross-sections</param>
+    /// <returns>Interpolated elevation, dominant owner spline ID, and blend range</returns>
+    private (float elevation, int dominantOwner, float blendRange, float nearestDist) InterpolateNearbyCrossSections(
+        Vector2 worldPos,
+        Dictionary<(int, int), List<UnifiedCrossSection>> index,
+        float metersPerPixel,
+        float searchRadius)
+    {
+        var gridX = (int)(worldPos.X / metersPerPixel / SpatialIndexCellSize);
+        var gridY = (int)(worldPos.Y / metersPerPixel / SpatialIndexCellSize);
+
+        var weightedElevation = 0f;
+        var totalWeight = 0f;
+        var minDist = float.MaxValue;
+        UnifiedCrossSection? dominantCs = null;
+
+        // Determine grid search range based on search radius
+        var gridSearchRange = (int)MathF.Ceiling(searchRadius / metersPerPixel / SpatialIndexCellSize) + 1;
+        gridSearchRange = Math.Max(1, Math.Min(gridSearchRange, 3)); // Clamp to reasonable range
+
+        // Search grid cells around the position
+        for (var dy = -gridSearchRange; dy <= gridSearchRange; dy++)
+        for (var dx = -gridSearchRange; dx <= gridSearchRange; dx++)
+        {
+            var key = (gridX + dx, gridY + dy);
+            if (!index.TryGetValue(key, out var sections))
+                continue;
+
+            foreach (var cs in sections)
+            {
+                // Skip invalid elevations
+                if (!IsValidTargetElevation(cs.TargetElevation))
+                    continue;
+
+                var dist = Vector2.Distance(worldPos, cs.CenterPoint);
+                if (dist > searchRadius)
+                    continue;
+
+                // Track nearest for ownership determination
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    dominantCs = cs;
+                }
+
+                // Inverse-distance weighting with epsilon to avoid division by zero
+                // Using squared inverse distance for smoother falloff
+                var weight = 1f / MathF.Max(dist * dist, 0.01f);
+                weightedElevation += cs.TargetElevation * weight;
+                totalWeight += weight;
+            }
+        }
+
+        if (dominantCs == null || totalWeight <= 0)
+            return (float.NaN, -1, 0, float.MaxValue);
+
+        return (weightedElevation / totalWeight, dominantCs.OwnerSplineId, dominantCs.EffectiveBlendRange, minDist);
     }
 
     /// <summary>

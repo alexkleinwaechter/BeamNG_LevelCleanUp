@@ -227,14 +227,25 @@ public class UnifiedRoadSmoother
                 tempGeometry.CrossSections.Add(ucs.ToCrossSection());
             }
 
+            // Sample raw terrain elevations BEFORE smoothing for OriginalTerrainElevation
+            int mapHeight = heightMap.GetLength(0);
+            int mapWidth = heightMap.GetLength(1);
+            for (int i = 0; i < crossSections.Count; i++)
+            {
+                int px = (int)(crossSections[i].CenterPoint.X / metersPerPixel);
+                int py = (int)(crossSections[i].CenterPoint.Y / metersPerPixel);
+                px = Math.Clamp(px, 0, mapWidth - 1);
+                py = Math.Clamp(py, 0, mapHeight - 1);
+                crossSections[i].OriginalTerrainElevation = heightMap[py, px];
+            }
+
             // Calculate elevations using existing calculator
             _elevationCalculator.CalculateTargetElevations(tempGeometry, heightMap, metersPerPixel);
 
-            // Copy calculated elevations back to UnifiedCrossSections
+            // Copy calculated (smoothed) elevations back to UnifiedCrossSections
             for (int i = 0; i < crossSections.Count && i < tempGeometry.CrossSections.Count; i++)
             {
                 crossSections[i].TargetElevation = tempGeometry.CrossSections[i].TargetElevation;
-                crossSections[i].OriginalTerrainElevation = tempGeometry.CrossSections[i].TargetElevation;
                 totalCalculated++;
             }
         }
