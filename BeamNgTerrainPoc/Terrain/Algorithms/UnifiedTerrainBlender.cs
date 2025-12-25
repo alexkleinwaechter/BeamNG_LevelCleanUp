@@ -7,39 +7,37 @@ using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
-/// Single-pass terrain blender for the unified road network.
-/// 
-/// Key improvements over per-material blending:
-/// 1. Single EDT computation for the entire road network (faster)
-/// 2. Road core pixels are PROTECTED - never modified by neighbor's blend zone
-/// 3. Per-spline blend ranges are respected
-/// 4. Overlapping blend zones use smooth interpolation between both splines
-/// 
-/// This eliminates the problem where sequential material processing would
-/// overwrite previously smoothed road surfaces.
+///     Single-pass terrain blender for the unified road network.
+///     Key improvements over per-material blending:
+///     1. Single EDT computation for the entire road network (faster)
+///     2. Road core pixels are PROTECTED - never modified by neighbor's blend zone
+///     3. Per-spline blend ranges are respected
+///     4. Overlapping blend zones use smooth interpolation between both splines
+///     This eliminates the problem where sequential material processing would
+///     overwrite previously smoothed road surfaces.
 /// </summary>
 public class UnifiedTerrainBlender
 {
     /// <summary>
-    /// Spatial index cell size in meters for elevation map building.
+    ///     Spatial index cell size in meters for elevation map building.
     /// </summary>
     private const int SpatialIndexCellSize = 32;
 
     /// <summary>
-    /// Buffer added to road width for protection mask (in meters).
-    /// This ensures the protection extends slightly beyond the nominal road edge
-    /// to account for rasterization precision and prevent edge artifacts.
-    /// A value of 0.5-1.0m typically covers sub-pixel inaccuracies.
+    ///     Buffer added to road width for protection mask (in meters).
+    ///     This ensures the protection extends slightly beyond the nominal road edge
+    ///     to account for rasterization precision and prevent edge artifacts.
+    ///     A value of 0.5-1.0m typically covers sub-pixel inaccuracies.
     /// </summary>
     private const float ProtectionMaskBufferMeters = 1.0f;
 
     /// <summary>
-    /// Distance field from the last blend operation (for post-processing).
+    ///     Distance field from the last blend operation (for post-processing).
     /// </summary>
     private float[,]? _lastDistanceField;
 
     /// <summary>
-    /// Gets the last computed distance field for reuse in post-processing.
+    ///     Gets the last computed distance field for reuse in post-processing.
     /// </summary>
     /// <exception cref="InvalidOperationException">If no distance field has been computed yet.</exception>
     public float[,] GetLastDistanceField()
@@ -51,14 +49,13 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Blends the unified road network with the terrain using a single-pass protected algorithm.
-    /// 
-    /// Algorithm:
-    /// 1. Build COMBINED road core mask from ALL splines (for EDT)
-    /// 2. Build road core PROTECTION mask with ownership (filled polygons tracking which spline owns each pixel)
-    /// 3. Compute SINGLE global EDT from combined mask
-    /// 4. Build elevation map with per-pixel source spline tracking (respecting protection mask ownership)
-    /// 5. Apply protected blending (ANY road core pixel is NEVER modified by ANY blend zone)
+    ///     Blends the unified road network with the terrain using a single-pass protected algorithm.
+    ///     Algorithm:
+    ///     1. Build COMBINED road core mask from ALL splines (for EDT)
+    ///     2. Build road core PROTECTION mask with ownership (filled polygons tracking which spline owns each pixel)
+    ///     3. Compute SINGLE global EDT from combined mask
+    ///     4. Build elevation map with per-pixel source spline tracking (respecting protection mask ownership)
+    ///     5. Apply protected blending (ANY road core pixel is NEVER modified by ANY blend zone)
     /// </summary>
     /// <param name="originalHeightMap">The original terrain heightmap.</param>
     /// <param name="network">The unified road network with harmonized elevations.</param>
@@ -134,8 +131,8 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Builds a combined road core mask from all splines in the network.
-    /// White pixels (255) indicate road core areas.
+    ///     Builds a combined road core mask from all splines in the network.
+    ///     White pixels (255) indicate road core areas.
     /// </summary>
     private byte[,] BuildCombinedRoadCoreMask(
         UnifiedRoadNetwork network,
@@ -173,37 +170,34 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Builds a protection mask that marks ALL road core pixels from ALL splines,
-    /// along with ownership (which spline owns each pixel) and elevation data.
-    /// 
-    /// This is the KEY fix for the junction problem: When roads overlap at tight angles,
-    /// we need to know definitively which road owns each pixel based on the actual
-    /// road geometry, not just "nearest cross-section".
-    /// 
-    /// Priority rules for overlapping road cores:
-    /// 1. Higher priority spline wins
-    /// 2. If equal priority, first one processed wins (stable ordering)
+    ///     Builds a protection mask that marks ALL road core pixels from ALL splines,
+    ///     along with ownership (which spline owns each pixel) and elevation data.
+    ///     This is the KEY fix for the junction problem: When roads overlap at tight angles,
+    ///     we need to know definitively which road owns each pixel based on the actual
+    ///     road geometry, not just "nearest cross-section".
+    ///     Priority rules for overlapping road cores:
+    ///     1. Higher priority spline wins
+    ///     2. If equal priority, first one processed wins (stable ordering)
     /// </summary>
-    private (bool[,] protectionMask, int[,] ownershipMap, float[,] elevationMap) BuildRoadCoreProtectionMaskWithOwnership(
-        UnifiedRoadNetwork network,
-        int width,
-        int height,
-        float metersPerPixel)
+    private (bool[,] protectionMask, int[,] ownershipMap, float[,] elevationMap)
+        BuildRoadCoreProtectionMaskWithOwnership(
+            UnifiedRoadNetwork network,
+            int width,
+            int height,
+            float metersPerPixel)
     {
         var protectionMask = new bool[height, width];
         var ownershipMap = new int[height, width];
         var elevationMap = new float[height, width];
-        var priorityMap = new int[height, width];  // Track priority for conflict resolution
+        var priorityMap = new int[height, width]; // Track priority for conflict resolution
 
         // Initialize ownership to -1 (no owner)
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
         {
-            for (int x = 0; x < width; x++)
-            {
-                ownershipMap[y, x] = -1;
-                elevationMap[y, x] = float.NaN;
-                priorityMap[y, x] = int.MinValue;
-            }
+            ownershipMap[y, x] = -1;
+            elevationMap[y, x] = float.NaN;
+            priorityMap[y, x] = int.MinValue;
         }
 
         var protectedPixels = 0;
@@ -226,7 +220,7 @@ public class UnifiedTerrainBlender
             var priority = splinePriority.GetValueOrDefault(splineId, 0);
 
             // For each consecutive pair of cross-sections, fill the road core polygon
-            for (int i = 0; i < crossSections.Count - 1; i++)
+            for (var i = 0; i < crossSections.Count - 1; i++)
             {
                 var cs1 = crossSections[i];
                 var cs2 = crossSections[i + 1];
@@ -267,17 +261,16 @@ public class UnifiedTerrainBlender
 
         TerrainLogger.Info($"  Protection mask: {protectedPixels:N0} road core pixels protected");
         if (overwrittenByPriority > 0)
-        {
-            TerrainLogger.Info($"  Priority resolution: {overwrittenByPriority:N0} pixels assigned to higher-priority roads");
-        }
+            TerrainLogger.Info(
+                $"  Priority resolution: {overwrittenByPriority:N0} pixels assigned to higher-priority roads");
 
         return (protectionMask, ownershipMap, elevationMap);
     }
 
     /// <summary>
-    /// Fills a convex polygon with ownership tracking.
-    /// Higher priority splines overwrite lower priority ones.
-    /// Returns (newPixelsFilled, pixelsOverwrittenByPriority).
+    ///     Fills a convex polygon with ownership tracking.
+    ///     Higher priority splines overwrite lower priority ones.
+    ///     Returns (newPixelsFilled, pixelsOverwrittenByPriority).
     /// </summary>
     private static (int filled, int overwritten) FillConvexPolygonWithOwnership(
         bool[,] protectionMask,
@@ -307,41 +300,39 @@ public class UnifiedTerrainBlender
         maxX = Math.Min(width - 1, maxX);
 
         // Scanline fill using point-in-polygon test
-        for (int y = minY; y <= maxY; y++)
+        for (var y = minY; y <= maxY; y++)
+        for (var x = minX; x <= maxX; x++)
         {
-            for (int x = minX; x <= maxX; x++)
-            {
-                if (!IsPointInConvexPolygon(new Vector2(x, y), corners))
-                    continue;
+            if (!IsPointInConvexPolygon(new Vector2(x, y), corners))
+                continue;
 
-                // Check if we should claim this pixel
-                if (!protectionMask[y, x])
-                {
-                    // New pixel - claim it
-                    protectionMask[y, x] = true;
-                    ownershipMap[y, x] = splineId;
-                    elevationMap[y, x] = elevation;
-                    priorityMap[y, x] = priority;
-                    filledCount++;
-                }
-                else if (priority > priorityMap[y, x])
-                {
-                    // Pixel already claimed, but we have higher priority - overwrite
-                    ownershipMap[y, x] = splineId;
-                    elevationMap[y, x] = elevation;
-                    priorityMap[y, x] = priority;
-                    overwrittenCount++;
-                }
-                // else: pixel claimed by equal or higher priority road - leave it
+            // Check if we should claim this pixel
+            if (!protectionMask[y, x])
+            {
+                // New pixel - claim it
+                protectionMask[y, x] = true;
+                ownershipMap[y, x] = splineId;
+                elevationMap[y, x] = elevation;
+                priorityMap[y, x] = priority;
+                filledCount++;
             }
+            else if (priority > priorityMap[y, x])
+            {
+                // Pixel already claimed, but we have higher priority - overwrite
+                ownershipMap[y, x] = splineId;
+                elevationMap[y, x] = elevation;
+                priorityMap[y, x] = priority;
+                overwrittenCount++;
+            }
+            // else: pixel claimed by equal or higher priority road - leave it
         }
 
         return (filledCount, overwrittenCount);
     }
 
     /// <summary>
-    /// Legacy method - replaced by BuildRoadCoreProtectionMaskWithOwnership.
-    /// Kept for reference but not used.
+    ///     Legacy method - replaced by BuildRoadCoreProtectionMaskWithOwnership.
+    ///     Kept for reference but not used.
     /// </summary>
     [Obsolete("Use BuildRoadCoreProtectionMaskWithOwnership instead")]
     private bool[,] BuildRoadCoreProtectionMask(
@@ -355,9 +346,9 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Fills a convex polygon (quad) using scanline algorithm.
-    /// Returns the number of pixels filled.
-    /// This is the simple version without ownership tracking.
+    ///     Fills a convex polygon (quad) using scanline algorithm.
+    ///     Returns the number of pixels filled.
+    ///     This is the simple version without ownership tracking.
     /// </summary>
     private static int FillConvexPolygon(bool[,] mask, Vector2[] corners, int width, int height)
     {
@@ -376,30 +367,26 @@ public class UnifiedTerrainBlender
         maxX = Math.Min(width - 1, maxX);
 
         // Scanline fill using point-in-polygon test
-        for (int y = minY; y <= maxY; y++)
-        {
-            for (int x = minX; x <= maxX; x++)
+        for (var y = minY; y <= maxY; y++)
+        for (var x = minX; x <= maxX; x++)
+            if (!mask[y, x] && IsPointInConvexPolygon(new Vector2(x, y), corners))
             {
-                if (!mask[y, x] && IsPointInConvexPolygon(new Vector2(x, y), corners))
-                {
-                    mask[y, x] = true;
-                    filledCount++;
-                }
+                mask[y, x] = true;
+                filledCount++;
             }
-        }
 
         return filledCount;
     }
 
     /// <summary>
-    /// Tests if a point is inside a convex polygon using cross product method.
+    ///     Tests if a point is inside a convex polygon using cross product method.
     /// </summary>
     private static bool IsPointInConvexPolygon(Vector2 point, Vector2[] polygon)
     {
         var n = polygon.Length;
         var sign = 0;
 
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
         {
             var a = polygon[i];
             var b = polygon[(i + 1) % n];
@@ -421,7 +408,7 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Bresenham line rasterization with bounds checking.
+    ///     Bresenham line rasterization with bounds checking.
     /// </summary>
     private static void DrawLine(byte[,] mask, int x0, int y0, int x1, int y1, int width, int height)
     {
@@ -441,6 +428,7 @@ public class UnifiedTerrainBlender
                 err += dy;
                 x0 += sx;
             }
+
             if (e2 <= dx)
             {
                 err += dx;
@@ -450,8 +438,8 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Computes exact Euclidean distance field using Felzenszwalb &amp; Huttenlocher algorithm.
-    /// O(W*H) complexity.
+    ///     Computes exact Euclidean distance field using Felzenszwalb &amp; Huttenlocher algorithm.
+    ///     O(W*H) complexity.
     /// </summary>
     private float[,] ComputeDistanceField(byte[,] mask, float metersPerPixel)
     {
@@ -462,8 +450,8 @@ public class UnifiedTerrainBlender
 
         // Initialize: 0 for road pixels, INF for non-road
         for (var y = 0; y < h; y++)
-            for (var x = 0; x < w; x++)
-                dist[y, x] = mask[y, x] > 0 ? 0f : INF;
+        for (var x = 0; x < w; x++)
+            dist[y, x] = mask[y, x] > 0 ? 0f : INF;
 
         // 1D EDT per row
         var f = new float[w];
@@ -569,21 +557,19 @@ public class UnifiedTerrainBlender
 
         // Convert squared pixel distance to meters
         for (var y = 0; y < h; y++)
-            for (var x = 0; x < w; x++)
-                dist[y, x] = MathF.Sqrt(dist[y, x]) * metersPerPixel;
+        for (var x = 0; x < w; x++)
+            dist[y, x] = MathF.Sqrt(dist[y, x]) * metersPerPixel;
 
         return dist;
     }
 
     /// <summary>
-    /// Builds elevation map with per-pixel ownership tracking.
-    /// 
-    /// IMPORTANT: For pixels inside road cores (marked in protectionMask), we use the
-    /// pre-computed ownership and elevation from BuildRoadCoreProtectionMaskWithOwnership.
-    /// This ensures that road core pixels get the correct road's elevation, not just
-    /// the nearest cross-section (which could be from a different road at tight-angle junctions).
-    /// 
-    /// For pixels in blend zones (outside all road cores), we use nearest cross-section logic.
+    ///     Builds elevation map with per-pixel ownership tracking.
+    ///     IMPORTANT: For pixels inside road cores (marked in protectionMask), we use the
+    ///     pre-computed ownership and elevation from BuildRoadCoreProtectionMaskWithOwnership.
+    ///     This ensures that road core pixels get the correct road's elevation, not just
+    ///     the nearest cross-section (which could be from a different road at tight-angle junctions).
+    ///     For pixels in blend zones (outside all road cores), we use nearest cross-section logic.
     /// </summary>
     private (float[,] elevations, int[,] owners, float[,] maxBlendRanges) BuildElevationMapWithOwnership(
         UnifiedRoadNetwork network,
@@ -601,33 +587,29 @@ public class UnifiedTerrainBlender
 
         // Build spline blend range lookup
         var splineBlendRanges = network.Splines.ToDictionary(
-            s => s.SplineId, 
+            s => s.SplineId,
             s => s.Parameters.TerrainAffectedRangeMeters);
 
         // Initialize - copy core data where available
         var corePixelsUsed = 0;
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+            if (protectionMask[y, x] && coreOwnershipMap[y, x] >= 0)
             {
-                if (protectionMask[y, x] && coreOwnershipMap[y, x] >= 0)
-                {
-                    // This pixel is inside a road core - use pre-computed ownership
-                    elevations[y, x] = coreElevationMap[y, x];
-                    owners[y, x] = coreOwnershipMap[y, x];
-                    maxBlendRanges[y, x] = splineBlendRanges.GetValueOrDefault(coreOwnershipMap[y, x], 0);
-                    distances[y, x] = 0; // Inside core, distance is 0
-                    corePixelsUsed++;
-                }
-                else
-                {
-                    elevations[y, x] = float.NaN;
-                    owners[y, x] = -1;
-                    maxBlendRanges[y, x] = 0;
-                    distances[y, x] = float.MaxValue;
-                }
+                // This pixel is inside a road core - use pre-computed ownership
+                elevations[y, x] = coreElevationMap[y, x];
+                owners[y, x] = coreOwnershipMap[y, x];
+                maxBlendRanges[y, x] = splineBlendRanges.GetValueOrDefault(coreOwnershipMap[y, x], 0);
+                distances[y, x] = 0; // Inside core, distance is 0
+                corePixelsUsed++;
             }
-        }
+            else
+            {
+                elevations[y, x] = float.NaN;
+                owners[y, x] = -1;
+                maxBlendRanges[y, x] = 0;
+                distances[y, x] = float.MaxValue;
+            }
 
         TerrainLogger.Info($"  Pre-filled {corePixelsUsed:N0} road core pixels from protection mask");
 
@@ -642,7 +624,7 @@ public class UnifiedTerrainBlender
 
         Parallel.For(0, height, options, () => 0, (y, state, localPixelsSet) =>
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 // Skip pixels already handled (road cores)
                 if (protectionMask[y, x])
@@ -657,7 +639,7 @@ public class UnifiedTerrainBlender
                     continue;
 
                 // Get the maximum impact distance for this spline
-                float maxDist = nearest.EffectiveRoadWidth / 2.0f + nearest.EffectiveBlendRange;
+                var maxDist = nearest.EffectiveRoadWidth / 2.0f + nearest.EffectiveBlendRange;
 
                 if (nearestDist > maxDist)
                     continue;
@@ -682,12 +664,12 @@ public class UnifiedTerrainBlender
 
         TerrainLogger.Info($"  Set {blendPixelsSet:N0} blend zone elevation values");
         TerrainLogger.Info($"  Total: {corePixelsUsed + blendPixelsSet:N0} pixels with elevation data");
-        
+
         return (elevations, owners, maxBlendRanges);
     }
 
     /// <summary>
-    /// Builds a spatial index for fast nearest-neighbor queries.
+    ///     Builds a spatial index for fast nearest-neighbor queries.
     /// </summary>
     private Dictionary<(int, int), List<UnifiedCrossSection>> BuildSpatialIndex(
         List<UnifiedCrossSection> sections,
@@ -722,7 +704,7 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Validates that a target elevation is valid.
+    ///     Validates that a target elevation is valid.
     /// </summary>
     private static bool IsValidTargetElevation(float elevation)
     {
@@ -734,7 +716,7 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Finds the nearest cross-section to a world position using the spatial index.
+    ///     Finds the nearest cross-section to a world position using the spatial index.
     /// </summary>
     private (UnifiedCrossSection? nearest, float distance) FindNearestCrossSection(
         Vector2 worldPos,
@@ -748,36 +730,30 @@ public class UnifiedTerrainBlender
         var minDist = float.MaxValue;
 
         // Search 3x3 grid around the position
-        for (int dy = -1; dy <= 1; dy++)
+        for (var dy = -1; dy <= 1; dy++)
+        for (var dx = -1; dx <= 1; dx++)
         {
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                var key = (gridX + dx, gridY + dy);
-                if (index.TryGetValue(key, out var sections))
+            var key = (gridX + dx, gridY + dy);
+            if (index.TryGetValue(key, out var sections))
+                foreach (var cs in sections)
                 {
-                    foreach (var cs in sections)
+                    var dist = Vector2.Distance(worldPos, cs.CenterPoint);
+                    if (dist < minDist)
                     {
-                        var dist = Vector2.Distance(worldPos, cs.CenterPoint);
-                        if (dist < minDist)
-                        {
-                            minDist = dist;
-                            nearest = cs;
-                        }
+                        minDist = dist;
+                        nearest = cs;
                     }
                 }
-            }
         }
 
         return (nearest, minDist);
     }
 
     /// <summary>
-    /// Applies protected blending with per-spline blend ranges.
-    /// 
-    /// Key protection rule: ANY road core pixel (marked in protectionMask) is NEVER 
-    /// modified by ANY blend zone, regardless of which spline owns the blend zone.
-    /// 
-    /// This prevents secondary roads' blend zones from destroying primary roads at junctions.
+    ///     Applies protected blending with per-spline blend ranges.
+    ///     Key protection rule: ANY road core pixel (marked in protectionMask) is NEVER
+    ///     modified by ANY blend zone, regardless of which spline owns the blend zone.
+    ///     This prevents secondary roads' blend zones from destroying primary roads at junctions.
     /// </summary>
     private float[,] ApplyProtectedBlending(
         float[,] original,
@@ -803,23 +779,23 @@ public class UnifiedTerrainBlender
             ));
 
         // Thread-safe counters
-        int modifiedPixels = 0;
-        int roadCorePixels = 0;
-        int shoulderPixels = 0;
-        int protectedFromBlend = 0;
+        var modifiedPixels = 0;
+        var roadCorePixels = 0;
+        var shoulderPixels = 0;
+        var protectedFromBlend = 0;
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
 
         Parallel.For(0, height, options, y =>
         {
-            int localModified = 0;
-            int localCore = 0;
-            int localShoulder = 0;
-            int localProtected = 0;
+            var localModified = 0;
+            var localCore = 0;
+            var localShoulder = 0;
+            var localProtected = 0;
 
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
-                int ownerId = splineOwnerMap[y, x];
+                var ownerId = splineOwnerMap[y, x];
                 if (ownerId < 0)
                     continue; // Not near any road
 
@@ -828,14 +804,14 @@ public class UnifiedTerrainBlender
                     continue;
 
                 // Get distance from road core
-                float d = distanceField[y, x];
+                var d = distanceField[y, x];
 
                 // Get owner spline parameters
                 if (!splineParams.TryGetValue(ownerId, out var ownerParams))
                     continue;
 
-                float halfWidth = ownerParams.HalfWidth;
-                float blendRange = ownerParams.BlendRange;
+                var halfWidth = ownerParams.HalfWidth;
+                var blendRange = ownerParams.BlendRange;
                 var blendFunctionType = ownerParams.BlendFunction;
 
                 float newH;
@@ -858,10 +834,10 @@ public class UnifiedTerrainBlender
                     }
 
                     // Safe to blend - Smooth transition to terrain
-                    float t = (d - halfWidth) / blendRange;
+                    var t = (d - halfWidth) / blendRange;
                     t = Math.Clamp(t, 0f, 1f);
 
-                    float blend = ApplyBlendFunction(t, blendFunctionType);
+                    var blend = ApplyBlendFunction(t, blendFunctionType);
 
                     // Interpolate between target elevation and original terrain
                     newH = targetElevation * (1f - blend) + original[y, x] * blend;
@@ -896,7 +872,7 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Applies the configured blend function.
+    ///     Applies the configured blend function.
     /// </summary>
     private static float ApplyBlendFunction(float t, BlendFunctionType blendType)
     {
@@ -910,8 +886,8 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Applies post-processing smoothing to eliminate staircase artifacts on the road surface.
-    /// Uses a masked smoothing approach - only smooths within the road and shoulder areas.
+    ///     Applies post-processing smoothing to eliminate staircase artifacts on the road surface.
+    ///     Uses a masked smoothing approach - only smooths within the road and shoulder areas.
     /// </summary>
     public void ApplyPostProcessingSmoothing(
         float[,] heightMap,
@@ -941,12 +917,12 @@ public class UnifiedTerrainBlender
         TerrainLogger.Info($"  Iterations: {parameters.SmoothingIterations}");
 
         // Build smoothing mask based on maximum road width + extension
-        float maxRoadWidth = network.Splines.Max(s => s.Parameters.RoadWidthMeters);
-        float maxSmoothingDist = maxRoadWidth / 2.0f + parameters.SmoothingMaskExtensionMeters;
+        var maxRoadWidth = network.Splines.Max(s => s.Parameters.RoadWidthMeters);
+        var maxSmoothingDist = maxRoadWidth / 2.0f + parameters.SmoothingMaskExtensionMeters;
         var smoothingMask = BuildSmoothingMask(_lastDistanceField, maxSmoothingDist);
 
         // Apply smoothing iterations
-        for (int iter = 0; iter < parameters.SmoothingIterations; iter++)
+        for (var iter = 0; iter < parameters.SmoothingIterations; iter++)
         {
             if (parameters.SmoothingIterations > 1)
                 TerrainLogger.Info($"  Iteration {iter + 1}/{parameters.SmoothingIterations}...");
@@ -971,7 +947,7 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Builds a binary mask indicating which pixels should be smoothed.
+    ///     Builds a binary mask indicating which pixels should be smoothed.
     /// </summary>
     private bool[,] BuildSmoothingMask(float[,] distanceField, float maxDistance)
     {
@@ -981,20 +957,20 @@ public class UnifiedTerrainBlender
         var maskedPixels = 0;
 
         for (var y = 0; y < height; y++)
-            for (var x = 0; x < width; x++)
-                if (distanceField[y, x] <= maxDistance)
-                {
-                    mask[y, x] = true;
-                    maskedPixels++;
-                }
+        for (var x = 0; x < width; x++)
+            if (distanceField[y, x] <= maxDistance)
+            {
+                mask[y, x] = true;
+                maskedPixels++;
+            }
 
         TerrainLogger.Info($"  Smoothing mask: {maskedPixels:N0} pixels");
         return mask;
     }
 
     /// <summary>
-    /// Applies Gaussian blur with the specified kernel size and sigma.
-    /// Only smooths pixels within the mask.
+    ///     Applies Gaussian blur with the specified kernel size and sigma.
+    ///     Only smooths pixels within the mask.
     /// </summary>
     private void ApplyGaussianSmoothing(float[,] heightMap, bool[,] mask, int kernelSize, float sigma)
     {
@@ -1010,41 +986,41 @@ public class UnifiedTerrainBlender
         var smoothedPixels = 0;
 
         for (var y = 0; y < height; y++)
-            for (var x = 0; x < width; x++)
+        for (var x = 0; x < width; x++)
+        {
+            if (!mask[y, x])
             {
-                if (!mask[y, x])
-                {
-                    tempMap[y, x] = heightMap[y, x];
-                    continue;
-                }
-
-                var sum = 0f;
-                var weightSum = 0f;
-
-                for (var ky = -radius; ky <= radius; ky++)
-                    for (var kx = -radius; kx <= radius; kx++)
-                    {
-                        var ny = y + ky;
-                        var nx = x + kx;
-
-                        if (ny >= 0 && ny < height && nx >= 0 && nx < width)
-                        {
-                            var weight = kernel[ky + radius, kx + radius];
-                            sum += heightMap[ny, nx] * weight;
-                            weightSum += weight;
-                        }
-                    }
-
-                tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
-                smoothedPixels++;
+                tempMap[y, x] = heightMap[y, x];
+                continue;
             }
+
+            var sum = 0f;
+            var weightSum = 0f;
+
+            for (var ky = -radius; ky <= radius; ky++)
+            for (var kx = -radius; kx <= radius; kx++)
+            {
+                var ny = y + ky;
+                var nx = x + kx;
+
+                if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                {
+                    var weight = kernel[ky + radius, kx + radius];
+                    sum += heightMap[ny, nx] * weight;
+                    weightSum += weight;
+                }
+            }
+
+            tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
+            smoothedPixels++;
+        }
 
         Array.Copy(tempMap, heightMap, height * width);
         TerrainLogger.Info($"    Gaussian smoothed {smoothedPixels:N0} pixels");
     }
 
     /// <summary>
-    /// Builds a 2D Gaussian kernel.
+    ///     Builds a 2D Gaussian kernel.
     /// </summary>
     private float[,] BuildGaussianKernel(int size, float sigma)
     {
@@ -1054,24 +1030,24 @@ public class UnifiedTerrainBlender
         var twoSigmaSquared = 2f * sigma * sigma;
 
         for (var y = -radius; y <= radius; y++)
-            for (var x = -radius; x <= radius; x++)
-            {
-                float distance = x * x + y * y;
-                var value = MathF.Exp(-distance / twoSigmaSquared);
-                kernel[y + radius, x + radius] = value;
-                sum += value;
-            }
+        for (var x = -radius; x <= radius; x++)
+        {
+            float distance = x * x + y * y;
+            var value = MathF.Exp(-distance / twoSigmaSquared);
+            kernel[y + radius, x + radius] = value;
+            sum += value;
+        }
 
         // Normalize
         for (var y = 0; y < size; y++)
-            for (var x = 0; x < size; x++)
-                kernel[y, x] /= sum;
+        for (var x = 0; x < size; x++)
+            kernel[y, x] /= sum;
 
         return kernel;
     }
 
     /// <summary>
-    /// Applies box blur (simple averaging).
+    ///     Applies box blur (simple averaging).
     /// </summary>
     private void ApplyBoxSmoothing(float[,] heightMap, bool[,] mask, int kernelSize)
     {
@@ -1083,40 +1059,40 @@ public class UnifiedTerrainBlender
         var smoothedPixels = 0;
 
         for (var y = 0; y < height; y++)
-            for (var x = 0; x < width; x++)
+        for (var x = 0; x < width; x++)
+        {
+            if (!mask[y, x])
             {
-                if (!mask[y, x])
-                {
-                    tempMap[y, x] = heightMap[y, x];
-                    continue;
-                }
-
-                var sum = 0f;
-                var count = 0;
-
-                for (var ky = -radius; ky <= radius; ky++)
-                    for (var kx = -radius; kx <= radius; kx++)
-                    {
-                        var ny = y + ky;
-                        var nx = x + kx;
-
-                        if (ny >= 0 && ny < height && nx >= 0 && nx < width)
-                        {
-                            sum += heightMap[ny, nx];
-                            count++;
-                        }
-                    }
-
-                tempMap[y, x] = count > 0 ? sum / count : heightMap[y, x];
-                smoothedPixels++;
+                tempMap[y, x] = heightMap[y, x];
+                continue;
             }
+
+            var sum = 0f;
+            var count = 0;
+
+            for (var ky = -radius; ky <= radius; ky++)
+            for (var kx = -radius; kx <= radius; kx++)
+            {
+                var ny = y + ky;
+                var nx = x + kx;
+
+                if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                {
+                    sum += heightMap[ny, nx];
+                    count++;
+                }
+            }
+
+            tempMap[y, x] = count > 0 ? sum / count : heightMap[y, x];
+            smoothedPixels++;
+        }
 
         Array.Copy(tempMap, heightMap, height * width);
         TerrainLogger.Info($"    Box smoothed {smoothedPixels:N0} pixels");
     }
 
     /// <summary>
-    /// Applies bilateral filtering - edge-preserving smoothing.
+    ///     Applies bilateral filtering - edge-preserving smoothing.
     /// </summary>
     private void ApplyBilateralSmoothing(float[,] heightMap, bool[,] mask, int kernelSize, float sigma)
     {
@@ -1130,43 +1106,43 @@ public class UnifiedTerrainBlender
         var smoothedPixels = 0;
 
         for (var y = 0; y < height; y++)
-            for (var x = 0; x < width; x++)
+        for (var x = 0; x < width; x++)
+        {
+            if (!mask[y, x])
             {
-                if (!mask[y, x])
-                {
-                    tempMap[y, x] = heightMap[y, x];
-                    continue;
-                }
-
-                var centerValue = heightMap[y, x];
-                var sum = 0f;
-                var weightSum = 0f;
-
-                for (var ky = -radius; ky <= radius; ky++)
-                    for (var kx = -radius; kx <= radius; kx++)
-                    {
-                        var ny = y + ky;
-                        var nx = x + kx;
-
-                        if (ny >= 0 && ny < height && nx >= 0 && nx < width)
-                        {
-                            var neighborValue = heightMap[ny, nx];
-
-                            float spatialDist = kx * kx + ky * ky;
-                            var spatialWeight = MathF.Exp(-spatialDist / (2f * sigmaSpatial * sigmaSpatial));
-
-                            var valueDiff = centerValue - neighborValue;
-                            var rangeWeight = MathF.Exp(-(valueDiff * valueDiff) / (2f * sigmaRange * sigmaRange));
-
-                            var weight = spatialWeight * rangeWeight;
-                            sum += neighborValue * weight;
-                            weightSum += weight;
-                        }
-                    }
-
-                tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
-                smoothedPixels++;
+                tempMap[y, x] = heightMap[y, x];
+                continue;
             }
+
+            var centerValue = heightMap[y, x];
+            var sum = 0f;
+            var weightSum = 0f;
+
+            for (var ky = -radius; ky <= radius; ky++)
+            for (var kx = -radius; kx <= radius; kx++)
+            {
+                var ny = y + ky;
+                var nx = x + kx;
+
+                if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                {
+                    var neighborValue = heightMap[ny, nx];
+
+                    float spatialDist = kx * kx + ky * ky;
+                    var spatialWeight = MathF.Exp(-spatialDist / (2f * sigmaSpatial * sigmaSpatial));
+
+                    var valueDiff = centerValue - neighborValue;
+                    var rangeWeight = MathF.Exp(-(valueDiff * valueDiff) / (2f * sigmaRange * sigmaRange));
+
+                    var weight = spatialWeight * rangeWeight;
+                    sum += neighborValue * weight;
+                    weightSum += weight;
+                }
+            }
+
+            tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
+            smoothedPixels++;
+        }
 
         Array.Copy(tempMap, heightMap, height * width);
         TerrainLogger.Info($"    Bilateral smoothed {smoothedPixels:N0} pixels");
