@@ -13,11 +13,11 @@ public class SplineRoadParameters
     
     /// <summary>
     /// Controls how splines are interpolated between control points.
-    /// SmoothInterpolated: Uses Akima/cubic spline for smooth curves (default)
-    /// LinearControlPoints: Uses linear interpolation for accurate source geometry adherence
-    /// Default: SmoothInterpolated
+    /// SmoothInterpolated: Uses Akima/cubic spline for smooth curves
+    /// LinearControlPoints: Uses linear interpolation for accurate source geometry adherence (default)
+    /// Default: LinearControlPoints
     /// </summary>
-    public SplineInterpolationType SplineInterpolationType { get; set; } = SplineInterpolationType.SmoothInterpolated;
+    public SplineInterpolationType SplineInterpolationType { get; set; } = SplineInterpolationType.LinearControlPoints;
     
     // ========================================
     // SPLINE EXTRACTION & ORDERING
