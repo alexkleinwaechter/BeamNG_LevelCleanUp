@@ -860,22 +860,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.PostProcessing.MaskExtensionMeters = postProcessing["maskExtensionMeters"]!.GetValue<float>();
             }
 
-            // Debug settings
-            var debug = roadSmoothing["debug"];
-            if (debug != null)
-            {
-                settings.Debug = new DebugSettings();
-                if (debug["exportSmoothedHeightmapWithOutlines"] != null)
-                    settings.Debug.ExportSmoothedHeightmapWithOutlines = debug["exportSmoothedHeightmapWithOutlines"]!.GetValue<bool>();
-                if (debug["exportSplineDebugImage"] != null)
-                    settings.Debug.ExportSplineDebugImage = debug["exportSplineDebugImage"]!.GetValue<bool>();
-                if (debug["exportSkeletonDebugImage"] != null)
-                    settings.Debug.ExportSkeletonDebugImage = debug["exportSkeletonDebugImage"]!.GetValue<bool>();
-                if (debug["exportSmoothedElevationDebugImage"] != null)
-                    settings.Debug.ExportSmoothedElevationDebugImage = debug["exportSmoothedElevationDebugImage"]!.GetValue<bool>();
-                if (debug["exportJunctionDebugImage"] != null)
-                    settings.Debug.ExportJunctionDebugImage = debug["exportJunctionDebugImage"]!.GetValue<bool>();
-            }
+            // Debug settings from presets are ignored - debug exports are always enabled
 
             // Junction harmonization settings
             var junctionHarmonization = roadSmoothing["junctionHarmonization"];
@@ -974,15 +959,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.SmoothingMaskExtensionMeters = settings.PostProcessing.MaskExtensionMeters;
             }
 
-            // Debug settings
-            if (settings.Debug != null)
-            {
-                material.ExportSmoothedHeightmapWithOutlines = settings.Debug.ExportSmoothedHeightmapWithOutlines;
-                material.ExportSplineDebugImage = settings.Debug.ExportSplineDebugImage;
-                material.ExportSkeletonDebugImage = settings.Debug.ExportSkeletonDebugImage;
-                material.ExportSmoothedElevationDebugImage = settings.Debug.ExportSmoothedElevationDebugImage;
-                material.ExportJunctionDebugImage = settings.Debug.ExportJunctionDebugImage;
-            }
+            // Debug settings are always enabled - no need to apply from preset
 
             // Junction harmonization settings
             if (settings.JunctionHarmonization != null)

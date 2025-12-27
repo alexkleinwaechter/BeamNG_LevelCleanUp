@@ -510,14 +510,7 @@
                 ["iterations"] = mat.SmoothingIterations,
                 ["maskExtensionMeters"] = mat.SmoothingMaskExtensionMeters
             },
-            ["debug"] = new JsonObject
-            {
-                ["exportSmoothedHeightmapWithOutlines"] = mat.ExportSmoothedHeightmapWithOutlines,
-                ["exportSplineDebugImage"] = mat.ExportSplineDebugImage,
-                ["exportSkeletonDebugImage"] = mat.ExportSkeletonDebugImage,
-                ["exportSmoothedElevationDebugImage"] = mat.ExportSmoothedElevationDebugImage,
-                ["exportJunctionDebugImage"] = mat.ExportJunctionDebugImage
-            },
+            // Debug settings are always enabled - no need to export them
             ["junctionHarmonization"] = new JsonObject
             {
                 ["useGlobalSettings"] = mat.UseGlobalJunctionSettings,

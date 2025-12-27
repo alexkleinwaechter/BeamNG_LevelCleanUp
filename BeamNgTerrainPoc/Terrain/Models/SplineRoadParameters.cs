@@ -176,28 +176,29 @@ public class SplineRoadParameters
     
     // ========================================
     // DEBUG OUTPUT
+    // All debug images are always exported to the MT_TerrainGeneration folder.
     // ========================================
     
     /// <summary>
     /// Export spline debug image showing centerline, road width, and cross-sections.
     /// Useful for verifying spline extraction quality.
-    /// Default: false
+    /// Default: true (always export debug images to MT_TerrainGeneration folder)
     /// </summary>
-    public bool ExportSplineDebugImage { get; set; } = false;
+    public bool ExportSplineDebugImage { get; set; } = true;
     
     /// <summary>
     /// Export skeleton debug image (raw skeleton, ordered paths, densified points).
     /// Useful for debugging centerline extraction.
-    /// Default: false
+    /// Default: true (always export debug images to MT_TerrainGeneration folder)
     /// </summary>
-    public bool ExportSkeletonDebugImage { get; set; } = false;
+    public bool ExportSkeletonDebugImage { get; set; } = true;
     
     /// <summary>
     /// Export smoothed elevation debug image showing final calculated elevations color-coded.
     /// Blue = lowest, Red = highest elevations.
-    /// Default: false
+    /// Default: true (always export debug images to MT_TerrainGeneration folder)
     /// </summary>
-    public bool ExportSmoothedElevationDebugImage { get; set; } = false;
+    public bool ExportSmoothedElevationDebugImage { get; set; } = true;
     
     /// <summary>
     /// Validates the spline-specific parameters.

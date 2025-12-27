@@ -291,9 +291,9 @@ public class RoadSmoothingParameters
     /// 
     /// Only works with Spline approach (requires distance field).
     /// Output file: smoothed_heightmap_with_road_outlines.png
-    /// Default: false
+    /// Default: true (always export debug images to MT_TerrainGeneration folder)
     /// </summary>
-    public bool ExportSmoothedHeightmapWithOutlines { get; set; } = false;
+    public bool ExportSmoothedHeightmapWithOutlines { get; set; } = true;
 
     // ========================================
     // HELPER METHODS

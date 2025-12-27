@@ -5,6 +5,8 @@ using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Utils;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace BeamNgTerrainPoc.Terrain.Services;
 
@@ -19,6 +21,363 @@ namespace BeamNgTerrainPoc.Terrain.Services;
 /// </summary>
 public static class MasterSplineExporter
 {
+    /// <summary>
+    /// Exports all splines from a unified road network to a single BeamNG master spline JSON file.
+    /// This is the preferred method for exporting splines from the unified road smoothing pipeline.
+    /// 
+    /// Splines are named using the format: "{MaterialName}_{index:D3}" (e.g., "Asphalt_001", "DirtRoad_002")
+    /// All materials' splines are combined into one JSON file for easy import into BeamNG.
+    /// </summary>
+    /// <param name="network">The unified road network containing all materials' splines</param>
+    /// <param name="heightMap">Heightmap array for elevation lookup (uses smoothed elevations from cross-sections when available)</param>
+    /// <param name="metersPerPixel">Scale factor</param>
+    /// <param name="terrainSizePixels">Terrain size in pixels</param>
+    /// <param name="terrainBaseHeight">Terrain base height offset for Z coordinates</param>
+    /// <param name="outputDirectory">Directory to write the master_splines.json file</param>
+    /// <param name="nodeDistanceMeters">Distance between nodes in the exported splines (default: 15m)</param>
+    public static void ExportFromUnifiedNetwork(
+        UnifiedRoadNetwork network,
+        float[,]? heightMap,
+        float metersPerPixel,
+        int terrainSizePixels,
+        float terrainBaseHeight,
+        string outputDirectory,
+        float nodeDistanceMeters = 15.0f)
+    {
+        if (network.Splines.Count == 0)
+        {
+            TerrainLogger.Warning("No splines in unified network to export as master splines.");
+            return;
+        }
+        
+        Directory.CreateDirectory(outputDirectory);
+        var splinesDir = Path.Combine(outputDirectory, "splines");
+        Directory.CreateDirectory(splinesDir);
+        
+        TerrainLogger.Info($"Exporting {network.Splines.Count} master spline(s) from unified network to JSON...");
+        TerrainLogger.Info($"  TerrainBaseHeight={terrainBaseHeight:F1}m, NodeDistance={nodeDistanceMeters:F1}m");
+        
+        var masterSplines = new List<MasterSpline>();
+        
+        // Group splines by material for organized naming
+        var splinesByMaterial = network.Splines
+            .GroupBy(s => s.MaterialName)
+            .OrderBy(g => g.Key)
+            .ToList();
+        
+        foreach (var materialGroup in splinesByMaterial)
+        {
+            var materialName = materialGroup.Key;
+            var materialSplines = materialGroup.OrderBy(s => s.SplineId).ToList();
+            
+            TerrainLogger.Info($"  Material '{materialName}': {materialSplines.Count} spline(s)");
+            
+            int splineIndex = 0;
+            foreach (var paramSpline in materialSplines)
+            {
+                splineIndex++;
+                var spline = paramSpline.Spline;
+                
+                if (spline == null || spline.ControlPoints.Count < 2)
+                    continue;
+                
+                // Get cross-sections for this spline to use smoothed elevations
+                var crossSections = network.GetCrossSectionsForSpline(paramSpline.SplineId).ToList();
+                
+                // Sample nodes along the spline
+                List<SplineNode> nodes;
+                if (crossSections.Count >= 2)
+                {
+                    // Use cross-section elevations (smoothed/harmonized)
+                    nodes = SampleNodesFromUnifiedCrossSections(
+                        crossSections,
+                        heightMap,
+                        metersPerPixel,
+                        terrainSizePixels,
+                        terrainBaseHeight,
+                        nodeDistanceMeters);
+                }
+                else
+                {
+                    // Fallback to direct spline sampling
+                    nodes = SampleNodesFromSpline(
+                        spline,
+                        heightMap,
+                        metersPerPixel,
+                        terrainSizePixels,
+                        terrainBaseHeight,
+                        nodeDistanceMeters);
+                }
+                
+                if (nodes.Count < 2)
+                    continue;
+                
+                // Use road surface width for the master spline
+                var roadWidth = paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
+                
+                // Create spline name: MaterialName_index (e.g., "Asphalt_001")
+                var splineName = $"{SanitizeName(materialName)}_{splineIndex:D3}";
+                
+                var masterSpline = new MasterSpline
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Name = splineName,
+                    Nodes = nodes,
+                    Nmls = nodes.Select(_ => new SplineNormal { X = 0, Y = 0, Z = 1 }).ToList(),
+                    Widths = nodes.Select(_ => roadWidth).ToList()
+                };
+                
+                masterSplines.Add(masterSpline);
+            }
+        }
+        
+        if (masterSplines.Count == 0)
+        {
+            TerrainLogger.Warning("No master splines generated from unified network.");
+            return;
+        }
+        
+        // Write the unified JSON file
+        var splineFile = new MasterSplineFile
+        {
+            MasterSplines = masterSplines
+        };
+        
+        var outputPath = Path.Combine(splinesDir, "master_splines.json");
+        WriteSplineFile(splineFile, outputPath);
+        
+        TerrainLogger.Info($"Exported {masterSplines.Count} master spline(s) to: {outputPath}");
+        
+        // Also export combined spline mask
+        ExportUnifiedSplineMasks(network, metersPerPixel, terrainSizePixels, splinesDir);
+    }
+    
+    /// <summary>
+    /// Exports spline masks from unified network as PNG images.
+    /// Creates:
+    /// - One PNG per spline with material name prefix (e.g., Asphalt_001.png, DirtRoad_001.png)
+    /// - One combined PNG with all splines from all materials (all_splines.png)
+    /// </summary>
+    private static void ExportUnifiedSplineMasks(
+        UnifiedRoadNetwork network,
+        float metersPerPixel,
+        int terrainSizePixels,
+        string splinesDir)
+    {
+        using var combinedImage = new Image<L16>(terrainSizePixels, terrainSizePixels, new L16(0));
+        
+        // Group splines by material for organized naming
+        var splinesByMaterial = network.Splines
+            .GroupBy(s => s.MaterialName)
+            .OrderBy(g => g.Key)
+            .ToList();
+        
+        int totalSplineCount = 0;
+        
+        foreach (var materialGroup in splinesByMaterial)
+        {
+            var materialName = SanitizeName(materialGroup.Key);
+            var materialSplines = materialGroup.OrderBy(s => s.SplineId).ToList();
+            
+            int splineIndex = 0;
+            foreach (var paramSpline in materialSplines)
+            {
+                splineIndex++;
+                var spline = paramSpline.Spline;
+                if (spline == null || spline.TotalLength < 1f)
+                    continue;
+                
+                var halfWidth = paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters / 2.0f;
+                
+                // Create individual spline image
+                using var splineImage = new Image<L16>(terrainSizePixels, terrainSizePixels, new L16(0));
+                
+                // Sample spline and draw road
+                var samples = spline.SampleByDistance(0.5f); // Fine sampling for accuracy
+                
+                for (int i = 0; i < samples.Count - 1; i++)
+                {
+                    var s1 = samples[i];
+                    var s2 = samples[i + 1];
+                    
+                    // Get corners of road segment
+                    var left1 = s1.Position - s1.Normal * halfWidth;
+                    var right1 = s1.Position + s1.Normal * halfWidth;
+                    var left2 = s2.Position - s2.Normal * halfWidth;
+                    var right2 = s2.Position + s2.Normal * halfWidth;
+                    
+                    // Convert to pixels
+                    int l1x = (int)(left1.X / metersPerPixel);
+                    int l1y = (int)(left1.Y / metersPerPixel);
+                    int r1x = (int)(right1.X / metersPerPixel);
+                    int r1y = (int)(right1.Y / metersPerPixel);
+                    int l2x = (int)(left2.X / metersPerPixel);
+                    int l2y = (int)(left2.Y / metersPerPixel);
+                    int r2x = (int)(right2.X / metersPerPixel);
+                    int r2y = (int)(right2.Y / metersPerPixel);
+                    
+                    // Draw quad on individual spline image
+                    FillQuadL16(splineImage, l1x, l1y, r1x, r1y, r2x, r2y, l2x, l2y, 
+                        new L16(ushort.MaxValue), terrainSizePixels);
+                    
+                    // Draw quad on combined image
+                    FillQuadL16(combinedImage, l1x, l1y, r1x, r1y, r2x, r2y, l2x, l2y, 
+                        new L16(ushort.MaxValue), terrainSizePixels);
+                }
+                
+                // Save individual spline mask with material name prefix
+                var splineFileName = $"{materialName}_{splineIndex:D3}.png";
+                var splineFilePath = Path.Combine(splinesDir, splineFileName);
+                splineImage.SaveAsPng(splineFilePath);
+                
+                totalSplineCount++;
+            }
+        }
+        
+        // Save combined mask
+        var combinedFilePath = Path.Combine(splinesDir, "all_splines.png");
+        combinedImage.SaveAsPng(combinedFilePath);
+        
+        TerrainLogger.Info($"Exported {totalSplineCount} individual spline mask(s) + combined mask (16-bit grayscale)");
+        TerrainLogger.Info($"  Combined mask: {combinedFilePath}");
+    }
+    
+    /// <summary>
+    /// Samples nodes from unified cross-sections, using their calculated target elevations.
+    /// </summary>
+    private static List<SplineNode> SampleNodesFromUnifiedCrossSections(
+        List<UnifiedCrossSection> crossSections,
+        float[,]? heightMap,
+        float metersPerPixel,
+        int terrainSizePixels,
+        float terrainBaseHeight,
+        float nodeDistanceMeters)
+    {
+        var nodes = new List<SplineNode>();
+        
+        // Calculate total path length and determine sampling
+        var totalLength = EstimatePathLengthFromUnified(crossSections);
+        var nodeCount = Math.Max(2, (int)Math.Ceiling(totalLength / nodeDistanceMeters) + 1);
+        var step = Math.Max(1, crossSections.Count / nodeCount);
+        
+        for (int i = 0; i < crossSections.Count; i += step)
+        {
+            var cs = crossSections[i];
+            
+            var terrainX = cs.CenterPoint.X;
+            var terrainY = cs.CenterPoint.Y;
+            
+            // Use smoothed target elevation if available
+            float elevation = 0;
+            if (!float.IsNaN(cs.TargetElevation) && cs.TargetElevation > -1000f)
+            {
+                elevation = cs.TargetElevation;
+            }
+            else if (heightMap != null)
+            {
+                var pixelX = (int)(terrainX / metersPerPixel);
+                var pixelY = (int)(terrainY / metersPerPixel);
+                var size = heightMap.GetLength(0);
+                pixelX = Math.Clamp(pixelX, 0, size - 1);
+                pixelY = Math.Clamp(pixelY, 0, size - 1);
+                elevation = heightMap[pixelY, pixelX];
+            }
+            
+            elevation += terrainBaseHeight;
+            
+            var worldPos = BeamNgCoordinateTransformer.TerrainToWorld(
+                terrainX, terrainY, elevation,
+                terrainSizePixels, metersPerPixel);
+            
+            nodes.Add(new SplineNode
+            {
+                X = worldPos.X,
+                Y = worldPos.Y,
+                Z = worldPos.Z
+            });
+        }
+        
+        // Always include the last cross-section
+        var lastCs = crossSections[^1];
+        float lastElevation = !float.IsNaN(lastCs.TargetElevation) && lastCs.TargetElevation > -1000f
+            ? lastCs.TargetElevation
+            : GetHeightMapElevation(heightMap, lastCs.CenterPoint.X, lastCs.CenterPoint.Y, metersPerPixel);
+        
+        lastElevation += terrainBaseHeight;
+        
+        var lastWorldPos = BeamNgCoordinateTransformer.TerrainToWorld(
+            lastCs.CenterPoint.X, lastCs.CenterPoint.Y, lastElevation,
+            terrainSizePixels, metersPerPixel);
+        
+        if (nodes.Count == 0 || 
+            Math.Abs(nodes[^1].X - lastWorldPos.X) > 0.1 || 
+            Math.Abs(nodes[^1].Y - lastWorldPos.Y) > 0.1)
+        {
+            nodes.Add(new SplineNode
+            {
+                X = lastWorldPos.X,
+                Y = lastWorldPos.Y,
+                Z = lastWorldPos.Z
+            });
+        }
+        
+        return nodes;
+    }
+    
+    /// <summary>
+    /// Estimates path length from unified cross-sections.
+    /// </summary>
+    private static float EstimatePathLengthFromUnified(List<UnifiedCrossSection> crossSections)
+    {
+        float length = 0;
+        for (int i = 1; i < crossSections.Count; i++)
+        {
+            length += Vector2.Distance(crossSections[i - 1].CenterPoint, crossSections[i].CenterPoint);
+        }
+        return length;
+    }
+    
+    /// <summary>
+    /// Gets elevation from heightmap at terrain coordinates.
+    /// </summary>
+    private static float GetHeightMapElevation(float[,]? heightMap, float terrainX, float terrainY, float metersPerPixel)
+    {
+        if (heightMap == null) return 0;
+        var pixelX = (int)(terrainX / metersPerPixel);
+        var pixelY = (int)(terrainY / metersPerPixel);
+        var size = heightMap.GetLength(0);
+        pixelX = Math.Clamp(pixelX, 0, size - 1);
+        pixelY = Math.Clamp(pixelY, 0, size - 1);
+        return heightMap[pixelY, pixelX];
+    }
+    
+    /// <summary>
+    /// Sanitizes a material name for use in spline names.
+    /// Removes special characters and replaces spaces with underscores.
+    /// </summary>
+    private static string SanitizeName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "Unknown";
+        
+        // Replace spaces and special characters
+        var sanitized = new System.Text.StringBuilder();
+        foreach (var c in name)
+        {
+            if (char.IsLetterOrDigit(c))
+                sanitized.Append(c);
+            else if (c == ' ' || c == '-' || c == '_')
+                sanitized.Append('_');
+        }
+        
+        var result = sanitized.ToString();
+        
+        // Remove consecutive underscores and trim
+        while (result.Contains("__"))
+            result = result.Replace("__", "_");
+        
+        return result.Trim('_');
+    }
+
     /// <summary>
     /// Exports splines from road geometry to BeamNG master spline JSON format.
     /// 
@@ -445,7 +804,7 @@ public static class MasterSplineExporter
     /// <summary>
     /// Root object for the master spline JSON file.
     /// </summary>
-    private class MasterSplineFile
+    internal class MasterSplineFile
     {
         [JsonPropertyName("linkedSplines")]
         public Dictionary<string, object> LinkedSplines { get; set; } = new();
@@ -457,7 +816,7 @@ public static class MasterSplineExporter
     /// <summary>
     /// Represents a single master spline in BeamNG format.
     /// </summary>
-    private class MasterSpline
+    internal class MasterSpline
     {
         [JsonPropertyName("autoBankFalloff")]
         public double AutoBankFalloff { get; set; } = 0.6;
@@ -505,7 +864,7 @@ public static class MasterSplineExporter
     /// <summary>
     /// Represents a node position in a master spline.
     /// </summary>
-    private class SplineNode
+    internal class SplineNode
     {
         [JsonPropertyName("x")]
         public double X { get; set; }
@@ -520,7 +879,7 @@ public static class MasterSplineExporter
     /// <summary>
     /// Represents the normal vector at a spline node (typically pointing up).
     /// </summary>
-    private class SplineNormal
+    internal class SplineNormal
     {
         [JsonPropertyName("x")]
         public double X { get; set; }
@@ -530,6 +889,54 @@ public static class MasterSplineExporter
         
         [JsonPropertyName("z")]
         public double Z { get; set; }
+    }
+    
+    #endregion
+    
+    #region Drawing Helpers
+    
+    /// <summary>
+    /// Fills a quadrilateral on a 16-bit grayscale image.
+    /// </summary>
+    private static void FillQuadL16(
+        Image<L16> img, 
+        int x0, int y0, int x1, int y1, int x2, int y2, int x3, int y3,
+        L16 color, int imgHeight)
+    {
+        // Flip Y coordinates
+        y0 = imgHeight - 1 - y0;
+        y1 = imgHeight - 1 - y1;
+        y2 = imgHeight - 1 - y2;
+        y3 = imgHeight - 1 - y3;
+
+        var minY = Math.Max(0, Math.Min(Math.Min(y0, y1), Math.Min(y2, y3)));
+        var maxY = Math.Min(img.Height - 1, Math.Max(Math.Max(y0, y1), Math.Max(y2, y3)));
+        var minX = Math.Max(0, Math.Min(Math.Min(x0, x1), Math.Min(x2, x3)));
+        var maxX = Math.Min(img.Width - 1, Math.Max(Math.Max(x0, x1), Math.Max(x2, x3)));
+
+        for (var y = minY; y <= maxY; y++)
+        for (var x = minX; x <= maxX; x++)
+            if (IsPointInQuad(x, y, x0, y0, x1, y1, x2, y2, x3, y3))
+                img[x, y] = color;
+    }
+    
+    /// <summary>
+    /// Checks if a point is inside a convex quadrilateral using cross product test.
+    /// </summary>
+    private static bool IsPointInQuad(int px, int py, int x0, int y0, int x1, int y1, int x2, int y2, int x3, int y3)
+    {
+        var sign0 = Sign((x1 - x0) * (py - y0) - (y1 - y0) * (px - x0));
+        var sign1 = Sign((x2 - x1) * (py - y1) - (y2 - y1) * (px - x1));
+        var sign2 = Sign((x3 - x2) * (py - y2) - (y3 - y2) * (px - x2));
+        var sign3 = Sign((x0 - x3) * (py - y3) - (y0 - y3) * (px - x3));
+
+        return (sign0 >= 0 && sign1 >= 0 && sign2 >= 0 && sign3 >= 0) ||
+               (sign0 <= 0 && sign1 <= 0 && sign2 <= 0 && sign3 <= 0);
+    }
+
+    private static int Sign(int value)
+    {
+        return value > 0 ? 1 : value < 0 ? -1 : 0;
     }
     
     #endregion

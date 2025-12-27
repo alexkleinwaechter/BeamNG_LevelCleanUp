@@ -216,9 +216,6 @@ public class RoadSmoothingSettings
     // Post-processing
     public PostProcessingSettings? PostProcessing { get; set; }
 
-    // Debug settings
-    public DebugSettings? Debug { get; set; }
-
     // Junction harmonization
     public JunctionHarmonizationSettings? JunctionHarmonization { get; set; }
 }
@@ -258,18 +255,6 @@ public class PostProcessingSettings
     public float Sigma { get; set; } = 1.5f;
     public int Iterations { get; set; } = 1;
     public float MaskExtensionMeters { get; set; } = 6.0f;
-}
-
-/// <summary>
-///     Debug settings for road smoothing preset.
-/// </summary>
-public class DebugSettings
-{
-    public bool ExportSmoothedHeightmapWithOutlines { get; set; }
-    public bool ExportSplineDebugImage { get; set; }
-    public bool ExportSkeletonDebugImage { get; set; }
-    public bool ExportSmoothedElevationDebugImage { get; set; }
-    public bool ExportJunctionDebugImage { get; set; }
 }
 
 /// <summary>

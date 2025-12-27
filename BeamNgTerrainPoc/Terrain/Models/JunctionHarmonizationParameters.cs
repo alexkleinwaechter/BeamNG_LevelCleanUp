@@ -114,13 +114,14 @@ public class JunctionHarmonizationParameters
     
     // ========================================
     // DEBUG OPTIONS
+    // All debug images are always exported to the MT_TerrainGeneration folder.
     // ========================================
     
     /// <summary>
     /// Export debug image showing detected junctions and blend zones.
-    /// Default: false
+    /// Default: true (always export debug images to MT_TerrainGeneration folder)
     /// </summary>
-    public bool ExportJunctionDebugImage { get; set; } = false;
+    public bool ExportJunctionDebugImage { get; set; } = true;
     
     /// <summary>
     /// Validates the junction harmonization parameters.

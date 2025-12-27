@@ -358,6 +358,8 @@ public class UnifiedRoadSmoother
 
     /// <summary>
     /// Exports debug images if requested by any material.
+    /// Also exports unified master splines JSON with all materials' splines combined.
+    /// Per-material debug images (spline_debug, elevation_debug) are exported to material-specific folders.
     /// </summary>
     private void ExportDebugImagesIfRequested(
         UnifiedRoadNetwork network,
@@ -366,6 +368,12 @@ public class UnifiedRoadSmoother
         float metersPerPixel,
         List<MaterialDefinition> roadMaterials)
     {
+        // Find the main debug output directory (parent of material-specific folders)
+        string? mainDebugDir = null;
+        float terrainBaseHeight = 0;
+        float nodeDistanceMeters = 15.0f;
+        int terrainSize = smoothedHeightMap.GetLength(0);
+        
         foreach (var material in roadMaterials)
         {
             var parameters = material.RoadParameters;
@@ -373,26 +381,289 @@ public class UnifiedRoadSmoother
                 continue;
 
             var outputDir = parameters.DebugOutputDirectory ?? ".";
-
-            // Export smoothed heightmap with outlines if requested
-            if (parameters.ExportSmoothedHeightmapWithOutlines)
+            
+            // Get the parent directory (MT_TerrainGeneration)
+            var parentDir = Path.GetDirectoryName(outputDir);
+            if (!string.IsNullOrEmpty(parentDir))
             {
-                try
-                {
-                    var outputPath = Path.Combine(outputDir, "unified_smoothed_heightmap_with_outlines.png");
-                    ExportSmoothedHeightmapWithOutlines(
-                        smoothedHeightMap,
-                        network,
-                        _terrainBlender.GetLastDistanceField(),
-                        metersPerPixel,
-                        outputPath);
-                }
-                catch (Exception ex)
-                {
-                    TerrainLogger.Warning($"Failed to export smoothed heightmap: {ex.Message}");
-                }
+                mainDebugDir = parentDir;
+                terrainBaseHeight = parameters.TerrainBaseHeight;
+                nodeDistanceMeters = parameters.MasterSplineNodeDistanceMeters;
+            }
+
+            // Export per-material debug images
+            ExportPerMaterialDebugImages(
+                network,
+                material,
+                parameters,
+                smoothedHeightMap,
+                metersPerPixel,
+                terrainSize);
+        }
+        
+        // Export unified smoothed heightmap with outlines to main folder
+        var firstMaterial = roadMaterials.FirstOrDefault(m => m.RoadParameters?.ExportSmoothedHeightmapWithOutlines == true);
+        if (firstMaterial != null && !string.IsNullOrEmpty(mainDebugDir))
+        {
+            try
+            {
+                var heightmapPath = Path.Combine(mainDebugDir, "unified_smoothed_heightmap_with_outlines.png");
+                ExportSmoothedHeightmapWithOutlines(
+                    smoothedHeightMap,
+                    network,
+                    _terrainBlender.GetLastDistanceField(),
+                    metersPerPixel,
+                    heightmapPath);
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Failed to export smoothed heightmap: {ex.Message}");
             }
         }
+        
+        // Export unified master splines JSON with all materials' splines
+        // This goes to the main debug folder (MT_TerrainGeneration), not material-specific subfolder
+        if (!string.IsNullOrEmpty(mainDebugDir) && network.Splines.Count > 0)
+        {
+            try
+            {
+                MasterSplineExporter.ExportFromUnifiedNetwork(
+                    network,
+                    smoothedHeightMap,
+                    metersPerPixel,
+                    terrainSize,
+                    terrainBaseHeight,
+                    mainDebugDir,
+                    nodeDistanceMeters);
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Failed to export unified master splines: {ex.Message}");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Exports per-material debug images (spline_debug.png, spline_smoothed_elevation_debug.png).
+    /// These are exported to each material's debug folder.
+    /// </summary>
+    private void ExportPerMaterialDebugImages(
+        UnifiedRoadNetwork network,
+        MaterialDefinition material,
+        RoadSmoothingParameters parameters,
+        float[,] smoothedHeightMap,
+        float metersPerPixel,
+        int terrainSize)
+    {
+        var splineParams = parameters.GetSplineParameters();
+        var outputDir = parameters.DebugOutputDirectory ?? ".";
+        Directory.CreateDirectory(outputDir);
+        
+        // Get splines for this material
+        var materialSplines = network.Splines.Where(s => s.MaterialName == material.MaterialName).ToList();
+        if (materialSplines.Count == 0)
+            return;
+        
+        // Export spline debug image if requested
+        if (splineParams.ExportSplineDebugImage)
+        {
+            try
+            {
+                ExportMaterialSplineDebugImage(
+                    materialSplines,
+                    network,
+                    terrainSize,
+                    metersPerPixel,
+                    Path.Combine(outputDir, "spline_debug.png"));
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Failed to export spline debug for {material.MaterialName}: {ex.Message}");
+            }
+        }
+        
+        // Export smoothed elevation debug image if requested
+        if (splineParams.ExportSmoothedElevationDebugImage)
+        {
+            try
+            {
+                ExportMaterialElevationDebugImage(
+                    materialSplines,
+                    network,
+                    parameters,
+                    terrainSize,
+                    metersPerPixel,
+                    Path.Combine(outputDir, "spline_smoothed_elevation_debug.png"));
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Failed to export elevation debug for {material.MaterialName}: {ex.Message}");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Exports a debug image showing spline centerlines for a specific material.
+    /// </summary>
+    private void ExportMaterialSplineDebugImage(
+        List<ParameterizedRoadSpline> materialSplines,
+        UnifiedRoadNetwork network,
+        int terrainSize,
+        float metersPerPixel,
+        string outputPath)
+    {
+        using var image = new Image<Rgba32>(terrainSize, terrainSize, new Rgba32(0, 0, 0, 255));
+        
+        var sampleInterval = 0.5f; // Sample interval for drawing
+        
+        foreach (var paramSpline in materialSplines)
+        {
+            var spline = paramSpline.Spline;
+            if (spline == null || spline.TotalLength < 1f) continue;
+            
+            // Draw original control points in cyan
+            foreach (var cp in spline.ControlPoints)
+            {
+                var cpx = (int)(cp.X / metersPerPixel);
+                var cpy = (int)(cp.Y / metersPerPixel);
+                if (cpx >= 1 && cpx < terrainSize - 1 && cpy >= 1 && cpy < terrainSize - 1)
+                {
+                    for (var dy = -1; dy <= 1; dy++)
+                    for (var dx = -1; dx <= 1; dx++)
+                        image[cpx + dx, terrainSize - 1 - (cpy + dy)] = new Rgba32(0, 255, 255, 255);
+                }
+            }
+            
+            // Draw interpolated spline centerline in yellow
+            for (float d = 0; d <= spline.TotalLength; d += sampleInterval)
+            {
+                var p = spline.GetPointAtDistance(d);
+                var px = (int)(p.X / metersPerPixel);
+                var py = (int)(p.Y / metersPerPixel);
+                if (px >= 0 && px < terrainSize && py >= 0 && py < terrainSize)
+                    image[px, terrainSize - 1 - py] = new Rgba32(255, 255, 0, 255);
+            }
+            
+            // Draw cross-section widths in green (every few cross-sections)
+            var crossSections = network.GetCrossSectionsForSpline(paramSpline.SplineId).ToList();
+            var step = Math.Max(1, crossSections.Count / 20); // ~20 width indicators per spline
+            for (int i = 0; i < crossSections.Count; i += step)
+            {
+                var cs = crossSections[i];
+                var halfWidth = paramSpline.Parameters.RoadWidthMeters / 2.0f;
+                var left = cs.CenterPoint - cs.NormalDirection * halfWidth;
+                var right = cs.CenterPoint + cs.NormalDirection * halfWidth;
+                
+                var lx = (int)(left.X / metersPerPixel);
+                var ly = (int)(left.Y / metersPerPixel);
+                var rx = (int)(right.X / metersPerPixel);
+                var ry = (int)(right.Y / metersPerPixel);
+                
+                DrawLineOnImage(image, lx, ly, rx, ry, new Rgba32(0, 255, 0, 255), terrainSize);
+            }
+        }
+        
+        image.SaveAsPng(outputPath);
+        TerrainLogger.Info($"  Exported spline debug image: {outputPath}");
+    }
+    
+    /// <summary>
+    /// Exports a debug image showing elevation-coded road segments for a specific material.
+    /// </summary>
+    private void ExportMaterialElevationDebugImage(
+        List<ParameterizedRoadSpline> materialSplines,
+        UnifiedRoadNetwork network,
+        RoadSmoothingParameters parameters,
+        int terrainSize,
+        float metersPerPixel,
+        string outputPath)
+    {
+        using var image = new Image<Rgba32>(terrainSize, terrainSize, new Rgba32(0, 0, 0, 255));
+        
+        // Collect all elevations for this material to find range
+        var elevations = new List<float>();
+        foreach (var paramSpline in materialSplines)
+        {
+            var crossSections = network.GetCrossSectionsForSpline(paramSpline.SplineId);
+            elevations.AddRange(crossSections
+                .Where(cs => !float.IsNaN(cs.TargetElevation) && cs.TargetElevation > -1000f)
+                .Select(cs => cs.TargetElevation));
+        }
+        
+        if (elevations.Count == 0)
+        {
+            TerrainLogger.Warning("No valid elevations for elevation debug image");
+            return;
+        }
+        
+        var minElev = elevations.Min();
+        var maxElev = elevations.Max();
+        var range = maxElev - minElev;
+        if (range < 0.01f) range = 1f;
+        
+        // Draw each cross-section color-coded by elevation
+        foreach (var paramSpline in materialSplines)
+        {
+            var crossSections = network.GetCrossSectionsForSpline(paramSpline.SplineId).ToList();
+            var halfWidth = paramSpline.Parameters.RoadWidthMeters / 2.0f;
+            
+            foreach (var cs in crossSections)
+            {
+                if (float.IsNaN(cs.TargetElevation) || cs.TargetElevation <= -1000f) continue;
+                
+                var normalizedElevation = (cs.TargetElevation - minElev) / range;
+                var color = GetColorForElevation(normalizedElevation);
+                
+                var left = cs.CenterPoint - cs.NormalDirection * halfWidth;
+                var right = cs.CenterPoint + cs.NormalDirection * halfWidth;
+                var lx = (int)(left.X / metersPerPixel);
+                var ly = (int)(left.Y / metersPerPixel);
+                var rx = (int)(right.X / metersPerPixel);
+                var ry = (int)(right.Y / metersPerPixel);
+                
+                DrawLineOnImage(image, lx, ly, rx, ry, color, terrainSize);
+            }
+        }
+        
+        image.SaveAsPng(outputPath);
+        TerrainLogger.Info($"  Exported smoothed elevation debug image: {outputPath}");
+        TerrainLogger.Info($"    Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
+    }
+    
+    /// <summary>
+    /// Draws a line on an image with Y-flipping.
+    /// </summary>
+    private static void DrawLineOnImage(Image<Rgba32> img, int x0, int y0, int x1, int y1, Rgba32 color, int height)
+    {
+        // Flip Y coordinates
+        y0 = height - 1 - y0;
+        y1 = height - 1 - y1;
+        
+        int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        var err = dx + dy;
+        
+        while (true)
+        {
+            if (x0 >= 0 && x0 < img.Width && y0 >= 0 && y0 < img.Height)
+                img[x0, y0] = color;
+            if (x0 == x1 && y0 == y1) break;
+            var e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+    
+    /// <summary>
+    /// Gets a color for elevation visualization (blue=low, green=mid, red=high).
+    /// </summary>
+    private static Rgba32 GetColorForElevation(float value)
+    {
+        value = Math.Clamp(value, 0f, 1f);
+        var r = Math.Clamp(value * 2.0f, 0f, 1f);
+        var b = Math.Clamp((1.0f - value) * 2.0f, 0f, 1f);
+        var g = 1.0f - Math.Abs(value - 0.5f) * 2.0f;
+        return new Rgba32(r, g, b);
     }
 
     /// <summary>

@@ -432,21 +432,7 @@ public partial class TerrainMaterialSettings
                     Material.SmoothingMaskExtensionMeters = postProcessing["maskExtensionMeters"]!.GetValue<float>();
             }
 
-            // Import debug settings
-            var debug = jsonNode["debug"];
-            if (debug != null)
-            {
-                if (debug["exportSmoothedHeightmapWithOutlines"] != null)
-                    Material.ExportSmoothedHeightmapWithOutlines = debug["exportSmoothedHeightmapWithOutlines"]!.GetValue<bool>();
-                if (debug["exportSplineDebugImage"] != null)
-                    Material.ExportSplineDebugImage = debug["exportSplineDebugImage"]!.GetValue<bool>();
-                if (debug["exportSkeletonDebugImage"] != null)
-                    Material.ExportSkeletonDebugImage = debug["exportSkeletonDebugImage"]!.GetValue<bool>();
-                if (debug["exportSmoothedElevationDebugImage"] != null)
-                    Material.ExportSmoothedElevationDebugImage = debug["exportSmoothedElevationDebugImage"]!.GetValue<bool>();
-                if (debug["exportJunctionDebugImage"] != null)
-                    Material.ExportJunctionDebugImage = debug["exportJunctionDebugImage"]!.GetValue<bool>();
-            }
+            // Debug settings from presets are ignored - debug exports are always enabled
 
             // Import junction harmonization settings
             var junctionParams = jsonNode["junctionHarmonization"];
@@ -609,15 +595,6 @@ public partial class TerrainMaterialSettings
         public float SmoothingMaskExtensionMeters { get; set; } = 6.0f;
 
         // ========================================
-        // DEBUG OUTPUT
-        // ========================================
-        public bool ExportSmoothedHeightmapWithOutlines { get; set; }
-        public bool ExportSplineDebugImage { get; set; }
-        public bool ExportSkeletonDebugImage { get; set; }
-        public bool ExportSmoothedElevationDebugImage { get; set; }
-        public bool ExportJunctionDebugImage { get; set; }
-
-        // ========================================
         // MASTER SPLINE EXPORT
         // ========================================
         /// <summary>
@@ -670,9 +647,6 @@ public partial class TerrainMaterialSettings
             SmoothingIterations = preset.SmoothingIterations;
             SmoothingMaskExtensionMeters = preset.SmoothingMaskExtensionMeters;
 
-            // Debug
-            ExportSmoothedHeightmapWithOutlines = preset.ExportSmoothedHeightmapWithOutlines;
-
             // Spline parameters
             if (preset.SplineParameters != null)
             {
@@ -693,9 +667,7 @@ public partial class TerrainMaterialSettings
                 SplineUseButterworthFilter = preset.SplineParameters.UseButterworthFilter;
                 SplineButterworthFilterOrder = preset.SplineParameters.ButterworthFilterOrder;
                 GlobalLevelingStrength = preset.SplineParameters.GlobalLevelingStrength;
-                ExportSplineDebugImage = preset.SplineParameters.ExportSplineDebugImage;
-                ExportSkeletonDebugImage = preset.SplineParameters.ExportSkeletonDebugImage;
-                ExportSmoothedElevationDebugImage = preset.SplineParameters.ExportSmoothedElevationDebugImage;
+                // Debug properties are always enabled - no need to copy from preset
             }
 
             // Junction harmonization parameters
@@ -709,7 +681,7 @@ public partial class TerrainMaterialSettings
                 EnableEndpointTaper = preset.JunctionHarmonizationParameters.EnableEndpointTaper;
                 EndpointTaperDistanceMeters = preset.JunctionHarmonizationParameters.EndpointTaperDistanceMeters;
                 EndpointTerrainBlendStrength = preset.JunctionHarmonizationParameters.EndpointTerrainBlendStrength;
-                ExportJunctionDebugImage = preset.JunctionHarmonizationParameters.ExportJunctionDebugImage;
+                // Debug properties are always enabled - no need to copy from preset
             }
         }
 
@@ -757,12 +729,12 @@ public partial class TerrainMaterialSettings
                 TerrainBaseHeight = terrainBaseHeight,
                 MasterSplineNodeDistanceMeters = MasterSplineNodeDistanceMeters,
 
-                // Debug - use material-specific subfolder
+                // Debug - use material-specific subfolder, always export debug images
                 DebugOutputDirectory = materialDebugDirectory,
-                ExportSmoothedHeightmapWithOutlines = ExportSmoothedHeightmapWithOutlines
+                ExportSmoothedHeightmapWithOutlines = true
             };
 
-            // Spline parameters
+            // Spline parameters - debug exports always enabled
             result.SplineParameters = new SplineRoadParameters
             {
                 SplineInterpolationType = SplineInterpolationType,
@@ -782,12 +754,12 @@ public partial class TerrainMaterialSettings
                 UseButterworthFilter = SplineUseButterworthFilter,
                 ButterworthFilterOrder = SplineButterworthFilterOrder,
                 GlobalLevelingStrength = GlobalLevelingStrength,
-                ExportSplineDebugImage = ExportSplineDebugImage,
-                ExportSkeletonDebugImage = ExportSkeletonDebugImage,
-                ExportSmoothedElevationDebugImage = ExportSmoothedElevationDebugImage
+                ExportSplineDebugImage = true,
+                ExportSkeletonDebugImage = true,
+                ExportSmoothedElevationDebugImage = true
             };
 
-            // Junction harmonization parameters
+            // Junction harmonization parameters - debug exports always enabled
             result.JunctionHarmonizationParameters = new JunctionHarmonizationParameters
             {
                 UseGlobalSettings = UseGlobalJunctionSettings,
@@ -798,7 +770,7 @@ public partial class TerrainMaterialSettings
                 EnableEndpointTaper = EnableEndpointTaper,
                 EndpointTaperDistanceMeters = EndpointTaperDistanceMeters,
                 EndpointTerrainBlendStrength = EndpointTerrainBlendStrength,
-                ExportJunctionDebugImage = ExportJunctionDebugImage
+                ExportJunctionDebugImage = true
             };
 
             return result;

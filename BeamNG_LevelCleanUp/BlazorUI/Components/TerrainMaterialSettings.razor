@@ -982,68 +982,6 @@ Class="my-0">
                                         </div>
                                     </MudTabPanel>
                                     
-                                    <!-- Debug Tab -->
-                                    <MudTabPanel Text="Debug" Icon="@Icons.Material.Filled.BugReport">
-                                        <div class="pa-3">
-                                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
-                                                Debug output options. These create additional image files for troubleshooting.
-                                            </MudAlert>
-                                            
-                                            <MudPaper Class="pa-3" Elevation="1">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Small" Class="mr-1"/>
-                                                    Export Debug Images
-                                                </MudText>
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
-                                                    Debug images are generated for the unified road network (all materials combined).
-                                                </MudText>
-                                                <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.ExportSmoothedHeightmapWithOutlines" 
-                                                                      Color="Color.Secondary"
-                                                                      Label="Unified Heightmap with Outlines"/>
-                                                            <HelpAdornment TooltipText="@ExportSmoothedHeightmapWithOutlines"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.ExportSplineDebugImage" 
-                                                                      Color="Color.Secondary"
-                                                                      Label="Per-Material Spline Debug"/>
-                                                            <HelpAdornment TooltipText="@ExportSplineDebugImage"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.ExportSkeletonDebugImage" 
-                                                                      Color="Color.Secondary"
-                                                                      Label="Skeleton Extraction (PNG only)"
-                                                                      Disabled="@IsUsingOsmSplines"/>
-                                                            <HelpAdornment TooltipText="@ExportSkeletonDebugImage"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.ExportSmoothedElevationDebugImage" 
-                                                                      Color="Color.Secondary"
-                                                                      Label="Elevation Profile"/>
-                                                            <HelpAdornment TooltipText="@ExportSmoothedElevationDebugImage"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.ExportJunctionDebugImage" 
-                                                                      Color="Color.Secondary"
-                                                                      Label="Cross-Material Junction Debug"
-                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"/>
-                                                            <HelpAdornment TooltipText="@ExportJunctionDebugImage"/>
-                                                        </div>
-                                                    </MudItem>
-                                                </MudGrid>
-                                            </MudPaper>
-                                        </div>
-                                    </MudTabPanel>
                                 </MudTabs>
                             </ChildContent>
                         </MudExpansionPanel>
