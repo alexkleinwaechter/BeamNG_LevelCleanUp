@@ -625,6 +625,15 @@ internal class BeamFileReader
                         CopyAssets);
                     terrainScanner.ScanTerrainMaterials();
                 }
+                
+                // After scanning all terrain materials, extract colors from the .ter file
+                // This updates the BaseColorHex property of each CopyAsset with the weighted average color
+                if (CopyAssets.Any(a => a.CopyAssetType == CopyAssetType.Terrain))
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Extracting terrain material colors from .ter file...");
+                    TerrainCopyScanner.ExtractTerrainMaterialColors(_levelNamePathCopyFrom, CopyAssets);
+                }
             }
             else
             {

@@ -3,6 +3,7 @@ using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
+using BeamNgTerrainPoc.Terrain.ColorExtraction;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
 
@@ -188,5 +189,135 @@ public class TerrainCopyScanner
         }
 
         return targetMaterials.OrderBy(x => x).ToList();
+    }
+
+    /// <summary>
+    ///     Extracts weighted average colors from terrain materials using the terrain .ter file.
+    ///     Uses the internal material name from main.materials.json mapped to baseColorBaseTex textures.
+    /// </summary>
+    /// <param name="levelPath">Path to the level folder (the namePath from extraction)</param>
+    /// <param name="copyAssets">List of CopyAssets to update with extracted colors</param>
+    /// <returns>Dictionary mapping internal material name to hex color</returns>
+    public static Dictionary<string, string> ExtractTerrainMaterialColors(string levelPath, List<CopyAsset> copyAssets)
+    {
+        var extractedColors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        
+        try
+        {
+            // 1. Find the .ter file in the level
+            var terFilePath = FindTerrainTerFile(levelPath);
+            if (string.IsNullOrEmpty(terFilePath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "No .ter terrain file found. Colors will use default values.");
+                return extractedColors;
+            }
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Found terrain file: {Path.GetFileName(terFilePath)}");
+            
+            // 2. Build material textures dictionary from CopyAssets
+            // We need to map: internal material name -> baseColorBaseTex path
+            var materialTextures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var copyAsset in copyAssets.Where(a => a.CopyAssetType == CopyAssetType.Terrain))
+            {
+                // Use the internal name as key (this matches what's in the .ter file)
+                var internalName = copyAsset.TerrainMaterialInternalName;
+                if (string.IsNullOrEmpty(internalName))
+                    continue;
+                
+                // Find the baseColorBaseTex texture from the material files
+                var material = copyAsset.Materials.FirstOrDefault();
+                if (material?.MaterialFiles == null)
+                    continue;
+                
+                // Look for baseColorBaseTex (the terrain-sized base texture used for color extraction)
+                var baseColorTex = material.MaterialFiles.FirstOrDefault(f => 
+                    f.MapType?.Equals("baseColorBaseTex", StringComparison.OrdinalIgnoreCase) == true);
+                
+                if (baseColorTex != null && baseColorTex.File.Exists)
+                {
+                    materialTextures[internalName] = baseColorTex.File.FullName;
+                }
+            }
+            
+            if (!materialTextures.Any())
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    "No valid baseColorBaseTex textures found for color extraction.");
+                return extractedColors;
+            }
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Extracting colors for {materialTextures.Count} terrain materials...");
+            
+            // 3. Extract colors using TerrainColorExtractor
+            extractedColors = TerrainColorExtractor.ExtractColors(terFilePath, materialTextures);
+            
+            // 4. Update CopyAssets with extracted colors
+            foreach (var copyAsset in copyAssets.Where(a => a.CopyAssetType == CopyAssetType.Terrain))
+            {
+                var internalName = copyAsset.TerrainMaterialInternalName;
+                if (!string.IsNullOrEmpty(internalName) && 
+                    extractedColors.TryGetValue(internalName, out var hexColor) &&
+                    !string.IsNullOrEmpty(hexColor))
+                {
+                    copyAsset.BaseColorHex = hexColor;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"  {internalName}: extracted color {hexColor}");
+                }
+            }
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Color extraction complete. Updated {extractedColors.Count(kv => !string.IsNullOrEmpty(kv.Value))} materials.");
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Error extracting terrain material colors: {ex.Message}. Using default colors.");
+        }
+        
+        return extractedColors;
+    }
+    
+    /// <summary>
+    ///     Finds the terrain .ter file in a level directory.
+    /// </summary>
+    /// <param name="levelPath">Path to the level folder</param>
+    /// <returns>Full path to the .ter file, or null if not found</returns>
+    private static string? FindTerrainTerFile(string levelPath)
+    {
+        try
+        {
+            // Search for .ter files in the level directory
+            var terFiles = Directory.GetFiles(levelPath, "*.ter", SearchOption.TopDirectoryOnly);
+            
+            if (terFiles.Length > 0)
+            {
+                // Prefer "theTerrain.ter" if it exists
+                var theTerrain = terFiles.FirstOrDefault(f => 
+                    Path.GetFileName(f).Equals("theTerrain.ter", StringComparison.OrdinalIgnoreCase));
+                
+                return theTerrain ?? terFiles[0];
+            }
+            
+            // Also check in subdirectories (some levels might have different structures)
+            terFiles = Directory.GetFiles(levelPath, "*.ter", SearchOption.AllDirectories);
+            if (terFiles.Length > 0)
+            {
+                var theTerrain = terFiles.FirstOrDefault(f => 
+                    Path.GetFileName(f).Equals("theTerrain.ter", StringComparison.OrdinalIgnoreCase));
+                
+                return theTerrain ?? terFiles[0];
+            }
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Error searching for .ter file: {ex.Message}");
+        }
+        
+        return null;
     }
 }

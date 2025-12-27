@@ -80,7 +80,6 @@ public class GeoTiffCombiner
         double maxX = double.MinValue, maxY = double.MinValue;
         double[] geoTransform = new double[6];
         double pixelSizeX = 0, pixelSizeY = 0;
-        int tileWidth = 0, tileHeight = 0;
         string? projection = null;
         DataType dataType = DataType.GDT_Unknown;
         int bandCount = 0;
@@ -94,6 +93,7 @@ public class GeoTiffCombiner
             // First pass: get bounds from all tiles
             TerrainLogger.Info($"Analyzing {inputFiles.Count} tiles for bounds...");
             var analyzedCount = 0;
+            int? firstTileWidth = null, firstTileHeight = null;
             
             foreach (var file in inputFiles)
             {
@@ -111,18 +111,18 @@ public class GeoTiffCombiner
                 {
                     pixelSizeX = Math.Abs(geoTransform[1]);
                     pixelSizeY = Math.Abs(geoTransform[5]);
-                    tileWidth = dataset.RasterXSize;
-                    tileHeight = dataset.RasterYSize;
+                    firstTileWidth = dataset.RasterXSize;
+                    firstTileHeight = dataset.RasterYSize;
                     projection = dataset.GetProjection();
                     bandCount = dataset.RasterCount;
                     dataType = dataset.GetRasterBand(1).DataType;
                 }
                 else
                 {
-                    // Verify tiles have consistent dimensions
-                    if (dataset.RasterXSize != tileWidth || dataset.RasterYSize != tileHeight)
+                    // Log info about tiles with different dimensions (common for edge tiles)
+                    if (dataset.RasterXSize != firstTileWidth || dataset.RasterYSize != firstTileHeight)
                     {
-                        TerrainLogger.DetailWarning($"Tile size mismatch in {Path.GetFileName(file)}. Expected {tileWidth}x{tileHeight}, got {dataset.RasterXSize}x{dataset.RasterYSize}");
+                        TerrainLogger.Detail($"Tile {Path.GetFileName(file)} has different size: {dataset.RasterXSize}x{dataset.RasterYSize} (first tile: {firstTileWidth}x{firstTileHeight})");
                     }
                 }
 
@@ -187,6 +187,10 @@ public class GeoTiffCombiner
                 using var inputDataset = Gdal.Open(file, Access.GA_ReadOnly);
                 if (inputDataset == null) continue;
 
+                // Get THIS tile's actual dimensions (tiles may have different sizes)
+                int thisTileWidth = inputDataset.RasterXSize;
+                int thisTileHeight = inputDataset.RasterYSize;
+
                 var inputGeoTransform = new double[6];
                 inputDataset.GetGeoTransform(inputGeoTransform);
 
@@ -194,12 +198,12 @@ public class GeoTiffCombiner
                 int xOffset = (int)Math.Round((inputGeoTransform[0] - minX) / pixelSizeX);
                 int yOffset = (int)Math.Round((maxY - inputGeoTransform[3]) / pixelSizeY);
 
-                // Clamp offsets
-                xOffset = Math.Max(0, Math.Min(xOffset, totalWidth - tileWidth));
-                yOffset = Math.Max(0, Math.Min(yOffset, totalHeight - tileHeight));
+                // Clamp offsets using THIS tile's dimensions
+                xOffset = Math.Max(0, Math.Min(xOffset, totalWidth - thisTileWidth));
+                yOffset = Math.Max(0, Math.Min(yOffset, totalHeight - thisTileHeight));
 
                 // Use Detail for per-tile messages (suppressed from UI when many tiles)
-                TerrainLogger.Detail($"Copying tile {Path.GetFileName(file)} to offset ({xOffset}, {yOffset})");
+                TerrainLogger.Detail($"Copying tile {Path.GetFileName(file)} ({thisTileWidth}x{thisTileHeight}) to offset ({xOffset}, {yOffset})");
 
                 // Copy each band
                 for (int bandIndex = 1; bandIndex <= bandCount; bandIndex++)
@@ -207,9 +211,10 @@ public class GeoTiffCombiner
                     var inputBand = inputDataset.GetRasterBand(bandIndex);
                     var outputBand = outputDataset.GetRasterBand(bandIndex);
 
-                    var buffer = new double[tileWidth * tileHeight];
-                    inputBand.ReadRaster(0, 0, tileWidth, tileHeight, buffer, tileWidth, tileHeight, 0, 0);
-                    outputBand.WriteRaster(xOffset, yOffset, tileWidth, tileHeight, buffer, tileWidth, tileHeight, 0, 0);
+                    // Use THIS tile's dimensions for buffer and read/write
+                    var buffer = new double[thisTileWidth * thisTileHeight];
+                    inputBand.ReadRaster(0, 0, thisTileWidth, thisTileHeight, buffer, thisTileWidth, thisTileHeight, 0, 0);
+                    outputBand.WriteRaster(xOffset, yOffset, thisTileWidth, thisTileHeight, buffer, thisTileWidth, thisTileHeight, 0, 0);
                 }
                 
                 copiedCount++;
