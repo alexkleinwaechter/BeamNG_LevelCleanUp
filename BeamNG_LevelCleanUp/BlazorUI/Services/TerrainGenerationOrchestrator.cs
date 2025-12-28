@@ -8,6 +8,7 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
@@ -39,6 +40,30 @@ public class TerrainGenerationOrchestrator
     /// Executes the full terrain generation pipeline.
     /// </summary>
     public async Task<GenerationResult> ExecuteAsync(TerrainGenerationState state)
+    {
+        return await ExecuteInternalAsync(state, null);
+    }
+
+    /// <summary>
+    /// Executes terrain generation using a pre-analyzed road network.
+    /// This allows users to preview and modify junction exclusions before generation.
+    /// </summary>
+    /// <param name="state">The terrain generation state with all settings.</param>
+    /// <param name="analysisState">The pre-analyzed network state with exclusions applied.</param>
+    /// <returns>Generation result.</returns>
+    public async Task<GenerationResult> ExecuteWithPreAnalyzedNetworkAsync(
+        TerrainGenerationState state,
+        TerrainAnalysisState? analysisState)
+    {
+        return await ExecuteInternalAsync(state, analysisState);
+    }
+
+    /// <summary>
+    /// Internal implementation of terrain generation.
+    /// </summary>
+    private async Task<GenerationResult> ExecuteInternalAsync(
+        TerrainGenerationState state,
+        TerrainAnalysisState? analysisState)
     {
         var debugPath = state.GetDebugPath();
         Directory.CreateDirectory(debugPath);
@@ -82,12 +107,22 @@ public class TerrainGenerationOrchestrator
             }
 
             // Build terrain creation parameters
-            terrainParameters = BuildTerrainParameters(state, materialDefinitions);
+            terrainParameters = BuildTerrainParameters(state, materialDefinitions, analysisState);
 
             // Execute terrain creation
             var outputPath = state.GetOutputPath();
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Starting terrain generation: {state.TerrainSize}x{state.TerrainSize}, {materialDefinitions.Count} materials...");
+            
+            if (analysisState?.HasAnalysis == true)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Starting terrain generation with pre-analyzed network ({analysisState.SplineCount} splines, " +
+                    $"{analysisState.ActiveJunctionCount} active junctions, {analysisState.ExcludedCount} excluded)...");
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Starting terrain generation: {state.TerrainSize}x{state.TerrainSize}, {materialDefinitions.Count} materials...");
+            }
 
             success = await creator.CreateTerrainFileAsync(outputPath, terrainParameters);
 
@@ -459,7 +494,8 @@ public class TerrainGenerationOrchestrator
 
     private static TerrainCreationParameters BuildTerrainParameters(
         TerrainGenerationState state,
-        List<MaterialDefinition> materialDefinitions)
+        List<MaterialDefinition> materialDefinitions,
+        TerrainAnalysisState? analysisState = null)
     {
         var parameters = new TerrainCreationParameters
         {
@@ -474,6 +510,19 @@ public class TerrainGenerationOrchestrator
             GlobalJunctionBlendDistanceMeters = state.GlobalJunctionBlendDistanceMeters,
             AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0
         };
+
+        // Pass pre-analyzed network if available
+        if (analysisState?.HasAnalysis == true && analysisState.Network != null)
+        {
+            // Ensure exclusions are applied before passing to terrain generation
+            analysisState.ApplyExclusions();
+            parameters.PreAnalyzedNetwork = analysisState.Network;
+            
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Using pre-analyzed network: {analysisState.SplineCount} splines, " +
+                $"{analysisState.ActiveJunctionCount} active junctions " +
+                $"({analysisState.ExcludedCount} excluded)");
+        }
 
         // Set heightmap source
         switch (state.HeightmapSourceType)

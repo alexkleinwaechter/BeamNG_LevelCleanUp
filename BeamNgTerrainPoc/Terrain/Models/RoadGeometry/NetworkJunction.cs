@@ -115,6 +115,18 @@ public class NetworkJunction
     public int JunctionId { get; set; }
 
     /// <summary>
+    ///     Whether this junction is excluded from harmonization.
+    ///     Excluded junctions are skipped during elevation harmonization,
+    ///     allowing the original terrain elevation to be used at this location.
+    /// </summary>
+    public bool IsExcluded { get; set; }
+
+    /// <summary>
+    ///     Reason for exclusion (user-provided or auto-detected).
+    /// </summary>
+    public string? ExclusionReason { get; set; }
+
+    /// <summary>
     ///     The maximum priority among all contributors.
     ///     Used for ordering junction processing.
     /// </summary>

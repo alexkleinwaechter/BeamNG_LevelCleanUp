@@ -116,7 +116,7 @@
                 {
                     var movedCount = Materials.Skip(1).Count(m => !m.HasLayerMap);
                     Snackbar.Add($"Reordered {movedCount} material(s) without layer maps to end of list.", Severity.Info);
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Moved {movedCount} material(s) without layer maps to end.");
+                    // Reorder details not needed in PubSub - Snackbar is sufficient
                 }
             }
 
@@ -125,7 +125,7 @@
             
             LastExportPath = exportFolder;
             Snackbar.Add($"Terrain preset exported to {exportFolder}", Severity.Success);
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported terrain preset with {_roadMaterialsExported} road smoothing config(s)");
+            // Snackbar provides export confirmation - no need for duplicate PubSub message
             StateHasChanged();
         }
         catch (Exception ex)
@@ -170,7 +170,7 @@
         if (File.Exists(smoothedHeightmapPath))
         {
             sourceHeightmapPath = smoothedHeightmapPath;
-            PubSubChannel.SendMessage(PubSubMessageType.Info, "Using smoothed heightmap as primary heightmap");
+            // Using smoothed heightmap - detail not needed in UI
         }
         else if (File.Exists(generatedHeightmapPath))
         {
@@ -179,7 +179,7 @@
         else if (!string.IsNullOrEmpty(HeightmapPath) && File.Exists(HeightmapPath))
         {
             sourceHeightmapPath = HeightmapPath;
-            PubSubChannel.SendMessage(PubSubMessageType.Info, "Using source heightmap (no generated heightmap found)");
+            // Using source heightmap - detail not needed in UI
         }
         
         if (!string.IsNullOrEmpty(sourceHeightmapPath))
@@ -190,7 +190,7 @@
             if (!string.Equals(Path.GetFullPath(sourceHeightmapPath), Path.GetFullPath(targetHeightmapPath), StringComparison.OrdinalIgnoreCase))
             {
                 CopyFileWithRetry(sourceHeightmapPath, targetHeightmapPath);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported heightmap: {heightmapExportName}");
+                // Heightmap exported - included in final count
             }
             preset["heightMapPath"] = $"/levels/{levelName}/import/{heightmapExportName}";
         }
@@ -202,7 +202,7 @@
         var holemapExportName = $"{TerrainName}_holemap.png";
         var holemapExportPath = Path.Combine(exportFolder, holemapExportName);
         GenerateBlackLayerMap(holemapExportPath, TerrainSize);
-        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Generated holemap: {holemapExportName}");
+        // Holemap generated - included in final summary
         preset["holeMapPath"] = $"/levels/{levelName}/import/{holemapExportName}";
         
         // ========================================
@@ -217,7 +217,7 @@
             if (!string.Equals(Path.GetFullPath(GeoTiffPath), Path.GetFullPath(targetGeoTiffPath), StringComparison.OrdinalIgnoreCase))
             {
                 CopyFileWithRetry(GeoTiffPath, targetGeoTiffPath);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported GeoTIFF source: {geoTiffExportName}");
+                // GeoTIFF source exported - detail not needed in UI
             }
         }
         else if (HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory && !string.IsNullOrEmpty(GeoTiffDirectory) && Directory.Exists(GeoTiffDirectory))
@@ -233,7 +233,7 @@
                 if (!string.Equals(Path.GetFullPath(combinedGeoTiffPath), Path.GetFullPath(targetCombinedPath), StringComparison.OrdinalIgnoreCase))
                 {
                     CopyFileWithRetry(combinedGeoTiffPath, targetCombinedPath);
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported combined GeoTIFF: {combinedExportName}");
+                    // Combined GeoTIFF exported - detail not needed in UI
                 }
             }
             else
@@ -254,10 +254,7 @@
                         CopyFileWithRetry(tiffFile, Path.Combine(tilesExportFolder, Path.GetFileName(tiffFile)));
                         tileCount++;
                     }
-                    if (tileCount > 0)
-                    {
-                        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported {tileCount} GeoTIFF tile(s) to geotiff_tiles/");
-                    }
+                    // GeoTIFF tiles exported - count included in file statistics if needed
                 }
             }
         }
@@ -320,14 +317,14 @@
                 }
                 
                 materialsWithLayerMap++;
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported layer map [{mat.Order}]: {layerMapExportName}");
+                // Per-layer-map export details not needed in UI
             }
             else
             {
                 // No layer map found - generate a black (empty) PNG
                 GenerateBlackLayerMap(targetLayerMapPath, TerrainSize);
                 materialsWithGeneratedBlack++;
-                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Generated empty layer map [{mat.Order}]: {layerMapExportName}");
+                // Empty layer map generated - included in final count
             }
             
             opacityMaps.Add($"/levels/{levelName}/import/{layerMapExportName}");
@@ -336,10 +333,7 @@
         if (opacityMaps.Count > 0)
         {
             preset["opacityMaps"] = opacityMaps;
-            var summary = $"Total layer maps: {opacityMaps.Count}";
-            if (materialsWithLayerMap > 0) summary += $", {materialsWithLayerMap} from generation";
-            if (materialsWithGeneratedBlack > 0) summary += $", {materialsWithGeneratedBlack} empty/black";
-            PubSubChannel.SendMessage(PubSubMessageType.Info, summary);
+            // Layer map summary included in Snackbar notification
         }
         
         // ========================================
@@ -350,7 +344,7 @@
         // Write the preset JSON file
         var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
         await File.WriteAllTextAsync(presetFilePath, preset.ToJsonString(jsonOptions));
-        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Exported terrain preset: {presetFileName}");
+        // Preset file written - Snackbar shows final success message
     }
 
     private JsonObject BuildAppSettings(List<TerrainMaterialItemExtended> orderedMaterials, string exportFolder)
@@ -475,6 +469,7 @@
             ["roadWidthMeters"] = mat.RoadWidthMeters,
             ["roadSurfaceWidthMeters"] = mat.RoadSurfaceWidthMeters,
             ["terrainAffectedRangeMeters"] = mat.TerrainAffectedRangeMeters,
+            ["roadEdgeProtectionBufferMeters"] = mat.RoadEdgeProtectionBufferMeters,
             ["enableMaxSlopeConstraint"] = mat.EnableMaxSlopeConstraint,
             ["roadMaxSlopeDegrees"] = mat.RoadMaxSlopeDegrees,
             ["sideMaxSlopeDegrees"] = mat.SideMaxSlopeDegrees,

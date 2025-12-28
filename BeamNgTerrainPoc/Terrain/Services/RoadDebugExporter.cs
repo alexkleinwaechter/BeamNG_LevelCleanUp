@@ -187,7 +187,7 @@ public static class RoadDebugExporter
             return;
         }
 
-        TerrainLogger.Info($"Exporting {pathGroups.Count} spline mask(s) to: {splinesDir}");
+        TerrainCreationLogger.Current?.Detail($"Exporting {pathGroups.Count} spline mask(s) to: {splinesDir}");
 
         // Create combined image (16-bit grayscale)
         using var combinedImage = new Image<L16>(width, height, new L16(0));
@@ -260,10 +260,10 @@ public static class RoadDebugExporter
         var combinedFilePath = Path.Combine(splinesDir, "all_splines.png");
         combinedImage.SaveAsPng(combinedFilePath);
 
-        TerrainLogger.Info($"Exported {pathIndex} individual spline mask(s) + combined mask (16-bit grayscale)");
-        TerrainLogger.Info(
+        TerrainCreationLogger.Current?.Detail($"Exported {pathIndex} individual spline mask(s) + combined mask (16-bit grayscale)");
+        TerrainCreationLogger.Current?.Detail(
             $"  Road width: {parameters.RoadWidthMeters}m ({parameters.RoadWidthMeters / metersPerPixel:F1} pixels)");
-        TerrainLogger.Info($"  Combined mask: {combinedFilePath}");
+        TerrainCreationLogger.Current?.Detail($"  Combined mask: {combinedFilePath}");
     }
 
     /// <summary>
@@ -384,8 +384,8 @@ public static class RoadDebugExporter
         Directory.CreateDirectory(dir);
         var filePath = Path.Combine(dir, fileName);
         image.SaveAsPng(filePath);
-        TerrainLogger.Info($"Exported spline debug image: {filePath}");
-        TerrainLogger.Info($"  Splines drawn: {splinesDrawn} (yellow=interpolated path, cyan=control points)");
+        TerrainCreationLogger.Current?.Detail($"Exported spline debug image: {filePath}");
+        TerrainCreationLogger.Current?.Detail($"  Splines drawn: {splinesDrawn} (yellow=interpolated path, cyan=control points)");
     }
 
     /// <summary>
@@ -440,8 +440,8 @@ public static class RoadDebugExporter
         Directory.CreateDirectory(dir);
         var filePath = Path.Combine(dir, "spline_smoothed_elevation_debug.png");
         image.SaveAsPng(filePath);
-        TerrainLogger.Info($"Exported smoothed elevation debug image: {filePath}");
-        TerrainLogger.Info($"  Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
+        TerrainCreationLogger.Current?.Detail($"Exported smoothed elevation debug image: {filePath}");
+        TerrainCreationLogger.Current?.Detail($"  Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
     }
 
     /// <summary>
@@ -461,7 +461,7 @@ public static class RoadDebugExporter
         var width = smoothedHeightMap.GetLength(1);
         var height = smoothedHeightMap.GetLength(0);
 
-        TerrainLogger.Info($"Exporting smoothed heightmap with road outlines ({width}x{height})...");
+        TerrainCreationLogger.Current?.Detail($"Exporting smoothed heightmap with road outlines ({width}x{height})...");
 
         // Step 1: Find height range for grayscale normalization
         var minHeight = float.MaxValue;
@@ -519,11 +519,11 @@ public static class RoadDebugExporter
         var filePath = Path.Combine(dir, "smoothed_heightmap_with_road_outlines.png");
         image.SaveAsPng(filePath);
 
-        TerrainLogger.Info($"Exported smoothed heightmap with outlines: {filePath}");
-        TerrainLogger.Info($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");
-        TerrainLogger.Info(
+        TerrainCreationLogger.Current?.Detail($"Exported smoothed heightmap with outlines: {filePath}");
+        TerrainCreationLogger.Current?.Detail($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");
+        TerrainCreationLogger.Current?.Detail(
             $"  Road edge outline (cyan): {roadEdgePixels:N0} pixels at ±{roadHalfWidth:F1}m from centerline");
-        TerrainLogger.Info(
+        TerrainCreationLogger.Current?.Detail(
             $"  Blend zone edge outline (magenta): {blendEdgePixels:N0} pixels at ±{blendZoneMaxDist:F1}m from centerline");
     }
 

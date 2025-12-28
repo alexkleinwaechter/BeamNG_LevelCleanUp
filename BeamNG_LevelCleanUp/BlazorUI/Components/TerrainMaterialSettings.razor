@@ -263,6 +263,18 @@ Class="my-0">
                 </MudItem>
                 
                 <MudItem xs="12" sm="6">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField @bind-Value="Material.RoadEdgeProtectionBufferMeters" 
+                                        Label="Edge Protection Buffer (m)" 
+                                        Variant="Variant.Outlined"
+                                        Min="0.0f" Max="20.0f" Step="0.5f"
+                                        HelperText="Protection from other roads' blend zones"
+                                        Class="flex-grow-1"/>
+                        <HelpAdornment TooltipText="@RoadEdgeProtectionBuffer"/>
+                    </div>
+                </MudItem>
+                
+                <MudItem xs="12" sm="6">
                     <div class="d-flex align-center gap-1">
                         <MudSwitch @bind-Value="Material.EnableMaxSlopeConstraint" 
                                   Color="Color.Primary"

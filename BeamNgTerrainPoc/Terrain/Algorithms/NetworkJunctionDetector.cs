@@ -366,7 +366,7 @@ public class NetworkJunctionDetector
                 {
                     // The spline has an endpoint here but also passes through nearby
                     // This is unusual - log it but don't add duplicate
-                    TerrainLogger.Info($"  Note: Spline {spline.SplineId} has endpoint at junction but also passes through nearby");
+                    TerrainCreationLogger.Current?.Detail($"Spline {spline.SplineId} has endpoint at junction but also passes through nearby");
                     continue;
                 }
 

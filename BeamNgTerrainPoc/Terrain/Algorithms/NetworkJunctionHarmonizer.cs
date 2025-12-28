@@ -90,8 +90,15 @@ public class NetworkJunctionHarmonizer
 
         // Step 2: Sort by priority (handle highest-priority junctions first)
         var sortedJunctions = junctions.OrderByDescending(j => j.MaxPriority).ToList();
+        
+        // Count excluded junctions
+        var excludedCount = sortedJunctions.Count(j => j.IsExcluded);
+        if (excludedCount > 0)
+        {
+            TerrainLogger.Info($"  {excludedCount} junction(s) marked as excluded, will be skipped");
+        }
 
-        // Step 3: Compute harmonized elevation for each junction
+        // Step 3: Compute harmonized elevation for each junction (skip excluded)
         ComputeJunctionElevations(sortedJunctions, heightMap, metersPerPixel, globalBlendDistance);
         perfLog?.Timing("Computed junction elevations");
 
@@ -157,6 +164,14 @@ public class NetworkJunctionHarmonizer
         var mapWidth = heightMap.GetLength(1);
 
         foreach (var junction in junctions)
+        {
+            // Skip excluded junctions - they won't be harmonized
+            if (junction.IsExcluded)
+            {
+                junction.HarmonizedElevation = float.NaN;
+                continue;
+            }
+            
             switch (junction.Type)
             {
                 case JunctionType.Endpoint:
@@ -168,19 +183,20 @@ public class NetworkJunctionHarmonizer
                     break;
 
                 case JunctionType.MidSplineCrossing:
-                    ComputeMidSplineCrossingElevation(junction);
-                    break;
+                                ComputeMidSplineCrossingElevation(junction);
+                                break;
 
-                case JunctionType.YJunction:
-                case JunctionType.CrossRoads:
-                case JunctionType.Complex:
-                    ComputeMultiWayJunctionElevation(junction);
-                    break;
-            }
-    }
+                            case JunctionType.YJunction:
+                            case JunctionType.CrossRoads:
+                            case JunctionType.Complex:
+                                ComputeMultiWayJunctionElevation(junction);
+                                break;
+                        }
+                    }
+                }
 
-    /// <summary>
-    ///     Computes elevation for isolated endpoints (roads that end without connecting to another).
+                /// <summary>
+                ///     Computes elevation for isolated endpoints (roads that end without connecting to another).
     ///     Blends toward terrain elevation based on configuration.
     /// </summary>
     private void ComputeEndpointElevation(
@@ -333,19 +349,19 @@ public class NetworkJunctionHarmonizer
         }
 
         if (totalPriority > 0)
-        {
-            junction.HarmonizedElevation = weightedSum / totalPriority;
-        }
-        else
-        {
-            // Fallback to simple average
-            junction.HarmonizedElevation = junction.Contributors.Average(c => c.CrossSection.TargetElevation);
-        }
+            {
+                junction.HarmonizedElevation = weightedSum / totalPriority;
+            }
+            else
+            {
+                // Fallback to simple average
+                junction.HarmonizedElevation = junction.Contributors.Average(c => c.CrossSection.TargetElevation);
+            }
 
-        TerrainLogger.Info($"    MidSplineCrossing #{junction.JunctionId}: " +
-                          $"harmonized elevation = {junction.HarmonizedElevation:F2}m " +
-                          $"(from {junction.Contributors.Count} continuous roads)");
-    }
+            TerrainCreationLogger.Current?.Detail($"MidSplineCrossing #{junction.JunctionId}: " +
+                              $"harmonized elevation = {junction.HarmonizedElevation:F2}m " +
+                              $"(from {junction.Contributors.Count} continuous roads)");
+        }
 
     /// <summary>
     ///     Propagates junction elevation constraints back along each affected spline.
@@ -367,7 +383,7 @@ public class NetworkJunctionHarmonizer
             .GroupBy(cs => cs.OwnerSplineId)
             .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
 
-        foreach (var junction in junctions.Where(j => j.Type != JunctionType.Endpoint))
+        foreach (var junction in junctions.Where(j => j.Type != JunctionType.Endpoint && !j.IsExcluded))
         {
             // For T-junctions, only propagate along terminating roads
             // For mid-spline crossings and other types, propagate along all roads
@@ -537,7 +553,7 @@ public class NetworkJunctionHarmonizer
             .GroupBy(cs => cs.OwnerSplineId)
             .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
 
-        foreach (var junction in junctions.Where(j => j.Type == JunctionType.Endpoint))
+        foreach (var junction in junctions.Where(j => j.Type == JunctionType.Endpoint && !j.IsExcluded))
         foreach (var contributor in junction.Contributors)
         {
             var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters
@@ -632,11 +648,12 @@ public class NetworkJunctionHarmonizer
     {
         var smoothedCount = 0;
 
-        // Only process multi-way junctions (Y, CrossRoads, Complex) - not T-junctions or isolated endpoints
+        // Only process multi-way junctions (Y, CrossRoads, Complex) - not T-junctions, isolated endpoints, or excluded
         var multiWayJunctions = junctions.Where(j =>
-            j.Type == JunctionType.YJunction ||
+            !j.IsExcluded &&
+            (j.Type == JunctionType.YJunction ||
             j.Type == JunctionType.CrossRoads ||
-            j.Type == JunctionType.Complex).ToList();
+            j.Type == JunctionType.Complex)).ToList();
 
         if (multiWayJunctions.Count == 0)
             return 0;
@@ -669,8 +686,8 @@ public class NetworkJunctionHarmonizer
             // This ensures we're sampling truly stable, unmodified road elevations
             var referenceDistance = globalBlendDistance * 1.0f;
 
-            TerrainLogger.Info(
-                $"    Junction #{junction.JunctionId} ({junction.Type}): {contributorCount} contributors, " +
+            TerrainCreationLogger.Current?.Detail(
+                $"Junction #{junction.JunctionId} ({junction.Type}): {contributorCount} contributors, " +
                 $"plateau radius={plateauRadius:F1}m, ref dist={referenceDistance:F1}m");
 
             // Collect ORIGINAL (pre-harmonization) reference elevations from each contributing spline
@@ -715,8 +732,8 @@ public class NetworkJunctionHarmonizer
 
             if (referenceElevations.Count == 0)
             {
-                TerrainLogger.Info(
-                    $"    Junction #{junction.JunctionId}: No valid reference elevations found, skipping");
+                TerrainCreationLogger.Current?.Detail(
+                    $"Junction #{junction.JunctionId}: No valid reference elevations found, skipping");
                 continue;
             }
 
@@ -731,8 +748,8 @@ public class NetworkJunctionHarmonizer
             var maxElev = referenceElevations.Max(r => r.elevation);
             var elevRange = maxElev - minElev;
 
-            TerrainLogger.Info(
-                $"    Junction #{junction.JunctionId}: ORIGINAL reference elevations range [{minElev:F2}, {maxElev:F2}] (range={elevRange:F2}m), " +
+            TerrainCreationLogger.Current?.Detail(
+                $"Junction #{junction.JunctionId}: ORIGINAL reference elevations range [{minElev:F2}, {maxElev:F2}] (range={elevRange:F2}m), " +
                 $"plateau={plateauElevation:F2}m, harmonized={junction.HarmonizedElevation:F2}m");
 
             // For junctions with significant elevation differences, use the HIGHER elevation
@@ -753,8 +770,8 @@ public class NetworkJunctionHarmonizer
                     var highElevAvg = totalMaxElev / maxPriorityAtHighElev;
                     // Bias toward higher elevation to prevent dents (70% high, 30% weighted average)
                     plateauElevation = highElevAvg * 0.7f + plateauElevation * 0.3f;
-                    TerrainLogger.Info(
-                        $"    Junction #{junction.JunctionId}: Large elev range detected, biasing plateau UP to {plateauElevation:F2}m");
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Junction #{junction.JunctionId}: Large elev range detected, biasing plateau UP to {plateauElevation:F2}m");
                 }
             }
 
@@ -786,19 +803,19 @@ public class NetworkJunctionHarmonizer
                     var newElevation = plateauElevation * (1.0f - blend) + currentElevation * blend;
 
                     if (MathF.Abs(newElevation - currentElevation) > 0.001f)
-                    {
-                        cs.TargetElevation = newElevation;
-                        junctionSmoothedCount++;
-                        smoothedCount++;
+                                    {
+                                        cs.TargetElevation = newElevation;
+                                        junctionSmoothedCount++;
+                                        smoothedCount++;
+                                    }
+                                }
+                            }
+
+                            TerrainCreationLogger.Current?.Detail($"Junction #{junction.JunctionId}: Smoothed {junctionSmoothedCount} cross-sections");
+                        }
+
+                        return smoothedCount;
                     }
-                }
-            }
-
-            TerrainLogger.Info($"    Junction #{junction.JunctionId}: Smoothed {junctionSmoothedCount} cross-sections");
-        }
-
-        return smoothedCount;
-    }
 
     /// <summary>
     ///     Applies the configured blend function.

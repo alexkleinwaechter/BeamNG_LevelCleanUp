@@ -54,8 +54,8 @@ public static class MasterSplineExporter
         var splinesDir = Path.Combine(outputDirectory, "splines");
         Directory.CreateDirectory(splinesDir);
         
-        TerrainLogger.Info($"Exporting {network.Splines.Count} master spline(s) from unified network to JSON...");
-        TerrainLogger.Info($"  TerrainBaseHeight={terrainBaseHeight:F1}m, NodeDistance={nodeDistanceMeters:F1}m");
+        TerrainCreationLogger.Current?.Detail($"Exporting {network.Splines.Count} master spline(s) from unified network to JSON...");
+        TerrainCreationLogger.Current?.Detail($"  TerrainBaseHeight={terrainBaseHeight:F1}m, NodeDistance={nodeDistanceMeters:F1}m");
         
         var masterSplines = new List<MasterSpline>();
         
@@ -70,7 +70,7 @@ public static class MasterSplineExporter
             var materialName = materialGroup.Key;
             var materialSplines = materialGroup.OrderBy(s => s.SplineId).ToList();
             
-            TerrainLogger.Info($"  Material '{materialName}': {materialSplines.Count} spline(s)");
+            TerrainCreationLogger.Current?.Detail($"  Material '{materialName}': {materialSplines.Count} spline(s)");
             
             int splineIndex = 0;
             foreach (var paramSpline in materialSplines)
@@ -146,7 +146,7 @@ public static class MasterSplineExporter
         var outputPath = Path.Combine(splinesDir, "master_splines.json");
         WriteSplineFile(splineFile, outputPath);
         
-        TerrainLogger.Info($"Exported {masterSplines.Count} master spline(s) to: {outputPath}");
+        TerrainCreationLogger.Current?.Detail($"Exported {masterSplines.Count} master spline(s) to: {outputPath}");
         
         // Also export combined spline mask
         ExportUnifiedSplineMasks(network, metersPerPixel, terrainSizePixels, splinesDir);
@@ -238,8 +238,8 @@ public static class MasterSplineExporter
         var combinedFilePath = Path.Combine(splinesDir, "all_splines.png");
         combinedImage.SaveAsPng(combinedFilePath);
         
-        TerrainLogger.Info($"Exported {totalSplineCount} individual spline mask(s) + combined mask (16-bit grayscale)");
-        TerrainLogger.Info($"  Combined mask: {combinedFilePath}");
+        TerrainCreationLogger.Current?.Detail($"Exported {totalSplineCount} individual spline mask(s) + combined mask (16-bit grayscale)");
+        TerrainCreationLogger.Current?.Detail($"  Combined mask: {combinedFilePath}");
     }
     
     /// <summary>
@@ -425,7 +425,7 @@ public static class MasterSplineExporter
             return;
         }
         
-        TerrainLogger.Info($"Exporting {pathGroups.Count} master spline(s) to JSON (TerrainBaseHeight={terrainBaseHeight:F1}m, NodeDistance={nodeDistance:F1}m)...");
+        TerrainCreationLogger.Current?.Detail($"Exporting {pathGroups.Count} master spline(s) to JSON (TerrainBaseHeight={terrainBaseHeight:F1}m, NodeDistance={nodeDistance:F1}m)...");
         
         var masterSplines = new List<MasterSpline>();
         int pathIndex = 0;
@@ -477,7 +477,7 @@ public static class MasterSplineExporter
         var outputPath = Path.Combine(splinesDir, "master_splines.json");
         WriteSplineFile(splineFile, outputPath);
         
-        TerrainLogger.Info($"Exported {masterSplines.Count} master spline(s) to: {outputPath}");
+        TerrainCreationLogger.Current?.Detail($"Exported {masterSplines.Count} master spline(s) to: {outputPath}");
     }
     
     /// <summary>
@@ -516,7 +516,7 @@ public static class MasterSplineExporter
         var terrainBaseHeight = parameters.TerrainBaseHeight;
         var nodeDistance = parameters.MasterSplineNodeDistanceMeters;
         
-        TerrainLogger.Info($"Exporting {splines.Count} pre-built spline(s) to JSON (TerrainBaseHeight={terrainBaseHeight:F1}m, NodeDistance={nodeDistance:F1}m)...");
+        TerrainCreationLogger.Current?.Detail($"Exporting {splines.Count} pre-built spline(s) to JSON (TerrainBaseHeight={terrainBaseHeight:F1}m, NodeDistance={nodeDistance:F1}m)...");
         
         var masterSplines = new List<MasterSpline>();
         
@@ -577,7 +577,7 @@ public static class MasterSplineExporter
         var outputPath = Path.Combine(splinesDir, "master_splines.json");
         WriteSplineFile(splineFile, outputPath);
         
-        TerrainLogger.Info($"Exported {masterSplines.Count} OSM master spline(s) to: {outputPath}");
+        TerrainCreationLogger.Current?.Detail($"Exported {masterSplines.Count} OSM master spline(s) to: {outputPath}");
     }
     
     /// <summary>

@@ -201,6 +201,12 @@ public class RoadSmoothingSettings
     public float RoadWidthMeters { get; set; } = 8.0f;
     public float? RoadSurfaceWidthMeters { get; set; }
     public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
+    
+    /// <summary>
+    /// Buffer distance beyond road edge protected from other roads' blend zones.
+    /// </summary>
+    public float RoadEdgeProtectionBufferMeters { get; set; } = 2.0f;
+    
     public bool EnableMaxSlopeConstraint { get; set; }
     public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;

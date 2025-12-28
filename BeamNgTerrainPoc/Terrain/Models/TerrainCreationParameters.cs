@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -193,4 +194,16 @@ public class TerrainCreationParameters
     /// This is an OUTPUT property - do not set manually.
     /// </summary>
     public SpawnPointData? ExtractedSpawnPoint { get; set; }
+
+    // ========================================
+    // PRE-ANALYZED NETWORK (for Analyze Settings feature)
+    // ========================================
+
+    /// <summary>
+    /// Pre-analyzed road network with junction exclusions already applied.
+    /// When set, the terrain generation will skip network building and junction detection,
+    /// instead using this pre-analyzed network directly.
+    /// This allows users to preview and modify junction exclusions before generation.
+    /// </summary>
+    public UnifiedRoadNetwork? PreAnalyzedNetwork { get; set; }
 }

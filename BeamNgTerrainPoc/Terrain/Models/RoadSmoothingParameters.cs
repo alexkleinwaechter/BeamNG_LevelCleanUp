@@ -78,6 +78,27 @@ public class RoadSmoothingParameters
     public float TerrainAffectedRangeMeters { get; set; } = 12.0f;
 
     /// <summary>
+    /// Buffer distance (in meters) beyond the road edge that is protected
+    /// from other roads' blend zones. Higher values prevent edge damage
+    /// from lower-priority roads meeting this road.
+    /// 
+    /// This creates a "protection zone" around each road that other roads'
+    /// blend zones cannot modify. Useful at intersections where a dirt road
+    /// meets a paved highway - prevents the dirt road's blend from damaging
+    /// the highway edge.
+    /// 
+    /// Typical values:
+    /// - 0.0m: No extra protection (only road core is protected)
+    /// - 2.0m: Default - good for most cases
+    /// - 5.0m+: Larger protection zone for wide roads or aggressive terrain
+    /// 
+    /// Note: Higher values may cause visible "steps" where protection zone ends.
+    /// 
+    /// Default: 2.0
+    /// </summary>
+    public float RoadEdgeProtectionBufferMeters { get; set; } = 2.0f;
+
+    /// <summary>
     /// Distance between cross-section samples in meters.
     /// Smaller values = more accurate but slower processing.
     /// 
@@ -332,6 +353,9 @@ public class RoadSmoothingParameters
 
         if (TerrainAffectedRangeMeters < 0)
             errors.Add("TerrainAffectedRangeMeters must be >= 0");
+
+        if (RoadEdgeProtectionBufferMeters < 0)
+            errors.Add("RoadEdgeProtectionBufferMeters must be >= 0");
 
         if (RoadMaxSlopeDegrees < 0 || RoadMaxSlopeDegrees > 90)
             errors.Add("RoadMaxSlopeDegrees must be between 0 and 90");

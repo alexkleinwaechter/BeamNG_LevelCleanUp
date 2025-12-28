@@ -24,14 +24,6 @@ public class UnifiedTerrainBlender
     private const int SpatialIndexCellSize = 32;
 
     /// <summary>
-    ///     Buffer added to road width for protection mask (in meters).
-    ///     This ensures the protection extends slightly beyond the nominal road edge
-    ///     to account for rasterization precision and prevent edge artifacts.
-    ///     A value of 0.5-1.0m typically covers sub-pixel inaccuracies.
-    /// </summary>
-    private const float ProtectionMaskBufferMeters = 1.0f;
-
-    /// <summary>
     ///     Distance field from the last blend operation (for post-processing).
     /// </summary>
     private float[,]? _lastDistanceField;
@@ -165,7 +157,7 @@ public class UnifiedTerrainBlender
             sectionsProcessed++;
         }
 
-        TerrainLogger.Info($"  Rasterized {sectionsProcessed} cross-sections into combined road mask");
+        TerrainCreationLogger.Current?.Detail($"Rasterized {sectionsProcessed} cross-sections into combined road mask");
         return mask;
     }
 
@@ -212,12 +204,18 @@ public class UnifiedTerrainBlender
         // Get spline priority lookup
         var splinePriority = network.Splines.ToDictionary(s => s.SplineId, s => s.Priority);
 
+        // Get spline protection buffer lookup (per-spline buffer values)
+        var splineProtectionBuffer = network.Splines.ToDictionary(
+            s => s.SplineId, 
+            s => s.Parameters.RoadEdgeProtectionBufferMeters);
+
         foreach (var (splineId, crossSections) in crossSectionsBySpline)
         {
             if (crossSections.Count < 2)
                 continue;
 
             var priority = splinePriority.GetValueOrDefault(splineId, 0);
+            var protectionBuffer = splineProtectionBuffer.GetValueOrDefault(splineId, 2.0f);
 
             // For each consecutive pair of cross-sections, fill the road core polygon
             for (var i = 0; i < crossSections.Count - 1; i++)
@@ -225,10 +223,10 @@ public class UnifiedTerrainBlender
                 var cs1 = crossSections[i];
                 var cs2 = crossSections[i + 1];
 
-                // Add buffer to road width for protection mask to prevent edge artifacts
-                // This ensures protection extends slightly beyond the nominal road edge
-                var halfWidth1 = cs1.EffectiveRoadWidth / 2.0f + ProtectionMaskBufferMeters;
-                var halfWidth2 = cs2.EffectiveRoadWidth / 2.0f + ProtectionMaskBufferMeters;
+                // Add per-spline buffer to road width for protection mask to prevent edge artifacts
+                // This ensures protection extends beyond the nominal road edge based on material settings
+                var halfWidth1 = cs1.EffectiveRoadWidth / 2.0f + protectionBuffer;
+                var halfWidth2 = cs2.EffectiveRoadWidth / 2.0f + protectionBuffer;
 
                 // Calculate the four corners of the road segment polygon
                 var left1 = cs1.CenterPoint - cs1.NormalDirection * halfWidth1;
@@ -259,10 +257,10 @@ public class UnifiedTerrainBlender
             }
         }
 
-        TerrainLogger.Info($"  Protection mask: {protectedPixels:N0} road core pixels protected");
+        TerrainCreationLogger.Current?.Detail($"Protection mask: {protectedPixels:N0} road core pixels protected");
         if (overwrittenByPriority > 0)
-            TerrainLogger.Info(
-                $"  Priority resolution: {overwrittenByPriority:N0} pixels assigned to higher-priority roads");
+            TerrainCreationLogger.Current?.Detail(
+                $"Priority resolution: {overwrittenByPriority:N0} pixels assigned to higher-priority roads");
 
         return (protectionMask, ownershipMap, elevationMap);
     }
@@ -611,7 +609,7 @@ public class UnifiedTerrainBlender
                 distances[y, x] = float.MaxValue;
             }
 
-        TerrainLogger.Info($"  Pre-filled {corePixelsUsed:N0} road core pixels from protection mask");
+        TerrainCreationLogger.Current?.Detail($"Pre-filled {corePixelsUsed:N0} road core pixels from protection mask");
 
         // Build spatial index for cross-sections (for blend zone processing)
         var spatialIndex = BuildSpatialIndex(network.CrossSections, metersPerPixel);
@@ -639,7 +637,7 @@ public class UnifiedTerrainBlender
 
                 // Use interpolation from multiple nearby cross-sections for smoother hairpin curves
                 // This eliminates the "step" artifacts on inner curves where cross-sections overlap
-                var (interpolatedElevation, dominantOwner, blendRange, nearestDist) = 
+                var (interpolatedElevation, dominantOwner, blendRange, nearestDist) =
                     InterpolateNearbyCrossSections(worldPos, spatialIndex, metersPerPixel, maxSearchRadius);
 
                 if (dominantOwner < 0 || float.IsNaN(interpolatedElevation))
@@ -665,8 +663,9 @@ public class UnifiedTerrainBlender
             return localPixelsSet;
         }, localCount => Interlocked.Add(ref blendPixelsSet, localCount));
 
-        TerrainLogger.Info($"  Set {blendPixelsSet:N0} blend zone elevation values");
-        TerrainLogger.Info($"  Total: {corePixelsUsed + blendPixelsSet:N0} pixels with elevation data");
+        TerrainCreationLogger.Current?.Detail($"Set {blendPixelsSet:N0} blend zone elevation values");
+        TerrainCreationLogger.Current?.Detail(
+            $"Total: {corePixelsUsed + blendPixelsSet:N0} pixels with elevation data");
 
         return (elevations, owners, maxBlendRanges);
     }
@@ -701,7 +700,7 @@ public class UnifiedTerrainBlender
         }
 
         if (skippedInvalid > 0)
-            TerrainLogger.Info($"  WARNING: Skipped {skippedInvalid} cross-sections with invalid target elevations");
+            TerrainLogger.Warning($"Skipped {skippedInvalid} cross-sections with invalid target elevations");
 
         return index;
     }
@@ -755,7 +754,6 @@ public class UnifiedTerrainBlender
     /// <summary>
     ///     Interpolates elevation from multiple nearby cross-sections using inverse-distance weighting.
     ///     This smooths inner curve artifacts at hairpin turns where cross-sections overlap.
-    ///     
     ///     Algorithm:
     ///     1. Find all cross-sections within the search radius
     ///     2. Weight each by 1/distance (closer = more influence)
@@ -937,10 +935,10 @@ public class UnifiedTerrainBlender
             Interlocked.Add(ref protectedFromBlend, localProtected);
         });
 
-        TerrainLogger.Info($"  Modified {modifiedPixels:N0} pixels total");
-        TerrainLogger.Info($"    Road core: {roadCorePixels:N0} pixels");
-        TerrainLogger.Info($"    Shoulder: {shoulderPixels:N0} pixels");
-        TerrainLogger.Info($"    Protected from blend overlap: {protectedFromBlend:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"Modified {modifiedPixels:N0} pixels total");
+        TerrainCreationLogger.Current?.Detail($"  Road core: {roadCorePixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"  Shoulder: {shoulderPixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"  Protected from blend overlap: {protectedFromBlend:N0} pixels");
 
         return result;
     }
@@ -1038,7 +1036,7 @@ public class UnifiedTerrainBlender
                 maskedPixels++;
             }
 
-        TerrainLogger.Info($"  Smoothing mask: {maskedPixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"Smoothing mask: {maskedPixels:N0} pixels");
         return mask;
     }
 
@@ -1090,7 +1088,7 @@ public class UnifiedTerrainBlender
         }
 
         Array.Copy(tempMap, heightMap, height * width);
-        TerrainLogger.Info($"    Gaussian smoothed {smoothedPixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"Gaussian smoothed {smoothedPixels:N0} pixels");
     }
 
     /// <summary>
@@ -1162,7 +1160,7 @@ public class UnifiedTerrainBlender
         }
 
         Array.Copy(tempMap, heightMap, height * width);
-        TerrainLogger.Info($"    Box smoothed {smoothedPixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"Box smoothed {smoothedPixels:N0} pixels");
     }
 
     /// <summary>
@@ -1219,6 +1217,6 @@ public class UnifiedTerrainBlender
         }
 
         Array.Copy(tempMap, heightMap, height * width);
-        TerrainLogger.Info($"    Bilateral smoothed {smoothedPixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"Bilateral smoothed {smoothedPixels:N0} pixels");
     }
 }

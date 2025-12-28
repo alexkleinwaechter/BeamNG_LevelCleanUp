@@ -250,7 +250,7 @@ public class UnifiedRoadSmoother
             }
         }
 
-        TerrainLogger.Info($"  Calculated elevations for {totalCalculated} cross-sections");
+        TerrainCreationLogger.Current?.Detail($"Calculated elevations for {totalCalculated} cross-sections");
     }
 
     /// <summary>
@@ -348,7 +348,7 @@ public class UnifiedRoadSmoother
                 metersPerPixel,
                 outputPath);
 
-            TerrainLogger.Info($"  Exported unified junction debug image: {outputPath}");
+            TerrainCreationLogger.Current?.Detail($"Exported unified junction debug image: {outputPath}");
         }
         catch (Exception ex)
         {
@@ -564,7 +564,7 @@ public class UnifiedRoadSmoother
         }
         
         image.SaveAsPng(outputPath);
-        TerrainLogger.Info($"  Exported spline debug image: {outputPath}");
+        TerrainCreationLogger.Current?.Detail($"Exported spline debug image: {outputPath}");
     }
     
     /// <summary>
@@ -626,8 +626,8 @@ public class UnifiedRoadSmoother
         }
         
         image.SaveAsPng(outputPath);
-        TerrainLogger.Info($"  Exported smoothed elevation debug image: {outputPath}");
-        TerrainLogger.Info($"    Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
+        TerrainCreationLogger.Current?.Detail($"Exported smoothed elevation debug image: {outputPath}");
+        TerrainCreationLogger.Current?.Detail($"Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
     }
     
     /// <summary>
@@ -740,7 +740,7 @@ public class UnifiedRoadSmoother
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
         image.SaveAsPng(outputPath);
 
-        TerrainLogger.Info($"  Exported smoothed heightmap with outlines: {outputPath}");
+        TerrainCreationLogger.Current?.Detail($"Exported smoothed heightmap with outlines: {outputPath}");
     }
 
     /// <summary>

@@ -355,6 +355,8 @@ public partial class TerrainMaterialSettings
                 Material.RoadSurfaceWidthMeters = jsonNode["roadSurfaceWidthMeters"]!.GetValue<float>();
             if (jsonNode["terrainAffectedRangeMeters"] != null)
                 Material.TerrainAffectedRangeMeters = jsonNode["terrainAffectedRangeMeters"]!.GetValue<float>();
+            if (jsonNode["roadEdgeProtectionBufferMeters"] != null)
+                Material.RoadEdgeProtectionBufferMeters = jsonNode["roadEdgeProtectionBufferMeters"]!.GetValue<float>();
             if (jsonNode["enableMaxSlopeConstraint"] != null)
                 Material.EnableMaxSlopeConstraint = jsonNode["enableMaxSlopeConstraint"]!.GetValue<bool>();
             if (jsonNode["roadMaxSlopeDegrees"] != null)
@@ -545,6 +547,12 @@ public partial class TerrainMaterialSettings
         public float RoadWidthMeters { get; set; } = 8.0f;
         public float? RoadSurfaceWidthMeters { get; set; }
         public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
+        
+        /// <summary>
+        /// Buffer distance beyond road edge protected from other roads' blend zones.
+        /// </summary>
+        public float RoadEdgeProtectionBufferMeters { get; set; } = 2.0f;
+        
         public bool EnableMaxSlopeConstraint { get; set; } = false;
         public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
         public float SideMaxSlopeDegrees { get; set; } = 45.0f;
@@ -630,6 +638,7 @@ public partial class TerrainMaterialSettings
             RoadWidthMeters = preset.RoadWidthMeters;
             RoadSurfaceWidthMeters = preset.RoadSurfaceWidthMeters;
             TerrainAffectedRangeMeters = preset.TerrainAffectedRangeMeters;
+            RoadEdgeProtectionBufferMeters = preset.RoadEdgeProtectionBufferMeters;
             EnableMaxSlopeConstraint = preset.EnableMaxSlopeConstraint;
             RoadMaxSlopeDegrees = preset.RoadMaxSlopeDegrees;
             SideMaxSlopeDegrees = preset.SideMaxSlopeDegrees;
@@ -708,6 +717,7 @@ public partial class TerrainMaterialSettings
                 RoadWidthMeters = RoadWidthMeters,
                 RoadSurfaceWidthMeters = RoadSurfaceWidthMeters,
                 TerrainAffectedRangeMeters = TerrainAffectedRangeMeters,
+                RoadEdgeProtectionBufferMeters = RoadEdgeProtectionBufferMeters,
                 EnableMaxSlopeConstraint = EnableMaxSlopeConstraint,
                 RoadMaxSlopeDegrees = RoadMaxSlopeDegrees,
                 SideMaxSlopeDegrees = SideMaxSlopeDegrees,

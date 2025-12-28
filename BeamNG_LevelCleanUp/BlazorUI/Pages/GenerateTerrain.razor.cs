@@ -8,6 +8,7 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using MudBlazor;
 using MudBlazor.Utilities;
 using DialogResult = System.Windows.Forms.DialogResult;
@@ -22,11 +23,13 @@ public partial class GenerateTerrain
     private readonly GeoTiffMetadataService _geoTiffService = new();
     private readonly TerrainMaterialService _materialService = new();
     private readonly TerrainGenerationOrchestrator _generationOrchestrator = new();
+    private readonly TerrainAnalysisOrchestrator _analysisOrchestrator = new();
 
     // ========================================
     // STATE (delegates to TerrainGenerationState)
     // ========================================
     private readonly TerrainGenerationState _state = new();
+    private readonly TerrainAnalysisState _analysisState = new();
 
     // ========================================
     // UI-ONLY STATE (not in TerrainGenerationState)
@@ -41,6 +44,18 @@ public partial class GenerateTerrain
     private CropAnchorSelector? _cropAnchorSelector;
     private bool _showErrorLog;
     private bool _showWarningLog;
+    
+    // Analysis dialog options for fullscreen display
+    private static readonly DialogOptions AnalysisDialogOptions = new()
+    {
+        FullScreen = true,
+        CloseButton = true,
+        BackdropClick = false,
+        CloseOnEscapeKey = true
+    };
+    
+    // Analysis state
+    private bool _isAnalyzing;
     
     // Pending crop settings from preset import (applied after GeoTIFF metadata is loaded)
     private (int offsetX, int offsetY)? _pendingCropOffsets;
@@ -1058,4 +1073,176 @@ public partial class GenerateTerrain
                     break;
             }
         }
+
+    // ========================================
+    // ANALYSIS METHODS
+    // ========================================
+
+    /// <summary>
+    /// Checks if terrain analysis can proceed.
+    /// Analysis requires at least one road material with road smoothing enabled.
+    /// </summary>
+    private bool CanAnalyze()
+    {
+        if (!CanGenerate())
+            return false;
+
+        // Must have at least one road material
+        return _terrainMaterials.Any(m => m.IsRoadMaterial);
     }
+
+    /// <summary>
+    /// Executes terrain analysis to preview splines and junctions before generation.
+    /// </summary>
+    private async Task ExecuteAnalysis()
+    {
+        if (!CanAnalyze()) return;
+
+        _isAnalyzing = true;
+        StateHasChanged();
+
+        try
+        {
+            // Clear previous analysis
+            _analysisState.Reset();
+
+            // Reorder materials if needed (same logic as generation)
+            if (ReorderMaterialsWithoutLayerMapsToEnd())
+            {
+                _dropContainer?.Refresh();
+            }
+
+            // Execute analysis via orchestrator
+            var result = await _analysisOrchestrator.AnalyzeAsync(_state, _analysisState);
+
+            if (result.Success && result.AnalyzerResult != null)
+            {
+                Snackbar.Add(
+                    $"Analysis complete: {_analysisState.SplineCount} splines, {_analysisState.TotalJunctionCount} junctions",
+                    Severity.Success);
+
+                // Save debug image to disk
+                if (_analysisState.DebugImageData != null)
+                {
+                    var debugImagePath = Path.Combine(_state.GetDebugPath(), "analysis_preview.png");
+                    await _analysisOrchestrator.SaveDebugImageAsync(_analysisState, debugImagePath);
+                }
+
+                // Show the fullscreen analysis dialog
+                await ShowAnalysisDialog();
+            }
+            else
+            {
+                Snackbar.Add(result.ErrorMessage ?? "Analysis failed", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            Snackbar.Add($"Error during analysis: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isAnalyzing = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Shows the fullscreen analysis dialog using IDialogService.
+    /// </summary>
+    private async Task ShowAnalysisDialog()
+    {
+        var parameters = new DialogParameters<TerrainAnalysisDialog>
+        {
+            { x => x.AnalysisState, _analysisState },
+            { x => x.MetersPerPixel, _metersPerPixel }
+        };
+
+        var dialog = await DialogService.ShowAsync<TerrainAnalysisDialog>(
+            "Terrain Analysis Results", 
+            parameters, 
+            AnalysisDialogOptions);
+        
+        var dialogResult = await dialog.Result;
+        
+        if (dialogResult == null || dialogResult.Canceled)
+        {
+            // User cancelled - check if they wanted to clear analysis
+            // The dialog returns Cancel for both Cancel and Clear buttons
+            // We distinguish by checking if the dialog was explicitly closed vs cancelled
+            return;
+        }
+        
+        // User clicked "Apply & Generate"
+        await ApplyAnalysisAndGenerate();
+    }
+
+    /// <summary>
+    /// Applies the analysis results (including exclusions) and starts terrain generation.
+    /// </summary>
+    private async Task ApplyAnalysisAndGenerate()
+    {
+        // Apply all junction exclusions to the network
+        _analysisState.ApplyExclusions();
+
+        if (_analysisState.ExcludedCount > 0)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Applied {_analysisState.ExcludedCount} junction exclusion(s) for terrain generation");
+        }
+
+        // Execute terrain generation with the pre-analyzed network
+        await ExecuteTerrainGenerationWithAnalysis();
+    }
+
+    /// <summary>
+    /// Executes terrain generation using the pre-analyzed road network.
+    /// </summary>
+    private async Task ExecuteTerrainGenerationWithAnalysis()
+    {
+        if (!CanGenerate()) return;
+
+        _isGenerating = true;
+        StateHasChanged();
+
+        try
+        {
+            // Execute terrain generation with pre-analyzed network
+            var result = await _generationOrchestrator.ExecuteWithPreAnalyzedNetworkAsync(_state, _analysisState);
+
+            if (result.Success)
+            {
+                Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Terrain file saved to: {GetOutputPath()}");
+
+                // Run post-generation tasks
+                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters);
+                Snackbar.Add("Post-processing complete!", Severity.Success);
+
+                // Write log files
+                _generationOrchestrator.WriteGenerationLogs(_state);
+
+                // Clear analysis state after successful generation
+                _analysisState.Reset();
+            }
+            else
+            {
+                Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
+                if (!string.IsNullOrEmpty(result.ErrorMessage))
+                    ShowException(new Exception(result.ErrorMessage));
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isGenerating = false;
+            StateHasChanged();
+        }
+    }
+}

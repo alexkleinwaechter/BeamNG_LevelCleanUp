@@ -149,6 +149,27 @@ public static class RoadParameterTooltips
         • 40° - Steep embankment (1:1.2 ratio)
         """;
 
+    public const string RoadEdgeProtectionBuffer = """
+        Default: 2.0 | Range: 0.0 to 20.0
+        Status: ? ACTIVELY USED
+
+        Distance (in meters) beyond the road edge that is protected from other roads' blend zones.
+        Higher values prevent lower-priority roads from damaging this road's edges at intersections.
+
+        This creates a "protection zone" around each road that other roads' blend zones cannot modify.
+        Useful when a dirt road meets a paved highway - prevents the dirt road's blend from damaging
+        the highway edge.
+
+        Example values:
+        • 0.0m - No extra protection (only road core is protected)
+        • 2.0m - Default, good for most cases
+        • 5.0m - Larger protection for wide roads
+        • 10.0m+ - Aggressive protection (may cause visible steps)
+
+        Increase if you see edge artifacts where roads meet. Higher values may cause visible "steps"
+        where the protection zone ends.
+        """;
+
     // ========================================
     // ALGORITHM SETTINGS
     // ========================================

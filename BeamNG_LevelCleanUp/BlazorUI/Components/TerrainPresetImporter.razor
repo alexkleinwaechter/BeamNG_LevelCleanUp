@@ -153,7 +153,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 if (File.Exists(resolvedHeightmap))
                 {
                     result.HeightmapPath = resolvedHeightmap;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Heightmap found: {result.HeightmapPath}");
+                    // Heightmap found - detail logged to file only
                 }
                 else
                 {
@@ -170,7 +170,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 {
                     HoleMapPath = resolvedHolemap;
                     result.HoleMapPath = resolvedHolemap;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, $"Holemap found: {HoleMapPath}");
+                    // Holemap found - detail logged to file only
                 }
             }
 
@@ -207,8 +207,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                                 // The order in the preset filename is the index used in the binary .ter file
                                 if (matchedMaterial.Order != order.Value)
                                 {
-                                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                        $"Updating order for '{matchedMaterial.InternalName}': {matchedMaterial.Order} -> {order.Value}");
+                                    // Order update logged silently - summary shown at end
                                     matchedMaterial.Order = order.Value;
                                     orderUpdatedCount++;
                                 }
@@ -237,16 +236,11 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     var sorted = Materials.OrderBy(m => m.Order).ToList();
                     Materials.Clear();
                     Materials.AddRange(sorted);
-                    
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Reordered {orderUpdatedCount} material(s) to match preset order");
+                    // Reorder complete - included in final summary
                 }
 
                 result.AssignedLayerMapsCount = assignedCount;
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Preset import complete: {assignedCount} layer maps assigned" +
-                    (orderUpdatedCount > 0 ? $", {orderUpdatedCount} materials reordered" : "") +
-                    (notFoundCount > 0 ? $", {notFoundCount} files not found" : ""));
+                // Summary is shown via Snackbar at end of import - no need for PubSub message here
             }
 
             // Import road smoothing settings from _appSettings.materialSettings (new unified format)
@@ -258,11 +252,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             {
                 await ImportAppSettings(appSettings, result);
             }
-            else
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    "No _appSettings section found in preset (legacy preset format)");
-            }
+            // Legacy preset format without _appSettings is handled silently
 
             await OnPresetImported.InvokeAsync(result);
             Snackbar.Add($"Terrain preset imported: {result.TerrainName}", Severity.Success);
@@ -421,8 +411,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             var orderMatch = Materials.FirstOrDefault(m => m.Order == presetOrder);
             if (orderMatch != null)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Matched '{layerMaterialName}' to '{orderMatch.InternalName}' by order ({presetOrder})");
+                // Matched by order - detail not needed in UI
                 return orderMatch;
             }
         }
@@ -480,7 +469,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
         try
         {
             var version = appSettings["version"]?.GetValue<string>() ?? "1.0";
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Importing app settings (version {version})");
+            // App settings version noted internally - detail not needed in UI
 
             // Import heightmap source configuration
             var heightmapSource = appSettings["heightmapSource"];
@@ -505,8 +494,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                         if (File.Exists(presetFolderGeoTiff))
                         {
                             result.GeoTiffPath = presetFolderGeoTiff;
-                            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                $"Found GeoTIFF in preset folder: {exportedGeoTiffFileName}");
+                            // GeoTIFF found in preset folder - detail not needed in UI
                         }
                     }
                     else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
@@ -519,8 +507,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                             if (Directory.Exists(tilesFolder))
                             {
                                 result.GeoTiffDirectory = tilesFolder;
-                                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                    $"Found GeoTIFF tiles folder in preset: geotiff_tiles/");
+                                // GeoTIFF tiles folder found - detail not needed in UI
                             }
                         }
                         else
@@ -533,8 +520,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                                 result.HeightmapSourceType = HeightmapSourceType.GeoTiffFile;
                                 result.GeoTiffPath = presetFolderGeoTiff;
                                 result.GeoTiffDirectory = null;
-                                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                    $"Found combined GeoTIFF in preset folder: {exportedGeoTiffFileName}");
+                                // Combined GeoTIFF found - detail not needed in UI
                             }
                         }
                     }
@@ -553,13 +539,12 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                         if (File.Exists(originalGeoTiffPath))
                         {
                             result.GeoTiffPath = originalGeoTiffPath;
-                            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                $"Using original GeoTIFF path: {originalGeoTiffPath}");
+                            // Using original GeoTIFF path - detail not needed in UI
                         }
                         else
                         {
                             PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                                $"GeoTIFF not found in preset folder or original path: {originalGeoTiffPath}. Please browse to select the file.");
+                                $"GeoTIFF not found. Please browse to select the file.");
                         }
                     }
                     else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
@@ -568,13 +553,12 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                         if (Directory.Exists(originalGeoTiffDirectory))
                         {
                             result.GeoTiffDirectory = originalGeoTiffDirectory;
-                            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                $"Using original GeoTIFF directory: {originalGeoTiffDirectory}");
+                            // Using original GeoTIFF directory - detail not needed in UI
                         }
                         else
                         {
                             PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                                $"GeoTIFF directory not found in preset folder or original path: {originalGeoTiffDirectory}. Please browse to select the folder.");
+                                $"GeoTIFF directory not found. Please browse to select the folder.");
                         }
                     }
                 }
@@ -714,29 +698,20 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                             matchingMaterial.SelectedOsmFeatures = layerSettings.OsmFeatureSelections
                                 .Select(r => r.ToSelection())
                                 .ToList();
-
-                            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                $"Restored {matchingMaterial.SelectedOsmFeatures.Count} OSM feature selection(s) for '{matName}'");
+                            // OSM features restored - detail not needed in UI
                         }
 
                         // Apply road smoothing settings
                         if (layerSettings.IsRoadMaterial && layerSettings.RoadSmoothing != null)
                         {
                             ApplyRoadSmoothingToMaterial(matchingMaterial, layerSettings.RoadSmoothing);
-                            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                $"Imported road smoothing settings for '{matName}'");
+                            // Road smoothing settings applied - included in final count
                         }
                     }
                 }
-
-                if (roadSmoothingImportedCount > 0)
-                {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Imported {roadSmoothingImportedCount} road smoothing configuration(s) from preset");
-                }
+                // Road smoothing import count included in Snackbar summary
             }
-
-            PubSubChannel.SendMessage(PubSubMessageType.Info, "App settings imported successfully");
+            // App settings import complete - Snackbar shows final summary
         }
         catch (Exception ex)
         {
@@ -781,6 +756,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 settings.RoadSurfaceWidthMeters = roadSmoothing["roadSurfaceWidthMeters"]!.GetValue<float>();
             if (roadSmoothing["terrainAffectedRangeMeters"] != null)
                 settings.TerrainAffectedRangeMeters = roadSmoothing["terrainAffectedRangeMeters"]!.GetValue<float>();
+            if (roadSmoothing["roadEdgeProtectionBufferMeters"] != null)
+                settings.RoadEdgeProtectionBufferMeters = roadSmoothing["roadEdgeProtectionBufferMeters"]!.GetValue<float>();
             if (roadSmoothing["enableMaxSlopeConstraint"] != null)
                 settings.EnableMaxSlopeConstraint = roadSmoothing["enableMaxSlopeConstraint"]!.GetValue<bool>();
             if (roadSmoothing["roadMaxSlopeDegrees"] != null)
@@ -911,6 +888,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             material.RoadWidthMeters = settings.RoadWidthMeters;
             material.RoadSurfaceWidthMeters = settings.RoadSurfaceWidthMeters;
             material.TerrainAffectedRangeMeters = settings.TerrainAffectedRangeMeters;
+            material.RoadEdgeProtectionBufferMeters = settings.RoadEdgeProtectionBufferMeters;
             material.EnableMaxSlopeConstraint = settings.EnableMaxSlopeConstraint;
             material.RoadMaxSlopeDegrees = settings.RoadMaxSlopeDegrees;
             material.SideMaxSlopeDegrees = settings.SideMaxSlopeDegrees;

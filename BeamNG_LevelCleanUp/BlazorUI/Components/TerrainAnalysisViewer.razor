@@ -1,0 +1,339 @@
+@using System.Globalization
+@using System.Numerics
+@using BeamNG_LevelCleanUp.BlazorUI.State
+@using BeamNgTerrainPoc.Terrain.Models.RoadGeometry
+@using BeamNgTerrainPoc.Terrain.Services
+
+<div class="terrain-analysis-container" style="width: 100%; height: 100%; display: flex; flex-direction: column; gap: 12px;">
+    @if (AnalysisState?.HasAnalysis == true)
+    {
+        @* Main preview area with interactive SVG *@
+        <div class="analysis-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 0; position: relative;">
+            <div class="analysis-preview-container" 
+                 style="position: relative; width: @(CanvasSize)px; height: @(CanvasSize)px; cursor: @(_isPanning ? "grabbing" : "grab");"
+                 @onmousedown="OnMouseDown"
+                 @onmousemove="OnMouseMove"
+                 @onmouseup="OnMouseUp"
+                 @onmouseleave="OnMouseLeave"
+                 @onwheel="OnWheel"
+                 @ref="_canvasContainer">
+                
+@* SVG for interactive elements *@
+                <svg width="@CanvasSize" height="@CanvasSize" 
+                     viewBox="@GetViewBox()"
+                     style="position: absolute; top: 0; left: 0; background: #1e1e2e; border-radius: 4px;"
+                     preserveAspectRatio="xMidYMid slice">
+                    
+                    @* Grid lines *@
+                    @{
+                        var gridStep = (int)(_networkExtent / 8);
+                        @for (var i = 0; i <= (int)_networkExtent; i += gridStep)
+                        {
+                            <line x1="@i" y1="0" x2="@i" y2="@_networkExtent" 
+                                  stroke="#333" stroke-width="@(1 / _zoom)" />
+                            <line x1="0" y1="@i" x2="@_networkExtent" y2="@i" 
+                                  stroke="#333" stroke-width="@(1 / _zoom)" />
+                        }
+                    }
+                    
+                    @* Draw spline centerlines (uses cached path data) *@
+                    @if (AnalysisState.Network != null)
+                    {
+                        @foreach (var spline in AnalysisState.Network.Splines)
+                        {
+                            var pathData = GetCachedSplinePath(spline.SplineId);
+                            if (string.IsNullOrEmpty(pathData)) continue;
+                            
+                            var color = GetMaterialColor(spline.MaterialName);
+                            
+                            <path d="@pathData" 
+                                  fill="none" 
+                                  stroke="@color" 
+                                  stroke-width="@(2 / _zoom)"
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round" />
+                        }
+                    }
+                    
+                    @* Draw junction markers (uses cached positions) *@
+                    @if (AnalysisState.Network != null)
+                    {
+                        @foreach (var junction in AnalysisState.Network.Junctions)
+                        {
+                            var cachedData = GetCachedJunctionData(junction);
+                            var pos = cachedData.Pos;
+                            var baseRadius = cachedData.Radius;
+                            var baseColor = cachedData.Color;
+                            
+                            // Check exclusion state dynamically (not cached, as it changes)
+                            var isExcluded = AnalysisState.IsJunctionExcluded(junction.JunctionId);
+                            var isSelected = _selectedJunctionId == junction.JunctionId;
+                            var isHovered = _hoveredJunctionId == junction.JunctionId;
+                            
+                            // Markers grow when zooming in: multiply base radius by zoom factor
+                            // This makes markers larger in world space as you zoom in
+                            var zoomGrowthFactor = 1.0f + (_zoom - 1.0f) * 0.5f; // Grows 50% per zoom level
+                            var radius = baseRadius * zoomGrowthFactor / _zoom;
+                            
+                            // Make click target larger for better usability (invisible expanded hitbox)
+                            var hitRadius = Math.Max(radius * 1.5f, 12f / _zoom);
+                            
+                            // Color: grey for excluded, original color otherwise
+                            var displayColor = isExcluded ? "#666666" : baseColor;
+                            var displayOpacity = isExcluded ? "0.5" : "1.0";
+                            
+                            @* Invisible hit target for easier clicking *@
+                            <circle cx="@pos.X.ToString("F1", CultureInfo.InvariantCulture)" 
+                                    cy="@pos.Y.ToString("F1", CultureInfo.InvariantCulture)" 
+                                    r="@hitRadius.ToString("F1", CultureInfo.InvariantCulture)"
+                                    fill="transparent"
+                                    style="cursor: pointer;"
+                                    @onclick="() => OnJunctionClick(junction)"
+                                    @onclick:stopPropagation="true"
+                                    @onmouseenter="() => OnJunctionHover(junction.JunctionId)"
+                                    @onmouseleave="OnJunctionHoverEnd">
+                                <title>@GetJunctionTooltip(junction)</title>
+                            </circle>
+                            
+                            @* Visible junction circle *@
+                            <circle cx="@pos.X.ToString("F1", CultureInfo.InvariantCulture)" 
+                                    cy="@pos.Y.ToString("F1", CultureInfo.InvariantCulture)" 
+                                    r="@radius.ToString("F1", CultureInfo.InvariantCulture)"
+                                    fill="@displayColor"
+                                    stroke="@(isSelected || isHovered ? "#fff" : "none")"
+                                    stroke-width="@((isSelected ? 3 : 2) / _zoom)"
+                                    opacity="@displayOpacity"
+                                    pointer-events="none" />
+                            
+                            @* Cross-material indicator (white outline) - scales with junction marker *@
+                            @if (junction.IsCrossMaterial && !isExcluded)
+                            {
+                                var outlineRadius = radius * 1.4f; // Proportional to marker size
+                                <circle cx="@pos.X.ToString("F1", CultureInfo.InvariantCulture)" 
+                                        cy="@pos.Y.ToString("F1", CultureInfo.InvariantCulture)" 
+                                        r="@(outlineRadius.ToString("F1", CultureInfo.InvariantCulture))"
+                                        fill="none"
+                                        stroke="#ffffff"
+                                        stroke-width="@((2 * zoomGrowthFactor / _zoom).ToString("F2", CultureInfo.InvariantCulture))"
+                                        opacity="0.7"
+                                        pointer-events="none" />
+                            }
+                            
+                            @* Exclusion X mark - scales with junction marker *@
+                            @if (isExcluded)
+                            {
+                                var xSize = radius * 1.2f; // Proportional to marker size
+                                var xStrokeWidth = 2 * zoomGrowthFactor / _zoom;
+                                <line x1="@((pos.X - xSize).ToString("F1", CultureInfo.InvariantCulture))" 
+                                      y1="@((pos.Y - xSize).ToString("F1", CultureInfo.InvariantCulture))"
+                                      x2="@((pos.X + xSize).ToString("F1", CultureInfo.InvariantCulture))" 
+                                      y2="@((pos.Y + xSize).ToString("F1", CultureInfo.InvariantCulture))"
+                                      stroke="#ff3232"
+                                      stroke-width="@(xStrokeWidth.ToString("F2", CultureInfo.InvariantCulture))"
+                                      pointer-events="none" />
+                                <line x1="@((pos.X + xSize).ToString("F1", CultureInfo.InvariantCulture))" 
+                                      y1="@((pos.Y - xSize).ToString("F1", CultureInfo.InvariantCulture))"
+                                      x2="@((pos.X - xSize).ToString("F1", CultureInfo.InvariantCulture))" 
+                                      y2="@((pos.Y + xSize).ToString("F1", CultureInfo.InvariantCulture))"
+                                      stroke="#ff3232"
+                                      stroke-width="@(xStrokeWidth.ToString("F2", CultureInfo.InvariantCulture))"
+                                      pointer-events="none" />
+                            }
+                        }
+                    }
+                </svg>
+                
+                @* Zoom controls *@
+                <div style="position: absolute; bottom: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px;">
+                    <MudIconButton Icon="@Icons.Material.Filled.Add" 
+                                   Size="Size.Small" 
+                                   Variant="Variant.Filled"
+                                   Color="Color.Dark"
+                                   OnClick="ZoomIn" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Remove" 
+                                   Size="Size.Small" 
+                                   Variant="Variant.Filled"
+                                   Color="Color.Dark"
+                                   OnClick="ZoomOut" />
+                    <MudIconButton Icon="@Icons.Material.Filled.CenterFocusStrong" 
+                                   Size="Size.Small" 
+                                   Variant="Variant.Filled"
+                                   Color="Color.Dark"
+                                   OnClick="ResetView" />
+                </div>
+            </div>
+        </div>
+        
+        @* Controls bar *@
+        <div class="d-flex align-center justify-end gap-4" style="padding: 0 8px;">
+            <MudText Typo="Typo.caption" Style="color: #888;">
+                Zoom: @(_zoom.ToString("F1"))x | 
+                @AnalysisState.SplineCount splines | 
+                @AnalysisState.TotalJunctionCount junctions
+            </MudText>
+        </div>
+        
+        @* Legend *@
+        <MudPaper Class="pa-2" Elevation="0" Style="background: rgba(0,0,0,0.2);">
+            <div class="d-flex flex-wrap gap-3 justify-center">
+                @foreach (var jType in Enum.GetValues<JunctionType>())
+                {
+                    var count = AnalysisState.JunctionsByType.GetValueOrDefault(jType, 0);
+                    var excludedCount = AnalysisState.ExcludedJunctionsByType.GetValueOrDefault(jType, 0);
+                    var totalForType = count + excludedCount;
+                    
+                    @if (totalForType > 0)
+                    {
+                        <div class="d-flex align-center gap-1">
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: @GetJunctionColor(jType);"></div>
+                            <MudText Typo="Typo.caption">@jType (@count)</MudText>
+                        </div>
+                    }
+                }
+                @if (AnalysisState.ExcludedCount > 0)
+                {
+                    <div class="d-flex align-center gap-1">
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: #666666; position: relative; opacity: 0.5;">
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff3232; font-size: 10px; font-weight: bold;">?</div>
+                        </div>
+                        <MudText Typo="Typo.caption">Excluded (@AnalysisState.ExcludedCount)</MudText>
+                    </div>
+                }
+            </div>
+        </MudPaper>
+        
+        @* Selected Junction Details - shows cluster if multiple junctions overlap *@
+        @if (_selectedJunction != null)
+        {
+            <MudPaper Class="pa-3" Elevation="1" Style="max-height: 300px; overflow-y: auto;">
+                @if (_selectedCluster.Count > 1)
+                {
+                    @* Cluster header *@
+                    <div class="d-flex justify-space-between align-center mb-2">
+                        <MudText Typo="Typo.subtitle2">
+                            <MudIcon Icon="@Icons.Material.Filled.Hub" Size="Size.Small" Class="mr-1" />
+                            Junction Cluster (@_selectedCluster.Count overlapping)
+                        </MudText>
+                        <MudStack Row="true" Spacing="1">
+                            <MudButton Size="Size.Small" 
+                                       Variant="Variant.Text" 
+                                       Color="Color.Warning"
+                                       OnClick="ExcludeAllInCluster">
+                                Exclude All
+                            </MudButton>
+                            <MudButton Size="Size.Small" 
+                                       Variant="Variant.Text" 
+                                       Color="Color.Success"
+                                       OnClick="IncludeAllInCluster">
+                                Include All
+                            </MudButton>
+                        </MudStack>
+                    </div>
+                    
+                    <MudDivider Class="mb-2" />
+                    
+                    @* List all junctions in the cluster *@
+                    @foreach (var junction in _selectedCluster)
+                    {
+                        var isExcluded = AnalysisState.IsJunctionExcluded(junction.JunctionId);
+                        var junctionColor = GetJunctionColor(junction.Type);
+                        var isPrimary = junction.JunctionId == _selectedJunctionId;
+                        
+                        <div class="d-flex align-center gap-2 py-1 @(isPrimary ? "mud-theme-primary" : "")" 
+                             style="@(isPrimary ? "background: rgba(var(--mud-palette-primary-rgb), 0.1); border-radius: 4px; padding: 4px 8px; margin: 2px -8px;" : "")">
+                            @* Junction type color indicator *@
+                            <div style="width: 14px; height: 14px; border-radius: 50%; background: @(isExcluded ? "#666666" : junctionColor); opacity: @(isExcluded ? "0.5" : "1"); flex-shrink: 0;"></div>
+                            
+                            @* Junction info *@
+                            <div class="flex-grow-1" style="min-width: 0;">
+                                <MudText Typo="Typo.body2" Style="@(isExcluded ? "text-decoration: line-through; opacity: 0.6;" : "")">
+                                    #@junction.JunctionId: @junction.Type
+                                    @if (junction.IsCrossMaterial)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Size="Size.Small" Style="vertical-align: middle; margin-left: 4px;" Title="Cross-Material" />
+                                    }
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @string.Join(", ", junction.GetMaterials())
+                                </MudText>
+                            </div>
+                            
+                            @* Exclusion checkbox *@
+                            <MudCheckBox T="bool" 
+                                         Value="@isExcluded"
+                                         ValueChanged="@((bool val) => ToggleClusterJunctionExclusion(junction.JunctionId, val))"
+                                         Color="Color.Warning"
+                                         Size="Size.Small"
+                                         Style="margin: 0; padding: 0;" />
+                        </div>
+                    }
+                }
+                else
+                {
+                    @* Single junction - original display *@
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.LocationOn" Size="Size.Small" Class="mr-1" />
+                        Junction #@_selectedJunction.JunctionId: @_selectedJunction.Type
+                    </MudText>
+                    
+                    <div class="d-flex flex-column gap-1">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            <strong>Position:</strong> (@_selectedJunction.Position.X.ToString("F1"), @_selectedJunction.Position.Y.ToString("F1"))
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            <strong>Harmonized Elevation:</strong> @(float.IsNaN(_selectedJunction.HarmonizedElevation) ? "N/A" : $"{_selectedJunction.HarmonizedElevation:F2}m")
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            <strong>Contributing Roads:</strong> @_selectedJunction.Contributors.Count
+                            (@string.Join(", ", _selectedJunction.GetMaterials()))
+                        </MudText>
+                        @if (_selectedJunction.IsCrossMaterial)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">Cross-Material</MudChip>
+                        }
+                        
+                        <MudDivider Class="my-2" />
+                        
+                        <MudCheckBox T="bool" 
+                                     Value="@AnalysisState.IsJunctionExcluded(_selectedJunction.JunctionId)"
+                                     ValueChanged="@((bool val) => ToggleSelectedJunctionExclusion(val))"
+                                     Label="Exclude from harmonization"
+                                     Color="Color.Warning"
+                                     Size="Size.Small" />
+                        
+                        @if (AnalysisState.IsJunctionExcluded(_selectedJunction.JunctionId))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning">
+                                This junction will be skipped during terrain smoothing.
+                            </MudText>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        }
+        
+        @* Summary bar *@
+        <MudPaper Class="pa-2" Elevation="0" Style="background: rgba(0,0,0,0.1);">
+            <div class="d-flex justify-space-between align-center">
+                <MudText Typo="Typo.caption">
+                    <strong>Summary:</strong> @AnalysisState.GetSummary()
+                </MudText>
+                @if (AnalysisState.ExcludedCount > 0)
+                {
+                    <MudButton Size="Size.Small" 
+                               Variant="Variant.Text" 
+                               Color="Color.Secondary"
+                               OnClick="ClearAllExclusions">
+                        Clear All Exclusions
+                    </MudButton>
+                }
+            </div>
+        </MudPaper>
+    }
+    else
+    {
+        <div class="d-flex align-center justify-center" style="height: 100%; color: #666;">
+            <MudText Typo="Typo.body2">No analysis data available</MudText>
+        </div>
+    }
+</div>
