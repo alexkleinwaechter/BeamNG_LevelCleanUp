@@ -374,28 +374,16 @@ Class="my-0">
                                     <!-- Algorithm Tab -->
                                     <MudTabPanel Text="Algorithm" Icon="@Icons.Material.Filled.Memory">
                                         <div class="pa-3">
-                                            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-                                                Core algorithm settings for spline-based road smoothing.
-                                            </MudAlert>
-                                            
-                                            <MudPaper Class="pa-3" Elevation="1">
+                                            <!-- 1. Sampling & Geometry Card (Input Phase) -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.GridOn" Size="Size.Small" Class="mr-1" />
+                                                    Sampling & Geometry
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how road geometry is sampled before processing.
+                                                </MudText>
                                                 <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudSelect T="BlendFunctionType" 
-                                                                      @bind-Value="Material.BlendFunctionType"
-                                                                      Label="Blend Function"
-                                                                      Variant="Variant.Outlined"
-                                                                      HelperText="Terrain transition curve type"
-                                                                      Class="flex-grow-1">
-                                                                <MudSelectItem Value="BlendFunctionType.Linear">Linear</MudSelectItem>
-                                                                <MudSelectItem Value="BlendFunctionType.Cosine">Cosine (smoothest)</MudSelectItem>
-                                                                <MudSelectItem Value="BlendFunctionType.Cubic">Cubic</MudSelectItem>
-                                                                <MudSelectItem Value="BlendFunctionType.Quintic">Quintic</MudSelectItem>
-                                                            </MudSelect>
-                                                            <HelpAdornment TooltipText="@BlendFunction"/>
-                                                        </div>
-                                                    </MudItem>
                                                     <MudItem xs="12" sm="6">
                                                         <div class="d-flex align-start gap-1">
                                                             <MudNumericField T="float" @bind-Value="Material.CrossSectionIntervalMeters" 
@@ -409,20 +397,158 @@ Class="my-0">
                                                         </div>
                                                     </MudItem>
                                                     <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudSelect T="SplineInterpolationType"
+                                                                       @bind-Value="Material.SplineInterpolationType"
+                                                                       Label="Spline Interpolation"
+                                                                       Variant="Variant.Outlined"
+                                                                       HelperText="Smooth curves vs accurate geometry"
+                                                                       Class="flex-grow-1">
+                                                                <MudSelectItem Value="SplineInterpolationType.SmoothInterpolated">Smooth Interpolated</MudSelectItem>
+                                                                <MudSelectItem Value="SplineInterpolationType.LinearControlPoints">Linear Control Points</MudSelectItem>
+                                                            </MudSelect>
+                                                            <HelpAdornment TooltipText="@RoadParameterTooltips.SplineInterpolationType" />
+                                                        </div>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+
+                                            <!-- 2. Elevation Smoothing Card (Processing Phase) -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Terrain" Size="Size.Small" Class="mr-1" />
+                                                    Elevation Smoothing
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Smooths road elevation along its length (longitudinal smoothing).
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="int" @bind-Value="Material.SplineSmoothingWindowSize"
+                                                                             Label="Window Size"
+                                                                             Variant="Variant.Outlined"
+                                                                             Min="11" Max="1001" Step="10"
+                                                                             HelperText="Must be odd number"
+                                                                             Class="flex-grow-1" />
+                                                            <HelpAdornment TooltipText="@SplineSmoothingWindowSize" />
+                                                        </div>
+                                                    </MudItem>
+                                                </MudGrid>
+
+                                                <!-- Butterworth sub-section -->
+                                                <MudDivider Class="my-3" />
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    <strong>Filter Type:</strong> Butterworth provides maximally flat response (professional quality).
+                                                </MudText>
+                                                <div class="d-flex align-center gap-3">
+                                                    <div class="d-flex align-center gap-1">
+                                                        <MudSwitch T="bool" @bind-Value="Material.SplineUseButterworthFilter"
+                                                                   Color="Color.Primary"
+                                                                   Label="Butterworth Filter" />
+                                                        <HelpAdornment TooltipText="@SplineUseButterworthFilter" />
+                                                    </div>
+                                                    <div class="d-flex align-start gap-1">
+                                                        <MudNumericField T="int" @bind-Value="Material.SplineButterworthFilterOrder"
+                                                                         Label="Filter Order"
+                                                                         Variant="Variant.Outlined"
+                                                                         Min="1" Max="8" Step="1"
+                                                                         Disabled="@(!Material.SplineUseButterworthFilter)"
+                                                                         HelperText="Higher = flatter"
+                                                                         Style="max-width: 150px;" />
+                                                        <HelpAdornment TooltipText="@SplineButterworthFilterOrder" />
+                                                    </div>
+                                                </div>
+                                            </MudPaper>
+
+                                            <!-- 3. Network Leveling Card (Optional Adjustment) -->
+                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Straighten" Size="Size.Small" Class="mr-1" />
+                                                    Network Leveling
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined" Class="ml-2">Optional</MudChip>
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Blends all roads toward a common network-average elevation.
+                                                    Use 0 for terrain-following roads (recommended for most cases).
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.GlobalLevelingStrength"
+                                                                             Label="Global Leveling Strength"
+                                                                             Variant="Variant.Outlined"
+                                                                             Min="0.0f" Max="1.0f" Step="0.05f"
+                                                                             Format="F2"
+                                                                             HelperText="0 = follow terrain, 1 = flat network"
+                                                                             Class="flex-grow-1" />
+                                                            <HelpAdornment TooltipText="@GlobalLevelingStrength" />
+                                                        </div>
+                                                    </MudItem>
+                                                </MudGrid>
+                                                @if (Material.GlobalLevelingStrength > 0.3f)
+                                                {
+                                                    <MudAlert Severity="@(Material.GlobalLevelingStrength > 0.5f ? Severity.Warning : Severity.Info)" 
+                                                              Dense="true" 
+                                                              Class="mt-2">
+                                                        @if (Material.GlobalLevelingStrength > 0.5f)
+                                                        {
+                                                            <span>⚠️ <strong>High leveling requires wider blend range!</strong> Ensure Blend Range (Terrain Affected) ≥ 20m to avoid disconnected "dotted" roads.</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>💡 Moderate leveling. Ensure Blend Range ≥ 12m for smooth transitions.</span>
+                                                        }
+                                                    </MudAlert>
+                                                }
+                                            </MudPaper>
+
+                                            <!-- 4. Terrain Transition Card (Output/Blending Phase) -->
+                                            <MudPaper Class="pa-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Gradient" Size="Size.Small" Class="mr-1" />
+                                                    Terrain Transition
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how the smoothed road blends into surrounding terrain.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudSelect T="BlendFunctionType" 
+                                                                      @bind-Value="Material.BlendFunctionType"
+                                                                      Label="Blend Function"
+                                                                      Variant="Variant.Outlined"
+                                                                      HelperText="Transition curve from road to terrain"
+                                                                      Class="flex-grow-1">
+                                                                <MudSelectItem Value="BlendFunctionType.Linear">Linear</MudSelectItem>
+                                                                <MudSelectItem Value="BlendFunctionType.Cosine">Cosine (smoothest)</MudSelectItem>
+                                                                <MudSelectItem Value="BlendFunctionType.Cubic">Cubic</MudSelectItem>
+                                                                <MudSelectItem Value="BlendFunctionType.Quintic">Quintic</MudSelectItem>
+                                                            </MudSelect>
+                                                            <HelpAdornment TooltipText="@BlendFunction"/>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
                                                         <div class="d-flex align-center gap-1">
                                                             <MudSwitch T="bool" @bind-Value="Material.EnableTerrainBlending" 
                                                                       Color="Color.Primary"
                                                                       Label="Enable Terrain Blending"/>
                                                             <HelpAdornment TooltipText="@EnableTerrainBlending"/>
                                                         </div>
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-12">
+                                                            @(Material.EnableTerrainBlending 
+                                                                ? "Road will be blended into terrain" 
+                                                                : "Debug mode: geometry only, no terrain modification")
+                                                        </MudText>
                                                     </MudItem>
                                                 </MudGrid>
                                             </MudPaper>
                                         </div>
                                     </MudTabPanel>
                                     
-                                    <!-- Spline Tab -->
-                                    <MudTabPanel Text="Spline" Icon="@Icons.Material.Filled.Timeline">
+                                    <!-- PNG Spline Tab -->
+                                    <MudTabPanel Text="PNG-Spline" Icon="@Icons.Material.Filled.Timeline">
                                         <div class="pa-3">
                                             @if (IsUsingOsmSplines)
                                             {
@@ -430,7 +556,6 @@ Class="my-0">
                                                     <strong>OSM Mode Active:</strong> Using pre-built splines from OpenStreetMap.
                                                     "Path Extraction" and "Curve Fitting" parameters are <strong>not used</strong> because
                                                     splines are generated directly from OSM vector data (skeleton extraction is bypassed).
-                                                    Only "Elevation Smoothing" parameters apply.
                                                 </MudAlert>
                                             }
                                             else
@@ -440,34 +565,7 @@ Class="my-0">
                                                 </MudAlert>
                                             }
                                             
-                                            <!-- Spline Interpolation Type Card -->
-                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1"/>
-                                                    Spline Interpolation
-                                                </MudText>
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                                    Controls how the spline curve is interpolated between control points.
-                                                    Affects both elevation smoothing and material painting consistency.
-                                                </MudText>
-                                                <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudSelect T="SplineInterpolationType" 
-                                                                      @bind-Value="Material.SplineInterpolationType"
-                                                                      Label="Interpolation Type"
-                                                                      Variant="Variant.Outlined"
-                                                                      HelperText="Smooth curves vs accurate geometry"
-                                                                      Class="flex-grow-1">
-                                                                <MudSelectItem Value="SplineInterpolationType.SmoothInterpolated">Smooth Interpolated</MudSelectItem>
-                                                                <MudSelectItem Value="SplineInterpolationType.LinearControlPoints">Linear Control Points</MudSelectItem>
-                                                            </MudSelect>
-                                                            <HelpAdornment TooltipText="@RoadParameterTooltips.SplineInterpolationType"/>
-                                                        </div>
-                                                    </MudItem>
-                                                </MudGrid>
-                                            </MudPaper>
-                                            
+                                           
                                             <!-- Curve Fitting Card (PNG layer map only - not used for OSM) -->
                                             <MudPaper Class="pa-3 mb-3" Elevation="1" Style="@(IsUsingOsmSplines ? "opacity: 0.5;" : "")">
                                                 <MudText Typo="Typo.subtitle2" Class="mb-2">
@@ -675,63 +773,6 @@ Class="my-0">
                                                                         HelperText="Max angle for 'straight through'"
                                                                         Style="max-width: 200px;"/>
                                                         <HelpAdornment TooltipText="@JunctionAngleThreshold"/>
-                                                    </div>
-                                                </div>
-                                            </MudPaper>
-                                            
-                                            <!-- Elevation Smoothing Card -->
-                                            <MudPaper Class="pa-3" Elevation="1">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.Terrain" Size="Size.Small" Class="mr-1"/>
-                                                    Elevation Smoothing
-                                                </MudText>
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                                    Controls how road elevation is smoothed along its length.
-                                                </MudText>
-                                                <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="int" @bind-Value="Material.SplineSmoothingWindowSize" 
-                                                                            Label="Window Size" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="11" Max="1001" Step="10"
-                                                                            HelperText="Must be odd number"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@SplineSmoothingWindowSize"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.GlobalLevelingStrength" 
-                                                                            Label="Global Leveling Strength" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="0.0f" Max="1.0f" Step="0.05f"
-                                                                            Format="F2"
-                                                                            HelperText="0=follow terrain, 1=flat network"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@GlobalLevelingStrength"/>
-                                                        </div>
-                                                    </MudItem>
-                                                </MudGrid>
-                                                
-                                                <!-- Butterworth sub-section -->
-                                                <MudDivider Class="my-3"/>
-                                                <div class="d-flex align-center gap-3">
-                                                    <div class="d-flex align-center gap-1">
-                                                        <MudSwitch T="bool" @bind-Value="Material.SplineUseButterworthFilter" 
-                                                                  Color="Color.Primary"
-                                                                  Label="Butterworth Filter"/>
-                                                        <HelpAdornment TooltipText="@SplineUseButterworthFilter"/>
-                                                    </div>
-                                                    <div class="d-flex align-start gap-1">
-                                                        <MudNumericField T="int" @bind-Value="Material.SplineButterworthFilterOrder" 
-                                                                        Label="Filter Order" 
-                                                                        Variant="Variant.Outlined"
-                                                                        Min="1" Max="8" Step="1"
-                                                                        Disabled="@(!Material.SplineUseButterworthFilter)"
-                                                                        HelperText="Higher = flatter"
-                                                                        Style="max-width: 150px;"/>
-                                                        <HelpAdornment TooltipText="@SplineButterworthFilterOrder"/>
                                                     </div>
                                                 </div>
                                             </MudPaper>

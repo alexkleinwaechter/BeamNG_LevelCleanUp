@@ -12,7 +12,7 @@ public static class RoadParameterTooltips
 
     public const string SplineInterpolationType = """
                                                   Default: Smooth Interpolated
-                                                  Status: ? ACTIVELY USED
+                                                  Status: ACTIVELY USED
 
                                                   Controls how road centerlines are interpolated between control points.
                                                   This affects both elevation smoothing AND material painting consistency.
@@ -34,7 +34,7 @@ public static class RoadParameterTooltips
                                                     debugging spline extraction issues, or when smooth interpolation
                                                     causes roads to "cut corners" on tight turns.
 
-                                                  ?? IMPORTANT: This setting ensures elevation smoothing and material
+                                                  ?IMPORTANT: This setting ensures elevation smoothing and material
                                                   painting use the SAME spline path. If roads appear to "cut corners"
                                                   in the terrain but not in the painted texture, try Linear Control Points.
                                                   """;
@@ -45,7 +45,7 @@ public static class RoadParameterTooltips
 
     public const string RoadWidthMeters = """
                                           Default: 8.0 | Range: 2.0 to 50.0
-                                          Status: ? ACTIVELY USED
+                                          Status: ACTIVELY USED
 
                                           Width of the road surface in meters. This is the ELEVATION SMOOTHING corridor width.
                                           The terrain within this width will be completely flattened to target elevation.
@@ -62,7 +62,7 @@ public static class RoadParameterTooltips
 
     public const string RoadSurfaceWidthMeters = """
                                                  Default: Same as Road Width | Range: 0.0 to 50.0
-                                                 Status: ? ACTIVELY USED (OSM mode and informational for PNG mode)
+                                                 Status: ACTIVELY USED (OSM mode and informational for PNG mode)
 
                                                  Width of the PAINTED MATERIAL on the terrain in meters.
                                                  This controls how wide the terrain texture (e.g., asphalt) is drawn.
@@ -85,7 +85,7 @@ public static class RoadParameterTooltips
 
     public const string TerrainAffectedRangeMeters = """
                                                      Default: 12.0 | Range: 0.0 to 50.0
-                                                     Status: ? ACTIVELY USED
+                                                     Status: ACTIVELY USED
 
                                                      Distance from road edge where terrain blends. Think of it as the "shoulder" or "embankment" distance.
 
@@ -98,12 +98,12 @@ public static class RoadParameterTooltips
                                                      • 20.0 - Wide highway with gentle embankments
                                                      • 25.0 - Extra wide for global leveling
 
-                                                     ?? If using GlobalLevelingStrength > 0.5, increase to 20-25m!
+                                                     ?If using GlobalLevelingStrength > 0.5, increase to 20-25m!
                                                      """;
 
     public const string EnableMaxSlopeConstraint = """
                                                    Default: false
-                                                   Status: ? ACTIVELY USED
+                                                   Status: ACTIVELY USED
 
                                                    Enable enforcement of the maximum road slope constraint.
 
@@ -125,11 +125,11 @@ public static class RoadParameterTooltips
 
     public const string RoadMaxSlopeDegrees = """
                                               Default: 4.0 | Range: 1.0 to 45.0
-                                              Status: ?? CONDITIONALLY USED (only when EnableMaxSlopeConstraint = true)
+                                              Status: ?CONDITIONALLY USED (only when EnableMaxSlopeConstraint = true)
 
                                               Maximum steepness allowed on the road surface itself. Think of it as the "incline warning" on highway signs.
 
-                                              ?? Only enforced when EnableMaxSlopeConstraint is enabled!
+                                              ?Only enforced when EnableMaxSlopeConstraint is enabled!
 
                                               Example values:
                                               • 1.0 - Ultra-flat race track
@@ -140,7 +140,7 @@ public static class RoadParameterTooltips
 
     public const string SideMaxSlopeDegrees = """
                                               Default: 30.0 | Range: 15.0 to 60.0
-                                              Status: ? ACTIVELY USED
+                                              Status: ACTIVELY USED
 
                                               Maximum embankment (road shoulder) slope. The transition zone from road edge to natural terrain.
 
@@ -151,7 +151,7 @@ public static class RoadParameterTooltips
 
     public const string RoadEdgeProtectionBuffer = """
                                                    Default: 2.0 | Range: 0.0 to 20.0
-                                                   Status: ? ACTIVELY USED
+                                                   Status: ACTIVELY USED
 
                                                    Distance (in meters) beyond the road edge that is protected from other roads' blend zones.
                                                    Higher values prevent lower-priority roads from damaging this road's edges at intersections.
@@ -176,7 +176,7 @@ public static class RoadParameterTooltips
 
     public const string BlendFunction = """
                                         Default: Cosine
-                                        Status: ? ACTIVELY USED
+                                        Status: ACTIVELY USED
 
                                         The "smoothing curve" used to blend the road into terrain:
 
@@ -188,11 +188,11 @@ public static class RoadParameterTooltips
 
     public const string CrossSectionIntervalMeters = """
                                                      Default: 0.5 | Range: 0.25 to 5.0
-                                                     Status: ? ACTIVELY USED
+                                                     Status: ACTIVELY USED
 
                                                      How often the algorithm "measures" the road. Smaller = more measurements = smoother but slower.
 
-                                                     Should be ? (RoadWidthMeters/2 + TerrainAffectedRangeMeters) / 3 to avoid gaps!
+                                                     Should be (RoadWidthMeters/2 + TerrainAffectedRangeMeters) / 3 to avoid gaps!
 
                                                      Example values:
                                                      • 0.25 - Ultra-high quality racing circuit (slow)
@@ -200,12 +200,12 @@ public static class RoadParameterTooltips
                                                      • 1.0 - Standard quality local road
                                                      • 2.0 - Low quality (may show gaps)
 
-                                                     ?? Auto-adjusted if too high to prevent gaps.
+                                                     ?Auto-adjusted if too high to prevent gaps.
                                                      """;
 
     public const string EnableTerrainBlending = """
                                                 Default: true
-                                                Status: ? ACTIVELY USED
+                                                Status: ACTIVELY USED
 
                                                 If enabled, the road will blend into terrain. If disabled, only extracts road geometry without modifying the heightmap (debug mode).
                                                 """;
@@ -216,7 +216,7 @@ public static class RoadParameterTooltips
 
     public const string SplineTension = """
                                         Default: 0.3 | Range: 0.0 to 1.0
-                                        Status: ? ACTIVELY USED
+                                        Status: ACTIVELY USED
 
                                         Controls how tightly the spline curve follows the skeleton points:
 
@@ -232,7 +232,7 @@ public static class RoadParameterTooltips
 
     public const string SplineContinuity = """
                                            Default: 0.5 | Range: -1.0 to 1.0
-                                           Status: ? ACTIVELY USED
+                                           Status: ACTIVELY USED
 
                                            Controls corner smoothness:
 
@@ -248,7 +248,7 @@ public static class RoadParameterTooltips
 
     public const string SplineBias = """
                                      Default: 0.0 | Range: -1.0 to 1.0
-                                     Status: ? ACTIVELY USED
+                                     Status: ACTIVELY USED
 
                                      Controls curve direction bias:
 
@@ -265,21 +265,21 @@ public static class RoadParameterTooltips
 
     public const string SkeletonDilationRadius = """
                                                  Default: 1 | Range: 0 to 5
-                                                 Status: ? ACTIVELY USED
+                                                 Status: ACTIVELY USED
 
                                                  Dilation radius (pixels) applied to road mask before skeletonization. Helps bridge small gaps and improve connectivity.
 
-                                                 ? 0 - No dilation (cleanest skeleton, hairpin-friendly, may miss disconnected fragments)
-                                                 ? 1 - Minimal dilation (default, good balance, minimal tail artifacts)
-                                                 ? 2 - Moderate dilation (better connectivity, minor blobs at curves)
-                                                 ? 3+ - Heavy dilation (maximum connectivity, SIGNIFICANT tail artifacts at hairpins)
+                                                 0 - No dilation (cleanest skeleton, hairpin-friendly, may miss disconnected fragments)
+                                                 1 - Minimal dilation (default, good balance, minimal tail artifacts)
+                                                 2 - Moderate dilation (better connectivity, minor blobs at curves)
+                                                 3+ - Heavy dilation (maximum connectivity, SIGNIFICANT tail artifacts at hairpins)
 
-                                                 ?? For tight hairpin turns, use 0 to avoid "tail" artifacts that mess up curves!
+                                                 ?For tight hairpin turns, use 0 to avoid "tail" artifacts that mess up curves!
                                                  """;
 
     public const string UseGraphOrdering = """
                                            Default: true
-                                           Status: ? ACTIVELY USED
+                                           Status: ACTIVELY USED
 
                                            Use smart graph-based algorithm to order skeleton points. More robust for complex road networks than simple nearest-neighbor.
 
@@ -288,7 +288,7 @@ public static class RoadParameterTooltips
 
     public const string DensifyMaxSpacingPixels = """
                                                   Default: 1.5 | Range: 0.5 to 5.0
-                                                  Status: ? ACTIVELY USED
+                                                  Status: ACTIVELY USED
 
                                                   Maximum spacing between skeleton points. If two consecutive points are farther apart, intermediate points are inserted.
 
@@ -299,7 +299,7 @@ public static class RoadParameterTooltips
 
     public const string SimplifyTolerancePixels = """
                                                   Default: 0.5 | Range: 0.0 to 5.0
-                                                  Status: ? ACTIVELY USED
+                                                  Status: ACTIVELY USED
 
                                                   Removes redundant points without changing path shape.
 
@@ -311,7 +311,7 @@ public static class RoadParameterTooltips
 
     public const string BridgeEndpointMaxDistancePixels = """
                                                           Default: 30.0 | Range: 10.0 to 100.0
-                                                          Status: ? ACTIVELY USED
+                                                          Status: ACTIVELY USED
 
                                                           If two skeleton endpoints are closer than this, they'll be connected to bridge the gap.
 
@@ -322,7 +322,7 @@ public static class RoadParameterTooltips
 
     public const string MinPathLengthPixels = """
                                               Default: 20.0 | Range: 10.0 to 200.0
-                                              Status: ? ACTIVELY USED
+                                              Status: ACTIVELY USED
 
                                               Discard paths shorter than this length. Helps remove parking lots, driveways, and small fragments.
 
@@ -333,7 +333,7 @@ public static class RoadParameterTooltips
 
     public const string OrderingNeighborRadiusPixels = """
                                                        Default: 2.5 | Range: 1.0 to 10.0
-                                                       Status: ? ACTIVELY USED
+                                                       Status: ACTIVELY USED
 
                                                        Points within this distance are considered neighbors when building the ordering graph.
 
@@ -348,17 +348,17 @@ public static class RoadParameterTooltips
 
     public const string PreferStraightThroughJunctions = """
                                                          Default: false
-                                                         Status: ? ACTIVELY USED
+                                                         Status: ACTIVELY USED
 
                                                          At intersections, prefer continuing straight rather than taking sharp turns. Extracts the "main road" through intersections.
 
-                                                         ?? Should be FALSE for simple curved roads without intersections!
+                                                         ?Should be FALSE for simple curved roads without intersections!
                                                          Only enable for actual road networks.
                                                          """;
 
     public const string JunctionAngleThreshold = """
                                                  Default: 45.0 | Range: 15.0 to 90.0
-                                                 Status: ?? CONDITIONALLY USED
+                                                 Status: ?CONDITIONALLY USED
 
                                                  Only used when PreferStraightThroughJunctions is enabled. Defines what angle change is considered "straight through."
 
@@ -373,21 +373,23 @@ public static class RoadParameterTooltips
 
     public const string SplineSmoothingWindowSize = """
                                                     Default: 101 | Range: 11 to 1001 (must be odd)
-                                                    Status: ? ACTIVELY USED
+                                                    Status: ACTIVELY USED
 
                                                     Number of cross-section samples to average for elevation smoothing.
+                                                    With a higher value, you can bridge gaps which may appear in the terrain.
+                                                    If you decrease CrossSectionIntervalMeters, you may need to increase this value to maintain the same smoothing window in meters.
 
                                                     • 51 - Minimal smoothing (follows terrain closely)
                                                     • 101 - Balanced (default)
                                                     • 201 - Heavy smoothing (highway quality)
                                                     • 301 - Very heavy smoothing (ultra-smooth race track)
 
-                                                    Window size in meters ? SmoothingWindowSize × CrossSectionIntervalMeters
+                                                    Window size in meters SmoothingWindowSize × CrossSectionIntervalMeters
                                                     """;
 
     public const string SplineUseButterworthFilter = """
                                                      Default: true
-                                                     Status: ? ACTIVELY USED
+                                                     Status: ACTIVELY USED
 
                                                      • Butterworth - Professional quality, maximally flat, sharper cutoff (RECOMMENDED)
                                                      • Disabled - Simple Gaussian averaging, softer transitions
@@ -397,7 +399,7 @@ public static class RoadParameterTooltips
 
     public const string SplineButterworthFilterOrder = """
                                                        Default: 3 | Range: 1 to 8
-                                                       Status: ? ACTIVELY USED (when Butterworth enabled)
+                                                       Status: ACTIVELY USED (when Butterworth enabled)
 
                                                        Filter "aggressiveness":
                                                        • 1-2 - Gentle smoothing
@@ -407,7 +409,7 @@ public static class RoadParameterTooltips
 
     public const string GlobalLevelingStrength = """
                                                  Default: 0.0 | Range: 0.0 to 1.0
-                                                 Status: ? ACTIVELY USED
+                                                 Status: ACTIVELY USED
 
                                                  How much to "level" the road to a global average elevation:
 
@@ -415,7 +417,7 @@ public static class RoadParameterTooltips
                                                  • 0.5 - Balanced (moderate leveling)
                                                  • 0.9 - Strong leveling (forces road network to similar elevation)
 
-                                                 ?? CRITICAL: If > 0.5, you MUST increase TerrainAffectedRangeMeters to 20-25m or you'll get "dotted road" artifacts!
+                                                 ?CRITICAL: If > 0.5, you MUST increase TerrainAffectedRangeMeters to 20-25m or you'll get "dotted road" artifacts!
                                                  """;
 
     // ========================================
@@ -424,7 +426,7 @@ public static class RoadParameterTooltips
 
     public const string EnablePostProcessingSmoothing = """
                                                         Default: false
-                                                        Status: ? ACTIVELY USED
+                                                        Status: ACTIVELY USED
 
                                                         Applies a final smoothing pass to eliminate visible "steps" or "bumps" on the road surface. Like applying a final polish after the main smoothing.
 
@@ -433,7 +435,7 @@ public static class RoadParameterTooltips
 
     public const string SmoothingType = """
                                         Default: Gaussian
-                                        Status: ? ACTIVELY USED
+                                        Status: ACTIVELY USED
 
                                         • Gaussian - Best quality, smooth and natural (RECOMMENDED)
                                         • Box - Fastest, simple averaging
@@ -442,19 +444,19 @@ public static class RoadParameterTooltips
 
     public const string SmoothingKernelSize = """
                                               Default: 7 | Range: 3, 5, 7, 9, 11, 13, 15 (must be odd)
-                                              Status: ? ACTIVELY USED
+                                              Status: ACTIVELY USED
 
                                               Smoothing brush size in pixels:
                                               • 3 - Tiny brush (subtle smoothing)
                                               • 7 - Medium brush (RECOMMENDED)
                                               • 11 - Large brush (very smooth)
 
-                                              ?? Must be odd number!
+                                              ?Must be odd number!
                                               """;
 
     public const string SmoothingSigma = """
                                          Default: 1.5 | Range: 0.5 to 4.0
-                                         Status: ? ACTIVELY USED (Gaussian/Bilateral)
+                                         Status: ACTIVELY USED (Gaussian/Bilateral)
 
                                          Gaussian blur strength (brush pressure):
                                          • 0.5 - Light touch
@@ -464,7 +466,7 @@ public static class RoadParameterTooltips
 
     public const string SmoothingMaskExtensionMeters = """
                                                        Default: 6.0 | Range: 0.0 to 12.0
-                                                       Status: ? ACTIVELY USED
+                                                       Status: ACTIVELY USED
 
                                                        How far beyond road edge to apply smoothing.
 
@@ -472,19 +474,19 @@ public static class RoadParameterTooltips
                                                        • 6.0 - Road + shoulder (RECOMMENDED)
                                                        • 10.0 - Entire blend zone
 
-                                                       Should be ? TerrainAffectedRangeMeters
+                                                       Should be TerrainAffectedRangeMeters
                                                        """;
 
     public const string SmoothingIterations = """
                                               Default: 1 | Range: 1 to 5
-                                              Status: ? ACTIVELY USED
+                                              Status: ACTIVELY USED
 
                                               Number of smoothing passes:
                                               • 1 - Single pass (usually sufficient)
                                               • 2 - Double pass (smoother)
                                               • 3+ - Rarely needed, may blur too much
 
-                                              ?? Each iteration multiplies processing time!
+                                              ?Each iteration multiplies processing time!
                                               """;
 
     // ========================================
@@ -493,7 +495,7 @@ public static class RoadParameterTooltips
 
     public const string ExportSmoothedHeightmapWithOutlines = """
                                                               Default: false
-                                                              Status: ? ACTIVELY USED
+                                                              Status: ACTIVELY USED
 
                                                               Saves the UNIFIED smoothed heightmap as grayscale with road outlines overlaid.
                                                               Shows the combined result of all road materials processed as a single network.
@@ -509,7 +511,7 @@ public static class RoadParameterTooltips
 
     public const string ExportSplineDebugImage = """
                                                  Default: false
-                                                 Status: ? ACTIVELY USED
+                                                 Status: ACTIVELY USED
 
                                                  Saves debug image showing spline centerline and road width for THIS material.
                                                  Each material's spline debug is saved to a subfolder.
@@ -525,12 +527,12 @@ public static class RoadParameterTooltips
 
     public const string ExportSkeletonDebugImage = """
                                                    Default: false
-                                                   Status: ? ACTIVELY USED (PNG layer source only)
+                                                   Status: ACTIVELY USED (PNG layer source only)
 
                                                    Saves raw skeleton (road centerline) before spline fitting.
                                                    White lines on black background.
 
-                                                   ?? PNG LAYER SOURCE ONLY - Not available for OSM splines!
+                                                   ?PNG LAYER SOURCE ONLY - Not available for OSM splines!
                                                    OSM splines are generated directly from vector data and bypass
                                                    skeleton extraction entirely.
 
@@ -541,7 +543,7 @@ public static class RoadParameterTooltips
 
     public const string ExportSmoothedElevationDebugImage = """
                                                             Default: false
-                                                            Status: ? ACTIVELY USED
+                                                            Status: ACTIVELY USED
 
                                                             Saves road colored by elevation:
                                                             • Blue - Low elevation
@@ -553,7 +555,7 @@ public static class RoadParameterTooltips
 
     public const string ExportJunctionDebugImage = """
                                                    Default: false
-                                                   Status: ? ACTIVELY USED
+                                                   Status: ACTIVELY USED
 
                                                    Exports debug image showing detected junctions including CROSS-MATERIAL connections.
                                                    The unified pipeline detects junctions across all road materials.
@@ -576,7 +578,7 @@ public static class RoadParameterTooltips
 
     public const string MasterSplineNodeDistanceMeters = """
                                                          Default: 15.0 | Range: 5.0 to 100.0
-                                                         Status: ? ACTIVELY USED
+                                                         Status: ACTIVELY USED
 
                                                          Distance between nodes in the exported master_splines.json file (in meters).
 
@@ -592,7 +594,7 @@ public static class RoadParameterTooltips
                                                          • 20-50m - Low detail (long straight highways)
                                                          • 50-100m - Minimal detail (very long straights)
 
-                                                         ?? For BeamNG import:
+                                                         ?For BeamNG import:
                                                          The exported master_splines.json can be imported into BeamNG using the
                                                          Master Spline Tool mod. More nodes = more handles to adjust in the editor,
                                                          so choose a balance between precision and usability.
