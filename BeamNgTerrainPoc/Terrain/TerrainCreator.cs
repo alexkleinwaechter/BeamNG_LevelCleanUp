@@ -219,18 +219,112 @@ public class TerrainCreator
                 parameters.Size,
                 materialNames);
 
-            // 6. Fill terrain data
+            // 6. Fill terrain data with spike prevention
             perfLog.LogSection("Terrain Data Assembly");
             sw.Restart();
             perfLog.Info("Filling terrain data...");
+            
+            // PRE-SAVE SPIKE PREVENTION: Scan and fix height values before writing
+            var spikeFixCount = 0;
+            var nanCount = 0;
+            var negativeCount = 0;
+            var overMaxCount = 0;
+            var nearMaxCount = 0;
+            
+            // Calculate a reasonable "normal" height from the data
+            var validHeights = heights.Where(h => !float.IsNaN(h) && !float.IsInfinity(h) && h >= 0 && h < parameters.MaxHeight * 0.95f).ToList();
+            var medianHeight = validHeights.Count > 0 
+                ? validHeights.OrderBy(h => h).ElementAt(validHeights.Count / 2) 
+                : 0.23f; // BeamNG default road elevation
+            var nearMaxThreshold = parameters.MaxHeight * 0.99f;
+            
+            perfLog.Info($"  Pre-save analysis: median valid height = {medianHeight:F2}m, maxHeight = {parameters.MaxHeight:F2}m");
+            
             for (var i = 0; i < terrain.Data.Length; i++)
+            {
+                var height = heights[i];
+                var originalHeight = height;
+                var needsFix = false;
+                
+                // Check for problematic values
+                if (float.IsNaN(height) || float.IsInfinity(height))
+                {
+                    nanCount++;
+                    needsFix = true;
+                }
+                else if (height < 0)
+                {
+                    negativeCount++;
+                    needsFix = true;
+                }
+                else if (height >= parameters.MaxHeight)
+                {
+                    overMaxCount++;
+                    needsFix = true;
+                }
+                else if (height >= nearMaxThreshold)
+                {
+                    // Check if this is an isolated near-max value (potential spike)
+                    var x = i % parameters.Size;
+                    var y = i / parameters.Size;
+                    var neighborAvg = GetNeighborAverageHeight(heights, x, y, parameters.Size, 3);
+                    
+                    // If we're near max but neighbors are much lower, this is a spike
+                    if (neighborAvg < parameters.MaxHeight * 0.5f)
+                    {
+                        nearMaxCount++;
+                        needsFix = true;
+                    }
+                }
+                
+                if (needsFix)
+                {
+                    // Try to get a sensible replacement value
+                    var x = i % parameters.Size;
+                    var y = i / parameters.Size;
+                    var neighborAvg = GetNeighborAverageHeight(heights, x, y, parameters.Size, 3);
+                    
+                    // Use neighbor average if valid, otherwise use median, otherwise use default
+                    if (!float.IsNaN(neighborAvg) && neighborAvg >= 0 && neighborAvg < parameters.MaxHeight * 0.95f)
+                    {
+                        height = neighborAvg;
+                    }
+                    else if (medianHeight > 0)
+                    {
+                        height = medianHeight;
+                    }
+                    else
+                    {
+                        height = 0.23f; // BeamNG default
+                    }
+                    
+                    heights[i] = height; // Update the array too
+                    spikeFixCount++;
+                }
+                
                 terrain.Data[i] = new TerrainData
                 {
-                    Height = heights[i],
+                    Height = height,
                     Material = materialIndices[i],
                     IsHole = false
                 };
+            }
+            
             perfLog.Timing($"Fill terrain data array: {sw.ElapsedMilliseconds}ms");
+            
+            // Report pre-save fixes
+            if (spikeFixCount > 0)
+            {
+                perfLog.Warning($"  PRE-SAVE SPIKE PREVENTION: Fixed {spikeFixCount} problematic height values:");
+                if (nanCount > 0) perfLog.Warning($"    - NaN/Infinity values: {nanCount}");
+                if (negativeCount > 0) perfLog.Warning($"    - Negative values: {negativeCount}");
+                if (overMaxCount > 0) perfLog.Warning($"    - Over-max values (>= {parameters.MaxHeight}m): {overMaxCount}");
+                if (nearMaxCount > 0) perfLog.Warning($"    - Isolated near-max spikes: {nearMaxCount}");
+            }
+            else
+            {
+                perfLog.Info("  ? No problematic height values found");
+            }
 
             // 7. Save using Grille.BeamNG.Lib
             perfLog.LogSection("File Writing");
@@ -243,6 +337,23 @@ public class TerrainCreator
             // Save synchronously (the Save method is synchronous)
             await Task.Run(() => terrain.Save(outputPath, parameters.MaxHeight));
             perfLog.Timing($"terrain.Save: {sw.Elapsed.TotalSeconds:F2}s");
+
+            // 7b. Validate terrain for spikes (informational only - spikes should already be fixed)
+            perfLog.LogSection("Spike Validation");
+            sw.Restart();
+            perfLog.Info("Validating terrain for elevation spikes...");
+            var spikeValidation = TerrainSpikeValidator.ValidateTerrainFile(outputPath, parameters.MaxHeight);
+            perfLog.Timing($"Spike validation: {sw.ElapsedMilliseconds}ms");
+            
+            if (!spikeValidation.IsValid)
+            {
+                perfLog.Warning($"SPIKE VALIDATION WARNING: {spikeValidation.SpikeCount} potential spikes detected after pre-save fix.");
+                perfLog.Warning("This may indicate an issue with the source data or smoothing parameters.");
+            }
+            else
+            {
+                perfLog.Info("? Terrain spike validation passed");
+            }
 
             // 8. Write terrain.json metadata file
             sw.Restart();
@@ -641,5 +752,48 @@ public class TerrainCreator
         {
             return "unknown";
         }
+    }
+
+    /// <summary>
+    ///     Calculates the average height of neighboring pixels.
+    ///     Used for spike detection and correction during terrain data assembly.
+    /// </summary>
+    /// <param name="heights">The height array (1D, row-major)</param>
+    /// <param name="x">X coordinate</param>
+    /// <param name="y">Y coordinate</param>
+    /// <param name="size">Terrain size</param>
+    /// <param name="radius">Search radius in pixels</param>
+    /// <returns>Average height of valid neighbors, or NaN if no valid neighbors</returns>
+    private static float GetNeighborAverageHeight(float[] heights, int x, int y, int size, int radius)
+    {
+        var sum = 0f;
+        var count = 0;
+
+        for (var dy = -radius; dy <= radius; dy++)
+        {
+            for (var dx = -radius; dx <= radius; dx++)
+            {
+                if (dx == 0 && dy == 0)
+                    continue; // Skip center pixel
+
+                var nx = x + dx;
+                var ny = y + dy;
+
+                if (nx >= 0 && nx < size && ny >= 0 && ny < size)
+                {
+                    var index = ny * size + nx;
+                    var h = heights[index];
+                    
+                    // Only include valid heights (not NaN, not negative, not at extreme max)
+                    if (!float.IsNaN(h) && !float.IsInfinity(h) && h >= 0)
+                    {
+                        sum += h;
+                        count++;
+                    }
+                }
+            }
+        }
+
+        return count > 0 ? sum / count : float.NaN;
     }
 }
