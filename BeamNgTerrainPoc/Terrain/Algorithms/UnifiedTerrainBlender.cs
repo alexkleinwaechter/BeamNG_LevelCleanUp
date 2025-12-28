@@ -206,7 +206,7 @@ public class UnifiedTerrainBlender
 
         // Get spline protection buffer lookup (per-spline buffer values)
         var splineProtectionBuffer = network.Splines.ToDictionary(
-            s => s.SplineId, 
+            s => s.SplineId,
             s => s.Parameters.RoadEdgeProtectionBufferMeters);
 
         foreach (var (splineId, crossSections) in crossSectionsBySpline)
@@ -757,7 +757,11 @@ public class UnifiedTerrainBlender
     ///     Algorithm:
     ///     1. Find all cross-sections within the search radius
     ///     2. Weight each by 1/distance (closer = more influence)
-    ///     3. Return weighted average elevation and dominant owner (nearest cross-section)
+    ///     3. Return weighted average elevation and dominant owner (HIGHEST PRIORITY cross-section, not just nearest)
+    ///     
+    ///     IMPORTANT: The dominant owner is determined by priority first, then by distance.
+    ///     This ensures that at junctions, the higher-priority road "owns" pixels in its influence zone,
+    ///     even if a lower-priority road's cross-section is technically closer.
     /// </summary>
     /// <param name="worldPos">World position to interpolate for</param>
     /// <param name="index">Spatial index of cross-sections</param>
@@ -777,6 +781,8 @@ public class UnifiedTerrainBlender
         var totalWeight = 0f;
         var minDist = float.MaxValue;
         UnifiedCrossSection? dominantCs = null;
+        var dominantPriority = int.MinValue;
+        var dominantDistance = float.MaxValue;
 
         // Determine grid search range based on search radius
         var gridSearchRange = (int)MathF.Ceiling(searchRadius / metersPerPixel / SpatialIndexCellSize) + 1;
@@ -800,11 +806,29 @@ public class UnifiedTerrainBlender
                 if (dist > searchRadius)
                     continue;
 
-                // Track nearest for ownership determination
+                // Track absolute nearest for distance calculation
                 if (dist < minDist)
-                {
                     minDist = dist;
+
+                // Determine dominant owner by PRIORITY first, then by distance
+                // This is critical for junctions: higher-priority road should own blend zone pixels
+                var shouldClaimOwnership = false;
+                if (cs.Priority > dominantPriority)
+                {
+                    // Higher priority always wins
+                    shouldClaimOwnership = true;
+                }
+                else if (cs.Priority == dominantPriority && dist < dominantDistance)
+                {
+                    // Equal priority: closer wins
+                    shouldClaimOwnership = true;
+                }
+
+                if (shouldClaimOwnership)
+                {
                     dominantCs = cs;
+                    dominantPriority = cs.Priority;
+                    dominantDistance = dist;
                 }
 
                 // Inverse-distance weighting with epsilon to avoid division by zero
@@ -823,9 +847,11 @@ public class UnifiedTerrainBlender
 
     /// <summary>
     ///     Applies protected blending with per-spline blend ranges.
-    ///     Key protection rule: ANY road core pixel (marked in protectionMask) is NEVER
-    ///     modified by ANY blend zone, regardless of which spline owns the blend zone.
-    ///     This prevents secondary roads' blend zones from destroying primary roads at junctions.
+    ///     Key protection rules:
+    ///     1. Road core pixels (marked in protectionMask) are NEVER modified by ANY blend zone
+    ///     2. When blending for a lower-priority road, if the pixel is within a higher-priority
+    ///     road's protection zone, use the higher-priority road's elevation instead of blending
+    ///     toward terrain. This prevents secondary roads from creating "dents" at junctions.
     /// </summary>
     private float[,] ApplyProtectedBlending(
         float[,] original,
@@ -847,14 +873,20 @@ public class UnifiedTerrainBlender
             s => (
                 HalfWidth: s.Parameters.RoadWidthMeters / 2.0f,
                 BlendRange: s.Parameters.TerrainAffectedRangeMeters,
-                BlendFunction: s.Parameters.BlendFunctionType
+                BlendFunction: s.Parameters.BlendFunctionType,
+                ProtectionBuffer: s.Parameters.RoadEdgeProtectionBufferMeters,
+                s.Priority
             ));
+
+        // Build spatial index for cross-sections grouped by spline ID for fast higher-priority lookups
+        var crossSectionsBySpline = BuildSpatialIndexBySpline(network.CrossSections, metersPerPixel);
 
         // Thread-safe counters
         var modifiedPixels = 0;
         var roadCorePixels = 0;
         var shoulderPixels = 0;
         var protectedFromBlend = 0;
+        var protectedByHigherPriority = 0;
 
         var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
 
@@ -864,6 +896,7 @@ public class UnifiedTerrainBlender
             var localCore = 0;
             var localShoulder = 0;
             var localProtected = 0;
+            var localProtectedByHigherPriority = 0;
 
             for (var x = 0; x < width; x++)
             {
@@ -885,6 +918,7 @@ public class UnifiedTerrainBlender
                 var halfWidth = ownerParams.HalfWidth;
                 var blendRange = ownerParams.BlendRange;
                 var blendFunctionType = ownerParams.BlendFunction;
+                var ownerPriority = ownerParams.Priority;
 
                 float newH;
 
@@ -896,7 +930,9 @@ public class UnifiedTerrainBlender
                 }
                 else if (d <= halfWidth + blendRange)
                 {
-                    // BLEND ZONE - But first check if this pixel is protected (part of another road's core)
+                    // BLEND ZONE - Check protection rules
+
+                    // Rule 1: If this pixel is inside any road's protection zone, don't blend toward terrain
                     if (protectionMask[y, x])
                     {
                         // This pixel is part of a road core (possibly different road) - DON'T modify it
@@ -905,14 +941,32 @@ public class UnifiedTerrainBlender
                         continue;
                     }
 
-                    // Safe to blend - Smooth transition to terrain
-                    var t = (d - halfWidth) / blendRange;
-                    t = Math.Clamp(t, 0f, 1f);
+                    // Rule 2: Check if we're in the blend zone of a lower-priority road but within
+                    // the protection buffer of a higher-priority road. In that case, use the 
+                    // higher-priority road's target elevation instead of blending toward terrain.
+                    var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
+                    var higherPriorityElevation = FindHigherPriorityProtectedElevation(
+                        worldPos, ownerId, ownerPriority, network.Splines, splineParams, crossSectionsBySpline,
+                        metersPerPixel);
 
-                    var blend = ApplyBlendFunction(t, blendFunctionType);
+                    if (higherPriorityElevation.HasValue)
+                    {
+                        // Use the higher-priority road's elevation instead of blending toward terrain
+                        newH = higherPriorityElevation.Value;
+                        localProtectedByHigherPriority++;
+                    }
+                    else
+                    {
+                        // Safe to blend - Smooth transition to terrain
+                        var t = (d - halfWidth) / blendRange;
+                        t = Math.Clamp(t, 0f, 1f);
 
-                    // Interpolate between target elevation and original terrain
-                    newH = targetElevation * (1f - blend) + original[y, x] * blend;
+                        var blend = ApplyBlendFunction(t, blendFunctionType);
+
+                        // Interpolate between target elevation and original terrain
+                        newH = targetElevation * (1f - blend) + original[y, x] * blend;
+                    }
+
                     localShoulder++;
                 }
                 else
@@ -933,14 +987,163 @@ public class UnifiedTerrainBlender
             Interlocked.Add(ref roadCorePixels, localCore);
             Interlocked.Add(ref shoulderPixels, localShoulder);
             Interlocked.Add(ref protectedFromBlend, localProtected);
+            Interlocked.Add(ref protectedByHigherPriority, localProtectedByHigherPriority);
         });
 
         TerrainCreationLogger.Current?.Detail($"Modified {modifiedPixels:N0} pixels total");
         TerrainCreationLogger.Current?.Detail($"  Road core: {roadCorePixels:N0} pixels");
         TerrainCreationLogger.Current?.Detail($"  Shoulder: {shoulderPixels:N0} pixels");
         TerrainCreationLogger.Current?.Detail($"  Protected from blend overlap: {protectedFromBlend:N0} pixels");
+        if (protectedByHigherPriority > 0)
+            TerrainCreationLogger.Current?.Detail(
+                $"  Protected by higher-priority road buffer: {protectedByHigherPriority:N0} pixels");
 
         return result;
+    }
+
+    /// <summary>
+    ///     Builds a spatial index for cross-sections grouped by spline ID.
+    ///     This allows efficient lookup of nearby cross-sections for a specific spline.
+    /// </summary>
+    private Dictionary<int, Dictionary<(int, int), List<UnifiedCrossSection>>> BuildSpatialIndexBySpline(
+        List<UnifiedCrossSection> sections,
+        float metersPerPixel)
+    {
+        var indexBySpline = new Dictionary<int, Dictionary<(int, int), List<UnifiedCrossSection>>>();
+
+        foreach (var cs in sections.Where(s => !s.IsExcluded && IsValidTargetElevation(s.TargetElevation)))
+        {
+            if (!indexBySpline.ContainsKey(cs.OwnerSplineId))
+                indexBySpline[cs.OwnerSplineId] = new Dictionary<(int, int), List<UnifiedCrossSection>>();
+
+            var splineIndex = indexBySpline[cs.OwnerSplineId];
+            var gridX = (int)(cs.CenterPoint.X / metersPerPixel / SpatialIndexCellSize);
+            var gridY = (int)(cs.CenterPoint.Y / metersPerPixel / SpatialIndexCellSize);
+            var key = (gridX, gridY);
+
+            if (!splineIndex.ContainsKey(key))
+                splineIndex[key] = [];
+
+            splineIndex[key].Add(cs);
+        }
+
+        return indexBySpline;
+    }
+
+    /// <summary>
+    ///     Checks if a pixel is within a higher-priority road's protection buffer zone.
+    ///     If so, returns that road's target elevation to prevent blend zone damage.
+    ///     
+    ///     This solves the junction problem where a secondary road's blend zone would
+    ///     cut into the primary road's edge, creating a dent. By detecting that we're
+    ///     within the primary road's protection buffer, we use the primary road's
+    ///     smoothed elevation instead of blending toward terrain.
+    ///     
+    ///     IMPORTANT: At junctions, the secondary road's cross-sections have already been
+    ///     harmonized by NetworkJunctionHarmonizer. We use the harmonized elevation from
+    ///     the nearest cross-section, which should be close to the primary road's elevation
+    ///     near the junction. This preserves smooth junction transitions.
+    /// </summary>
+    private static float? FindHigherPriorityProtectedElevation(
+        Vector2 worldPos,
+        int currentOwnerId,
+        int currentPriority,
+        List<ParameterizedRoadSpline> splines,
+        Dictionary<int, (float HalfWidth, float BlendRange, BlendFunctionType BlendFunction, float ProtectionBuffer, int
+            Priority)> splineParams,
+        Dictionary<int, Dictionary<(int, int), List<UnifiedCrossSection>>> crossSectionsBySpline,
+        float metersPerPixel)
+    {
+        float? bestElevation = null;
+        var bestPriority = currentPriority;
+        var bestDistance = float.MaxValue;
+
+        var gridX = (int)(worldPos.X / metersPerPixel / SpatialIndexCellSize);
+        var gridY = (int)(worldPos.Y / metersPerPixel / SpatialIndexCellSize);
+
+        // Check all splines with higher priority than the current owner
+        foreach (var spline in splines)
+        {
+            if (spline.SplineId == currentOwnerId)
+                continue;
+
+            if (!splineParams.TryGetValue(spline.SplineId, out var params_))
+                continue;
+
+            // Only consider splines with strictly higher priority
+            if (params_.Priority <= currentPriority)
+                continue;
+
+            // Calculate the protection zone boundary for this spline
+            // Protection zone = road core (halfWidth) + protection buffer
+            var protectionRadius = params_.HalfWidth + params_.ProtectionBuffer;
+
+            // Use spatial index to find nearest cross-section of this spline
+            if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var splineIndex))
+                continue;
+
+            var nearestCs = FindNearestCrossSectionInSpatialIndex(worldPos, splineIndex, gridX, gridY, protectionRadius,
+                metersPerPixel);
+            if (nearestCs == null)
+                continue;
+
+            var distToSpline = Vector2.Distance(worldPos, nearestCs.CenterPoint);
+
+            // Check if this pixel is within this spline's protection zone
+            // AND this spline has higher priority than any we've found so far
+            // If equal priority, prefer closer cross-section for smoother results
+            if (distToSpline <= protectionRadius)
+            {
+                if (params_.Priority > bestPriority || 
+                    (params_.Priority == bestPriority && distToSpline < bestDistance))
+                {
+                    // Use the cross-section's target elevation (which has been harmonized at junctions)
+                    bestElevation = nearestCs.TargetElevation;
+                    bestPriority = params_.Priority;
+                    bestDistance = distToSpline;
+                }
+            }
+        }
+
+        return bestElevation;
+    }
+
+    /// <summary>
+    ///     Finds the nearest cross-section in a spatial index within a given search radius.
+    /// </summary>
+    private static UnifiedCrossSection? FindNearestCrossSectionInSpatialIndex(
+        Vector2 worldPos,
+        Dictionary<(int, int), List<UnifiedCrossSection>> spatialIndex,
+        int gridX, int gridY,
+        float searchRadius,
+        float metersPerPixel)
+    {
+        UnifiedCrossSection? nearest = null;
+        var minDist = float.MaxValue;
+
+        // Calculate grid search range based on search radius
+        var gridSearchRange = (int)MathF.Ceiling(searchRadius / metersPerPixel / SpatialIndexCellSize) + 1;
+        gridSearchRange = Math.Max(1, Math.Min(gridSearchRange, 3)); // Clamp to reasonable range
+
+        for (var dy = -gridSearchRange; dy <= gridSearchRange; dy++)
+        for (var dx = -gridSearchRange; dx <= gridSearchRange; dx++)
+        {
+            var key = (gridX + dx, gridY + dy);
+            if (!spatialIndex.TryGetValue(key, out var sections))
+                continue;
+
+            foreach (var cs in sections)
+            {
+                var dist = Vector2.Distance(worldPos, cs.CenterPoint);
+                if (dist < minDist && dist <= searchRadius)
+                {
+                    minDist = dist;
+                    nearest = cs;
+                }
+            }
+        }
+
+        return nearest;
     }
 
     /// <summary>
