@@ -794,7 +794,7 @@ Allows asymmetric curves. Usually kept at 0.0 for natural-looking roads.
 **Type:** `int`  
 **Default:** `101`  
 **Status:** ? **ACTIVELY USED**  
-**Value Range:** `11` to `501` (must be odd)
+**Value Range:** `11` to `1001` (must be odd)
 
 **What it does (simple explanation):**  
 How many cross-section samples to average together when smoothing the elevation along the road length.
@@ -811,7 +811,7 @@ Prevents sudden elevation changes along the road. Larger windows create smoother
 - `101` - Balanced smoothing (default)
 - `201` - Heavy smoothing (highway quality)
 - `301` - Very heavy smoothing (ultra-smooth race track)
-- `501` - Maximum smoothing (may be too flat)
+- `1001` - Maximum smoothing (may be too flat)
 
 **Formula:** Window size in meters ? `SmoothingWindowSize × CrossSectionIntervalMeters`
 

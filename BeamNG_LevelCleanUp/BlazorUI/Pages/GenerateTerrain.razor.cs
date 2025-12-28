@@ -1075,6 +1075,27 @@ public partial class GenerateTerrain
         }
 
     // ========================================
+    // HELP DIALOGS
+    // ========================================
+
+    /// <summary>
+    /// Opens the Material Order Help dialog explaining texture painting and elevation priority.
+    /// </summary>
+    private async Task OpenMaterialOrderHelpDialog()
+    {
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        await DialogService.ShowAsync<TerrainMaterialOrderHelpDialog>(
+            "Material Order & Priority Guide",
+            options);
+    }
+
+    // ========================================
     // ANALYSIS METHODS
     // ========================================
 

@@ -36,7 +36,7 @@ public class ParameterizedRoadSpline
     ///     Priority sources (in order of preference):
     ///     1. OSM road classification (motorway=100, primary=80, residential=50, etc.)
     ///     2. RoadWidthMeters (wider = higher priority)
-    ///     3. Material order in UI (first = highest)
+    ///     3. Material order in UI (higher index = higher priority, consistent with texture painting)
     /// </summary>
     public int Priority { get; set; }
 
@@ -150,22 +150,23 @@ public class ParameterizedRoadSpline
     ///     Calculates the effective priority for this spline using the cascade:
     ///     1. OSM road type (if available)
     ///     2. Road width
+    ///     3. Material order (higher index = higher priority as tiebreaker)
     /// </summary>
-    /// <param name="materialOrderPriority">Priority from material order (0 = first, higher = later)</param>
+    /// <param name="materialOrderIndex">Material index from UI order (0 = first/top, higher = later/bottom)</param>
     /// <returns>Final priority value</returns>
-    public int CalculateEffectivePriority(int materialOrderPriority)
+    public int CalculateEffectivePriority(int materialOrderIndex)
     {
         // If we have OSM road type, use it as primary source
         var osmPriority = GetOsmPriority(OsmRoadType);
         if (osmPriority > 0)
-            // OSM priority is authoritative, but add small offset for material order
-            // to break ties deterministically
-            return osmPriority * 100 + (100 - materialOrderPriority);
+            // OSM priority is authoritative, but add material order index as tiebreaker
+            // Higher material index = higher priority (consistent with texture painting where last wins)
+            return osmPriority * 100 + materialOrderIndex;
 
         // Fall back to width-based priority
         var widthPriority = GetWidthBasedPriority(Parameters.RoadWidthMeters);
 
-        // Combine with material order (earlier materials = higher priority when width is same)
-        return widthPriority * 100 + (100 - materialOrderPriority);
+        // Combine with material order (higher index = higher priority, consistent with texture painting)
+        return widthPriority * 100 + materialOrderIndex;
     }
 }

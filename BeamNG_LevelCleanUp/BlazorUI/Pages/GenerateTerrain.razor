@@ -440,10 +440,18 @@
             {
                 <!-- Materials Section with Drag-Drop -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
-                    <MudText Typo="Typo.h6" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2" />
-                        Terrain Materials (@_terrainMaterials.Count)
-                    </MudText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2" />
+                            Terrain Materials (@_terrainMaterials.Count)
+                        </MudText>
+                        <MudTooltip Text="Learn about material order and priority">
+                            <MudIconButton Icon="@Icons.Material.Filled.Help"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           OnClick="OpenMaterialOrderHelpDialog" />
+                        </MudTooltip>
+                    </div>
                     <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
                         Drag and drop to change the order. Material at index 0 is the default/fallback material.
                         Expand each material to configure layer maps and road smoothing.
