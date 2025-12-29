@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
 
@@ -206,7 +207,7 @@ public class GroundCoverCopier
                     continue;
                 }
 
-                var newName = $"{groundCoverName}_{_levelNameCopyFrom}";
+                var newName = $"gc_{groundCoverName}_{_levelNameCopyFrom}";
 
                 // Copy dependencies (materials and DAE files)
                 // Returns the new material name if a material was copied
@@ -252,8 +253,10 @@ public class GroundCoverCopier
         // Clone efficiently by using the JsonNode copy constructor pattern
         var result = JsonNode.Parse(originalGroundCover.ToJsonString());
 
-        // Update name with suffix
-        result["name"] = $"{originalName}_{_levelNameCopyFrom}";
+        // Update name with prefix and suffix to avoid collision with TerrainMaterial names
+        // TerrainMaterial "Grass2" becomes "Grass2_italy"
+        // GroundCover "Grass2" becomes "gc_Grass2_italy" (different name!)
+        result["name"] = $"gc_{originalName}_{_levelNameCopyFrom}";
 
         // Update persistentId with new GUID
         result["persistentId"] = Guid.NewGuid().ToString();
@@ -276,7 +279,9 @@ public class GroundCoverCopier
                 var shapeFilename = typeNode["shapeFilename"]?.GetValue<string>();
                 if (!string.IsNullOrEmpty(shapeFilename))
                 {
-                    var fileName = Path.GetFileName(shapeFilename);
+                    // Strip .link extension for the JSON path - BeamNG references without .link
+                    var cleanShapeFilename = FileUtils.StripLinkExtension(shapeFilename);
+                    var fileName = Path.GetFileName(cleanShapeFilename);
                     var newPath =
                         $"/levels/{_targetLevelName}/art/shapes/groundcover/MT_{_levelNameCopyFrom}/{fileName}";
                     typeNode["shapeFilename"] = newPath;

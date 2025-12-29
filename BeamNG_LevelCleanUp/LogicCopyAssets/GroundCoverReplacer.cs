@@ -422,8 +422,9 @@ public class GroundCoverReplacer
                 }
             }
 
-            // Generate new name with target material name AND level suffix for uniqueness
-            var newName = $"{cleanSourceName}_{targetMaterialInternalName}_{_levelNameCopyFrom}";
+            // Generate new name with prefix, target material name AND level suffix for uniqueness
+            // Using gc_ prefix to avoid collision with TerrainMaterial names
+            var newName = $"gc_{cleanSourceName}_{targetMaterialInternalName}_{_levelNameCopyFrom}";
             newGroundCover["name"] = newName;
 
             // Generate new GUID
@@ -463,8 +464,9 @@ public class GroundCoverReplacer
             // Create a copy of source groundcover
             var newGroundCover = JsonNode.Parse(sourceGroundCover.ToJsonString());
 
-            // Generate new name with level suffix (consistent with Add mode)
-            var newName = $"{sourceGroundCoverName}_{_levelNameCopyFrom}";
+            // Generate new name with gc_ prefix and level suffix (consistent with Add mode)
+            // Using gc_ prefix to avoid collision with TerrainMaterial names
+            var newName = $"gc_{sourceGroundCoverName}_{_levelNameCopyFrom}";
             newGroundCover["name"] = newName;
 
             // Generate new GUID

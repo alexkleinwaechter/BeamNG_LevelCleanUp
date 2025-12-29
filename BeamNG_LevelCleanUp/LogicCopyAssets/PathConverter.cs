@@ -1,5 +1,6 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
 
@@ -46,8 +47,16 @@ public class PathConverter
         return Path.Join(_namePath, Constants.Terrains, fileName);
     }
 
+    /// <summary>
+    ///     Converts a Windows file path to a BeamNG JSON path format.
+    ///     Strips .link extension since materials.json should reference actual texture paths without .link.
+    /// </summary>
     public string GetBeamNgJsonPathOrFileName(string windowsFileName, bool removeExtension = true)
     {
+        // Strip .link extension - BeamNG uses these as virtual redirects
+        // but materials.json should reference the actual texture path without .link
+        windowsFileName = FileUtils.StripLinkExtension(windowsFileName);
+        
         // Normalize path separators to forward slashes for comparison
         var normalizedPath = windowsFileName.Replace(@"\", "/").ToLowerInvariant();
 

@@ -2,6 +2,41 @@
 
 public static class FileUtils
 {
+    /// <summary>
+    ///     The BeamNG .link file extension used for virtual filesystem redirection.
+    /// </summary>
+    public const string LinkExtension = ".link";
+
+    /// <summary>
+    ///     Strips the .link extension from a file path if present.
+    ///     BeamNG uses .link files as virtual redirects to shared assets in /assets/ folder.
+    ///     The .link extension should never appear in materials.json texture paths.
+    /// </summary>
+    /// <param name="filePath">The file path that may contain .link extension</param>
+    /// <returns>The file path without .link extension</returns>
+    public static string StripLinkExtension(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath))
+            return filePath;
+
+        // Check if path ends with .link (case-insensitive)
+        if (filePath.EndsWith(LinkExtension, StringComparison.OrdinalIgnoreCase))
+            return filePath.Substring(0, filePath.Length - LinkExtension.Length);
+
+        return filePath;
+    }
+
+    /// <summary>
+    ///     Checks if a file path refers to a .link file.
+    /// </summary>
+    /// <param name="filePath">The file path to check</param>
+    /// <returns>True if the path ends with .link</returns>
+    public static bool IsLinkFile(string filePath)
+    {
+        return !string.IsNullOrEmpty(filePath) &&
+               filePath.EndsWith(LinkExtension, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static FileInfo ResolveImageFileName(string filePath)
     {
         //to Do: check if filepath has image extension, if not attach png

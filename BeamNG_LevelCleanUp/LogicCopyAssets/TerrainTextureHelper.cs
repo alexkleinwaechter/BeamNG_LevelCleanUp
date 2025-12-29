@@ -436,11 +436,20 @@ public static class TerrainTextureHelper
             var targetFullName = pathConverter.GetTerrainTargetFileName(matFile.File.FullName);
             if (string.IsNullOrEmpty(targetFullName)) continue;
 
-            // Add suffix to the filename
-            var targetDirectory = Path.GetDirectoryName(targetFullName);
-            var targetFileName = Path.GetFileNameWithoutExtension(targetFullName);
-            var targetExtension = Path.GetExtension(targetFullName);
+            // Handle .link files: strip .link for filename manipulation, then re-add it
+            var isLinkFile = FileUtils.IsLinkFile(targetFullName);
+            var workingTargetName = isLinkFile ? FileUtils.StripLinkExtension(targetFullName) : targetFullName;
+            
+            // Add suffix to the filename (before the image extension)
+            var targetDirectory = Path.GetDirectoryName(workingTargetName);
+            var targetFileName = Path.GetFileNameWithoutExtension(workingTargetName);
+            var targetExtension = Path.GetExtension(workingTargetName);
             var suffixedTargetFileName = $"{targetFileName}_{levelNameCopyFrom}{targetExtension}";
+            
+            // Re-add .link extension if the source was a .link file
+            if (isLinkFile)
+                suffixedTargetFileName += FileUtils.LinkExtension;
+                
             var suffixedTargetFullName = Path.Join(targetDirectory, suffixedTargetFileName);
 
             try
