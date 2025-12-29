@@ -66,6 +66,10 @@ public class TerrainGenerationOrchestrator
         TerrainAnalysisState? analysisState)
     {
         var debugPath = state.GetDebugPath();
+        
+        // Clear the debug folder before starting a new generation
+        ClearDebugFolder(debugPath);
+        
         Directory.CreateDirectory(debugPath);
 
         TerrainCreationParameters? terrainParameters = null;
@@ -252,6 +256,67 @@ public class TerrainGenerationOrchestrator
     }
 
     #region Private Helpers
+
+    /// <summary>
+    /// Clears all files and subdirectories in the debug folder before starting a new generation.
+    /// This ensures clean debug output without stale files from previous runs.
+    /// </summary>
+    /// <param name="debugPath">Path to the debug folder (MT_TerrainGeneration).</param>
+    private static void ClearDebugFolder(string debugPath)
+    {
+        if (!Directory.Exists(debugPath))
+            return;
+
+        try
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Clearing previous debug files from: {Path.GetFileName(debugPath)}");
+
+            var filesDeleted = 0;
+            var foldersDeleted = 0;
+
+            // Delete all files in the debug folder
+            foreach (var file in Directory.GetFiles(debugPath))
+            {
+                try
+                {
+                    File.Delete(file);
+                    filesDeleted++;
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Could not delete file {Path.GetFileName(file)}: {ex.Message}");
+                }
+            }
+
+            // Delete all subdirectories (material-specific debug folders)
+            foreach (var dir in Directory.GetDirectories(debugPath))
+            {
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                    foldersDeleted++;
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Could not delete folder {Path.GetFileName(dir)}: {ex.Message}");
+                }
+            }
+
+            if (filesDeleted > 0 || foldersDeleted > 0)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Cleared {filesDeleted} file(s) and {foldersDeleted} folder(s) from debug directory");
+            }
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Could not fully clear debug folder: {ex.Message}");
+        }
+    }
 
     private static GeoBoundingBox? GetEffectiveBoundingBox(TerrainGenerationState state)
     {
