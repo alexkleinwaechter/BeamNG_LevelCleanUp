@@ -218,6 +218,12 @@
                                            Label="Preset"
                                            Dense="true"
                                            Variant="Variant.Outlined">
+                                    @if (context.CopyAsset.HasCalculatedRoughness)
+                                    {
+                                        <MudSelectItem Value="TerrainRoughnessPreset.Calculated">
+                                            Calculated (@context.CopyAsset.CalculatedRoughnessValue)
+                                        </MudSelectItem>
+                                    }
                                     <MudSelectItem Value="TerrainRoughnessPreset.WetAsphalt">Wet Asphalt (Shiny)</MudSelectItem>
                                     <MudSelectItem Value="TerrainRoughnessPreset.Asphalt">Asphalt</MudSelectItem>
                                     <MudSelectItem Value="TerrainRoughnessPreset.WetSurface">Wet Surface</MudSelectItem>
@@ -243,6 +249,13 @@
                                             context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
                                         </MudText>
                                     </div>
+                                }
+                                else if (context.CopyAsset.RoughnessPreset == TerrainRoughnessPreset.Calculated)
+                                {
+                                    <MudText Typo="Typo.caption" Style="color: gray;">
+                                        <MudIcon Icon="@Icons.Material.Filled.Calculate" Size="Size.Small" Style="vertical-align: middle;" />
+                                        Extracted: @context.CopyAsset.CalculatedRoughnessValue (0=Shiny, 255=Rough)
+                                    </MudText>
                                 }
                                 else
                                 {

@@ -26,7 +26,8 @@ public enum TerrainRoughnessPreset
     Mud = 6, // High roughness
     Forest = 7, // High roughness
     WetSurface = 8, // Low roughness (shiny when wet)
-    Rock = 9 // Medium-low roughness
+    Rock = 9, // Medium-low roughness
+    Calculated = 10 // Auto-extracted from source terrain roughnessBaseTex
 }
 
 public class CopyAsset
@@ -61,6 +62,19 @@ public class CopyAsset
     ///     Custom roughness value (0-255, where 0 is shiny/black and 255 is rough/white)
     /// </summary>
     public int RoughnessValue { get; set; } = 128;
+
+    /// <summary>
+    ///     Calculated roughness value extracted from the source terrain's roughnessBaseTex texture.
+    ///     This value is preserved so the user can always return to the calculated value after changing presets.
+    ///     Value of -1 indicates no calculated value is available.
+    /// </summary>
+    public int CalculatedRoughnessValue { get; set; } = -1;
+
+    /// <summary>
+    ///     Returns true if a calculated roughness value was successfully extracted from the source terrain.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasCalculatedRoughness => CalculatedRoughnessValue >= 0;
 
     /// <summary>
     ///     Target terrain material names to replace (empty/null means "Add" new material)
@@ -103,6 +117,7 @@ public class CopyAsset
             TerrainRoughnessPreset.Mud => 100,
             TerrainRoughnessPreset.Forest => 230,
             TerrainRoughnessPreset.Custom => RoughnessValue,
+            TerrainRoughnessPreset.Calculated => CalculatedRoughnessValue >= 0 ? CalculatedRoughnessValue : 128,
             _ => 128 // Default medium roughness
         };
     }

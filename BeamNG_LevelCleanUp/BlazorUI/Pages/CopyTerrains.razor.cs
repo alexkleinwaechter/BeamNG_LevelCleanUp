@@ -897,8 +897,12 @@ public partial class CopyTerrains
     {
         foreach (var asset in Reader.GetCopyList().Where(x => x.CopyAssetType == CopyAssetType.Terrain))
         {
-            // Auto-detect roughness preset based on material name
-            asset.RoughnessPreset = CopyAsset.DetectRoughnessPresetFromName(asset.Name);
+            // Only auto-detect roughness preset if no calculated value was extracted from the source terrain
+            // The extraction sets HasCalculatedRoughness = true and RoughnessPreset = Calculated when successful
+            if (!asset.HasCalculatedRoughness)
+            {
+                asset.RoughnessPreset = CopyAsset.DetectRoughnessPresetFromName(asset.Name);
+            }
 
             var item = new GridFileListItem
             {
