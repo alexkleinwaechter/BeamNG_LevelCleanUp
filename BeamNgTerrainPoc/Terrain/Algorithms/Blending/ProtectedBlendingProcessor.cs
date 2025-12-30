@@ -1,0 +1,244 @@
+using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
+using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+
+namespace BeamNgTerrainPoc.Terrain.Algorithms.Blending;
+
+/// <summary>
+/// Applies protected blending to terrain with road elevations.
+/// 
+/// Key protection rules:
+/// 1. Road core pixels (marked in protectionMask) are NEVER modified by ANY blend zone
+/// 2. When blending for a lower-priority road, if the pixel is within a higher-priority
+///    road's protection zone, use the higher-priority road's elevation instead of blending
+///    toward terrain. This prevents secondary roads from creating "dents" at junctions.
+/// </summary>
+public class ProtectedBlendingProcessor
+{
+    /// <summary>
+    /// Result statistics from protected blending.
+    /// </summary>
+    public record BlendingStatistics(
+        int ModifiedPixels,
+        int RoadCorePixels,
+        int ShoulderPixels,
+        int ProtectedFromBlend,
+        int ProtectedByHigherPriority);
+
+    /// <summary>
+    /// Applies protected blending with per-spline blend ranges.
+    /// </summary>
+    public (float[,] result, BlendingStatistics stats) ApplyProtectedBlending(
+        float[,] original,
+        float[,] distanceField,
+        float[,] elevationMap,
+        int[,] splineOwnerMap,
+        float[,] maxBlendRangeMap,
+        bool[,] protectionMask,
+        UnifiedRoadNetwork network,
+        float metersPerPixel)
+    {
+        var height = original.GetLength(0);
+        var width = original.GetLength(1);
+        var result = (float[,])original.Clone();
+
+        // Build spline parameters lookup for fast access
+        var splineParams = network.Splines.ToDictionary(
+            s => s.SplineId,
+            s => new SplineBlendParams(
+                s.Parameters.RoadWidthMeters / 2.0f,
+                s.Parameters.TerrainAffectedRangeMeters,
+                s.Parameters.BlendFunctionType,
+                s.Parameters.RoadEdgeProtectionBufferMeters,
+                s.Priority));
+
+        // Build spatial index for cross-sections grouped by spline ID
+        var crossSectionsBySpline = new SplineGroupedSpatialIndex(network.CrossSections, metersPerPixel);
+
+        // Thread-safe counters
+        var modifiedPixels = 0;
+        var roadCorePixels = 0;
+        var shoulderPixels = 0;
+        var protectedFromBlend = 0;
+        var protectedByHigherPriority = 0;
+
+        var options = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
+
+        Parallel.For(0, height, options, y =>
+        {
+            var localModified = 0;
+            var localCore = 0;
+            var localShoulder = 0;
+            var localProtected = 0;
+            var localProtectedByHigherPriority = 0;
+
+            for (var x = 0; x < width; x++)
+            {
+                var ownerId = splineOwnerMap[y, x];
+                if (ownerId < 0)
+                    continue; // Not near any road
+
+                var targetElevation = elevationMap[y, x];
+                if (float.IsNaN(targetElevation))
+                    continue;
+
+                // Get distance from road core
+                var d = distanceField[y, x];
+
+                // Get owner spline parameters
+                if (!splineParams.TryGetValue(ownerId, out var ownerParams))
+                    continue;
+
+                var halfWidth = ownerParams.HalfWidth;
+                var blendRange = ownerParams.BlendRange;
+                var blendFunctionType = ownerParams.BlendFunction;
+                var ownerPriority = ownerParams.Priority;
+
+                float newH;
+
+                if (d <= halfWidth)
+                {
+                    // ROAD CORE - Protected zone, use target elevation directly
+                    newH = targetElevation;
+                    localCore++;
+                }
+                else if (d <= halfWidth + blendRange)
+                {
+                    // BLEND ZONE - Check protection rules
+
+                    // Rule 1: If this pixel is inside any road's protection zone, don't blend toward terrain
+                    if (protectionMask[y, x])
+                    {
+                        localProtected++;
+                        continue;
+                    }
+
+                    // Rule 2: Check if we're in the blend zone of a lower-priority road but within
+                    // the protection buffer of a higher-priority road.
+                    var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
+                    var higherPriorityElevation = FindHigherPriorityProtectedElevation(
+                        worldPos, ownerId, ownerPriority, network.Splines, splineParams, 
+                        crossSectionsBySpline, metersPerPixel);
+
+                    if (higherPriorityElevation.HasValue)
+                    {
+                        newH = higherPriorityElevation.Value;
+                        localProtectedByHigherPriority++;
+                    }
+                    else
+                    {
+                        // Safe to blend - Smooth transition to terrain
+                        var t = (d - halfWidth) / blendRange;
+                        t = Math.Clamp(t, 0f, 1f);
+
+                        var blend = BlendFunctions.Apply(t, blendFunctionType);
+                        newH = targetElevation * (1f - blend) + original[y, x] * blend;
+                    }
+
+                    localShoulder++;
+                }
+                else
+                {
+                    // Outside influence zone - keep original
+                    continue;
+                }
+
+                // Only modify if there's a meaningful change
+                if (MathF.Abs(result[y, x] - newH) > 0.001f)
+                {
+                    result[y, x] = newH;
+                    localModified++;
+                }
+            }
+
+            Interlocked.Add(ref modifiedPixels, localModified);
+            Interlocked.Add(ref roadCorePixels, localCore);
+            Interlocked.Add(ref shoulderPixels, localShoulder);
+            Interlocked.Add(ref protectedFromBlend, localProtected);
+            Interlocked.Add(ref protectedByHigherPriority, localProtectedByHigherPriority);
+        });
+
+        var stats = new BlendingStatistics(
+            modifiedPixels, roadCorePixels, shoulderPixels, 
+            protectedFromBlend, protectedByHigherPriority);
+
+        LogStatistics(stats);
+
+        return (result, stats);
+    }
+
+    /// <summary>
+    /// Checks if a pixel is within a higher-priority road's protection buffer zone.
+    /// </summary>
+    private static float? FindHigherPriorityProtectedElevation(
+        Vector2 worldPos,
+        int currentOwnerId,
+        int currentPriority,
+        List<ParameterizedRoadSpline> splines,
+        Dictionary<int, SplineBlendParams> splineParams,
+        SplineGroupedSpatialIndex crossSectionsBySpline,
+        float metersPerPixel)
+    {
+        float? bestElevation = null;
+        var bestPriority = currentPriority;
+        var bestDistance = float.MaxValue;
+
+        foreach (var spline in splines)
+        {
+            if (spline.SplineId == currentOwnerId)
+                continue;
+
+            if (!splineParams.TryGetValue(spline.SplineId, out var params_))
+                continue;
+
+            if (params_.Priority <= currentPriority)
+                continue;
+
+            var protectionRadius = params_.HalfWidth + params_.ProtectionBuffer;
+
+            var nearestCs = crossSectionsBySpline.FindNearestForSpline(
+                worldPos, spline.SplineId, protectionRadius);
+            
+            if (nearestCs == null)
+                continue;
+
+            var distToSpline = Vector2.Distance(worldPos, nearestCs.CenterPoint);
+
+            if (distToSpline <= protectionRadius)
+            {
+                if (params_.Priority > bestPriority ||
+                    (params_.Priority == bestPriority && distToSpline < bestDistance))
+                {
+                    bestElevation = nearestCs.TargetElevation;
+                    bestPriority = params_.Priority;
+                    bestDistance = distToSpline;
+                }
+            }
+        }
+
+        return bestElevation;
+    }
+
+    private static void LogStatistics(BlendingStatistics stats)
+    {
+        TerrainCreationLogger.Current?.Detail($"Modified {stats.ModifiedPixels:N0} pixels total");
+        TerrainCreationLogger.Current?.Detail($"  Road core: {stats.RoadCorePixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"  Shoulder: {stats.ShoulderPixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"  Protected from blend overlap: {stats.ProtectedFromBlend:N0} pixels");
+        if (stats.ProtectedByHigherPriority > 0)
+            TerrainCreationLogger.Current?.Detail(
+                $"  Protected by higher-priority road buffer: {stats.ProtectedByHigherPriority:N0} pixels");
+    }
+
+    /// <summary>
+    /// Parameters for a spline's blending behavior.
+    /// </summary>
+    private record SplineBlendParams(
+        float HalfWidth,
+        float BlendRange,
+        BlendFunctionType BlendFunction,
+        float ProtectionBuffer,
+        int Priority);
+}

@@ -164,7 +164,8 @@ public class TerrainCreator
                     parameters.Size,
                     parameters.EnableCrossMaterialHarmonization,
                     parameters.GlobalJunctionDetectionRadiusMeters,
-                    parameters.GlobalJunctionBlendDistanceMeters);
+                    parameters.GlobalJunctionBlendDistanceMeters,
+                    parameters.FlipMaterialProcessingOrder);
 
                 if (smoothingResult != null)
                 {
@@ -438,7 +439,8 @@ public class TerrainCreator
         int size,
         bool enableCrossMaterialHarmonization,
         float globalJunctionDetectionRadius,
-        float globalJunctionBlendDistance)
+        float globalJunctionBlendDistance,
+        bool flipMaterialProcessingOrder)
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
@@ -451,7 +453,8 @@ public class TerrainCreator
             size,
             enableCrossMaterialHarmonization,
             globalJunctionDetectionRadius,
-            globalJunctionBlendDistance);
+            globalJunctionBlendDistance,
+            flipMaterialProcessingOrder);
 
         if (unifiedResult == null)
             return null;

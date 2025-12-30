@@ -8,6 +8,26 @@ namespace BeamNgTerrainPoc.Terrain.Models;
 public class SplineRoadParameters
 {
     // ========================================
+    // BANKING (SUPERELEVATION) PARAMETERS
+    // ========================================
+
+    /// <summary>
+    /// Banking (superelevation) parameters for curved roads.
+    /// Null = banking disabled.
+    /// </summary>
+    public BankingParameters? Banking { get; set; }
+
+    /// <summary>
+    /// Gets banking parameters, creating defaults if not set.
+    /// </summary>
+    public BankingParameters GetBankingParameters() => Banking ??= new BankingParameters();
+
+    /// <summary>
+    /// Convenience property: true if banking is enabled.
+    /// </summary>
+    public bool IsBankingEnabled => Banking?.EnableAutoBanking == true;
+
+    // ========================================
     // SPLINE INTERPOLATION TYPE
     // ========================================
     
@@ -245,7 +265,13 @@ public class SplineRoadParameters
         
         if (SkeletonDilationRadius < 0 || SkeletonDilationRadius > 5)
             errors.Add("SkeletonDilationRadius must be between 0 and 5");
-            
+
+        // Validate banking parameters if set
+        if (Banking != null)
+        {
+            errors.AddRange(Banking.Validate());
+        }
+
         return errors;
     }
 }

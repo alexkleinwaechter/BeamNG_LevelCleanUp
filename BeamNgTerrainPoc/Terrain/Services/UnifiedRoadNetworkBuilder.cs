@@ -41,12 +41,14 @@ public class UnifiedRoadNetworkBuilder
     /// <param name="heightMap">The terrain heightmap for elevation sampling.</param>
     /// <param name="metersPerPixel">Scale factor for converting between pixels and meters.</param>
     /// <param name="terrainSize">Terrain size in pixels.</param>
+    /// <param name="flipMaterialProcessingOrder">When true, reverses material order so index 0 gets highest priority.</param>
     /// <returns>A unified road network containing all splines from all materials.</returns>
     public UnifiedRoadNetwork BuildNetwork(
         List<MaterialDefinition> materials,
         float[,] heightMap,
         float metersPerPixel,
-        int terrainSize)
+        int terrainSize,
+        bool flipMaterialProcessingOrder = true)
     {
         var perfLog = TerrainCreationLogger.Current;
         var network = new UnifiedRoadNetwork();
@@ -59,6 +61,28 @@ public class UnifiedRoadNetworkBuilder
         {
             TerrainLogger.Info("UnifiedRoadNetworkBuilder: No road materials to process");
             return network;
+        }
+        
+        // Material order handling for priority calculation:
+        // - Materials are listed in UI with index 0 at top
+        // - For TEXTURE PAINTING: the LAST material (highest index) wins overlaps
+        // - For JUNCTION HARMONIZATION: we want configurable priority
+        //
+        // When flipMaterialProcessingOrder is TRUE (default):
+        //   - Reverse the list so index 0 becomes last processed with highest materialOrderIndex
+        //   - This gives the FIRST material (top of UI list) HIGHEST priority for road smoothing
+        //
+        // When flipMaterialProcessingOrder is FALSE:
+        //   - Process in original order, so LAST material (bottom of UI list) gets highest priority
+        //   - This matches the texture painting behavior
+        if (flipMaterialProcessingOrder)
+        {
+            roadMaterials.Reverse();
+            TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order FLIPPED - top material (index 0) gets highest priority");
+        }
+        else
+        {
+            TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order NORMAL - bottom material gets highest priority");
         }
         
         TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network from {roadMaterials.Count} road material(s)");

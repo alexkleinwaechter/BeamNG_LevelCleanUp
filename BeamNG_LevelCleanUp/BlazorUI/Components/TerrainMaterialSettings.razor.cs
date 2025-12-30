@@ -41,6 +41,15 @@ public partial class TerrainMaterialSettings
     private bool HasGeoBoundingBox => GeoBoundingBox != null;
     
     /// <summary>
+    /// Handles banking parameters changes from the BankingSettingsPanel component.
+    /// </summary>
+    private async Task OnBankingParametersChanged(BankingParameters? banking)
+    {
+        Material.SetBankingParameters(banking);
+        await OnMaterialChanged.InvokeAsync(Material);
+    }
+    
+    /// <summary>
     /// Gets the helper text for Road Surface Width field based on current value
     /// </summary>
     private string GetRoadSurfaceWidthHelperText()
@@ -410,6 +419,26 @@ public partial class TerrainMaterialSettings
                     Material.SplineButterworthFilterOrder = splineParams["butterworthFilterOrder"]!.GetValue<int>();
                 if (splineParams["globalLevelingStrength"] != null)
                     Material.GlobalLevelingStrength = splineParams["globalLevelingStrength"]!.GetValue<float>();
+                
+                // Import banking parameters
+                var bankingParams = splineParams["banking"];
+                if (bankingParams != null)
+                {
+                    if (bankingParams["enableAutoBanking"] != null)
+                        Material.EnableAutoBanking = bankingParams["enableAutoBanking"]!.GetValue<bool>();
+                    if (bankingParams["maxBankAngleDegrees"] != null)
+                        Material.MaxBankAngleDegrees = bankingParams["maxBankAngleDegrees"]!.GetValue<float>();
+                    if (bankingParams["bankStrength"] != null)
+                        Material.BankStrength = bankingParams["bankStrength"]!.GetValue<float>();
+                    if (bankingParams["autoBankFalloff"] != null)
+                        Material.AutoBankFalloff = bankingParams["autoBankFalloff"]!.GetValue<float>();
+                    if (bankingParams["curvatureToBankScale"] != null)
+                        Material.CurvatureToBankScale = bankingParams["curvatureToBankScale"]!.GetValue<float>();
+                    if (bankingParams["minCurveRadiusForMaxBank"] != null)
+                        Material.MinCurveRadiusForMaxBank = bankingParams["minCurveRadiusForMaxBank"]!.GetValue<float>();
+                    if (bankingParams["bankTransitionLengthMeters"] != null)
+                        Material.BankTransitionLengthMeters = bankingParams["bankTransitionLengthMeters"]!.GetValue<float>();
+                }
             }
 
             // Legacy DirectMask parameters - ignore (graceful handling for old presets)
@@ -629,6 +658,91 @@ public partial class TerrainMaterialSettings
         public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
         public float EndpointTerrainBlendStrength { get; set; } = 0.3f;
 
+        // ========================================
+        // ROAD BANKING (SUPERELEVATION)
+        // ========================================
+        
+        /// <summary>
+        /// Enable automatic banking (superelevation) on curves.
+        /// When enabled, the road surface tilts based on curve curvature.
+        /// </summary>
+        public bool EnableAutoBanking { get; set; } = false;
+        
+        /// <summary>
+        /// Maximum bank angle in degrees.
+        /// Real-world highways typically use 4-8°, race tracks up to 15°.
+        /// </summary>
+        public float MaxBankAngleDegrees { get; set; } = 8.0f;
+        
+        /// <summary>
+        /// Banking strength multiplier (0-1).
+        /// 0 = no banking, 1 = full banking based on curvature.
+        /// </summary>
+        public float BankStrength { get; set; } = 0.5f;
+        
+        /// <summary>
+        /// Controls how banking transitions at curve boundaries.
+        /// Higher values = sharper falloff (banking drops faster from curve apex).
+        /// </summary>
+        public float AutoBankFalloff { get; set; } = 0.6f;
+        
+        /// <summary>
+        /// Curvature scale factor for bank angle calculation.
+        /// Higher values = more aggressive banking on gentle curves.
+        /// </summary>
+        public float CurvatureToBankScale { get; set; } = 500.0f;
+        
+        /// <summary>
+        /// Minimum curve radius (meters) below which maximum banking is applied.
+        /// </summary>
+        public float MinCurveRadiusForMaxBank { get; set; } = 50.0f;
+        
+        /// <summary>
+        /// Transition length (meters) for banking changes.
+        /// Banking fades in/out over this distance at curve entries/exits.
+        /// </summary>
+        public float BankTransitionLengthMeters { get; set; } = 30.0f;
+        
+        /// <summary>
+        /// Gets the banking parameters as a BankingParameters object.
+        /// </summary>
+        public BankingParameters? GetBankingParameters()
+        {
+            if (!EnableAutoBanking)
+                return null;
+            
+            return new BankingParameters
+            {
+                EnableAutoBanking = EnableAutoBanking,
+                MaxBankAngleDegrees = MaxBankAngleDegrees,
+                BankStrength = BankStrength,
+                AutoBankFalloff = AutoBankFalloff,
+                CurvatureToBankScale = CurvatureToBankScale,
+                MinCurveRadiusForMaxBank = MinCurveRadiusForMaxBank,
+                BankTransitionLengthMeters = BankTransitionLengthMeters
+            };
+        }
+        
+        /// <summary>
+        /// Sets banking parameters from a BankingParameters object.
+        /// </summary>
+        public void SetBankingParameters(BankingParameters? banking)
+        {
+            if (banking == null)
+            {
+                EnableAutoBanking = false;
+                return;
+            }
+            
+            EnableAutoBanking = banking.EnableAutoBanking;
+            MaxBankAngleDegrees = banking.MaxBankAngleDegrees;
+            BankStrength = banking.BankStrength;
+            AutoBankFalloff = banking.AutoBankFalloff;
+            CurvatureToBankScale = banking.CurvatureToBankScale;
+            MinCurveRadiusForMaxBank = banking.MinCurveRadiusForMaxBank;
+            BankTransitionLengthMeters = banking.BankTransitionLengthMeters;
+        }
+
         /// <summary>
         ///     Applies all values from a preset to this material's settings.
         /// </summary>
@@ -677,6 +791,9 @@ public partial class TerrainMaterialSettings
                 SplineButterworthFilterOrder = preset.SplineParameters.ButterworthFilterOrder;
                 GlobalLevelingStrength = preset.SplineParameters.GlobalLevelingStrength;
                 // Debug properties are always enabled - no need to copy from preset
+                
+                // Banking parameters
+                SetBankingParameters(preset.SplineParameters.Banking);
             }
 
             // Junction harmonization parameters
@@ -766,7 +883,9 @@ public partial class TerrainMaterialSettings
                 GlobalLevelingStrength = GlobalLevelingStrength,
                 ExportSplineDebugImage = true,
                 ExportSkeletonDebugImage = true,
-                ExportSmoothedElevationDebugImage = true
+                ExportSmoothedElevationDebugImage = true,
+                // Banking parameters
+                Banking = GetBankingParameters()
             };
 
             // Junction harmonization parameters - debug exports always enabled

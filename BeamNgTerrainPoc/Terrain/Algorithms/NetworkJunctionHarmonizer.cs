@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -233,6 +234,11 @@ public class NetworkJunctionHarmonizer
     ///     1. Identify continuous (C) and terminating (T) roads
     ///     2. If elevation difference is small: Use weighted average based on priority
     ///     3. If elevation difference is large: Apply gradient ramp on terminating road
+    ///     
+    ///     BANKING-AWARE: If the continuous road has banking, the harmonized elevation
+    ///     is calculated at the surface where the terminating road connects, not at
+    ///     the centerline. This prevents "cliff" artifacts where secondary roads meet
+    ///     banked primary roads.
     /// </summary>
     private void ComputeTJunctionElevation(NetworkJunction junction, float globalBlendDistance)
     {
@@ -249,7 +255,33 @@ public class NetworkJunctionHarmonizer
 
         // Use the highest-priority continuous road's elevation
         var primaryContinuous = continuous.OrderByDescending(c => c.Spline.Priority).First();
-        var E_c = primaryContinuous.CrossSection.TargetElevation;
+        var primaryCS = primaryContinuous.CrossSection;
+        
+        // Get the base elevation (centerline) of the continuous road
+        var E_c_centerline = primaryCS.TargetElevation;
+        
+        // Check if the continuous road has banking
+        // If so, calculate the surface elevation at the connection point
+        var E_c = E_c_centerline;
+        if (BankedTerrainHelper.HasBanking(primaryCS) && terminating.Count > 0)
+        {
+            // Find where the terminating road's endpoint is relative to the continuous road
+            // The terminating road connects at a specific lateral offset from the continuous road's centerline
+            var terminatingEndpoint = terminating[0].CrossSection.CenterPoint;
+            
+            // Calculate the surface elevation at the connection point (accounting for banking)
+            E_c = BankedTerrainHelper.GetBankedElevation(primaryCS, terminatingEndpoint);
+            
+            if (float.IsNaN(E_c))
+            {
+                E_c = E_c_centerline; // Fallback
+            }
+            
+            TerrainCreationLogger.Current?.Detail(
+                $"T-Junction #{junction.JunctionId}: Continuous road is banked " +
+                $"(bank angle: {BankingCalculator.RadiansToDegrees(primaryCS.BankAngleRadians):F1}°), " +
+                $"centerline elev={E_c_centerline:F2}m, surface elev at connection={E_c:F2}m");
+        }
 
         // Calculate priority-weighted elevation from all terminating roads
         var totalTerminatingPriority = 0f;

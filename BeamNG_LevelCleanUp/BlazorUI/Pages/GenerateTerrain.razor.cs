@@ -246,6 +246,12 @@ public partial class GenerateTerrain
         set => _state.UpdateTerrainBlock = value;
     }
 
+    private bool _flipMaterialProcessingOrder
+    {
+        get => _state.FlipMaterialProcessingOrder;
+        set => _state.FlipMaterialProcessingOrder = value;
+    }
+
     private string _workingDirectory
     {
         get => _state.WorkingDirectory;

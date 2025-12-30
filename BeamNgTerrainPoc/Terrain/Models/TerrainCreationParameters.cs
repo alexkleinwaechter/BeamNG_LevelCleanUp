@@ -104,6 +104,15 @@ public class TerrainCreationParameters
     public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
 
     /// <summary>
+    /// When true, flips the material processing order for road network building.
+    /// By default (true), materials at the top of the list (index 0) get higher priority
+    /// for junction harmonization. When false, materials at the bottom get higher priority.
+    /// This does NOT affect texture painting order (last material still wins for overlaps).
+    /// Default: true (top material = highest priority for road smoothing)
+    /// </summary>
+    public bool FlipMaterialProcessingOrder { get; set; } = true;
+
+    /// <summary>
     /// Path to a GeoTIFF heightmap file.
     /// Use this as an alternative to HeightmapPath for importing elevation data with geographic coordinates.
     /// When set, the GeoTIFF will be read and the bounding box will be extracted.

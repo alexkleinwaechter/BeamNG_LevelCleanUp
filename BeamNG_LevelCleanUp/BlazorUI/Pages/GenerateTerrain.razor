@@ -387,6 +387,21 @@
                             </MudText>
                         </MudItem>
 
+                        <!-- Flip Material Processing Order -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_flipMaterialProcessingOrder"
+                                             Label="Flip Processing Order"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When enabled (default), materials at the top of the list get higher priority for road smoothing at junctions. When disabled, materials at the bottom get higher priority (matches texture painting order).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Top material = highest road priority
+                            </MudText>
+                        </MudItem>
+
                         <!-- Cross-Material Harmonization -->
                         <MudItem xs="12" sm="6" md="3">
                             <div class="d-flex align-center gap-1">

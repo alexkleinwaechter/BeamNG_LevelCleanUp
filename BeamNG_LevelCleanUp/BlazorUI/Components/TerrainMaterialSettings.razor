@@ -355,6 +355,13 @@ Class="my-0">
                     </div>
                 </MudItem>
                 
+                <!-- Road Banking (Superelevation) -->
+                <MudItem xs="12">
+                    <BankingSettingsPanel 
+                        Parameters="@Material.GetBankingParameters()"
+                        ParametersChanged="OnBankingParametersChanged" />
+                </MudItem>
+                
                 <!-- Advanced Settings (Nerd Mode) -->
                 <MudItem xs="12">
                     <MudExpansionPanels Class="mt-2">

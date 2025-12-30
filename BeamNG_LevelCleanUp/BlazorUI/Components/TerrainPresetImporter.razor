@@ -812,6 +812,27 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.SplineParameters.ButterworthFilterOrder = splineParams["butterworthFilterOrder"]!.GetValue<int>();
                 if (splineParams["globalLevelingStrength"] != null)
                     settings.SplineParameters.GlobalLevelingStrength = splineParams["globalLevelingStrength"]!.GetValue<float>();
+                
+                // Banking (superelevation) parameters
+                var bankingParams = splineParams["banking"];
+                if (bankingParams != null)
+                {
+                    settings.SplineParameters.Banking = new BankingSettingsPreset();
+                    if (bankingParams["enableAutoBanking"] != null)
+                        settings.SplineParameters.Banking.EnableAutoBanking = bankingParams["enableAutoBanking"]!.GetValue<bool>();
+                    if (bankingParams["maxBankAngleDegrees"] != null)
+                        settings.SplineParameters.Banking.MaxBankAngleDegrees = bankingParams["maxBankAngleDegrees"]!.GetValue<float>();
+                    if (bankingParams["bankStrength"] != null)
+                        settings.SplineParameters.Banking.BankStrength = bankingParams["bankStrength"]!.GetValue<float>();
+                    if (bankingParams["autoBankFalloff"] != null)
+                        settings.SplineParameters.Banking.AutoBankFalloff = bankingParams["autoBankFalloff"]!.GetValue<float>();
+                    if (bankingParams["curvatureToBankScale"] != null)
+                        settings.SplineParameters.Banking.CurvatureToBankScale = bankingParams["curvatureToBankScale"]!.GetValue<float>();
+                    if (bankingParams["minCurveRadiusForMaxBank"] != null)
+                        settings.SplineParameters.Banking.MinCurveRadiusForMaxBank = bankingParams["minCurveRadiusForMaxBank"]!.GetValue<float>();
+                    if (bankingParams["bankTransitionLengthMeters"] != null)
+                        settings.SplineParameters.Banking.BankTransitionLengthMeters = bankingParams["bankTransitionLengthMeters"]!.GetValue<float>();
+                }
             }
 
             // DirectMask parameters - ignore (legacy, spline is now only approach)
@@ -920,6 +941,18 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.SplineUseButterworthFilter = settings.SplineParameters.UseButterworthFilter;
                 material.SplineButterworthFilterOrder = settings.SplineParameters.ButterworthFilterOrder;
                 material.GlobalLevelingStrength = settings.SplineParameters.GlobalLevelingStrength;
+                
+                // Banking (superelevation) parameters
+                if (settings.SplineParameters.Banking != null)
+                {
+                    material.EnableAutoBanking = settings.SplineParameters.Banking.EnableAutoBanking;
+                    material.MaxBankAngleDegrees = settings.SplineParameters.Banking.MaxBankAngleDegrees;
+                    material.BankStrength = settings.SplineParameters.Banking.BankStrength;
+                    material.AutoBankFalloff = settings.SplineParameters.Banking.AutoBankFalloff;
+                    material.CurvatureToBankScale = settings.SplineParameters.Banking.CurvatureToBankScale;
+                    material.MinCurveRadiusForMaxBank = settings.SplineParameters.Banking.MinCurveRadiusForMaxBank;
+                    material.BankTransitionLengthMeters = settings.SplineParameters.Banking.BankTransitionLengthMeters;
+                }
             }
 
             // DirectMask parameters - ignore (legacy, spline is now only approach)

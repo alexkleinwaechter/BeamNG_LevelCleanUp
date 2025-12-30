@@ -44,6 +44,15 @@ public class TerrainGenerationState
     /// </summary>
     public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
     
+    /// <summary>
+    /// When true, flips the material processing order for road network building.
+    /// By default (true), materials at the top of the list (index 0) get higher priority
+    /// for junction harmonization. When false, materials at the bottom get higher priority.
+    /// This does NOT affect texture painting order (last material still wins for overlaps).
+    /// Default: true (top material = highest priority for road smoothing)
+    /// </summary>
+    public bool FlipMaterialProcessingOrder { get; set; } = true;
+    
     // ========================================
     // HEIGHTMAP SOURCE
     // ========================================
@@ -272,6 +281,7 @@ public class TerrainGenerationState
         EnableCrossMaterialHarmonization = true;
         GlobalJunctionDetectionRadiusMeters = 10.0f;
         GlobalJunctionBlendDistanceMeters = 30.0f;
+        FlipMaterialProcessingOrder = true;
         
         HeightmapSourceType = HeightmapSourceType.Png;
         GeoTiffPath = null;

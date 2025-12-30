@@ -248,6 +248,25 @@ public class SplineParametersSettings
     public bool UseButterworthFilter { get; set; } = true;
     public int ButterworthFilterOrder { get; set; } = 4;
     public float GlobalLevelingStrength { get; set; }
+    
+    /// <summary>
+    /// Banking (superelevation) settings for curved roads.
+    /// </summary>
+    public BankingSettingsPreset? Banking { get; set; }
+}
+
+/// <summary>
+///     Banking (superelevation) settings for preset export/import.
+/// </summary>
+public class BankingSettingsPreset
+{
+    public bool EnableAutoBanking { get; set; }
+    public float MaxBankAngleDegrees { get; set; } = 8.0f;
+    public float BankStrength { get; set; } = 0.5f;
+    public float AutoBankFalloff { get; set; } = 0.6f;
+    public float CurvatureToBankScale { get; set; } = 500.0f;
+    public float MinCurveRadiusForMaxBank { get; set; } = 50.0f;
+    public float BankTransitionLengthMeters { get; set; } = 30.0f;
 }
 
 /// <summary>

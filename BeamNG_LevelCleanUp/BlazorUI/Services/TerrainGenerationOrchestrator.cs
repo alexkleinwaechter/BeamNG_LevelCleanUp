@@ -573,6 +573,7 @@ public class TerrainGenerationOrchestrator
             EnableCrossMaterialHarmonization = state.EnableCrossMaterialHarmonization,
             GlobalJunctionDetectionRadiusMeters = state.GlobalJunctionDetectionRadiusMeters,
             GlobalJunctionBlendDistanceMeters = state.GlobalJunctionBlendDistanceMeters,
+            FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
             AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0
         };
 

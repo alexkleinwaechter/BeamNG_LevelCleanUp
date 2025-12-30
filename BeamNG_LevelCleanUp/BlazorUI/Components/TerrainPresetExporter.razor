@@ -494,7 +494,18 @@
                 ["smoothingWindowSize"] = mat.SplineSmoothingWindowSize,
                 ["useButterworthFilter"] = mat.SplineUseButterworthFilter,
                 ["butterworthFilterOrder"] = mat.SplineButterworthFilterOrder,
-                ["globalLevelingStrength"] = mat.GlobalLevelingStrength
+                ["globalLevelingStrength"] = mat.GlobalLevelingStrength,
+                // Banking (superelevation) parameters
+                ["banking"] = new JsonObject
+                {
+                    ["enableAutoBanking"] = mat.EnableAutoBanking,
+                    ["maxBankAngleDegrees"] = mat.MaxBankAngleDegrees,
+                    ["bankStrength"] = mat.BankStrength,
+                    ["autoBankFalloff"] = mat.AutoBankFalloff,
+                    ["curvatureToBankScale"] = mat.CurvatureToBankScale,
+                    ["minCurveRadiusForMaxBank"] = mat.MinCurveRadiusForMaxBank,
+                    ["bankTransitionLengthMeters"] = mat.BankTransitionLengthMeters
+                }
             },
             ["postProcessing"] = new JsonObject
             {
