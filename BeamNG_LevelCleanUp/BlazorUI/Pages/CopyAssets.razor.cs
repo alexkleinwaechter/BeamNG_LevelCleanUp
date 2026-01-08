@@ -6,6 +6,7 @@ using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
+using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using Color = MudBlazor.Color;
 
@@ -13,6 +14,20 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Pages;
 
 public partial class CopyAssets
 {
+    // Wizard mode properties
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "wizardMode")]
+    public bool WizardMode { get; set; }
+
+    /// <summary>
+    ///     Wizard state reference when in wizard mode
+    /// </summary>
+    public CreateLevelWizardState WizardState { get; private set; }
+
+    // Wizard tracking
+    private int _totalCopiedAssetsCount { get; set; }
+    private bool _showWizardSourceSelection { get; set; }
+
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
     private string _levelNameCopyFrom { get; set; }
@@ -54,6 +69,383 @@ public partial class CopyAssets
     private string _lastCopiedSourceName { get; set; }
     private string _initialWorkingDirectory { get; set; }
     private bool _isSelectingAnotherSource { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (WizardMode)
+        {
+            WizardState = CreateLevel.GetWizardState();
+            if (WizardState == null || !WizardState.IsActive)
+            {
+                // Invalid wizard state - redirect to CreateLevel
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Wizard state not found. Please start the wizard from Create Level page.");
+                Navigation.NavigateTo("/CreateLevel");
+                return;
+            }
+
+            // Set the current wizard step
+            WizardState.CurrentStep = 4;
+
+            // Auto-load levels from wizard state
+            await LoadLevelsFromWizardState();
+        }
+    }
+
+    /// <summary>
+    ///     Loads source and target levels from wizard state
+    /// </summary>
+    private async Task LoadLevelsFromWizardState()
+    {
+        if (WizardState == null) return;
+
+        try
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Wizard mode: Loading levels automatically...");
+
+            _beamInstallDir = Steam.GetBeamInstallDir();
+            GetVanillaLevels();
+
+            // Set source level from wizard state
+            var sourceLevelPath = WizardState.SourceLevelPath;
+            _levelNameCopyFrom = WizardState.SourceLevelName;
+            _levelPathCopyFrom = ZipFileHandler.GetLevelPath(sourceLevelPath);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Source level path: {_levelPathCopyFrom}");
+
+            // Set target level from wizard state
+            var targetLevelRootPath = WizardState.TargetLevelRootPath;
+            _levelName = WizardState.LevelName;
+
+            var targetLevelNamePath = targetLevelRootPath;
+            _levelPath = Directory.GetParent(targetLevelRootPath)?.FullName;
+
+            if (_levelPath == null || !Directory.Exists(_levelPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                    $"Target level path not found: {_levelPath}");
+                return;
+            }
+
+            // Set working directory
+            if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+            {
+                var unpackedIndex = _levelPath.IndexOf("_unpacked", StringComparison.OrdinalIgnoreCase);
+                if (unpackedIndex > 0)
+                {
+                    ZipFileHandler.WorkingDirectory = _levelPath.Substring(0, unpackedIndex - 1);
+                }
+                else
+                {
+                    var levelsParent = Directory.GetParent(_levelPath);
+                    if (levelsParent != null)
+                        ZipFileHandler.WorkingDirectory = Directory.GetParent(levelsParent.FullName)?.FullName;
+                }
+            }
+
+            _initialWorkingDirectory = ZipFileHandler.WorkingDirectory;
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Target level path: {_levelPath}");
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Working directory: {ZipFileHandler.WorkingDirectory}");
+
+            // Initialize reader and scan assets
+            Reader = new BeamFileReader(_levelPath, null, _levelPathCopyFrom);
+
+            await ScanAssets();
+            await InvokeAsync(StateHasChanged);
+
+            _showDeployButton = true;
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "Wizard mode: Levels loaded successfully");
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
+                $"Failed to load levels in wizard mode: {ex.Message}");
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    ///     Updates wizard state after copying assets
+    /// </summary>
+    private void UpdateWizardStateAfterCopy()
+    {
+        if (WizardState == null) return;
+
+        // Collect copied asset names
+        var copiedAssetNames = _selectedItems
+            .Select(x => $"{x.AssetType}: {x.FullName}")
+            .ToList();
+
+        // Accumulate assets (allow multiple copy operations)
+        WizardState.CopiedAssets.AddRange(copiedAssetNames);
+        WizardState.Step5_AssetsSelected = true;
+        WizardState.CurrentStep = 4;
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Copied {copiedAssetNames.Count} asset(s) to {WizardState.LevelName}");
+    }
+
+    /// <summary>
+    ///     Copy dialog for wizard mode with state updates
+    /// </summary>
+    private async Task CopyDialogWizardMode()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true };
+        var parameters = new DialogParameters();
+
+        var messageText = $"Copy {_selectedItems.Count} asset(s) to {WizardState.LevelName}?";
+
+        parameters.Add("ContentText", messageText);
+        parameters.Add("ButtonText", "Copy Assets");
+        parameters.Add("Color", Color.Primary);
+
+        var dialog = await DialogService.ShowAsync<SimpleDialog>("Copy Assets", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            _staticSnackbar = Snackbar.Add("Copying assets...", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+
+            var copyCount = _selectedItems.Count;
+            var sourceName = _levelNameCopyFrom;
+
+            await Task.Run(() =>
+            {
+                var selected = _selectedItems.Select(y => y.Identifier).ToList();
+                Reader.DoCopyAssets(selected);
+            });
+
+            Snackbar.Remove(_staticSnackbar);
+
+            // Handle duplicate materials warning
+            var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
+            if (!string.IsNullOrEmpty(duplicateMaterialsPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Duplicate Materials found. See logfile {duplicateMaterialsPath}");
+            }
+
+            // UPDATE WIZARD STATE
+            UpdateWizardStateAfterCopy();
+
+            _copyCompleted = true;
+            _copiedAssetsCount = copyCount;
+            _totalCopiedAssetsCount += copyCount;
+            _lastCopiedSourceName = sourceName;
+
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    ///     Resets source map state in wizard mode to allow selecting another source
+    /// </summary>
+    private void ResetSourceMapWizardMode()
+    {
+        // Reset source-related state while keeping target
+        _levelNameCopyFrom = null;
+        _levelPathCopyFrom = null;
+        _vanillaLevelSourceSelected = null;
+        BindingListCopy = new List<GridFileListItem>();
+        _selectedItems = new HashSet<GridFileListItem>();
+        _copyCompleted = false;
+        _searchString = string.Empty;
+
+        // Clear messages but keep target context
+        _errors = new List<string>();
+        _warnings = new List<string>();
+
+        // Set flag and re-enable selection
+        _fileSelectDisabled = false;
+        _isLoadingMap = false;
+
+        // Show wizard source selection UI
+        _showWizardSourceSelection = true;
+
+        StateHasChanged();
+        Snackbar.Add($"Select a new source map. Target: {_levelName}", Severity.Info);
+    }
+
+    /// <summary>
+    /// Handles file selection in wizard mode source selection
+    /// </summary>
+    private async Task OnWizardSourceFileSelected(string filePath)
+    {
+        await LoadNewSourceMapWizardMode(filePath);
+    }
+
+    /// <summary>
+    /// Handles vanilla level selection in wizard mode source selection
+    /// </summary>
+    private async Task OnWizardVanillaSourceSelected(FileInfo file)
+    {
+        if (file == null)
+        {
+            _vanillaLevelSourceSelected = null;
+            return;
+        }
+
+        _vanillaLevelSourceSelected = file;
+
+        var target = Path.Join(ZipFileHandler.WorkingDirectory, file.Name);
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copying {file.Name} to working directory...");
+
+        try
+        {
+            File.Copy(file.FullName, target, true);
+            await LoadNewSourceMapWizardMode(target);
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Failed to copy vanilla level: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Loads a new source map in wizard mode
+    /// </summary>
+    private async Task LoadNewSourceMapWizardMode(string filePath)
+    {
+        _isLoadingMap = true;
+        StateHasChanged();
+
+        try
+        {
+            _staticSnackbar = Snackbar.Add("Extracting new source level...", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+
+            var fileInWorkingDir = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(filePath));
+
+            var sourceDir = Path.GetFullPath(Path.GetDirectoryName(filePath) ?? "");
+            var workingDir = Path.GetFullPath(ZipFileHandler.WorkingDirectory ?? "");
+
+            if (!sourceDir.Equals(workingDir, StringComparison.OrdinalIgnoreCase))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Copying source level to working directory: {ZipFileHandler.WorkingDirectory}");
+                File.Copy(filePath, fileInWorkingDir, true);
+            }
+
+            var copyFromPath = Path.Join(ZipFileHandler.WorkingDirectory, "_copyFrom");
+            if (Directory.Exists(copyFromPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Cleaning up previous source level...");
+                Directory.Delete(copyFromPath, true);
+            }
+
+            await Task.Run(() =>
+            {
+                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(
+                    fileInWorkingDir,
+                    "_copyFrom",
+                    true);
+
+                _levelPathCopyFrom = ZipFileHandler.GetLevelPath(_levelPathCopyFrom);
+
+                var tempReader = new BeamFileReader(_levelPathCopyFrom, null);
+                _levelNameCopyFrom = tempReader.GetLevelName();
+            });
+
+            Snackbar.Remove(_staticSnackbar);
+            Snackbar.Add($"Source level loaded: {_levelNameCopyFrom}", Severity.Success);
+
+            _showWizardSourceSelection = false;
+
+            await ScanAssetsWizardMode();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Remove(_staticSnackbar);
+            ShowException(ex);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Failed to load source level: {ex.Message}");
+        }
+        finally
+        {
+            _isLoadingMap = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Scans assets in wizard mode (source changed, target stays same)
+    /// </summary>
+    private async Task ScanAssetsWizardMode()
+    {
+        _fileSelectDisabled = true;
+        await Task.Run(() =>
+        {
+            try
+            {
+                Reader = new BeamFileReader(_levelPath, null, _levelPathCopyFrom);
+                Reader.ReadAssetsForCopy();
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+            finally
+            {
+                _fileSelectDisabled = false;
+            }
+        });
+
+        // Clear previous list before filling
+        BindingListCopy = new List<GridFileListItem>();
+        FillCopyList();
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Found {BindingListCopy.Count} assets in {_levelNameCopyFrom}. Select assets to copy.");
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    ///     Finishes the wizard and navigates back to CreateLevel
+    /// </summary>
+    private void FinishWizard()
+    {
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Wizard completed! Copied {_totalCopiedAssetsCount} asset(s) to {WizardState?.LevelName}.");
+
+        // Ensure state is marked complete
+        if (WizardState != null)
+        {
+            WizardState.Step5_AssetsSelected = true;
+        }
+
+        Navigation.NavigateTo("/CreateLevel");
+    }
+
+    /// <summary>
+    ///     Cancels current step and navigates back to forest brushes
+    /// </summary>
+    private void CancelWizard()
+    {
+        Navigation.NavigateTo("/CopyForestBrushes?wizardMode=true");
+    }
+
+    /// <summary>
+    ///     Skips the assets step (marks as complete without copying)
+    /// </summary>
+    private void SkipStep()
+    {
+        if (WizardState != null)
+        {
+            WizardState.Step5_AssetsSelected = true;
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Assets step skipped.");
+        }
+
+        Navigation.NavigateTo("/CreateLevel");
+    }
 
     /// <summary>
     ///     Determines if file selection should be disabled
@@ -97,6 +489,9 @@ public partial class CopyAssets
         _copiedAssetsCount = 0;
         _lastCopiedSourceName = null;
         _isSelectingAnotherSource = false;
+
+        // Reset wizard tracking (but don't reset WizardState itself)
+        _totalCopiedAssetsCount = 0;
     }
 
     /// <summary>

@@ -14,7 +14,7 @@
 
 <ErrorBoundary>
 <ChildContent>
-    <div class="content" style="@(WizardMode ? "padding-bottom: 250px;" : "")">
+    <div class="content @(WizardMode ? "wizard-content" : "")">
         <h3>Copy Terrain Materials</h3>
             
         @if (WizardMode && WizardState != null)
@@ -45,9 +45,6 @@
                     </MudText>
                     <MudText Typo="Typo.body2">
                         Total materials copied in this session: <b>@_totalCopiedMaterialsCount</b>
-                    </MudText>
-                    <MudText Typo="Typo.body2" Class="mt-2">
-                        You can select another source map to copy additional materials, or continue to forest brushes.
                     </MudText>
                 </MudAlert>
             }
@@ -98,7 +95,7 @@
             
         @if (!WizardMode)
         {
-        <MudExpansionPanels @ref="FileSelect">
+            <MudExpansionPanels @ref="FileSelect">
                 <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
                                          Description="The game install directory. If empty some features are missing.">
@@ -148,281 +145,282 @@
                     }
                 </MudExpansionPanel>
             </MudExpansionPanels>
-            }
+        }
 
-            @if (!WizardMode && !string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
-            {
-                <MudButton @onclick="ResetPage" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Refresh" Style="margin-top: 16px;">
-                    Reset and Select Different Maps
+        @if (!WizardMode && !string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
+        {
+            <MudButton @onclick="ResetPage" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Refresh" Style="margin-top: 16px;">
+                Reset and Select Different Maps
+            </MudButton>
+        }
+        
+        @if (_copyCompleted && !WizardMode)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4 mb-4" Icon="@Icons.Material.Filled.CheckCircle" ShowCloseIcon="true" CloseIconClicked="@(() => _copyCompleted = false)">
+                <MudText Typo="Typo.h6">Copy Completed Successfully!</MudText>
+                <MudText Typo="Typo.body2">
+                    Copied <b>@_copiedMaterialsCount</b> terrain material(s) from <b>@_lastCopiedSourceName</b> to <b>@_levelName</b>.
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mt-2">
+                    You can now select another source map to copy additional materials, or build the zip file.
+                </MudText>
+                <MudButton @onclick="ResetSourceMap" 
+                          Color="Color.Primary" 
+                          Variant="Variant.Filled"
+                          StartIcon="@Icons.Material.Filled.AddCircle" 
+                          Class="mt-3">
+                    Select Another Source Map
                 </MudButton>
-            }
-            
-            @if (_copyCompleted && !WizardMode)
-            {
-                <MudAlert Severity="Severity.Success" Class="mt-4 mb-4" Icon="@Icons.Material.Filled.CheckCircle" ShowCloseIcon="true" CloseIconClicked="@(() => _copyCompleted = false)">
-                    <MudText Typo="Typo.h6">Copy Completed Successfully!</MudText>
-                    <MudText Typo="Typo.body2">
-                        Copied <b>@_copiedMaterialsCount</b> terrain material(s) from <b>@_lastCopiedSourceName</b> to <b>@_levelName</b>.
-                    </MudText>
-                    <MudText Typo="Typo.body2" Class="mt-2">
-                        You can now select another source map to copy additional materials, or build the zip file.
-                    </MudText>
-                    <MudButton @onclick="ResetSourceMap" 
-                              Color="Color.Primary" 
-                              Variant="Variant.Filled"
-                              StartIcon="@Icons.Material.Filled.AddCircle" 
-                              Class="mt-3">
-                        Select Another Source Map
-                    </MudButton>
-                </MudAlert>
-            }
+            </MudAlert>
+        }
 
-            @if (BindingListCopy.Any())
-            {
-                <MudTable @ref="table" T="GridFileListItem" Hover="true" ServerData="LoadServerData"
-                          MultiSelection="true" @bind-SelectedItems="_selectedItems">
-                    <ToolBarContent>
-                        <MudText Typo="Typo.h6">Found Terrain Materials in @_levelNameCopyFrom</MudText>
-                        <MudSpacer/>
-                        <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s => OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-                    </ToolBarContent>
-                    <HeaderContent>
-                        <MudTh>
-                            <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.FullName)">Terrain Material</MudTableSortLabel>
-                        </MudTh>
-                        <MudTh>Base Color</MudTh>
-                        <MudTh>Roughness</MudTh>
-                        <MudTh>Replace Target</MudTh>
-                        <MudTh>
-                            <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.SizeMb)">Size Mb</MudTableSortLabel>
-                        </MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="File">@context.FullName</MudTd>
-                        <MudTd DataLabel="Base Color" @onclick:stopPropagation>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <div style="width: 32px; height: 32px; background-color: @context.CopyAsset.BaseColorHex; border: 1px solid #ccc; border-radius: 4px;"></div>
-                                <MudColorPicker @bind-Text="@context.CopyAsset.BaseColorHex"
-                                                Placeholder="Select Color"
-                                                ShowAlpha="false"
-                                                ColorPickerMode="ColorPickerMode.RGB"
-                                                PickerVariant="PickerVariant.Dialog"
-                                                ColorPickerView="ColorPickerView.Spectrum"
-                                                ShowToolbar="true"/>
-                            </div>
-                        </MudTd>
-                        <MudTd DataLabel="Roughness" @onclick:stopPropagation>
-                            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
-                                <MudSelect T="TerrainRoughnessPreset"
-                                           @bind-Value="@context.CopyAsset.RoughnessPreset"
-                                           Label="Preset"
-                                           Dense="true"
-                                           Variant="Variant.Outlined">
-                                    @if (context.CopyAsset.HasCalculatedRoughness)
-                                    {
-                                        <MudSelectItem Value="TerrainRoughnessPreset.Calculated">
-                                            Calculated (@context.CopyAsset.CalculatedRoughnessValue)
-                                        </MudSelectItem>
-                                    }
-                                    <MudSelectItem Value="TerrainRoughnessPreset.WetAsphalt">Wet Asphalt (Shiny)</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.Asphalt">Asphalt</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.WetSurface">Wet Surface</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.Concrete">Concrete</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.Rock">Rock</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.DirtRoad">Dirt Road</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.Grass">Grass</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.Forest">Forest</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.Mud">Mud (Rough)</MudSelectItem>
-                                    <MudSelectItem Value="TerrainRoughnessPreset.Custom">Custom</MudSelectItem>
-                                </MudSelect>
-                                @if (context.CopyAsset.RoughnessPreset == TerrainRoughnessPreset.Custom)
-                                {
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <MudSlider T="int" @bind-Value="@context.CopyAsset.RoughnessValue"
-                                                   Min="0" Max="255"
-                                                   Step="1"
-                                                   Color="Color.Primary">
-                                            Roughness: @context.CopyAsset.RoughnessValue
-                                        </MudSlider>
-                                        <MudText Typo="Typo.caption" Style="min-width: 80px;">
-                                            @(context.CopyAsset.RoughnessValue < 85 ? "Shiny" :
-                                            context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
-                                        </MudText>
-                                    </div>
-                                }
-                                else if (context.CopyAsset.RoughnessPreset == TerrainRoughnessPreset.Calculated)
-                                {
-                                    <MudText Typo="Typo.caption" Style="color: gray;">
-                                        <MudIcon Icon="@Icons.Material.Filled.Calculate" Size="Size.Small" Style="vertical-align: middle;" />
-                                        Extracted: @context.CopyAsset.CalculatedRoughnessValue (0=Shiny, 255=Rough)
-                                    </MudText>
-                                }
-                                else
-                                {
-                                    <MudText Typo="Typo.caption" Style="color: gray;">
-                                        Value: @context.CopyAsset.GetRoughnessValue() (0=Shiny, 255=Rough)
-                                    </MudText>
-                                }
-                            </div>
-                        </MudTd>
-                        <MudTd DataLabel="Replace Target" @onclick:stopPropagation>
-                            <MudSelect T="string"
-                                       MultiSelection="true"
-                                       SelectedValues="@context.CopyAsset.ReplaceTargetMaterialNames"
-                                       SelectedValuesChanged="@((IEnumerable<string> values) => OnReplaceTargetChanged(context.CopyAsset, values))"
-                                       Label="Mode"
+        @if (BindingListCopy.Any())
+        {
+            <MudTable @ref="table" T="GridFileListItem" Hover="true" ServerData="LoadServerData"
+                      MultiSelection="true" @bind-SelectedItems="_selectedItems">
+                <ToolBarContent>
+                    <MudText Typo="Typo.h6">Found Terrain Materials in @_levelNameCopyFrom</MudText>
+                    <MudSpacer/>
+                    <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s => OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>
+                        <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.FullName)">Terrain Material</MudTableSortLabel>
+                    </MudTh>
+                    <MudTh>Base Color</MudTh>
+                    <MudTh>Roughness</MudTh>
+                    <MudTh>Replace Target</MudTh>
+                    <MudTh>
+                        <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.SizeMb)">Size Mb</MudTableSortLabel>
+                    </MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="File">@context.FullName</MudTd>
+                    <MudTd DataLabel="Base Color" @onclick:stopPropagation>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 32px; height: 32px; background-color: @context.CopyAsset.BaseColorHex; border: 1px solid #ccc; border-radius: 4px;"></div>
+                            <MudColorPicker @bind-Text="@context.CopyAsset.BaseColorHex"
+                                            Placeholder="Select Color"
+                                            ShowAlpha="false"
+                                            ColorPickerMode="ColorPickerMode.RGB"
+                                            PickerVariant="PickerVariant.Dialog"
+                                            ColorPickerView="ColorPickerView.Spectrum"
+                                            ShowToolbar="true"/>
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Roughness" @onclick:stopPropagation>
+                        <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
+                            <MudSelect T="TerrainRoughnessPreset"
+                                       @bind-Value="@context.CopyAsset.RoughnessPreset"
+                                       Label="Preset"
                                        Dense="true"
-                                       Variant="Variant.Outlined"
-                                       Placeholder="Add New Material"
-                                       Clearable="false"
-                                       HelperText="Add or replace terrainmaterials in target">
-                                <MudSelectItem Value="@((string)null)">Add New Material</MudSelectItem>
-                                @foreach (var targetMaterial in _targetTerrainMaterials)
+                                       Variant="Variant.Outlined">
+                                @if (context.CopyAsset.HasCalculatedRoughness)
                                 {
-                                    <MudSelectItem Value="@targetMaterial">Replace: @targetMaterial</MudSelectItem>
+                                    <MudSelectItem Value="TerrainRoughnessPreset.Calculated">
+                                        Calculated (@context.CopyAsset.CalculatedRoughnessValue)
+                                    </MudSelectItem>
                                 }
+                                <MudSelectItem Value="TerrainRoughnessPreset.WetAsphalt">Wet Asphalt (Shiny)</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.Asphalt">Asphalt</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.WetSurface">Wet Surface</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.Concrete">Concrete</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.Rock">Rock</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.DirtRoad">Dirt Road</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.Grass">Grass</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.Forest">Forest</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.Mud">Mud (Rough)</MudSelectItem>
+                                <MudSelectItem Value="TerrainRoughnessPreset.Custom">Custom</MudSelectItem>
                             </MudSelect>
-                        </MudTd>
-                        <MudTd DataLabel="Size">@context.SizeMb</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            }
-            else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
-            {
-                <MudText Color="Color.Warning">No terrain materials found.</MudText>
-            }
+                            @if (context.CopyAsset.RoughnessPreset == TerrainRoughnessPreset.Custom)
+                            {
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <MudSlider T="int" @bind-Value="@context.CopyAsset.RoughnessValue"
+                                               Min="0" Max="255"
+                                               Step="1"
+                                               Color="Color.Primary">
+                                        Roughness: @context.CopyAsset.RoughnessValue
+                                    </MudSlider>
+                                    <MudText Typo="Typo.caption" Style="min-width: 80px;">
+                                        @(context.CopyAsset.RoughnessValue < 85 ? "Shiny" :
+                                        context.CopyAsset.RoughnessValue < 170 ? "Medium" : "Rough")
+                                    </MudText>
+                                </div>
+                            }
+                            else if (context.CopyAsset.RoughnessPreset == TerrainRoughnessPreset.Calculated)
+                            {
+                                <MudText Typo="Typo.caption" Style="color: gray;">
+                                    <MudIcon Icon="@Icons.Material.Filled.Calculate" Size="Size.Small" Style="vertical-align: middle;" />
+                                    Extracted: @context.CopyAsset.CalculatedRoughnessValue (0=Shiny, 255=Rough)
+                                </MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Style="color: gray;">
+                                    Value: @context.CopyAsset.GetRoughnessValue() (0=Shiny, 255=Rough)
+                                </MudText>
+                            }
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Replace Target" @onclick:stopPropagation>
+                        <MudSelect T="string"
+                                   MultiSelection="true"
+                                   SelectedValues="@context.CopyAsset.ReplaceTargetMaterialNames"
+                                   SelectedValuesChanged="@((IEnumerable<string> values) => OnReplaceTargetChanged(context.CopyAsset, values))"
+                                   Label="Mode"
+                                   Dense="true"
+                                   Variant="Variant.Outlined"
+                                   Placeholder="Add New Material"
+                                   Clearable="false"
+                                   HelperText="Add or replace terrainmaterials in target">
+                            <MudSelectItem Value="@((string)null)">Add New Material</MudSelectItem>
+                            @foreach (var targetMaterial in _targetTerrainMaterials)
+                            {
+                                <MudSelectItem Value="@targetMaterial">Replace: @targetMaterial</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
+        {
+            <MudText Color="Color.Warning">No terrain materials found.</MudText>
+        }
 
-            <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
-                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
-                    @{
-                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
-                        @foreach (var item in list)
-                        {
-                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
-                                <MudText Typo="Typo.h6">@item</MudText>
-                            </MudListItem>
-                        }
+        <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+            <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                @{
+                    var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
+                    @foreach (var item in list)
+                    {
+                        <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudText Typo="Typo.h6">@item</MudText>
+                        </MudListItem>
                     }
-                </MudList>
-            </MudDrawer>
-        </div>
-        <footer style="@(WizardMode ? "position: relative; z-index: 1100; background: var(--mud-palette-surface); padding: 16px;" : "")">
+                }
+            </MudList>
+        </MudDrawer>
+    </div>
+    
+    @* Unified Footer Component *@
+    <WizardFooter WizardMode="@WizardMode"
+                  WizardState="@WizardState"
+                  BackButtonText="@GetBackButtonText()"
+                  NextButtonText="@GetNextButtonText()"
+                  CanProceed="@GetCanProceed()"
+                  ShowNextButton="@GetShowNextButton()"
+                  ShowFinishButton="false"
+                  ShowSkipButton="false"
+                  OnBackClick="@OnBackClicked"
+                  OnNextClick="@OnNextClicked">
+        <SelectionInfo>
             @if (_selectedItems.Any())
             {
-                <MudText>Terrain Materials: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
+                <MudText Typo="Typo.caption">
+                    Terrain Materials: @BindingListCopy?.Count | Selected: @_selectedItems.Count() | Size: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2) MB
+                </MudText>
             }
-            
+        </SelectionInfo>
+        <ActionButtons>
             @if (WizardMode)
             {
-                <!-- Wizard mode: Different button layout -->
-                <MudStack Row="true" Justify="Justify.SpaceBetween" Class="flex-wrap" Style="gap: 8px;">
-                    @if (_copyCompleted)
-                    {
-                        <!-- After copy: Show options to continue or finish -->
-                        <MudButton OnClick="@ResetSourceMapWizardMode" 
-                                  Color="Color.Primary"
-                                  Variant="Variant.Filled"
-                                  StartIcon="@Icons.Material.Filled.AddCircle">
-                            Select Another Source Map
-                        </MudButton>
-                        
-                        <MudButton OnClick="@FinishWizard" 
-                                  Color="Color.Success"
-                                  Variant="Variant.Filled"
-                                  StartIcon="@Icons.Material.Filled.Forest">
-                            Select Forest Brushes
-                        </MudButton>
-                    }
-                    else
-                    {
-                        <!-- Before copy: Show back and copy buttons -->
-                        <MudButton OnClick="@CancelWizard" 
-                                  Variant="Variant.Outlined"
-                                  StartIcon="@Icons.Material.Filled.ArrowBack">
-                            Back to Create Level
-                        </MudButton>
-                        
-                        @if (_selectedItems.Any())
-                        {
-                            <MudButton @onclick="CopyDialogWizardMode" 
-                                      Color="Color.Primary"
-                                      Variant="Variant.Filled"
-                                      StartIcon="@Icons.Material.Filled.ContentCopy">
-                                Copy Selected Materials (@_selectedItems.Count)
-                            </MudButton>
-                        }
-                    }
-                    
-                    @if (_errors.Any())
-                    {
-                        <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
-                    }
-                    @if (_warnings.Any())
-                    {
-                        <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
-                    }
-                    @if (_messages.Any())
-                    {
-                        <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
-                    }
-                </MudStack>
+                @if (_copyCompleted)
+                {
+                    <MudButton OnClick="@ResetSourceMapWizardMode" 
+                              Color="Color.Primary"
+                              Variant="Variant.Outlined"
+                              StartIcon="@Icons.Material.Filled.AddCircle"
+                              Size="Size.Small">
+                        Select Another Source
+                    </MudButton>
+                }
+                else if (_selectedItems.Any())
+                {
+                    <MudButton @onclick="CopyDialogWizardMode" 
+                              Color="Color.Primary"
+                              Variant="Variant.Filled"
+                              StartIcon="@Icons.Material.Filled.ContentCopy"
+                              Size="Size.Small">
+                        Copy Selected (@_selectedItems.Count)
+                    </MudButton>
+                }
             }
             else
             {
-                <!-- Standard mode: Existing footer -->
-                <MudStack Row="true" Justify="Justify.SpaceBetween">
-                    @if (_selectedItems.Any())
-                    {
-                        <MudButton @onclick="CopyDialog" Color="Color.Primary">Copy Terrain Materials</MudButton>
-                    }
-                    @if (_errors.Any())
-                    {
-
-                        <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
-                    }
-                    @if (_warnings.Any())
-                    {
-                        <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
-                    }
-                    @if (_messages.Any())
-                    {
-                        <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
-                    }
-                    @if (_showDeployButton)
-                    {
-                        <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                                   @bind-Value="_compressionLevel">
-                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
-                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
-                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
-                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
-                        </MudSelect>
-                        <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
-                    }
-                </MudStack>
+                @if (_selectedItems.Any())
+                {
+                    <MudButton @onclick="CopyDialog" Color="Color.Primary" Size="Size.Small">Copy Terrain Materials</MudButton>
+                }
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))" Size="Size.Small">Errors</MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))" Size="Size.Small">Warnings</MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))" Size="Size.Small">Messages</MudButton>
+                }
+                @if (_showDeployButton)
+                {
+                    <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
+                               @bind-Value="_compressionLevel" Style="max-width: 150px;">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
+                    </MudSelect>
+                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary" Size="Size.Small">Build Zipfile</MudButton>
+                }
             }
+        </ActionButtons>
+        <FooterLinks>
             @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
             {
-                <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Working Directory: @ZipFileHandler.WorkingDirectory</MudButton>
-                <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Logfiles</MudButton>
+                <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Working Directory</MudButton>
+                <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Logfiles</MudButton>
             }
-        </footer>
-        
-        @if (WizardMode && WizardState != null)
-        {
-            <CascadingValue Value="WizardState">
-                <CreateLevelAssistant />
-            </CascadingValue>
-        }
-    </ChildContent>
-    <ErrorContent>
-        <CustomErrorContent/>
-    </ErrorContent>
+        </FooterLinks>
+    </WizardFooter>
+</ChildContent>
+<ErrorContent>
+    <CustomErrorContent/>
+</ErrorContent>
 </ErrorBoundary>
 
 @code {
-
     // Note: CascadingParameter doesn't work across page navigation
     // We'll get the wizard state from CreateLevel's static field instead
-
+    
+    private string GetBackButtonText() => WizardMode ? "Back to Create Level" : "";
+    
+    private string GetNextButtonText()
+    {
+        if (!WizardMode) return "";
+        return _copyCompleted ? "Continue to Forest Brushes" : "Select Forest Brushes";
+    }
+    
+    private bool GetCanProceed() => WizardMode && (_copyCompleted || WizardState?.Step3_TerrainMaterialsSelected == true);
+    
+    private bool GetShowNextButton() => WizardMode;
+    
+    private void OnBackClicked()
+    {
+        if (WizardMode)
+        {
+            CancelWizard();
+        }
+    }
+    
+    private void OnNextClicked()
+    {
+        if (WizardMode)
+        {
+            FinishWizard();
+        }
+    }
 }

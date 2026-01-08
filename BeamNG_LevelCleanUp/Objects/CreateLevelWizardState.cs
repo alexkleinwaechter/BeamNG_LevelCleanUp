@@ -66,6 +66,11 @@ public class CreateLevelWizardState
     public List<string> CopiedForestBrushes { get; set; } = new();
 
     /// <summary>
+    ///     Assets copied to the new level (decalroads, decals, DAE files)
+    /// </summary>
+    public List<string> CopiedAssets { get; set; } = new();
+
+    /// <summary>
     ///     Files copied during the wizard process
     /// </summary>
     public List<string> CopiedFiles { get; set; } = new();
@@ -91,6 +96,11 @@ public class CreateLevelWizardState
     public bool Step4_ForestBrushesSelected { get; set; }
 
     /// <summary>
+    ///     Step 5: Assets selected and copied
+    /// </summary>
+    public bool Step5_AssetsSelected { get; set; }
+
+    /// <summary>
     ///     Resets the wizard state to initial values
     /// </summary>
     public void Reset()
@@ -106,11 +116,13 @@ public class CreateLevelWizardState
         CopiedTerrainMaterials = new List<MaterialJson>();
         CopiedGroundCovers = new List<string>();
         CopiedForestBrushes = new List<string>();
+        CopiedAssets = new List<string>();
         CopiedFiles = new List<string>();
         Step1_SetupComplete = false;
         Step2_MissionGroupsCopied = false;
         Step3_TerrainMaterialsSelected = false;
         Step4_ForestBrushesSelected = false;
+        Step5_AssetsSelected = false;
     }
 
     /// <summary>
@@ -124,6 +136,7 @@ public class CreateLevelWizardState
             1 => Step2_MissionGroupsCopied,
             2 => Step3_TerrainMaterialsSelected,
             3 => Step4_ForestBrushesSelected,
+            4 => Step5_AssetsSelected,
             _ => false
         };
     }
@@ -138,8 +151,9 @@ public class CreateLevelWizardState
             Step1_SetupComplete,
             Step2_MissionGroupsCopied,
             Step3_TerrainMaterialsSelected,
-            Step4_ForestBrushesSelected
+            Step4_ForestBrushesSelected,
+            Step5_AssetsSelected
         }.Count(x => x);
-        return $"{completedSteps}/4 steps completed";
+        return $"{completedSteps}/5 steps completed";
     }
 }

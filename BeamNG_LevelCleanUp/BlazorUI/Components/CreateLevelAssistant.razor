@@ -1,102 +1,127 @@
 @using BeamNG_LevelCleanUp.Objects
 @inject NavigationManager Navigation
 
+@* 
+    DEPRECATED: This component is kept for backward compatibility with CreateLevel.razor
+    The wizard pages (CopyTerrains, CopyForestBrushes, CopyAssets) now use WizardFooter component instead.
+    
+    This component is only rendered on CreateLevel.razor where it shows the wizard progress
+    in a non-overlapping way (not as a fixed panel).
+*@
+
 @if (WizardState?.IsActive == true)
 {
-    <div class="assistant-panel">
-        <MudPaper Elevation="0">
-            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
-                <MudStack Row="true" Spacing="4">
-                    <MudChip T="string" Color="@GetStepColor(0)" Icon="@Icons.Material.Filled.Settings">Setup</MudChip>
-                    <MudChip T="string" Color="@GetStepColor(1)" Icon="@Icons.Material.Filled.Layers">MissionGroups</MudChip>
-                    <MudChip T="string" Color="@GetStepColor(2)" Icon="@Icons.Material.Filled.Terrain">Terrain Materials</MudChip>
-                    <MudChip T="string" Color="@GetStepColor(3)" Icon="@Icons.Material.Filled.Forest">Forest Brushes</MudChip>
-                </MudStack>
-                
-                <MudText Typo="Typo.body2" Color="Color.Primary">
-                    @WizardState.GetProgressSummary()
-                </MudText>
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+            <MudStack Row="true" Spacing="2" Class="flex-wrap">
+                <MudChip T="string" Size="Size.Small" Color="@GetStepColor(0)" Icon="@Icons.Material.Filled.Settings">Setup</MudChip>
+                <MudChip T="string" Size="Size.Small" Color="@GetStepColor(1)" Icon="@Icons.Material.Filled.Layers">MissionGroups</MudChip>
+                <MudChip T="string" Size="Size.Small" Color="@GetStepColor(2)" Icon="@Icons.Material.Filled.Terrain">Terrains</MudChip>
+                <MudChip T="string" Size="Size.Small" Color="@GetStepColor(3)" Icon="@Icons.Material.Filled.Forest">Forest</MudChip>
+                <MudChip T="string" Size="Size.Small" Color="@GetStepColor(4)" Icon="@Icons.Material.Filled.ContentCopy">Assets</MudChip>
             </MudStack>
             
-            <MudPaper Class="pa-3 mb-4" Elevation="1">
-                @if (WizardState.CurrentStep == 0)
-                {
-                    <MudStack Spacing="1">
-                        <MudText Typo="Typo.body2"><b>Level:</b> @WizardState.LevelName</MudText>
-                        <MudText Typo="Typo.body2"><b>Path:</b> @WizardState.TargetLevelPath</MudText>
-                        <MudText Typo="Typo.body2"><b>Source:</b> @WizardState.SourceLevelName</MudText>
-                    </MudStack>
-                }
-                else if (WizardState.CurrentStep == 1)
+            <MudText Typo="Typo.body2" Color="Color.Primary">
+                @WizardState.GetProgressSummary()
+            </MudText>
+        </MudStack>
+        
+        <MudPaper Class="pa-3 mb-4" Elevation="1">
+            @if (WizardState.CurrentStep == 0)
+            {
+                <MudStack Spacing="1">
+                    <MudText Typo="Typo.body2"><b>Level:</b> @WizardState.LevelName</MudText>
+                    <MudText Typo="Typo.body2"><b>Path:</b> @WizardState.TargetLevelPath</MudText>
+                    <MudText Typo="Typo.body2"><b>Source:</b> @WizardState.SourceLevelName</MudText>
+                </MudStack>
+            }
+            else if (WizardState.CurrentStep == 1)
+            {
+                <MudText Typo="Typo.body2">
+                    @WizardState.CopiedMissionGroupAssets.Count essential object(s) copied
+                </MudText>
+                @if (WizardState.CopiedFiles.Any())
                 {
                     <MudText Typo="Typo.body2">
-                        @WizardState.CopiedMissionGroupAssets.Count essential object(s) copied
+                        @WizardState.CopiedFiles.Count file(s) copied
                     </MudText>
-                    @if (WizardState.CopiedFiles.Any())
-                    {
-                        <MudText Typo="Typo.body2">
-                            @WizardState.CopiedFiles.Count file(s) copied
-                        </MudText>
-                    }
                 }
-                else if (WizardState.CurrentStep == 2)
+            }
+            else if (WizardState.CurrentStep == 2)
+            {
+                @if (WizardState.Step3_TerrainMaterialsSelected)
                 {
-                    @if (WizardState.Step3_TerrainMaterialsSelected)
-                    {
-                        <MudText Typo="Typo.body2">
-                            @WizardState.CopiedTerrainMaterials.Count material(s) selected
-                        </MudText>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2">
-                            Ready to select terrain materials
-                        </MudText>
-                    }
+                    <MudText Typo="Typo.body2">
+                        @WizardState.CopiedTerrainMaterials.Count material(s) selected
+                    </MudText>
                 }
-                else if (WizardState.CurrentStep == 3)
+                else
                 {
-                    @if (WizardState.Step4_ForestBrushesSelected)
-                    {
-                        <MudText Typo="Typo.body2">
-                            @WizardState.CopiedForestBrushes.Count brush(es) selected
-                        </MudText>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2">
-                            Ready to select forest brushes
-                        </MudText>
-                    }
+                    <MudText Typo="Typo.body2">
+                        Ready to select terrain materials
+                    </MudText>
                 }
-            </MudPaper>
-            
-            <MudStack Row="true" Justify="Justify.SpaceBetween">
-                <MudButton OnClick="@PreviousStep" 
-                          Disabled="@(WizardState.CurrentStep == 0)"
-                          StartIcon="@Icons.Material.Filled.ArrowBack"
-                          Variant="Variant.Outlined">
-                    Back
-                </MudButton>
-                
-                <MudButton OnClick="@NextStep" 
-                          Variant="Variant.Filled" 
-                          Color="Color.Primary"
-                          EndIcon="@Icons.Material.Filled.ArrowForward"
-                          Disabled="@(!CanProceedToNextStep())">
-                    @GetNextButtonText()
-                </MudButton>
-                
-                <MudButton OnClick="@FinishWizard"
-                          Variant="Variant.Filled"
-                          Color="Color.Success"
-                          StartIcon="@Icons.Material.Filled.Check"
-                          Style="@(WizardState.Step4_ForestBrushesSelected ? "" : "display:none")">
-                    Finish
-                </MudButton>
-            </MudStack>
+            }
+            else if (WizardState.CurrentStep == 3)
+            {
+                @if (WizardState.Step4_ForestBrushesSelected)
+                {
+                    <MudText Typo="Typo.body2">
+                        @WizardState.CopiedForestBrushes.Count brush(es) selected
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">
+                        Ready to select forest brushes
+                    </MudText>
+                }
+            }
+            else if (WizardState.CurrentStep == 4)
+            {
+                @if (WizardState.Step5_AssetsSelected)
+                {
+                    <MudText Typo="Typo.body2">
+                        @WizardState.CopiedAssets.Count asset(s) copied
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">
+                        Ready to select assets (decalroads, decals, models)
+                    </MudText>
+                }
+            }
         </MudPaper>
-    </div>
+        
+        <MudStack Row="true" Justify="Justify.SpaceBetween">
+            <MudButton OnClick="@PreviousStep" 
+                      Disabled="@(WizardState.CurrentStep == 0)"
+                      StartIcon="@Icons.Material.Filled.ArrowBack"
+                      Variant="Variant.Outlined"
+                      Size="Size.Small">
+                Back
+            </MudButton>
+            
+            <MudButton OnClick="@NextStep" 
+                      Variant="Variant.Filled" 
+                      Color="Color.Primary"
+                      EndIcon="@Icons.Material.Filled.ArrowForward"
+                      Size="Size.Small"
+                      Disabled="@(!CanProceedToNextStep())">
+                @GetNextButtonText()
+            </MudButton>
+            
+            <MudButton OnClick="@FinishWizard"
+                      Variant="Variant.Filled"
+                      Color="Color.Success"
+                      StartIcon="@Icons.Material.Filled.Check"
+                      Size="Size.Small"
+                      Style="@(WizardState.Step5_AssetsSelected ? "" : "display:none")">
+                Finish
+            </MudButton>
+        </MudStack>
+    </MudPaper>
 }
 
 @code {
@@ -126,6 +151,10 @@
         {
             Navigation.NavigateTo("/CopyTerrains?wizardMode=true");
         }
+        else if (WizardState.CurrentStep == 4)
+        {
+            Navigation.NavigateTo("/CopyForestBrushes?wizardMode=true");
+        }
         
         WizardState.CurrentStep = Math.Max(0, WizardState.CurrentStep - 1);
     }
@@ -149,6 +178,11 @@
         }
         else if (WizardState.CurrentStep == 3 && WizardState.Step4_ForestBrushesSelected)
         {
+            Navigation.NavigateTo("/CopyAssets?wizardMode=true");
+            WizardState.CurrentStep = 4;
+        }
+        else if (WizardState.CurrentStep == 4 && WizardState.Step5_AssetsSelected)
+        {
             Navigation.NavigateTo("/CreateLevel");
         }
     }
@@ -167,6 +201,7 @@
             1 => WizardState.Step2_MissionGroupsCopied,
             2 => WizardState.Step3_TerrainMaterialsSelected,
             3 => WizardState.Step4_ForestBrushesSelected,
+            4 => WizardState.Step5_AssetsSelected,
             _ => false
         };
     }
@@ -178,7 +213,8 @@
             0 => "Review",
             1 => "Select Terrain Materials",
             2 => "Select Forest Brushes",
-            3 => "Back to Review",
+            3 => "Select Assets",
+            4 => "Back to Review",
             _ => "Next"
         };
     }

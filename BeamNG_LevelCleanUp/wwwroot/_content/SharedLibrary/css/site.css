@@ -3,10 +3,19 @@
     max-height: 100vh;
 }
 
-.main footer {
-    height: 7rem;
-    max-height: 7rem;
-    background-color:dimgray;
+.main footer,
+.main .standalone-footer,
+.main .wizard-footer {
+    min-height: 7rem;
+    background-color: dimgray;
+    padding: 12px 16px;
+}
+
+/* Wizard footer needs more height for progress chips + buttons */
+.main .wizard-footer {
+    min-height: 10rem;
+    background: var(--mud-palette-surface);
+    border-top: 2px solid var(--mud-palette-primary);
 }
 
 .main .content {
@@ -15,33 +24,15 @@
     overflow-y: auto;
 }
 
-/* Create Level Wizard Assistant Panel */
-.assistant-panel {
-    position: fixed;
-    bottom: 0;
-    left: 260px; /* Match drawer width */
-    right: 0;
-    padding: 16px;
-    z-index: 1000;
-    background: var(--mud-palette-surface);
-    border-top: 2px solid var(--mud-palette-primary);
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-}
-
-/* Adjust content padding when assistant is visible */
-.content-with-assistant {
-    padding-bottom: 180px !important; /* Space for assistant panel */
+/* When wizard footer is active, content needs more space at bottom */
+.main .content.wizard-content {
+    height: calc(100vh - 15rem);
+    max-height: calc(100vh - 15rem);
 }
 
 @media (min-width: 641px) {
     .sidebar {
         max-height: 100vh;
         overflow-y: auto;
-    }
-}
-
-@media (max-width: 640px) {
-    .assistant-panel {
-        left: 0; /* Full width on mobile */
     }
 }

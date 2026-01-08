@@ -771,12 +771,12 @@ public partial class CopyForestBrushes
     }
 
     /// <summary>
-    /// Finishes the wizard and navigates back to CreateLevel
+    ///     Navigates to assets step (next step after forest brushes)
     /// </summary>
     private void FinishWizard()
     {
         PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Wizard completed! Copied {_totalCopiedBrushesCount} forest brush(es) to {WizardState?.LevelName}.");
+            $"Forest brushes step completed! Copied {_totalCopiedBrushesCount} brush(es). Proceeding to assets.");
 
         // Ensure state is marked complete
         if (WizardState != null)
@@ -784,7 +784,8 @@ public partial class CopyForestBrushes
             WizardState.Step4_ForestBrushesSelected = true;
         }
 
-        Navigation.NavigateTo("/CreateLevel");
+        // Navigate to assets step instead of finishing
+        Navigation.NavigateTo("/CopyAssets?wizardMode=true");
     }
 
     private void OpenDrawer(Anchor anchor, PubSubMessageType msgType)

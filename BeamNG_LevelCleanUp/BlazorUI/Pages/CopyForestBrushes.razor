@@ -15,7 +15,7 @@
 
 <ErrorBoundary>
 <ChildContent>
-    <div class="content" style="@(WizardMode ? "padding-bottom: 250px;" : "")">
+    <div class="content @(WizardMode ? "wizard-content" : "")">
         <h3>Copy Forest Brushes</h3>
         
         @if (WizardMode && WizardState != null)
@@ -28,7 +28,7 @@
                 <MudText Typo="Typo.body2" Class="mt-2">
                     @if (_copyCompleted)
                     {
-                        <text>Forest brushes copied! You can select another source map or finish.</text>
+                        <text>Forest brushes copied! You can select another source map or continue to assets.</text>
                     }
                     else
                     {
@@ -46,9 +46,6 @@
                     </MudText>
                     <MudText Typo="Typo.body2">
                         Total brushes copied in this session: <b>@_totalCopiedBrushesCount</b>
-                    </MudText>
-                    <MudText Typo="Typo.body2" Class="mt-2">
-                        You can select another source map to copy additional brushes, or finish.
                     </MudText>
                 </MudAlert>
             }
@@ -251,113 +248,89 @@
             </MudList>
         </MudDrawer>
     </div>
-    <footer style="@(WizardMode ? "position: relative; z-index: 1100; background: var(--mud-palette-surface); padding: 16px;" : "")">
-        @if (_selectedItems.Any())
-        {
-            <MudText>Forest Brushes: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
-        }
-        
-        @if (WizardMode)
-        {
-            <!-- Wizard mode: Different button layout -->
-            <MudStack Row="true" Justify="Justify.SpaceBetween" Class="flex-wrap" Style="gap: 8px;">
+    
+    @* Unified Footer Component *@
+    <WizardFooter WizardMode="@WizardMode"
+                  WizardState="@WizardState"
+                  BackButtonText="@GetBackButtonText()"
+                  NextButtonText="@GetNextButtonText()"
+                  CanProceed="@GetCanProceed()"
+                  ShowNextButton="@GetShowNextButton()"
+                  ShowFinishButton="false"
+                  ShowSkipButton="false"
+                  OnBackClick="@OnBackClicked"
+                  OnNextClick="@OnNextClicked">
+        <SelectionInfo>
+            @if (_selectedItems.Any())
+            {
+                <MudText Typo="Typo.caption">
+                    Forest Brushes: @BindingListCopy?.Count | Selected: @_selectedItems.Count() | Size: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2) MB
+                </MudText>
+            }
+        </SelectionInfo>
+        <ActionButtons>
+            @if (WizardMode)
+            {
                 @if (_copyCompleted)
                 {
-                    <!-- After copy: Show options to continue or finish -->
                     <MudButton OnClick="@ResetSourceMapWizardMode" 
                               Color="Color.Primary"
-                              Variant="Variant.Filled"
-                              StartIcon="@Icons.Material.Filled.AddCircle">
-                        Select Another Source Map
-                    </MudButton>
-                    
-                    <MudButton OnClick="@FinishWizard" 
-                              Color="Color.Success"
-                              Variant="Variant.Filled"
-                              StartIcon="@Icons.Material.Filled.Check">
-                        Finish (@_totalCopiedBrushesCount brushes)
-                    </MudButton>
-                }
-                else
-                {
-                    <!-- Before copy: Show back and copy buttons -->
-                    <MudButton OnClick="@CancelWizard" 
                               Variant="Variant.Outlined"
-                              StartIcon="@Icons.Material.Filled.ArrowBack">
-                        Back
+                              StartIcon="@Icons.Material.Filled.AddCircle"
+                              Size="Size.Small">
+                        Select Another Source
                     </MudButton>
-                    
-                    @if (_selectedItems.Any())
-                    {
-                        <MudButton @onclick="CopyDialogWizardMode" 
-                                  Color="Color.Primary"
-                                  Variant="Variant.Filled"
-                                  StartIcon="@Icons.Material.Filled.ContentCopy">
-                            Copy Selected Brushes (@_selectedItems.Count)
-                        </MudButton>
-                    }
                 }
-                
-                @if (_errors.Any())
+                else if (_selectedItems.Any())
                 {
-                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
+                    <MudButton @onclick="CopyDialogWizardMode" 
+                              Color="Color.Primary"
+                              Variant="Variant.Filled"
+                              StartIcon="@Icons.Material.Filled.ContentCopy"
+                              Size="Size.Small">
+                        Copy Selected (@_selectedItems.Count)
+                    </MudButton>
                 }
-                @if (_warnings.Any())
-                {
-                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
-                }
-                @if (_messages.Any())
-                {
-                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
-                }
-            </MudStack>
-        }
-        else
-        {
-            <!-- Standard mode: Existing footer -->
-            <MudStack Row="true" Justify="Justify.SpaceBetween">
+            }
+            else
+            {
                 @if (_selectedItems.Any())
                 {
-                    <MudButton @onclick="CopyDialog" Color="Color.Primary">Copy Forest Brushes</MudButton>
+                    <MudButton @onclick="CopyDialog" Color="Color.Primary" Size="Size.Small">Copy Forest Brushes</MudButton>
                 }
                 @if (_errors.Any())
                 {
-                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))" Size="Size.Small">Errors</MudButton>
                 }
                 @if (_warnings.Any())
                 {
-                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))" Size="Size.Small">Warnings</MudButton>
                 }
                 @if (_messages.Any())
                 {
-                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))" Size="Size.Small">Messages</MudButton>
                 }
                 @if (_showDeployButton)
                 {
                     <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                               @bind-Value="_compressionLevel">
+                               @bind-Value="_compressionLevel" Style="max-width: 150px;">
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
                     </MudSelect>
-                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
+                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary" Size="Size.Small">Build Zipfile</MudButton>
                 }
-            </MudStack>
-        }
-        @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
-        {
-            <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Working Directory: @ZipFileHandler.WorkingDirectory</MudButton>
-            <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Logfiles</MudButton>
-        }
-    </footer>
-    
-    @if (WizardMode && WizardState != null)
-    {
-        <CascadingValue Value="WizardState">
-            <CreateLevelAssistant />
-        </CascadingValue>
-    }
+            }
+        </ActionButtons>
+        <FooterLinks>
+            @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+            {
+                <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Working Directory</MudButton>
+                <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Logfiles</MudButton>
+            }
+        </FooterLinks>
+    </WizardFooter>
 </ChildContent>
 <ErrorContent>
     <CustomErrorContent/>
@@ -367,4 +340,32 @@
 @code {
     // Note: CascadingParameter doesn't work across page navigation
     // We'll get the wizard state from CreateLevel's static field instead
+    
+    private string GetBackButtonText() => WizardMode ? "Back to Terrains" : "";
+    
+    private string GetNextButtonText()
+    {
+        if (!WizardMode) return "";
+        return _copyCompleted ? "Continue to Assets" : "Select Assets";
+    }
+    
+    private bool GetCanProceed() => WizardMode && (_copyCompleted || WizardState?.Step4_ForestBrushesSelected == true);
+    
+    private bool GetShowNextButton() => WizardMode;
+    
+    private void OnBackClicked()
+    {
+        if (WizardMode)
+        {
+            CancelWizard();
+        }
+    }
+    
+    private void OnNextClicked()
+    {
+        if (WizardMode)
+        {
+            FinishWizard();
+        }
+    }
 }
