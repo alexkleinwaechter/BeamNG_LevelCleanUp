@@ -844,7 +844,7 @@ public partial class CopyTerrains
     }
 
     /// <summary>
-    ///     Finishes the wizard and navigates back to CreateLevel
+    ///     Navigates to forest brushes step (next step after terrain materials)
     /// </summary>
     private void FinishWizard()
     {
@@ -852,10 +852,10 @@ public partial class CopyTerrains
         PathResolver.WizardTerrainSize = null;
 
         PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Wizard completed! Copied {_totalCopiedMaterialsCount} terrain material(s) to {WizardState?.LevelName}.");
+            $"Terrain materials step completed! Copied {_totalCopiedMaterialsCount} material(s). Proceeding to forest brushes.");
 
-        // Navigate back to CreateLevel
-        Navigation.NavigateTo("/CreateLevel");
+        // Navigate to forest brushes step instead of finishing
+        Navigation.NavigateTo("/CopyForestBrushes?wizardMode=true");
     }
 
     private void OpenDrawer(Anchor anchor, PubSubMessageType msgType)

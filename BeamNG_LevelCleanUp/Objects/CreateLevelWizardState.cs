@@ -61,6 +61,11 @@ public class CreateLevelWizardState
     public List<string> CopiedGroundCovers { get; set; } = new();
 
     /// <summary>
+    ///     Forest brushes copied to the new level
+    /// </summary>
+    public List<string> CopiedForestBrushes { get; set; } = new();
+
+    /// <summary>
     ///     Files copied during the wizard process
     /// </summary>
     public List<string> CopiedFiles { get; set; } = new();
@@ -81,6 +86,11 @@ public class CreateLevelWizardState
     public bool Step3_TerrainMaterialsSelected { get; set; }
 
     /// <summary>
+    ///     Step 4: Forest brushes selected and copied
+    /// </summary>
+    public bool Step4_ForestBrushesSelected { get; set; }
+
+    /// <summary>
     ///     Resets the wizard state to initial values
     /// </summary>
     public void Reset()
@@ -95,10 +105,12 @@ public class CreateLevelWizardState
         CopiedMissionGroupAssets = new List<Asset>();
         CopiedTerrainMaterials = new List<MaterialJson>();
         CopiedGroundCovers = new List<string>();
+        CopiedForestBrushes = new List<string>();
         CopiedFiles = new List<string>();
         Step1_SetupComplete = false;
         Step2_MissionGroupsCopied = false;
         Step3_TerrainMaterialsSelected = false;
+        Step4_ForestBrushesSelected = false;
     }
 
     /// <summary>
@@ -111,6 +123,7 @@ public class CreateLevelWizardState
             0 => Step1_SetupComplete,
             1 => Step2_MissionGroupsCopied,
             2 => Step3_TerrainMaterialsSelected,
+            3 => Step4_ForestBrushesSelected,
             _ => false
         };
     }
@@ -120,8 +133,13 @@ public class CreateLevelWizardState
     /// </summary>
     public string GetProgressSummary()
     {
-        var completedSteps = new[] { Step1_SetupComplete, Step2_MissionGroupsCopied, Step3_TerrainMaterialsSelected }
-            .Count(x => x);
-        return $"{completedSteps}/3 steps completed";
+        var completedSteps = new[]
+        {
+            Step1_SetupComplete,
+            Step2_MissionGroupsCopied,
+            Step3_TerrainMaterialsSelected,
+            Step4_ForestBrushesSelected
+        }.Count(x => x);
+        return $"{completedSteps}/4 steps completed";
     }
 }

@@ -10,6 +10,7 @@
                     <MudChip T="string" Color="@GetStepColor(0)" Icon="@Icons.Material.Filled.Settings">Setup</MudChip>
                     <MudChip T="string" Color="@GetStepColor(1)" Icon="@Icons.Material.Filled.Layers">MissionGroups</MudChip>
                     <MudChip T="string" Color="@GetStepColor(2)" Icon="@Icons.Material.Filled.Terrain">Terrain Materials</MudChip>
+                    <MudChip T="string" Color="@GetStepColor(3)" Icon="@Icons.Material.Filled.Forest">Forest Brushes</MudChip>
                 </MudStack>
                 
                 <MudText Typo="Typo.body2" Color="Color.Primary">
@@ -53,6 +54,21 @@
                         </MudText>
                     }
                 }
+                else if (WizardState.CurrentStep == 3)
+                {
+                    @if (WizardState.Step4_ForestBrushesSelected)
+                    {
+                        <MudText Typo="Typo.body2">
+                            @WizardState.CopiedForestBrushes.Count brush(es) selected
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">
+                            Ready to select forest brushes
+                        </MudText>
+                    }
+                }
             </MudPaper>
             
             <MudStack Row="true" Justify="Justify.SpaceBetween">
@@ -75,7 +91,7 @@
                           Variant="Variant.Filled"
                           Color="Color.Success"
                           StartIcon="@Icons.Material.Filled.Check"
-                          Style="@(WizardState.Step3_TerrainMaterialsSelected ? "" : "display:none")">
+                          Style="@(WizardState.Step4_ForestBrushesSelected ? "" : "display:none")">
                     Finish
                 </MudButton>
             </MudStack>
@@ -106,6 +122,10 @@
         {
             Navigation.NavigateTo("/CreateLevel");
         }
+        else if (WizardState.CurrentStep == 3)
+        {
+            Navigation.NavigateTo("/CopyTerrains?wizardMode=true");
+        }
         
         WizardState.CurrentStep = Math.Max(0, WizardState.CurrentStep - 1);
     }
@@ -124,6 +144,11 @@
         }
         else if (WizardState.CurrentStep == 2 && WizardState.Step3_TerrainMaterialsSelected)
         {
+            Navigation.NavigateTo("/CopyForestBrushes?wizardMode=true");
+            WizardState.CurrentStep = 3;
+        }
+        else if (WizardState.CurrentStep == 3 && WizardState.Step4_ForestBrushesSelected)
+        {
             Navigation.NavigateTo("/CreateLevel");
         }
     }
@@ -141,6 +166,7 @@
             0 => WizardState.Step1_SetupComplete,
             1 => WizardState.Step2_MissionGroupsCopied,
             2 => WizardState.Step3_TerrainMaterialsSelected,
+            3 => WizardState.Step4_ForestBrushesSelected,
             _ => false
         };
     }
@@ -151,7 +177,8 @@
         {
             0 => "Review",
             1 => "Select Terrain Materials",
-            2 => "Back to Review",
+            2 => "Select Forest Brushes",
+            3 => "Back to Review",
             _ => "Next"
         };
     }

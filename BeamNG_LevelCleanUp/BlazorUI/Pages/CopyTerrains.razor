@@ -27,7 +27,7 @@
                 <MudText Typo="Typo.body2" Class="mt-2">
                     @if (_copyCompleted)
                     {
-                        <text>Materials copied! You can select another source map or finish the wizard.</text>
+                        <text>Materials copied! You can select another source map or continue to forest brushes.</text>
                     }
                     else
                     {
@@ -47,7 +47,7 @@
                         Total materials copied in this session: <b>@_totalCopiedMaterialsCount</b>
                     </MudText>
                     <MudText Typo="Typo.body2" Class="mt-2">
-                        You can select another source map to copy additional materials, or finish the wizard.
+                        You can select another source map to copy additional materials, or continue to forest brushes.
                     </MudText>
                 </MudAlert>
             }
@@ -329,8 +329,8 @@
                         <MudButton OnClick="@FinishWizard" 
                                   Color="Color.Success"
                                   Variant="Variant.Filled"
-                                  StartIcon="@Icons.Material.Filled.Check">
-                            Finish Wizard (@_totalCopiedMaterialsCount materials)
+                                  StartIcon="@Icons.Material.Filled.Forest">
+                            Select Forest Brushes
                         </MudButton>
                     }
                     else
@@ -377,6 +377,7 @@
                     }
                     @if (_errors.Any())
                     {
+
                         <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
                     }
                     @if (_warnings.Any())

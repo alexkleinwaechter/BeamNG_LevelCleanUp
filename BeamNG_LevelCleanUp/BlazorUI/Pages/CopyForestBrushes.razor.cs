@@ -571,6 +571,9 @@ public partial class CopyForestBrushes
 
             Snackbar.Remove(_staticSnackbar);
 
+            // UPDATE WIZARD STATE
+            UpdateWizardStateAfterCopy();
+
             _copyCompleted = true;
             _copiedBrushesCount = copyCount;
             _totalCopiedBrushesCount += copyCount;
@@ -580,9 +583,32 @@ public partial class CopyForestBrushes
         }
     }
 
+    /// <summary>
+    /// Updates wizard state after copying forest brushes
+    /// </summary>
+    private void UpdateWizardStateAfterCopy()
+    {
+        if (WizardState == null) return;
+
+        // Collect copied brush names
+        var copiedBrushNames = _selectedItems
+            .Where(x => x.CopyAsset?.CopyAssetType == CopyAssetType.ForestBrush)
+            .Select(x => x.FullName)
+            .ToList();
+
+        // Accumulate brushes (allow multiple copy operations)
+        WizardState.CopiedForestBrushes.AddRange(copiedBrushNames);
+        WizardState.Step4_ForestBrushesSelected = true;
+        WizardState.CurrentStep = 3;
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Copied {copiedBrushNames.Count} forest brush(es) to {WizardState.LevelName}");
+    }
+
     private void CancelWizard()
     {
-        Navigation.NavigateTo("/CreateLevel");
+        // Navigate back to terrain materials (previous step)
+        Navigation.NavigateTo("/CopyTerrains?wizardMode=true");
     }
 
     /// <summary>
@@ -750,7 +776,13 @@ public partial class CopyForestBrushes
     private void FinishWizard()
     {
         PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Completed! Copied {_totalCopiedBrushesCount} forest brush(es) to {WizardState?.LevelName}.");
+            $"Wizard completed! Copied {_totalCopiedBrushesCount} forest brush(es) to {WizardState?.LevelName}.");
+
+        // Ensure state is marked complete
+        if (WizardState != null)
+        {
+            WizardState.Step4_ForestBrushesSelected = true;
+        }
 
         Navigation.NavigateTo("/CreateLevel");
     }
