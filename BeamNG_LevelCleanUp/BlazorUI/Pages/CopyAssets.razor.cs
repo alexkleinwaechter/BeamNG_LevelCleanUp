@@ -103,7 +103,7 @@ public partial class CopyAssets
         {
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Wizard mode: Loading levels automatically...");
 
-            _beamInstallDir = Steam.GetBeamInstallDir();
+            _beamInstallDir = GameDirectoryService.GetInstallDirectory();
             GetVanillaLevels();
 
             // Set source level from wizard state
@@ -808,18 +808,19 @@ public partial class CopyAssets
 
     protected void SetBeamInstallDir(string file)
     {
-        if (file != Steam.BeamInstallDir)
+        if (file != GameDirectoryService.GetInstallDirectory())
         {
-            Steam.BeamInstallDir = file;
+            GameDirectoryService.SetInstallDirectory(file);
             GetVanillaLevels();
         }
     }
 
     protected string GetBeamInstallDir()
     {
-        if (Steam.BeamInstallDir != _beamInstallDir)
+        var currentDir = GameDirectoryService.GetInstallDirectory();
+        if (currentDir != _beamInstallDir)
         {
-            _beamInstallDir = Steam.GetBeamInstallDir();
+            _beamInstallDir = currentDir;
             GetVanillaLevels();
         }
 

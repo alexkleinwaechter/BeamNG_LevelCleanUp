@@ -406,18 +406,19 @@ public partial class CreateLevel
 
     private void SetBeamInstallDir(string file)
     {
-        if (file != Steam.BeamInstallDir)
+        if (file != GameDirectoryService.GetInstallDirectory())
         {
-            Steam.BeamInstallDir = file;
+            GameDirectoryService.SetInstallDirectory(file);
             GetVanillaLevels();
         }
     }
 
     private string GetBeamInstallDir()
     {
-        if (Steam.BeamInstallDir != _beamInstallDir)
+        var currentDir = GameDirectoryService.GetInstallDirectory();
+        if (currentDir != _beamInstallDir)
         {
-            _beamInstallDir = Steam.GetBeamInstallDir();
+            _beamInstallDir = currentDir;
             GetVanillaLevels();
         }
 
