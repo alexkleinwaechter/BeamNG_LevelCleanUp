@@ -14,8 +14,9 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 ///     - A driver at 130 km/h should NOT suddenly hit a flat curve because a dirt road crosses!
 ///     2. Lower-priority road (e.g., dirt road) ADAPTS to match the higher-priority road's banked surface
 ///     - Edge elevations transition smoothly to meet the banked highway
-///     3. Equal-priority roads both REDUCE banking to flat at their mutual junction
-///     4. Endpoints (dead ends) fade banking to flat
+///     3. Equal-priority roads from DIFFERENT materials: both REDUCE banking to flat at their mutual junction
+///     4. Equal-priority roads from the SAME material: both MAINTAIN banking (same road network)
+///     5. Endpoints (dead ends) fade banking to flat
 ///     This ensures highways remain safe at high speeds while secondary roads
 ///     smoothly transition to meet them.
 /// </summary>
@@ -142,7 +143,42 @@ public class PriorityAwareJunctionBankingCalculator
         // Check if there are multiple splines with the highest priority (equal priority case)
         var hasEqualPriorityConflict = highestPrioritySplines.Count > 1;
 
-        // For equal-priority junctions, use a MUCH smaller transition distance.
+        // NEW: Check if all highest-priority splines are from the same material
+        // If so, they're part of the same road network and should MAINTAIN banking
+        var uniqueMaterials = highestPrioritySplines.Select(s => s.MaterialName).Distinct().ToList();
+        var isSameMaterial = uniqueMaterials.Count == 1;
+
+        if (hasEqualPriorityConflict && isSameMaterial)
+        {
+            // All roads at this junction are from the same material (same road network)
+            // They should MAINTAIN banking, not suppress it
+            // This prevents banking suppression from bleeding across the entire network
+            // when there are many junctions between roads of the same type
+            TerrainCreationLogger.Current?.Detail(
+                $"Junction #{junction.JunctionId}: Equal priority but same material ({uniqueMaterials[0]}) - maintaining banking");
+
+            // Apply MaintainBanking to all splines at this junction
+            foreach (var splineId in participatingSplineIds)
+            {
+                if (!crossSectionsBySpline.TryGetValue(splineId, out var crossSections))
+                    continue;
+
+                // For same-material junctions, use a small transition just to smooth
+                // the banking at the immediate junction point, but don't suppress it
+                var maxRoadWidth = highestPrioritySplines.Max(s => s.Parameters.RoadWidthMeters);
+                var smallTransitionDistance = MathF.Max(maxRoadWidth, 5.0f);
+                
+                ApplyBehaviorToNearbyCrossSections(
+                    crossSections,
+                    junction.Position,
+                    JunctionBankingBehavior.MaintainBanking,
+                    null,
+                    smallTransitionDistance);
+            }
+            return;
+        }
+
+        // For equal-priority junctions with DIFFERENT materials, use a MUCH smaller transition distance.
         // When two roads of the same type meet, there's no safety concern - they both
         // have the same design speed and banking requirements. Using a small transition
         // (based on road width) prevents banking suppression from bleeding across the
@@ -177,7 +213,7 @@ public class PriorityAwareJunctionBankingCalculator
             {
                 if (hasEqualPriorityConflict)
                 {
-                    // Equal priority - all roads reduce banking at this junction
+                    // Equal priority with different materials - reduce banking at this junction
                     // Use the reduced transition distance for equal-priority junctions
                     behavior = JunctionBankingBehavior.SuppressBanking;
                     useTransitionDistance = effectiveTransitionDistance;
