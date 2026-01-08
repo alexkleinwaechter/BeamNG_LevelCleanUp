@@ -1,0 +1,290 @@
+using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
+using BeamNgTerrainPoc.Terrain.Osm.Processing;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+
+namespace BeamNgTerrainPoc.Terrain.Osm.Services;
+
+/// <summary>
+/// Exports ALL OSM feature types as individual 8-bit PNG layer maps.
+/// This is called automatically during terrain generation when OSM data is available.
+/// Each feature type (category + subcategory + geometry type) gets its own PNG file.
+/// </summary>
+public class OsmLayerExporter
+{
+    /// <summary>
+    /// Information about a group of OSM features that will be exported as a single layer.
+    /// </summary>
+    private class FeatureGroupInfo
+    {
+        public string Category { get; init; } = string.Empty;
+        public string SubCategory { get; init; } = string.Empty;
+        public OsmGeometryType GeometryType { get; init; }
+        public List<OsmFeature> Features { get; init; } = new();
+        public string SafeFileName { get; init; } = string.Empty;
+        public int FeatureCount => Features.Count;
+    }
+
+    /// <summary>
+    /// Exports all OSM feature types to 8-bit PNG layer maps.
+    /// Each unique combination of category + subcategory + geometry type gets its own file.
+    /// </summary>
+    /// <param name="osmResult">The OSM query result (from cache or API)</param>
+    /// <param name="effectiveBoundingBox">The WGS84 bounding box (possibly cropped)</param>
+    /// <param name="coordinateTransformer">Optional GDAL transformer for projected CRS</param>
+    /// <param name="terrainSize">Size of terrain in pixels</param>
+    /// <param name="metersPerPixel">Scale factor (meters per terrain pixel)</param>
+    /// <param name="outputFolder">Target folder where osm_layer subfolder will be created</param>
+    /// <returns>Number of layer files exported</returns>
+    public async Task<int> ExportAllOsmLayersAsync(
+        OsmQueryResult osmResult,
+        GeoBoundingBox effectiveBoundingBox,
+        GeoCoordinateTransformer? coordinateTransformer,
+        int terrainSize,
+        float metersPerPixel,
+        string outputFolder)
+    {
+        if (osmResult.Features.Count == 0)
+        {
+            TerrainLogger.Info("OsmLayerExporter: No features to export");
+            return 0;
+        }
+
+        // Create the osm_layer subfolder
+        var osmLayerFolder = Path.Combine(outputFolder, "osm_layer");
+        Directory.CreateDirectory(osmLayerFolder);
+
+        // Build feature groups from OSM result
+        var featureGroups = BuildFeatureGroups(osmResult);
+        
+        if (featureGroups.Count == 0)
+        {
+            TerrainLogger.Info("OsmLayerExporter: No feature groups to export");
+            return 0;
+        }
+
+        TerrainLogger.Info($"OsmLayerExporter: Exporting {featureGroups.Count} OSM layer types...");
+
+        // Set up the geometry processor
+        var processor = new OsmGeometryProcessor();
+        if (coordinateTransformer != null)
+        {
+            processor.SetCoordinateTransformer(coordinateTransformer);
+        }
+
+        var exportedCount = 0;
+        var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in featureGroups)
+        {
+            try
+            {
+                // Ensure unique filename
+                var fileName = EnsureUniqueFileName(group.SafeFileName, usedFileNames);
+                usedFileNames.Add(fileName);
+
+                var filePath = Path.Combine(osmLayerFolder, $"{fileName}.png");
+                
+                await ExportFeatureGroupAsync(
+                    group, 
+                    processor, 
+                    effectiveBoundingBox, 
+                    terrainSize, 
+                    metersPerPixel, 
+                    filePath);
+
+                exportedCount++;
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"OsmLayerExporter: Failed to export {group.SafeFileName}: {ex.Message}");
+            }
+        }
+
+        TerrainLogger.Info($"OsmLayerExporter: Successfully exported {exportedCount}/{featureGroups.Count} OSM layer maps to {osmLayerFolder}");
+        return exportedCount;
+    }
+
+    /// <summary>
+    /// Builds feature groups from OSM query result.
+    /// Groups features by category + subcategory + geometry type.
+    /// </summary>
+    private static List<FeatureGroupInfo> BuildFeatureGroups(OsmQueryResult osmResult)
+    {
+        return osmResult.Features
+            .Where(f => f.GeometryType == OsmGeometryType.LineString || f.GeometryType == OsmGeometryType.Polygon)
+            .GroupBy(f => new { f.Category, f.SubCategory, f.GeometryType })
+            .Select(g => new FeatureGroupInfo
+            {
+                Category = g.Key.Category,
+                SubCategory = g.Key.SubCategory,
+                GeometryType = g.Key.GeometryType,
+                Features = g.ToList(),
+                SafeFileName = SanitizeFileName($"{g.Key.Category}_{g.Key.SubCategory}_{g.Key.GeometryType}")
+            })
+            .Where(g => g.FeatureCount > 0)
+            .OrderBy(g => g.Category)
+            .ThenBy(g => g.SubCategory)
+            .ThenBy(g => g.GeometryType)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Exports a single feature group to a PNG file.
+    /// </summary>
+    private static async Task ExportFeatureGroupAsync(
+        FeatureGroupInfo group,
+        OsmGeometryProcessor processor,
+        GeoBoundingBox bbox,
+        int terrainSize,
+        float metersPerPixel,
+        string filePath)
+    {
+        byte[,] layerMap;
+
+        if (group.GeometryType == OsmGeometryType.LineString)
+        {
+            // For lines, use a sensible width based on road/feature type
+            var lineWidthMeters = GetDefaultLineWidth(group.Category, group.SubCategory);
+            var lineWidthPixels = lineWidthMeters / metersPerPixel;
+            
+            layerMap = processor.RasterizeLinesToLayerMap(
+                group.Features, bbox, terrainSize, lineWidthPixels);
+        }
+        else // Polygon
+        {
+            layerMap = processor.RasterizePolygonsToLayerMap(
+                group.Features, bbox, terrainSize);
+        }
+
+        // Save as 8-bit grayscale PNG
+        await SaveLayerMapAsync(layerMap, filePath);
+    }
+
+    /// <summary>
+    /// Gets the default line width in meters based on feature category and subcategory.
+    /// </summary>
+    private static float GetDefaultLineWidth(string category, string subCategory)
+    {
+        if (category == "highway")
+        {
+            return subCategory switch
+            {
+                "motorway" => 20.0f,
+                "motorway_link" => 12.0f,
+                "trunk" => 18.0f,
+                "trunk_link" => 10.0f,
+                "primary" => 16.0f,
+                "primary_link" => 8.0f,
+                "secondary" => 14.0f,
+                "secondary_link" => 7.0f,
+                "tertiary" => 12.0f,
+                "tertiary_link" => 6.0f,
+                "unclassified" => 10.0f,
+                "residential" => 10.0f,
+                "living_street" => 8.0f,
+                "service" => 6.0f,
+                "track" => 4.0f,
+                "path" => 2.0f,
+                "footway" => 2.0f,
+                "pedestrian" => 4.0f,
+                "cycleway" => 3.0f,
+                "bridleway" => 3.0f,
+                "steps" => 2.0f,
+                _ => 8.0f // Default for unrecognized road types
+            };
+        }
+        
+        if (category == "railway")
+        {
+            return subCategory switch
+            {
+                "rail" => 6.0f,
+                "light_rail" => 5.0f,
+                "subway" => 5.0f,
+                "tram" => 4.0f,
+                "narrow_gauge" => 3.0f,
+                "miniature" => 2.0f,
+                _ => 4.0f
+            };
+        }
+
+        if (category == "waterway")
+        {
+            return subCategory switch
+            {
+                "river" => 20.0f,
+                "canal" => 15.0f,
+                "stream" => 6.0f,
+                "drain" => 4.0f,
+                "ditch" => 2.0f,
+                _ => 6.0f
+            };
+        }
+
+        // Default for other line features
+        return 6.0f;
+    }
+
+    /// <summary>
+    /// Sanitizes a string to be safe for use as a filename.
+    /// </summary>
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var result = new char[name.Length];
+
+        for (var i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (invalid.Contains(c) || c == ' ' || c == '-')
+                result[i] = '_';
+            else
+                result[i] = char.ToLowerInvariant(c);
+        }
+
+        return new string(result);
+    }
+
+    /// <summary>
+    /// Ensures a filename is unique by appending a counter if necessary.
+    /// </summary>
+    private static string EnsureUniqueFileName(string baseName, HashSet<string> usedNames)
+    {
+        if (!usedNames.Contains(baseName))
+            return baseName;
+
+        var counter = 2;
+        string uniqueName;
+        do
+        {
+            uniqueName = $"{baseName}_{counter}";
+            counter++;
+        } while (usedNames.Contains(uniqueName));
+
+        return uniqueName;
+    }
+
+    /// <summary>
+    /// Saves a layer map as an 8-bit grayscale PNG file.
+    /// </summary>
+    private static async Task SaveLayerMapAsync(byte[,] layerMap, string filePath)
+    {
+        var height = layerMap.GetLength(0);
+        var width = layerMap.GetLength(1);
+
+        using var image = new Image<L8>(width, height);
+
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                image[x, y] = new L8(layerMap[y, x]);
+            }
+        }
+
+        await image.SaveAsPngAsync(filePath);
+    }
+}

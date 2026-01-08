@@ -110,6 +110,15 @@ public class TerrainGenerationOrchestrator
                     roadParams));
             }
 
+            // Export ALL OSM layers to osm_layer subfolder (if OSM data is available)
+            // This happens automatically when using GeoTIFF with valid WGS84 bounding box
+            await ExportAllOsmLayersAsync(
+                osmQueryResult, 
+                effectiveBoundingBox, 
+                coordinateTransformer, 
+                state, 
+                debugPath);
+
             // Build terrain creation parameters
             terrainParameters = BuildTerrainParameters(state, materialDefinitions, analysisState);
 
@@ -734,6 +743,87 @@ public class TerrainGenerationOrchestrator
             $"Saved OSM layer map: {Path.GetFileName(filePath)}");
 
         return filePath;
+    }
+
+    /// <summary>
+    /// Exports ALL available OSM feature types as individual 8-bit PNG layer maps.
+    /// This happens automatically when terrain generation uses a GeoTIFF with valid WGS84 bounding box.
+    /// Each unique combination of category + subcategory + geometry type gets its own file.
+    /// The files are saved to {debugPath}/osm_layer/ folder.
+    /// </summary>
+    /// <param name="osmQueryResult">The OSM query result (may be null if no OSM data fetched).</param>
+    /// <param name="effectiveBoundingBox">The WGS84 bounding box (possibly cropped).</param>
+    /// <param name="coordinateTransformer">Optional GDAL transformer for projected CRS.</param>
+    /// <param name="state">The terrain generation state.</param>
+    /// <param name="debugPath">The debug output folder (MT_TerrainGeneration).</param>
+    private static async Task ExportAllOsmLayersAsync(
+        OsmQueryResult? osmQueryResult,
+        GeoBoundingBox? effectiveBoundingBox,
+        GeoCoordinateTransformer? coordinateTransformer,
+        TerrainGenerationState state,
+        string debugPath)
+    {
+        // Only export if:
+        // 1. We have OSM data available (either from material processing or we can fetch it)
+        // 2. We have a valid GeoTIFF-based heightmap (not PNG)
+        // 3. We can fetch OSM data (valid WGS84 bounding box)
+        
+        var isGeoTiffSource = state.HeightmapSourceType == HeightmapSourceType.GeoTiffFile ||
+                             state.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory;
+        
+        if (!isGeoTiffSource || !state.CanFetchOsmData || effectiveBoundingBox == null)
+        {
+            // OSM layer export not applicable - silently skip
+            return;
+        }
+
+        try
+        {
+            // If no OSM data was fetched during material processing, fetch it now
+            if (osmQueryResult == null)
+            {
+                var cache = new OsmQueryCache();
+                osmQueryResult = await cache.GetAsync(effectiveBoundingBox);
+
+                if (osmQueryResult == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Fetching OSM data for layer export...");
+                    var service = new OverpassApiService();
+                    osmQueryResult = await service.QueryAllFeaturesAsync(effectiveBoundingBox);
+                    await cache.SetAsync(effectiveBoundingBox, osmQueryResult);
+                }
+            }
+
+            if (osmQueryResult.Features.Count == 0)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    "No OSM features found in bounding box - skipping layer export");
+                return;
+            }
+
+            // Export all OSM layers
+            var exporter = new OsmLayerExporter();
+            var exportedCount = await exporter.ExportAllOsmLayersAsync(
+                osmQueryResult,
+                effectiveBoundingBox,
+                coordinateTransformer,
+                state.TerrainSize,
+                state.MetersPerPixel,
+                debugPath);
+
+            if (exportedCount > 0)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Exported {exportedCount} OSM layer maps to osm_layer folder");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Don't fail the terrain generation if OSM layer export fails
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"OSM layer export failed (terrain generation will continue): {ex.Message}");
+        }
     }
 
     #endregion
