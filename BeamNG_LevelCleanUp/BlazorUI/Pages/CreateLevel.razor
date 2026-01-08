@@ -145,9 +145,17 @@
                     <MudButton OnClick="@InitializeNewLevel" 
                               Color="Color.Primary" 
                               Variant="Variant.Filled"
-                              Disabled="@(!CanInitialize())"
-                              StartIcon="@Icons.Material.Filled.Create">
-                        Initialize New Level
+                              Disabled="@(!CanInitialize() || _isInitializing)"
+                              StartIcon="@(_isInitializing ? null : Icons.Material.Filled.Create)">
+                        @if (_isInitializing)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>Initializing...</span>
+                        }
+                        else
+                        {
+                            <span>Initialize New Level</span>
+                        }
                     </MudButton>
                 </MudPaper>
             }

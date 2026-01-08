@@ -42,6 +42,7 @@ public partial class CreateLevel
     private string height;
     private bool _showErrorLog;
     private bool _showWarningLog;
+    private bool _isInitializing;
     private List<FileInfo> _vanillaLevels = new();
     private FileInfo _vanillaLevelSourceSelected;
     private string _beamInstallDir;
@@ -166,8 +167,11 @@ public partial class CreateLevel
 
     protected async Task InitializeNewLevel()
     {
-        if (!CanInitialize())
+        if (!CanInitialize() || _isInitializing)
             return;
+
+        _isInitializing = true;
+        StateHasChanged();
 
         try
         {
@@ -270,6 +274,7 @@ public partial class CreateLevel
         }
         finally
         {
+            _isInitializing = false;
             StateHasChanged();
         }
     }
