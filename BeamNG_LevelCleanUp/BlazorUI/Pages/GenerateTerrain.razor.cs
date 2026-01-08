@@ -9,6 +9,7 @@ using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using MudBlazor.Utilities;
 using DialogResult = System.Windows.Forms.DialogResult;
@@ -17,6 +18,24 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Pages;
 
 public partial class GenerateTerrain
 {
+    // ========================================
+    // WIZARD MODE PROPERTIES
+    // ========================================
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "wizardMode")]
+    public bool WizardMode { get; set; }
+
+    /// <summary>
+    ///     Wizard state reference when in wizard mode
+    /// </summary>
+    public CreateLevelWizardState? WizardState { get; private set; }
+
+    /// <summary>
+    ///     Indicates if terrain has been generated during this wizard session
+    /// </summary>
+    private bool _terrainGeneratedInWizard { get; set; }
+
     // ========================================
     // SERVICES
     // ========================================
@@ -282,6 +301,201 @@ public partial class GenerateTerrain
     private GeoBoundingBox? EffectiveBoundingBox => _state.EffectiveBoundingBox;
 
     [AllowNull] private MudExpansionPanels FileSelect { get; set; }
+
+    // ========================================
+    // WIZARD MODE LIFECYCLE METHODS
+    // ========================================
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (WizardMode)
+        {
+            WizardState = CreateLevel.GetWizardState();
+            if (WizardState == null || !WizardState.IsActive)
+            {
+                // Invalid wizard state - redirect to CreateLevel
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Wizard state not found. Please start the wizard from Create Level page.");
+                Navigation.NavigateTo("/CreateLevel");
+                return;
+            }
+
+            // Set the current wizard step
+            WizardState.CurrentStep = 5;
+
+            // Auto-load level from wizard state
+            await LoadLevelFromWizardState();
+        }
+    }
+
+    /// <summary>
+    ///     Loads the target level from wizard state for terrain generation
+    /// </summary>
+    private async Task LoadLevelFromWizardState()
+    {
+        if (WizardState == null) return;
+
+        try
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "Wizard mode: Loading level for terrain generation...");
+
+            var targetLevelRootPath = WizardState.TargetLevelRootPath;
+
+            if (string.IsNullOrEmpty(targetLevelRootPath) || !Directory.Exists(targetLevelRootPath))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                    $"Target level path not found: {targetLevelRootPath}");
+                return;
+            }
+
+            // Use the material service to load the level
+            await Task.Run(() =>
+            {
+                var result = _materialService.LoadLevelFromFolder(targetLevelRootPath);
+
+                if (!result.Success)
+                {
+                    if (!string.IsNullOrEmpty(result.ErrorMessage))
+                        PubSubChannel.SendMessage(PubSubMessageType.Error, result.ErrorMessage);
+                    return;
+                }
+
+                _workingDirectory = result.LevelPath;
+                _hasWorkingDirectory = true;
+                _levelName = result.LevelName;
+
+                // Apply loaded materials
+                _terrainMaterials.Clear();
+                _terrainMaterials.AddRange(result.Materials);
+
+                // Apply existing terrain settings if found
+                if (result.ExistingTerrainSize.HasValue)
+                {
+                    _terrainSize = result.ExistingTerrainSize.Value;
+                    _hasExistingTerrainSettings = true;
+                }
+                else if (WizardState.TerrainSize > 0)
+                {
+                    // Use terrain size from wizard state
+                    _terrainSize = WizardState.TerrainSize;
+                }
+
+                if (!string.IsNullOrEmpty(result.TerrainName))
+                    _terrainName = result.TerrainName;
+                if (result.MetersPerPixel.HasValue)
+                    _metersPerPixel = result.MetersPerPixel.Value;
+            });
+
+            await InvokeAsync(StateHasChanged);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Wizard mode: Level loaded successfully - {_terrainMaterials.Count} terrain materials found");
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
+                $"Failed to load level in wizard mode: {ex.Message}");
+        }
+    }
+
+    // ========================================
+    // WIZARD FOOTER HELPER METHODS
+    // ========================================
+
+    private string GetBackButtonText() => WizardMode ? "Back to Assets" : "";
+
+    private string GetNextButtonText() => "";  // Not used - this is the last step
+
+    private bool GetCanProceed() => WizardMode && _terrainGeneratedInWizard &&
+                                     WizardState?.TerrainCompletionDialogShown == true;
+
+    private bool GetShowFinishButton() => WizardMode && _terrainGeneratedInWizard &&
+                                           WizardState?.TerrainCompletionDialogShown == true;
+
+    private bool GetShowSkipButton() => WizardMode && !_terrainGeneratedInWizard;
+
+    private void OnBackClicked()
+    {
+        if (WizardMode)
+        {
+            Navigation.NavigateTo("/CopyAssets?wizardMode=true");
+        }
+    }
+
+    private void SkipStep()
+    {
+        if (WizardState != null)
+        {
+            // Mark as skipped (not generated) and finish wizard
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "Terrain generation skipped. You can generate terrain later from this page.");
+        }
+        Navigation.NavigateTo("/CreateLevel");
+    }
+
+    private void FinishWizard()
+    {
+        if (WizardState != null)
+        {
+            WizardState.Step6_TerrainGenerated = true;
+        }
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Create Level Wizard completed! Your level '{WizardState?.LevelName}' is ready.");
+
+        Navigation.NavigateTo("/CreateLevel");
+    }
+
+    /// <summary>
+    /// Updates wizard state after successful terrain generation
+    /// </summary>
+    private void UpdateWizardStateAfterGeneration()
+    {
+        if (WizardState == null) return;
+
+        WizardState.GeneratedTerrainPath = GetOutputPath();
+        WizardState.Step6_TerrainGenerated = true;
+        _terrainGeneratedInWizard = true;
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Terrain generated for {WizardState.LevelName}");
+    }
+
+    /// <summary>
+    /// Shows the wizard completion dialog with next-steps instructions
+    /// </summary>
+    private async Task ShowTerrainWizardCompletionDialog()
+    {
+        var options = new DialogOptions
+        {
+            CloseButton = false,
+            CloseOnEscapeKey = false,
+            BackdropClick = false,
+            MaxWidth = MaxWidth.Medium
+        };
+
+        var parameters = new DialogParameters<TerrainWizardCompletionDialog>
+        {
+            { x => x.TerrainFilePath, GetOutputPath() }
+        };
+
+        var dialog = await DialogService.ShowAsync<TerrainWizardCompletionDialog>(
+            "Terrain Generation Complete",
+            parameters,
+            options);
+
+        var result = await dialog.Result;
+
+        // When dialog is closed, mark it as shown and trigger UI update
+        if (WizardState != null)
+        {
+            WizardState.TerrainCompletionDialogShown = true;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
 
     protected override void OnInitialized()
     {
@@ -1016,6 +1230,13 @@ public partial class GenerateTerrain
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
+
+                // WIZARD MODE: Update state and show completion dialog
+                if (WizardMode && WizardState != null)
+                {
+                    UpdateWizardStateAfterGeneration();
+                    await ShowTerrainWizardCompletionDialog();
+                }
             }
             else
             {

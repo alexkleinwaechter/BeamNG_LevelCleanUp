@@ -238,8 +238,8 @@
                       BackButtonText="@GetBackButtonText()"
                       NextButtonText="@GetNextButtonText()"
                       CanProceed="@GetCanProceed()"
-                      ShowNextButton="@(!GetShowFinishButton())"
-                      ShowFinishButton="@GetShowFinishButton()"
+                      ShowNextButton="@(WizardMode && (_copyCompleted || WizardState?.Step5_AssetsSelected == true))"
+                      ShowFinishButton="@false"
                       ShowSkipButton="@GetShowSkipButton()"
                       OnBackClick="@OnBackClicked"
                       OnNextClick="@OnNextClicked"
@@ -331,12 +331,12 @@
     private string GetNextButtonText()
     {
         if (!WizardMode) return "";
-        return "Back to Review";
+        return _copyCompleted ? "Continue to Terrain Generation" : "Generate Terrain";
     }
     
     private bool GetCanProceed() => WizardMode && (_copyCompleted || WizardState?.Step5_AssetsSelected == true);
     
-    private bool GetShowFinishButton() => WizardMode && (_copyCompleted || WizardState?.Step5_AssetsSelected == true);
+    private bool GetShowFinishButton() => false; // Finish is now on GenerateTerrain page
     
     private bool GetShowSkipButton() => WizardMode && !_copyCompleted && !_selectedItems.Any();
     

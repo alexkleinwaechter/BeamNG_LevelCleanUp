@@ -409,12 +409,12 @@ public partial class CopyAssets
     }
 
     /// <summary>
-    ///     Finishes the wizard and navigates back to CreateLevel
+    ///     Finishes the assets step and navigates to terrain generation
     /// </summary>
     private void FinishWizard()
     {
         PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Wizard completed! Copied {_totalCopiedAssetsCount} asset(s) to {WizardState?.LevelName}.");
+            $"Assets step completed! Copied {_totalCopiedAssetsCount} asset(s). Proceeding to terrain generation.");
 
         // Ensure state is marked complete
         if (WizardState != null)
@@ -422,7 +422,8 @@ public partial class CopyAssets
             WizardState.Step5_AssetsSelected = true;
         }
 
-        Navigation.NavigateTo("/CreateLevel");
+        // Navigate to terrain generation step instead of finishing
+        Navigation.NavigateTo("/GenerateTerrain?wizardMode=true");
     }
 
     /// <summary>
@@ -441,10 +442,11 @@ public partial class CopyAssets
         if (WizardState != null)
         {
             WizardState.Step5_AssetsSelected = true;
-            PubSubChannel.SendMessage(PubSubMessageType.Info, "Assets step skipped.");
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Assets step skipped. Proceeding to terrain generation.");
         }
 
-        Navigation.NavigateTo("/CreateLevel");
+        // Navigate to terrain generation step instead of CreateLevel
+        Navigation.NavigateTo("/GenerateTerrain?wizardMode=true");
     }
 
     /// <summary>

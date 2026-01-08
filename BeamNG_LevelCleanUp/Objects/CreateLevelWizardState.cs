@@ -101,6 +101,21 @@ public class CreateLevelWizardState
     public bool Step5_AssetsSelected { get; set; }
 
     /// <summary>
+    ///     Step 6: Terrain generated successfully
+    /// </summary>
+    public bool Step6_TerrainGenerated { get; set; }
+
+    /// <summary>
+    ///     Path to the generated terrain file (.ter)
+    /// </summary>
+    public string GeneratedTerrainPath { get; set; }
+
+    /// <summary>
+    ///     Indicates if the wizard completion dialog has been shown and closed
+    /// </summary>
+    public bool TerrainCompletionDialogShown { get; set; }
+
+    /// <summary>
     ///     Resets the wizard state to initial values
     /// </summary>
     public void Reset()
@@ -123,6 +138,9 @@ public class CreateLevelWizardState
         Step3_TerrainMaterialsSelected = false;
         Step4_ForestBrushesSelected = false;
         Step5_AssetsSelected = false;
+        Step6_TerrainGenerated = false;
+        GeneratedTerrainPath = null;
+        TerrainCompletionDialogShown = false;
     }
 
     /// <summary>
@@ -137,6 +155,7 @@ public class CreateLevelWizardState
             2 => Step3_TerrainMaterialsSelected,
             3 => Step4_ForestBrushesSelected,
             4 => Step5_AssetsSelected,
+            5 => Step6_TerrainGenerated,
             _ => false
         };
     }
@@ -152,8 +171,9 @@ public class CreateLevelWizardState
             Step2_MissionGroupsCopied,
             Step3_TerrainMaterialsSelected,
             Step4_ForestBrushesSelected,
-            Step5_AssetsSelected
+            Step5_AssetsSelected,
+            Step6_TerrainGenerated
         }.Count(x => x);
-        return $"{completedSteps}/5 steps completed";
+        return $"{completedSteps}/6 steps completed";
     }
 }
