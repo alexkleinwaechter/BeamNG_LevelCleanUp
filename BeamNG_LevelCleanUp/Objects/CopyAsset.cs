@@ -7,8 +7,8 @@ public enum CopyAssetType
     Road = 0,
     Decal = 1,
     Dae = 2,
-
-    Terrain = 3
+    Terrain = 3,
+    ForestBrush = 4
     // GroundCover removed - now copied automatically with Terrain
 }
 
@@ -47,6 +47,11 @@ public class CopyAsset
     public string TerrainMaterialName { get; set; }
     public string TerrainMaterialInternalName { get; set; }
     public GroundCover GroundCoverData { get; set; }
+
+    /// <summary>
+    ///     Forest brush information for CopyAssetType.ForestBrush assets
+    /// </summary>
+    public ForestBrushInfo ForestBrushInfo { get; set; }
 
     /// <summary>
     ///     Base color for terrain texture generation in hex format (e.g., #808080)

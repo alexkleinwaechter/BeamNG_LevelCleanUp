@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
+using BeamNG_LevelCleanUp.LogicCopyForest;
 using BeamNG_LevelCleanUp.Objects;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
@@ -116,7 +117,10 @@ public class AssetCopy
     {
         // Collect all terrain materials first for batch processing
         var terrainMaterials = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.Terrain).ToList();
-        var otherAssets = _assetsToCopy.Where(x => x.CopyAssetType != CopyAssetType.Terrain).ToList();
+        var forestBrushes = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.ForestBrush).ToList();
+        var otherAssets = _assetsToCopy.Where(x => 
+            x.CopyAssetType != CopyAssetType.Terrain && 
+            x.CopyAssetType != CopyAssetType.ForestBrush).ToList();
 
         // Group other assets by type for potential batch processing
         var roads = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Road).ToList();
@@ -166,6 +170,14 @@ public class AssetCopy
         // Now process all terrain materials in batch (with groundcover collection)
         if (terrainMaterials.Any()) stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials);
 
+        if (stopFaultyFile) return;
+
+        // Process forest brushes
+        if (forestBrushes.Any())
+        {
+            stopFaultyFile = !CopyForestBrushes(forestBrushes);
+        }
+
         if (!stopFaultyFile)
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Assets copied. Build your deployment file now.");
 
@@ -190,6 +202,25 @@ public class AssetCopy
     private bool CopyDae(CopyAsset item)
     {
         return _daeCopier.Copy(item);
+    }
+
+    /// <summary>
+    ///     Copies forest brushes to target level
+    /// </summary>
+    private bool CopyForestBrushes(List<CopyAsset> forestBrushes)
+    {
+        PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            $"Copying {forestBrushes.Count} forest brushes...");
+
+        var forestCopier = new ForestBrushCopier(
+            PathResolver.LevelPathCopyFrom,
+            PathResolver.LevelNamePath,
+            _pathConverter,
+            _fileCopyHandler,
+            _materialCopier,
+            _daeCopier);
+
+        return forestCopier.CopyBrushes(forestBrushes);
     }
 
     /// <summary>

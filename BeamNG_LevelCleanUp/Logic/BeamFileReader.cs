@@ -2,6 +2,7 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.LogicConvertForest;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
+using BeamNG_LevelCleanUp.LogicCopyForest;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 
@@ -166,7 +167,72 @@ internal class BeamFileReader
         CopyDae();
         CopyTerrainMaterials();
         CopyGroundCovers();
+        CopyForestBrushes();
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
+    }
+
+    /// <summary>
+    ///     Scans roads, decals, and DAE files from the source level for copying.
+    ///     Used by CopyAssets.razor page.
+    ///     Does not include terrain materials, groundcovers, or forest brushes.
+    /// </summary>
+    internal void ReadAssetsForCopy()
+    {
+        Reset();
+        ReadMaterialsJson();
+        RemoveDuplicateMaterials(false);
+        CopyAssetRoad();
+        CopyAssetDecal();
+        CopyDae();
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
+    }
+
+    /// <summary>
+    ///     Scans terrain materials and groundcovers from the source level for copying.
+    ///     Used by CopyTerrains.razor page.
+    ///     Does not include roads, decals, DAE files, or forest brushes.
+    /// </summary>
+    internal void ReadTerrainMaterialsForCopy()
+    {
+        Reset();
+        ReadMaterialsJson();
+        RemoveDuplicateMaterials(false);
+        ReadSourceMaterialsJson(); // Needed for groundcover material lookup
+        CopyTerrainMaterials();
+        CopyGroundCovers();
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Terrain Materials finished");
+    }
+
+    /// <summary>
+    ///     Scans only forest brushes from the source level for copying.
+    ///     This is a lightweight scan that doesn't include terrain materials, groundcovers,
+    ///     roads, decals, or DAE files - only forest brush definitions.
+    /// </summary>
+    internal void ReadForestBrushesForCopy()
+    {
+        Reset();
+        ReadSourceMaterialsJson(); // Needed for material lookup when copying shape files
+        CopyForestBrushes();
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Forest Brushes finished");
+    }
+
+    /// <summary>
+    ///     Scans materials.json files from the source level (levelPathCopyFrom) and populates MaterialsJsonCopy.
+    ///     This is needed by groundcover copier to find material definitions for dependencies.
+    /// </summary>
+    internal void ReadSourceMaterialsJson()
+    {
+        if (string.IsNullOrEmpty(_levelPathCopyFrom))
+            return;
+
+        var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+        if (dirInfo != null)
+        {
+            WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopySourceMaterials);
+            WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopySourceMaterials);
+            Console.WriteLine("Files with restricted access:");
+            foreach (var s in log) Console.WriteLine(s);
+        }
     }
 
     /// <summary>
@@ -685,6 +751,30 @@ internal class BeamFileReader
         }
     }
 
+    /// <summary>
+    ///     Scans and adds forest brushes from the source level to the copy list.
+    ///     Forest brushes are painting templates used in BeamNG's World Editor Forest tool.
+    /// </summary>
+    internal void CopyForestBrushes()
+    {
+        if (string.IsNullOrEmpty(_levelPathCopyFrom))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                "No source level path set for forest brush copy");
+            return;
+        }
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Scanning forest brushes from {_levelNameCopyFrom}...");
+
+        var forestBrushScanner = new ForestBrushCopyScanner(
+            _levelNamePathCopyFrom,
+            _levelNamePath,
+            CopyAssets);
+
+        forestBrushScanner.ScanForestBrushes();
+    }
+
     internal void ConvertToForest(List<Asset> assets)
     {
         var forestScanner = ReadForest();
@@ -696,7 +786,7 @@ internal class BeamFileReader
 
     internal void DeleteFromMissiongroups(List<Asset> assets)
     {
-        //Group assets by MissionGroupPath and return Missiongrouplines as List
+        //Group assetsby MissionGroup and return Missiongrouplines as List
         var assetsByMissionGroupPath = assets
             .Where(a => a.MissionGroupPath != null && a.MissionGroupLine != null)
             .GroupBy(a => a.MissionGroupPath)
@@ -908,6 +998,13 @@ internal class BeamFileReader
                         }
 
                         break;
+                    case ReadTypeEnum.CopySourceMaterials:
+                        // Scan materials.json files from SOURCE level and populate MaterialsJsonCopy
+                        // This is needed for groundcover material lookup
+                        var sourceMaterialScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, _levelNamePath,
+                            MaterialsJsonCopy, new List<Asset>(), new List<string>());
+                        sourceMaterialScanner.ScanMaterialsJsonFile();
+                        break;
                 }
             }
 
@@ -945,7 +1042,8 @@ internal class BeamFileReader
         ChangeHeightDecals = 20,
         CopyTerrainMaterials = 21,
         FindTerrainMaterialFiles = 22,
-        FindGroundCoverFiles = 23
+        FindGroundCoverFiles = 23,
+        CopySourceMaterials = 24
     }
 
     /// <summary>
