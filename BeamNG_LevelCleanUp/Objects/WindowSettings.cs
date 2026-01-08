@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.Objects;
 
@@ -8,11 +9,7 @@ namespace BeamNG_LevelCleanUp.Objects;
 /// </summary>
 public class WindowSettings
 {
-    private static readonly string SettingsFolder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "BeamNG_LevelCleanUp");
-
-    private static readonly string SettingsFile = Path.Combine(SettingsFolder, "window-settings.json");
+    private static readonly string SettingsFile = Path.Combine(AppPaths.SettingsFolder, "window-settings.json");
 
     public int Left { get; set; }
     public int Top { get; set; }
@@ -47,8 +44,8 @@ public class WindowSettings
     {
         try
         {
-            if (!Directory.Exists(SettingsFolder))
-                Directory.CreateDirectory(SettingsFolder);
+            if (!Directory.Exists(AppPaths.SettingsFolder))
+                Directory.CreateDirectory(AppPaths.SettingsFolder);
 
             var json = JsonSerializer.Serialize(this, BeamJsonOptions.GetJsonSerializerOptions());
             File.WriteAllText(SettingsFile, json);

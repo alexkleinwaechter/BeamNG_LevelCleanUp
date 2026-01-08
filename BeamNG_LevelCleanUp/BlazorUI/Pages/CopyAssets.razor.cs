@@ -483,7 +483,8 @@ public partial class CopyAssets
         _showDeployButton = false;
         _vanillaLevelSourceSelected = null;
         _vanillaLevelTargetSelected = null;
-        ZipFileHandler.WorkingDirectory = null;
+        // Reset to centralized working directory instead of null
+        AppPaths.EnsureWorkingDirectory();
         Reader = null;
         _copyCompleted = false;
         _copiedAssetsCount = 0;
@@ -585,8 +586,15 @@ public partial class CopyAssets
 
         InitializeVariables();
         _isLoadingMap = true;
-        ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
         _initialWorkingDirectory = ZipFileHandler.WorkingDirectory;
+        
+        // Copy file to centralized working directory if not already there
+        var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
+        if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Copy(file, targetFile, true);
+        }
+        
         await Task.Run(() =>
         {
             try
@@ -594,8 +602,7 @@ public partial class CopyAssets
                 _unzipSnackbarCopyFrom = Snackbar.Add("Unzipping source level...", Severity.Normal,
                     config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPathCopyFrom =
-                    ZipFileHandler.ExtractToDirectory(
-                        Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_copyFrom", true);
+                    ZipFileHandler.ExtractToDirectory(targetFile, "_copyFrom", true);
                 Reader = new BeamFileReader(_levelPathCopyFrom, null);
                 _levelNameCopyFrom = Reader.GetLevelName();
                 Snackbar.Add("Unzipping source level finished", Severity.Success);
@@ -725,23 +732,29 @@ public partial class CopyAssets
     {
         _isLoadingMap = true;
 
-        if (_vanillaLevelTargetSelected == null)
+        if (isFolder)
         {
-            ZipFileHandler.WorkingDirectory = isFolder ? file : Path.GetDirectoryName(file);
+            // Direct folder mode - work in place, set working directory to the folder
+            ZipFileHandler.WorkingDirectory = file;
         }
-        else if (!isFolder && ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(file))
+        else
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Copy target level to {ZipFileHandler.WorkingDirectory} ...");
-            try
+            // ZIP mode - copy to centralized temp folder if needed
+            var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
+            if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
             {
-                File.Copy(file, Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), true);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, "Copy target level finished");
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Error,
-                    $"Error copy target level to working directory: {ex.Message}");
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Copy target level to {ZipFileHandler.WorkingDirectory} ...");
+                try
+                {
+                    File.Copy(file, targetFile, true);
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, "Copy target level finished");
+                }
+                catch (Exception ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Error,
+                        $"Error copy target level to working directory: {ex.Message}");
+                }
             }
         }
 
@@ -844,6 +857,9 @@ public partial class CopyAssets
 
     protected override void OnInitialized()
     {
+        // IMPORTANT: Always reset to default working directory on page init
+        AppPaths.EnsureWorkingDirectory();
+        
         _fileSelectExpanded = true;
         var consumer = Task.Run(async () =>
         {
@@ -1093,12 +1109,6 @@ public partial class CopyAssets
 
     public void SetDefaultWorkingDirectory()
     {
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory) ||
-            (_vanillaLevelSourceSelected != null && _vanillaLevelTargetSelected != null))
-        {
-            ZipFileHandler.WorkingDirectory =
-                Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BeamNgMT");
-            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
-        }
+        AppPaths.EnsureWorkingDirectory();
     }
 }

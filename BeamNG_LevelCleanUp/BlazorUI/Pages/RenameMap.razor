@@ -161,13 +161,19 @@
             _staticSnackbar = null;
         }
 
-        ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
+        // Copy file to centralized working directory if not already there
+        var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
+        if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Copy(file, targetFile, true);
+        }
+
         await Task.Run(() =>
         {
             try
             {
                 _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-                _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
+                _levelPath = ZipFileHandler.ExtractToDirectory(targetFile, "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
                 Snackbar.Remove(_staticSnackbar);
             }
@@ -279,15 +285,14 @@
 
     public void SetDefaultWorkingDirectory()
     {
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory) || _vanillaLevelSourceSelected != null)
-        {
-            ZipFileHandler.WorkingDirectory = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BeamNgMT");
-            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
-        }
+        AppPaths.EnsureWorkingDirectory();
     }
 
     protected override void OnInitialized()
     {
+        // IMPORTANT: Always reset to default working directory on page init
+        AppPaths.EnsureWorkingDirectory();
+        
         CheckPreviousLevel();
         var consumer = Task.Run(async () =>
         {
@@ -489,4 +494,4 @@
         }
     }
 
-}
+}}

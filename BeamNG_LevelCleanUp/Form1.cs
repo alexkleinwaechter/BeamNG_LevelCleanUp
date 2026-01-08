@@ -1,6 +1,7 @@
 ﻿using BeamNG_LevelCleanUp.BlazorUI;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using Microsoft.AspNetCore.Components.WebView.WindowsForms;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
@@ -13,6 +14,9 @@ public partial class Form1 : Form
     {
         InitializeComponent();
         RestoreWindowSettings();
+        
+        // Initialize centralized application paths and clean up stale temp folders from previous sessions
+        AppPaths.Initialize(cleanupOnStartup: true);
 
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddWindowsFormsBlazorWebView();

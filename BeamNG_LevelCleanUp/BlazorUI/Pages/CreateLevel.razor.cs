@@ -50,6 +50,9 @@ public partial class CreateLevel
 
     protected override void OnInitialized()
     {
+        // IMPORTANT: Always reset to default working directory on page init
+        AppPaths.EnsureWorkingDirectory();
+        
         // Subscribe to PubSub messages
         var consumer = Task.Run(async () =>
         {
@@ -442,13 +445,7 @@ public partial class CreateLevel
 
     private void SetDefaultWorkingDirectory()
     {
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
-        {
-            ZipFileHandler.WorkingDirectory = Path.Join(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                "BeamNgMT");
-            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
-        }
+        AppPaths.EnsureWorkingDirectory();
     }
 
     /// <summary>
@@ -457,43 +454,7 @@ public partial class CreateLevel
     /// </summary>
     private void CleanupWorkingDirectories()
     {
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
-            return;
-
-        // Clean up tracked paths via ZipFileHandler
-        ZipFileHandler.CleanUpWorkingDirectory();
-
-        // Also explicitly delete _unpacked and _copyFrom folders if they exist
-        // (in case they weren't tracked by ZipFileHandler)
-        var unpackedPath = Path.Join(ZipFileHandler.WorkingDirectory, "_unpacked");
-        if (Directory.Exists(unpackedPath))
-        {
-            try
-            {
-                Directory.Delete(unpackedPath, true);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, "Cleaned up _unpacked folder");
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"Could not clean up _unpacked folder: {ex.Message}");
-            }
-        }
-
-        var copyFromPath = Path.Join(ZipFileHandler.WorkingDirectory, "_copyFrom");
-        if (Directory.Exists(copyFromPath))
-        {
-            try
-            {
-                Directory.Delete(copyFromPath, true);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, "Cleaned up _copyFrom folder");
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"Could not clean up _copyFrom folder: {ex.Message}");
-            }
-        }
+        AppPaths.CleanupTempFolders();
     }
 
     private void ShowException(Exception ex)

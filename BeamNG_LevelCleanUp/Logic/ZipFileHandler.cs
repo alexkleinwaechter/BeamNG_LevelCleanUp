@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Text;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.Logic;
 
@@ -27,7 +28,59 @@ public static class ZipFileHandler
     private static string _lastCopyFromUnpackedPath { get; set; }
     private static string _lastUnpackedZip { get; set; }
     private static string _lastCopyFromUnpackedZip { get; set; }
-    public static string WorkingDirectory { get; set; }
+    
+    private static string _workingDirectory;
+    
+    /// <summary>
+    /// Gets or sets the working directory for extraction operations.
+    /// Defaults to AppPaths.TempFolder when not explicitly set.
+    /// </summary>
+    public static string WorkingDirectory 
+    { 
+        get => _workingDirectory ?? AppPaths.TempFolder;
+        set => _workingDirectory = value;
+    }
+
+    /// <summary>
+    /// Resets working directory to the default centralized temp folder.
+    /// Call this instead of setting WorkingDirectory = null.
+    /// </summary>
+    public static void ResetToDefaultWorkingDirectory()
+    {
+        _workingDirectory = AppPaths.TempFolder;
+    }
+
+    /// <summary>
+    /// Resets all static path references. Call this on application startup
+    /// when cleaning up stale temp folders from previous sessions.
+    /// Note: This does NOT affect BeamFileReader static state used for "previously loaded level" detection.
+    /// </summary>
+    public static void ResetStaticPaths()
+    {
+        _lastUnpackedPath = null;
+        _lastCopyFromUnpackedPath = null;
+        _lastUnpackedZip = null;
+        _lastCopyFromUnpackedZip = null;
+        _nameLevelPath = null;
+    }
+
+    /// <summary>
+    /// Resets only the unpacked path references. Call this when cleaning up the _unpacked folder.
+    /// </summary>
+    public static void ResetUnpackedPaths()
+    {
+        _lastUnpackedPath = null;
+        _lastUnpackedZip = null;
+    }
+
+    /// <summary>
+    /// Resets only the copyFrom path references. Call this when cleaning up the _copyFrom folder.
+    /// </summary>
+    public static void ResetCopyFromPaths()
+    {
+        _lastCopyFromUnpackedPath = null;
+        _lastCopyFromUnpackedZip = null;
+    }
 
     public static string ExtractToDirectory(string filePath, string relativeTarget, bool isCopyFrom = false)
     {
@@ -72,12 +125,14 @@ public static class ZipFileHandler
         {
             var deleteDir = new DirectoryInfo(_lastUnpackedPath);
             if (deleteDir.Exists) Directory.Delete(_lastUnpackedPath, true);
+            _lastUnpackedPath = null; // Reset after cleanup
         }
 
         if (!string.IsNullOrEmpty(_lastCopyFromUnpackedPath))
         {
             var deleteDir = new DirectoryInfo(_lastCopyFromUnpackedPath);
             if (deleteDir.Exists) Directory.Delete(_lastCopyFromUnpackedPath, true);
+            _lastCopyFromUnpackedPath = null; // Reset after cleanup
         }
 
         //if (!string.IsNullOrEmpty(_lastUnpackedZip))
