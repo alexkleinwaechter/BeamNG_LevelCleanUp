@@ -29,6 +29,11 @@ public class ProtectedBlendingProcessor
 
     /// <summary>
     /// Applies protected blending with per-spline blend ranges.
+    /// 
+    /// IMPORTANT: The blend zone calculation uses the distance from the OWNING spline's
+    /// nearest cross-section, not the global distance field. This ensures that the blend
+    /// transition is relative to the road that "owns" this pixel, providing smooth
+    /// road-to-terrain transitions regardless of the FlipMaterialProcessingOrder setting.
     /// </summary>
     public (float[,] result, BlendingStatistics stats) ApplyProtectedBlending(
         float[,] original,
@@ -84,9 +89,6 @@ public class ProtectedBlendingProcessor
                 if (float.IsNaN(targetElevation))
                     continue;
 
-                // Get distance from road core
-                var d = distanceField[y, x];
-
                 // Get owner spline parameters
                 if (!splineParams.TryGetValue(ownerId, out var ownerParams))
                     continue;
@@ -96,17 +98,33 @@ public class ProtectedBlendingProcessor
                 var blendFunctionType = ownerParams.BlendFunction;
                 var ownerPriority = ownerParams.Priority;
 
+                // Calculate distance from the OWNING spline's road core, not global distance field.
+                // This is critical for correct blend transitions - we need the distance relative
+                // to the road that owns this pixel, not the nearest road core overall.
+                var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
+                var distToOwner = CalculateDistanceToOwningSpline(
+                    worldPos, ownerId, crossSectionsBySpline, halfWidth);
+                
+                // Use global distance field only for road core detection (as fallback),
+                // but use owner-specific distance for blend zone calculations
+                var globalDist = distanceField[y, x];
+
                 float newH;
 
-                if (d <= halfWidth)
+                // Use the minimum of global distance and owner distance for core detection
+                // This ensures we're in the road core if EITHER measure says so
+                var effectiveDistForCore = MathF.Min(globalDist, distToOwner);
+
+                if (effectiveDistForCore <= halfWidth)
                 {
                     // ROAD CORE - Protected zone, use target elevation directly
                     newH = targetElevation;
                     localCore++;
                 }
-                else if (d <= halfWidth + blendRange)
+                else if (distToOwner <= halfWidth + blendRange)
                 {
-                    // BLEND ZONE - Check protection rules
+                    // BLEND ZONE - Use distance from owning spline for proper transition
+                    // Check protection rules
 
                     // Rule 1: If this pixel is inside any road's protection zone, don't blend toward terrain
                     if (protectionMask[y, x])
@@ -117,7 +135,6 @@ public class ProtectedBlendingProcessor
 
                     // Rule 2: Check if we're in the blend zone of a lower-priority road but within
                     // the protection buffer of a higher-priority road.
-                    var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
                     var higherPriorityElevation = FindHigherPriorityProtectedElevation(
                         worldPos, ownerId, ownerPriority, network.Splines, splineParams, 
                         crossSectionsBySpline, metersPerPixel);
@@ -130,7 +147,8 @@ public class ProtectedBlendingProcessor
                     else
                     {
                         // Safe to blend - Smooth transition to terrain
-                        var t = (d - halfWidth) / blendRange;
+                        // Use distance from OWNING spline for blend calculation
+                        var t = (distToOwner - halfWidth) / blendRange;
                         t = Math.Clamp(t, 0f, 1f);
 
                         var blend = BlendFunctions.Apply(t, blendFunctionType);
@@ -167,6 +185,40 @@ public class ProtectedBlendingProcessor
         LogStatistics(stats);
 
         return (result, stats);
+    }
+
+    /// <summary>
+    /// Calculates the distance from a world position to the owning spline's road core.
+    /// This is used for blend zone calculations to ensure proper road-to-terrain transitions.
+    /// </summary>
+    /// <param name="worldPos">The world position to calculate distance from</param>
+    /// <param name="ownerId">The ID of the spline that owns this pixel</param>
+    /// <param name="crossSectionsBySpline">Spatial index of cross-sections by spline</param>
+    /// <param name="halfWidth">Half-width of the road for this spline</param>
+    /// <returns>Distance from the owning spline's centerline to the world position</returns>
+    private static float CalculateDistanceToOwningSpline(
+        Vector2 worldPos,
+        int ownerId,
+        SplineGroupedSpatialIndex crossSectionsBySpline,
+        float halfWidth)
+    {
+        // Find the nearest cross-section of the owning spline
+        var searchRadius = halfWidth * 4; // Search radius to find nearby cross-sections
+        var nearestCs = crossSectionsBySpline.FindNearestForSpline(worldPos, ownerId, searchRadius);
+
+        if (nearestCs == null)
+        {
+            // Fallback: if we can't find a cross-section, return a large distance
+            // This shouldn't happen if ownership is set correctly
+            return float.MaxValue;
+        }
+
+        // Calculate perpendicular distance from the cross-section's centerline
+        // Project the position onto the normal direction to get lateral offset
+        var toPoint = worldPos - nearestCs.CenterPoint;
+        var lateralOffset = MathF.Abs(Vector2.Dot(toPoint, nearestCs.NormalDirection));
+
+        return lateralOffset;
     }
 
     /// <summary>
