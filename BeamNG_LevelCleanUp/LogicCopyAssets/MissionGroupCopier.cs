@@ -6,7 +6,9 @@ using BeamNG_LevelCleanUp.Objects;
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
 
 /// <summary>
-///     Handles copying of MissionGroup data and associated files for Create Level wizard
+///     Handles copying of MissionGroup data and associated files for Create Level wizard.
+///     This class properly recreates the MissionGroup hierarchy from the source level,
+///     maintaining the folder structure and parent relationships.
 /// </summary>
 public class MissionGroupCopier
 {
@@ -17,6 +19,19 @@ public class MissionGroupCopier
     private readonly string _targetLevelName;
     private readonly string _targetLevelNamePath;
     private readonly string _targetLevelPath;
+
+    /// <summary>
+    ///     Tracks SimGroup definitions parsed from source level.
+    ///     Key: SimGroup name (e.g., "sky", "terrain", "vegetation")
+    ///     Value: Tuple of (parent name, original JSON line)
+    /// </summary>
+    private readonly Dictionary<string, (string Parent, string OriginalJson)> _simGroups = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     Maps class types to their expected parent SimGroup names based on source level structure.
+    ///     Populated during source level parsing.
+    /// </summary>
+    private readonly Dictionary<string, string> _classToParentMap = new(StringComparer.OrdinalIgnoreCase);
 
     public MissionGroupCopier(
         List<Asset> missionGroupAssets,
@@ -45,16 +60,19 @@ public class MissionGroupCopier
         {
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Copying MissionGroup data...");
 
-            // 1. Create target directory structure
+            // 1. Parse source level hierarchy to understand SimGroup structure
+            ParseSourceHierarchy();
+
+            // 2. Create target directory structure based on source hierarchy
             CreateDirectoryStructure();
 
-            // 2. Copy referenced files
+            // 3. Copy referenced files
             CopyReferencedFiles();
 
-            // 3. Copy referenced materials (cubemaps, moon materials, flare types)
+            // 4. Copy referenced materials (cubemaps, moon materials, flare types)
             CopyReferencedMaterials();
 
-            // 4. Write MissionGroup items to target
+            // 5. Write MissionGroup items to target with proper hierarchy
             WriteMissionGroupItems();
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
@@ -69,22 +87,179 @@ public class MissionGroupCopier
     }
 
     /// <summary>
+    ///     Parses the source level's MissionGroup hierarchy to understand SimGroup structure.
+    ///     This is essential for recreating the proper folder structure in the target level.
+    /// </summary>
+    private void ParseSourceHierarchy()
+    {
+        var sourceMissionGroupPath = Path.Join(_sourceLevelNamePath, "main", "MissionGroup");
+        if (!Directory.Exists(sourceMissionGroupPath))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Source MissionGroup directory not found: {sourceMissionGroupPath}");
+            return;
+        }
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            "Parsing source level hierarchy...", true);
+
+        // Recursively parse all items.level.json files to build SimGroup map
+        ParseDirectoryForSimGroups(sourceMissionGroupPath, "MissionGroup");
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Found {_simGroups.Count} SimGroup(s) in source level", true);
+
+        // Log the hierarchy for debugging
+        foreach (var sg in _simGroups)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"  SimGroup '{sg.Key}' -> parent '{sg.Value.Parent}'", true);
+        }
+    }
+
+    /// <summary>
+    ///     Recursively parses a directory and its subdirectories for SimGroup definitions.
+    /// </summary>
+    private void ParseDirectoryForSimGroups(string directoryPath, string expectedParent)
+    {
+        var itemsFilePath = Path.Join(directoryPath, "items.level.json");
+        if (!File.Exists(itemsFilePath))
+            return;
+
+        try
+        {
+            var lines = File.ReadAllLines(itemsFilePath);
+            foreach (var line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+
+                    if (!root.TryGetProperty("class", out var classProperty))
+                        continue;
+
+                    var className = classProperty.GetString();
+                    var name = root.TryGetProperty("name", out var nameProperty)
+                        ? nameProperty.GetString()
+                        : null;
+                    var parent = root.TryGetProperty("__parent", out var parentProperty)
+                        ? parentProperty.GetString()
+                        : expectedParent;
+
+                    if (className == "SimGroup" && !string.IsNullOrEmpty(name))
+                    {
+                        // Track this SimGroup for hierarchy reconstruction
+                        if (!_simGroups.ContainsKey(name))
+                        {
+                            _simGroups[name] = (parent, line);
+                        }
+
+                        // Check if there's a subdirectory for this SimGroup
+                        var subDirPath = Path.Join(directoryPath, name);
+                        if (Directory.Exists(subDirPath))
+                        {
+                            ParseDirectoryForSimGroups(subDirPath, name);
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(className) && !string.IsNullOrEmpty(parent))
+                    {
+                        // Track which parent each class type belongs to
+                        // This helps us know where to place objects of each class
+                        if (!_classToParentMap.ContainsKey(className))
+                        {
+                            _classToParentMap[className] = parent;
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Skip malformed lines
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Could not parse {itemsFilePath}: {ex.Message}", true);
+        }
+
+        // Also check all subdirectories
+        try
+        {
+            foreach (var subDir in Directory.GetDirectories(directoryPath))
+            {
+                var subDirName = new DirectoryInfo(subDir).Name;
+                ParseDirectoryForSimGroups(subDir, subDirName);
+            }
+        }
+        catch
+        {
+            // Ignore directory enumeration errors
+        }
+    }
+
+    /// <summary>
+    ///     Gets the ancestry chain for a SimGroup (from root to the SimGroup).
+    /// </summary>
+    private List<string> GetSimGroupAncestry(string simGroupName)
+    {
+        var ancestry = new List<string>();
+        var current = simGroupName;
+
+        while (!string.IsNullOrEmpty(current) && 
+               !current.Equals("MissionGroup", StringComparison.OrdinalIgnoreCase))
+        {
+            ancestry.Insert(0, current);
+            if (_simGroups.TryGetValue(current, out var info))
+            {
+                current = info.Parent;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return ancestry;
+    }
+
+    /// <summary>
     ///     Creates the necessary directory structure in the target level
     /// </summary>
     private void CreateDirectoryStructure()
     {
-        var directories = new[]
+        // Create base directories
+        var baseDirectories = new[]
         {
-            Path.Join(_targetLevelNamePath, "main", "MissionGroup", "Level_object"),
+            Path.Join(_targetLevelNamePath, "main", "MissionGroup", "level_object"),
             Path.Join(_targetLevelNamePath, "main", "MissionGroup", "PlayerDropPoints"),
             Path.Join(_targetLevelNamePath, "art", "skies"),
             Path.Join(_targetLevelNamePath, "art", "terrains")
         };
 
-        foreach (var dir in directories)
+        foreach (var dir in baseDirectories)
         {
             Directory.CreateDirectory(dir);
             PubSubChannel.SendMessage(PubSubMessageType.Info, $"Created directory: {dir}", true);
+        }
+
+        // Create subdirectories for level_object based on source hierarchy
+        // Find all SimGroups that are children of level_object (or Level_object)
+        var levelObjectChildren = _simGroups
+            .Where(sg => sg.Value.Parent.Equals("level_object", StringComparison.OrdinalIgnoreCase) ||
+                        sg.Value.Parent.Equals("Level_object", StringComparison.OrdinalIgnoreCase))
+            .Select(sg => sg.Key)
+            .ToList();
+
+        foreach (var childName in levelObjectChildren)
+        {
+            var childDir = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "level_object", childName.ToLowerInvariant());
+            Directory.CreateDirectory(childDir);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Created hierarchy directory: {childDir}", true);
         }
 
         // Create hierarchy items.level.json files
@@ -111,14 +286,14 @@ public class MissionGroupCopier
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Created main/items.level.json with MissionGroup entry",
             true);
 
-        // 2. Create main/MissionGroup/items.level.json with Level_object and PlayerDropPoints entries
+        // 2. Create main/MissionGroup/items.level.json with level_object and PlayerDropPoints entries
         var missionGroupItemsPath = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "items.level.json");
         var lines = new List<string>();
 
-        // Level_object SimGroup
+        // level_object SimGroup (lowercase for consistency)
         var levelObjectEntry = new Dictionary<string, object>
         {
-            { "name", "Level_object" },
+            { "name", "level_object" },
             { "class", "SimGroup" },
             { "persistentId", Guid.NewGuid().ToString() },
             { "__parent", "MissionGroup" }
@@ -137,12 +312,47 @@ public class MissionGroupCopier
 
         File.WriteAllLines(missionGroupItemsPath, lines);
         PubSubChannel.SendMessage(PubSubMessageType.Info,
-            "Created main/MissionGroup/items.level.json with Level_object and PlayerDropPoints entries", true);
+            "Created main/MissionGroup/items.level.json with level_object and PlayerDropPoints entries", true);
 
         // 3. Create PlayerDropPoints/items.level.json with spawn_default_MT SpawnSphere
         CreateDefaultSpawnPoint();
 
-        // 4. main/MissionGroup/Level_object/items.level.json will be created by WriteMissionGroupItems()
+        // 4. Create level_object/items.level.json with SimGroup entries for each child category
+        CreateLevelObjectHierarchy();
+    }
+
+    /// <summary>
+    ///     Creates the level_object hierarchy with SimGroup entries for sky, terrain, vegetation, etc.
+    /// </summary>
+    private void CreateLevelObjectHierarchy()
+    {
+        var levelObjectItemsPath = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "level_object", "items.level.json");
+        var lines = new List<string>();
+
+        // Standard categories for level_object
+        var standardCategories = new[] { "sky", "terrain", "vegetation" };
+
+        foreach (var category in standardCategories)
+        {
+            var categoryDir = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "level_object", category);
+            Directory.CreateDirectory(categoryDir);
+
+            var categoryEntry = new Dictionary<string, object>
+            {
+                { "name", category },
+                { "class", "SimGroup" },
+                { "persistentId", Guid.NewGuid().ToString() },
+                { "__parent", "level_object" }
+            };
+            lines.Add(JsonSerializer.Serialize(categoryEntry, BeamJsonOptions.GetJsonSerializerOneLineOptions()));
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Created SimGroup entry for '{category}'", true);
+        }
+
+        File.WriteAllLines(levelObjectItemsPath, lines);
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            "Created main/MissionGroup/level_object/items.level.json with category SimGroups", true);
     }
 
     /// <summary>
@@ -321,28 +531,53 @@ public class MissionGroupCopier
     }
 
     /// <summary>
-    ///     Writes MissionGroup items to items.level.json in target level
+    ///     Writes MissionGroup items to items.level.json files in the proper hierarchy locations.
+    ///     Objects are categorized and placed in appropriate subdirectories:
+    ///     - sky: ScatterSky, TimeOfDay, CloudLayer, LevelInfo
+    ///     - terrain: TerrainBlock
+    ///     - vegetation: ForestWindEmitter, Forest
+    ///     Note: GroundCover is NOT copied here - it's handled separately by terrain material copying.
     /// </summary>
     private void WriteMissionGroupItems()
     {
         try
         {
-            var missionGroupPath = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "Level_object",
-                "items.level.json");
-            var lines = new List<string>();
-
             // Get source level name for path replacement
             var sourceLevelName = new DirectoryInfo(_sourceLevelNamePath).Name;
 
-            // Read the original MissionGroup items.level.json files from source
-            // BeamNG stores these in subdirectories under Level_object/
-            var sourceMissionGroupPath = Path.Join(_sourceLevelNamePath, "main", "MissionGroup");
-            var sourceLevelObjectPath = Path.Join(sourceMissionGroupPath, "Level_object");
+            // Define the mapping of class types to their target category folders
+            // Note: GroundCover is NOT included - it's handled separately by terrain material copying
+            var classToCategory = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "ScatterSky", "sky" },
+                { "TimeOfDay", "sky" },
+                { "CloudLayer", "sky" },
+                { "LevelInfo", "sky" },
+                { "TerrainBlock", "terrain" },
+                { "ForestWindEmitter", "vegetation" },
+                { "Forest", "vegetation" }
+            };
 
-            // Check if Level_object directory exists
-            if (!Directory.Exists(sourceLevelObjectPath))
-                // Fallback: try direct MissionGroup path
+            // Dictionary to hold items grouped by their target category
+            var itemsByCategory = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "sky", new List<string>() },
+                { "terrain", new List<string>() },
+                { "vegetation", new List<string>() }
+            };
+
+            // Read the original MissionGroup items.level.json files from source
+            var sourceMissionGroupPath = Path.Join(_sourceLevelNamePath, "main", "MissionGroup");
+            
+            // Try to find level_object or Level_object directory
+            var sourceLevelObjectPath = FindLevelObjectDirectory(sourceMissionGroupPath);
+            
+            if (string.IsNullOrEmpty(sourceLevelObjectPath))
+            {
                 sourceLevelObjectPath = sourceMissionGroupPath;
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "No level_object directory found, scanning entire MissionGroup folder");
+            }
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Reading source MissionGroup from: {sourceLevelObjectPath}", true);
@@ -362,7 +597,8 @@ public class MissionGroupCopier
 
             // Filter to only include lines for our allowed classes
             // Note: SpawnSphere is NOT included - we always generate a fresh one in PlayerDropPoints
-            var allowedClasses = new HashSet<string>
+            // Note: GroundCover is NOT included - it's handled separately by terrain material copying
+            var allowedClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "LevelInfo",
                 "TerrainBlock",
@@ -383,9 +619,9 @@ public class MissionGroupCopier
                 var sourceLines = File.ReadAllLines(itemsFile);
                 totalLines += sourceLines.Length;
 
+                var relativePath = Path.GetRelativePath(sourceLevelObjectPath, Path.GetDirectoryName(itemsFile) ?? "");
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Reading {sourceLines.Length} lines from {Path.GetFileName(Path.GetDirectoryName(itemsFile))}/items.level.json",
-                    true);
+                    $"Reading {sourceLines.Length} lines from {relativePath}/items.level.json", true);
 
                 foreach (var line in sourceLines)
                 {
@@ -399,23 +635,23 @@ public class MissionGroupCopier
                         var root = doc.RootElement;
 
                         // Check if this is one of our allowed classes
-                        if (root.TryGetProperty("class", out var classProperty))
-                        {
-                            var className = classProperty.GetString();
-                            if (!allowedClasses.Contains(className))
-                            {
-                                skippedCount++;
-                                continue; // Skip classes we don't want to copy
-                            }
+                        if (!root.TryGetProperty("class", out var classProperty))
+                            continue;
 
-                            processedCount++;
-                            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                $"Processing {className} object", true);
-                        }
-                        else
+                        var className = classProperty.GetString();
+                        if (string.IsNullOrEmpty(className) || !allowedClasses.Contains(className))
                         {
-                            continue; // Skip if no class property
+                            skippedCount++;
+                            continue;
                         }
+
+                        processedCount++;
+                        
+                        // Determine target category
+                        var targetCategory = classToCategory.TryGetValue(className, out var cat) ? cat : "sky";
+
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Processing {className} object -> {targetCategory}", true);
 
                         // Convert to mutable dictionary
                         var jsonDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(line);
@@ -423,46 +659,23 @@ public class MissionGroupCopier
                             continue;
 
                         // Update path fields - replace source level name with target level name
-                        UpdatePathField(jsonDict, "terrainFile", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "texture", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "ambientScaleGradientFile", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "colorizeGradientFile", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "fogScaleGradientFile", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "nightFogGradientFile", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "nightGradientFile", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "sunScaleGradientFile", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "flareType", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "nightCubemap", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "globalEnviromentMap", sourceLevelName, _targetLevelName);
-                        UpdatePathField(jsonDict, "moonMat", sourceLevelName, _targetLevelName);
+                        UpdateAllPathFields(jsonDict, sourceLevelName, _targetLevelName);
 
                         // Special handling for CloudLayer texture - update to new location in art/skies
-                        if (jsonDict.TryGetValue("class", out var classElement) &&
-                            classElement.GetString() == "CloudLayer" &&
-                            jsonDict.TryGetValue("texture", out var textureElement))
-                        {
-                            var texturePath = textureElement.GetString();
-                            if (!string.IsNullOrEmpty(texturePath))
-                            {
-                                var textureFileName = Path.GetFileName(texturePath);
-                                var newTexturePath = $"/levels/{_targetLevelName}/art/skies/{textureFileName}";
-                                jsonDict["texture"] = JsonSerializer.SerializeToElement(newTexturePath);
+                        HandleCloudLayerTexture(jsonDict, className);
 
-                                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                                    $"Updated CloudLayer texture: {textureFileName}", true);
-                            }
-                        }
-
-                        // Set __parent to Level_object for all copied objects
-                        jsonDict["__parent"] = JsonSerializer.SerializeToElement("Level_object");
+                        // Set __parent to the target category (e.g., "sky", "terrain", "vegetation")
+                        jsonDict["__parent"] = JsonSerializer.SerializeToElement(targetCategory);
 
                         // Generate new persistentId for copied objects
                         if (jsonDict.ContainsKey("persistentId"))
                             jsonDict["persistentId"] = JsonSerializer.SerializeToElement(Guid.NewGuid().ToString());
+
                         // Serialize back to JSON (one line, preserving all original fields)
                         var updatedJson = JsonSerializer.Serialize(jsonDict,
                             BeamJsonOptions.GetJsonSerializerOneLineOptions());
-                        lines.Add(updatedJson);
+                        
+                        itemsByCategory[targetCategory].Add(updatedJson);
                     }
                     catch (JsonException ex)
                     {
@@ -475,18 +688,32 @@ public class MissionGroupCopier
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Read {totalLines} total lines, processed {processedCount} objects, skipped {skippedCount} objects");
 
-            if (lines.Count == 0)
+            // Write items to their respective category files
+            var totalWritten = 0;
+            foreach (var category in itemsByCategory)
+            {
+                if (category.Value.Count == 0)
+                    continue;
+
+                var categoryPath = Path.Join(_targetLevelNamePath, "main", "MissionGroup", "level_object", category.Key, "items.level.json");
+                Directory.CreateDirectory(Path.GetDirectoryName(categoryPath)!);
+                File.WriteAllLines(categoryPath, category.Value);
+                
+                totalWritten += category.Value.Count;
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Wrote {category.Value.Count} item(s) to {category.Key}/items.level.json");
+            }
+
+            if (totalWritten == 0)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     "No allowed classes found in source files");
-                return;
             }
-
-            // Write all lines to single file
-            File.WriteAllLines(missionGroupPath, lines);
-
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Wrote {lines.Count} MissionGroup items to: {missionGroupPath}");
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Total: wrote {totalWritten} MissionGroup items across {itemsByCategory.Count(c => c.Value.Count > 0)} categories");
+            }
         }
         catch (Exception ex)
         {
@@ -494,6 +721,83 @@ public class MissionGroupCopier
                 $"Error writing MissionGroup items: {ex.Message}");
             throw;
         }
+    }
+
+    /// <summary>
+    ///     Finds the level_object directory in the source level, accounting for case variations.
+    /// </summary>
+    private string FindLevelObjectDirectory(string missionGroupPath)
+    {
+        if (!Directory.Exists(missionGroupPath))
+            return null;
+
+        // Try common variations
+        var variations = new[] { "level_object", "Level_object", "LevelObject", "levelObject" };
+        
+        foreach (var variation in variations)
+        {
+            var path = Path.Join(missionGroupPath, variation);
+            if (Directory.Exists(path))
+                return path;
+        }
+
+        // Try case-insensitive search
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(missionGroupPath))
+            {
+                var dirName = new DirectoryInfo(dir).Name;
+                if (dirName.Equals("level_object", StringComparison.OrdinalIgnoreCase))
+                    return dir;
+            }
+        }
+        catch
+        {
+            // Ignore enumeration errors
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Updates all known path fields in the JSON dictionary.
+    /// </summary>
+    private void UpdateAllPathFields(Dictionary<string, JsonElement> jsonDict, string sourceLevelName, string targetLevelName)
+    {
+        var pathFields = new[]
+        {
+            "terrainFile", "texture", "ambientScaleGradientFile", "colorizeGradientFile",
+            "fogScaleGradientFile", "nightFogGradientFile", "nightGradientFile", "sunScaleGradientFile",
+            "flareType", "nightCubemap", "globalEnviromentMap", "moonMat"
+        };
+
+        foreach (var field in pathFields)
+        {
+            UpdatePathField(jsonDict, field, sourceLevelName, targetLevelName);
+        }
+    }
+
+    /// <summary>
+    ///     Handles CloudLayer texture path updates.
+    /// </summary>
+    private void HandleCloudLayerTexture(Dictionary<string, JsonElement> jsonDict, string className)
+    {
+        if (!className.Equals("CloudLayer", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!jsonDict.TryGetValue("texture", out var textureElement))
+            return;
+
+        var texturePath = textureElement.GetString();
+        if (string.IsNullOrEmpty(texturePath))
+            return;
+
+        var textureFileName = Path.GetFileName(texturePath);
+        var newTexturePath = $"/levels/{_targetLevelName}/art/skies/{textureFileName}";
+        jsonDict["texture"] = JsonSerializer.SerializeToElement(newTexturePath);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Updated CloudLayer texture: {textureFileName}", true);
     }
 
     /// <summary>
