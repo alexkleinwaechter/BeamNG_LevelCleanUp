@@ -1,4 +1,5 @@
 ﻿using BeamNG_LevelCleanUp.BlazorUI;
+using BeamNG_LevelCleanUp.BlazorUI.Services;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
@@ -27,6 +28,9 @@ public partial class Form1 : Form
 
         // Code for MudBlazor
         serviceCollection.AddMudServices();
+        
+        // Add 3D viewer service
+        serviceCollection.AddSingleton<Viewer3DService>();
 
         blazorWebView1.HostPage = @"wwwroot\index.html";
 #if DEBUG

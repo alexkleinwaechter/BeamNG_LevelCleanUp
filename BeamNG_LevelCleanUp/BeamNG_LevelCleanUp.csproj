@@ -5,6 +5,7 @@
     <TargetFramework>net9.0-windows10.0.17763.0</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyVersion>1.3.4.0</AssemblyVersion>
     <FileVersion>1.3.4.0</FileVersion>
@@ -15,7 +16,9 @@
 
   <ItemGroup>
     <PackageReference Include="Autoupdater.NET.Official" Version="1.9.2" />
-    <PackageReference Include="Blazor3D" Version="0.1.42" />
+    <!-- Helix Toolkit for 3D rendering (replaced Blazor3D) -->
+    <PackageReference Include="HelixToolkit.Wpf.SharpDX" Version="2.24.0" />
+    <PackageReference Include="HelixToolkit.SharpDX.Assimp" Version="2.24.0" />
     <!-- MaxRev GDAL packages for WiX installer compatibility -->
     <PackageReference Include="MaxRev.Gdal.Core" Version="3.10.0.300" />
     <PackageReference Include="MaxRev.Gdal.WindowsRuntime.Minimal" Version="3.10.0.300" />

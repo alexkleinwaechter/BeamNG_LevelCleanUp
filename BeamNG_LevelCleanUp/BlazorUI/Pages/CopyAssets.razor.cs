@@ -2,6 +2,7 @@
 using System.IO.Compression;
 using System.Reflection;
 using BeamNG_LevelCleanUp.BlazorUI.Components;
+using BeamNG_LevelCleanUp.BlazorUI.Services;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
@@ -14,6 +15,22 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Pages;
 
 public partial class CopyAssets
 {
+    private readonly string _fileSelectTitle = "Select the target level you want to copy to";
+    private readonly string _fileSelectTitleCopyFrom = "Select the zipped source level you want to copy from";
+
+    private readonly Func<FileInfo, string> converter = p => p?.Name;
+    private Anchor _anchor;
+    private bool _fixed_Header = true;
+    private bool _openDrawer;
+    private string _searchString = string.Empty;
+    private HashSet<GridFileListItem> _selectedItems = new();
+    private Snackbar _staticSnackbar;
+    private Snackbar _unzipSnackbarCopyFrom;
+    private string height;
+    private MudTable<GridFileListItem> table;
+    private string width;
+    [Inject] private Viewer3DService Viewer3DService { get; set; } = null!;
+
     // Wizard mode properties
     [Parameter]
     [SupplyParameterFromQuery(Name = "wizardMode")]
@@ -37,23 +54,12 @@ public partial class CopyAssets
     private List<string> _errors { get; set; } = new();
     private List<string> _messages { get; set; } = new();
     private List<string> _warnings { get; set; } = new();
-    private Snackbar _staticSnackbar;
-    private Snackbar _unzipSnackbarCopyFrom;
     private BeamFileReader Reader { get; set; }
-    private readonly string _fileSelectTitleCopyFrom = "Select the zipped source level you want to copy from";
-    private readonly string _fileSelectTitle = "Select the target level you want to copy to";
     private bool _fileSelectDisabled { get; set; }
     private bool _isLoadingMap { get; set; }
     private bool _fileSelectExpanded { get; set; }
-    private bool _openDrawer;
-    private Anchor _anchor;
-    private string width;
-    private string height;
     private List<GridFileListItem> BindingListCopy { get; set; } = new();
-    private HashSet<GridFileListItem> _selectedItems = new();
-    private bool _fixed_Header = true;
     [AllowNull] private MudExpansionPanels FileSelect { get; set; }
-    private string _searchString = string.Empty;
     private string _labelFileSummaryShrink { get; set; } = string.Empty;
     private bool _showDeployButton { get; set; }
     private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
@@ -63,7 +69,6 @@ public partial class CopyAssets
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private FileInfo _vanillaLevelTargetSelected { get; set; }
     private string _beamInstallDir { get; set; }
-    private MudTable<GridFileListItem> table;
     private bool _copyCompleted { get; set; }
     private int _copiedAssetsCount { get; set; }
     private string _lastCopiedSourceName { get; set; }
@@ -228,10 +233,8 @@ public partial class CopyAssets
             // Handle duplicate materials warning
             var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
             if (!string.IsNullOrEmpty(duplicateMaterialsPath))
-            {
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Duplicate Materials found. See logfile {duplicateMaterialsPath}");
-            }
 
             // UPDATE WIZARD STATE
             UpdateWizardStateAfterCopy();
@@ -275,7 +278,7 @@ public partial class CopyAssets
     }
 
     /// <summary>
-    /// Handles file selection in wizard mode source selection
+    ///     Handles file selection in wizard mode source selection
     /// </summary>
     private async Task OnWizardSourceFileSelected(string filePath)
     {
@@ -283,7 +286,7 @@ public partial class CopyAssets
     }
 
     /// <summary>
-    /// Handles vanilla level selection in wizard mode source selection
+    ///     Handles vanilla level selection in wizard mode source selection
     /// </summary>
     private async Task OnWizardVanillaSourceSelected(FileInfo file)
     {
@@ -311,7 +314,7 @@ public partial class CopyAssets
     }
 
     /// <summary>
-    /// Loads a new source map in wizard mode
+    ///     Loads a new source map in wizard mode
     /// </summary>
     private async Task LoadNewSourceMapWizardMode(string filePath)
     {
@@ -376,7 +379,7 @@ public partial class CopyAssets
     }
 
     /// <summary>
-    /// Scans assets in wizard mode (source changed, target stays same)
+    ///     Scans assets in wizard mode (source changed, target stays same)
     /// </summary>
     private async Task ScanAssetsWizardMode()
     {
@@ -417,10 +420,7 @@ public partial class CopyAssets
             $"Assets step completed! Copied {_totalCopiedAssetsCount} asset(s). Proceeding to terrain generation.");
 
         // Ensure state is marked complete
-        if (WizardState != null)
-        {
-            WizardState.Step5_AssetsSelected = true;
-        }
+        if (WizardState != null) WizardState.Step5_AssetsSelected = true;
 
         // Navigate to terrain generation step instead of finishing
         Navigation.NavigateTo("/GenerateTerrain?wizardMode=true");
@@ -503,10 +503,7 @@ public partial class CopyAssets
     protected async Task ResetPage()
     {
         // Call Reader.Reset() if it exists
-        if (Reader != null)
-        {
-            Reader.Reset();
-        }
+        if (Reader != null) Reader.Reset();
 
         // Reset all page variables
         InitializeVariables();
@@ -518,10 +515,7 @@ public partial class CopyAssets
         await Task.Delay(100);
 
         // Expand only the source panel (index 1) using ExpandAsync
-        if (FileSelect.Panels.Count > 1)
-        {
-            await FileSelect.Panels[1].ExpandAsync();
-        }
+        if (FileSelect.Panels.Count > 1) await FileSelect.Panels[1].ExpandAsync();
 
         // Force UI refresh
         StateHasChanged();
@@ -531,7 +525,7 @@ public partial class CopyAssets
     }
 
     /// <summary>
-    /// Resets only the source map state, keeping the target map intact for copying from another source
+    ///     Resets only the source map state, keeping the target map intact for copying from another source
     /// </summary>
     protected async Task ResetSourceMap()
     {
@@ -589,14 +583,11 @@ public partial class CopyAssets
         InitializeVariables();
         _isLoadingMap = true;
         _initialWorkingDirectory = ZipFileHandler.WorkingDirectory;
-        
+
         // Copy file to centralized working directory if not already there
         var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
-        if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
-        {
-            File.Copy(file, targetFile, true);
-        }
-        
+        if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase)) File.Copy(file, targetFile, true);
+
         await Task.Run(() =>
         {
             try
@@ -623,7 +614,7 @@ public partial class CopyAssets
     }
 
     /// <summary>
-    /// Loads a new source map in standalone mode while preserving target state
+    ///     Loads a new source map in standalone mode while preserving target state
     /// </summary>
     private async Task LoadNewSourceMapStandaloneMode(string filePath)
     {
@@ -767,15 +758,11 @@ public partial class CopyAssets
                 _staticSnackbar = Snackbar.Add("Unzipping target level...", Severity.Normal,
                     config => { config.VisibleStateDuration = int.MaxValue; });
                 if (!isFolder)
-                {
                     _levelPath =
                         ZipFileHandler.ExtractToDirectory(
                             Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
-                }
                 else
-                {
                     _levelPath = ZipFileHandler.GetNamePath(file);
-                }
 
                 Reader = new BeamFileReader(_levelPath, null);
                 _levelName = Reader.GetLevelName();
@@ -794,18 +781,12 @@ public partial class CopyAssets
         });
 
         // Save initial working directory for later source resets
-        if (string.IsNullOrEmpty(_initialWorkingDirectory))
-        {
-            _initialWorkingDirectory = ZipFileHandler.WorkingDirectory;
-        }
+        if (string.IsNullOrEmpty(_initialWorkingDirectory)) _initialWorkingDirectory = ZipFileHandler.WorkingDirectory;
 
         await ScanAssets();
 
         // Collapse the target panel (index 2) after successful selection
-        if (FileSelect.Panels.Count > 2)
-        {
-            await FileSelect.Panels[2].CollapseAsync();
-        }
+        if (FileSelect.Panels.Count > 2) await FileSelect.Panels[2].CollapseAsync();
     }
 
     protected void SetBeamInstallDir(string file)
@@ -848,13 +829,13 @@ public partial class CopyAssets
                 _fileSelectDisabled = false;
             }
         });
-        
+
         // Clear previous list before filling
         BindingListCopy = new List<GridFileListItem>();
         FillCopyList();
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             "Done! Scanning Assets finished. Please select assets to copy.");
-        
+
         await InvokeAsync(StateHasChanged);
     }
 
@@ -862,7 +843,7 @@ public partial class CopyAssets
     {
         // IMPORTANT: Always reset to default working directory on page init
         AppPaths.EnsureWorkingDirectory();
-        
+
         _fileSelectExpanded = true;
         var consumer = Task.Run(async () =>
         {
@@ -870,7 +851,6 @@ public partial class CopyAssets
             {
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
                 if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
-                {
                     switch (msg.MessageType)
                     {
                         case PubSubMessageType.Info:
@@ -887,7 +867,6 @@ public partial class CopyAssets
                             Snackbar.Add(msg.Message, Severity.Error);
                             break;
                     }
-                }
             }
         });
     }
@@ -947,20 +926,14 @@ public partial class CopyAssets
 
     private string GetFileSelectTitle()
     {
-        if (!string.IsNullOrEmpty(_levelName))
-        {
-            return $"{_fileSelectTitle} > {_levelName}";
-        }
+        if (!string.IsNullOrEmpty(_levelName)) return $"{_fileSelectTitle} > {_levelName}";
 
         return $"{_fileSelectTitle}";
     }
 
     private string GetFileSelectTitleCopyFrom()
     {
-        if (!string.IsNullOrEmpty(_levelNameCopyFrom))
-        {
-            return $"{_fileSelectTitleCopyFrom} > {_levelNameCopyFrom}";
-        }
+        if (!string.IsNullOrEmpty(_levelNameCopyFrom)) return $"{_fileSelectTitleCopyFrom} > {_levelNameCopyFrom}";
 
         return $"{_fileSelectTitleCopyFrom}";
     }
@@ -1039,10 +1012,8 @@ public partial class CopyAssets
 
             var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
             if (!string.IsNullOrEmpty(duplicateMaterialsPath))
-            {
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
-            }
 
             Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
             Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
@@ -1060,7 +1031,6 @@ public partial class CopyAssets
     {
         var path = string.Empty;
         if (!string.IsNullOrEmpty(_levelPath))
-        {
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
@@ -1073,15 +1043,32 @@ public partial class CopyAssets
             {
                 ShowException(ex);
             }
-        }
     }
 
-    private void OpenAssetViewer(GridFileListItem context)
+    private async void OpenAssetViewer(GridFileListItem context)
     {
-        var dialogOptions = new DialogOptions { FullScreen = true, CloseButton = true };
-        var parameters = new DialogParameters();
-        parameters.Add("CopyAsset", context.CopyAsset);
-        var dialog = DialogService.Show<AssetViewer>($"Asset Preview: {context.FullName}", parameters, dialogOptions);
+        try
+        {
+            if (context?.CopyAsset == null)
+            {
+                Snackbar.Add("No asset data available for preview", Severity.Warning);
+                return;
+            }
+
+            Snackbar.Add($"Opening viewer for: {context.CopyAsset.Name}...", Severity.Info);
+
+            await Viewer3DService.OpenViewerAsync(context.CopyAsset);
+
+            Snackbar.Add("Viewer closed", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            var message = ex.InnerException != null
+                ? $"{ex.Message}\n\nInner: {ex.InnerException.Message}"
+                : ex.Message;
+            Snackbar.Add($"Failed to open viewer: {message}", Severity.Error);
+            _errors.Add($"Viewer error: {message}");
+        }
     }
 
     private void GetVanillaLevels()
@@ -1101,8 +1088,6 @@ public partial class CopyAssets
             }
         }
     }
-
-    private readonly Func<FileInfo, string> converter = p => p?.Name;
 
     public static DirectoryInfo GetExecutingDirectory()
     {

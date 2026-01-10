@@ -628,6 +628,10 @@ internal class BeamFileReader
                 .Where(m => daeMaterials.Select(x => x.MaterialName.ToUpper()).Contains(m.Name.ToUpper()))
                 .Distinct()
                 .ToList();
+            
+            // Enhance materials that have empty stages (physics-only materials) by searching for textures by convention
+            EnhanceMaterialsWithConventionTextures(materialsJson, item.DirectoryName);
+            
             var asset = new CopyAsset
             {
                 CopyAssetType = CopyAssetType.Dae,
@@ -648,6 +652,149 @@ internal class BeamFileReader
             //asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
             CopyAssets.Add(asset);
         }
+    }
+
+    /// <summary>
+    ///     Enhances materials that have empty stages (physics-only materials) by searching for textures
+    ///     by naming convention in the specified directory. BeamNG often uses materials like "leaves_strong"
+    ///     which are physics-only but the DAE expects visual textures. This method searches for texture files
+    ///     that match patterns like: materialname_b.png, materialname_nm.png, t_materialname_b.color.png, etc.
+    /// </summary>
+    /// <param name="materials">List of materials to enhance</param>
+    /// <param name="searchDirectory">Directory to search for texture files (typically the DAE's directory)</param>
+    private static void EnhanceMaterialsWithConventionTextures(List<MaterialJson> materials, string searchDirectory)
+    {
+        if (materials == null || string.IsNullOrEmpty(searchDirectory) || !Directory.Exists(searchDirectory))
+            return;
+
+        // Common texture suffixes used in BeamNG
+        var textureSuffixes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "_b", "BaseColorMap" },
+            { "_b.color", "BaseColorMap" },
+            { "_d", "ColorMap" },
+            { "_nm", "NormalMap" },
+            { "_nm.normal", "NormalMap" },
+            { "_n", "NormalMap" },
+            { "_r", "RoughnessMap" },
+            { "_r.data", "RoughnessMap" },
+            { "_ao", "AmbientOcclusionMap" },
+            { "_ao.data", "AmbientOcclusionMap" },
+            { "_o", "OpacityMap" },
+            { "_o.data", "OpacityMap" },
+            { "_s", "SpecularMap" },
+            { "_m", "MetallicMap" },
+            { "_e", "EmissiveMap" }
+        };
+
+        var imageExtensions = new[] { ".png", ".dds", ".jpg", ".jpeg", ".tga" };
+
+        foreach (var material in materials)
+        {
+            // Skip materials that already have texture files
+            if (material.MaterialFiles != null && material.MaterialFiles.Any(f => f.File?.Exists == true))
+                continue;
+
+            // Check if material has empty stages
+            var hasEmptyStages = material.Stages == null || 
+                                  !material.Stages.Any() ||
+                                  material.Stages.All(s => IsStageEmpty(s));
+
+            if (!hasEmptyStages)
+                continue;
+
+            // Initialize MaterialFiles if null
+            material.MaterialFiles ??= new List<MaterialFile>();
+
+            var materialName = material.Name?.ToLowerInvariant() ?? "";
+            if (string.IsNullOrEmpty(materialName))
+                continue;
+
+            // Search for texture files matching naming conventions
+            try
+            {
+                var allFiles = Directory.GetFiles(searchDirectory);
+                
+                foreach (var filePath in allFiles)
+                {
+                    var fileName = Path.GetFileName(filePath);
+                    var fileNameLower = fileName.ToLowerInvariant();
+                    var fileNameWithoutExt = Path.GetFileNameWithoutExtension(filePath).ToLowerInvariant();
+                    var extension = Path.GetExtension(filePath).ToLowerInvariant();
+
+                    // Skip non-image files
+                    if (!imageExtensions.Contains(extension))
+                        continue;
+
+                    // Check various naming patterns
+                    foreach (var suffix in textureSuffixes)
+                    {
+                        // Pattern 1: materialname_suffix.ext (e.g., leaves_strong_b.png)
+                        // Pattern 2: t_materialname_suffix.ext (e.g., t_leaves_strong_b.color.png)
+                        var pattern1 = $"{materialName}{suffix.Key}";
+                        var pattern2 = $"t_{materialName}{suffix.Key}";
+
+                        // Handle double extension like .color.png or .data.png
+                        var fileNameForComparison = fileNameWithoutExt;
+                        if (fileNameWithoutExt.EndsWith(".color") || fileNameWithoutExt.EndsWith(".data") || fileNameWithoutExt.EndsWith(".normal"))
+                        {
+                            fileNameForComparison = Path.GetFileNameWithoutExtension(fileNameWithoutExt);
+                        }
+
+                        if (fileNameForComparison.Equals(pattern1, StringComparison.OrdinalIgnoreCase) ||
+                            fileNameForComparison.Equals(pattern2, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var fileInfo = new FileInfo(filePath);
+                            if (fileInfo.Exists && !material.MaterialFiles.Any(f => f.File?.FullName == fileInfo.FullName))
+                            {
+                                material.MaterialFiles.Add(new MaterialFile
+                                {
+                                    MaterialName = material.Name,
+                                    File = fileInfo,
+                                    MapType = suffix.Value,
+                                    Missing = false,
+                                    OriginalJsonPath = filePath
+                                });
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log but don't fail - this is an enhancement, not critical
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                    $"Could not search for convention textures for material {material.Name}: {ex.Message}", true);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Checks if a MaterialStage has no texture map properties set (is empty/physics-only).
+    /// </summary>
+    private static bool IsStageEmpty(MaterialStage stage)
+    {
+        if (stage == null)
+            return true;
+
+        // Check all string properties that represent texture maps
+        foreach (var prop in stage.GetType().GetProperties())
+        {
+            if (prop.PropertyType != typeof(string))
+                continue;
+
+            // Skip non-map properties
+            var propName = prop.Name.ToLowerInvariant();
+            if (!propName.Contains("map") && !propName.Contains("tex"))
+                continue;
+
+            var value = prop.GetValue(stage, null) as string;
+            if (!string.IsNullOrEmpty(value))
+                return false;
+        }
+
+        return true;
     }
 
     internal void CopyAssetDecal()

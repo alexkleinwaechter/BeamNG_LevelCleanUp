@@ -10,6 +10,12 @@ public class MaterialJson
     public string MapTo { get; set; } = string.Empty;
     public string PersistentId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Material version. Version >= 1.5 indicates PBR (Physically Based Rendering) material.
+    /// Version < 1.5 or null indicates legacy Phong material.
+    /// </summary>
+    public double? Version { get; set; }
+
     [JsonPropertyName("Stages")] public List<MaterialStage> Stages { get; set; }
 
     public List<string> CubeFace { get; set; }
@@ -56,4 +62,11 @@ public class MaterialJson
     {
         get { return MaterialTags.Any(x => x.ToUpperInvariant().Equals("RoadAndPath".ToUpperInvariant())); }
     }
+
+    /// <summary>
+    /// Determines if this material uses PBR (Physically Based Rendering).
+    /// PBR materials have version >= 1.5
+    /// </summary>
+    [JsonIgnore]
+    public bool IsPbr => Version.HasValue && Version.Value >= 1.5;
 }
