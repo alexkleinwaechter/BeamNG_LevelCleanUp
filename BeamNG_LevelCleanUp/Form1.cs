@@ -11,17 +11,18 @@ namespace BeamNG_LevelCleanUp;
 
 public partial class Form1 : Form
 {
+    private bool _gameDirectoryFound;
+    
     public Form1()
     {
         InitializeComponent();
-        RestoreWindowSettings();
         
         // Initialize centralized application paths and clean up stale temp folders from previous sessions
         AppPaths.Initialize(cleanupOnStartup: true);
         
         // Initialize game directory settings synchronously
         // This tries: 1) saved settings from game-settings.json, 2) Steam auto-detection
-        var gameDirectoryFound = GameDirectoryService.Initialize();
+        _gameDirectoryFound = GameDirectoryService.Initialize();
 
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddWindowsFormsBlazorWebView();
@@ -40,10 +41,21 @@ public partial class Form1 : Form
         blazorWebView1.Services = serviceCollection.BuildServiceProvider();
         blazorWebView1.RootComponents.Add<App>("#app");
         
-        // If game directory not found, show dialog once after form is loaded
-        if (!gameDirectoryFound)
+        // Restore window settings and show game directory dialog in Load event
+        // This ensures the form is fully initialized before applying settings
+        this.Load += Form1_Load;
+    }
+    
+    private async void Form1_Load(object? sender, EventArgs e)
+    {
+        // Restore window size/position after form is fully loaded
+        // This must happen in Load event to work correctly with AutoScaleMode
+        RestoreWindowSettings();
+        
+        // If game directory not found, show dialog
+        if (!_gameDirectoryFound)
         {
-            this.Load += async (s, e) => await ShowGameDirectoryDialogAsync();
+            await ShowGameDirectoryDialogAsync();
         }
     }
 
@@ -53,8 +65,8 @@ public partial class Form1 : Form
     /// </summary>
     private async Task ShowGameDirectoryDialogAsync()
     {
-        // Small delay to ensure the form and Blazor WebView are fully loaded
-        await Task.Delay(500);
+        // Small delay to ensure the Blazor WebView is fully loaded
+        await Task.Delay(300);
         
         using var dialog = new FolderBrowserDialog
         {
