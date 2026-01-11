@@ -105,30 +105,24 @@ public static class AppPaths
     }
 
     /// <summary>
-    /// Quietly cleans up temp folders without user notification.
+    /// Completely removes the temp folder and all its contents on startup.
     /// Used during application startup to ensure a clean state.
     /// </summary>
     private static void CleanupTempFoldersQuietly()
     {
         try
         {
-            if (Directory.Exists(UnpackedFolder))
-                Directory.Delete(UnpackedFolder, true);
+            // Delete the entire temp folder and all contents
+            if (Directory.Exists(TempFolder))
+                Directory.Delete(TempFolder, true);
         }
         catch
         {
             // Silently ignore - folder might be in use or already deleted
         }
-
-        try
-        {
-            if (Directory.Exists(CopyFromFolder))
-                Directory.Delete(CopyFromFolder, true);
-        }
-        catch
-        {
-            // Silently ignore - folder might be in use or already deleted
-        }
+        
+        // Recreate the temp folder structure
+        Directory.CreateDirectory(TempFolder);
         
         // Reset ZipFileHandler static paths since we're starting fresh
         // Note: BeamFileReader static state is NOT reset here - that would break
