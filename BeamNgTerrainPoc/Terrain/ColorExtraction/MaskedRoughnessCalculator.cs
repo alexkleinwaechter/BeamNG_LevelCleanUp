@@ -31,14 +31,41 @@ public static class MaskedRoughnessCalculator
             return null;
         }
 
+        using var fileStream = File.OpenRead(texturePath);
+        return CalculateDominantRoughness(fileStream, mask, terrainSize);
+    }
+
+    /// <summary>
+    /// Finds the dominant (most frequent) roughness value of a grayscale texture within the masked area.
+    /// This overload accepts a stream, allowing callers to resolve .link files or other
+    /// stream sources before calling this method.
+    /// 
+    /// Roughness values: 0 = very shiny/smooth (black), 255 = very rough/matte (white)
+    /// </summary>
+    /// <param name="textureStream">Stream containing the roughness texture image data</param>
+    /// <param name="mask">Boolean mask array (Size*Size, row-major, BeamNG coords: bottom-left origin)</param>
+    /// <param name="terrainSize">Size of the terrain (width = height) from the .ter file</param>
+    /// <returns>Roughness value (0-255) of the most frequent intensity, or null if no pixels matched</returns>
+    public static int? CalculateDominantRoughness(Stream textureStream, bool[] mask, uint terrainSize)
+    {
+        if (textureStream == null || !textureStream.CanRead)
+        {
+            return null;
+        }
+
         // Try to load as grayscale first, fall back to RGBA if needed
         int textureWidth, textureHeight;
         byte[,]? grayscaleData = null;
 
+        // We need to read the stream twice potentially, so copy to a MemoryStream first
+        using var memoryStream = new MemoryStream();
+        textureStream.CopyTo(memoryStream);
+        memoryStream.Position = 0;
+
         try
         {
             // Try loading as L8 (grayscale 8-bit)
-            using var imageL8 = Image.Load<L8>(texturePath);
+            using var imageL8 = Image.Load<L8>(memoryStream);
             textureWidth = imageL8.Width;
             textureHeight = imageL8.Height;
             grayscaleData = ExtractGrayscaleData(imageL8);
@@ -46,7 +73,8 @@ public static class MaskedRoughnessCalculator
         catch
         {
             // Fall back to RGBA and convert to grayscale
-            using var imageRgba = Image.Load<Rgba32>(texturePath);
+            memoryStream.Position = 0;
+            using var imageRgba = Image.Load<Rgba32>(memoryStream);
             textureWidth = imageRgba.Width;
             textureHeight = imageRgba.Height;
             grayscaleData = ExtractGrayscaleFromRgba(imageRgba);
@@ -135,20 +163,46 @@ public static class MaskedRoughnessCalculator
             return null;
         }
 
+        using var fileStream = File.OpenRead(texturePath);
+        return CalculateDominantRoughnessDetailed(fileStream, mask, terrainSize);
+    }
+
+    /// <summary>
+    /// Finds the dominant roughness with detailed statistics about value distribution.
+    /// This overload accepts a stream, allowing callers to resolve .link files or other
+    /// stream sources before calling this method.
+    /// </summary>
+    /// <param name="textureStream">Stream containing the roughness texture image data</param>
+    /// <param name="mask">Boolean mask array</param>
+    /// <param name="terrainSize">Size of the terrain from the .ter file</param>
+    /// <returns>Result containing dominant roughness, pixel count, and coverage percentage</returns>
+    public static DominantRoughnessResult? CalculateDominantRoughnessDetailed(Stream textureStream, bool[] mask, uint terrainSize)
+    {
+        if (textureStream == null || !textureStream.CanRead)
+        {
+            return null;
+        }
+
         // Try to load as grayscale first, fall back to RGBA if needed
         int textureWidth, textureHeight;
         byte[,]? grayscaleData = null;
 
+        // We need to read the stream twice potentially, so copy to a MemoryStream first
+        using var memoryStream = new MemoryStream();
+        textureStream.CopyTo(memoryStream);
+        memoryStream.Position = 0;
+
         try
         {
-            using var imageL8 = Image.Load<L8>(texturePath);
+            using var imageL8 = Image.Load<L8>(memoryStream);
             textureWidth = imageL8.Width;
             textureHeight = imageL8.Height;
             grayscaleData = ExtractGrayscaleData(imageL8);
         }
         catch
         {
-            using var imageRgba = Image.Load<Rgba32>(texturePath);
+            memoryStream.Position = 0;
+            using var imageRgba = Image.Load<Rgba32>(memoryStream);
             textureWidth = imageRgba.Width;
             textureHeight = imageRgba.Height;
             grayscaleData = ExtractGrayscaleFromRgba(imageRgba);

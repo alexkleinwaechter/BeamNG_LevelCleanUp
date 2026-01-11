@@ -194,6 +194,7 @@ public class TerrainCopyScanner
     /// <summary>
     ///     Extracts weighted average colors from terrain materials using the terrain .ter file.
     ///     Uses the internal material name from main.materials.json mapped to baseColorBaseTex textures.
+    ///     Supports .link files via LinkFileResolver.
     /// </summary>
     /// <param name="levelPath">Path to the level folder (the namePath from extraction)</param>
     /// <param name="copyAssets">List of CopyAssets to update with extracted colors</param>
@@ -236,7 +237,8 @@ public class TerrainCopyScanner
                 var baseColorTex = material.MaterialFiles.FirstOrDefault(f => 
                     f.MapType?.Equals("baseColorBaseTex", StringComparison.OrdinalIgnoreCase) == true);
                 
-                if (baseColorTex != null && baseColorTex.File.Exists)
+                // Check if file exists directly or can be resolved via .link
+                if (baseColorTex != null && (baseColorTex.File.Exists || LinkFileResolver.CanResolve(baseColorTex.File.FullName)))
                 {
                     materialTextures[internalName] = baseColorTex.File.FullName;
                 }
@@ -252,8 +254,9 @@ public class TerrainCopyScanner
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Extracting colors for {materialTextures.Count} terrain materials...");
             
-            // 3. Extract colors using TerrainColorExtractor
-            extractedColors = TerrainColorExtractor.ExtractColors(terFilePath, materialTextures);
+            // 3. Extract colors using TerrainColorExtractor with LinkFileResolver support
+            extractedColors = TerrainColorExtractor.ExtractColors(terFilePath, materialTextures, 
+                path => LinkFileResolver.GetFileStream(path));
             
             // 4. Update CopyAssets with extracted colors
             foreach (var copyAsset in copyAssets.Where(a => a.CopyAssetType == CopyAssetType.Terrain))
@@ -284,6 +287,7 @@ public class TerrainCopyScanner
     /// <summary>
     ///     Extracts dominant roughness values from terrain materials using the terrain .ter file.
     ///     Uses the internal material name from main.materials.json mapped to roughnessBaseTex textures.
+    ///     Supports .link files via LinkFileResolver.
     /// </summary>
     /// <param name="levelPath">Path to the level folder (the namePath from extraction)</param>
     /// <param name="copyAssets">List of CopyAssets to update with extracted roughness values</param>
@@ -326,7 +330,8 @@ public class TerrainCopyScanner
                 var roughnessTex = material.MaterialFiles.FirstOrDefault(f => 
                     f.MapType?.Equals("roughnessBaseTex", StringComparison.OrdinalIgnoreCase) == true);
                 
-                if (roughnessTex != null && roughnessTex.File.Exists)
+                // Check if file exists directly or can be resolved via .link
+                if (roughnessTex != null && (roughnessTex.File.Exists || LinkFileResolver.CanResolve(roughnessTex.File.FullName)))
                 {
                     materialTextures[internalName] = roughnessTex.File.FullName;
                 }
@@ -342,8 +347,9 @@ public class TerrainCopyScanner
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Extracting roughness for {materialTextures.Count} terrain materials...");
             
-            // 3. Extract roughness using TerrainRoughnessExtractor
-            extractedRoughness = TerrainRoughnessExtractor.ExtractRoughness(terFilePath, materialTextures);
+            // 3. Extract roughness using TerrainRoughnessExtractor with LinkFileResolver support
+            extractedRoughness = TerrainRoughnessExtractor.ExtractRoughness(terFilePath, materialTextures,
+                path => LinkFileResolver.GetFileStream(path));
             
             // 4. Update CopyAssets with extracted roughness values
             foreach (var copyAsset in copyAssets.Where(a => a.CopyAssetType == CopyAssetType.Terrain))

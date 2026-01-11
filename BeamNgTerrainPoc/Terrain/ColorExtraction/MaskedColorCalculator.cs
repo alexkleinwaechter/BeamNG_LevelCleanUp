@@ -33,7 +33,27 @@ public static class MaskedColorCalculator
             return null;
         }
 
-        using var image = Image.Load<Rgba32>(texturePath);
+        using var fileStream = File.OpenRead(texturePath);
+        return CalculateDominantColor(fileStream, mask, terrainSize);
+    }
+
+    /// <summary>
+    /// Finds the dominant (most frequent) color of a texture within the masked area.
+    /// This overload accepts a stream, allowing callers to resolve .link files or other
+    /// stream sources before calling this method.
+    /// </summary>
+    /// <param name="textureStream">Stream containing the texture image data</param>
+    /// <param name="mask">Boolean mask array (Size*Size, row-major, BeamNG coords: bottom-left origin)</param>
+    /// <param name="terrainSize">Size of the terrain (width = height) from the .ter file</param>
+    /// <returns>Hex color string (#RRGGBB) of the most frequent color, or null if no pixels matched</returns>
+    public static string? CalculateDominantColor(Stream textureStream, bool[] mask, uint terrainSize)
+    {
+        if (textureStream == null || !textureStream.CanRead)
+        {
+            return null;
+        }
+
+        using var image = Image.Load<Rgba32>(textureStream);
 
         int size = (int)terrainSize;
         int textureWidth = image.Width;
@@ -138,7 +158,27 @@ public static class MaskedColorCalculator
             return null;
         }
 
-        using var image = Image.Load<Rgba32>(texturePath);
+        using var fileStream = File.OpenRead(texturePath);
+        return CalculateDominantColorDetailed(fileStream, mask, terrainSize);
+    }
+
+    /// <summary>
+    /// Finds the dominant color with detailed statistics about color distribution.
+    /// This overload accepts a stream, allowing callers to resolve .link files or other
+    /// stream sources before calling this method.
+    /// </summary>
+    /// <param name="textureStream">Stream containing the texture image data</param>
+    /// <param name="mask">Boolean mask array</param>
+    /// <param name="terrainSize">Size of the terrain from the .ter file</param>
+    /// <returns>Result containing dominant color, pixel count, and coverage percentage</returns>
+    public static DominantColorResult? CalculateDominantColorDetailed(Stream textureStream, bool[] mask, uint terrainSize)
+    {
+        if (textureStream == null || !textureStream.CanRead)
+        {
+            return null;
+        }
+
+        using var image = Image.Load<Rgba32>(textureStream);
 
         int size = (int)terrainSize;
         int textureWidth = image.Width;

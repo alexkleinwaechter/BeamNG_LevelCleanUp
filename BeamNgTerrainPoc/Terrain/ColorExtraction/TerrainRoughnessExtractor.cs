@@ -32,6 +32,25 @@ public static class TerrainRoughnessExtractor
     }
 
     /// <summary>
+    /// Extracts dominant roughness values for terrain materials using a stream resolver.
+    /// This overload supports .link files and other stream sources by allowing the caller
+    /// to provide a function that resolves texture paths to streams.
+    /// </summary>
+    /// <param name="terFilePath">Path to the terrain .ter file</param>
+    /// <param name="materialTexturePaths">Dictionary mapping material name to texture path (may be .link file)</param>
+    /// <param name="streamResolver">Function that resolves a texture path to a Stream, or null if not found</param>
+    /// <returns>Dictionary mapping material name to roughness value (0-255). -1 for materials with no coverage or failed extraction.</returns>
+    /// <exception cref="FileNotFoundException">If .ter file doesn't exist</exception>
+    public static Dictionary<string, int> ExtractRoughness(
+        string terFilePath,
+        Dictionary<string, string> materialTexturePaths,
+        Func<string, Stream?> streamResolver)
+    {
+        var summary = ExtractRoughnessDetailed(terFilePath, materialTexturePaths, streamResolver);
+        return summary.RoughnessValues;
+    }
+
+    /// <summary>
     /// Extracts roughness with detailed statistics for each material.
     /// </summary>
     /// <param name="terFilePath">Path to the terrain .ter file</param>
@@ -42,6 +61,29 @@ public static class TerrainRoughnessExtractor
         string terFilePath,
         Dictionary<string, string> materialTextures)
     {
+        // Use default file-based stream resolver
+        return ExtractRoughnessDetailed(terFilePath, materialTextures, path =>
+        {
+            if (File.Exists(path))
+                return File.OpenRead(path);
+            return null;
+        });
+    }
+
+    /// <summary>
+    /// Extracts roughness with detailed statistics for each material using a stream resolver.
+    /// This overload supports .link files and other stream sources.
+    /// </summary>
+    /// <param name="terFilePath">Path to the terrain .ter file</param>
+    /// <param name="materialTexturePaths">Dictionary mapping material name to texture path (may be .link file)</param>
+    /// <param name="streamResolver">Function that resolves a texture path to a Stream, or null if not found</param>
+    /// <returns>Complete extraction summary with roughness values and statistics</returns>
+    /// <exception cref="FileNotFoundException">If .ter file doesn't exist</exception>
+    public static RoughnessExtractionSummary ExtractRoughnessDetailed(
+        string terFilePath,
+        Dictionary<string, string> materialTexturePaths,
+        Func<string, Stream?> streamResolver)
+    {
         if (!File.Exists(terFilePath))
         {
             TerrainLogger.Error($"Terrain file not found: {terFilePath}");
@@ -49,7 +91,7 @@ public static class TerrainRoughnessExtractor
         }
 
         TerrainLogger.Info($"Extracting roughness from terrain: {Path.GetFileName(terFilePath)}");
-        TerrainLogger.Info($"Processing {materialTextures.Count} material textures...");
+        TerrainLogger.Info($"Processing {materialTexturePaths.Count} material textures...");
 
         // Read terrain data
         var (terrainSize, terrainMaterialNames) = LayerMaskReader.ReadTerrainInfo(terFilePath);
@@ -62,7 +104,7 @@ public static class TerrainRoughnessExtractor
         // Create a set of terrain material names for quick lookup
         var terrainMaterialSet = new HashSet<string>(terrainMaterialNames);
 
-        foreach (var (materialName, texturePath) in materialTextures)
+        foreach (var (materialName, texturePath) in materialTexturePaths)
         {
             // Check if material exists in terrain
             if (!terrainMaterialSet.Contains(materialName))
@@ -71,8 +113,9 @@ public static class TerrainRoughnessExtractor
                 continue;
             }
 
-            // Check if texture file exists
-            if (!File.Exists(texturePath))
+            // Try to get stream for texture
+            using var textureStream = streamResolver(texturePath);
+            if (textureStream == null)
             {
                 TerrainLogger.Warning($"Roughness texture not found for '{materialName}': {texturePath}");
                 roughnessValues[materialName] = -1;
@@ -97,7 +140,7 @@ public static class TerrainRoughnessExtractor
             int? roughness = null;
             if (maskedPixels > 0)
             {
-                roughness = MaskedRoughnessCalculator.CalculateDominantRoughness(texturePath, mask, terrainSize);
+                roughness = MaskedRoughnessCalculator.CalculateDominantRoughness(textureStream, mask, terrainSize);
             }
 
             roughnessValues[materialName] = roughness ?? -1;

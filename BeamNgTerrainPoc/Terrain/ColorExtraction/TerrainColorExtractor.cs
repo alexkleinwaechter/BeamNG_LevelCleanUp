@@ -30,6 +30,25 @@ public static class TerrainColorExtractor
     }
 
     /// <summary>
+    /// Extracts weighted average colors for terrain materials using a stream resolver.
+    /// This overload supports .link files and other stream sources by allowing the caller
+    /// to provide a function that resolves texture paths to streams.
+    /// </summary>
+    /// <param name="terFilePath">Path to the terrain .ter file</param>
+    /// <param name="materialTexturePaths">Dictionary mapping material name to texture path (may be .link file)</param>
+    /// <param name="streamResolver">Function that resolves a texture path to a Stream, or null if not found</param>
+    /// <returns>Dictionary mapping material name to hex color (#RRGGBB). Empty string for materials with no coverage or failed extraction.</returns>
+    /// <exception cref="FileNotFoundException">If .ter file doesn't exist</exception>
+    public static Dictionary<string, string> ExtractColors(
+        string terFilePath,
+        Dictionary<string, string> materialTexturePaths,
+        Func<string, Stream?> streamResolver)
+    {
+        var summary = ExtractColorsDetailed(terFilePath, materialTexturePaths, streamResolver);
+        return summary.Colors;
+    }
+
+    /// <summary>
     /// Extracts colors with detailed statistics for each material.
     /// </summary>
     /// <param name="terFilePath">Path to the terrain .ter file</param>
@@ -40,6 +59,29 @@ public static class TerrainColorExtractor
         string terFilePath,
         Dictionary<string, string> materialTextures)
     {
+        // Use default file-based stream resolver
+        return ExtractColorsDetailed(terFilePath, materialTextures, path =>
+        {
+            if (File.Exists(path))
+                return File.OpenRead(path);
+            return null;
+        });
+    }
+
+    /// <summary>
+    /// Extracts colors with detailed statistics for each material using a stream resolver.
+    /// This overload supports .link files and other stream sources.
+    /// </summary>
+    /// <param name="terFilePath">Path to the terrain .ter file</param>
+    /// <param name="materialTexturePaths">Dictionary mapping material name to texture path (may be .link file)</param>
+    /// <param name="streamResolver">Function that resolves a texture path to a Stream, or null if not found</param>
+    /// <returns>Complete extraction summary with colors and statistics</returns>
+    /// <exception cref="FileNotFoundException">If .ter file doesn't exist</exception>
+    public static ColorExtractionSummary ExtractColorsDetailed(
+        string terFilePath,
+        Dictionary<string, string> materialTexturePaths,
+        Func<string, Stream?> streamResolver)
+    {
         if (!File.Exists(terFilePath))
         {
             TerrainLogger.Error($"Terrain file not found: {terFilePath}");
@@ -47,7 +89,7 @@ public static class TerrainColorExtractor
         }
 
         TerrainLogger.Info($"Extracting colors from terrain: {Path.GetFileName(terFilePath)}");
-        TerrainLogger.Info($"Processing {materialTextures.Count} material textures...");
+        TerrainLogger.Info($"Processing {materialTexturePaths.Count} material textures...");
 
         // Read terrain data
         var (terrainSize, terrainMaterialNames) = LayerMaskReader.ReadTerrainInfo(terFilePath);
@@ -60,7 +102,7 @@ public static class TerrainColorExtractor
         // Create a set of terrain material names for quick lookup
         var terrainMaterialSet = new HashSet<string>(terrainMaterialNames);
 
-        foreach (var (materialName, texturePath) in materialTextures)
+        foreach (var (materialName, texturePath) in materialTexturePaths)
         {
             // Check if material exists in terrain
             if (!terrainMaterialSet.Contains(materialName))
@@ -69,8 +111,9 @@ public static class TerrainColorExtractor
                 continue;
             }
 
-            // Check if texture file exists
-            if (!File.Exists(texturePath))
+            // Try to get stream for texture
+            using var textureStream = streamResolver(texturePath);
+            if (textureStream == null)
             {
                 TerrainLogger.Warning($"Texture not found for '{materialName}': {texturePath}");
                 colors[materialName] = string.Empty;
@@ -95,7 +138,7 @@ public static class TerrainColorExtractor
             string? hexColor = null;
             if (maskedPixels > 0)
             {
-                hexColor = MaskedColorCalculator.CalculateDominantColor(texturePath, mask, terrainSize);
+                hexColor = MaskedColorCalculator.CalculateDominantColor(textureStream, mask, terrainSize);
             }
 
             colors[materialName] = hexColor ?? string.Empty;
