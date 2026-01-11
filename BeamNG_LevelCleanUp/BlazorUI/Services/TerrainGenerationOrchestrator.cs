@@ -49,6 +49,7 @@ public class TerrainGenerationOrchestrator
 
     /// <summary>
     ///     Internal implementation of terrain generation.
+    ///     Runs the heavy computation on a background thread to keep the UI responsive.
     /// </summary>
     private async Task<GenerationResult> ExecuteInternalAsync(
         TerrainGenerationState state,
@@ -56,9 +57,8 @@ public class TerrainGenerationOrchestrator
     {
         var debugPath = state.GetDebugPath();
 
-        // Clear the debug folder before starting a new generation
+        // Clear the debug folder before starting a new generation (quick operation, OK on UI thread)
         ClearDebugFolder(debugPath);
-
         Directory.CreateDirectory(debugPath);
 
         TerrainCreationParameters? terrainParameters = null;
@@ -66,63 +66,72 @@ public class TerrainGenerationOrchestrator
 
         try
         {
-            var creator = new TerrainCreator();
-
-            // Build material definitions
-            var orderedMaterials = state.TerrainMaterials.OrderBy(m => m.Order).ToList();
-            var materialDefinitions = new List<MaterialDefinition>();
-
-            // Determine effective bounding box (cropped or full)
-            var effectiveBoundingBox = GetEffectiveBoundingBox(state);
-
-            // Create coordinate transformer
-            var coordinateTransformer = CreateCoordinateTransformer(state, effectiveBoundingBox);
-
-            // Cache for OSM query results
-            OsmQueryResult? osmQueryResult = null;
-
-            // Process each material
-            foreach (var mat in orderedMaterials)
+            // Run the heavy computation on a background thread to keep the UI responsive
+            // This allows Windows to properly handle ALT-TAB and taskbar clicks during generation
+            var result = await Task.Run(async () =>
             {
-                var (layerImagePath, roadParams) = await ProcessMaterialAsync(
-                    mat,
+                var creator = new TerrainCreator();
+
+                // Build material definitions
+                var orderedMaterials = state.TerrainMaterials.OrderBy(m => m.Order).ToList();
+                var materialDefinitions = new List<MaterialDefinition>();
+
+                // Determine effective bounding box (cropped or full)
+                var effectiveBoundingBox = GetEffectiveBoundingBox(state);
+
+                // Create coordinate transformer
+                var coordinateTransformer = CreateCoordinateTransformer(state, effectiveBoundingBox);
+
+                // Cache for OSM query results
+                OsmQueryResult? osmQueryResult = null;
+
+                // Process each material
+                foreach (var mat in orderedMaterials)
+                {
+                    var (layerImagePath, roadParams) = await ProcessMaterialAsync(
+                        mat,
+                        effectiveBoundingBox,
+                        coordinateTransformer,
+                        debugPath,
+                        state,
+                        osmQueryResult,
+                        newOsmResult => osmQueryResult = newOsmResult);
+
+                    materialDefinitions.Add(new MaterialDefinition(
+                        mat.InternalName,
+                        layerImagePath,
+                        roadParams));
+                }
+
+                // Export ALL OSM layers to osm_layer subfolder (if OSM data is available)
+                await ExportAllOsmLayersAsync(
+                    osmQueryResult,
                     effectiveBoundingBox,
                     coordinateTransformer,
-                    debugPath,
                     state,
-                    osmQueryResult,
-                    newOsmResult => osmQueryResult = newOsmResult);
+                    debugPath);
 
-                materialDefinitions.Add(new MaterialDefinition(
-                    mat.InternalName,
-                    layerImagePath,
-                    roadParams));
-            }
+                // Build terrain creation parameters
+                var parameters = BuildTerrainParameters(state, materialDefinitions, analysisState);
 
-            // Export ALL OSM layers to osm_layer subfolder (if OSM data is available)
-            // This happens automatically when using GeoTIFF with valid WGS84 bounding box
-            await ExportAllOsmLayersAsync(
-                osmQueryResult,
-                effectiveBoundingBox,
-                coordinateTransformer,
-                state,
-                debugPath);
+                // Execute terrain creation
+                var outputPath = state.GetOutputPath();
 
-            // Build terrain creation parameters
-            terrainParameters = BuildTerrainParameters(state, materialDefinitions, analysisState);
+                if (analysisState?.HasAnalysis == true)
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Starting terrain generation with pre-analyzed network ({analysisState.SplineCount} splines, " +
+                        $"{analysisState.ActiveJunctionCount} active junctions, {analysisState.ExcludedCount} excluded)...");
+                else
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Starting terrain generation: {state.TerrainSize}x{state.TerrainSize}, {materialDefinitions.Count} materials...");
 
-            // Execute terrain creation
-            var outputPath = state.GetOutputPath();
+                var generationSuccess = await creator.CreateTerrainFileAsync(outputPath, parameters);
 
-            if (analysisState?.HasAnalysis == true)
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Starting terrain generation with pre-analyzed network ({analysisState.SplineCount} splines, " +
-                    $"{analysisState.ActiveJunctionCount} active junctions, {analysisState.ExcludedCount} excluded)...");
-            else
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Starting terrain generation: {state.TerrainSize}x{state.TerrainSize}, {materialDefinitions.Count} materials...");
+                return (Success: generationSuccess, Parameters: parameters);
+            }).ConfigureAwait(false);
 
-            success = await creator.CreateTerrainFileAsync(outputPath, terrainParameters);
+            success = result.Success;
+            terrainParameters = result.Parameters;
 
             // Update state with auto-calculated values
             UpdateStateFromParameters(state, terrainParameters);

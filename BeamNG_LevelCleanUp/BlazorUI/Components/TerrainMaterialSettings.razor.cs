@@ -247,7 +247,7 @@ public partial class TerrainMaterialSettings
         await OnMaterialChanged.InvokeAsync(Material);
     }
     
-    private void SetLayerSourceType(LayerSourceType sourceType)
+    private async Task SetLayerSourceType(LayerSourceType sourceType)
     {
         Material.LayerSourceType = sourceType;
         
@@ -261,7 +261,7 @@ public partial class TerrainMaterialSettings
             Material.SelectedOsmFeatures = null;
         }
         
-        OnMaterialChanged.InvokeAsync(Material);
+        await OnMaterialChanged.InvokeAsync(Material);
     }
     
     private async Task OpenOsmFeatureSelector()
@@ -297,14 +297,14 @@ public partial class TerrainMaterialSettings
         }
     }
     
-    private void RemoveOsmFeature(OsmFeatureSelection feature)
+    private async Task RemoveOsmFeature(OsmFeatureSelection feature)
     {
         Material.SelectedOsmFeatures?.Remove(feature);
         if (Material.SelectedOsmFeatures?.Count == 0)
         {
             Material.LayerSourceType = LayerSourceType.None;
         }
-        OnMaterialChanged.InvokeAsync(Material);
+        await OnMaterialChanged.InvokeAsync(Material);
     }
     
     private async Task ClearOsmFeatures()

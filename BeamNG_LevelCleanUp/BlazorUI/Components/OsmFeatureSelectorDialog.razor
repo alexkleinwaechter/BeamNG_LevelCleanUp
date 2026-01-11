@@ -168,6 +168,10 @@
     private string? _error;
     private string _searchText = string.Empty;
     
+    // Cached filtered groups to avoid recomputation on every render
+    private List<FeatureGroup>? _cachedFilteredGroups;
+    private string? _lastFilterKey;
+    
     private int PreviewSize => Math.Min(512, TerrainSize);
     
     private string[] _availableCategories = 
@@ -219,7 +223,7 @@
     
     protected override async Task OnInitializedAsync()
     {
-        await FetchOsmData();
+        await FetchOsmData().ConfigureAwait(false);
     }
     
     private async Task FetchOsmData()
@@ -228,31 +232,41 @@
         {
             _error = "No geographic bounding box available. Please load a GeoTIFF file first.";
             _isLoading = false;
+            await InvokeAsync(StateHasChanged);
             return;
         }
         
         _isLoading = true;
         _error = null;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
         
         try
         {
-            // Check cache first
-            var cache = new OsmQueryCache();
-            _queryResult = await cache.GetAsync(BoundingBox);
-            
-            if (_queryResult == null)
+            // Check cache first - run on background thread
+            OsmQueryResult? queryResult = null;
+            await Task.Run(async () =>
             {
-                // Fetch from API
-                var service = new OverpassApiService();
-                _queryResult = await service.QueryAllFeaturesAsync(BoundingBox);
+                var cache = new OsmQueryCache();
+                queryResult = await cache.GetAsync(BoundingBox);
                 
-                // Cache the result
-                await cache.SetAsync(BoundingBox, _queryResult);
-            }
+                if (queryResult == null)
+                {
+                    // Fetch from API
+                    var service = new OverpassApiService();
+                    queryResult = await service.QueryAllFeaturesAsync(BoundingBox);
+                    
+                    // Cache the result
+                    await cache.SetAsync(BoundingBox, queryResult);
+                }
+            }).ConfigureAwait(false);
+            
+            _queryResult = queryResult;
             
             // Build feature groups
             BuildFeatureGroups();
+            
+            // Invalidate filter cache
+            InvalidateFilterCache();
             
             // Pre-filter based on material type
             if (IsRoadMaterial)
@@ -277,7 +291,7 @@
                     .ToList();
             }
             
-            Snackbar.Add($"Loaded {_queryResult.Features.Count} OSM features in {_featureGroups.Count} types", Severity.Success);
+            Snackbar.Add($"Loaded {_queryResult?.Features.Count ?? 0} OSM features in {_featureGroups.Count} types", Severity.Success);
         }
         catch (Exception ex)
         {
@@ -287,7 +301,7 @@
         finally
         {
             _isLoading = false;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
     
@@ -320,10 +334,39 @@
         await FetchOsmData();
     }
     
+    /// <summary>
+    /// Generates a key representing current filter state to detect changes.
+    /// </summary>
+    private string GetFilterKey()
+    {
+        var categoriesKey = _selectedCategories.Any() 
+            ? string.Join(",", _selectedCategories.OrderBy(c => c)) 
+            : "all";
+        return $"{_showLines}|{_showPolygons}|{categoriesKey}|{_searchText?.ToLowerInvariant() ?? ""}";
+    }
+    
+    /// <summary>
+    /// Invalidates the cached filtered groups, forcing recomputation on next access.
+    /// </summary>
+    private void InvalidateFilterCache()
+    {
+        _cachedFilteredGroups = null;
+        _lastFilterKey = null;
+    }
+    
     private IEnumerable<FeatureGroup> FilteredGroups
     {
         get
         {
+            var currentKey = GetFilterKey();
+            
+            // Return cached result if filter hasn't changed
+            if (_cachedFilteredGroups != null && _lastFilterKey == currentKey)
+            {
+                return _cachedFilteredGroups;
+            }
+            
+            // Recompute filtered groups
             var filtered = _featureGroups.AsEnumerable();
             
             // Filter by geometry type
@@ -332,7 +375,11 @@
             else if (!_showLines && _showPolygons)
                 filtered = filtered.Where(g => g.GeometryType == OsmGeometryType.Polygon);
             else if (!_showLines && !_showPolygons)
-                return Enumerable.Empty<FeatureGroup>();
+            {
+                _cachedFilteredGroups = new List<FeatureGroup>();
+                _lastFilterKey = currentKey;
+                return _cachedFilteredGroups;
+            }
             
             // Filter by category
             if (_selectedCategories.Any())
@@ -348,7 +395,9 @@
                     g.SubCategory.Contains(searchLower, StringComparison.OrdinalIgnoreCase));
             }
             
-            return filtered;
+            _cachedFilteredGroups = filtered.ToList();
+            _lastFilterKey = currentKey;
+            return _cachedFilteredGroups;
         }
     }
     
@@ -360,13 +409,11 @@
     private void SelectAllFiltered()
     {
         _selectedGroups = FilteredGroups.ToList();
-        StateHasChanged();
     }
     
     private void ClearSelection()
     {
         _selectedGroups = new List<FeatureGroup>();
-        StateHasChanged();
     }
     
     private string GetGroupIcon(FeatureGroup group)

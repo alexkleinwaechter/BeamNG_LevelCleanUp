@@ -1207,26 +1207,34 @@ public partial class GenerateTerrain
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Moved {movedCount} material(s) without layer maps to end of list for correct terrain generation.");
             _dropContainer?.Refresh();
-            StateHasChanged();
         }
 
         _isGenerating = true;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
+        
+        // Yield to allow UI to render the loading state before starting heavy work
+        await Task.Yield();
 
         try
         {
-            // Execute terrain generation via orchestrator
-            var result = await _generationOrchestrator.ExecuteAsync(_state);
+            // Execute terrain generation via orchestrator (runs on background thread)
+            var result = await _generationOrchestrator.ExecuteAsync(_state).ConfigureAwait(false);
 
             if (result.Success)
             {
-                Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
+                });
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Terrain file saved to: {GetOutputPath()}");
 
                 // Run post-generation tasks
-                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters);
-                Snackbar.Add("Post-processing complete!", Severity.Success);
+                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters).ConfigureAwait(false);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add("Post-processing complete!", Severity.Success);
+                });
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
@@ -1235,12 +1243,15 @@ public partial class GenerateTerrain
                 if (WizardMode && WizardState != null)
                 {
                     UpdateWizardStateAfterGeneration();
-                    await ShowTerrainWizardCompletionDialog();
+                    await InvokeAsync(async () => await ShowTerrainWizardCompletionDialog());
                 }
             }
             else
             {
-                Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
+                });
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
                     ShowException(new Exception(result.ErrorMessage));
             }
@@ -1248,12 +1259,15 @@ public partial class GenerateTerrain
         catch (Exception ex)
         {
             ShowException(ex);
-            Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error);
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error);
+            });
         }
         finally
         {
             _isGenerating = false;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -1347,7 +1361,10 @@ public partial class GenerateTerrain
         if (!CanAnalyze()) return;
 
         _isAnalyzing = true;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
+        
+        // Yield to allow UI to render the loading state before starting heavy work
+        await Task.Yield();
 
         try
         {
@@ -1360,39 +1377,48 @@ public partial class GenerateTerrain
                 _dropContainer?.Refresh();
             }
 
-            // Execute analysis via orchestrator
-            var result = await _analysisOrchestrator.AnalyzeAsync(_state, _analysisState);
+            // Execute analysis via orchestrator (runs on background thread)
+            var result = await _analysisOrchestrator.AnalyzeAsync(_state, _analysisState).ConfigureAwait(false);
 
             if (result.Success && result.AnalyzerResult != null)
             {
-                Snackbar.Add(
-                    $"Analysis complete: {_analysisState.SplineCount} splines, {_analysisState.TotalJunctionCount} junctions",
-                    Severity.Success);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add(
+                        $"Analysis complete: {_analysisState.SplineCount} splines, {_analysisState.TotalJunctionCount} junctions",
+                        Severity.Success);
+                });
 
                 // Save debug image to disk
                 if (_analysisState.DebugImageData != null)
                 {
                     var debugImagePath = Path.Combine(_state.GetDebugPath(), "analysis_preview.png");
-                    await _analysisOrchestrator.SaveDebugImageAsync(_analysisState, debugImagePath);
+                    await _analysisOrchestrator.SaveDebugImageAsync(_analysisState, debugImagePath).ConfigureAwait(false);
                 }
 
-                // Show the fullscreen analysis dialog
-                await ShowAnalysisDialog();
+                // Show the fullscreen analysis dialog (must be on UI thread)
+                await InvokeAsync(async () => await ShowAnalysisDialog());
             }
             else
             {
-                Snackbar.Add(result.ErrorMessage ?? "Analysis failed", Severity.Error);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add(result.ErrorMessage ?? "Analysis failed", Severity.Error);
+                });
             }
         }
         catch (Exception ex)
         {
             ShowException(ex);
-            Snackbar.Add($"Error during analysis: {ex.Message}", Severity.Error);
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add($"Error during analysis: {ex.Message}", Severity.Error);
+            });
         }
         finally
         {
             _isAnalyzing = false;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -1452,22 +1478,31 @@ public partial class GenerateTerrain
         if (!CanGenerate()) return;
 
         _isGenerating = true;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
+        
+        // Yield to allow UI to render the loading state before starting heavy work
+        await Task.Yield();
 
         try
         {
-            // Execute terrain generation with pre-analyzed network
-            var result = await _generationOrchestrator.ExecuteWithPreAnalyzedNetworkAsync(_state, _analysisState);
+            // Execute terrain generation with pre-analyzed network (runs on background thread)
+            var result = await _generationOrchestrator.ExecuteWithPreAnalyzedNetworkAsync(_state, _analysisState).ConfigureAwait(false);
 
             if (result.Success)
             {
-                Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
+                });
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Terrain file saved to: {GetOutputPath()}");
 
                 // Run post-generation tasks
-                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters);
-                Snackbar.Add("Post-processing complete!", Severity.Success);
+                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters).ConfigureAwait(false);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add("Post-processing complete!", Severity.Success);
+                });
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
@@ -1477,7 +1512,10 @@ public partial class GenerateTerrain
             }
             else
             {
-                Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
+                });
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
                     ShowException(new Exception(result.ErrorMessage));
             }
@@ -1485,12 +1523,15 @@ public partial class GenerateTerrain
         catch (Exception ex)
         {
             ShowException(ex);
-            Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error);
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error);
+            });
         }
         finally
         {
             _isGenerating = false;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
     }
 }
