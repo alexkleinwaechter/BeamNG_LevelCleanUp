@@ -1,35 +1,33 @@
-using System.Drawing;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 using System.Windows.Forms.Integration;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using Pfim;
+using Color = System.Drawing.Color;
 using ImageFormat = Pfim.ImageFormat;
-using PixelFormat = System.Windows.Media.PixelFormat;
 
 namespace BeamNG_LevelCleanUp.Viewer3D;
 
 /// <summary>
-/// Windows Forms dialog hosting the Helix Toolkit WPF viewport.
-/// Provides 3D preview for DAE models and material textures.
+///     Windows Forms dialog hosting the Helix Toolkit WPF viewport.
+///     Provides 3D preview for DAE models and material textures.
 /// </summary>
 public class HelixViewerForm : Form
 {
-    private readonly ElementHost _elementHost;
-    private readonly HelixViewportControl _viewportControl;
-    private readonly Panel _texturePanel;
-    private readonly FlowLayoutPanel _textureGallery;
-    private readonly Label _selectionLabel;
-    private readonly Button _clearSelectionButton;
-    private Viewer3DRequest? _pendingRequest;
-    
     /// <summary>
-    /// Stores all texture cards for filtering.
+    ///     Stores all texture cards for filtering.
     /// </summary>
     private readonly List<(Panel Card, string MaterialName, MaterialFile File)> _allTextureCards = new();
+
+    private readonly Button _clearSelectionButton;
+    private readonly ElementHost _elementHost;
+    private readonly Label _selectionLabel;
+    private readonly FlowLayoutPanel _textureGallery;
+    private readonly Panel _texturePanel;
+    private readonly HelixViewportControl _viewportControl;
+    private Viewer3DRequest? _pendingRequest;
 
     public HelixViewerForm()
     {
@@ -50,7 +48,7 @@ public class HelixViewerForm : Form
             AutoScroll = true,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
-            BackColor = System.Drawing.Color.FromArgb(30, 30, 46)
+            BackColor = Color.FromArgb(30, 30, 46)
         };
 
         // Create selection info panel
@@ -58,43 +56,43 @@ public class HelixViewerForm : Form
         {
             Dock = DockStyle.Top,
             Height = 35,
-            BackColor = System.Drawing.Color.FromArgb(40, 40, 56),
+            BackColor = Color.FromArgb(40, 40, 56),
             Padding = new Padding(8, 5, 8, 5)
         };
-        
+
         _selectionLabel = new Label
         {
             Text = "Click on a mesh to see its material info",
-            ForeColor = System.Drawing.Color.LightGray,
+            ForeColor = Color.LightGray,
             Font = new Font("Segoe UI", 9, FontStyle.Italic),
             AutoSize = true,
-            Location = new System.Drawing.Point(8, 8)
+            Location = new Point(8, 8)
         };
-        
+
         _clearSelectionButton = new Button
         {
             Text = "Show All",
-            Size = new System.Drawing.Size(80, 25),
+            Size = new Size(80, 25),
             FlatStyle = FlatStyle.Flat,
-            BackColor = System.Drawing.Color.FromArgb(70, 70, 90),
-            ForeColor = System.Drawing.Color.White,
+            BackColor = Color.FromArgb(70, 70, 90),
+            ForeColor = Color.White,
             Visible = false,
             Anchor = AnchorStyles.Right | AnchorStyles.Top
         };
         _clearSelectionButton.Click += (s, e) => ClearTextureFilter();
-        
+
         selectionPanel.Controls.Add(_selectionLabel);
         selectionPanel.Controls.Add(_clearSelectionButton);
         selectionPanel.Resize += (s, e) =>
         {
-            _clearSelectionButton.Location = new System.Drawing.Point(selectionPanel.Width - 95, 5);
+            _clearSelectionButton.Location = new Point(selectionPanel.Width - 95, 5);
         };
 
         _texturePanel = new Panel
         {
             Dock = DockStyle.Bottom,
             Height = 235,
-            BackColor = System.Drawing.Color.FromArgb(30, 30, 46),
+            BackColor = Color.FromArgb(30, 30, 46),
             AutoScroll = true
         };
         _texturePanel.Controls.Add(_textureGallery);
@@ -108,7 +106,7 @@ public class HelixViewerForm : Form
         Controls.Add(mainPanel);
         Controls.Add(_texturePanel);
         Controls.Add(buttonPanel);
-        
+
         // Load content after the form is shown and WPF control is initialized
         Shown += OnFormShown;
     }
@@ -116,10 +114,10 @@ public class HelixViewerForm : Form
     private void InitializeForm()
     {
         Text = "3D Asset Viewer";
-        Size = new System.Drawing.Size(1200, 800);
+        Size = new Size(1200, 800);
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = System.Drawing.Color.FromArgb(30, 30, 46);
-        MinimumSize = new System.Drawing.Size(800, 600);
+        BackColor = Color.FromArgb(30, 30, 46);
+        MinimumSize = new Size(800, 600);
     }
 
     private Panel CreateButtonPanel()
@@ -128,28 +126,28 @@ public class HelixViewerForm : Form
         {
             Dock = DockStyle.Bottom,
             Height = 50,
-            BackColor = System.Drawing.Color.FromArgb(45, 45, 61)
+            BackColor = Color.FromArgb(45, 45, 61)
         };
 
         var closeButton = new Button
         {
             Text = "Close",
-            Size = new System.Drawing.Size(100, 35),
+            Size = new Size(100, 35),
             Anchor = AnchorStyles.Right | AnchorStyles.Top,
             FlatStyle = FlatStyle.Flat,
-            BackColor = System.Drawing.Color.FromArgb(80, 80, 100),
-            ForeColor = System.Drawing.Color.White
+            BackColor = Color.FromArgb(80, 80, 100),
+            ForeColor = Color.White
         };
         closeButton.Click += (s, e) => Close();
 
         var resetCameraButton = new Button
         {
             Text = "Reset Camera",
-            Size = new System.Drawing.Size(120, 35),
-            Location = new System.Drawing.Point(10, 8),
+            Size = new Size(120, 35),
+            Location = new Point(10, 8),
             FlatStyle = FlatStyle.Flat,
-            BackColor = System.Drawing.Color.FromArgb(80, 80, 100),
-            ForeColor = System.Drawing.Color.White
+            BackColor = Color.FromArgb(80, 80, 100),
+            ForeColor = Color.White
         };
         resetCameraButton.Click += (s, e) => _viewportControl?.ResetCamera();
 
@@ -157,16 +155,13 @@ public class HelixViewerForm : Form
         panel.Controls.Add(resetCameraButton);
 
         // Position close button on right side
-        panel.Resize += (s, e) =>
-        {
-            closeButton.Location = new System.Drawing.Point(panel.Width - 120, 8);
-        };
+        panel.Resize += (s, e) => { closeButton.Location = new Point(panel.Width - 120, 8); };
 
         return panel;
     }
 
     /// <summary>
-    /// Sets the request to load when the form is shown.
+    ///     Sets the request to load when the form is shown.
     /// </summary>
     public void SetRequest(Viewer3DRequest request)
     {
@@ -175,7 +170,7 @@ public class HelixViewerForm : Form
     }
 
     /// <summary>
-    /// Called when the form is shown - loads the content after WPF is initialized.
+    ///     Called when the form is shown - loads the content after WPF is initialized.
     /// </summary>
     private async void OnFormShown(object? sender, EventArgs e)
     {
@@ -198,8 +193,8 @@ public class HelixViewerForm : Form
     }
 
     /// <summary>
-    /// Handles mesh selection events from the viewport control.
-    /// Filters the texture gallery to show only textures for the selected material.
+    ///     Handles mesh selection events from the viewport control.
+    ///     Filters the texture gallery to show only textures for the selected material.
     /// </summary>
     private void OnMeshSelected(object? sender, MeshSelectionInfo? selectionInfo)
     {
@@ -209,19 +204,19 @@ public class HelixViewerForm : Form
             ClearTextureFilter();
             return;
         }
-        
+
         // Update selection label
         _selectionLabel.Text = $"Material: {selectionInfo.MaterialName}";
-        _selectionLabel.ForeColor = System.Drawing.Color.FromArgb(255, 200, 100); // Highlight color
+        _selectionLabel.ForeColor = Color.FromArgb(255, 200, 100); // Highlight color
         _selectionLabel.Font = new Font("Segoe UI", 9, FontStyle.Bold);
         _clearSelectionButton.Visible = true;
-        
+
         // Filter texture gallery to show only textures for this material
         FilterTextureGallery(selectionInfo);
     }
 
     /// <summary>
-    /// Filters the texture gallery to show only textures for the selected material.
+    ///     Filters the texture gallery to show only textures for the selected material.
     /// </summary>
     private void FilterTextureGallery(MeshSelectionInfo selectionInfo)
     {
@@ -229,53 +224,48 @@ public class HelixViewerForm : Form
         {
             // Check if this card belongs to the selected material
             var isMatch = materialName.Equals(selectionInfo.MaterialName, StringComparison.OrdinalIgnoreCase) ||
-                         (selectionInfo.Material != null && (
-                             materialName.Equals(selectionInfo.Material.Name, StringComparison.OrdinalIgnoreCase) ||
-                             materialName.Equals(selectionInfo.Material.InternalName, StringComparison.OrdinalIgnoreCase) ||
-                             materialName.Equals(selectionInfo.Material.MapTo, StringComparison.OrdinalIgnoreCase)));
-            
+                          (selectionInfo.Material != null && (
+                              materialName.Equals(selectionInfo.Material.Name, StringComparison.OrdinalIgnoreCase) ||
+                              materialName.Equals(selectionInfo.Material.InternalName,
+                                  StringComparison.OrdinalIgnoreCase) ||
+                              materialName.Equals(selectionInfo.Material.MapTo, StringComparison.OrdinalIgnoreCase)));
+
             // Also check if the texture file is in the selection's texture files
             if (!isMatch && selectionInfo.TextureFiles.Count > 0)
-            {
-                isMatch = selectionInfo.TextureFiles.Any(tf => 
+                isMatch = selectionInfo.TextureFiles.Any(tf =>
                     tf.File?.FullName?.Equals(file.File?.FullName, StringComparison.OrdinalIgnoreCase) == true);
-            }
-            
+
             card.Visible = isMatch;
-            
+
             // Highlight matching cards
             if (isMatch)
-            {
-                card.BackColor = System.Drawing.Color.FromArgb(60, 60, 80); // Highlighted
-            }
+                card.BackColor = Color.FromArgb(60, 60, 80); // Highlighted
             else
-            {
-                card.BackColor = System.Drawing.Color.FromArgb(45, 45, 61); // Normal
-            }
+                card.BackColor = Color.FromArgb(45, 45, 61); // Normal
         }
     }
 
     /// <summary>
-    /// Clears the texture filter and shows all textures.
+    ///     Clears the texture filter and shows all textures.
     /// </summary>
     private void ClearTextureFilter()
     {
         _selectionLabel.Text = "Click on a mesh to see its material info";
-        _selectionLabel.ForeColor = System.Drawing.Color.LightGray;
+        _selectionLabel.ForeColor = Color.LightGray;
         _selectionLabel.Font = new Font("Segoe UI", 9, FontStyle.Italic);
         _clearSelectionButton.Visible = false;
-        
+
         foreach (var (card, _, _) in _allTextureCards)
         {
             card.Visible = true;
-            card.BackColor = System.Drawing.Color.FromArgb(45, 45, 61);
+            card.BackColor = Color.FromArgb(45, 45, 61);
         }
     }
 
     /// <summary>
-    /// Populates the texture gallery with material textures.
-    /// Uses Pfim for DDS conversion (2D preview only).
-    /// Supports .link file resolution from game asset ZIPs.
+    ///     Populates the texture gallery with material textures.
+    ///     Uses Pfim for DDS conversion (2D preview only).
+    ///     Supports .link file resolution from game asset ZIPs.
     /// </summary>
     private void PopulateTextureGallery(List<MaterialJson>? materials)
     {
@@ -290,17 +280,17 @@ public class HelixViewerForm : Form
             // MaterialFiles could be null
             if (material.MaterialFiles == null)
                 continue;
-            
+
             var materialName = material.Name ?? material.InternalName ?? "Unknown";
-                
+
             foreach (var file in material.MaterialFiles)
             {
                 // Check if file exists or can be resolved via .link
                 if (file.File == null) continue;
-                
+
                 var filePath = file.File.FullName;
                 var canResolve = file.File.Exists || LinkFileResolver.CanResolve(filePath);
-                
+
                 if (!canResolve) continue;
 
                 try
@@ -321,29 +311,29 @@ public class HelixViewerForm : Form
     {
         var card = new Panel
         {
-            Size = new System.Drawing.Size(150, 195),
-            BackColor = System.Drawing.Color.FromArgb(45, 45, 61),
+            Size = new Size(150, 195),
+            BackColor = Color.FromArgb(45, 45, 61),
             Margin = new Padding(5),
             Cursor = Cursors.Hand
         };
-        
+
         // Material name label at top
         var materialLabel = new Label
         {
             Text = materialName.Length > 20 ? materialName[..17] + "..." : materialName,
-            Location = new System.Drawing.Point(5, 3),
-            Size = new System.Drawing.Size(140, 16),
-            ForeColor = System.Drawing.Color.FromArgb(150, 180, 255),
+            Location = new Point(5, 3),
+            Size = new Size(140, 16),
+            ForeColor = Color.FromArgb(150, 180, 255),
             Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
             TextAlign = ContentAlignment.TopCenter
         };
 
         var pictureBox = new PictureBox
         {
-            Size = new System.Drawing.Size(140, 120),
-            Location = new System.Drawing.Point(5, 20),
+            Size = new Size(140, 120),
+            Location = new Point(5, 20),
             SizeMode = PictureBoxSizeMode.Zoom,
-            BackColor = System.Drawing.Color.FromArgb(60, 60, 80),
+            BackColor = Color.FromArgb(60, 60, 80),
             Cursor = Cursors.Hand
         };
 
@@ -355,30 +345,26 @@ public class HelixViewerForm : Form
             // Use LinkFileResolver to get file stream (handles .link files automatically)
             using var stream = LinkFileResolver.GetFileStream(filePath);
             if (stream != null)
-            {
                 // Detect actual content type from stream header, not file extension
                 // (LinkFileResolver may have found .dds when material referenced .png)
                 pictureBox.Image = LoadImageFromStream(stream);
-            }
             else
-            {
-                pictureBox.BackColor = System.Drawing.Color.DarkGray;
-            }
+                pictureBox.BackColor = Color.DarkGray;
         }
         catch
         {
-            pictureBox.BackColor = System.Drawing.Color.DarkGray;
+            pictureBox.BackColor = Color.DarkGray;
         }
 
         // Use actual file name (without .link) for display
         var displayFileName = LinkFileResolver.GetActualFileName(file.File!.Name);
-        
+
         var label = new Label
         {
             Text = $"{file.MapType}\n{displayFileName}",
-            Location = new System.Drawing.Point(5, 143),
-            Size = new System.Drawing.Size(140, 45),
-            ForeColor = System.Drawing.Color.White,
+            Location = new Point(5, 143),
+            Size = new Size(140, 45),
+            ForeColor = Color.White,
             Font = new Font("Segoe UI", 8),
             TextAlign = ContentAlignment.TopCenter
         };
@@ -399,17 +385,14 @@ public class HelixViewerForm : Form
     }
 
     /// <summary>
-    /// Loads an image from a stream, detecting the format from the stream content.
-    /// Handles DDS files (via Pfim) and standard image formats (PNG, JPG, etc.).
+    ///     Loads an image from a stream, detecting the format from the stream content.
+    ///     Handles DDS files (via Pfim) and standard image formats (PNG, JPG, etc.).
     /// </summary>
     private static Bitmap? LoadImageFromStream(Stream stream)
     {
         // Check if stream is a DDS file by reading magic bytes
-        if (IsDdsStream(stream))
-        {
-            return LoadDdsAsBitmap(stream);
-        }
-        
+        if (IsDdsStream(stream)) return LoadDdsAsBitmap(stream);
+
         // Try loading as standard image format
         try
         {
@@ -432,8 +415,8 @@ public class HelixViewerForm : Form
     }
 
     /// <summary>
-    /// Checks if a stream contains DDS data by examining the magic bytes.
-    /// DDS files start with "DDS " (0x44 0x44 0x53 0x20).
+    ///     Checks if a stream contains DDS data by examining the magic bytes.
+    ///     DDS files start with "DDS " (0x44 0x44 0x53 0x20).
     /// </summary>
     private static bool IsDdsStream(Stream stream)
     {
@@ -442,22 +425,22 @@ public class HelixViewerForm : Form
 
         var originalPosition = stream.Position;
         stream.Position = 0;
-        
+
         Span<byte> magic = stackalloc byte[4];
         var bytesRead = stream.Read(magic);
-        
+
         stream.Position = originalPosition;
-        
+
         // DDS magic: "DDS " = 0x44, 0x44, 0x53, 0x20
-        return bytesRead == 4 && 
-               magic[0] == 0x44 && 
-               magic[1] == 0x44 && 
-               magic[2] == 0x53 && 
+        return bytesRead == 4 &&
+               magic[0] == 0x44 &&
+               magic[1] == 0x44 &&
+               magic[2] == 0x53 &&
                magic[3] == 0x20;
     }
 
     /// <summary>
-    /// Loads a DDS file from a stream and converts it to a Bitmap for display.
+    ///     Loads a DDS file from a stream and converts it to a Bitmap for display.
     /// </summary>
     private static Bitmap? LoadDdsAsBitmap(Stream stream)
     {
@@ -465,7 +448,7 @@ public class HelixViewerForm : Form
         {
             using var image = Pfimage.FromStream(stream);
 
-            PixelFormat format = image.Format switch
+            var format = image.Format switch
             {
                 ImageFormat.Rgba32 => PixelFormats.Bgra32,
                 ImageFormat.Rgb24 => PixelFormats.Bgr24,

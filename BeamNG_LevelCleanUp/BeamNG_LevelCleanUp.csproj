@@ -16,6 +16,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Autoupdater.NET.Official" Version="1.9.2" />
     <!-- Helix Toolkit for 3D rendering (replaced Blazor3D) -->
     <PackageReference Include="HelixToolkit.Wpf.SharpDX" Version="2.24.0" />
