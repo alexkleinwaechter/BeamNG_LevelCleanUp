@@ -205,8 +205,16 @@ public class ForestBrushCopier
             var daeMaterials = daeScanner.GetMaterials();
 
             // Look up materials in MaterialsJsonCopy (populated by ReadSourceMaterialsJson)
+            // DAE files reference material names via the "mapTo" property in materials.json
+            // If mapTo is set, use it as the primary match; otherwise fall back to Name
+            var daeMaterialNamesUpper = daeMaterials.Select(x => x.MaterialName.ToUpper()).ToHashSet();
+            
             var materialsJson = BeamFileReader.MaterialsJsonCopy
-                .Where(m => daeMaterials.Select(x => x.MaterialName.ToUpper()).Contains(m.Name.ToUpper()))
+                .Where(m => 
+                    // Primary: Check MapTo first (this is what DAE files reference)
+                    (!string.IsNullOrEmpty(m.MapTo) && daeMaterialNamesUpper.Contains(m.MapTo.ToUpper())) ||
+                    // Fallback: Check Name if MapTo doesn't match
+                    daeMaterialNamesUpper.Contains(m.Name.ToUpper()))
                 .Distinct()
                 .ToList();
 
