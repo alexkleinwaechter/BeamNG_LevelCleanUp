@@ -383,7 +383,7 @@ public static class RoadSmoothingPresets
         RoadWidthMeters = 8.0f,
         TerrainAffectedRangeMeters = 10.0f, // Moderate blend for natural look
         // CrossSectionIntervalMeters validation: (8/2 + 10) / 3 = 4.7m max, using 0.5m ?
-        CrossSectionIntervalMeters = 0.5f,
+        CrossSectionIntervalMeters = 0.4f,
 
         // SLOPE CONSTRAINTS
         RoadMaxSlopeDegrees = 6.0f,
@@ -719,7 +719,7 @@ public static class RoadSmoothingPresets
         RoadWidthMeters = 12.0f, // Wide elevation smoothing corridor
         RoadSurfaceWidthMeters = 7.0f, // Actual painted material width
         TerrainAffectedRangeMeters = 8.0f, // Moderate blend zone
-        CrossSectionIntervalMeters = 0.5f,
+        CrossSectionIntervalMeters = 0.4f,
 
         // SLOPE CONSTRAINTS - Moderate for real-world roads
         RoadMaxSlopeDegrees = 8.0f, // Real roads can be steep
@@ -740,7 +740,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             PreferStraightThroughJunctions = false,
             JunctionAngleThreshold = 90.0f,
-            
+
             // MinPathLengthPixels is converted to meters for OSM mode
             // At 1m/pixel, 50 pixels = 50 meters minimum road length
             MinPathLengthPixels = 50.0f,
@@ -757,7 +757,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Strong elevation smoothing for OSM roads
-            SmoothingWindowSize = 201,
+            SmoothingWindowSize = 301,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f, // Follow terrain

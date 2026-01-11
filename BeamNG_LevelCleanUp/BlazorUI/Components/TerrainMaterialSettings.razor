@@ -197,12 +197,12 @@ Class="my-0">
                                   AnchorOrigin="Origin.BottomCenter"
                                   Class="flex-grow-1">
                             <MudSelectItem Value="RoadPresetType.Custom">Custom</MudSelectItem>
-                            <MudSelectItem Value="RoadPresetType.OsmRoads">OSM Roads (7m, general OSM data)</MudSelectItem>
-                            <MudSelectItem Value="RoadPresetType.OsmHighway">OSM Highway (10m, motorway/trunk)</MudSelectItem>
-                            <MudSelectItem Value="RoadPresetType.OsmTrack">OSM Track (4m, trails/paths)</MudSelectItem>
-                            <MudSelectItem Value="RoadPresetType.Highway">PNG Highway (8m, professional quality)</MudSelectItem>
-                            <MudSelectItem Value="RoadPresetType.MountainRoad">PNGMountain Road (6m, hairpins)</MudSelectItem>
-                            <MudSelectItem Value="RoadPresetType.DirtRoad">PNG Dirt Road (5m, rustic)</MudSelectItem>
+@*                             <MudSelectItem Value="RoadPresetType.OsmHighway">OSM Highway (10m, motorway/trunk)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.OsmTrack">OSM Track (4m, trails/paths)</MudSelectItem> *@
+                            <MudSelectItem Value="RoadPresetType.Highway">Highway (8m, smooth)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.OsmRoads">Rural Roads (7m, general)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.MountainRoad">Mountain Road (6m, hairpins)</MudSelectItem>
+                            <MudSelectItem Value="RoadPresetType.DirtRoad">Dirt Road (5m, rustic)</MudSelectItem>
 @*                          <MudSelectItem Value="RoadPresetType.RacingCircuit">Racing Circuit (10m, tight turns)</MudSelectItem>
                             <MudSelectItem Value="RoadPresetType.TerrainFollowingSmooth">Terrain Following (Butterworth filter)</MudSelectItem>
                             <MudSelectItem Value="RoadPresetType.MountainousUltraSmooth">Mountainous Ultra Smooth (aggressive leveling)</MudSelectItem>
@@ -217,6 +217,13 @@ Class="my-0">
                                    OnClick="ImportRoadSettings"
                                    Size="Size.Small">
                             Import
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.FileDownload"
+                                   OnClick="ExportRoadSettings"
+                                   Size="Size.Small">
+                            Export
                         </MudButton>
                     </div>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">

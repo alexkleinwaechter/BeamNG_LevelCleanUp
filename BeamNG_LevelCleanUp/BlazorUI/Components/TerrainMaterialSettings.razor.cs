@@ -345,6 +345,117 @@ public partial class TerrainMaterialSettings
         }
     }
 
+    private async Task ExportRoadSettings()
+    {
+        string? selectedPath = null;
+        var defaultFileName = $"{SanitizeFileName(Material.InternalName)}_roadSmoothing.json";
+        
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new SaveFileDialog();
+            dialog.Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*";
+            dialog.Title = $"Export Road Smoothing Settings for {Material.InternalName}";
+            dialog.FileName = defaultFileName;
+            dialog.DefaultExt = "json";
+            if (dialog.ShowDialog() == DialogResult.OK)
+                selectedPath = dialog.FileName;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            await ExportRoadSettingsToFile(selectedPath);
+        }
+    }
+
+    private async Task ExportRoadSettingsToFile(string filePath)
+    {
+        try
+        {
+            var settings = new System.Text.Json.Nodes.JsonObject
+            {
+                ["selectedPreset"] = Material.SelectedPreset.ToString(),
+                ["roadWidthMeters"] = Material.RoadWidthMeters,
+                ["roadSurfaceWidthMeters"] = Material.RoadSurfaceWidthMeters,
+                ["terrainAffectedRangeMeters"] = Material.TerrainAffectedRangeMeters,
+                ["roadEdgeProtectionBufferMeters"] = Material.RoadEdgeProtectionBufferMeters,
+                ["enableMaxSlopeConstraint"] = Material.EnableMaxSlopeConstraint,
+                ["roadMaxSlopeDegrees"] = Material.RoadMaxSlopeDegrees,
+                ["sideMaxSlopeDegrees"] = Material.SideMaxSlopeDegrees,
+                ["blendFunctionType"] = Material.BlendFunctionType.ToString(),
+                ["crossSectionIntervalMeters"] = Material.CrossSectionIntervalMeters,
+                ["enableTerrainBlending"] = Material.EnableTerrainBlending,
+                ["splineParameters"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["splineInterpolationType"] = Material.SplineInterpolationType.ToString(),
+                    ["tension"] = Material.SplineTension,
+                    ["continuity"] = Material.SplineContinuity,
+                    ["bias"] = Material.SplineBias,
+                    ["useGraphOrdering"] = Material.UseGraphOrdering,
+                    ["preferStraightThroughJunctions"] = Material.PreferStraightThroughJunctions,
+                    ["densifyMaxSpacingPixels"] = Material.DensifyMaxSpacingPixels,
+                    ["simplifyTolerancePixels"] = Material.SimplifyTolerancePixels,
+                    ["bridgeEndpointMaxDistancePixels"] = Material.BridgeEndpointMaxDistancePixels,
+                    ["minPathLengthPixels"] = Material.MinPathLengthPixels,
+                    ["junctionAngleThreshold"] = Material.JunctionAngleThreshold,
+                    ["orderingNeighborRadiusPixels"] = Material.OrderingNeighborRadiusPixels,
+                    ["skeletonDilationRadius"] = Material.SkeletonDilationRadius,
+                    ["smoothingWindowSize"] = Material.SplineSmoothingWindowSize,
+                    ["useButterworthFilter"] = Material.SplineUseButterworthFilter,
+                    ["butterworthFilterOrder"] = Material.SplineButterworthFilterOrder,
+                    ["globalLevelingStrength"] = Material.GlobalLevelingStrength,
+                    ["banking"] = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["enableAutoBanking"] = Material.EnableAutoBanking,
+                        ["maxBankAngleDegrees"] = Material.MaxBankAngleDegrees,
+                        ["bankStrength"] = Material.BankStrength,
+                        ["autoBankFalloff"] = Material.AutoBankFalloff,
+                        ["curvatureToBankScale"] = Material.CurvatureToBankScale,
+                        ["minCurveRadiusForMaxBank"] = Material.MinCurveRadiusForMaxBank,
+                        ["bankTransitionLengthMeters"] = Material.BankTransitionLengthMeters
+                    }
+                },
+                ["postProcessing"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["enabled"] = Material.EnablePostProcessingSmoothing,
+                    ["smoothingType"] = Material.SmoothingType.ToString(),
+                    ["kernelSize"] = Material.SmoothingKernelSize,
+                    ["sigma"] = Material.SmoothingSigma,
+                    ["iterations"] = Material.SmoothingIterations,
+                    ["maskExtensionMeters"] = Material.SmoothingMaskExtensionMeters
+                },
+                ["junctionHarmonization"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["useGlobalSettings"] = Material.UseGlobalJunctionSettings,
+                    ["enableJunctionHarmonization"] = Material.EnableJunctionHarmonization,
+                    ["junctionDetectionRadiusMeters"] = Material.JunctionDetectionRadiusMeters,
+                    ["junctionBlendDistanceMeters"] = Material.JunctionBlendDistanceMeters,
+                    ["blendFunctionType"] = Material.JunctionBlendFunction.ToString(),
+                    ["enableEndpointTaper"] = Material.EnableEndpointTaper,
+                    ["endpointTaperDistanceMeters"] = Material.EndpointTaperDistanceMeters,
+                    ["endpointTerrainBlendStrength"] = Material.EndpointTerrainBlendStrength
+                }
+            };
+
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            await File.WriteAllTextAsync(filePath, settings.ToJsonString(jsonOptions));
+        }
+        catch (Exception)
+        {
+            // Silently fail - the user will see no file was created
+        }
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var result = fileName;
+        foreach (var c in Path.GetInvalidFileNameChars())
+            result = result.Replace(c, '_');
+        return result.Replace(' ', '_').Replace('-', '_');
+    }
+
     private async Task ImportRoadSettingsFromFile(string filePath)
     {
         try
