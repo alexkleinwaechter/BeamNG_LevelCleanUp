@@ -16,6 +16,7 @@ public static class MaterialLayerProcessor
     /// For each pixel, the HIGHEST index material with a white pixel in its layer wins.
     /// Materials without layer images are treated as having no coverage (all black) -
     /// they don't claim any pixels but their index position is preserved for the .ter file.
+    /// Uses parallel processing for improved performance on large terrains.
     /// </summary>
     /// <param name="materials">List of material definitions in order</param>
     /// <param name="size">Terrain size (width and height)</param>
@@ -84,31 +85,39 @@ public static class MaterialLayerProcessor
                 return materialIndices;
             }
             
-            // Process each pixel
-            for (int y = 0; y < size; y++)
+            // Pre-extract pixel data from images for thread-safe parallel access
+            // ImageSharp's pixel access is not thread-safe, so we need to extract to arrays first
+            var layerData = new List<(int MaterialIndex, byte[] Pixels)>();
+            foreach (var (materialIndex, image) in loadedImages)
             {
-                for (int x = 0; x < size; x++)
+                var pixels = new byte[size * size];
+                for (int y = 0; y < size; y++)
                 {
-                    // BeamNG array index (bottom-left origin)
-                    int flippedY = size - 1 - y;
-                    int arrayIndex = flippedY * size + x;
-                    
-                    // Find which material should be at this pixel
-                    // IMPORTANT: Process layers in REVERSE order of material index
-                    // Highest material index with white pixel wins (highest priority)
-                    for (int i = loadedImages.Count - 1; i >= 0; i--)
+                    for (int x = 0; x < size; x++)
                     {
-                        var (materialIndex, image) = loadedImages[i];
-                        var pixel = image[x, y];
-                        
-                        // White pixel (>127) means material is present at this location
-                        if (pixel.PackedValue > 127)
-                        {
-                            materialIndices[arrayIndex] = (byte)materialIndex;
-                            break; // Found highest priority material for this pixel
-                        }
+                        pixels[y * size + x] = image[x, y].PackedValue;
                     }
-                    // If no material claimed this pixel, it stays at 0 (default/fallback)
+                }
+                layerData.Add((materialIndex, pixels));
+            }
+            
+            // Determine if we should use parallel processing (worth it for larger terrains)
+            var useParallel = size >= 1024;
+            
+            if (useParallel)
+            {
+                // Process rows in parallel for large terrains
+                Parallel.For(0, size, y =>
+                {
+                    ProcessRow(y, size, layerData, materialIndices);
+                });
+            }
+            else
+            {
+                // Sequential processing for small terrains
+                for (int y = 0; y < size; y++)
+                {
+                    ProcessRow(y, size, layerData, materialIndices);
                 }
             }
         }
@@ -122,6 +131,38 @@ public static class MaterialLayerProcessor
         }
         
         return materialIndices;
+    }
+    
+    /// <summary>
+    /// Processes a single row of pixels, assigning material indices.
+    /// Thread-safe when using pre-extracted pixel arrays.
+    /// </summary>
+    private static void ProcessRow(int y, int size, List<(int MaterialIndex, byte[] Pixels)> layerData, byte[] materialIndices)
+    {
+        for (int x = 0; x < size; x++)
+        {
+            // BeamNG array index (bottom-left origin)
+            int flippedY = size - 1 - y;
+            int arrayIndex = flippedY * size + x;
+            int pixelIndex = y * size + x;
+            
+            // Find which material should be at this pixel
+            // IMPORTANT: Process layers in REVERSE order of material index
+            // Highest material index with white pixel wins (highest priority)
+            for (int i = layerData.Count - 1; i >= 0; i--)
+            {
+                var (materialIndex, pixels) = layerData[i];
+                var pixel = pixels[pixelIndex];
+                
+                // White pixel (>127) means material is present at this location
+                if (pixel > 127)
+                {
+                    materialIndices[arrayIndex] = (byte)materialIndex;
+                    break; // Found highest priority material for this pixel
+                }
+            }
+            // If no material claimed this pixel, it stays at 0 (default/fallback)
+        }
     }
     
     /// <summary>

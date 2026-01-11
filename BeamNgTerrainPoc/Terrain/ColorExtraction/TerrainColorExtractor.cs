@@ -4,21 +4,24 @@ using BeamNgTerrainPoc.Terrain.Logging;
 namespace BeamNgTerrainPoc.Terrain.ColorExtraction;
 
 /// <summary>
-/// Extracts weighted average colors from BeamNG terrain materials.
-/// Main entry point for the ColorExtraction feature.
+///     Extracts weighted average colors from BeamNG terrain materials.
+///     Main entry point for the ColorExtraction feature.
 /// </summary>
 public static class TerrainColorExtractor
 {
     /// <summary>
-    /// Extracts weighted average colors for terrain materials.
+    ///     Extracts weighted average colors for terrain materials.
     /// </summary>
     /// <param name="terFilePath">Path to the terrain .ter file</param>
     /// <param name="materialTextures">Dictionary mapping material name to basecolor texture path (PNG)</param>
-    /// <returns>Dictionary mapping material name to hex color (#RRGGBB). Empty string for materials with no coverage or failed extraction.</returns>
+    /// <returns>
+    ///     Dictionary mapping material name to hex color (#RRGGBB). Empty string for materials with no coverage or failed
+    ///     extraction.
+    /// </returns>
     /// <remarks>
-    /// Materials not found in the terrain file are skipped with a warning.
-    /// Materials with missing texture files are skipped with a warning.
-    /// Materials with 0% coverage return empty string.
+    ///     Materials not found in the terrain file are skipped with a warning.
+    ///     Materials with missing texture files are skipped with a warning.
+    ///     Materials with 0% coverage return empty string.
     /// </remarks>
     /// <exception cref="FileNotFoundException">If .ter file doesn't exist</exception>
     public static Dictionary<string, string> ExtractColors(
@@ -30,14 +33,17 @@ public static class TerrainColorExtractor
     }
 
     /// <summary>
-    /// Extracts weighted average colors for terrain materials using a stream resolver.
-    /// This overload supports .link files and other stream sources by allowing the caller
-    /// to provide a function that resolves texture paths to streams.
+    ///     Extracts weighted average colors for terrain materials using a stream resolver.
+    ///     This overload supports .link files and other stream sources by allowing the caller
+    ///     to provide a function that resolves texture paths to streams.
     /// </summary>
     /// <param name="terFilePath">Path to the terrain .ter file</param>
     /// <param name="materialTexturePaths">Dictionary mapping material name to texture path (may be .link file)</param>
     /// <param name="streamResolver">Function that resolves a texture path to a Stream, or null if not found</param>
-    /// <returns>Dictionary mapping material name to hex color (#RRGGBB). Empty string for materials with no coverage or failed extraction.</returns>
+    /// <returns>
+    ///     Dictionary mapping material name to hex color (#RRGGBB). Empty string for materials with no coverage or failed
+    ///     extraction.
+    /// </returns>
     /// <exception cref="FileNotFoundException">If .ter file doesn't exist</exception>
     public static Dictionary<string, string> ExtractColors(
         string terFilePath,
@@ -49,7 +55,7 @@ public static class TerrainColorExtractor
     }
 
     /// <summary>
-    /// Extracts colors with detailed statistics for each material.
+    ///     Extracts colors with detailed statistics for each material.
     /// </summary>
     /// <param name="terFilePath">Path to the terrain .ter file</param>
     /// <param name="materialTextures">Dictionary mapping material name to basecolor texture path</param>
@@ -69,8 +75,8 @@ public static class TerrainColorExtractor
     }
 
     /// <summary>
-    /// Extracts colors with detailed statistics for each material using a stream resolver.
-    /// This overload supports .link files and other stream sources.
+    ///     Extracts colors with detailed statistics for each material using a stream resolver.
+    ///     This overload supports .link files and other stream sources.
     /// </summary>
     /// <param name="terFilePath">Path to the terrain .ter file</param>
     /// <param name="materialTexturePaths">Dictionary mapping material name to texture path (may be .link file)</param>
@@ -95,7 +101,7 @@ public static class TerrainColorExtractor
         var (terrainSize, terrainMaterialNames) = LayerMaskReader.ReadTerrainInfo(terFilePath);
         var masks = LayerMaskReader.ReadLayerMasks(terFilePath);
 
-        int totalPixels = (int)(terrainSize * terrainSize);
+        var totalPixels = (int)(terrainSize * terrainSize);
         var colors = new Dictionary<string, string>();
         var details = new List<MaterialColorResult>();
 
@@ -131,15 +137,13 @@ public static class TerrainColorExtractor
             }
 
             // Calculate coverage
-            int maskedPixels = MaskedColorCalculator.CountMaskedPixels(mask);
-            float coveragePercent = (float)maskedPixels / totalPixels * 100f;
+            var maskedPixels = MaskedColorCalculator.CountMaskedPixels(mask);
+            var coveragePercent = (float)maskedPixels / totalPixels * 100f;
 
             // Calculate dominant color if there's coverage
             string? hexColor = null;
             if (maskedPixels > 0)
-            {
                 hexColor = MaskedColorCalculator.CalculateDominantColor(textureStream, mask, terrainSize);
-            }
 
             colors[materialName] = hexColor ?? string.Empty;
             details.Add(new MaterialColorResult(materialName, hexColor, maskedPixels, coveragePercent));
@@ -153,9 +157,9 @@ public static class TerrainColorExtractor
     }
 
     /// <summary>
-    /// Extracts colors for all materials found in a terrain file.
-    /// Automatically discovers materials from the .ter file and looks for corresponding
-    /// basecolor textures in the specified texture directory.
+    ///     Extracts colors for all materials found in a terrain file.
+    ///     Automatically discovers materials from the .ter file and looks for corresponding
+    ///     basecolor textures in the specified texture directory.
     /// </summary>
     /// <param name="terFilePath">Path to the terrain .ter file</param>
     /// <param name="textureDirectory">Directory containing basecolor textures (named {materialName}_b.png)</param>
@@ -187,15 +191,11 @@ public static class TerrainColorExtractor
         {
             var textureFileName = string.Format(textureFilePattern, materialName);
             var texturePath = Path.Combine(textureDirectory, textureFileName);
-            
+
             if (File.Exists(texturePath))
-            {
                 materialTextures[materialName] = texturePath;
-            }
             else
-            {
                 TerrainLogger.Detail($"Texture not found for material '{materialName}': {texturePath}");
-            }
         }
 
         return ExtractColors(terFilePath, materialTextures);

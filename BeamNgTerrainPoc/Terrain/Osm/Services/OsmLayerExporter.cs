@@ -30,6 +30,7 @@ public class OsmLayerExporter
     /// <summary>
     /// Exports all OSM feature types to 8-bit PNG layer maps.
     /// Each unique combination of category + subcategory + geometry type gets its own file.
+    /// Uses parallel processing for improved performance.
     /// </summary>
     /// <param name="osmResult">The OSM query result (from cache or API)</param>
     /// <param name="effectiveBoundingBox">The WGS84 bounding box (possibly cropped)</param>
@@ -65,46 +66,126 @@ public class OsmLayerExporter
             return 0;
         }
 
-        TerrainLogger.Info($"OsmLayerExporter: Exporting {featureGroups.Count} OSM layer types...");
+        TerrainLogger.Info($"OsmLayerExporter: Exporting {featureGroups.Count} OSM layer types (parallel)...");
 
-        // Set up the geometry processor
-        var processor = new OsmGeometryProcessor();
-        if (coordinateTransformer != null)
-        {
-            processor.SetCoordinateTransformer(coordinateTransformer);
-        }
-
-        var exportedCount = 0;
+        // Pre-assign unique filenames (must be done sequentially to avoid conflicts)
         var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+        var groupsWithPaths = new List<(FeatureGroupInfo Group, string FilePath)>();
+        
         foreach (var group in featureGroups)
         {
-            try
-            {
-                // Ensure unique filename
-                var fileName = EnsureUniqueFileName(group.SafeFileName, usedFileNames);
-                usedFileNames.Add(fileName);
+            var fileName = EnsureUniqueFileName(group.SafeFileName, usedFileNames);
+            usedFileNames.Add(fileName);
+            var filePath = Path.Combine(osmLayerFolder, $"{fileName}.png");
+            groupsWithPaths.Add((group, filePath));
+        }
 
-                var filePath = Path.Combine(osmLayerFolder, $"{fileName}.png");
-                
-                await ExportFeatureGroupAsync(
-                    group, 
-                    processor, 
-                    effectiveBoundingBox, 
-                    terrainSize, 
-                    metersPerPixel, 
-                    filePath);
+        // Process feature groups in parallel
+        // Each group gets its own OsmGeometryProcessor instance for thread safety
+        var exportedCount = 0;
+        var failedCount = 0;
+        var lockObj = new object();
 
-                exportedCount++;
-            }
-            catch (Exception ex)
+        await Task.Run(() =>
+        {
+            Parallel.ForEach(groupsWithPaths, 
+                new ParallelOptions 
+                { 
+                    // Limit parallelism to avoid excessive memory usage with large terrains
+                    MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) 
+                },
+                groupWithPath =>
+                {
+                    try
+                    {
+                        // Create a processor instance per thread for thread safety
+                        var processor = new OsmGeometryProcessor();
+                        if (coordinateTransformer != null)
+                        {
+                            processor.SetCoordinateTransformer(coordinateTransformer);
+                        }
+
+                        // Rasterize and save synchronously within the parallel task
+                        ExportFeatureGroupSync(
+                            groupWithPath.Group, 
+                            processor, 
+                            effectiveBoundingBox, 
+                            terrainSize, 
+                            metersPerPixel, 
+                            groupWithPath.FilePath);
+
+                        lock (lockObj)
+                        {
+                            exportedCount++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        TerrainLogger.Warning($"OsmLayerExporter: Failed to export {groupWithPath.Group.SafeFileName}: {ex.Message}");
+                        lock (lockObj)
+                        {
+                            failedCount++;
+                        }
+                    }
+                });
+        });
+
+        TerrainLogger.Info($"OsmLayerExporter: Successfully exported {exportedCount}/{featureGroups.Count} OSM layer maps to {osmLayerFolder}" +
+                          (failedCount > 0 ? $" ({failedCount} failed)" : ""));
+        return exportedCount;
+    }
+
+    /// <summary>
+    /// Synchronous version of ExportFeatureGroupAsync for use in parallel processing.
+    /// </summary>
+    private static void ExportFeatureGroupSync(
+        FeatureGroupInfo group,
+        OsmGeometryProcessor processor,
+        GeoBoundingBox bbox,
+        int terrainSize,
+        float metersPerPixel,
+        string filePath)
+    {
+        byte[,] layerMap;
+
+        if (group.GeometryType == OsmGeometryType.LineString)
+        {
+            // For lines, use a sensible width based on road/feature type
+            var lineWidthMeters = GetDefaultLineWidth(group.Category, group.SubCategory);
+            var lineWidthPixels = lineWidthMeters / metersPerPixel;
+            
+            layerMap = processor.RasterizeLinesToLayerMap(
+                group.Features, bbox, terrainSize, lineWidthPixels);
+        }
+        else // Polygon
+        {
+            layerMap = processor.RasterizePolygonsToLayerMap(
+                group.Features, bbox, terrainSize);
+        }
+
+        // Save as 8-bit grayscale PNG (synchronously)
+        SaveLayerMapSync(layerMap, filePath);
+    }
+
+    /// <summary>
+    /// Synchronous version of SaveLayerMapAsync for use in parallel processing.
+    /// </summary>
+    private static void SaveLayerMapSync(byte[,] layerMap, string filePath)
+    {
+        var height = layerMap.GetLength(0);
+        var width = layerMap.GetLength(1);
+
+        using var image = new Image<L8>(width, height);
+
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
             {
-                TerrainLogger.Warning($"OsmLayerExporter: Failed to export {group.SafeFileName}: {ex.Message}");
+                image[x, y] = new L8(layerMap[y, x]);
             }
         }
 
-        TerrainLogger.Info($"OsmLayerExporter: Successfully exported {exportedCount}/{featureGroups.Count} OSM layer maps to {osmLayerFolder}");
-        return exportedCount;
+        image.SaveAsPng(filePath);
     }
 
     /// <summary>
