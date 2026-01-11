@@ -1,4 +1,4 @@
-@page "/CopyForestBrushes"
+﻿@page "/CopyForestBrushes"
 @using System.Diagnostics.CodeAnalysis
 @using System.IO.Compression
 @using System.Reflection
@@ -23,9 +23,9 @@
             <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Assistant">
                 <MudText Typo="Typo.h6">Create Level Wizard - Select Forest Brushes</MudText>
                 <MudText Typo="Typo.body2">
-                    Source: <b>@(_copyCompleted ? _lastCopiedSourceName : WizardState.SourceLevelName)</b> ? Target: <b>@WizardState.LevelName</b>
+                        Source: <b>@(_copyCompleted? _lastCopiedSourceName : WizardState.SourceLevelName)</b> → Target: <b>@WizardState.LevelName</b>
                 </MudText>
-                <MudText Typo="Typo.body2" Class="mt-2">
+                <MudText Typo="Typo.body2" Class="mt-2">o
                     @if (_copyCompleted)
                     {
                         <text>Forest brushes copied! You can select another source map or continue to assets.</text>
