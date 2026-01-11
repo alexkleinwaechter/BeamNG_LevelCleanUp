@@ -1336,6 +1336,23 @@ public partial class GenerateTerrain
             options);
     }
 
+    /// <summary>
+    /// Opens the Heightmap Source Help dialog explaining GeoTIFF sources and where to get elevation data.
+    /// </summary>
+    private async Task OpenHeightmapSourceHelpDialog()
+    {
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        await DialogService.ShowAsync<HeightmapSourceHelpDialog>(
+            "Heightmap Sources Guide",
+            options);
+    }
+
     // ========================================
     // ANALYSIS METHODS
     // ========================================

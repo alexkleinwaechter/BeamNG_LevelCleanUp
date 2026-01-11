@@ -1,0 +1,354 @@
+﻿@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Help" Class="mr-2" />
+            Heightmap Sources Guide
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <div style="max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 8px;">
+            
+            @* Introduction *@
+            <MudText Typo="Typo.body1" Class="mb-4">
+                This guide explains the different heightmap source options and helps you find 
+                elevation data (GeoTIFF) for your map.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 1: What are GeoTIFFs? *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Terrain" Size="Size.Small" Class="mr-1" />
+                1. What is Elevation-Based GeoTIFF?
+            </MudText>
+            
+            <MudText Typo="Typo.body2" Class="mb-3">
+                A <strong>GeoTIFF</strong> is a standard TIFF image file that contains embedded geographic 
+                metadata (coordinates, projection, pixel size). When used for terrain generation, each pixel 
+                value represents the <strong>elevation</strong> (height above sea level) at that location.
+            </MudText>
+            
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                <strong>Key advantage:</strong> GeoTIFF files contain real-world coordinates, enabling automatic 
+                OSM data fetching for roads, buildings, and land use in your map area.
+            </MudAlert>
+            
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-4" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Property</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Pixel Values</strong></td>
+                        <td>Elevation in meters (e.g., 0-8848 for Mt. Everest)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Bit Depth</strong></td>
+                        <td>Usually 16-bit or 32-bit float for precise elevation</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Projection</strong></td>
+                        <td>Geographic (WGS84) or projected (UTM, etc.)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Resolution</strong></td>
+                        <td>Meters per pixel (e.g., 30m for SRTM, 1m for LiDAR)</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 2: Single GeoTIFF vs Tiles *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.GridOn" Size="Size.Small" Class="mr-1" />
+                2. Single GeoTIFF vs. GeoTIFF Tiles
+            </MudText>
+            
+            <MudGrid Spacing="3" Class="mb-4">
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-3" Elevation="1">
+                        <MudText Typo="Typo.subtitle1" Color="Color.Primary">
+                            <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Small" Class="mr-1" />
+                            Single GeoTIFF File
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
+                            A single file covering your entire map area. Best for:
+                        </MudText>
+                        <MudList T="string" Dense="true">
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                Small to medium areas (&lt; 50km²)
+                            </MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                Data from mapng.com or similar tools
+                            </MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                Simplest workflow - one file, no assembly
+                            </MudListItem>
+                        </MudList>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-3" Elevation="1">
+                        <MudText Typo="Typo.subtitle1" Color="Color.Primary">
+                            <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Class="mr-1" />
+                            GeoTIFF Tiles (Directory)
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
+                            Multiple tiles that are automatically combined. Best for:
+                        </MudText>
+                        <MudList T="string" Dense="true">
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                Large areas requiring multiple downloads
+                            </MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                High-resolution government data (often tiled)
+                            </MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                LiDAR datasets (typically distributed as tiles)
+                            </MudListItem>
+                        </MudList>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+            
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                <strong>Note:</strong> When using tiles, ensure all files use the same projection and resolution.
+                The tool will automatically merge overlapping tiles.
+            </MudAlert>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 3: Where to Get GeoTIFF Data *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Small" Class="mr-1" />
+                3. Where to Get GeoTIFF Elevation Data
+            </MudText>
+            
+            @* Easy Option: mapng.com *@
+            <MudPaper Class="pa-3 mb-3" Elevation="1" Style="border-left: 4px solid var(--mud-palette-success);">
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.subtitle1" Color="Color.Success">
+                        <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" Class="mr-1" />
+                        Easiest Option: mapng.com
+                    </MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Recommended</MudChip>
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    <MudLink Href="https://mapng.com/" Target="_blank" Color="Color.Primary">
+                        <strong>https://mapng.com/</strong>
+                        <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Class="ml-1" />
+                    </MudLink>
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    A website specifically designed for generating GeoTIFF heightmaps from global elevation data.
+                    It provides a unified interface to access elevation data from anywhere in the world.
+                </MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                        Simple point-and-click interface
+                    </MudListItem>
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                        Works worldwide with consistent data format
+                    </MudListItem>
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                        Downloads ready-to-use GeoTIFF files
+                    </MudListItem>
+                    <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                        <strong>GPXZ Premium Global</strong> option for high-resolution data (requires API key), up to 100 requests per day free of charge
+                    </MudListItem>
+                </MudList>
+            </MudPaper>
+            
+            @* Advanced Option: Government Sources *@
+            <MudPaper Class="pa-3 mb-3" Elevation="1" Style="border-left: 4px solid var(--mud-palette-info);">
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.subtitle1" Color="Color.Info">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Small" Class="mr-1" />
+                        Best Quality: Official Government Sources
+                    </MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">Advanced</MudChip>
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    For the highest resolution and accuracy, official government surveying agencies are the best source.
+                    Many countries provide free LiDAR-derived elevation data with 1-5 meter resolution.
+                </MudText>
+                
+                <MudExpansionPanels Dense="true" Class="mb-2">
+                    <MudExpansionPanel Text="Why government data is better" Dense="true">
+                        <MudList T="string" Dense="true">
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                <strong>Higher Resolution:</strong> Often 1-5m vs 30m for global datasets
+                            </MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                <strong>More Accurate:</strong> LiDAR-derived, not radar interpolation
+                            </MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                                <strong>Better Features:</strong> Shows small hills, ditches, road embankments
+                            </MudListItem>
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">
+                                <strong>Tradeoff:</strong> Each country has different download portals and formats
+                            </MudListItem>
+                        </MudList>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+                
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    <strong>Finding your country's data portal:</strong>
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    <MudLink Href="https://www.opendem.info/opendemsearcher.html" Target="_blank" Color="Color.Primary">
+                        <strong>OpenDEM Searcher</strong>
+                        <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Class="ml-1" />
+                    </MudLink>
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    This meta-search tool helps you find the official elevation data portal for specific regions.
+                    It links to government surveying agencies and open data portals worldwide.
+                </MudText>
+                
+                <MudExpansionPanels Dense="true" Class="mt-2">
+                    <MudExpansionPanel Text="Example: Popular government data sources" Dense="true">
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                            <thead>
+                                <tr>
+                                    <th>Country/Region</th>
+                                    <th>Source</th>
+                                    <th>Resolution</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>🇺🇸 USA</td>
+                                    <td>USGS 3DEP</td>
+                                    <td>1-10m</td>
+                                </tr>
+                                <tr>
+                                    <td>🇬🇧 UK</td>
+                                    <td>Environment Agency LIDAR</td>
+                                    <td>0.25-2m</td>
+                                </tr>
+                                <tr>
+                                    <td>🇩🇪 Germany</td>
+                                    <td>State Surveying Offices (varies)</td>
+                                    <td>1-5m</td>
+                                </tr>
+                                <tr>
+                                    <td>🇫🇷 France</td>
+                                    <td>IGN RGE ALTI</td>
+                                    <td>1-5m</td>
+                                </tr>
+                                <tr>
+                                    <td>🇦🇺 Australia</td>
+                                    <td>ELVIS (Geoscience AU)</td>
+                                    <td>1-5m</td>
+                                </tr>
+                                <tr>
+                                    <td>🇨🇦 Canada</td>
+                                    <td>HRDEM (NRCan)</td>
+                                    <td>1-2m</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            </MudPaper>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 4: Tips *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" Class="mr-1" />
+                4. Tips for Best Results
+            </MudText>
+            
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2">
+                        <strong>Start with mapng.com</strong> for quick results. Use the free tier to test your workflow,
+                        or enable <strong>GPXZ Premium Global</strong> with an API key for high-resolution data worldwide.
+                    </MudText>
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2">
+                        <strong>Match resolution to your map size:</strong> A 4096x4096 terrain at 1m/pixel 
+                        (4km × 4km) benefits from high-res data. A 16km map at 30m data is often fine.
+                    </MudText>
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2">
+                        <strong>Check projection:</strong> Data in WGS84 (EPSG:4326) or UTM works best. 
+                        The tool will show a warning if projection cannot be determined.
+                    </MudText>
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">
+                    <MudText Typo="Typo.body2">
+                        <strong>Avoid DSM data</strong> (Digital Surface Model) which includes buildings and trees.
+                        Use <strong>DTM</strong> (Digital Terrain Model) or <strong>DEM</strong> (bare earth) for terrain.
+                    </MudText>
+                </MudListItem>
+            </MudList>
+
+            <MudDivider Class="my-4" />
+
+            @* Quick Reference *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Bookmark" Size="Size.Small" Class="mr-1" />
+                Quick Reference
+            </MudText>
+            
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Source Type</th>
+                        <th>Best For</th>
+                        <th>Typical Resolution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Default">PNG Heightmap</MudChip></td>
+                        <td>Custom/artistic terrains, game assets</td>
+                        <td>N/A (user-defined)</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Success">mapng.com (Free)</MudChip></td>
+                        <td>Quick start, worldwide coverage</td>
+                        <td>~30m</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Success">mapng.com (GPXZ Premium)</MudChip></td>
+                        <td>High quality, worldwide coverage</td>
+                        <td>~1-10m</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Info">Government LiDAR</MudChip></td>
+                        <td>Highest quality, realistic terrain</td>
+                        <td>0.25-5m</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+            
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Primary" Variant="Variant.Filled">
+            Got it!
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] 
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private void Close()
+    {
+        MudDialog.Close();
+    }
+}

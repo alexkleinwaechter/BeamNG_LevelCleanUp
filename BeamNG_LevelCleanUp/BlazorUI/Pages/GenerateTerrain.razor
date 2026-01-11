@@ -122,7 +122,15 @@
                     <MudGrid Spacing="3">
                         <!-- Heightmap Source Type Selection -->
                         <MudItem xs="12">
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">Heightmap Source (Required)</MudText>
+                            <div class="d-flex align-center gap-2 mb-2">
+                                <MudText Typo="Typo.subtitle2">Heightmap Source (Required)</MudText>
+                                <MudTooltip Text="Learn about GeoTIFF sources and where to get elevation data">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Help"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   OnClick="OpenHeightmapSourceHelpDialog" />
+                                </MudTooltip>
+                            </div>
                             <MudButtonGroup OverrideStyles="false" Class="mb-3">
                                 <MudButton Variant="@(_heightmapSourceType == HeightmapSourceType.Png ? Variant.Filled : Variant.Outlined)"
                                            Color="Color.Primary"
