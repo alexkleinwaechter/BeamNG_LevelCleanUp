@@ -8,7 +8,6 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
-using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
@@ -18,26 +17,16 @@ using SixLabors.ImageSharp.PixelFormats;
 namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 
 /// <summary>
-/// Orchestrates the terrain generation process including:
-/// - Building material definitions from OSM or PNG sources
-/// - Creating coordinate transformers for proper geo-alignment
-/// - Executing terrain creation
-/// - Running post-generation tasks (TerrainBlock update, spawn points, etc.)
+///     Orchestrates the terrain generation process including:
+///     - Building material definitions from OSM or PNG sources
+///     - Creating coordinate transformers for proper geo-alignment
+///     - Executing terrain creation
+///     - Running post-generation tasks (TerrainBlock update, spawn points, etc.)
 /// </summary>
 public class TerrainGenerationOrchestrator
 {
     /// <summary>
-    /// Result of terrain generation execution.
-    /// </summary>
-    public class GenerationResult
-    {
-        public bool Success { get; init; }
-        public TerrainCreationParameters? Parameters { get; init; }
-        public string? ErrorMessage { get; init; }
-    }
-
-    /// <summary>
-    /// Executes the full terrain generation pipeline.
+    ///     Executes the full terrain generation pipeline.
     /// </summary>
     public async Task<GenerationResult> ExecuteAsync(TerrainGenerationState state)
     {
@@ -45,8 +34,8 @@ public class TerrainGenerationOrchestrator
     }
 
     /// <summary>
-    /// Executes terrain generation using a pre-analyzed road network.
-    /// This allows users to preview and modify junction exclusions before generation.
+    ///     Executes terrain generation using a pre-analyzed road network.
+    ///     This allows users to preview and modify junction exclusions before generation.
     /// </summary>
     /// <param name="state">The terrain generation state with all settings.</param>
     /// <param name="analysisState">The pre-analyzed network state with exclusions applied.</param>
@@ -59,17 +48,17 @@ public class TerrainGenerationOrchestrator
     }
 
     /// <summary>
-    /// Internal implementation of terrain generation.
+    ///     Internal implementation of terrain generation.
     /// </summary>
     private async Task<GenerationResult> ExecuteInternalAsync(
         TerrainGenerationState state,
         TerrainAnalysisState? analysisState)
     {
         var debugPath = state.GetDebugPath();
-        
+
         // Clear the debug folder before starting a new generation
         ClearDebugFolder(debugPath);
-        
+
         Directory.CreateDirectory(debugPath);
 
         TerrainCreationParameters? terrainParameters = null;
@@ -113,10 +102,10 @@ public class TerrainGenerationOrchestrator
             // Export ALL OSM layers to osm_layer subfolder (if OSM data is available)
             // This happens automatically when using GeoTIFF with valid WGS84 bounding box
             await ExportAllOsmLayersAsync(
-                osmQueryResult, 
-                effectiveBoundingBox, 
-                coordinateTransformer, 
-                state, 
+                osmQueryResult,
+                effectiveBoundingBox,
+                coordinateTransformer,
+                state,
                 debugPath);
 
             // Build terrain creation parameters
@@ -124,18 +113,14 @@ public class TerrainGenerationOrchestrator
 
             // Execute terrain creation
             var outputPath = state.GetOutputPath();
-            
+
             if (analysisState?.HasAnalysis == true)
-            {
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Starting terrain generation with pre-analyzed network ({analysisState.SplineCount} splines, " +
                     $"{analysisState.ActiveJunctionCount} active junctions, {analysisState.ExcludedCount} excluded)...");
-            }
             else
-            {
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Starting terrain generation: {state.TerrainSize}x{state.TerrainSize}, {materialDefinitions.Count} materials...");
-            }
 
             success = await creator.CreateTerrainFileAsync(outputPath, terrainParameters);
 
@@ -160,7 +145,7 @@ public class TerrainGenerationOrchestrator
     }
 
     /// <summary>
-    /// Runs post-generation tasks like TerrainBlock update and spawn point creation.
+    ///     Runs post-generation tasks like TerrainBlock update and spawn point creation.
     /// </summary>
     public async Task RunPostGenerationTasksAsync(
         TerrainGenerationState state,
@@ -173,27 +158,27 @@ public class TerrainGenerationOrchestrator
         {
             var taskStopwatch = Stopwatch.StartNew();
 
-            // Update TerrainMaterialTextureSet baseTexSize
-            var terrainMaterialsPath = TerrainTextureHelper.FindTerrainMaterialsJsonPath(state.WorkingDirectory);
-            if (!string.IsNullOrEmpty(terrainMaterialsPath))
-            {
-                var pbrHandler = new PbrUpgradeHandler(terrainMaterialsPath, state.LevelName, state.WorkingDirectory);
-                pbrHandler.EnsureTerrainMaterialTextureSetSize(state.TerrainSize);
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"[Perf] EnsureTerrainMaterialTextureSetSize: {taskStopwatch.ElapsedMilliseconds}ms");
+            //// Update TerrainMaterialTextureSet baseTexSize
+            //var terrainMaterialsPath = TerrainTextureHelper.FindTerrainMaterialsJsonPath(state.WorkingDirectory);
+            //if (!string.IsNullOrEmpty(terrainMaterialsPath))
+            //{
+            //    var pbrHandler = new PbrUpgradeHandler(terrainMaterialsPath, state.LevelName, state.WorkingDirectory);
+            //    pbrHandler.EnsureTerrainMaterialTextureSetSize(state.TerrainSize);
+            //    PubSubChannel.SendMessage(PubSubMessageType.Info,
+            //        $"[Perf] EnsureTerrainMaterialTextureSetSize: {taskStopwatch.ElapsedMilliseconds}ms");
 
-                // Resize base textures
-                taskStopwatch.Restart();
-                var resizedCount = TerrainTextureHelper.ResizeBaseTexturesToTerrainSize(
-                    state.WorkingDirectory, state.TerrainSize);
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"[Perf] ResizeBaseTexturesToTerrainSize: {taskStopwatch.ElapsedMilliseconds}ms ({resizedCount} textures)");
-            }
-            else
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    "Could not find terrain materials.json for PBR texture set update.");
-            }
+            //    // Resize base textures
+            //    taskStopwatch.Restart();
+            //    var resizedCount = TerrainTextureHelper.ResizeBaseTexturesToTerrainSize(
+            //        state.WorkingDirectory, state.TerrainSize);
+            //    PubSubChannel.SendMessage(PubSubMessageType.Info,
+            //        $"[Perf] ResizeBaseTexturesToTerrainSize: {taskStopwatch.ElapsedMilliseconds}ms ({resizedCount} textures)");
+            //}
+            //else
+            //{
+            //    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+            //        "Could not find terrain materials.json for PBR texture set update.");
+            //}
 
             // Update TerrainBlock
             if (state.UpdateTerrainBlock)
@@ -212,7 +197,8 @@ public class TerrainGenerationOrchestrator
                 if (terrainBlockUpdated)
                     PubSubChannel.SendMessage(PubSubMessageType.Info, "TerrainBlock updated in items.level.json");
                 else
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning, "Could not update TerrainBlock - check warnings");
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        "Could not update TerrainBlock - check warnings");
             }
 
             // Handle spawn points
@@ -228,7 +214,7 @@ public class TerrainGenerationOrchestrator
     }
 
     /// <summary>
-    /// Writes terrain generation logs to files.
+    ///     Writes terrain generation logs to files.
     /// </summary>
     public void WriteGenerationLogs(TerrainGenerationState state)
     {
@@ -264,11 +250,21 @@ public class TerrainGenerationOrchestrator
         }
     }
 
+    /// <summary>
+    ///     Result of terrain generation execution.
+    /// </summary>
+    public class GenerationResult
+    {
+        public bool Success { get; init; }
+        public TerrainCreationParameters? Parameters { get; init; }
+        public string? ErrorMessage { get; init; }
+    }
+
     #region Private Helpers
 
     /// <summary>
-    /// Clears all files and subdirectories in the debug folder before starting a new generation.
-    /// This ensures clean debug output without stale files from previous runs.
+    ///     Clears all files and subdirectories in the debug folder before starting a new generation.
+    ///     This ensures clean debug output without stale files from previous runs.
     /// </summary>
     /// <param name="debugPath">Path to the debug folder (MT_TerrainGeneration).</param>
     private static void ClearDebugFolder(string debugPath)
@@ -286,7 +282,6 @@ public class TerrainGenerationOrchestrator
 
             // Delete all files in the debug folder
             foreach (var file in Directory.GetFiles(debugPath))
-            {
                 try
                 {
                     File.Delete(file);
@@ -297,14 +292,12 @@ public class TerrainGenerationOrchestrator
                     PubSubChannel.SendMessage(PubSubMessageType.Warning,
                         $"Could not delete file {Path.GetFileName(file)}: {ex.Message}");
                 }
-            }
 
             // Delete all subdirectories (material-specific debug folders)
             foreach (var dir in Directory.GetDirectories(debugPath))
-            {
                 try
                 {
-                    Directory.Delete(dir, recursive: true);
+                    Directory.Delete(dir, true);
                     foldersDeleted++;
                 }
                 catch (Exception ex)
@@ -312,13 +305,10 @@ public class TerrainGenerationOrchestrator
                     PubSubChannel.SendMessage(PubSubMessageType.Warning,
                         $"Could not delete folder {Path.GetFileName(dir)}: {ex.Message}");
                 }
-            }
 
             if (filesDeleted > 0 || foldersDeleted > 0)
-            {
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Cleared {filesDeleted} file(s) and {foldersDeleted} folder(s) from debug directory");
-            }
         }
         catch (Exception ex)
         {
@@ -337,10 +327,8 @@ public class TerrainGenerationOrchestrator
         }
 
         if (state.GeoBoundingBox != null)
-        {
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Using FULL bounding box for OSM: {state.GeoBoundingBox}");
-        }
 
         return state.GeoBoundingBox;
     }
@@ -349,8 +337,8 @@ public class TerrainGenerationOrchestrator
         TerrainGenerationState state,
         GeoBoundingBox? effectiveBoundingBox)
     {
-        if (state.GeoTiffGeoTransform == null || 
-            state.GeoTiffProjectionWkt == null || 
+        if (state.GeoTiffGeoTransform == null ||
+            state.GeoTiffProjectionWkt == null ||
             effectiveBoundingBox == null)
             return null;
 
@@ -362,9 +350,9 @@ public class TerrainGenerationOrchestrator
             var croppedGeoTransform = new double[6];
             Array.Copy(state.GeoTiffGeoTransform, croppedGeoTransform, 6);
 
-            croppedGeoTransform[0] = state.GeoTiffGeoTransform[0] + 
+            croppedGeoTransform[0] = state.GeoTiffGeoTransform[0] +
                                      state.CropResult.OffsetX * state.GeoTiffGeoTransform[1];
-            croppedGeoTransform[3] = state.GeoTiffGeoTransform[3] + 
+            croppedGeoTransform[3] = state.GeoTiffGeoTransform[3] +
                                      state.CropResult.OffsetY * state.GeoTiffGeoTransform[5];
 
             transformer = new GeoCoordinateTransformer(
@@ -412,7 +400,7 @@ public class TerrainGenerationOrchestrator
         {
             (layerImagePath, roadParams, osmQueryResult) = await ProcessOsmMaterialAsync(
                 mat, effectiveBoundingBox, coordinateTransformer, debugPath, state, osmQueryResult);
-            
+
             if (osmQueryResult != null)
                 setOsmQueryResult(osmQueryResult);
         }
@@ -430,7 +418,7 @@ public class TerrainGenerationOrchestrator
         return (layerImagePath, roadParams);
     }
 
-    private async Task<(string? LayerImagePath, RoadSmoothingParameters? RoadParams, OsmQueryResult? OsmResult)> 
+    private async Task<(string? LayerImagePath, RoadSmoothingParameters? RoadParams, OsmQueryResult? OsmResult)>
         ProcessOsmMaterialAsync(
             TerrainMaterialSettings.TerrainMaterialItemExtended mat,
             GeoBoundingBox effectiveBoundingBox,
@@ -468,15 +456,11 @@ public class TerrainGenerationOrchestrator
         string? layerImagePath = null;
 
         if (mat.IsRoadMaterial)
-        {
             (layerImagePath, roadParams) = await ProcessOsmRoadMaterialAsync(
                 mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state);
-        }
         else
-        {
             layerImagePath = await ProcessOsmPolygonMaterialAsync(
                 mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state);
-        }
 
         return (layerImagePath, roadParams, osmQueryResult);
     }
@@ -519,7 +503,7 @@ public class TerrainGenerationOrchestrator
 
             roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
             roadParams.PreBuiltSplines = splines;
-            
+
             // Rasterize layer map FROM THE SPLINES (not from OSM line features)
             // This ensures the layer map matches the interpolated spline path used for elevation smoothing
             var effectiveRoadSurfaceWidth = mat.RoadSurfaceWidthMeters is > 0
@@ -592,7 +576,7 @@ public class TerrainGenerationOrchestrator
             // Ensure exclusions are applied before passing to terrain generation
             analysisState.ApplyExclusions();
             parameters.PreAnalyzedNetwork = analysisState.Network;
-            
+
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Using pre-analyzed network: {analysisState.SplineCount} splines, " +
                 $"{analysisState.ActiveJunctionCount} active junctions " +
@@ -625,6 +609,7 @@ public class TerrainGenerationOrchestrator
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         "No cached combined GeoTIFF - will combine tiles during generation");
                 }
+
                 ApplyCropSettings(state, parameters);
                 break;
         }
@@ -634,7 +619,7 @@ public class TerrainGenerationOrchestrator
 
     private static void ApplyCropSettings(TerrainGenerationState state, TerrainCreationParameters parameters)
     {
-        if (state.CropResult is not { NeedsCropping: true }) 
+        if (state.CropResult is not { NeedsCropping: true })
             return;
 
         parameters.CropGeoTiff = true;
@@ -680,28 +665,22 @@ public class TerrainGenerationOrchestrator
             {
                 var spawnPoint = CreateSpawnPointFromExtracted(terrainParameters.ExtractedSpawnPoint);
                 if (SpawnPointUpdater.CreateSpawnPoint(state.WorkingDirectory, spawnPoint))
-                {
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         $"Created spawn point at ({spawnPoint.X:F1}, {spawnPoint.Y:F1}, {spawnPoint.Z:F1})");
-                }
             }
             else
             {
                 if (SpawnPointUpdater.CreateSpawnPoint(state.WorkingDirectory))
-                {
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         "Created default spawn point 'spawn_default_MT'");
-                }
             }
         }
         else if (terrainParameters?.ExtractedSpawnPoint != null)
         {
             var spawnPoint = CreateSpawnPointFromExtracted(terrainParameters.ExtractedSpawnPoint);
             if (SpawnPointUpdater.UpdateSpawnPoint(state.WorkingDirectory, spawnPoint))
-            {
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Spawn point updated at ({spawnPoint.X:F1}, {spawnPoint.Y:F1}, {spawnPoint.Z:F1})");
-            }
         }
         else
         {
@@ -746,10 +725,10 @@ public class TerrainGenerationOrchestrator
     }
 
     /// <summary>
-    /// Exports ALL available OSM feature types as individual 8-bit PNG layer maps.
-    /// This happens automatically when terrain generation uses a GeoTIFF with valid WGS84 bounding box.
-    /// Each unique combination of category + subcategory + geometry type gets its own file.
-    /// The files are saved to {debugPath}/osm_layer/ folder.
+    ///     Exports ALL available OSM feature types as individual 8-bit PNG layer maps.
+    ///     This happens automatically when terrain generation uses a GeoTIFF with valid WGS84 bounding box.
+    ///     Each unique combination of category + subcategory + geometry type gets its own file.
+    ///     The files are saved to {debugPath}/osm_layer/ folder.
     /// </summary>
     /// <param name="osmQueryResult">The OSM query result (may be null if no OSM data fetched).</param>
     /// <param name="effectiveBoundingBox">The WGS84 bounding box (possibly cropped).</param>
@@ -767,15 +746,13 @@ public class TerrainGenerationOrchestrator
         // 1. We have OSM data available (either from material processing or we can fetch it)
         // 2. We have a valid GeoTIFF-based heightmap (not PNG)
         // 3. We can fetch OSM data (valid WGS84 bounding box)
-        
+
         var isGeoTiffSource = state.HeightmapSourceType == HeightmapSourceType.GeoTiffFile ||
-                             state.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory;
-        
+                              state.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory;
+
         if (!isGeoTiffSource || !state.CanFetchOsmData || effectiveBoundingBox == null)
-        {
             // OSM layer export not applicable - silently skip
             return;
-        }
 
         try
         {
@@ -813,10 +790,8 @@ public class TerrainGenerationOrchestrator
                 debugPath);
 
             if (exportedCount > 0)
-            {
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Exported {exportedCount} OSM layer maps to osm_layer folder");
-            }
         }
         catch (Exception ex)
         {
