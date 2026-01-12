@@ -431,6 +431,12 @@ public partial class CopyAssets
     /// </summary>
     private void CancelWizard()
     {
+        // Set step back to 3 (forest brushes) before navigating
+        if (WizardState != null)
+        {
+            WizardState.CurrentStep = 3;
+        }
+        
         Navigation.NavigateTo("/CopyForestBrushes?wizardMode=true");
     }
 

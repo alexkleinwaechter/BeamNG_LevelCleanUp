@@ -38,15 +38,34 @@
         
         @* Row 3: Action Buttons *@
         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="flex-wrap" Style="gap: 8px;">
-            @* Left side: Back/Cancel button (only show if there's a back action) *@
-            @if (!string.IsNullOrEmpty(BackButtonText) && WizardState.CurrentStep > 0)
+            @* Left side: Back/Cancel/Reset button *@
+            @if (!string.IsNullOrEmpty(BackButtonText))
             {
-                <MudButton OnClick="@OnBackClick" 
-                          Variant="Variant.Outlined"
-                          StartIcon="@Icons.Material.Filled.ArrowBack"
-                          Size="Size.Small">
-                    @BackButtonText
-                </MudButton>
+                @* Show back button on step > 0, or as Reset on step 0 when setup is complete *@
+                @if (WizardState.CurrentStep > 0)
+                {
+                    <MudButton OnClick="@OnBackClick" 
+                              Variant="Variant.Outlined"
+                              StartIcon="@Icons.Material.Filled.ArrowBack"
+                              Size="Size.Small">
+                        @BackButtonText
+                    </MudButton>
+                }
+                else if (WizardState.CurrentStep == 0 && BackButtonText == "Reset Wizard")
+                {
+                    @* Show Reset Wizard button on step 0 when setup is complete *@
+                    <MudButton OnClick="@OnBackClick" 
+                              Variant="Variant.Outlined"
+                              Color="Color.Warning"
+                              StartIcon="@Icons.Material.Filled.Refresh"
+                              Size="Size.Small">
+                        @BackButtonText
+                    </MudButton>
+                }
+                else
+                {
+                    <div></div> @* Spacer for flex layout *@
+                }
             }
             else
             {

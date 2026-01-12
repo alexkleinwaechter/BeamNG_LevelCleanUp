@@ -420,6 +420,12 @@ public partial class GenerateTerrain
     {
         if (WizardMode)
         {
+            // Set step back to 4 (assets) before navigating
+            if (WizardState != null)
+            {
+                WizardState.CurrentStep = 4;
+            }
+            
             Navigation.NavigateTo("/CopyAssets?wizardMode=true");
         }
     }

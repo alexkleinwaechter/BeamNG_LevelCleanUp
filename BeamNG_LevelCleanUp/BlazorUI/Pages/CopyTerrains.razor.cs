@@ -681,7 +681,13 @@ public partial class CopyTerrains
         // Clear wizard terrain size when canceling
         PathResolver.WizardTerrainSize = null;
 
-        // Navigate back to CreateLevel without making changes
+        // Set step back to 1 (review) before navigating
+        if (WizardState != null)
+        {
+            WizardState.CurrentStep = 1;
+        }
+
+        // Navigate back to CreateLevel
         Navigation.NavigateTo("/CreateLevel");
     }
 

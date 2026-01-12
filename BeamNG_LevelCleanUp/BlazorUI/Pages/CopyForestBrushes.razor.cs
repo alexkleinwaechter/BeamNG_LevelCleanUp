@@ -630,6 +630,12 @@ public partial class CopyForestBrushes
 
     private void CancelWizard()
     {
+        // Set step back to 2 (terrain materials) before navigating
+        if (WizardState != null)
+        {
+            WizardState.CurrentStep = 2;
+        }
+        
         // Navigate back to terrain materials (previous step)
         Navigation.NavigateTo("/CopyTerrains?wizardMode=true");
     }

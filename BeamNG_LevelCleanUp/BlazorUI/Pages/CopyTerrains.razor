@@ -22,7 +22,7 @@
             <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Assistant">
                 <MudText Typo="Typo.h6">Create Level Wizard - Step 3: Select Terrain Materials</MudText>
                 <MudText Typo="Typo.body2">
-                    Source: <b>@(_copyCompleted ? _lastCopiedSourceName : WizardState.SourceLevelName)</b> → Target: <b>@WizardState.LevelName</b>
+                    Source: <b>@(GetCurrentSourceName())</b> → Target: <b>@WizardState.LevelName</b>
                 </MudText>
                 <MudText Typo="Typo.body2" Class="mt-2">
                     @if (_copyCompleted)
@@ -326,17 +326,7 @@
         <ActionButtons>
             @if (WizardMode)
             {
-                @if (_copyCompleted)
-                {
-                    <MudButton OnClick="@ResetSourceMapWizardMode" 
-                              Color="Color.Primary"
-                              Variant="Variant.Outlined"
-                              StartIcon="@Icons.Material.Filled.AddCircle"
-                              Size="Size.Small">
-                        Select Another Source
-                    </MudButton>
-                }
-                else if (_selectedItems.Any())
+                @if (_selectedItems.Any())
                 {
                     <MudButton @onclick="CopyDialogWizardMode" 
                               Color="Color.Primary"
@@ -344,6 +334,16 @@
                               StartIcon="@Icons.Material.Filled.ContentCopy"
                               Size="Size.Small">
                         Copy Selected (@_selectedItems.Count)
+                    </MudButton>
+                }
+                else
+                {
+                    <MudButton OnClick="@ResetSourceMapWizardMode" 
+                              Color="Color.Primary"
+                              Variant="Variant.Outlined"
+                              StartIcon="@Icons.Material.Filled.AddCircle"
+                              Size="Size.Small">
+                        Select Another Source
                     </MudButton>
                 }
             }
@@ -395,6 +395,18 @@
 @code {
     // Note: CascadingParameter doesn't work across page navigation
     // We'll get the wizard state from CreateLevel's static field instead
+    
+    private string GetCurrentSourceName()
+    {
+        // Priority: 1. Currently loaded source, 2. Last copied source, 3. Wizard state source, 4. Prompt to select
+        if (!string.IsNullOrEmpty(_levelNameCopyFrom))
+            return _levelNameCopyFrom;
+        if (_copyCompleted && !string.IsNullOrEmpty(_lastCopiedSourceName))
+            return _lastCopiedSourceName;
+        if (!string.IsNullOrEmpty(WizardState?.SourceLevelName))
+            return WizardState.SourceLevelName;
+        return "(Select a source)";
+    }
     
     private string GetBackButtonText() => WizardMode ? "Back to Create Level" : "";
     
