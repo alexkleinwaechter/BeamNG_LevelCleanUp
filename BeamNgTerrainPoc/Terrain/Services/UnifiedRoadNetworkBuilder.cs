@@ -539,6 +539,74 @@ public class UnifiedRoadNetworkBuilder
     }
 
     /// <summary>
+    /// Densifies control points near the start and end of a spline path.
+    /// This improves junction harmonization for OSM roads by providing more control points
+    /// for the blend algorithm to work with near endpoints (similar to how PNG roads have
+    /// more dense control points after simplification).
+    /// </summary>
+    /// <param name="points">The sparse control points from OSM.</param>
+    /// <param name="densifyRadius">How far from endpoints to densify (in meters).</param>
+    /// <param name="targetSpacing">Target spacing between densified points (in meters).</param>
+    /// <returns>Points with additional interpolated points near endpoints.</returns>
+    private static List<Vector2> DensifyNearEndpoints(List<Vector2> points, float densifyRadius = 30f, float targetSpacing = 3f)
+    {
+        if (points.Count < 2)
+            return points;
+        
+        var result = new List<Vector2>();
+        
+        // Calculate cumulative distances along the path
+        var distances = new List<float> { 0f };
+        for (int i = 1; i < points.Count; i++)
+        {
+            distances.Add(distances[^1] + Vector2.Distance(points[i - 1], points[i]));
+        }
+        var totalLength = distances[^1];
+        
+        // If the path is shorter than 2x densifyRadius, densify the whole thing
+        var effectiveStartRadius = Math.Min(densifyRadius, totalLength / 2);
+        var effectiveEndRadius = Math.Min(densifyRadius, totalLength / 2);
+        var endThreshold = totalLength - effectiveEndRadius;
+        
+        // Process each segment
+        for (int i = 0; i < points.Count - 1; i++)
+        {
+            var p0 = points[i];
+            var p1 = points[i + 1];
+            var segmentStart = distances[i];
+            var segmentEnd = distances[i + 1];
+            var segmentLength = segmentEnd - segmentStart;
+            
+            // Always add the start point of the segment
+            if (i == 0 || result.Count == 0 || Vector2.DistanceSquared(result[^1], p0) > 0.01f)
+            {
+                result.Add(p0);
+            }
+            
+            // Check if this segment is near start or end
+            var isNearStart = segmentStart < effectiveStartRadius;
+            var isNearEnd = segmentEnd > endThreshold;
+            
+            if ((isNearStart || isNearEnd) && segmentLength > targetSpacing * 1.5f)
+            {
+                // Densify this segment
+                var numPoints = (int)Math.Ceiling(segmentLength / targetSpacing);
+                for (int j = 1; j < numPoints; j++)
+                {
+                    var t = (float)j / numPoints;
+                    var interpolated = Vector2.Lerp(p0, p1, t);
+                    result.Add(interpolated);
+                }
+            }
+        }
+        
+        // Always add the last point
+        result.Add(points[^1]);
+        
+        return result;
+    }
+
+    /// <summary>
     /// Filters out splines that are too short to generate meaningful cross-sections.
     /// </summary>
     private List<RoadSpline> FilterShortSplines(List<RoadSpline> splines, float crossSectionInterval)
@@ -592,9 +660,10 @@ public class UnifiedRoadNetworkBuilder
                 globalIndex++;
             }
             
-            // For PNG-extracted splines (non-OSM), smooth the normals to reduce bumpiness
-            // OSM splines have clean vector data and don't need this
-            if (string.IsNullOrEmpty(paramSpline.OsmRoadType) && crossSections.Count >= 5)
+            // Smooth cross-section normals to reduce bumpiness in road edges and elevation transitions.
+            // Apply to ALL splines (both OSM and PNG) for consistent junction harmonization behavior.
+            // Originally this was only for PNG splines, but OSM splines also benefit from smoothing.
+            if (crossSections.Count >= 5)
             {
                 SmoothCrossSectionNormals(crossSections);
             }
@@ -1044,9 +1113,14 @@ public class UnifiedRoadNetworkBuilder
         if (uniqueCoords.Count < 2)
             return null;
         
+        // Densify control points near endpoints for better junction harmonization
+        // OSM roads have sparse waypoints which can cause poor blending at junctions
+        // This adds interpolated points near start/end to match PNG road behavior
+        var densifiedCoords = DensifyNearEndpoints(uniqueCoords, densifyRadius: 30f, targetSpacing: 3f);
+        
         try
         {
-            return new RoadSpline(uniqueCoords, interpolationType);
+            return new RoadSpline(densifiedCoords, interpolationType);
         }
         catch (Exception ex)
         {
