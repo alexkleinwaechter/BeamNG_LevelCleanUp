@@ -33,11 +33,11 @@ public class SplineRoadParameters
     
     /// <summary>
     /// Controls how splines are interpolated between control points.
-    /// SmoothInterpolated: Uses Akima/cubic spline for smooth curves
-    /// LinearControlPoints: Uses linear interpolation for accurate source geometry adherence (default)
-    /// Default: LinearControlPoints
+    /// SmoothInterpolated: Uses Akima/cubic spline for smooth curves (default, best for PNG skeleton extraction)
+    /// LinearControlPoints: Uses linear interpolation for accurate source geometry adherence (best for OSM vector data)
+    /// Default: SmoothInterpolated (PNG skeleton-extracted paths benefit from smooth interpolation to reduce jagged edges)
     /// </summary>
-    public SplineInterpolationType SplineInterpolationType { get; set; } = SplineInterpolationType.LinearControlPoints;
+    public SplineInterpolationType SplineInterpolationType { get; set; } = SplineInterpolationType.SmoothInterpolated;
     
     // ========================================
     // SPLINE EXTRACTION & ORDERING
@@ -54,9 +54,9 @@ public class SplineRoadParameters
     /// Maximum spacing (pixels) after densification. Larger gaps will be filled with intermediate points.
     /// Higher values = fewer control points = less sensitivity to skeleton noise = fewer spikes.
     /// Lower values = more control points = follows skeleton more closely = may amplify noise.
-    /// Default: 2.0 (good balance between accuracy and spike prevention)
+    /// Default: 1.5 (better path following accuracy for PNG sources)
     /// </summary>
-    public float DensifyMaxSpacingPixels { get; set; } = 2.0f;
+    public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
     
     /// <summary>
     /// Maximum neighbor link distance (pixels) when building adjacency graph.

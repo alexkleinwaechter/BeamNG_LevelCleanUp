@@ -149,6 +149,7 @@ public class TerrainCreator
 
             // 3a. Apply road smoothing if road materials exist
             SmoothingResult? smoothingResult = null;
+            UnifiedSmoothingResult? unifiedResult = null;
             float[,]? heightMap2DForSpawn = null;
             
             if (parameters.Materials.Any(m => m.RoadParameters != null))
@@ -157,7 +158,7 @@ public class TerrainCreator
                 sw.Restart();
                 perfLog.Info("Applying road smoothing...");
 
-                smoothingResult = ApplyRoadSmoothing(
+                (smoothingResult, unifiedResult) = ApplyRoadSmoothing(
                     heights,
                     parameters.Materials,
                     parameters.MetersPerPixel,
@@ -165,7 +166,9 @@ public class TerrainCreator
                     parameters.EnableCrossMaterialHarmonization,
                     parameters.GlobalJunctionDetectionRadiusMeters,
                     parameters.GlobalJunctionBlendDistanceMeters,
-                    parameters.FlipMaterialProcessingOrder);
+                    parameters.FlipMaterialProcessingOrder,
+                    debugBaseDir,
+                    perfLog);
 
                 if (smoothingResult != null)
                 {
@@ -202,9 +205,20 @@ public class TerrainCreator
             }
 
             // 4. Process material layers
+            // IMPORTANT: If road smoothing was applied, the MaterialPainter has generated
+            // correct layer maps using RoadSurfaceWidthMeters. We need to save these and
+            // update the MaterialDefinition.LayerImagePath so MaterialLayerProcessor uses them.
             perfLog.LogSection("Material Layer Processing");
             sw.Restart();
             perfLog.Info("Processing material layers...");
+            
+            // If unified result has MaterialLayers, save them and update material definitions
+            if (unifiedResult?.MaterialLayers != null && unifiedResult.MaterialLayers.Count > 0)
+            {
+                perfLog.Info($"Updating {unifiedResult.MaterialLayers.Count} road material layer maps from spline-based painting...");
+                await UpdateRoadMaterialLayersAsync(parameters.Materials, unifiedResult.MaterialLayers, debugBaseDir!, perfLog);
+            }
+            
             var materialIndices = MaterialLayerProcessor.ProcessMaterialLayers(
                 parameters.Materials,
                 parameters.Size);
@@ -432,7 +446,7 @@ public class TerrainCreator
         return CreateTerrainFileAsync(outputPath, parameters).GetAwaiter().GetResult();
     }
 
-    private SmoothingResult? ApplyRoadSmoothing(
+    private (SmoothingResult?, UnifiedSmoothingResult?) ApplyRoadSmoothing(
         float[] heightMap1D,
         List<MaterialDefinition> materials,
         float metersPerPixel,
@@ -440,7 +454,9 @@ public class TerrainCreator
         bool enableCrossMaterialHarmonization,
         float globalJunctionDetectionRadius,
         float globalJunctionBlendDistance,
-        bool flipMaterialProcessingOrder)
+        bool flipMaterialProcessingOrder,
+        string? debugBaseDir,
+        TerrainCreationLogger log)
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
@@ -457,7 +473,7 @@ public class TerrainCreator
             flipMaterialProcessingOrder);
 
         if (unifiedResult == null)
-            return null;
+            return (null, null);
 
         // Convert to SmoothingResult for compatibility with existing terrain creation flow
         // Create a minimal road mask for the geometry wrapper
@@ -466,7 +482,8 @@ public class TerrainCreator
             .FirstOrDefault(m => m.RoadParameters != null)?.RoadParameters
             ?? new RoadSmoothingParameters();
 
-        return unifiedResult.ToSmoothingResult(minimalRoadMask, defaultParams);
+        var smoothingResult = unifiedResult.ToSmoothingResult(minimalRoadMask, defaultParams);
+        return (smoothingResult, unifiedResult);
     }
 
     /// <summary>
@@ -603,6 +620,85 @@ public class TerrainCreator
         }
 
         return result.HeightmapImage;
+    }
+
+    /// <summary>
+    ///     Updates road material layer image paths with correctly painted layers from MaterialPainter.
+    ///     This ensures that RoadSurfaceWidthMeters is respected for PNG roads (not just OSM roads).
+    ///     The MaterialPainter generates layer maps by sampling splines at RoadSurfaceWidthMeters,
+    ///     which may differ from the original PNG width.
+    /// </summary>
+    private async Task UpdateRoadMaterialLayersAsync(
+        List<MaterialDefinition> materials,
+        Dictionary<string, byte[,]> paintedLayers,
+        string debugBaseDir,
+        TerrainCreationLogger log)
+    {
+        foreach (var (materialName, layerData) in paintedLayers)
+        {
+            // Find the matching material definition
+            var material = materials.FirstOrDefault(m => m.MaterialName == materialName);
+            if (material == null)
+            {
+                log.Warning($"  Could not find material '{materialName}' to update layer map");
+                continue;
+            }
+
+            // Only update if this is a road material
+            if (material.RoadParameters == null)
+                continue;
+
+            try
+            {
+                // Save the painted layer to a PNG file
+                // MaterialPainter works in terrain-space (Y=0 at bottom, BeamNG convention)
+                // PNG images need image-space (Y=0 at top), so we flip Y when saving
+                var height = layerData.GetLength(0);
+                var width = layerData.GetLength(1);
+
+                var safeName = SanitizeFileName(materialName);
+                var layerPath = Path.Combine(debugBaseDir, $"{safeName}_painted_layer.png");
+
+                using var image = new Image<L8>(width, height);
+                for (var y = 0; y < height; y++)
+                for (var x = 0; x < width; x++)
+                {
+                    // Flip Y to convert from terrain-space (bottom-up) to image-space (top-down)
+                    var flippedY = height - 1 - y;
+                    image[x, flippedY] = new L8(layerData[y, x]);
+                }
+
+                await image.SaveAsPngAsync(layerPath);
+
+                // Update the material definition to use the painted layer
+                var oldPath = material.LayerImagePath;
+                material.LayerImagePath = layerPath;
+
+                var surfaceWidth = material.RoadParameters.EffectiveRoadSurfaceWidthMeters;
+                var corridorWidth = material.RoadParameters.RoadWidthMeters;
+                log.Info($"  {materialName}: Updated layer map (surface={surfaceWidth:F1}m, corridor={corridorWidth:F1}m)");
+                
+                if (!string.IsNullOrEmpty(oldPath))
+                    log.Detail($"    Old: {Path.GetFileName(oldPath)} -> New: {Path.GetFileName(layerPath)}");
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"  Failed to save painted layer for '{materialName}': {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Sanitizes a material name for use as a file name.
+    /// </summary>
+    private static string SanitizeFileName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "unknown";
+
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = string.Join("_", name.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries));
+        return string.IsNullOrWhiteSpace(sanitized) ? "unknown" : sanitized.Trim().Trim('.');
     }
 
     private float[,] ConvertTo2DArray(float[] array1D, int size)

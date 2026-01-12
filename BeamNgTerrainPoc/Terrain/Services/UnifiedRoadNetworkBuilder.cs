@@ -284,8 +284,9 @@ public class UnifiedRoadNetworkBuilder
     {
         var splines = new List<RoadSpline>();
         
-        // Get spline interpolation type from parameters
-        var interpolationType = parameters.GetSplineParameters().SplineInterpolationType;
+        // Get spline parameters
+        var splineParams = parameters.GetSplineParameters();
+        var interpolationType = splineParams.SplineInterpolationType;
         
         // Extract centerline paths using skeletonization
         var centerlinePathsPixels = _skeletonExtractor.ExtractCenterlinePaths(roadLayer, parameters);
@@ -313,9 +314,22 @@ public class UnifiedRoadNetworkBuilder
                 .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
                 .ToList();
             
+            // CRITICAL: Simplify the dense skeleton path to sparse control points like OSM has.
+            // The skeleton produces pixel-by-pixel points that create jagged splines.
+            // By simplifying first, we get clean waypoints that spline interpolation can smooth.
+            var simplifiedPoints = SimplifyPathForSpline(worldPoints, splineParams, metersPerPixel);
+            
+            if (simplifiedPoints.Count < 2)
+                continue;
+            
+            if (simplifiedPoints.Count < worldPoints.Count)
+            {
+                TerrainLogger.Info($"      Path simplified: {worldPoints.Count} -> {simplifiedPoints.Count} control points");
+            }
+            
             try
             {
-                var spline = new RoadSpline(worldPoints, interpolationType);
+                var spline = new RoadSpline(simplifiedPoints, interpolationType);
                 
                 // Filter short paths
                 var estimatedCrossSections = (int)(spline.TotalLength / parameters.CrossSectionIntervalMeters);
@@ -331,6 +345,197 @@ public class UnifiedRoadNetworkBuilder
         }
         
         return splines;
+    }
+
+    /// <summary>
+    /// Simplifies a dense skeleton path to sparse control points suitable for spline creation.
+    /// This is the key to getting smooth results from PNG sources - similar to how OSM provides
+    /// clean waypoints rather than dense pixel data.
+    /// 
+    /// The process:
+    /// 1. Apply Ramer-Douglas-Peucker simplification to reduce points while preserving shape
+    /// 2. Enforce minimum spacing between control points
+    /// 3. Optionally apply Chaikin smoothing to reduce jaggedness in the control points
+    /// </summary>
+    private static List<Vector2> SimplifyPathForSpline(
+        List<Vector2> densePoints,
+        SplineRoadParameters splineParams,
+        float metersPerPixel)
+    {
+        if (densePoints.Count < 3)
+            return densePoints;
+        
+        // Step 1: Ramer-Douglas-Peucker simplification
+        // Convert tolerance from pixels to meters
+        var rdpTolerance = splineParams.SimplifyTolerancePixels * metersPerPixel;
+        
+        // Use a minimum tolerance to avoid excessive control points (at least 0.5 pixels worth)
+        var effectiveTolerance = Math.Max(rdpTolerance, metersPerPixel * 0.5f);
+        
+        var simplified = RamerDouglasPeucker(densePoints, effectiveTolerance);
+        
+        // Step 2: If still very dense, enforce minimum spacing
+        // Target roughly 1 control point per 5-10 meters of road for good spline quality
+        var targetSpacing = 5.0f * metersPerPixel; // Minimum 5 pixels worth of spacing
+        if (simplified.Count > 100)
+        {
+            simplified = EnforceMinimumSpacing(simplified, targetSpacing);
+        }
+        
+        // Step 3: Apply Chaikin corner-cutting smoothing to the control points themselves
+        // This pre-smooths the waypoints before spline interpolation
+        // Only apply when using smooth interpolation mode (not linear)
+        if (simplified.Count >= 4 && splineParams.SplineInterpolationType == SplineInterpolationType.SmoothInterpolated)
+        {
+            // One iteration of Chaikin smoothing on the control points
+            simplified = ChaikinSmooth(simplified, 1);
+        }
+        
+        return simplified;
+    }
+
+    /// <summary>
+    /// Ramer-Douglas-Peucker line simplification algorithm.
+    /// Reduces the number of points in a path while preserving overall shape.
+    /// </summary>
+    private static List<Vector2> RamerDouglasPeucker(List<Vector2> points, float epsilon)
+    {
+        if (points.Count < 3)
+            return new List<Vector2>(points);
+        
+        // Find the point with maximum distance from the line between first and last
+        float maxDistance = 0;
+        int maxIndex = 0;
+        
+        var lineStart = points[0];
+        var lineEnd = points[^1];
+        
+        for (int i = 1; i < points.Count - 1; i++)
+        {
+            var distance = PerpendicularDistance(points[i], lineStart, lineEnd);
+            if (distance > maxDistance)
+            {
+                maxDistance = distance;
+                maxIndex = i;
+            }
+        }
+        
+        // If max distance is greater than epsilon, recursively simplify
+        if (maxDistance > epsilon)
+        {
+            var left = RamerDouglasPeucker(points.Take(maxIndex + 1).ToList(), epsilon);
+            var right = RamerDouglasPeucker(points.Skip(maxIndex).ToList(), epsilon);
+            
+            // Combine results (avoiding duplicate point at maxIndex)
+            var result = new List<Vector2>(left);
+            result.AddRange(right.Skip(1));
+            return result;
+        }
+        else
+        {
+            // All intermediate points can be removed
+            return new List<Vector2> { lineStart, lineEnd };
+        }
+    }
+    
+    /// <summary>
+    /// Calculates perpendicular distance from a point to a line segment.
+    /// </summary>
+    private static float PerpendicularDistance(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
+    {
+        var dx = lineEnd.X - lineStart.X;
+        var dy = lineEnd.Y - lineStart.Y;
+        
+        var lineLengthSquared = dx * dx + dy * dy;
+        
+        if (lineLengthSquared < 0.0001f)
+        {
+            // Line segment is essentially a point
+            return Vector2.Distance(point, lineStart);
+        }
+        
+        // Project point onto line and find perpendicular distance
+        var t = ((point.X - lineStart.X) * dx + (point.Y - lineStart.Y) * dy) / lineLengthSquared;
+        t = Math.Clamp(t, 0, 1);
+        
+        var projectionX = lineStart.X + t * dx;
+        var projectionY = lineStart.Y + t * dy;
+        
+        return Vector2.Distance(point, new Vector2(projectionX, projectionY));
+    }
+    
+    /// <summary>
+    /// Enforces minimum spacing between consecutive points by removing points that are too close.
+    /// </summary>
+    private static List<Vector2> EnforceMinimumSpacing(List<Vector2> points, float minSpacing)
+    {
+        if (points.Count < 3)
+            return points;
+        
+        var result = new List<Vector2> { points[0] };
+        var minSpacingSquared = minSpacing * minSpacing;
+        
+        for (int i = 1; i < points.Count - 1; i++)
+        {
+            var distSquared = Vector2.DistanceSquared(result[^1], points[i]);
+            if (distSquared >= minSpacingSquared)
+            {
+                result.Add(points[i]);
+            }
+        }
+        
+        // Always include the last point
+        result.Add(points[^1]);
+        
+        return result;
+    }
+    
+    /// <summary>
+    /// Chaikin corner-cutting smoothing algorithm.
+    /// Creates smoother control points by iteratively cutting corners.
+    /// </summary>
+    private static List<Vector2> ChaikinSmooth(List<Vector2> points, int iterations)
+    {
+        if (points.Count < 3 || iterations <= 0)
+            return points;
+        
+        var result = new List<Vector2>(points);
+        
+        for (int iter = 0; iter < iterations; iter++)
+        {
+            var smoothed = new List<Vector2>();
+            
+            // Keep the first point
+            smoothed.Add(result[0]);
+            
+            // Apply corner cutting to intermediate segments
+            for (int i = 0; i < result.Count - 1; i++)
+            {
+                var p0 = result[i];
+                var p1 = result[i + 1];
+                
+                // Create two new points at 1/4 and 3/4 along the segment
+                var q = new Vector2(
+                    0.75f * p0.X + 0.25f * p1.X,
+                    0.75f * p0.Y + 0.25f * p1.Y);
+                var r = new Vector2(
+                    0.25f * p0.X + 0.75f * p1.X,
+                    0.25f * p0.Y + 0.75f * p1.Y);
+                
+                // Don't duplicate start/end points
+                if (i > 0)
+                    smoothed.Add(q);
+                if (i < result.Count - 2)
+                    smoothed.Add(r);
+            }
+            
+            // Keep the last point
+            smoothed.Add(result[^1]);
+            
+            result = smoothed;
+        }
+        
+        return result;
     }
 
     /// <summary>
@@ -350,6 +555,7 @@ public class UnifiedRoadNetworkBuilder
     /// <summary>
     /// Generates cross-sections for all splines in the network.
     /// Cross-sections are sampled along each spline at the interval specified in its parameters.
+    /// For PNG-extracted splines, the normals are smoothed to reduce jaggedness from skeleton extraction.
     /// </summary>
     private void GenerateCrossSections(UnifiedRoadNetwork network, float metersPerPixel)
     {
@@ -366,6 +572,8 @@ public class UnifiedRoadNetworkBuilder
             // Sample the spline at regular intervals
             var samples = spline.SampleByDistance(parameters.CrossSectionIntervalMeters);
             
+            var crossSections = new List<UnifiedCrossSection>();
+            
             for (var localIndex = 0; localIndex < samples.Count; localIndex++)
             {
                 var sample = samples[localIndex];
@@ -380,12 +588,79 @@ public class UnifiedRoadNetworkBuilder
                 crossSection.IsSplineStart = localIndex == 0;
                 crossSection.IsSplineEnd = localIndex == samples.Count - 1;
                 
-                network.AddCrossSection(crossSection);
+                crossSections.Add(crossSection);
                 globalIndex++;
+            }
+            
+            // For PNG-extracted splines (non-OSM), smooth the normals to reduce bumpiness
+            // OSM splines have clean vector data and don't need this
+            if (string.IsNullOrEmpty(paramSpline.OsmRoadType) && crossSections.Count >= 5)
+            {
+                SmoothCrossSectionNormals(crossSections);
+            }
+            
+            // Add all cross-sections to the network
+            foreach (var cs in crossSections)
+            {
+                network.AddCrossSection(cs);
             }
         }
         
         TerrainLogger.Info($"    Generated {network.CrossSections.Count} cross-sections from {network.Splines.Count} splines");
+    }
+    
+    /// <summary>
+    /// Smooths the normal vectors of cross-sections using a moving average filter.
+    /// This reduces the jaggedness that comes from skeleton-extracted PNG paths,
+    /// resulting in smoother road edges and elevation transitions.
+    /// 
+    /// Uses a 5-point moving average (2 before, current, 2 after) which provides
+    /// good smoothing while preserving overall road direction.
+    /// </summary>
+    private static void SmoothCrossSectionNormals(List<UnifiedCrossSection> crossSections)
+    {
+        if (crossSections.Count < 5)
+            return;
+        
+        const int windowHalfSize = 2; // 5-point moving average (2 + 1 + 2)
+        
+        // Store original normals
+        var originalNormals = crossSections.Select(cs => cs.NormalDirection).ToList();
+        var originalTangents = crossSections.Select(cs => cs.TangentDirection).ToList();
+        
+        // Apply moving average to normals
+        for (var i = 0; i < crossSections.Count; i++)
+        {
+            var sumNormal = Vector2.Zero;
+            var sumTangent = Vector2.Zero;
+            var count = 0;
+            
+            for (var j = i - windowHalfSize; j <= i + windowHalfSize; j++)
+            {
+                if (j < 0 || j >= crossSections.Count)
+                    continue;
+                
+                sumNormal += originalNormals[j];
+                sumTangent += originalTangents[j];
+                count++;
+            }
+            
+            if (count > 0)
+            {
+                // Normalize the averaged vectors
+                var avgNormal = sumNormal / count;
+                var avgTangent = sumTangent / count;
+                
+                var normalLength = avgNormal.Length();
+                var tangentLength = avgTangent.Length();
+                
+                if (normalLength > 0.001f)
+                    crossSections[i].NormalDirection = avgNormal / normalLength;
+                
+                if (tangentLength > 0.001f)
+                    crossSections[i].TangentDirection = avgTangent / tangentLength;
+            }
+        }
     }
 
     /// <summary>

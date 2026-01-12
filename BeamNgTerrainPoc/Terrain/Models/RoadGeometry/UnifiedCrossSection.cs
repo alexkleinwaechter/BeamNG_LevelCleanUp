@@ -104,6 +104,14 @@ public class UnifiedCrossSection
     public int Priority { get; set; }
 
     /// <summary>
+    ///     Whether this cross-section comes from an OSM source (true) or PNG layer map (false).
+    ///     Used to select the appropriate elevation interpolation strategy:
+    ///     - OSM roads use inverse-distance weighted interpolation (smooth for vector data)
+    ///     - PNG roads use single nearest-neighbor (more robust for skeleton-extracted paths)
+    /// </summary>
+    public bool IsFromOsmSource { get; set; }
+
+    /// <summary>
     ///     Whether this is the first cross-section of its spline (start endpoint).
     /// </summary>
     public bool IsSplineStart { get; set; }
@@ -210,7 +218,9 @@ public class UnifiedCrossSection
             EffectiveRoadWidth = ownerSpline.Parameters.RoadWidthMeters,
             EffectiveBlendRange = ownerSpline.Parameters.TerrainAffectedRangeMeters,
             Priority = ownerSpline.Priority,
-            IsExcluded = false
+            IsExcluded = false,
+            // OSM roads have OsmRoadType set, PNG roads have it null
+            IsFromOsmSource = !string.IsNullOrEmpty(ownerSpline.OsmRoadType)
         };
     }
 

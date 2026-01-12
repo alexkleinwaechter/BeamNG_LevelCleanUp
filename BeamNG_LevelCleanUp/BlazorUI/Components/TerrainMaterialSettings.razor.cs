@@ -1,9 +1,12 @@
-﻿using BeamNgTerrainPoc.Examples;
+﻿using System.Text.Json;
+using System.Text.Json.Nodes;
+using BeamNgTerrainPoc.Examples;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
+using Color = MudBlazor.Color;
 using DialogResult = System.Windows.Forms.DialogResult;
 using SplineInterpolationType = BeamNgTerrainPoc.Terrain.Models.SplineInterpolationType;
 
@@ -12,69 +15,74 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Components;
 public partial class TerrainMaterialSettings
 {
     /// <summary>
-    ///     Available road smoothing presets from RoadSmoothingPresets class
+    ///     Available road smoothing presets from RoadSmoothingPresets class.
+    ///     Organized into two categories:
+    ///     - PNG presets: Optimized for skeleton extraction from layer masks (SmoothInterpolated splines)
+    ///     - OSM presets: Optimized for pre-built splines from vector data (LinearControlPoints)
     /// </summary>
     public enum RoadPresetType
     {
         Custom,
-        Highway,
-        MountainRoad,
-        RacingCircuit,
-        DirtRoad,
-        TerrainFollowingSmooth,
-        MountainousUltraSmooth,
-        HillyAggressive,
-        FlatModerate,
-        ExtremeNuclear,
-        OsmRoads,
+        // PNG presets (skeleton extraction from layer masks)
+        PngHighway,
+        PngRuralRoad,
+        PngMountainRoad,
+        PngDirtRoad,
+        PngRacingCircuit,
+        // OSM presets (pre-built splines from vector data)
         OsmHighway,
-        OsmTrack
+        OsmRuralRoad,
+        OsmMountainRoad,
+        OsmDirtRoad,
+        OsmRacingCircuit
     }
 
     [Parameter] public TerrainMaterialItemExtended Material { get; set; } = null!;
     [Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
     [Parameter] public GeoBoundingBox? GeoBoundingBox { get; set; }
     [Parameter] public int TerrainSize { get; set; } = 2048;
-    
+
     [Inject] private IDialogService DialogService { get; set; } = null!;
-    
+
     private bool HasGeoBoundingBox => GeoBoundingBox != null;
-    
+
     /// <summary>
-    /// Handles banking parameters changes from the BankingSettingsPanel component.
+    ///     Returns true when this road material has OSM features mode selected as its layer source.
+    ///     When true, skeleton extraction is skipped and pre-built splines from OSM are used directly.
+    ///     This means "Path Extraction" and "Curve Fitting" parameters have no effect.
+    ///     Parameters are disabled as soon as OSM mode is selected (not after selecting specific shapes).
+    /// </summary>
+    private bool IsUsingOsmSplines =>
+        Material.IsRoadMaterial &&
+        Material.LayerSourceType == LayerSourceType.OsmFeatures;
+
+    /// <summary>
+    ///     Handles banking parameters changes from the BankingSettingsPanel component.
     /// </summary>
     private async Task OnBankingParametersChanged(BankingParameters? banking)
     {
         Material.SetBankingParameters(banking);
         await OnMaterialChanged.InvokeAsync(Material);
     }
-    
+
     /// <summary>
-    /// Gets the helper text for Road Surface Width field based on current value
+    ///     Gets the helper text for Road Surface Width field based on current value
     /// </summary>
     private string GetRoadSurfaceWidthHelperText()
     {
         if (!Material.RoadSurfaceWidthMeters.HasValue || Material.RoadSurfaceWidthMeters <= 0)
             return "Material painting width (empty = same as Road Width)";
-        
+
         if (Material.RoadSurfaceWidthMeters < Material.RoadWidthMeters)
-            return $"Narrow surface ({Material.RoadSurfaceWidthMeters}m) on wider smoothed corridor ({Material.RoadWidthMeters}m)";
-        
+            return
+                $"Narrow surface ({Material.RoadSurfaceWidthMeters}m) on wider smoothed corridor ({Material.RoadWidthMeters}m)";
+
         if (Material.RoadSurfaceWidthMeters > Material.RoadWidthMeters)
-            return $"Wide surface ({Material.RoadSurfaceWidthMeters}m) with narrower smoothing ({Material.RoadWidthMeters}m)";
-        
+            return
+                $"Wide surface ({Material.RoadSurfaceWidthMeters}m) with narrower smoothing ({Material.RoadWidthMeters}m)";
+
         return "Material painting width (same as Road Width)";
     }
-    
-    /// <summary>
-    /// Returns true when this road material has OSM features mode selected as its layer source.
-    /// When true, skeleton extraction is skipped and pre-built splines from OSM are used directly.
-    /// This means "Path Extraction" and "Curve Fitting" parameters have no effect.
-    /// Parameters are disabled as soon as OSM mode is selected (not after selecting specific shapes).
-    /// </summary>
-    private bool IsUsingOsmSplines => 
-        Material.IsRoadMaterial && 
-        Material.LayerSourceType == LayerSourceType.OsmFeatures;
 
     /// <summary>
     ///     Gets all current validation warnings based on parameter combinations
@@ -246,29 +254,23 @@ public partial class TerrainMaterialSettings
         Material.LayerMapPath = null;
         await OnMaterialChanged.InvokeAsync(Material);
     }
-    
+
     private async Task SetLayerSourceType(LayerSourceType sourceType)
     {
         Material.LayerSourceType = sourceType;
-        
+
         // Clear data from other source types
-        if (sourceType != LayerSourceType.PngFile)
-        {
-            Material.LayerMapPath = null;
-        }
-        if (sourceType != LayerSourceType.OsmFeatures)
-        {
-            Material.SelectedOsmFeatures = null;
-        }
-        
+        if (sourceType != LayerSourceType.PngFile) Material.LayerMapPath = null;
+        if (sourceType != LayerSourceType.OsmFeatures) Material.SelectedOsmFeatures = null;
+
         await OnMaterialChanged.InvokeAsync(Material);
     }
-    
+
     private async Task OpenOsmFeatureSelector()
     {
         if (GeoBoundingBox == null)
             return;
-        
+
         var parameters = new DialogParameters<OsmFeatureSelectorDialog>
         {
             { x => x.MaterialName, Material.InternalName },
@@ -277,18 +279,18 @@ public partial class TerrainMaterialSettings
             { x => x.IsRoadMaterial, Material.IsRoadMaterial },
             { x => x.ExistingSelections, Material.SelectedOsmFeatures }
         };
-        
-        var options = new DialogOptions 
-        { 
-            MaxWidth = MaxWidth.Large, 
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Large,
             FullWidth = true,
             CloseOnEscapeKey = true
         };
-        
+
         var dialog = await DialogService.ShowAsync<OsmFeatureSelectorDialog>(
             "Select OSM Features", parameters, options);
         var result = await dialog.Result;
-        
+
         if (result != null && !result.Canceled && result.Data is List<OsmFeatureSelection> selections)
         {
             Material.SelectedOsmFeatures = selections;
@@ -296,31 +298,28 @@ public partial class TerrainMaterialSettings
             await OnMaterialChanged.InvokeAsync(Material);
         }
     }
-    
+
     private async Task RemoveOsmFeature(OsmFeatureSelection feature)
     {
         Material.SelectedOsmFeatures?.Remove(feature);
-        if (Material.SelectedOsmFeatures?.Count == 0)
-        {
-            Material.LayerSourceType = LayerSourceType.None;
-        }
+        if (Material.SelectedOsmFeatures?.Count == 0) Material.LayerSourceType = LayerSourceType.None;
         await OnMaterialChanged.InvokeAsync(Material);
     }
-    
+
     private async Task ClearOsmFeatures()
     {
         Material.SelectedOsmFeatures = null;
         Material.LayerSourceType = LayerSourceType.None;
         await OnMaterialChanged.InvokeAsync(Material);
     }
-    
-    private MudBlazor.Color GetOsmFeatureChipColor(OsmFeatureSelection feature)
+
+    private Color GetOsmFeatureChipColor(OsmFeatureSelection feature)
     {
         return feature.GeometryType switch
         {
-            OsmGeometryType.LineString => MudBlazor.Color.Warning,
-            OsmGeometryType.Polygon => MudBlazor.Color.Info,
-            _ => MudBlazor.Color.Default
+            OsmGeometryType.LineString => Color.Warning,
+            OsmGeometryType.Polygon => Color.Info,
+            _ => Color.Default
         };
     }
 
@@ -330,7 +329,8 @@ public partial class TerrainMaterialSettings
         var staThread = new Thread(() =>
         {
             using var dialog = new OpenFileDialog();
-            dialog.Filter = "Road Smoothing JSON (*_roadSmoothing*.json)|*_roadSmoothing*.json|All JSON Files (*.json)|*.json";
+            dialog.Filter =
+                "Road Smoothing JSON (*_roadSmoothing*.json)|*_roadSmoothing*.json|All JSON Files (*.json)|*.json";
             dialog.Title = $"Import Road Smoothing Settings for {Material.InternalName}";
             if (dialog.ShowDialog() == DialogResult.OK)
                 selectedPath = dialog.FileName;
@@ -339,17 +339,14 @@ public partial class TerrainMaterialSettings
         staThread.Start();
         staThread.Join();
 
-        if (!string.IsNullOrEmpty(selectedPath))
-        {
-            await ImportRoadSettingsFromFile(selectedPath);
-        }
+        if (!string.IsNullOrEmpty(selectedPath)) await ImportRoadSettingsFromFile(selectedPath);
     }
 
     private async Task ExportRoadSettings()
     {
         string? selectedPath = null;
         var defaultFileName = $"{SanitizeFileName(Material.InternalName)}_roadSmoothing.json";
-        
+
         var staThread = new Thread(() =>
         {
             using var dialog = new SaveFileDialog();
@@ -364,17 +361,14 @@ public partial class TerrainMaterialSettings
         staThread.Start();
         staThread.Join();
 
-        if (!string.IsNullOrEmpty(selectedPath))
-        {
-            await ExportRoadSettingsToFile(selectedPath);
-        }
+        if (!string.IsNullOrEmpty(selectedPath)) await ExportRoadSettingsToFile(selectedPath);
     }
 
     private async Task ExportRoadSettingsToFile(string filePath)
     {
         try
         {
-            var settings = new System.Text.Json.Nodes.JsonObject
+            var settings = new JsonObject
             {
                 ["selectedPreset"] = Material.SelectedPreset.ToString(),
                 ["roadWidthMeters"] = Material.RoadWidthMeters,
@@ -387,7 +381,7 @@ public partial class TerrainMaterialSettings
                 ["blendFunctionType"] = Material.BlendFunctionType.ToString(),
                 ["crossSectionIntervalMeters"] = Material.CrossSectionIntervalMeters,
                 ["enableTerrainBlending"] = Material.EnableTerrainBlending,
-                ["splineParameters"] = new System.Text.Json.Nodes.JsonObject
+                ["splineParameters"] = new JsonObject
                 {
                     ["splineInterpolationType"] = Material.SplineInterpolationType.ToString(),
                     ["tension"] = Material.SplineTension,
@@ -406,7 +400,7 @@ public partial class TerrainMaterialSettings
                     ["useButterworthFilter"] = Material.SplineUseButterworthFilter,
                     ["butterworthFilterOrder"] = Material.SplineButterworthFilterOrder,
                     ["globalLevelingStrength"] = Material.GlobalLevelingStrength,
-                    ["banking"] = new System.Text.Json.Nodes.JsonObject
+                    ["banking"] = new JsonObject
                     {
                         ["enableAutoBanking"] = Material.EnableAutoBanking,
                         ["maxBankAngleDegrees"] = Material.MaxBankAngleDegrees,
@@ -417,7 +411,7 @@ public partial class TerrainMaterialSettings
                         ["bankTransitionLengthMeters"] = Material.BankTransitionLengthMeters
                     }
                 },
-                ["postProcessing"] = new System.Text.Json.Nodes.JsonObject
+                ["postProcessing"] = new JsonObject
                 {
                     ["enabled"] = Material.EnablePostProcessingSmoothing,
                     ["smoothingType"] = Material.SmoothingType.ToString(),
@@ -426,7 +420,7 @@ public partial class TerrainMaterialSettings
                     ["iterations"] = Material.SmoothingIterations,
                     ["maskExtensionMeters"] = Material.SmoothingMaskExtensionMeters
                 },
-                ["junctionHarmonization"] = new System.Text.Json.Nodes.JsonObject
+                ["junctionHarmonization"] = new JsonObject
                 {
                     ["useGlobalSettings"] = Material.UseGlobalJunctionSettings,
                     ["enableJunctionHarmonization"] = Material.EnableJunctionHarmonization,
@@ -439,7 +433,7 @@ public partial class TerrainMaterialSettings
                 }
             };
 
-            var jsonOptions = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
             await File.WriteAllTextAsync(filePath, settings.ToJsonString(jsonOptions));
         }
         catch (Exception)
@@ -461,12 +455,9 @@ public partial class TerrainMaterialSettings
         try
         {
             var jsonContent = await File.ReadAllTextAsync(filePath);
-            var jsonNode = System.Text.Json.Nodes.JsonNode.Parse(jsonContent);
-            
-            if (jsonNode == null)
-            {
-                return;
-            }
+            var jsonNode = JsonNode.Parse(jsonContent);
+
+            if (jsonNode == null) return;
 
             // Import primary parameters
             if (jsonNode["roadWidthMeters"] != null)
@@ -485,7 +476,8 @@ public partial class TerrainMaterialSettings
                 Material.SideMaxSlopeDegrees = jsonNode["sideMaxSlopeDegrees"]!.GetValue<float>();
 
             // Import algorithm settings (ignore legacy 'approach' field - spline is now only option)
-            if (jsonNode["blendFunctionType"] != null && Enum.TryParse<BlendFunctionType>(jsonNode["blendFunctionType"]!.GetValue<string>(), out var blendType))
+            if (jsonNode["blendFunctionType"] != null &&
+                Enum.TryParse<BlendFunctionType>(jsonNode["blendFunctionType"]!.GetValue<string>(), out var blendType))
                 Material.BlendFunctionType = blendType;
             if (jsonNode["crossSectionIntervalMeters"] != null)
                 Material.CrossSectionIntervalMeters = jsonNode["crossSectionIntervalMeters"]!.GetValue<float>();
@@ -496,7 +488,9 @@ public partial class TerrainMaterialSettings
             var splineParams = jsonNode["splineParameters"];
             if (splineParams != null)
             {
-                if (splineParams["splineInterpolationType"] != null && Enum.TryParse<SplineInterpolationType>(splineParams["splineInterpolationType"]!.GetValue<string>(), out var interpType))
+                if (splineParams["splineInterpolationType"] != null &&
+                    Enum.TryParse<SplineInterpolationType>(splineParams["splineInterpolationType"]!.GetValue<string>(),
+                        out var interpType))
                     Material.SplineInterpolationType = interpType;
                 if (splineParams["tension"] != null)
                     Material.SplineTension = splineParams["tension"]!.GetValue<float>();
@@ -507,19 +501,22 @@ public partial class TerrainMaterialSettings
                 if (splineParams["useGraphOrdering"] != null)
                     Material.UseGraphOrdering = splineParams["useGraphOrdering"]!.GetValue<bool>();
                 if (splineParams["preferStraightThroughJunctions"] != null)
-                    Material.PreferStraightThroughJunctions = splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
+                    Material.PreferStraightThroughJunctions =
+                        splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
                 if (splineParams["densifyMaxSpacingPixels"] != null)
                     Material.DensifyMaxSpacingPixels = splineParams["densifyMaxSpacingPixels"]!.GetValue<float>();
                 if (splineParams["simplifyTolerancePixels"] != null)
                     Material.SimplifyTolerancePixels = splineParams["simplifyTolerancePixels"]!.GetValue<float>();
                 if (splineParams["bridgeEndpointMaxDistancePixels"] != null)
-                    Material.BridgeEndpointMaxDistancePixels = splineParams["bridgeEndpointMaxDistancePixels"]!.GetValue<float>();
+                    Material.BridgeEndpointMaxDistancePixels =
+                        splineParams["bridgeEndpointMaxDistancePixels"]!.GetValue<float>();
                 if (splineParams["minPathLengthPixels"] != null)
                     Material.MinPathLengthPixels = splineParams["minPathLengthPixels"]!.GetValue<float>();
                 if (splineParams["junctionAngleThreshold"] != null)
                     Material.JunctionAngleThreshold = splineParams["junctionAngleThreshold"]!.GetValue<float>();
                 if (splineParams["orderingNeighborRadiusPixels"] != null)
-                    Material.OrderingNeighborRadiusPixels = splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
+                    Material.OrderingNeighborRadiusPixels =
+                        splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
                 if (splineParams["skeletonDilationRadius"] != null)
                     Material.SkeletonDilationRadius = splineParams["skeletonDilationRadius"]!.GetValue<int>();
                 if (splineParams["smoothingWindowSize"] != null)
@@ -530,7 +527,7 @@ public partial class TerrainMaterialSettings
                     Material.SplineButterworthFilterOrder = splineParams["butterworthFilterOrder"]!.GetValue<int>();
                 if (splineParams["globalLevelingStrength"] != null)
                     Material.GlobalLevelingStrength = splineParams["globalLevelingStrength"]!.GetValue<float>();
-                
+
                 // Import banking parameters
                 var bankingParams = splineParams["banking"];
                 if (bankingParams != null)
@@ -546,9 +543,11 @@ public partial class TerrainMaterialSettings
                     if (bankingParams["curvatureToBankScale"] != null)
                         Material.CurvatureToBankScale = bankingParams["curvatureToBankScale"]!.GetValue<float>();
                     if (bankingParams["minCurveRadiusForMaxBank"] != null)
-                        Material.MinCurveRadiusForMaxBank = bankingParams["minCurveRadiusForMaxBank"]!.GetValue<float>();
+                        Material.MinCurveRadiusForMaxBank =
+                            bankingParams["minCurveRadiusForMaxBank"]!.GetValue<float>();
                     if (bankingParams["bankTransitionLengthMeters"] != null)
-                        Material.BankTransitionLengthMeters = bankingParams["bankTransitionLengthMeters"]!.GetValue<float>();
+                        Material.BankTransitionLengthMeters =
+                            bankingParams["bankTransitionLengthMeters"]!.GetValue<float>();
                 }
             }
 
@@ -562,7 +561,9 @@ public partial class TerrainMaterialSettings
             {
                 if (postProcessing["enabled"] != null)
                     Material.EnablePostProcessingSmoothing = postProcessing["enabled"]!.GetValue<bool>();
-                if (postProcessing["smoothingType"] != null && Enum.TryParse<PostProcessingSmoothingType>(postProcessing["smoothingType"]!.GetValue<string>(), out var smoothingType))
+                if (postProcessing["smoothingType"] != null &&
+                    Enum.TryParse<PostProcessingSmoothingType>(postProcessing["smoothingType"]!.GetValue<string>(),
+                        out var smoothingType))
                     Material.SmoothingType = smoothingType;
                 if (postProcessing["kernelSize"] != null)
                     Material.SmoothingKernelSize = postProcessing["kernelSize"]!.GetValue<int>();
@@ -583,19 +584,26 @@ public partial class TerrainMaterialSettings
                 if (junctionParams["useGlobalSettings"] != null)
                     Material.UseGlobalJunctionSettings = junctionParams["useGlobalSettings"]!.GetValue<bool>();
                 if (junctionParams["enableJunctionHarmonization"] != null)
-                    Material.EnableJunctionHarmonization = junctionParams["enableJunctionHarmonization"]!.GetValue<bool>();
+                    Material.EnableJunctionHarmonization =
+                        junctionParams["enableJunctionHarmonization"]!.GetValue<bool>();
                 if (junctionParams["junctionDetectionRadiusMeters"] != null)
-                    Material.JunctionDetectionRadiusMeters = junctionParams["junctionDetectionRadiusMeters"]!.GetValue<float>();
+                    Material.JunctionDetectionRadiusMeters =
+                        junctionParams["junctionDetectionRadiusMeters"]!.GetValue<float>();
                 if (junctionParams["junctionBlendDistanceMeters"] != null)
-                    Material.JunctionBlendDistanceMeters = junctionParams["junctionBlendDistanceMeters"]!.GetValue<float>();
-                if (junctionParams["blendFunctionType"] != null && Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(), out var junctionBlendType))
+                    Material.JunctionBlendDistanceMeters =
+                        junctionParams["junctionBlendDistanceMeters"]!.GetValue<float>();
+                if (junctionParams["blendFunctionType"] != null &&
+                    Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(),
+                        out var junctionBlendType))
                     Material.JunctionBlendFunction = junctionBlendType;
                 if (junctionParams["enableEndpointTaper"] != null)
                     Material.EnableEndpointTaper = junctionParams["enableEndpointTaper"]!.GetValue<bool>();
                 if (junctionParams["endpointTaperDistanceMeters"] != null)
-                    Material.EndpointTaperDistanceMeters = junctionParams["endpointTaperDistanceMeters"]!.GetValue<float>();
+                    Material.EndpointTaperDistanceMeters =
+                        junctionParams["endpointTaperDistanceMeters"]!.GetValue<float>();
                 if (junctionParams["endpointTerrainBlendStrength"] != null)
-                    Material.EndpointTerrainBlendStrength = junctionParams["endpointTerrainBlendStrength"]!.GetValue<float>();
+                    Material.EndpointTerrainBlendStrength =
+                        junctionParams["endpointTerrainBlendStrength"]!.GetValue<float>();
             }
 
             // Set preset to Custom since we imported custom values
@@ -628,18 +636,18 @@ public partial class TerrainMaterialSettings
     {
         return preset switch
         {
-            RoadPresetType.Highway => RoadSmoothingPresets.Highway,
-            RoadPresetType.MountainRoad => RoadSmoothingPresets.MountainRoad,
-            RoadPresetType.RacingCircuit => RoadSmoothingPresets.RacingCircuit,
-            RoadPresetType.DirtRoad => RoadSmoothingPresets.DirtRoad,
-            RoadPresetType.TerrainFollowingSmooth => RoadSmoothingPresets.TerrainFollowingSmooth,
-            RoadPresetType.MountainousUltraSmooth => RoadSmoothingPresets.MountainousUltraSmooth,
-            RoadPresetType.HillyAggressive => RoadSmoothingPresets.HillyAggressive,
-            RoadPresetType.FlatModerate => RoadSmoothingPresets.FlatModerate,
-            RoadPresetType.ExtremeNuclear => RoadSmoothingPresets.ExtremeNuclear,
-            RoadPresetType.OsmRoads => RoadSmoothingPresets.OsmRoads,
+            // PNG presets (skeleton extraction from layer masks)
+            RoadPresetType.PngHighway => RoadSmoothingPresets.PngHighway,
+            RoadPresetType.PngRuralRoad => RoadSmoothingPresets.PngRuralRoad,
+            RoadPresetType.PngMountainRoad => RoadSmoothingPresets.PngMountainRoad,
+            RoadPresetType.PngDirtRoad => RoadSmoothingPresets.PngDirtRoad,
+            RoadPresetType.PngRacingCircuit => RoadSmoothingPresets.PngRacingCircuit,
+            // OSM presets (pre-built splines from vector data)
             RoadPresetType.OsmHighway => RoadSmoothingPresets.OsmHighway,
-            RoadPresetType.OsmTrack => RoadSmoothingPresets.OsmTrack,
+            RoadPresetType.OsmRuralRoad => RoadSmoothingPresets.OsmRuralRoad,
+            RoadPresetType.OsmMountainRoad => RoadSmoothingPresets.OsmMountainRoad,
+            RoadPresetType.OsmDirtRoad => RoadSmoothingPresets.OsmDirtRoad,
+            RoadPresetType.OsmRacingCircuit => RoadSmoothingPresets.OsmRacingCircuit,
             _ => null
         };
     }
@@ -667,19 +675,19 @@ public partial class TerrainMaterialSettings
 
         // Layer map
         public string? LayerMapPath { get; set; }
-        
+
         // OSM Layer Source
         public LayerSourceType LayerSourceType { get; set; } = LayerSourceType.None;
         public List<OsmFeatureSelection>? SelectedOsmFeatures { get; set; }
-        
+
         // Updated HasLayerMap to include OSM source
-        public bool HasLayerMap => 
+        public bool HasLayerMap =>
             (LayerSourceType == LayerSourceType.PngFile && !string.IsNullOrEmpty(LayerMapPath)) ||
             (LayerSourceType == LayerSourceType.OsmFeatures && SelectedOsmFeatures?.Any() == true);
 
         // Road smoothing enabled
         public bool IsRoadMaterial { get; set; }
-        public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.Highway;
+        public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.PngHighway;
 
         // ========================================
         // PRIMARY PARAMETERS (always visible)
@@ -687,13 +695,13 @@ public partial class TerrainMaterialSettings
         public float RoadWidthMeters { get; set; } = 8.0f;
         public float? RoadSurfaceWidthMeters { get; set; }
         public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
-        
+
         /// <summary>
-        /// Buffer distance beyond road edge protected from other roads' blend zones.
+        ///     Buffer distance beyond road edge protected from other roads' blend zones.
         /// </summary>
         public float RoadEdgeProtectionBufferMeters { get; set; } = 2.0f;
-        
-        public bool EnableMaxSlopeConstraint { get; set; } = false;
+
+        public bool EnableMaxSlopeConstraint { get; set; }
         public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
         public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
@@ -708,8 +716,9 @@ public partial class TerrainMaterialSettings
         // SPLINE PARAMETERS
         // ========================================
         // Spline interpolation type
-        public SplineInterpolationType SplineInterpolationType { get; set; } = SplineInterpolationType.SmoothInterpolated;
-        
+        public SplineInterpolationType SplineInterpolationType { get; set; } =
+            SplineInterpolationType.SmoothInterpolated;
+
         // Curve fitting
         public float SplineTension { get; set; } = 0.2f;
         public float SplineContinuity { get; set; } = 0.7f;
@@ -724,7 +733,7 @@ public partial class TerrainMaterialSettings
         public float MinPathLengthPixels { get; set; } = 100.0f;
         public float JunctionAngleThreshold { get; set; } = 90.0f;
         public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
-        public int SkeletonDilationRadius { get; set; } = 0;
+        public int SkeletonDilationRadius { get; set; }
 
         // Elevation smoothing (Spline)
         public int SplineSmoothingWindowSize { get; set; } = 301;
@@ -746,21 +755,21 @@ public partial class TerrainMaterialSettings
         // MASTER SPLINE EXPORT
         // ========================================
         /// <summary>
-        /// Distance between nodes in the exported master spline JSON (in meters).
-        /// Controls node density for BeamNG's Master Spline tool import.
+        ///     Distance between nodes in the exported master spline JSON (in meters).
+        ///     Controls node density for BeamNG's Master Spline tool import.
         /// </summary>
         public float MasterSplineNodeDistanceMeters { get; set; } = 15.0f;
 
         // ========================================
         // JUNCTION HARMONIZATION
         // ========================================
-        
+
         /// <summary>
-        /// When true, uses global junction settings from TerrainGenerationState.
-        /// When false, uses the per-material values specified below.
+        ///     When true, uses global junction settings from TerrainGenerationState.
+        ///     When false, uses the per-material values specified below.
         /// </summary>
         public bool UseGlobalJunctionSettings { get; set; } = true;
-        
+
         public bool EnableJunctionHarmonization { get; set; } = true;
         public float JunctionDetectionRadiusMeters { get; set; } = 20.0f;
         public float JunctionBlendDistanceMeters { get; set; } = 40.0f;
@@ -772,56 +781,56 @@ public partial class TerrainMaterialSettings
         // ========================================
         // ROAD BANKING (SUPERELEVATION)
         // ========================================
-        
+
         /// <summary>
-        /// Enable automatic banking (superelevation) on curves.
-        /// When enabled, the road surface tilts based on curve curvature.
+        ///     Enable automatic banking (superelevation) on curves.
+        ///     When enabled, the road surface tilts based on curve curvature.
         /// </summary>
-        public bool EnableAutoBanking { get; set; } = false;
-        
+        public bool EnableAutoBanking { get; set; }
+
         /// <summary>
-        /// Maximum bank angle in degrees.
-        /// Real-world highways typically use 4-8°, race tracks up to 15°.
+        ///     Maximum bank angle in degrees.
+        ///     Real-world highways typically use 4-8°, race tracks up to 15°.
         /// </summary>
         public float MaxBankAngleDegrees { get; set; } = 8.0f;
-        
+
         /// <summary>
-        /// Banking strength multiplier (0-1).
-        /// 0 = no banking, 1 = full banking based on curvature.
+        ///     Banking strength multiplier (0-1).
+        ///     0 = no banking, 1 = full banking based on curvature.
         /// </summary>
         public float BankStrength { get; set; } = 0.5f;
-        
+
         /// <summary>
-        /// Controls how banking transitions at curve boundaries.
-        /// Higher values = sharper falloff (banking drops faster from curve apex).
+        ///     Controls how banking transitions at curve boundaries.
+        ///     Higher values = sharper falloff (banking drops faster from curve apex).
         /// </summary>
         public float AutoBankFalloff { get; set; } = 0.6f;
-        
+
         /// <summary>
-        /// Curvature scale factor for bank angle calculation.
-        /// Higher values = more aggressive banking on gentle curves.
+        ///     Curvature scale factor for bank angle calculation.
+        ///     Higher values = more aggressive banking on gentle curves.
         /// </summary>
         public float CurvatureToBankScale { get; set; } = 500.0f;
-        
+
         /// <summary>
-        /// Minimum curve radius (meters) below which maximum banking is applied.
+        ///     Minimum curve radius (meters) below which maximum banking is applied.
         /// </summary>
         public float MinCurveRadiusForMaxBank { get; set; } = 50.0f;
-        
+
         /// <summary>
-        /// Transition length (meters) for banking changes.
-        /// Banking fades in/out over this distance at curve entries/exits.
+        ///     Transition length (meters) for banking changes.
+        ///     Banking fades in/out over this distance at curve entries/exits.
         /// </summary>
         public float BankTransitionLengthMeters { get; set; } = 30.0f;
-        
+
         /// <summary>
-        /// Gets the banking parameters as a BankingParameters object.
+        ///     Gets the banking parameters as a BankingParameters object.
         /// </summary>
         public BankingParameters? GetBankingParameters()
         {
             if (!EnableAutoBanking)
                 return null;
-            
+
             return new BankingParameters
             {
                 EnableAutoBanking = EnableAutoBanking,
@@ -833,9 +842,9 @@ public partial class TerrainMaterialSettings
                 BankTransitionLengthMeters = BankTransitionLengthMeters
             };
         }
-        
+
         /// <summary>
-        /// Sets banking parameters from a BankingParameters object.
+        ///     Sets banking parameters from a BankingParameters object.
         /// </summary>
         public void SetBankingParameters(BankingParameters? banking)
         {
@@ -844,7 +853,7 @@ public partial class TerrainMaterialSettings
                 EnableAutoBanking = false;
                 return;
             }
-            
+
             EnableAutoBanking = banking.EnableAutoBanking;
             MaxBankAngleDegrees = banking.MaxBankAngleDegrees;
             BankStrength = banking.BankStrength;
@@ -902,7 +911,7 @@ public partial class TerrainMaterialSettings
                 SplineButterworthFilterOrder = preset.SplineParameters.ButterworthFilterOrder;
                 GlobalLevelingStrength = preset.SplineParameters.GlobalLevelingStrength;
                 // Debug properties are always enabled - no need to copy from preset
-                
+
                 // Banking parameters
                 SetBankingParameters(preset.SplineParameters.Banking);
             }
@@ -928,7 +937,8 @@ public partial class TerrainMaterialSettings
         /// </summary>
         /// <param name="debugOutputDirectory">Base directory for debug output files.</param>
         /// <param name="terrainBaseHeight">Base height (Z offset) for the terrain in world units.</param>
-        public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null, float terrainBaseHeight = 0.0f)
+        public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null,
+            float terrainBaseHeight = 0.0f)
         {
             // Create a subfolder for this material's debug output to avoid overwriting other materials' images
             string? materialDebugDirectory = null;
@@ -1026,13 +1036,13 @@ public partial class TerrainMaterialSettings
 
             // Get invalid path characters
             var invalidChars = Path.GetInvalidFileNameChars();
-            
+
             // Replace invalid characters with underscores
             var sanitized = string.Join("_", name.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries));
-            
+
             // Remove any leading/trailing whitespace and dots (which can cause issues)
             sanitized = sanitized.Trim().Trim('.');
-            
+
             // If result is empty, use a default name
             return string.IsNullOrWhiteSpace(sanitized) ? "unknown_material" : sanitized;
         }

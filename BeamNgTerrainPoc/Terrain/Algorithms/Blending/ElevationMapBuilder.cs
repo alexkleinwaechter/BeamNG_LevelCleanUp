@@ -9,7 +9,16 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms.Blending;
 /// Builds elevation maps for terrain blending with per-pixel ownership tracking.
 /// 
 /// This handles both road core pixels (which use pre-computed ownership from the protection mask)
-/// and blend zone pixels (which use nearest cross-section interpolation).
+/// and blend zone pixels (which use cross-section elevation lookup with inverse-distance weighting).
+/// 
+/// IMPORTANT: Different interpolation strategies are used based on road source:
+/// - OSM roads: Inverse-distance weighted interpolation from ALL nearby cross-sections
+///   (works well for clean vector data)
+/// - PNG roads: Inverse-distance weighted interpolation from ONLY ADJACENT cross-sections
+///   along the spline path (±2 from nearest). This prevents spikes at curves where different
+///   parts of the same spline are geometrically close but at different elevations.
+/// 
+/// Both approaches use interpolation (not nearest-neighbor) to avoid discontinuities.
 /// </summary>
 public class ElevationMapBuilder
 {
@@ -78,6 +87,11 @@ public class ElevationMapBuilder
         // Build spatial index for cross-sections (for blend zone processing)
         var spatialIndex = new CrossSectionSpatialIndex(network.CrossSections, metersPerPixel);
 
+        // Build lookup for whether each spline is from OSM source
+        var splineIsOsm = network.Splines.ToDictionary(
+            s => s.SplineId,
+            s => !string.IsNullOrEmpty(s.OsmRoadType));
+
         var blendPixelsSet = 0;
         var processorCount = Environment.ProcessorCount;
 
@@ -99,9 +113,39 @@ public class ElevationMapBuilder
 
                 var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
 
-                // Use interpolation from multiple nearby cross-sections for smoother hairpin curves
-                var (interpolatedElevation, dominantOwner, blendRange, nearestDist) =
-                    InterpolateNearbyCrossSections(worldPos, spatialIndex, maxSearchRadius);
+                // Find the nearest cross-section to determine which road "owns" this pixel
+                var (nearestCs, nearestDist) = spatialIndex.FindNearest(worldPos);
+                
+                if (nearestCs == null)
+                    continue;
+                
+                var nearestSplineId = nearestCs.OwnerSplineId;
+                var isOsm = splineIsOsm.GetValueOrDefault(nearestSplineId, false);
+
+                // Use different interpolation strategies based on road source
+                float interpolatedElevation;
+                float blendRange;
+                int dominantOwner;
+                
+                if (isOsm)
+                {
+                    // OSM roads: Use inverse-distance weighted interpolation from ALL nearby cross-sections
+                    // This works well for clean vector data from OSM
+                    (interpolatedElevation, dominantOwner, blendRange, _) =
+                        InterpolateNearbyCrossSections(worldPos, spatialIndex, maxSearchRadius);
+                }
+                else
+                {
+                    // PNG roads: Use inverse-distance weighted interpolation from ONLY the nearest spline
+                    // This prevents bumpy artifacts from mixing cross-sections with inconsistent normals
+                    // that result from skeleton extraction jaggedness.
+                    // 
+                    // We still use interpolation (not nearest-neighbor) to avoid spikes at road curves,
+                    // but we filter to only cross-sections from the same spline to avoid mixing
+                    // elevations from different road segments that happen to be geometrically close.
+                    (interpolatedElevation, dominantOwner, blendRange, _) =
+                        InterpolateFromSingleSpline(worldPos, spatialIndex, maxSearchRadius, nearestSplineId);
+                }
 
                 if (dominantOwner < 0 || float.IsNaN(interpolatedElevation))
                     continue;
@@ -198,5 +242,84 @@ public class ElevationMapBuilder
             return (float.NaN, -1, 0, float.MaxValue);
 
         return (weightedElevation / totalWeight, dominantCs.OwnerSplineId, dominantCs.EffectiveBlendRange, minDist);
+    }
+
+    /// <summary>
+    /// Interpolates elevation from cross-sections belonging to a SINGLE spline only.
+    /// Used for PNG roads to avoid mixing elevations from different road segments
+    /// that may have inconsistent normal vectors due to skeleton extraction.
+    /// 
+    /// IMPORTANT: This method only considers cross-sections that are ADJACENT along the spline path,
+    /// not just geometrically close. This prevents spikes at curves where different parts of the
+    /// same spline are within the search radius but at very different elevations.
+    /// 
+    /// Algorithm:
+    /// 1. Find the nearest cross-section from the target spline
+    /// 2. Only interpolate with that cross-section and its immediate neighbors (±2 along LocalIndex)
+    /// 3. This ensures smooth elevation transitions along the road path
+    /// </summary>
+    private static (float elevation, int dominantOwner, float blendRange, float nearestDist)
+        InterpolateFromSingleSpline(
+            Vector2 worldPos,
+            CrossSectionSpatialIndex spatialIndex,
+            float searchRadius,
+            int targetSplineId)
+    {
+        // First pass: find the nearest cross-section from the target spline
+        var minDist = float.MaxValue;
+        UnifiedCrossSection? nearestCs = null;
+
+        foreach (var (cs, dist) in spatialIndex.FindWithinRadius(worldPos, searchRadius))
+        {
+            if (cs.OwnerSplineId != targetSplineId)
+                continue;
+
+            if (dist < minDist)
+            {
+                minDist = dist;
+                nearestCs = cs;
+            }
+        }
+
+        if (nearestCs == null)
+            return (float.NaN, -1, 0, float.MaxValue);
+
+        // Second pass: only interpolate with cross-sections that are adjacent along the spline path
+        // This prevents spikes at curves where distant parts of the spline are geometrically close
+        var nearestLocalIndex = nearestCs.LocalIndex;
+        const int maxIndexDistance = 2; // Only consider ±2 cross-sections along the path
+
+        var weightedElevation = 0f;
+        var totalWeight = 0f;
+
+        foreach (var (cs, dist) in spatialIndex.FindWithinRadius(worldPos, searchRadius))
+        {
+            if (cs.OwnerSplineId != targetSplineId)
+                continue;
+
+            // Only consider cross-sections that are adjacent along the spline path
+            var indexDistance = Math.Abs(cs.LocalIndex - nearestLocalIndex);
+            if (indexDistance > maxIndexDistance)
+                continue;
+
+            // Get elevation at the world position (banking-aware)
+            var elevationAtPos = BankedTerrainHelper.GetBankedElevation(cs, worldPos);
+            if (float.IsNaN(elevationAtPos))
+                elevationAtPos = cs.TargetElevation;
+
+            // Weight by both geometric distance AND path distance
+            // Cross-sections further along the path get less weight
+            var pathWeight = 1f / (1f + indexDistance);
+            var distWeight = 1f / MathF.Max(dist * dist, 0.01f);
+            var weight = pathWeight * distWeight;
+            
+            weightedElevation += elevationAtPos * weight;
+            totalWeight += weight;
+        }
+
+        if (totalWeight <= 0)
+            return (float.NaN, -1, 0, float.MaxValue);
+
+        return (weightedElevation / totalWeight, nearestCs.OwnerSplineId, nearestCs.EffectiveBlendRange, minDist);
     }
 }

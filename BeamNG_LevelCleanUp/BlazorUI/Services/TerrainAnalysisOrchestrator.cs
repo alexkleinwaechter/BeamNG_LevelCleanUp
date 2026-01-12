@@ -12,47 +12,22 @@ using BeamNgTerrainPoc.Terrain.Osm.Services;
 using BeamNgTerrainPoc.Terrain.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using Image = SixLabors.ImageSharp.Image;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 
 /// <summary>
-/// Orchestrates terrain analysis similar to TerrainGenerationOrchestrator
-/// but stops after junction detection without modifying terrain.
-/// This allows users to preview and modify the road network before committing
-/// to full terrain generation.
+///     Orchestrates terrain analysis similar to TerrainGenerationOrchestrator
+///     but stops after junction detection without modifying terrain.
+///     This allows users to preview and modify the road network before committing
+///     to full terrain generation.
 /// </summary>
 public class TerrainAnalysisOrchestrator
 {
     /// <summary>
-    /// Result of terrain analysis.
-    /// </summary>
-    public class AnalysisOrchestratorResult
-    {
-        /// <summary>
-        /// Whether the analysis completed successfully.
-        /// </summary>
-        public bool Success { get; init; }
-
-        /// <summary>
-        /// The underlying analyzer result with network data.
-        /// </summary>
-        public TerrainAnalyzer.AnalysisResult? AnalyzerResult { get; init; }
-
-        /// <summary>
-        /// Error message if analysis failed.
-        /// </summary>
-        public string? ErrorMessage { get; init; }
-
-        /// <summary>
-        /// Elapsed time for analysis.
-        /// </summary>
-        public TimeSpan ElapsedTime { get; init; }
-    }
-
-    /// <summary>
-    /// Performs analysis phase only (spline extraction + junction detection).
-    /// This method mirrors the material processing in TerrainGenerationOrchestrator
-    /// but stops before terrain blending.
+    ///     Performs analysis phase only (spline extraction + junction detection).
+    ///     This method mirrors the material processing in TerrainGenerationOrchestrator
+    ///     but stops before terrain blending.
     /// </summary>
     /// <param name="state">The terrain generation state with all settings.</param>
     /// <param name="analysisState">Optional existing analysis state to update.</param>
@@ -69,13 +44,11 @@ public class TerrainAnalysisOrchestrator
 
             // Validate state
             if (!state.CanGenerate())
-            {
                 return new AnalysisOrchestratorResult
                 {
                     Success = false,
                     ErrorMessage = "Cannot analyze: invalid generation settings."
                 };
-            }
 
             // Build material definitions (same as generation)
             var orderedMaterials = state.TerrainMaterials.OrderBy(m => m.Order).ToList();
@@ -114,25 +87,22 @@ public class TerrainAnalysisOrchestrator
             // Check if we have any road materials to analyze
             var roadMaterials = materialDefinitions.Where(m => m.RoadParameters != null).ToList();
             if (roadMaterials.Count == 0)
-            {
                 return new AnalysisOrchestratorResult
                 {
                     Success = false,
-                    ErrorMessage = "No road materials found. Analysis requires at least one material with road smoothing enabled."
+                    ErrorMessage =
+                        "No road materials found. Analysis requires at least one material with road smoothing enabled."
                 };
-            }
 
             // Load heightmap for elevation calculations
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Loading heightmap for analysis...");
             var heightMap = await LoadHeightMapAsync(state);
             if (heightMap == null)
-            {
                 return new AnalysisOrchestratorResult
                 {
                     Success = false,
                     ErrorMessage = "Failed to load heightmap for analysis."
                 };
-            }
 
             // Run the analyzer
             PubSubChannel.SendMessage(PubSubMessageType.Info,
@@ -145,16 +115,14 @@ public class TerrainAnalysisOrchestrator
                 state.MetersPerPixel,
                 state.TerrainSize,
                 state.GlobalJunctionDetectionRadiusMeters,
-                generateDebugImage: true);
+                true);
 
             if (!analyzerResult.Success)
-            {
                 return new AnalysisOrchestratorResult
                 {
                     Success = false,
                     ErrorMessage = analyzerResult.ErrorMessage ?? "Analysis failed for unknown reason."
                 };
-            }
 
             // Update analysis state if provided
             analysisState?.SetAnalysisResult(analyzerResult);
@@ -189,7 +157,7 @@ public class TerrainAnalysisOrchestrator
     }
 
     /// <summary>
-    /// Saves the analysis debug image to a file.
+    ///     Saves the analysis debug image to a file.
     /// </summary>
     /// <param name="analysisState">The analysis state with debug image data.</param>
     /// <param name="outputPath">The output file path.</param>
@@ -214,8 +182,8 @@ public class TerrainAnalysisOrchestrator
     }
 
     /// <summary>
-    /// Regenerates the debug image with current exclusion state.
-    /// Call this after user modifies exclusions to update the visualization.
+    ///     Regenerates the debug image with current exclusion state.
+    ///     Call this after user modifies exclusions to update the visualization.
     /// </summary>
     /// <param name="analysisState">The analysis state to update.</param>
     /// <param name="metersPerPixel">The terrain meters per pixel.</param>
@@ -251,6 +219,32 @@ public class TerrainAnalysisOrchestrator
                 $"Failed to regenerate debug image: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    ///     Result of terrain analysis.
+    /// </summary>
+    public class AnalysisOrchestratorResult
+    {
+        /// <summary>
+        ///     Whether the analysis completed successfully.
+        /// </summary>
+        public bool Success { get; init; }
+
+        /// <summary>
+        ///     The underlying analyzer result with network data.
+        /// </summary>
+        public TerrainAnalyzer.AnalysisResult? AnalyzerResult { get; init; }
+
+        /// <summary>
+        ///     Error message if analysis failed.
+        /// </summary>
+        public string? ErrorMessage { get; init; }
+
+        /// <summary>
+        ///     Elapsed time for analysis.
+        /// </summary>
+        public TimeSpan ElapsedTime { get; init; }
     }
 
     #region Private Helpers
@@ -434,16 +428,14 @@ public class TerrainAnalysisOrchestrator
 
         return await Task.Run(() =>
         {
-            using var image = SixLabors.ImageSharp.Image.Load<L16>(path);
+            using var image = Image.Load<L16>(path);
             var heightMap = new float[image.Height, image.Width];
 
             for (var y = 0; y < image.Height; y++)
+            for (var x = 0; x < image.Width; x++)
             {
-                for (var x = 0; x < image.Width; x++)
-                {
-                    var pixel = image[x, y];
-                    heightMap[y, x] = pixel.PackedValue / 65535f * maxHeight;
-                }
+                var pixel = image[x, y];
+                heightMap[y, x] = pixel.PackedValue / 65535f * maxHeight;
             }
 
             return heightMap;
@@ -461,7 +453,6 @@ public class TerrainAnalysisOrchestrator
             GeoTiffImportResult result;
 
             if (state.CropResult is { NeedsCropping: true })
-            {
                 result = reader.ReadGeoTiff(
                     state.GeoTiffPath,
                     state.TerrainSize,
@@ -469,11 +460,8 @@ public class TerrainAnalysisOrchestrator
                     state.CropResult.OffsetY,
                     state.CropResult.CropWidth,
                     state.CropResult.CropHeight);
-            }
             else
-            {
                 result = reader.ReadGeoTiff(state.GeoTiffPath, state.TerrainSize);
-            }
 
             return ConvertImageToHeightMap(result.HeightmapImage, result.MinElevation, result.MaxElevation);
         });
@@ -503,7 +491,6 @@ public class TerrainAnalysisOrchestrator
             GeoTiffImportResult result;
 
             if (state.CropResult is { NeedsCropping: true })
-            {
                 result = reader.ReadGeoTiff(
                     geoTiffPath,
                     state.TerrainSize,
@@ -511,21 +498,18 @@ public class TerrainAnalysisOrchestrator
                     state.CropResult.OffsetY,
                     state.CropResult.CropWidth,
                     state.CropResult.CropHeight);
-            }
             else
-            {
                 result = reader.ReadGeoTiff(geoTiffPath, state.TerrainSize);
-            }
 
             return ConvertImageToHeightMap(result.HeightmapImage, result.MinElevation, result.MaxElevation);
         });
     }
 
     /// <summary>
-    /// Converts a 16-bit heightmap image to a float array.
+    ///     Converts a 16-bit heightmap image to a float array.
     /// </summary>
     private static float[,] ConvertImageToHeightMap(
-        SixLabors.ImageSharp.Image<L16> image,
+        Image<L16> image,
         double minElevation,
         double maxElevation)
     {
@@ -533,13 +517,11 @@ public class TerrainAnalysisOrchestrator
         var elevationRange = maxElevation - minElevation;
 
         for (var y = 0; y < image.Height; y++)
+        for (var x = 0; x < image.Width; x++)
         {
-            for (var x = 0; x < image.Width; x++)
-            {
-                var pixel = image[x, y];
-                var normalized = pixel.PackedValue / 65535.0;
-                heightMap[y, x] = (float)(minElevation + normalized * elevationRange);
-            }
+            var pixel = image[x, y];
+            var normalized = pixel.PackedValue / 65535.0;
+            heightMap[y, x] = (float)(minElevation + normalized * elevationRange);
         }
 
         return heightMap;
@@ -553,7 +535,7 @@ public class TerrainAnalysisOrchestrator
         var safeName = string.Join("_", materialName.Split(Path.GetInvalidFileNameChars()));
         var filePath = Path.Combine(debugPath, $"{safeName}_osm_layer.png");
 
-        using var image = new SixLabors.ImageSharp.Image<L8>(width, height);
+        using var image = new Image<L8>(width, height);
 
         for (var y = 0; y < height; y++)
         for (var x = 0; x < width; x++)
@@ -565,8 +547,8 @@ public class TerrainAnalysisOrchestrator
     }
 
     /// <summary>
-    /// Generates a simplified debug image showing junction states.
-    /// This is used for updating the visualization after exclusion changes.
+    ///     Generates a simplified debug image showing junction states.
+    ///     This is used for updating the visualization after exclusion changes.
     /// </summary>
     private static byte[]? GenerateSimplifiedDebugImage(
         UnifiedRoadNetwork network,
@@ -577,7 +559,7 @@ public class TerrainAnalysisOrchestrator
         if (imageWidth <= 0 || imageHeight <= 0)
             return null;
 
-        using var image = new SixLabors.ImageSharp.Image<Rgba32>(imageWidth, imageHeight, new Rgba32(30, 30, 30, 255));
+        using var image = new Image<Rgba32>(imageWidth, imageHeight, new Rgba32(30, 30, 30, 255));
 
         // Draw cross-sections as road paths
         foreach (var cs in network.CrossSections.Where(c => !c.IsExcluded && !float.IsNaN(c.TargetElevation)))
@@ -600,7 +582,7 @@ public class TerrainAnalysisOrchestrator
             var color = new Rgba32(255, 200, 0, 255); // Gold
 
             var crossSections = network.GetCrossSectionsForSpline(spline.SplineId).ToList();
-            for (int i = 0; i < crossSections.Count - 1; i++)
+            for (var i = 0; i < crossSections.Count - 1; i++)
             {
                 var p1 = crossSections[i].CenterPoint;
                 var p2 = crossSections[i + 1].CenterPoint;
@@ -622,11 +604,8 @@ public class TerrainAnalysisOrchestrator
 
             Rgba32 junctionColor;
             if (junction.IsExcluded)
-            {
                 junctionColor = new Rgba32(128, 128, 128, 180);
-            }
             else
-            {
                 junctionColor = junction.Type switch
                 {
                     JunctionType.Endpoint => new Rgba32(255, 255, 0, 255),
@@ -637,20 +616,14 @@ public class TerrainAnalysisOrchestrator
                     JunctionType.MidSplineCrossing => new Rgba32(255, 64, 128, 255),
                     _ => new Rgba32(255, 255, 255, 255)
                 };
-            }
 
             var radius = junction.Type == JunctionType.Endpoint ? 4 : 7;
             DrawFilledCircle(image, jx, jy, radius, junctionColor);
 
             if (junction.IsCrossMaterial && !junction.IsExcluded)
-            {
                 DrawCircleOutline(image, jx, jy, radius + 3, new Rgba32(255, 255, 255, 200));
-            }
 
-            if (junction.IsExcluded)
-            {
-                DrawX(image, jx, jy, radius + 2, new Rgba32(255, 50, 50, 255));
-            }
+            if (junction.IsExcluded) DrawX(image, jx, jy, radius + 2, new Rgba32(255, 50, 50, 255));
         }
 
         using var ms = new MemoryStream();
@@ -660,7 +633,7 @@ public class TerrainAnalysisOrchestrator
 
     #region Drawing Helpers
 
-    private static void DrawLine(SixLabors.ImageSharp.Image<Rgba32> img, int x0, int y0, int x1, int y1, Rgba32 color)
+    private static void DrawLine(Image<Rgba32> img, int x0, int y0, int x1, int y1, Rgba32 color)
     {
         int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
         int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -672,12 +645,21 @@ public class TerrainAnalysisOrchestrator
                 img[x0, y0] = color;
             if (x0 == x1 && y0 == y1) break;
             var e2 = 2 * err;
-            if (e2 >= dy) { err += dy; x0 += sx; }
-            if (e2 <= dx) { err += dx; y0 += sy; }
+            if (e2 >= dy)
+            {
+                err += dy;
+                x0 += sx;
+            }
+
+            if (e2 <= dx)
+            {
+                err += dx;
+                y0 += sy;
+            }
         }
     }
 
-    private static void DrawFilledCircle(SixLabors.ImageSharp.Image<Rgba32> img, int cx, int cy, int radius, Rgba32 color)
+    private static void DrawFilledCircle(Image<Rgba32> img, int cx, int cy, int radius, Rgba32 color)
     {
         for (var y = -radius; y <= radius; y++)
         for (var x = -radius; x <= radius; x++)
@@ -690,7 +672,7 @@ public class TerrainAnalysisOrchestrator
             }
     }
 
-    private static void DrawCircleOutline(SixLabors.ImageSharp.Image<Rgba32> img, int cx, int cy, int radius, Rgba32 color)
+    private static void DrawCircleOutline(Image<Rgba32> img, int cx, int cy, int radius, Rgba32 color)
     {
         for (var angle = 0; angle < 360; angle += 2)
         {
@@ -702,9 +684,9 @@ public class TerrainAnalysisOrchestrator
         }
     }
 
-    private static void DrawX(SixLabors.ImageSharp.Image<Rgba32> img, int cx, int cy, int size, Rgba32 color)
+    private static void DrawX(Image<Rgba32> img, int cx, int cy, int size, Rgba32 color)
     {
-        for (int i = -size; i <= size; i++)
+        for (var i = -size; i <= size; i++)
         {
             var px1 = cx + i;
             var py1 = cy + i;
