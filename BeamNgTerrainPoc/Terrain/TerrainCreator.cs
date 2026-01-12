@@ -195,12 +195,29 @@ public class TerrainCreator
                 heightMap2DForSpawn = ConvertTo2DArray(heights, parameters.Size);
             }
             
-            parameters.ExtractedSpawnPoint = SpawnPointData.ExtractFromRoads(
-                parameters.Materials,
-                heightMap2DForSpawn,
-                parameters.Size,
-                parameters.MetersPerPixel,
-                parameters.TerrainBaseHeight);
+            // Try to extract spawn point from the unified road network first (works for PNG roads)
+            // This captures splines created during smoothing, not just pre-built OSM splines.
+            // Fall back to the material-based extraction for backward compatibility with OSM roads.
+            if (unifiedResult?.Network != null && unifiedResult.Network.Splines.Count > 0)
+            {
+                // Use the new network-based extraction (works for both PNG and OSM)
+                parameters.ExtractedSpawnPoint = SpawnPointData.ExtractFromNetwork(
+                    unifiedResult.Network,
+                    heightMap2DForSpawn,
+                    parameters.Size,
+                    parameters.MetersPerPixel,
+                    parameters.TerrainBaseHeight);
+            }
+            else
+            {
+                // Fallback to material-based extraction (for OSM roads with PreBuiltSplines)
+                parameters.ExtractedSpawnPoint = SpawnPointData.ExtractFromRoads(
+                    parameters.Materials,
+                    heightMap2DForSpawn,
+                    parameters.Size,
+                    parameters.MetersPerPixel,
+                    parameters.TerrainBaseHeight);
+            }
             
             if (parameters.ExtractedSpawnPoint != null)
             {

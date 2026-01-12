@@ -125,30 +125,43 @@ public class SpawnPointSuggestion
 
     /// <summary>
     ///     Creates a rotation matrix that orients the vehicle along the road direction.
-    ///     In BeamNG, the vehicle's forward direction is typically along the positive X axis.
+    ///     
+    ///     BeamNG uses a right-handed coordinate system with:
+    ///     - +X pointing East
+    ///     - +Y pointing North (forward is +Y by default)
+    ///     - +Z pointing Up
+    ///     
+    ///     From real BeamNG spawn points (johnson_valley items.level.json):
+    ///     "rotationMatrix":[0.837925911,0.545783997,0,-0.545783997,0.837925911,0,0,0,1]
+    ///     This pattern is: [cos(θ), sin(θ), 0, -sin(θ), cos(θ), 0, 0, 0, 1]
+    ///     
+    ///     To point the nose along direction (dx, dy), where default forward is +Y:
+    ///     θ = atan2(dx, dy)
+    ///     cos(θ) = dy/len, sin(θ) = dx/len
     /// </summary>
-    /// <param name="tangentX">Road direction tangent X component (normalized)</param>
-    /// <param name="tangentY">Road direction tangent Y component (normalized)</param>
+    /// <param name="tangentX">Road direction tangent X component</param>
+    /// <param name="tangentY">Road direction tangent Y component</param>
     private static double[] CreateRotationFromDirection(float tangentX, float tangentY)
     {
-        // Normalize the tangent just in case
+        // Normalize the tangent
         var length = Math.Sqrt(tangentX * tangentX + tangentY * tangentY);
         if (length < 0.001) return CreateIdentityRotation();
 
-        var forwardX = tangentX / length;
-        var forwardY = tangentY / length;
+        var dx = tangentX / length;  // sin(θ)
+        var dy = tangentY / length;  // cos(θ)
 
-        // The rotation matrix for 2D rotation around Z axis:
-        // [ cos(?)  -sin(?)  0 ]
-        // [ sin(?)   cos(?)  0 ]
-        // [   0        0     1 ]
-        //
-        // Where cos(?) = forwardX and sin(?) = forwardY (tangent direction)
-
-        return new[]
+        // BeamNG rotation matrix for yaw rotation around Z axis (verified from real spawn points):
+        // [cos(θ),  sin(θ), 0]
+        // [-sin(θ), cos(θ), 0]
+        // [  0,       0,    1]
+        // 
+        // In row-major 9-element array:
+        // [cos, sin, 0, -sin, cos, 0, 0, 0, 1]
+        // [dy,  dx,  0, -dx,  dy,  0, 0, 0, 1]
+        return new double[]
         {
-            forwardX, -forwardY, 0,
-            forwardY, forwardX, 0,
+            dy, dx, 0,
+            -dx, dy, 0,
             0, 0, 1
         };
     }
