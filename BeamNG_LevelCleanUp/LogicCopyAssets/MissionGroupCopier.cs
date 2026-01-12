@@ -2,6 +2,7 @@ using System.Text.Json;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
 
@@ -19,6 +20,7 @@ public class MissionGroupCopier
     private readonly string _targetLevelName;
     private readonly string _targetLevelNamePath;
     private readonly string _targetLevelPath;
+    private readonly FileCopyHandler _fileCopyHandler;
 
     /// <summary>
     ///     Tracks SimGroup definitions parsed from source level.
@@ -32,6 +34,12 @@ public class MissionGroupCopier
     ///     Populated during source level parsing.
     /// </summary>
     private readonly Dictionary<string, string> _classToParentMap = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     Stores assets extracted from main.level.json (hierarchical JSON format).
+    ///     This is the legacy format that some levels still use alongside or instead of items.level.json.
+    /// </summary>
+    private readonly List<Asset> _mainLevelJsonAssets = new();
 
     public MissionGroupCopier(
         List<Asset> missionGroupAssets,
@@ -49,6 +57,10 @@ public class MissionGroupCopier
         _targetLevelNamePath = targetLevelNamePath;
         _targetLevelName = targetLevelName;
         _sourceMaterials = sourceMaterials ?? new List<MaterialJson>();
+        
+        // Initialize FileCopyHandler for cross-level file extraction
+        var sourceLevelName = new DirectoryInfo(_sourceLevelNamePath).Name;
+        _fileCopyHandler = new FileCopyHandler(sourceLevelName);
     }
 
     /// <summary>
@@ -60,13 +72,16 @@ public class MissionGroupCopier
         {
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Copying MissionGroup data...");
 
+            // 0. Parse main.level.json if it exists (hierarchical JSON format - legacy)
+            ParseMainLevelJson();
+
             // 1. Parse source level hierarchy to understand SimGroup structure
             ParseSourceHierarchy();
 
             // 2. Create target directory structure based on source hierarchy
             CreateDirectoryStructure();
 
-            // 3. Copy referenced files
+            // 3. Copy referenced files (including from main.level.json)
             CopyReferencedFiles();
 
             // 4. Copy referenced materials (cubemaps, moon materials, flare types)
@@ -83,6 +98,91 @@ public class MissionGroupCopier
             PubSubChannel.SendMessage(PubSubMessageType.Error,
                 $"Error copying MissionGroup data: {ex.Message}");
             throw;
+        }
+    }
+
+    /// <summary>
+    ///     Parses the main.level.json file (hierarchical JSON format).
+    ///     This file exists in the root of the level folder and contains the scene hierarchy
+    ///     with nested "childs" arrays. It's an alternative/legacy format to items.level.json files.
+    ///     Important: This file may contain references to textures from other levels.
+    /// </summary>
+    private void ParseMainLevelJson()
+    {
+        var mainLevelJsonPath = Path.Join(_sourceLevelNamePath, "main.level.json");
+        if (!File.Exists(mainLevelJsonPath))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "No main.level.json found (using items.level.json format)", true);
+            return;
+        }
+
+        try
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "Parsing main.level.json (hierarchical format)...", true);
+
+            var jsonContent = File.ReadAllText(mainLevelJsonPath);
+            using var doc = JsonDocument.Parse(jsonContent);
+            
+            // Recursively extract assets from the hierarchical structure
+            ExtractAssetsFromHierarchy(doc.RootElement, null);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Found {_mainLevelJsonAssets.Count} assets in main.level.json", true);
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Could not parse main.level.json: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    ///     Recursively extracts assets from the hierarchical main.level.json structure.
+    /// </summary>
+    private void ExtractAssetsFromHierarchy(JsonElement element, string parentName)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+            return;
+
+        // Check if this element has a class property (is an object we care about)
+        if (element.TryGetProperty("class", out var classProperty))
+        {
+            var className = classProperty.GetString();
+            
+            // Extract asset data from this element
+            try
+            {
+                var asset = element.Deserialize<Asset>(BeamJsonOptions.GetJsonSerializerOptions());
+                if (asset != null)
+                {
+                    asset.__parent = parentName;
+                    _mainLevelJsonAssets.Add(asset);
+                    
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"  Found {className}: {asset.Name ?? "(unnamed)"}", true);
+                }
+            }
+            catch
+            {
+                // Ignore deserialization errors for individual elements
+            }
+
+            // Get name for child elements
+            var name = element.TryGetProperty("name", out var nameProperty) 
+                ? nameProperty.GetString() 
+                : null;
+
+            // Process childs array if present
+            if (element.TryGetProperty("childs", out var childsProperty) && 
+                childsProperty.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var child in childsProperty.EnumerateArray())
+                {
+                    ExtractAssetsFromHierarchy(child, name ?? parentName);
+                }
+            }
         }
     }
 
@@ -383,34 +483,54 @@ public class MissionGroupCopier
     }
 
     /// <summary>
-    ///     Copies all files referenced by MissionGroup assets
+    ///     Copies all files referenced by MissionGroup assets (from both items.level.json and main.level.json)
     /// </summary>
     private void CopyReferencedFiles()
     {
         var copiedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Process assets from items.level.json (NDJSON format)
         foreach (var asset in _missionGroupAssets)
         {
-            // TerrainBlock: Copy .ter file and .terrain.json
-            if (!string.IsNullOrEmpty(asset.TerrainFile)) CopyTerrainFiles(asset.TerrainFile, copiedFiles);
+            CopyAssetReferencedFiles(asset, copiedFiles);
+        }
 
-            // ScatterSky: Copy gradient files
-            CopyGradientFile(asset.AmbientScaleGradientFile, copiedFiles);
-            CopyGradientFile(asset.ColorizeGradientFile, copiedFiles);
-            CopyGradientFile(asset.FogScaleGradientFile, copiedFiles);
-            CopyGradientFile(asset.NightFogGradientFile, copiedFiles);
-            CopyGradientFile(asset.NightGradientFile, copiedFiles);
-            CopyGradientFile(asset.SunScaleGradientFile, copiedFiles);
-
-            // CloudLayer: Copy texture files
-            if (!string.IsNullOrEmpty(asset.Texture)) CopyTextureFile(asset.Texture, copiedFiles);
-
-            // Material references will be handled separately by MaterialCopier
-            // (FlareType, NightCubemap, GlobalEnviromentMap, MoonMat)
+        // Process assets from main.level.json (hierarchical format)
+        foreach (var asset in _mainLevelJsonAssets)
+        {
+            CopyAssetReferencedFiles(asset, copiedFiles);
         }
 
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Copied {copiedFiles.Count} referenced file(s)");
+    }
+
+    /// <summary>
+    ///     Copies all files referenced by a single asset
+    /// </summary>
+    private void CopyAssetReferencedFiles(Asset asset, HashSet<string> copiedFiles)
+    {
+        // TerrainBlock: Copy .ter file and .terrain.json
+        if (!string.IsNullOrEmpty(asset.TerrainFile)) CopyTerrainFiles(asset.TerrainFile, copiedFiles);
+
+        // ScatterSky: Copy gradient files
+        CopyGradientFile(asset.AmbientScaleGradientFile, copiedFiles);
+        CopyGradientFile(asset.ColorizeGradientFile, copiedFiles);
+        CopyGradientFile(asset.FogScaleGradientFile, copiedFiles);
+        CopyGradientFile(asset.NightFogGradientFile, copiedFiles);
+        CopyGradientFile(asset.NightGradientFile, copiedFiles);
+        CopyGradientFile(asset.SunScaleGradientFile, copiedFiles);
+
+        // CloudLayer: Copy texture files
+        if (!string.IsNullOrEmpty(asset.Texture)) CopyTextureFile(asset.Texture, copiedFiles);
+
+        // WaterPlane: Copy water-related textures
+        if (!string.IsNullOrEmpty(asset.FoamTex)) CopyTextureFile(asset.FoamTex, copiedFiles, "art/water");
+        if (!string.IsNullOrEmpty(asset.RippleTex)) CopyTextureFile(asset.RippleTex, copiedFiles, "art/water");
+        if (!string.IsNullOrEmpty(asset.DepthGradientTex)) CopyTextureFile(asset.DepthGradientTex, copiedFiles, "art/water");
+
+        // Material references will be handled separately by MaterialCopier
+        // (FlareType, NightCubemap, GlobalEnviromentMap, MoonMat)
     }
 
     /// <summary>
@@ -498,30 +618,114 @@ public class MissionGroupCopier
     }
 
     /// <summary>
-    ///     Copies a texture file (DDS, PNG, etc.)
+    ///     Copies a texture file (DDS, PNG, etc.), including from other levels via ZIP extraction.
     /// </summary>
-    private void CopyTextureFile(string textureFilePath, HashSet<string> copiedFiles)
+    /// <param name="textureFilePath">The texture path (may reference another level)</param>
+    /// <param name="copiedFiles">Set of already copied files to avoid duplicates</param>
+    /// <param name="targetSubFolder">Target subfolder under level path (default: "art/skies")</param>
+    private void CopyTextureFile(string textureFilePath, HashSet<string> copiedFiles, string targetSubFolder = "art/skies")
     {
         if (string.IsNullOrEmpty(textureFilePath) || copiedFiles.Contains(textureFilePath))
             return;
 
         try
         {
+            // Extract just the filename for the target
+            var fileName = Path.GetFileName(textureFilePath);
+            var targetPath = Path.Join(_targetLevelNamePath, targetSubFolder, fileName);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+
+            // First, try resolving from the source level path
             var sourcePath = PathResolver.ResolvePath(_sourceLevelPath, textureFilePath, false);
 
             if (File.Exists(sourcePath))
             {
-                // Extract just the filename and put it in art/skies folder
-                var fileName = Path.GetFileName(textureFilePath);
-                var targetPath = Path.Join(_targetLevelNamePath, "art", "skies", fileName);
-
-                Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
                 File.Copy(sourcePath, targetPath, true);
                 copiedFiles.Add(textureFilePath);
-
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Copied texture: {fileName}", true);
+                return;
             }
+
+            // Check if this is a cross-level reference (path starts with /levels/ or levels/)
+            var normalizedPath = textureFilePath.TrimStart('/');
+            if (normalizedPath.StartsWith("levels/", StringComparison.OrdinalIgnoreCase))
+            {
+                // Extract level name from path: levels/{levelname}/...
+                var pathParts = normalizedPath.Split('/');
+                if (pathParts.Length >= 3)
+                {
+                    var referencedLevelName = pathParts[1];
+                    var sourceLevelName = new DirectoryInfo(_sourceLevelNamePath).Name;
+
+                    // Check if it's referencing a different level
+                    if (!referencedLevelName.Equals(sourceLevelName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Cross-level texture reference found: {textureFilePath}", true);
+
+                        // Try to find the file in the BeamNG install directory
+                        var beamInstallDir = Steam.GetBeamInstallDir();
+                        if (!string.IsNullOrEmpty(beamInstallDir))
+                        {
+                            // Try the unpacked level directory first
+                            var beamLevelPath = Path.Join(beamInstallDir, Constants.BeamMapPath, referencedLevelName);
+                            var fullSourcePath = Path.Join(beamLevelPath, string.Join(Path.DirectorySeparatorChar.ToString(), pathParts.Skip(2)));
+
+                            if (File.Exists(fullSourcePath))
+                            {
+                                File.Copy(fullSourcePath, targetPath, true);
+                                copiedFiles.Add(textureFilePath);
+                                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                    $"Copied cross-level texture from {referencedLevelName}: {fileName}", true);
+                                return;
+                            }
+
+                            // Try using FileCopyHandler for ZIP extraction
+                            try
+                            {
+                                _fileCopyHandler.CopyFile(fullSourcePath, targetPath);
+                                copiedFiles.Add(textureFilePath);
+                                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                                    $"Extracted cross-level texture from {referencedLevelName}.zip: {fileName}", true);
+                                return;
+                            }
+                            catch (FileNotFoundException)
+                            {
+                                // Fall through to warning
+                            }
+                        }
+
+                        PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                            $"Could not find cross-level texture: {textureFilePath} (from level '{referencedLevelName}')");
+                        return;
+                    }
+                }
+            }
+
+            // Also check for core assets (e.g., core/art/water/foam.dds)
+            if (normalizedPath.StartsWith("core/", StringComparison.OrdinalIgnoreCase))
+            {
+                var beamInstallDir = Steam.GetBeamInstallDir();
+                if (!string.IsNullOrEmpty(beamInstallDir))
+                {
+                    // Try ZipAssetExtractor for core assets
+                    if (ZipAssetExtractor.ExtractAssetToFile(normalizedPath, targetPath))
+                    {
+                        copiedFiles.Add(textureFilePath);
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Extracted core asset: {fileName}", true);
+                        return;
+                    }
+                }
+
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Could not find core asset: {textureFilePath}");
+                return;
+            }
+
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Texture file not found: {textureFilePath}");
         }
         catch (Exception ex)
         {
