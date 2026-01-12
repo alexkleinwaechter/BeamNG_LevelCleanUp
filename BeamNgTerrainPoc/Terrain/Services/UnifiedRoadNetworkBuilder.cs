@@ -303,6 +303,11 @@ public class UnifiedRoadNetworkBuilder
         
         TerrainLogger.Info($"    After merging: {mergedPathPixels.Count} path(s)");
         
+        // Track simplification statistics for aggregated logging
+        var totalWorldPoints = 0;
+        var totalSimplifiedPoints = 0;
+        var simplifiedPathCount = 0;
+        
         // Convert to splines
         foreach (var pathPixels in mergedPathPixels)
         {
@@ -322,9 +327,12 @@ public class UnifiedRoadNetworkBuilder
             if (simplifiedPoints.Count < 2)
                 continue;
             
+            // Track simplification stats
             if (simplifiedPoints.Count < worldPoints.Count)
             {
-                TerrainLogger.Info($"      Path simplified: {worldPoints.Count} -> {simplifiedPoints.Count} control points");
+                totalWorldPoints += worldPoints.Count;
+                totalSimplifiedPoints += simplifiedPoints.Count;
+                simplifiedPathCount++;
             }
             
             try
@@ -342,6 +350,12 @@ public class UnifiedRoadNetworkBuilder
             {
                 TerrainLogger.Warning($"    Failed to create spline: {ex.Message}");
             }
+        }
+        
+        // Log aggregated simplification summary
+        if (simplifiedPathCount > 0)
+        {
+            TerrainLogger.Info($"    Path simplification: {simplifiedPathCount} path(s), {totalWorldPoints} -> {totalSimplifiedPoints} total control points");
         }
         
         return splines;

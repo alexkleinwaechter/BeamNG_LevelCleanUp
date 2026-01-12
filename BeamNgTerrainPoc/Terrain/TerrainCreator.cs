@@ -93,6 +93,7 @@ public class TerrainCreator
 
         Image<L16>? heightmapImage = null;
         var shouldDisposeHeightmap = false;
+        var isGeoTiffSource = false; // Track source type for spike prevention strategy
 
         try
         {
@@ -104,6 +105,7 @@ public class TerrainCreator
             {
                 heightmapImage = parameters.HeightmapImage;
                 shouldDisposeHeightmap = false; // Caller owns this
+                isGeoTiffSource = false; // Provided image, assume pre-processed
                 perfLog.Timing("Using provided HeightmapImage");
             }
             else if (!string.IsNullOrWhiteSpace(parameters.HeightmapPath))
@@ -111,6 +113,7 @@ public class TerrainCreator
                 perfLog.Info($"Loading heightmap from PNG: {parameters.HeightmapPath}");
                 heightmapImage = Image.Load<L16>(parameters.HeightmapPath);
                 shouldDisposeHeightmap = true; // We loaded it, we dispose it
+                isGeoTiffSource = false; // PNG has valid peaks at maxHeight
                 perfLog.Timing($"Loaded PNG heightmap: {sw.ElapsedMilliseconds}ms");
             }
             else if (!string.IsNullOrWhiteSpace(parameters.GeoTiffPath))
@@ -120,6 +123,7 @@ public class TerrainCreator
                 var geoTiffResult = await LoadFromGeoTiffAsync(parameters.GeoTiffPath, parameters, perfLog);
                 heightmapImage = geoTiffResult;
                 shouldDisposeHeightmap = true; // We loaded it, we dispose it
+                isGeoTiffSource = true; // GeoTIFF may have data artifacts
                 perfLog.Timing($"Loaded GeoTIFF heightmap: {sw.Elapsed.TotalSeconds:F2}s");
             }
             else if (!string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory))
@@ -129,6 +133,7 @@ public class TerrainCreator
                 var geoTiffResult = await LoadFromGeoTiffDirectoryAsync(parameters.GeoTiffDirectory, parameters, perfLog);
                 heightmapImage = geoTiffResult;
                 shouldDisposeHeightmap = true; // We loaded it, we dispose it
+                isGeoTiffSource = true; // GeoTIFF may have data artifacts
                 perfLog.Timing($"Loaded GeoTIFF directory heightmap: {sw.Elapsed.TotalSeconds:F2}s");
             }
             else
@@ -240,46 +245,61 @@ public class TerrainCreator
             perfLog.Info("Filling terrain data...");
             
             // PRE-SAVE SPIKE PREVENTION: Scan and fix height values before writing
+            // Strategy differs by source:
+            // - GeoTIFF: Full spike prevention (may have data artifacts, values exceeding maxHeight)
+            // - PNG: Only fix NaN/negative (peaks at maxHeight are valid, not spikes)
             var spikeFixCount = 0;
             var nanCount = 0;
             var negativeCount = 0;
             var overMaxCount = 0;
             var nearMaxCount = 0;
             
-            // Calculate a reasonable "normal" height from the data
-            var validHeights = heights.Where(h => !float.IsNaN(h) && !float.IsInfinity(h) && h >= 0 && h < parameters.MaxHeight * 0.95f).ToList();
-            var medianHeight = validHeights.Count > 0 
-                ? validHeights.OrderBy(h => h).ElementAt(validHeights.Count / 2) 
-                : 0.23f; // BeamNG default road elevation
+            // Calculate a reasonable "normal" height from the data (for GeoTIFF spike replacement)
+            float medianHeight = 0.23f; // BeamNG default
             var nearMaxThreshold = parameters.MaxHeight * 0.99f;
             
-            perfLog.Info($"  Pre-save analysis: median valid height = {medianHeight:F2}m, maxHeight = {parameters.MaxHeight:F2}m");
+            if (isGeoTiffSource)
+            {
+                var validHeights = heights.Where(h => !float.IsNaN(h) && !float.IsInfinity(h) && h >= 0 && h < parameters.MaxHeight * 0.95f).ToList();
+                medianHeight = validHeights.Count > 0 
+                    ? validHeights.OrderBy(h => h).ElementAt(validHeights.Count / 2) 
+                    : 0.23f;
+                perfLog.Info($"  Pre-save analysis (GeoTIFF): median height = {medianHeight:F2}m, maxHeight = {parameters.MaxHeight:F2}m");
+            }
+            else
+            {
+                perfLog.Info($"  Pre-save analysis (PNG): maxHeight = {parameters.MaxHeight:F2}m (peaks at maxHeight are valid)");
+            }
             
             for (var i = 0; i < terrain.Data.Length; i++)
             {
                 var height = heights[i];
-                var originalHeight = height;
                 var needsFix = false;
                 
-                // Check for problematic values
+                // Check for problematic values - some checks only apply to GeoTIFF
                 if (float.IsNaN(height) || float.IsInfinity(height))
                 {
+                    // Always fix NaN/Infinity - these are invalid for any source
                     nanCount++;
                     needsFix = true;
                 }
                 else if (height < 0)
                 {
+                    // Always fix negative heights - terrain can't go below 0
                     negativeCount++;
                     needsFix = true;
                 }
-                else if (height >= parameters.MaxHeight)
+                else if (isGeoTiffSource && height >= parameters.MaxHeight)
                 {
+                    // GeoTIFF ONLY: Values at/above maxHeight are data artifacts
+                    // For PNG: values at maxHeight are valid peaks (16-bit 65535 maps to maxHeight)
                     overMaxCount++;
                     needsFix = true;
                 }
-                else if (height >= nearMaxThreshold)
+                else if (isGeoTiffSource && height >= nearMaxThreshold)
                 {
-                    // Check if this is an isolated near-max value (potential spike)
+                    // GeoTIFF ONLY: Check for isolated near-max spikes
+                    // For PNG: near-max values are valid terrain features
                     var x = i % parameters.Size;
                     var y = i / parameters.Size;
                     var neighborAvg = GetNeighborAverageHeight(heights, x, y, parameters.Size, 3);
@@ -333,8 +353,8 @@ public class TerrainCreator
                 perfLog.Warning($"  PRE-SAVE SPIKE PREVENTION: Fixed {spikeFixCount} problematic height values:");
                 if (nanCount > 0) perfLog.Warning($"    - NaN/Infinity values: {nanCount}");
                 if (negativeCount > 0) perfLog.Warning($"    - Negative values: {negativeCount}");
-                if (overMaxCount > 0) perfLog.Warning($"    - Over-max values (>= {parameters.MaxHeight}m): {overMaxCount}");
-                if (nearMaxCount > 0) perfLog.Warning($"    - Isolated near-max spikes: {nearMaxCount}");
+                if (overMaxCount > 0) perfLog.Warning($"    - Over-max values (>= {parameters.MaxHeight}m): {overMaxCount} [GeoTIFF only]");
+                if (nearMaxCount > 0) perfLog.Warning($"    - Isolated near-max spikes: {nearMaxCount} [GeoTIFF only]");
             }
             else
             {
@@ -773,10 +793,10 @@ public class TerrainCreator
     {
         log.Info("=== Road Smoothing Statistics ===");
         log.Info($"Pixels modified: {stats.PixelsModified:N0}");
-        log.Info($"Max road slope: {stats.MaxRoadSlope:F2}°");
+        log.Info($"Max road slope: {stats.MaxRoadSlope:F2}ï¿½");
         log.Info($"Max discontinuity: {stats.MaxDiscontinuity:F3}m");
-        log.Info($"Cut volume: {stats.TotalCutVolume:F2} m³");
-        log.Info($"Fill volume: {stats.TotalFillVolume:F2} m³");
+        log.Info($"Cut volume: {stats.TotalCutVolume:F2} mï¿½");
+        log.Info($"Fill volume: {stats.TotalFillVolume:F2} mï¿½");
         log.Info($"Constraints met: {stats.MeetsAllConstraints}");
 
         if (stats.ConstraintViolations.Any())
