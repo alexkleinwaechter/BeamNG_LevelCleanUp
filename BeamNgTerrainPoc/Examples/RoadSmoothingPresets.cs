@@ -24,11 +24,9 @@ namespace BeamNgTerrainPoc.Examples;
 
 /// <summary>
 ///     Pre-configured road smoothing parameter presets for different road types.
-///     
 ///     PRESET CATEGORIES:
 ///     - PNG presets: For skeleton extraction from layer masks (use SmoothInterpolated for smooth curves)
 ///     - OSM presets: For pre-built splines from OSM vector data (use LinearControlPoints for accuracy)
-///     
 ///     ROAD TYPES (5 each for PNG and OSM):
 ///     - Highway: Wide roads with aggressive smoothing (8-10m)
 ///     - RuralRoad: General-purpose roads for mixed terrain (7m)
@@ -56,9 +54,9 @@ public static class RoadSmoothingPresets
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Wide highway with wider smoothing corridor
-        RoadWidthMeters = 16.0f,
-        RoadSurfaceWidthMeters = 8.0f,
-        TerrainAffectedRangeMeters = 10.0f,
+        RoadWidthMeters = 20.0f,
+        RoadSurfaceWidthMeters = 10.0f,
+        TerrainAffectedRangeMeters = 12.0f,
         CrossSectionIntervalMeters = 0.4f,
 
         // SLOPE CONSTRAINTS
@@ -78,7 +76,7 @@ public static class RoadSmoothingPresets
         {
             // PNG-SPECIFIC: Use SmoothInterpolated to reduce skeleton jaggedness
             SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-            
+
             // Skeleton extraction parameters
             SkeletonDilationRadius = 0, // Clean skeleton for PNG
             DensifyMaxSpacingPixels = 1.5f, // Better path following for PNG
@@ -94,7 +92,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Elevation smoothing - aggressive for flat road surface
-            SmoothingWindowSize = 301,
+            SmoothingWindowSize = 601,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -130,9 +128,9 @@ public static class RoadSmoothingPresets
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY
-        RoadWidthMeters = 12.0f,
+        RoadWidthMeters = 9.0f,
         RoadSurfaceWidthMeters = 7.0f,
-        TerrainAffectedRangeMeters = 8.0f,
+        TerrainAffectedRangeMeters = 10f,
         CrossSectionIntervalMeters = 0.4f,
 
         // SLOPE CONSTRAINTS
@@ -152,7 +150,7 @@ public static class RoadSmoothingPresets
         {
             // PNG-SPECIFIC: Use SmoothInterpolated to reduce skeleton jaggedness
             SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-            
+
             // Skeleton extraction parameters
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
@@ -168,7 +166,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Elevation smoothing - moderate
-            SmoothingWindowSize = 201,
+            SmoothingWindowSize = 401,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -207,7 +205,7 @@ public static class RoadSmoothingPresets
         // ROAD GEOMETRY - Narrow road with steep sides
         RoadWidthMeters = 6.0f,
         RoadSurfaceWidthMeters = 5.0f,
-        TerrainAffectedRangeMeters = 4.0f,
+        TerrainAffectedRangeMeters = 10.0f,
         CrossSectionIntervalMeters = 0.3f,
 
         // SLOPE CONSTRAINTS - Steep grades allowed
@@ -227,7 +225,7 @@ public static class RoadSmoothingPresets
         {
             // PNG-SPECIFIC: Use SmoothInterpolated for smooth curves from skeleton
             SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-            
+
             // Skeleton extraction parameters
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
@@ -243,7 +241,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Elevation smoothing - responsive for curves
-            SmoothingWindowSize = 201,
+            SmoothingWindowSize = 401,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -301,7 +299,7 @@ public static class RoadSmoothingPresets
         {
             // PNG-SPECIFIC: Use SmoothInterpolated
             SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-            
+
             // Skeleton extraction parameters
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
@@ -317,7 +315,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Box filter for organic feel
-            SmoothingWindowSize = 31,
+            SmoothingWindowSize = 51,
             UseButterworthFilter = false,
             ButterworthFilterOrder = 2,
             GlobalLevelingStrength = 0.0f,
@@ -354,9 +352,9 @@ public static class RoadSmoothingPresets
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Wide racing surface
-        RoadWidthMeters = 14.0f,
-        RoadSurfaceWidthMeters = 10.0f,
-        TerrainAffectedRangeMeters = 8.0f,
+        RoadWidthMeters = 30.0f,
+        RoadSurfaceWidthMeters = 15.0f,
+        TerrainAffectedRangeMeters = 20f,
         CrossSectionIntervalMeters = 0.25f,
 
         // SLOPE CONSTRAINTS - Racing standard
@@ -377,7 +375,7 @@ public static class RoadSmoothingPresets
         {
             // PNG-SPECIFIC: Use SmoothInterpolated for smooth curves
             SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-            
+
             // Skeleton extraction parameters
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
@@ -393,7 +391,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Elevation smoothing
-            SmoothingWindowSize = 201,
+            SmoothingWindowSize = 601,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -455,7 +453,7 @@ public static class RoadSmoothingPresets
         {
             // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
             SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
-            
+
             // Not used for OSM but set reasonable defaults
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
@@ -471,7 +469,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Very strong elevation smoothing
-            SmoothingWindowSize = 301,
+            SmoothingWindowSize = 601,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -506,9 +504,9 @@ public static class RoadSmoothingPresets
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY
-        RoadWidthMeters = 12.0f,
+        RoadWidthMeters = 9.0f,
         RoadSurfaceWidthMeters = 7.0f,
-        TerrainAffectedRangeMeters = 8.0f,
+        TerrainAffectedRangeMeters = 10.0f,
         CrossSectionIntervalMeters = 0.4f,
 
         // SLOPE CONSTRAINTS
@@ -528,7 +526,7 @@ public static class RoadSmoothingPresets
         {
             // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
             SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
-            
+
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 0.5f,
@@ -543,7 +541,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Strong elevation smoothing
-            SmoothingWindowSize = 301,
+            SmoothingWindowSize = 401,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -579,7 +577,8 @@ public static class RoadSmoothingPresets
 
         // ROAD GEOMETRY - Narrow road with steep sides
         RoadWidthMeters = 6.0f,
-        TerrainAffectedRangeMeters = 4.0f,
+        RoadSurfaceWidthMeters = 5.0f,
+        TerrainAffectedRangeMeters = 10.0f,
         CrossSectionIntervalMeters = 0.3f,
 
         // SLOPE CONSTRAINTS - Steep grades allowed
@@ -599,7 +598,7 @@ public static class RoadSmoothingPresets
         {
             // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
             SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
-            
+
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 0.5f,
@@ -614,7 +613,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Moderate elevation smoothing
-            SmoothingWindowSize = 201,
+            SmoothingWindowSize = 401,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -649,8 +648,9 @@ public static class RoadSmoothingPresets
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Narrow track
-        RoadWidthMeters = 4.0f,
-        TerrainAffectedRangeMeters = 2.0f,
+        RoadWidthMeters = 5.0f,
+        RoadSurfaceWidthMeters = 4.0f,
+        TerrainAffectedRangeMeters = 3.0f,
         CrossSectionIntervalMeters = 0.5f,
 
         // SLOPE CONSTRAINTS - Relaxed for natural paths
@@ -670,7 +670,7 @@ public static class RoadSmoothingPresets
         {
             // OSM-SPECIFIC: Use LinearControlPoints
             SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
-            
+
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 1.0f,
@@ -721,8 +721,9 @@ public static class RoadSmoothingPresets
         EnableTerrainBlending = true,
 
         // ROAD GEOMETRY - Wide racing surface
-        RoadWidthMeters = 10.0f,
-        TerrainAffectedRangeMeters = 8.0f,
+        RoadWidthMeters = 30.0f,
+        RoadSurfaceWidthMeters = 15.0f,
+        TerrainAffectedRangeMeters = 20f,
         CrossSectionIntervalMeters = 0.25f,
 
         // SLOPE CONSTRAINTS - Racing standard
@@ -743,7 +744,7 @@ public static class RoadSmoothingPresets
         {
             // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
             SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
-            
+
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 0.3f,
@@ -758,7 +759,7 @@ public static class RoadSmoothingPresets
             SplineBias = 0.0f,
 
             // Elevation smoothing
-            SmoothingWindowSize = 201,
+            SmoothingWindowSize = 601,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
