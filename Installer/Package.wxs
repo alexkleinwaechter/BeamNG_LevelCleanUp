@@ -13,8 +13,8 @@
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
   <Package Name="BeamNG Mapping Tools" 
-           Manufacturer="Alex Kleinwaechter" 
-           Version="1.3.3.0" 
+           Manufacturer="Alexander Kleinwaechter" 
+           Version="1.4.0.0" 
            UpgradeCode="E9D4C8B2-1A5F-4C7E-B8D9-3E6F2A8C5D1B"
            Scope="perMachine"
            InstallerVersion="500">
@@ -23,7 +23,8 @@
                         Manufacturer="Alex Kleinwaechter" />
     
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." 
-                  Schedule="afterInstallInitialize" />
+                  Schedule="afterInstallValidate" 
+                  AllowSameVersionUpgrades="yes" />
     
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     
