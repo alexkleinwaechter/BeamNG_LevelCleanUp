@@ -641,6 +641,9 @@ public partial class CopyTerrains
 
             Snackbar.Remove(_staticSnackbar);
 
+            // Write operation logs (info, warnings, errors)
+            Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");
+
             // Update wizard state (accumulate materials)
             UpdateWizardStateAfterCopy();
 
@@ -1046,8 +1049,8 @@ public partial class CopyTerrains
             });
             Snackbar.Remove(_staticSnackbar);
 
-            Reader.WriteLogFile(_warnings, "Log_TerrainCopy_Warnings");
-            Reader.WriteLogFile(_errors, "Log_TerrainCopy_Errors");
+            // Write operation logs (info, warnings, errors)
+            Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");
 
             // Set copy completed state
             _copyCompleted = true;

@@ -236,6 +236,9 @@ public partial class CopyAssets
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Duplicate Materials found. See logfile {duplicateMaterialsPath}");
 
+            // Write all operation logs (info, warnings, errors) - also in wizard mode
+            Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
+
             // UPDATE WIZARD STATE
             UpdateWizardStateAfterCopy();
 
@@ -1021,8 +1024,8 @@ public partial class CopyAssets
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
 
-            Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
-            Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
+            // Write all operation logs (info, warnings, errors)
+            Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
 
             // Set copy completed state
             _copyCompleted = true;

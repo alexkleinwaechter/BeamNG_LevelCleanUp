@@ -594,6 +594,9 @@ public partial class CopyForestBrushes
 
             Snackbar.Remove(_staticSnackbar);
 
+            // Write operation logs (even in wizard mode)
+            Reader.WriteOperationLogs(_messages, _warnings, _errors, "ForestBrushCopy");
+
             // UPDATE WIZARD STATE
             UpdateWizardStateAfterCopy();
 
@@ -944,8 +947,8 @@ public partial class CopyForestBrushes
             });
             Snackbar.Remove(_staticSnackbar);
 
-            Reader.WriteLogFile(_warnings, "Log_ForestBrushCopy_Warnings");
-            Reader.WriteLogFile(_errors, "Log_ForestBrushCopy_Errors");
+            // Write all logs (info, warnings, errors) using consistent naming
+            Reader.WriteOperationLogs(_messages, _warnings, _errors, "ForestBrushCopy");
 
             _copyCompleted = true;
             _copiedBrushesCount = copyCount;

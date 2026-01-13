@@ -447,8 +447,10 @@
             SelectedValues.Clear();
             Items.Clear();
             TreeItems.Clear();
-            Reader.WriteLogFile(_warnings, "Log_ForestConvert_Warnings");
-            Reader.WriteLogFile(_errors, "Log_ForestConvert_Errors");
+            
+            // Write operation logs (info, warnings, errors)
+            Reader.WriteOperationLogs(_messages, _warnings, _errors, "ForestConvert");
+            
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Conversion done! You can build your deployment file now.");
         }
     }

@@ -257,6 +257,9 @@ public partial class CreateLevel
                 _wizardState.CurrentStep = 1;
             });
 
+            // Write operation logs
+            WriteCreateLevelLogs();
+
             Snackbar.Remove(_staticSnackbar);
             Snackbar.Add("Level initialization complete!", Severity.Success);
 
@@ -461,6 +464,51 @@ public partial class CreateLevel
     private void CleanupWorkingDirectories()
     {
         AppPaths.CleanupTempFolders();
+    }
+
+    private void WriteCreateLevelLogs()
+    {
+        if (string.IsNullOrEmpty(_wizardState.TargetLevelRootPath))
+            return;
+
+        try
+        {
+            var logPath = _wizardState.TargetLevelRootPath;
+
+            if (_messages.Any())
+            {
+                var messagesPath = Path.Combine(logPath, "Log_CreateLevel.txt");
+                var messagesWithHeader = new List<string>
+                {
+                    $"# Create Level Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+                    $"# Source: {_sourceLevelName}",
+                    $"# Target: {_targetLevelName} ({_targetLevelPath})",
+                    ""
+                };
+                messagesWithHeader.AddRange(_messages);
+                File.WriteAllLines(messagesPath, messagesWithHeader);
+            }
+
+            if (_warnings.Any())
+            {
+                var warningsPath = Path.Combine(logPath, "Log_CreateLevel_Warnings.txt");
+                File.WriteAllLines(warningsPath, _warnings);
+            }
+
+            if (_errors.Any())
+            {
+                var errorsPath = Path.Combine(logPath, "Log_CreateLevel_Errors.txt");
+                File.WriteAllLines(errorsPath, _errors);
+            }
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Level creation logs written to: {Path.GetFileName(logPath)}");
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Could not write log files: {ex.Message}");
+        }
     }
 
     private void ShowException(Exception ex)

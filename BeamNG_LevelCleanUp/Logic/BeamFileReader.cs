@@ -407,7 +407,7 @@ internal class BeamFileReader
 
         if (lines.Count > 0)
         {
-            var path = Path.Join(_levelPath, "DuplicateMaterials.txt");
+            var path = Path.Join(_levelNamePath, "DuplicateMaterials.txt");
             File.WriteAllLines(path, lines);
             return path;
         }
@@ -419,9 +419,40 @@ internal class BeamFileReader
     {
         if (lines.Count > 0)
         {
-            var path = Path.Join(_levelPath, $"{logFileName}.txt");
+            var path = Path.Join(_levelNamePath, $"{logFileName}.txt");
             File.WriteAllLines(path, lines);
         }
+    }
+
+    /// <summary>
+    ///     Writes operation logs to files in the level name path (the actual level folder).
+    ///     Creates up to three log files: main log, warnings, and errors.
+    ///     Files are only created if they have content.
+    /// </summary>
+    /// <param name="messages">Info messages list (main operation log)</param>
+    /// <param name="warnings">Warning messages list</param>
+    /// <param name="errors">Error messages list</param>
+    /// <param name="featureName">Feature name for log file prefix (e.g., "AssetCopy" creates Log_AssetCopy.txt)</param>
+    internal void WriteOperationLogs(List<string> messages, List<string> warnings, List<string> errors, string featureName)
+    {
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+        if (messages.Count > 0)
+        {
+            var messagesWithHeader = new List<string>
+            {
+                $"# {featureName} Log - {timestamp}",
+                ""
+            };
+            messagesWithHeader.AddRange(messages);
+            WriteLogFile(messagesWithHeader, $"Log_{featureName}");
+        }
+
+        if (warnings.Count > 0)
+            WriteLogFile(warnings, $"Log_{featureName}_Warnings");
+
+        if (errors.Count > 0)
+            WriteLogFile(errors, $"Log_{featureName}_Errors");
     }
 
     internal void ReadTerrainJson()
@@ -562,7 +593,7 @@ internal class BeamFileReader
             var logReader = new BeamLogReader(_beamLogPath, _levelPath);
             var missingFiles = logReader.ScanForMissingFiles();
             if (missingFiles.Any())
-                File.WriteAllLines(Path.Join(_levelPath, "MissingFilesFromBeamNgLog.txt"), missingFiles);
+                File.WriteAllLines(Path.Join(_levelNamePath, "MissingFilesFromBeamNgLog.txt"), missingFiles);
             return missingFiles;
         }
 

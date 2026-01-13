@@ -229,8 +229,8 @@
             PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
         }
 
-        Reader.WriteLogFile(_warnings, "Log_Shrinker_Warnings");
-        Reader.WriteLogFile(_errors, "Log_Shrinker_Errors");
+        // Write operation logs (info, warnings, errors) using consistent naming convention
+        Reader.WriteOperationLogs(_messages, _warnings, _errors, "Shrinker");
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
     }
 
