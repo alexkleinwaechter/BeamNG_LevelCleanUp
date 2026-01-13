@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  BeamNG Tools for Mapbuilders  WiX v5 Installer
+  BeamNG Mapping Tools  WiX v5 Installer
   
   This installer packages the application with GDAL native libraries in a proper folder structure,
   which is required for GDAL to find its drivers and projection data (proj.db).
   
   Build: dotnet build Installer\BeamNG_LevelCleanUp.Installer.wixproj -c Release
   
-  Installs to: C:\Program Files\BeamNG Tools for Mapbuilders
+  Installs to: C:\Program Files\BeamNG Mapping Tools
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
-  <Package Name="BeamNG Tools for Mapbuilders" 
+  <Package Name="BeamNG Mapping Tools" 
            Manufacturer="Alex Kleinwaechter" 
            Version="1.3.3.0" 
            UpgradeCode="E9D4C8B2-1A5F-4C7E-B8D9-3E6F2A8C5D1B"
@@ -42,7 +42,7 @@
     <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
     
     <!-- Checkbox text on the finish dialog -->
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch BeamNG Tools for Mapbuilders" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch BeamNG Mapping Tools" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
 
     <!-- Custom action to launch the application after install using WiX Util extension -->
@@ -51,7 +51,7 @@
                   DllEntry="WixShellExec"
                   Impersonate="yes" />
     
-    <Feature Id="MainApplication" Title="BeamNG Tools for Mapbuilders" Level="1">
+    <Feature Id="MainApplication" Title="BeamNG Mapping Tools" Level="1">
       <ComponentGroupRef Id="AppComponents" />
       <ComponentRef Id="MainExeComponent" />
       <ComponentRef Id="ProgramMenuShortcut" />
@@ -63,11 +63,11 @@
   <!-- Directory structure -->
   <Fragment>
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="BeamNG Tools for Mapbuilders" />
+      <Directory Id="INSTALLFOLDER" Name="BeamNG Mapping Tools" />
     </StandardDirectory>
     
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="BeamNG Tools for Mapbuilders" />
+      <Directory Id="ApplicationProgramsFolder" Name="BeamNG Mapping Tools" />
     </StandardDirectory>
     
     <StandardDirectory Id="DesktopFolder" />
@@ -86,7 +86,7 @@
   <Fragment>
     <Component Id="ProgramMenuShortcut" Guid="A1B2C3D4-E5F6-7890-A1B2-C3D4E5F67890" Directory="ApplicationProgramsFolder" Bitness="always64">
       <Shortcut Id="ApplicationStartMenuShortcut"
-                Name="BeamNG Tools for Mapbuilders"
+                Name="BeamNG Mapping Tools"
                 Description="Tools for BeamNG.drive map building with GeoTIFF support"
                 Target="[INSTALLFOLDER]BeamNG_LevelCleanUp.exe"
                 WorkingDirectory="INSTALLFOLDER" />
@@ -96,7 +96,7 @@
     
     <Component Id="DesktopShortcut" Guid="B2C3D4E5-F6A7-8901-B2C3-D4E5F6A78901" Directory="DesktopFolder" Bitness="always64">
       <Shortcut Id="ApplicationDesktopShortcut"
-                Name="BeamNG Tools for Mapbuilders"
+                Name="BeamNG Mapping Tools"
                 Description="Tools for BeamNG.drive map building with GeoTIFF support"
                 Target="[INSTALLFOLDER]BeamNG_LevelCleanUp.exe"
                 WorkingDirectory="INSTALLFOLDER" />
