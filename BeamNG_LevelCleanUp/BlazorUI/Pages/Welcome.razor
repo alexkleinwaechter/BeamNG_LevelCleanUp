@@ -9,7 +9,7 @@
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
-                <MudText>This is a collection of some useful tools for manipulating BeamNG drive maps (aka levels).</MudText>
+                <MudText>This is a collection of useful tools for BeamNG.drive mapbuilders. Whether you're creating a new level from scratch or fine-tuning an existing one, these tools will help you get things done faster.</MudText>
             </MudCardContent>
         </MudCard>
 
@@ -20,14 +20,44 @@
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
-                <MudText>It's a good idea to copy the maps you want to work with to a dedicated folder. The tool does a lot of unzipping, zipping and logfiles. You don't want to have that in your vanilla maps folder :-)</MudText>
+                <MudText>
+                    Don't worry about your original map files - all the heavy lifting happens in a temp folder (<code>%LocalAppData%\BeamNG_LevelCleanUp\temp</code>). 
+                    Your source ZIPs stay untouched! The tool extracts maps there, does its magic, and creates new deployment ZIPs when you're done. 
+                    That said, it's still smart to keep backups of your projects - better safe than sorry!
+                </MudText>
             </MudCardContent>
         </MudCard>
 
         <MudCard Class="my-4">
             <MudCardHeader>
                 <CardHeaderContent>
-                    <MudText Typo="Typo.h6">1. Map Shrinker</MudText>
+                    <MudText Typo="Typo.h6">1. Create New Level</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>
+                    Start a fresh BeamNG level from scratch! This wizard guides you through the whole process: pick a source level to grab sky, sun, water settings from, configure your level name and size, then copy terrain materials, forest brushes, and assets from any vanilla or custom map. Finally, generate your terrain from a heightmap (PNG or GeoTIFF with real-world elevation data). Perfect for when you want a clean slate without manually setting up all the boring stuff.
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">2. Generate Terrain</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>
+                    Create or regenerate terrain (.ter) files for your level. Load a heightmap (16-bit PNG or GeoTIFF) and configure terrain materials with layer maps. Supports OSM road data for automatic road smoothing - the tool can fetch real-world road networks and smooth your terrain along them. Great for both realistic maps based on real locations and custom fantasy terrains. Save your settings as presets so you can tweak and regenerate without starting over.
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">3. Map Shrinker</MudText>
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
@@ -38,7 +68,7 @@
         <MudCard Class="my-4">
             <MudCardHeader>
                 <CardHeaderContent>
-                    <MudText Typo="Typo.h6">2. Rename Map</MudText>
+                    <MudText Typo="Typo.h6">4. Rename Map</MudText>
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
@@ -49,7 +79,7 @@
         <MudCard Class="my-4">
             <MudCardHeader>
                 <CardHeaderContent>
-                    <MudText Typo="Typo.h6">3. Copy Assets (Experimental)</MudText>
+                    <MudText Typo="Typo.h6">5. Copy Assets (Experimental)</MudText>
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
@@ -66,7 +96,7 @@
         <MudCard Class="my-4">
             <MudCardHeader>
                 <CardHeaderContent>
-                    <MudText Typo="Typo.h6">4. Copy/Replace Terrain Materials</MudText>
+                    <MudText Typo="Typo.h6">6. Copy/Replace Terrain Materials</MudText>
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
@@ -80,7 +110,20 @@
         <MudCard Class="my-4">
             <MudCardHeader>
                 <CardHeaderContent>
-                    <MudText Typo="Typo.h6">5. Convert TSStatic Assets to forest items</MudText>
+                    <MudText Typo="Typo.h6">7. Copy Forest Brushes</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>
+                    Grab forest brushes (the painting templates for trees, rocks, grass, etc.) from any map and copy them to your project. Select the brushes you want, and the tool handles all the dependencies - mesh files, materials, textures, everything. Super handy when you see some nice vegetation in a vanilla map and want to use it in your own level without manually hunting down all the files.
+                </MudText>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Class="my-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">8. Convert TSStatic Assets to Forest Items</MudText>
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
@@ -103,7 +146,7 @@
         <MudCard Class="my-4">
             <MudCardHeader>
                 <CardHeaderContent>
-                    <MudText Typo="Typo.h6">6. Utilities</MudText>
+                    <MudText Typo="Typo.h6">9. Utilities</MudText>
                 </CardHeaderContent>
             </MudCardHeader>
             <MudCardContent>
