@@ -34,15 +34,74 @@ public class OsmLayerExporter
     /// </summary>
     /// <param name="osmResult">The OSM query result (from cache or API)</param>
     /// <param name="effectiveBoundingBox">The WGS84 bounding box (possibly cropped)</param>
-    /// <param name="coordinateTransformer">Optional GDAL transformer for projected CRS</param>
+    /// <param name="coordinateTransformer">Optional GDAL transformer for projected CRS (NOT thread-safe - only used for single-threaded fallback)</param>
     /// <param name="terrainSize">Size of terrain in pixels</param>
     /// <param name="metersPerPixel">Scale factor (meters per terrain pixel)</param>
     /// <param name="outputFolder">Target folder where osm_layer subfolder will be created</param>
     /// <returns>Number of layer files exported</returns>
+    /// <remarks>
+    /// WARNING: The coordinateTransformer parameter is kept for backward compatibility but should NOT be used 
+    /// with parallel processing. Use the overload that accepts GeoCoordinateTransformerFactory instead.
+    /// When coordinateTransformer is provided, this method falls back to sequential processing.
+    /// </remarks>
     public async Task<int> ExportAllOsmLayersAsync(
         OsmQueryResult osmResult,
         GeoBoundingBox effectiveBoundingBox,
         GeoCoordinateTransformer? coordinateTransformer,
+        int terrainSize,
+        float metersPerPixel,
+        string outputFolder)
+    {
+        // When a transformer is provided but no factory, we must process sequentially
+        // because GDAL's CoordinateTransformation is not thread-safe
+        return await ExportAllOsmLayersAsync(
+            osmResult,
+            effectiveBoundingBox,
+            transformerFactory: null,
+            coordinateTransformer,
+            terrainSize,
+            metersPerPixel,
+            outputFolder);
+    }
+
+    /// <summary>
+    /// Exports all OSM feature types to 8-bit PNG layer maps.
+    /// Each unique combination of category + subcategory + geometry type gets its own file.
+    /// Uses parallel processing for improved performance.
+    /// </summary>
+    /// <param name="osmResult">The OSM query result (from cache or API)</param>
+    /// <param name="effectiveBoundingBox">The WGS84 bounding box (possibly cropped)</param>
+    /// <param name="transformerFactory">Factory for creating thread-safe transformer instances (recommended for parallel processing)</param>
+    /// <param name="terrainSize">Size of terrain in pixels</param>
+    /// <param name="metersPerPixel">Scale factor (meters per terrain pixel)</param>
+    /// <param name="outputFolder">Target folder where osm_layer subfolder will be created</param>
+    /// <returns>Number of layer files exported</returns>
+    public Task<int> ExportAllOsmLayersAsync(
+        OsmQueryResult osmResult,
+        GeoBoundingBox effectiveBoundingBox,
+        GeoCoordinateTransformerFactory? transformerFactory,
+        int terrainSize,
+        float metersPerPixel,
+        string outputFolder)
+    {
+        return ExportAllOsmLayersAsync(
+            osmResult,
+            effectiveBoundingBox,
+            transformerFactory,
+            sharedTransformer: null,
+            terrainSize,
+            metersPerPixel,
+            outputFolder);
+    }
+
+    /// <summary>
+    /// Internal implementation that handles both factory and shared transformer scenarios.
+    /// </summary>
+    private async Task<int> ExportAllOsmLayersAsync(
+        OsmQueryResult osmResult,
+        GeoBoundingBox effectiveBoundingBox,
+        GeoCoordinateTransformerFactory? transformerFactory,
+        GeoCoordinateTransformer? sharedTransformer,
         int terrainSize,
         float metersPerPixel,
         string outputFolder)
@@ -80,32 +139,85 @@ public class OsmLayerExporter
             groupsWithPaths.Add((group, filePath));
         }
 
-        // Process feature groups in parallel
-        // Each group gets its own OsmGeometryProcessor instance for thread safety
+        // Process feature groups
+        // When we have a factory, we can process in parallel (each thread gets its own transformer)
+        // When we only have a shared transformer, we must process sequentially (GDAL is not thread-safe)
         var exportedCount = 0;
         var failedCount = 0;
         var lockObj = new object();
 
-        await Task.Run(() =>
+        var canProcessInParallel = transformerFactory != null || sharedTransformer == null;
+
+        if (canProcessInParallel)
         {
-            Parallel.ForEach(groupsWithPaths, 
-                new ParallelOptions 
-                { 
-                    // Limit parallelism to avoid excessive memory usage with large terrains
-                    MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) 
-                },
-                groupWithPath =>
+            await Task.Run(() =>
+            {
+                Parallel.ForEach(groupsWithPaths, 
+                    new ParallelOptions 
+                    { 
+                        // Limit parallelism to avoid excessive memory usage with large terrains
+                        MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) 
+                    },
+                    groupWithPath =>
+                    {
+                        // Create a thread-local transformer if we have a factory
+                        GeoCoordinateTransformer? threadLocalTransformer = null;
+                        try
+                        {
+                            // Create a processor instance per thread for thread safety
+                            var processor = new OsmGeometryProcessor();
+                            
+                            if (transformerFactory != null)
+                            {
+                                // Create a new transformer for this thread
+                                threadLocalTransformer = transformerFactory.Create();
+                                processor.SetCoordinateTransformer(threadLocalTransformer);
+                            }
+                            // If no factory and no shared transformer, processor will use linear interpolation
+
+                            // Rasterize and save synchronously within the parallel task
+                            ExportFeatureGroupSync(
+                                groupWithPath.Group, 
+                                processor, 
+                                effectiveBoundingBox, 
+                                terrainSize, 
+                                metersPerPixel, 
+                                groupWithPath.FilePath);
+
+                            lock (lockObj)
+                            {
+                                exportedCount++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            TerrainLogger.Warning($"OsmLayerExporter: Failed to export {groupWithPath.Group.SafeFileName}: {ex.Message}");
+                            lock (lockObj)
+                            {
+                                failedCount++;
+                            }
+                        }
+                        finally
+                        {
+                            // Dispose the thread-local transformer
+                            threadLocalTransformer?.Dispose();
+                        }
+                    });
+            });
+        }
+        else
+        {
+            // Sequential processing when using a shared transformer (not thread-safe)
+            TerrainLogger.Info("OsmLayerExporter: Using sequential processing (shared transformer is not thread-safe)");
+            await Task.Run(() =>
+            {
+                foreach (var groupWithPath in groupsWithPaths)
                 {
                     try
                     {
-                        // Create a processor instance per thread for thread safety
                         var processor = new OsmGeometryProcessor();
-                        if (coordinateTransformer != null)
-                        {
-                            processor.SetCoordinateTransformer(coordinateTransformer);
-                        }
+                        processor.SetCoordinateTransformer(sharedTransformer);
 
-                        // Rasterize and save synchronously within the parallel task
                         ExportFeatureGroupSync(
                             groupWithPath.Group, 
                             processor, 
@@ -114,21 +226,16 @@ public class OsmLayerExporter
                             metersPerPixel, 
                             groupWithPath.FilePath);
 
-                        lock (lockObj)
-                        {
-                            exportedCount++;
-                        }
+                        exportedCount++;
                     }
                     catch (Exception ex)
                     {
                         TerrainLogger.Warning($"OsmLayerExporter: Failed to export {groupWithPath.Group.SafeFileName}: {ex.Message}");
-                        lock (lockObj)
-                        {
-                            failedCount++;
-                        }
+                        failedCount++;
                     }
-                });
-        });
+                }
+            });
+        }
 
         TerrainLogger.Info($"OsmLayerExporter: Successfully exported {exportedCount}/{featureGroups.Count} OSM layer maps to {osmLayerFolder}" +
                           (failedCount > 0 ? $" ({failedCount} failed)" : ""));

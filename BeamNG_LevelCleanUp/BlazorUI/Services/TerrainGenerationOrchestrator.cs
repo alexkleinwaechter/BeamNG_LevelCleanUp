@@ -81,6 +81,9 @@ public class TerrainGenerationOrchestrator
 
                 // Create coordinate transformer
                 var coordinateTransformer = CreateCoordinateTransformer(state, effectiveBoundingBox);
+                
+                // Create factory for thread-safe parallel OSM layer export
+                var transformerFactory = CreateCoordinateTransformerFactory(state, effectiveBoundingBox);
 
                 // Cache for OSM query results
                 OsmQueryResult? osmQueryResult = null;
@@ -107,7 +110,7 @@ public class TerrainGenerationOrchestrator
                 await ExportAllOsmLayersAsync(
                     osmQueryResult,
                     effectiveBoundingBox,
-                    coordinateTransformer,
+                    transformerFactory,
                     state,
                     debugPath);
 
@@ -389,6 +392,46 @@ public class TerrainGenerationOrchestrator
             $"Using GDAL coordinate transformer for OSM features (reprojection: {transformer.UsesReprojection})");
 
         return transformer;
+    }
+
+    /// <summary>
+    /// Creates a factory for generating thread-safe GeoCoordinateTransformer instances.
+    /// This is needed for parallel OSM layer export since GDAL's CoordinateTransformation is not thread-safe.
+    /// </summary>
+    private static GeoCoordinateTransformerFactory? CreateCoordinateTransformerFactory(
+        TerrainGenerationState state,
+        GeoBoundingBox? effectiveBoundingBox)
+    {
+        if (state.GeoTiffGeoTransform == null ||
+            state.GeoTiffProjectionWkt == null ||
+            effectiveBoundingBox == null)
+            return null;
+
+        if (state.CropResult is { NeedsCropping: true })
+        {
+            // Create adjusted GeoTransform for cropped region
+            var croppedGeoTransform = new double[6];
+            Array.Copy(state.GeoTiffGeoTransform, croppedGeoTransform, 6);
+
+            croppedGeoTransform[0] = state.GeoTiffGeoTransform[0] +
+                                     state.CropResult.OffsetX * state.GeoTiffGeoTransform[1];
+            croppedGeoTransform[3] = state.GeoTiffGeoTransform[3] +
+                                     state.CropResult.OffsetY * state.GeoTiffGeoTransform[5];
+
+            return new GeoCoordinateTransformerFactory(
+                state.GeoTiffProjectionWkt,
+                croppedGeoTransform,
+                state.CropResult.CropWidth,
+                state.CropResult.CropHeight,
+                state.TerrainSize);
+        }
+
+        return new GeoCoordinateTransformerFactory(
+            state.GeoTiffProjectionWkt,
+            state.GeoTiffGeoTransform,
+            state.GeoTiffOriginalWidth,
+            state.GeoTiffOriginalHeight,
+            state.TerrainSize);
     }
 
     private async Task<(string? LayerImagePath, RoadSmoothingParameters? RoadParams)> ProcessMaterialAsync(
@@ -741,13 +784,13 @@ public class TerrainGenerationOrchestrator
     /// </summary>
     /// <param name="osmQueryResult">The OSM query result (may be null if no OSM data fetched).</param>
     /// <param name="effectiveBoundingBox">The WGS84 bounding box (possibly cropped).</param>
-    /// <param name="coordinateTransformer">Optional GDAL transformer for projected CRS.</param>
+    /// <param name="transformerFactory">Factory for creating thread-safe transformer instances (for parallel processing).</param>
     /// <param name="state">The terrain generation state.</param>
     /// <param name="debugPath">The debug output folder (MT_TerrainGeneration).</param>
     private static async Task ExportAllOsmLayersAsync(
         OsmQueryResult? osmQueryResult,
         GeoBoundingBox? effectiveBoundingBox,
-        GeoCoordinateTransformer? coordinateTransformer,
+        GeoCoordinateTransformerFactory? transformerFactory,
         TerrainGenerationState state,
         string debugPath)
     {
@@ -793,7 +836,7 @@ public class TerrainGenerationOrchestrator
             var exportedCount = await exporter.ExportAllOsmLayersAsync(
                 osmQueryResult,
                 effectiveBoundingBox,
-                coordinateTransformer,
+                transformerFactory,
                 state.TerrainSize,
                 state.MetersPerPixel,
                 debugPath);

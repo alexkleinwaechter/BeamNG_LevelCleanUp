@@ -203,3 +203,66 @@ public class GeoCoordinateTransformer : IDisposable
         GC.SuppressFinalize(this);
     }
 }
+
+/// <summary>
+/// Factory for creating thread-safe GeoCoordinateTransformer instances.
+/// GDAL's CoordinateTransformation is not thread-safe, so each thread needs its own instance.
+/// This factory stores the parameters needed to create transformers on demand.
+/// </summary>
+public class GeoCoordinateTransformerFactory
+{
+    private readonly string? _projectionWkt;
+    private readonly double[] _geoTransform;
+    private readonly int _originalWidth;
+    private readonly int _originalHeight;
+    private readonly int _terrainSize;
+
+    /// <summary>
+    /// Creates a factory that can produce GeoCoordinateTransformer instances with the given parameters.
+    /// </summary>
+    /// <param name="projectionWkt">The WKT of the GeoTIFF's native projection.</param>
+    /// <param name="geoTransform">The 6-element geotransform array from GDAL.</param>
+    /// <param name="originalWidth">Original width of the GeoTIFF in pixels.</param>
+    /// <param name="originalHeight">Original height of the GeoTIFF in pixels.</param>
+    /// <param name="terrainSize">Target terrain size (after resize to power of 2).</param>
+    public GeoCoordinateTransformerFactory(
+        string? projectionWkt,
+        double[] geoTransform,
+        int originalWidth,
+        int originalHeight,
+        int terrainSize)
+    {
+        _projectionWkt = projectionWkt;
+        // Clone the array to ensure immutability
+        _geoTransform = (double[])geoTransform.Clone();
+        _originalWidth = originalWidth;
+        _originalHeight = originalHeight;
+        _terrainSize = terrainSize;
+    }
+
+    /// <summary>
+    /// Creates a factory from an existing transformer instance.
+    /// Note: This extracts the parameters but the original transformer remains usable.
+    /// </summary>
+    public static GeoCoordinateTransformerFactory? FromTransformer(GeoCoordinateTransformer? transformer)
+    {
+        // Cannot extract parameters from an existing transformer - return null
+        // Callers should use the constructor with explicit parameters instead
+        return null;
+    }
+
+    /// <summary>
+    /// Creates a new GeoCoordinateTransformer instance.
+    /// Each call creates a new instance that is safe to use in a single thread.
+    /// The caller is responsible for disposing the returned instance.
+    /// </summary>
+    public GeoCoordinateTransformer Create()
+    {
+        return new GeoCoordinateTransformer(
+            _projectionWkt,
+            _geoTransform,
+            _originalWidth,
+            _originalHeight,
+            _terrainSize);
+    }
+}
