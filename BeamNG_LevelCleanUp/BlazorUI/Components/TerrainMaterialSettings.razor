@@ -423,6 +423,18 @@ Class="my-0">
                                                             <HelpAdornment TooltipText="@RoadParameterTooltips.SplineInterpolationType" />
                                                         </div>
                                                     </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.MinPathLengthPixels" 
+                                                                            Label="@(IsUsingOsmSplines ? "Min Path Length (meters)" : "Min Path Length (px)")"
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="10.0f" Max="200.0f" Step="10.0f"
+                                                                            Format="F0"
+                                                                            HelperText="@(IsUsingOsmSplines ? "Short OSM paths filtered (value × metersPerPixel)" : "Shorter paths are filtered out")"
+                                                                            Class="flex-grow-1"/>
+                                                            <HelpAdornment TooltipText="@MinPathLengthPixels"/>
+                                                        </div>
+                                                    </MudItem>
                                                 </MudGrid>
                                             </MudPaper>
 
@@ -709,18 +721,6 @@ Class="my-0">
                                                                             Disabled="@IsUsingOsmSplines"
                                                                             Class="flex-grow-1"/>
                                                             <HelpAdornment TooltipText="@BridgeEndpointMaxDistancePixels"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.MinPathLengthPixels" 
-                                                                            Label="Min Path Length (px)" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="10.0f" Max="200.0f" Step="10.0f"
-                                                                            Format="F0"
-                                                                            HelperText="@(IsUsingOsmSplines ? "Converted to meters for OSM filtering" : "Shorter paths are filtered out")"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@MinPathLengthPixels"/>
                                                         </div>
                                                     </MudItem>
                                                 </MudGrid>
