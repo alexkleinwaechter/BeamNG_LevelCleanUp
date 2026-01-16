@@ -779,6 +779,41 @@ public partial class TerrainMaterialSettings
         public float EndpointTerrainBlendStrength { get; set; } = 0.3f;
 
         // ========================================
+        // ROUNDABOUT SETTINGS
+        // ========================================
+
+        /// <summary>
+        ///     When true, automatically detect and handle roundabouts from OSM data.
+        /// </summary>
+        public bool EnableRoundaboutDetection { get; set; } = true;
+
+        /// <summary>
+        ///     When true, automatically trim connecting roads that overlap with roundabout rings.
+        /// </summary>
+        public bool EnableRoundaboutRoadTrimming { get; set; } = true;
+
+        /// <summary>
+        ///     Detection radius for roundabout connections (in meters).
+        /// </summary>
+        public float RoundaboutConnectionRadiusMeters { get; set; } = 10.0f;
+
+        /// <summary>
+        ///     Tolerance for determining if a road point is "on" the roundabout ring (in meters).
+        /// </summary>
+        public float RoundaboutOverlapToleranceMeters { get; set; } = 2.0f;
+
+        /// <summary>
+        ///     When true, force uniform elevation around roundabout rings.
+        /// </summary>
+        public bool ForceUniformRoundaboutElevation { get; set; } = true;
+
+        /// <summary>
+        ///     Distance over which to blend connecting road elevation toward the roundabout ring.
+        ///     If null, uses JunctionBlendDistanceMeters.
+        /// </summary>
+        public float? RoundaboutBlendDistanceMeters { get; set; } = 20.0f;
+
+        // ========================================
         // ROAD BANKING (SUPERELEVATION)
         // ========================================
 
@@ -927,6 +962,13 @@ public partial class TerrainMaterialSettings
                 EnableEndpointTaper = preset.JunctionHarmonizationParameters.EnableEndpointTaper;
                 EndpointTaperDistanceMeters = preset.JunctionHarmonizationParameters.EndpointTaperDistanceMeters;
                 EndpointTerrainBlendStrength = preset.JunctionHarmonizationParameters.EndpointTerrainBlendStrength;
+                // Roundabout settings
+                EnableRoundaboutDetection = preset.JunctionHarmonizationParameters.EnableRoundaboutDetection;
+                EnableRoundaboutRoadTrimming = preset.JunctionHarmonizationParameters.EnableRoundaboutRoadTrimming;
+                RoundaboutConnectionRadiusMeters = preset.JunctionHarmonizationParameters.RoundaboutConnectionRadiusMeters;
+                RoundaboutOverlapToleranceMeters = preset.JunctionHarmonizationParameters.RoundaboutOverlapToleranceMeters;
+                ForceUniformRoundaboutElevation = preset.JunctionHarmonizationParameters.ForceUniformRoundaboutElevation;
+                RoundaboutBlendDistanceMeters = preset.JunctionHarmonizationParameters.RoundaboutBlendDistanceMeters;
                 // Debug properties are always enabled - no need to copy from preset
             }
         }
@@ -1020,7 +1062,15 @@ public partial class TerrainMaterialSettings
                 EnableEndpointTaper = EnableEndpointTaper,
                 EndpointTaperDistanceMeters = EndpointTaperDistanceMeters,
                 EndpointTerrainBlendStrength = EndpointTerrainBlendStrength,
-                ExportJunctionDebugImage = true
+                // Roundabout settings
+                EnableRoundaboutDetection = EnableRoundaboutDetection,
+                EnableRoundaboutRoadTrimming = EnableRoundaboutRoadTrimming,
+                RoundaboutConnectionRadiusMeters = RoundaboutConnectionRadiusMeters,
+                RoundaboutOverlapToleranceMeters = RoundaboutOverlapToleranceMeters,
+                ForceUniformRoundaboutElevation = ForceUniformRoundaboutElevation,
+                RoundaboutBlendDistanceMeters = RoundaboutBlendDistanceMeters,
+                ExportJunctionDebugImage = true,
+                ExportRoundaboutDebugImage = true
             };
 
             return result;

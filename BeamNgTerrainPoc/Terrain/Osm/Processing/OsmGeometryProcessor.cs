@@ -907,6 +907,238 @@ public class OsmGeometryProcessor
     }
     
     /// <summary>
+    /// Detects roundabouts in the OSM query result using the RoundaboutDetector.
+    /// This is a convenience method that creates a detector and runs detection.
+    /// </summary>
+    /// <param name="queryResult">The OSM query result to analyze.</param>
+    /// <returns>List of detected roundabouts with merged ring geometry.</returns>
+    public List<OsmRoundabout> DetectRoundabouts(OsmQueryResult queryResult)
+    {
+        var detector = new RoundaboutDetector();
+        return detector.DetectRoundabouts(queryResult);
+    }
+    
+    /// <summary>
+    /// Converts line features to splines with roundabout detection and handling.
+    /// This method:
+    /// 1. Detects roundabouts from junction=roundabout tags
+    /// 2. TRIMS connecting roads that overlap with roundabout rings (CRITICAL!)
+    /// 3. Excludes roundabout segments from normal road processing
+    /// 4. Creates closed-loop splines for roundabout rings
+    /// 5. Creates normal splines for regular (trimmed) roads
+    /// 
+    /// Use this instead of ConvertLinesToSplines when you want roundabouts to be
+    /// properly handled as closed loops rather than fragmented segments.
+    /// </summary>
+    /// <param name="lineFeatures">OSM line features to convert.</param>
+    /// <param name="fullQueryResult">The complete OSM query result (needed for roundabout detection).</param>
+    /// <param name="bbox">Geographic bounding box (WGS84).</param>
+    /// <param name="terrainSize">Size of terrain in pixels.</param>
+    /// <param name="metersPerPixel">Scale factor for meters per pixel.</param>
+    /// <param name="interpolationType">How to interpolate between control points.</param>
+    /// <param name="detectedRoundabouts">Output: List of detected roundabouts.</param>
+    /// <param name="roundaboutWayIds">Output: Set of OSM way IDs that are part of roundabouts.</param>
+    /// <param name="enableRoadTrimming">When true, trims roads that overlap with roundabouts (recommended).</param>
+    /// <param name="overlapToleranceMeters">Tolerance for determining if a road point is on the roundabout ring.</param>
+    /// <param name="minPathLengthMeters">Minimum path length to include.</param>
+    /// <param name="duplicatePointToleranceMeters">Tolerance for removing duplicate points.</param>
+    /// <param name="endpointJoinToleranceMeters">Tolerance for joining endpoints.</param>
+    /// <returns>List of road splines including both regular roads and roundabout rings.</returns>
+    public List<RoadSpline> ConvertLinesToSplinesWithRoundabouts(
+        List<OsmFeature> lineFeatures,
+        OsmQueryResult fullQueryResult,
+        GeoBoundingBox bbox,
+        int terrainSize,
+        float metersPerPixel,
+        SplineInterpolationType interpolationType,
+        out List<OsmRoundabout> detectedRoundabouts,
+        out HashSet<long> roundaboutWayIds,
+        bool enableRoadTrimming = true,
+        float overlapToleranceMeters = 2.0f,
+        float minPathLengthMeters = 1.0f,
+        float duplicatePointToleranceMeters = 0.01f,
+        float endpointJoinToleranceMeters = 1.0f)
+    {
+        // Use the full overload and discard the roundabout processing result
+        return ConvertLinesToSplinesWithRoundabouts(
+            lineFeatures,
+            fullQueryResult,
+            bbox,
+            terrainSize,
+            metersPerPixel,
+            interpolationType,
+            out detectedRoundabouts,
+            out roundaboutWayIds,
+            out _,  // Discard roundaboutProcessingResult
+            enableRoadTrimming,
+            overlapToleranceMeters,
+            minPathLengthMeters,
+            duplicatePointToleranceMeters,
+            endpointJoinToleranceMeters);
+    }
+    
+    /// <summary>
+    /// Converts line features to splines with roundabout detection and handling.
+    /// This overload provides full roundabout processing result for junction detection.
+    /// </summary>
+    /// <param name="lineFeatures">OSM line features to convert.</param>
+    /// <param name="fullQueryResult">The complete OSM query result (needed for roundabout detection).</param>
+    /// <param name="bbox">Geographic bounding box (WGS84).</param>
+    /// <param name="terrainSize">Size of terrain in pixels.</param>
+    /// <param name="metersPerPixel">Scale factor for meters per pixel.</param>
+    /// <param name="interpolationType">How to interpolate between control points.</param>
+    /// <param name="detectedRoundabouts">Output: List of detected roundabouts.</param>
+    /// <param name="roundaboutWayIds">Output: Set of OSM way IDs that are part of roundabouts.</param>
+    /// <param name="roundaboutProcessingResult">Output: Full roundabout processing result for junction detection.</param>
+    /// <param name="enableRoadTrimming">When true, trims roads that overlap with roundabouts (recommended).</param>
+    /// <param name="overlapToleranceMeters">Tolerance for determining if a road point is on the roundabout ring.</param>
+    /// <param name="minPathLengthMeters">Minimum path length to include.</param>
+    /// <param name="duplicatePointToleranceMeters">Tolerance for removing duplicate points.</param>
+    /// <param name="endpointJoinToleranceMeters">Tolerance for joining endpoints.</param>
+    /// <param name="debugOutputPath">Optional path to save a debug image showing roundabout processing.</param>
+    /// <returns>List of road splines including both regular roads and roundabout rings.</returns>
+    public List<RoadSpline> ConvertLinesToSplinesWithRoundabouts(
+        List<OsmFeature> lineFeatures,
+        OsmQueryResult fullQueryResult,
+        GeoBoundingBox bbox,
+        int terrainSize,
+        float metersPerPixel,
+        SplineInterpolationType interpolationType,
+        out List<OsmRoundabout> detectedRoundabouts,
+        out HashSet<long> roundaboutWayIds,
+        out RoundaboutMerger.RoundaboutProcessingResult roundaboutProcessingResult,
+        bool enableRoadTrimming = true,
+        float overlapToleranceMeters = 2.0f,
+        float minPathLengthMeters = 1.0f,
+        float duplicatePointToleranceMeters = 0.01f,
+        float endpointJoinToleranceMeters = 1.0f,
+        string? debugOutputPath = null)
+    {
+        // Build a set of feature IDs that belong to this material
+        // This is CRITICAL for ensuring roundabout splines are only created once
+        var materialFeatureIds = lineFeatures.Select(f => f.Id).ToHashSet();
+        
+        // Step 1: Detect ALL roundabouts in the full query result
+        var detector = new RoundaboutDetector();
+        var allDetectedRoundabouts = detector.DetectRoundabouts(fullQueryResult);
+        
+        // Step 2: Filter to only roundabouts whose ways overlap with THIS material's features
+        // This prevents creating duplicate roundabout splines when multiple materials are processed
+        detectedRoundabouts = allDetectedRoundabouts
+            .Where(r => r.WayIds.Any(wayId => materialFeatureIds.Contains(wayId)))
+            .ToList();
+        
+        var skippedRoundabouts = allDetectedRoundabouts.Count - detectedRoundabouts.Count;
+        
+        // Collect way IDs only from roundabouts that belong to this material
+        var wayIdSet = new HashSet<long>();
+        foreach (var roundabout in detectedRoundabouts)
+        {
+            foreach (var wayId in roundabout.WayIds)
+            {
+                wayIdSet.Add(wayId);
+            }
+        }
+        roundaboutWayIds = wayIdSet;
+        
+        TerrainLogger.Info($"ConvertLinesToSplinesWithRoundabouts: Detected {allDetectedRoundabouts.Count} roundabout(s) total, " +
+            $"{detectedRoundabouts.Count} belong to this material ({wayIdSet.Count} way segments)" +
+            (skippedRoundabouts > 0 ? $", skipped {skippedRoundabouts} roundabout(s) belonging to other materials" : ""));
+        
+        // Capture pre-trim snapshot for debug visualization (if debug output requested)
+        RoundaboutDebugImageExporter.PreTrimSnapshot? preTrimSnapshot = null;
+        if (!string.IsNullOrEmpty(debugOutputPath) && detectedRoundabouts.Count > 0)
+        {
+            preTrimSnapshot = RoundaboutDebugImageExporter.CapturePreTrimSnapshot(lineFeatures, wayIdSet);
+        }
+        
+        // Step 2: CRITICAL - Trim connecting roads that overlap with roundabouts
+        // This removes the quirky high-angle segments that follow the roundabout ring
+        var deletedFeatureIds = new HashSet<long>();
+        if (enableRoadTrimming && detectedRoundabouts.Count > 0)
+        {
+            var trimmer = new ConnectingRoadTrimmer
+            {
+                OverlapToleranceMeters = overlapToleranceMeters
+            };
+            deletedFeatureIds = trimmer.TrimConnectingRoads(detectedRoundabouts, lineFeatures);
+            
+            // Update pre-trim snapshot with deleted feature IDs
+            if (preTrimSnapshot != null)
+            {
+                preTrimSnapshot.DeletedFeatureIds = deletedFeatureIds;
+            }
+        }
+        
+        // Step 3: Create roundabout ring splines using RoundaboutMerger
+        var merger = new RoundaboutMerger(this);
+        roundaboutProcessingResult = merger.ProcessRoundabouts(
+            detectedRoundabouts,
+            bbox,
+            terrainSize,
+            metersPerPixel,
+            interpolationType);
+        
+        var roundaboutSplines = roundaboutProcessingResult.RoundaboutSplines;
+        
+        // Step 4: Filter out roundabout ways AND deleted features from regular processing
+        var regularFeatures = lineFeatures
+            .Where(f => !wayIdSet.Contains(f.Id))
+            .Where(f => !deletedFeatureIds.Contains(f.Id))
+            .Where(f => f.Coordinates.Count >= 2) // Ensure still valid after trimming
+            .ToList();
+        
+        TerrainLogger.Info($"  Regular roads after excluding roundabouts and deleted: {regularFeatures.Count} " +
+            $"(excluded {lineFeatures.Count - regularFeatures.Count - deletedFeatureIds.Count} roundabout ways, " +
+            $"{deletedFeatureIds.Count} deleted roads)");
+        
+        // Step 5: Process regular (now trimmed) roads
+        var regularSplines = ConvertLinesToSplines(
+            regularFeatures,
+            bbox,
+            terrainSize,
+            metersPerPixel,
+            interpolationType,
+            minPathLengthMeters,
+            duplicatePointToleranceMeters,
+            endpointJoinToleranceMeters);
+        
+        // Step 6: Combine results
+        var allSplines = new List<RoadSpline>();
+        allSplines.AddRange(roundaboutSplines);
+        allSplines.AddRange(regularSplines);
+        
+        TerrainLogger.Info($"ConvertLinesToSplinesWithRoundabouts: Total {allSplines.Count} splines " +
+            $"({roundaboutSplines.Count} roundabout rings + {regularSplines.Count} regular roads)");
+        
+        // Step 7: Export debug image if requested and roundabouts were detected
+        if (!string.IsNullOrEmpty(debugOutputPath) && detectedRoundabouts.Count > 0 && preTrimSnapshot != null)
+        {
+            try
+            {
+                var debugExporter = new RoundaboutDebugImageExporter();
+                debugExporter.ExportDebugImage(
+                    detectedRoundabouts,
+                    regularFeatures,
+                    preTrimSnapshot,
+                    roundaboutSplines,
+                    regularSplines,
+                    bbox,
+                    terrainSize,
+                    metersPerPixel,
+                    debugOutputPath,
+                    _transformer);
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Failed to export roundabout debug image: {ex.Message}");
+            }
+        }
+        
+        return allSplines;
+    }
+    
+    /// <summary>
     /// Retrieves full OsmFeature objects by their IDs from a query result.
     /// </summary>
     public List<OsmFeature> GetFeaturesByIds(OsmQueryResult queryResult, IEnumerable<long> featureIds)

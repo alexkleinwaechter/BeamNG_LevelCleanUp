@@ -149,6 +149,15 @@ public class OsmFeature
     /// </summary>
     public bool IsWaterway => Category == "waterway";
     
+    /// <summary>
+    /// Checks if this feature is part of a roundabout (junction=roundabout tag).
+    /// Roundabout segments need special handling as they are often split into
+    /// multiple ways at connecting road intersections.
+    /// </summary>
+    public bool IsRoundabout => 
+        Tags.TryGetValue("junction", out var junction) && 
+        junction.Equals("roundabout", StringComparison.OrdinalIgnoreCase);
+    
     public override string ToString()
     {
         return $"{GeometryType} - {DisplayName} ({Coordinates.Count} coords)";

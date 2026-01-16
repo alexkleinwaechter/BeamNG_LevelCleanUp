@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -15,13 +17,15 @@ namespace BeamNgTerrainPoc.Terrain.Services;
 ///     a network-centric approach that:
 ///     1. Builds a unified road network from all materials
 ///     2. Calculates target elevations per-spline using each spline's parameters
-///     3. Harmonizes junctions across the entire network (including cross-material)
-///     4. Applies protected terrain blending in a single pass
-///     5. Paints material layers separately (using surface width, not elevation width)
+///     3. Detects roundabout junctions and harmonizes roundabout elevations
+///     4. Harmonizes junctions across the entire network (including cross-material)
+///     5. Applies protected terrain blending in a single pass
+///     6. Paints material layers separately (using surface width, not elevation width)
 ///     Key benefits:
 ///     - Single EDT computation (faster than per-material)
 ///     - Road core pixels are protected from neighbor's blend zones
 ///     - Proper cross-material junction handling
+///     - Roundabout rings have uniform elevation with smooth connecting road transitions
 ///     - Per-spline parameter respect in unified processing
 /// </summary>
 public class UnifiedRoadSmoother
@@ -32,6 +36,7 @@ public class UnifiedRoadSmoother
     private readonly NetworkJunctionHarmonizer _junctionHarmonizer;
     private readonly MaterialPainter _materialPainter;
     private readonly UnifiedRoadNetworkBuilder _networkBuilder;
+    private readonly RoundaboutElevationHarmonizer _roundaboutHarmonizer;
     private readonly UnifiedTerrainBlender _terrainBlender;
 
     public UnifiedRoadSmoother()
@@ -39,6 +44,7 @@ public class UnifiedRoadSmoother
         _networkBuilder = new UnifiedRoadNetworkBuilder();
         _junctionDetector = new NetworkJunctionDetector();
         _junctionHarmonizer = new NetworkJunctionHarmonizer();
+        _roundaboutHarmonizer = new RoundaboutElevationHarmonizer();
         _bankingOrchestrator = new BankingOrchestrator();
         _terrainBlender = new UnifiedTerrainBlender();
         _materialPainter = new MaterialPainter();
@@ -115,6 +121,20 @@ public class UnifiedRoadSmoother
         TerrainLogger.Info(
             $"  Network built: {network.Splines.Count} splines, {network.CrossSections.Count} cross-sections");
 
+        // Phase 1.5: Identify roundabout splines early (before banking)
+        // This must happen BEFORE banking pre-calculation so that roundabout splines
+        // don't get banking applied to them. Roundabouts are circular and should never be banked.
+        // We ALWAYS run this phase to catch closed-loop splines even without RoundaboutProcessingResult.
+        {
+            perfLog?.LogSection("Phase 1.5: Roundabout Identification");
+            TerrainLogger.Info("Phase 1.5: Identifying roundabout splines...");
+            sw.Restart();
+            IdentifyRoundaboutSplines(roadMaterials, network);
+            var roundaboutCount = network.Splines.Count(s => s.IsRoundabout);
+            TerrainLogger.Info($"  Identified {roundaboutCount} roundabout spline(s)");
+            perfLog?.Timing($"IdentifyRoundaboutSplines: {sw.Elapsed.TotalSeconds:F2}s");
+        }
+
         // Phase 2: Calculate target elevations for each spline
         perfLog?.LogSection("Phase 2: Elevation Calculation");
         TerrainLogger.Info("Phase 2: Calculating target elevations...");
@@ -135,6 +155,42 @@ public class UnifiedRoadSmoother
             sw.Restart();
             bankingApplied = _bankingOrchestrator.ApplyBankingPreCalculation(network, globalJunctionBlendDistance);
             perfLog?.Timing($"ApplyBankingPreCalculation: {sw.Elapsed.TotalSeconds:F2}s");
+        }
+
+        // Phase 2.6: Detect and harmonize roundabout elevations
+        // This must happen AFTER initial elevation calculation but BEFORE general junction harmonization
+        // so that roundabout junctions are already at their target elevation when other roads blend to them.
+        var roundaboutJunctionInfos = new List<RoundaboutJunctionInfo>();
+        if (HasRoundaboutsInNetwork(network, roadMaterials))
+        {
+            perfLog?.LogSection("Phase 2.6: Roundabout Elevation Harmonization");
+            TerrainLogger.Info("Phase 2.6: Processing roundabout elevations...");
+            sw.Restart();
+
+            // Step 1: Collect roundabout processing results from all materials
+            var allRoundaboutInfos = CollectRoundaboutInfos(roadMaterials, network);
+
+            if (allRoundaboutInfos.Count > 0)
+            {
+                // Step 2: Detect roundabout junctions (where roads meet roundabout rings)
+                var roundaboutConnectionRadius = GetRoundaboutConnectionRadius(roadMaterials);
+                roundaboutJunctionInfos = _junctionDetector.DetectRoundaboutJunctions(
+                    network, allRoundaboutInfos, roundaboutConnectionRadius);
+
+                // Step 3: Harmonize roundabout elevations (uniform ring elevation + connecting road blending)
+                var roundaboutHarmonizationResult = _roundaboutHarmonizer.HarmonizeRoundaboutElevations(
+                    network,
+                    roundaboutJunctionInfos,
+                    heightMap,
+                    metersPerPixel,
+                    globalJunctionBlendDistance);
+
+                TerrainLogger.Info($"  Processed {roundaboutHarmonizationResult.RoundaboutsProcessed} roundabout(s), " +
+                                   $"modified {roundaboutHarmonizationResult.RingCrossSectionsModified} ring cross-sections, " +
+                                   $"blended {roundaboutHarmonizationResult.ConnectingRoadCrossSectionsBlended} connecting road cross-sections");
+            }
+
+            perfLog?.Timing($"Roundabout elevation harmonization: {sw.Elapsed.TotalSeconds:F2}s");
         }
 
         // Phase 3: Detect and harmonize junctions
@@ -244,6 +300,187 @@ public class UnifiedRoadSmoother
     {
         return roadMaterials.Any(m =>
             m.RoadParameters?.GetSplineParameters()?.Banking?.EnableAutoBanking == true);
+    }
+
+    /// <summary>
+    ///     Determines if any materials have roundabout data that needs processing.
+    /// </summary>
+    private static bool HasRoundaboutsInNetwork(UnifiedRoadNetwork network, List<MaterialDefinition> roadMaterials)
+    {
+        // Check if any material has roundabout detection enabled AND has roundabout data
+        return roadMaterials.Any(m =>
+            m.RoadParameters?.JunctionHarmonizationParameters?.EnableRoundaboutDetection == true &&
+            m.RoadParameters?.RoundaboutProcessingResult?.RoundaboutInfos.Count > 0);
+    }
+
+    /// <summary>
+    ///     Identifies roundabout splines in the network and marks them with IsRoundabout = true.
+    ///     This must be called BEFORE banking pre-calculation to ensure roundabouts don't get banked.
+    /// </summary>
+    private static void IdentifyRoundaboutSplines(
+        List<MaterialDefinition> roadMaterials,
+        UnifiedRoadNetwork network)
+    {
+        var perfLog = TerrainCreationLogger.Current;
+
+        // First pass: Match roundabouts from RoundaboutProcessingResult
+        foreach (var material in roadMaterials)
+        {
+            var roundaboutResult = material.RoadParameters?.RoundaboutProcessingResult;
+            if (roundaboutResult == null || roundaboutResult.RoundaboutInfos.Count == 0)
+                continue;
+
+            perfLog?.Detail(
+                $"Processing roundabout infos for material '{material.MaterialName}': {roundaboutResult.RoundaboutInfos.Count} roundabout(s)");
+
+            foreach (var info in roundaboutResult.RoundaboutInfos)
+            {
+                if (!info.IsValid)
+                {
+                    perfLog?.Detail($"  Roundabout {info.OriginalId}: Invalid, skipping");
+                    continue;
+                }
+
+                // Find and mark the matching spline as a roundabout
+                var matchedSpline = FindMatchingRoundaboutSpline(network, material.MaterialName, info);
+                if (matchedSpline != null)
+                    perfLog?.Detail($"  Roundabout {info.OriginalId}: Matched to spline ID {matchedSpline.SplineId}");
+                else
+                    perfLog?.Detail($"  Roundabout {info.OriginalId}: No matching spline found!");
+            }
+        }
+
+        // Second pass: Fallback detection for closed-loop splines that weren't matched
+        // This catches roundabouts that exist in the network but weren't in RoundaboutProcessingResult
+        var closedLoopTolerance = 15.0f; // meters
+        foreach (var spline in network.Splines)
+        {
+            if (spline.IsRoundabout)
+                continue; // Already marked
+
+            // Check if this is a closed loop
+            var startEndDistance = Vector2.Distance(spline.StartPoint, spline.EndPoint);
+            if (startEndDistance < closedLoopTolerance)
+            {
+                // This is a closed loop - mark it as a roundabout
+                spline.IsRoundabout = true;
+                perfLog?.Detail(
+                    $"  Fallback detection: Spline ID {spline.SplineId} is a closed loop (start-end distance: {startEndDistance:F1}m) - marking as roundabout");
+            }
+        }
+
+        // Log final count
+        var totalRoundabouts = network.Splines.Count(s => s.IsRoundabout);
+        perfLog?.Detail($"Total roundabout splines identified: {totalRoundabouts}");
+    }
+
+    /// <summary>
+    ///     Collects roundabout processing results from all materials and maps them to the network.
+    /// </summary>
+    private static List<RoundaboutMerger.ProcessedRoundaboutInfo> CollectRoundaboutInfos(
+        List<MaterialDefinition> roadMaterials,
+        UnifiedRoadNetwork network)
+    {
+        var allInfos = new List<RoundaboutMerger.ProcessedRoundaboutInfo>();
+
+        foreach (var material in roadMaterials)
+        {
+            var roundaboutResult = material.RoadParameters?.RoundaboutProcessingResult;
+            if (roundaboutResult == null || roundaboutResult.RoundaboutInfos.Count == 0)
+                continue;
+
+            foreach (var info in roundaboutResult.RoundaboutInfos)
+            {
+                if (!info.IsValid)
+                    continue;
+
+                // Find the matching spline in the network by looking for splines from this material
+                // that have similar center coordinates and radius
+                var matchingSpline = FindMatchingRoundaboutSpline(network, material.MaterialName, info);
+                if (matchingSpline != null)
+                {
+                    // Update the ProcessedRoundaboutInfo to reference the actual network spline ID
+                    // This is necessary because spline IDs are assigned during network building,
+                    // not during OSM processing
+                    var updatedInfo = new RoundaboutMerger.ProcessedRoundaboutInfo
+                    {
+                        OriginalId = info.OriginalId,
+                        SplineIndex = matchingSpline.SplineId,
+                        Spline = matchingSpline.Spline,
+                        CenterMeters = info.CenterMeters,
+                        RadiusMeters = info.RadiusMeters,
+                        Connections = info.Connections,
+                        OriginalRoundabout = info.OriginalRoundabout
+                    };
+
+                    allInfos.Add(updatedInfo);
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Mapped roundabout {info.OriginalId} to network spline {matchingSpline.SplineId}");
+                }
+                else
+                {
+                    TerrainLogger.Warning($"Could not find network spline for roundabout {info.OriginalId}");
+                }
+            }
+        }
+
+        return allInfos;
+    }
+
+    /// <summary>
+    ///     Finds the network spline that matches a roundabout info by material and geometry.
+    ///     Also marks the spline as a roundabout when found.
+    /// </summary>
+    private static ParameterizedRoadSpline? FindMatchingRoundaboutSpline(
+        UnifiedRoadNetwork network,
+        string materialName,
+        RoundaboutMerger.ProcessedRoundaboutInfo info)
+    {
+        const float matchTolerance = 10.0f; // 10 meters tolerance
+
+        // Look for closed-loop splines from this material near the roundabout center
+        foreach (var spline in network.GetSplinesForMaterial(materialName))
+        {
+            // Check if this spline is a closed loop (start near end)
+            if (Vector2.Distance(spline.StartPoint, spline.EndPoint) > matchTolerance)
+                continue;
+
+            // Check if the spline center is near the roundabout center
+            var splineCrossSections = network.GetCrossSectionsForSpline(spline.SplineId).ToList();
+            if (splineCrossSections.Count < 4)
+                continue;
+
+            // Calculate the centroid of the spline
+            var centroid = Vector2.Zero;
+            foreach (var cs in splineCrossSections) centroid += cs.CenterPoint;
+            centroid /= splineCrossSections.Count;
+
+            if (Vector2.Distance(centroid, info.CenterMeters) < info.RadiusMeters * 2 + matchTolerance)
+            {
+                // Mark this spline as a roundabout so that banking is not applied to it
+                spline.IsRoundabout = true;
+                return spline;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Gets the roundabout connection radius from material settings, using the maximum value.
+    /// </summary>
+    private static float GetRoundaboutConnectionRadius(List<MaterialDefinition> roadMaterials)
+    {
+        var maxRadius = 10.0f; // Default
+
+        foreach (var material in roadMaterials)
+        {
+            var junctionParams = material.RoadParameters?.JunctionHarmonizationParameters;
+            if (junctionParams != null && junctionParams.RoundaboutConnectionRadiusMeters > maxRadius)
+                maxRadius = junctionParams.RoundaboutConnectionRadiusMeters;
+        }
+
+        return maxRadius;
     }
 
     /// <summary>

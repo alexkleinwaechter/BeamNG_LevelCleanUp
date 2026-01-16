@@ -299,6 +299,14 @@ public class JunctionHarmonizationSettings
     public bool EnableEndpointTaper { get; set; } = true;
     public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
     public float EndpointTerrainBlendStrength { get; set; } = 0.3f;
+
+    // Roundabout settings
+    public bool EnableRoundaboutDetection { get; set; } = true;
+    public bool EnableRoundaboutRoadTrimming { get; set; } = true;
+    public float RoundaboutConnectionRadiusMeters { get; set; } = 10.0f;
+    public float RoundaboutOverlapToleranceMeters { get; set; } = 2.0f;
+    public bool ForceUniformRoundaboutElevation { get; set; } = true;
+    public float? RoundaboutBlendDistanceMeters { get; set; } = 20.0f;
 }
 
 /// <summary>

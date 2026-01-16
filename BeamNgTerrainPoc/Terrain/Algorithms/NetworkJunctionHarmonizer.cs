@@ -71,16 +71,52 @@ public class NetworkJunctionHarmonizer
         var preHarmonizationElevations = CaptureElevations(network);
         result.PreHarmonizationElevations = preHarmonizationElevations;
 
-        // Step 1: Detect junctions (if not already done)
-        List<NetworkJunction> junctions;
-        if (network.Junctions.Count > 0)
+        // Step 1: Detect junctions
+        // IMPORTANT: We must ALWAYS run DetectJunctions() to find regular junctions (T, Y, X, etc.)
+        // even when roundabout junctions already exist in network.Junctions.
+        // Roundabout junctions are added by DetectRoundaboutJunctions() in Phase 2.6 of UnifiedRoadSmoother,
+        // but that method does NOT detect regular road junctions - only roundabout connections.
+        // If we skip DetectJunctions() when network.Junctions.Count > 0, we miss all regular junctions!
+        
+        // First, preserve any existing roundabout junctions (added by RoundaboutElevationHarmonizer)
+        var existingRoundaboutJunctions = network.Junctions
+            .Where(j => j.Type == JunctionType.Roundabout)
+            .ToList();
+        
+        var existingRoundaboutCount = existingRoundaboutJunctions.Count;
+        if (existingRoundaboutCount > 0)
         {
-            junctions = network.Junctions;
-            TerrainLogger.Info($"  Using {junctions.Count} previously detected junction(s)");
+            TerrainLogger.Info($"  Preserving {existingRoundaboutCount} existing roundabout junction(s)");
         }
-        else
+        
+        // Always run standard junction detection to find regular junctions
+        // DetectJunctions() finds: Endpoint, TJunction, YJunction, CrossRoads, Complex, MidSplineCrossing
+        // It does NOT create Roundabout type junctions - those come from DetectRoundaboutJunctions()
+        var detectedJunctions = _detector.DetectJunctions(network, globalDetectionRadius);
+        TerrainLogger.Info($"  Detected {detectedJunctions.Count} regular junction(s)");
+        
+        // Merge: combine detected junctions with preserved roundabout junctions
+        List<NetworkJunction> junctions = detectedJunctions;
+        
+        // Add back roundabout junctions that were already processed by RoundaboutElevationHarmonizer
+        // These should already be marked as IsExcluded=true to prevent double-processing
+        foreach (var roundaboutJunction in existingRoundaboutJunctions)
         {
-            junctions = _detector.DetectJunctions(network, globalDetectionRadius);
+            // Avoid duplicates by checking JunctionId
+            if (!junctions.Any(j => j.JunctionId == roundaboutJunction.JunctionId))
+            {
+                junctions.Add(roundaboutJunction);
+            }
+        }
+        
+        // Update the network's junction list with the complete set
+        network.Junctions.Clear();
+        network.Junctions.AddRange(junctions);
+        
+        // Re-assign sequential junction IDs after merging
+        for (int i = 0; i < junctions.Count; i++)
+        {
+            junctions[i].JunctionId = i;
         }
 
         if (junctions.Count == 0)

@@ -8,6 +8,7 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
@@ -509,7 +510,7 @@ public class TerrainGenerationOrchestrator
 
         if (mat.IsRoadMaterial)
             (layerImagePath, roadParams) = await ProcessOsmRoadMaterialAsync(
-                mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state);
+                mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state, osmQueryResult);
         else
             layerImagePath = await ProcessOsmPolygonMaterialAsync(
                 mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state);
@@ -523,7 +524,8 @@ public class TerrainGenerationOrchestrator
         GeoBoundingBox effectiveBoundingBox,
         OsmGeometryProcessor processor,
         string debugPath,
-        TerrainGenerationState state)
+        TerrainGenerationState state,
+        OsmQueryResult osmQueryResult)
     {
         RoadSmoothingParameters? roadParams = null;
         string? layerImagePath = null;
@@ -539,21 +541,77 @@ public class TerrainGenerationOrchestrator
             // Get the interpolation type from material settings
             var interpolationType = mat.SplineInterpolationType;
 
-            var splines = processor.ConvertLinesToSplines(
-                lineFeatures,
-                effectiveBoundingBox,
-                state.TerrainSize,
-                state.MetersPerPixel,
-                interpolationType,
-                minPathLengthMeters);
+            // Build road params early to access junction harmonization settings
+            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
+            
+            // Check if roundabout detection is enabled
+            var junctionParams = roadParams.JunctionHarmonizationParameters;
+            var enableRoundaboutDetection = junctionParams?.EnableRoundaboutDetection ?? true;
+            var enableRoadTrimming = junctionParams?.EnableRoundaboutRoadTrimming ?? true;
+            var overlapTolerance = junctionParams?.RoundaboutOverlapToleranceMeters ?? 2.0f;
+            var exportRoundaboutDebugImage = junctionParams?.ExportRoundaboutDebugImage ?? true;
+            
+            List<RoadSpline> splines;
+            
+            if (enableRoundaboutDetection)
+            {
+                // Use roundabout-aware spline conversion
+                // This will:
+                // 1. Detect roundabouts from junction=roundabout tags
+                // 2. Trim connecting roads that overlap with roundabout rings
+                // 3. Create closed-loop splines for roundabout rings
+                // 4. Create normal splines for trimmed connecting roads
+                // 5. Export a debug image showing roundabout processing (if enabled)
+                string? roundaboutDebugPath = exportRoundaboutDebugImage
+                    ? Path.Combine(debugPath, $"{mat.InternalName}_roundabout_debug.png")
+                    : null;
+                
+                splines = processor.ConvertLinesToSplinesWithRoundabouts(
+                    lineFeatures,
+                    osmQueryResult,
+                    effectiveBoundingBox,
+                    state.TerrainSize,
+                    state.MetersPerPixel,
+                    interpolationType,
+                    out var detectedRoundabouts,
+                    out var roundaboutWayIds,
+                    out var roundaboutProcessingResult,
+                    enableRoadTrimming,
+                    overlapTolerance,
+                    minPathLengthMeters,
+                    duplicatePointToleranceMeters: 0.01f,
+                    endpointJoinToleranceMeters: 1.0f,
+                    debugOutputPath: roundaboutDebugPath);
+                
+                // Store roundabout info in road params for potential use in junction detection
+                if (detectedRoundabouts.Count > 0)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Detected {detectedRoundabouts.Count} roundabout(s) with {roundaboutWayIds.Count} way segments");
+                    
+                    // Store roundabout processing result for junction detection phase
+                    roadParams.RoundaboutProcessingResult = roundaboutProcessingResult;
+                }
+            }
+            else
+            {
+                // Use standard spline conversion (no roundabout handling)
+                splines = processor.ConvertLinesToSplines(
+                    lineFeatures,
+                    effectiveBoundingBox,
+                    state.TerrainSize,
+                    state.MetersPerPixel,
+                    interpolationType,
+                    minPathLengthMeters);
+            }
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Created {splines.Count} splines from {lineFeatures.Count} OSM line features (interpolation: {interpolationType})");
+                $"Created {splines.Count} splines from {lineFeatures.Count} OSM line features " +
+                $"(interpolation: {interpolationType}, roundabout detection: {enableRoundaboutDetection})");
 
             var osmDebugPath = Path.Combine(debugPath, $"{mat.InternalName}_osm_splines_debug.png");
             processor.ExportOsmSplineDebugImage(splines, state.TerrainSize, state.MetersPerPixel, osmDebugPath);
 
-            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
             roadParams.PreBuiltSplines = splines;
 
             // Rasterize layer map FROM THE SPLINES (not from OSM line features)

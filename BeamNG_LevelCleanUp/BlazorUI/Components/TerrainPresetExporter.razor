@@ -526,7 +526,14 @@
                 ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
                 ["enableEndpointTaper"] = mat.EnableEndpointTaper,
                 ["endpointTaperDistanceMeters"] = mat.EndpointTaperDistanceMeters,
-                ["endpointTerrainBlendStrength"] = mat.EndpointTerrainBlendStrength
+                ["endpointTerrainBlendStrength"] = mat.EndpointTerrainBlendStrength,
+                // Roundabout settings
+                ["enableRoundaboutDetection"] = mat.EnableRoundaboutDetection,
+                ["enableRoundaboutRoadTrimming"] = mat.EnableRoundaboutRoadTrimming,
+                ["roundaboutConnectionRadiusMeters"] = mat.RoundaboutConnectionRadiusMeters,
+                ["roundaboutOverlapToleranceMeters"] = mat.RoundaboutOverlapToleranceMeters,
+                ["forceUniformRoundaboutElevation"] = mat.ForceUniformRoundaboutElevation,
+                ["roundaboutBlendDistanceMeters"] = mat.RoundaboutBlendDistanceMeters
             }
         };
     }

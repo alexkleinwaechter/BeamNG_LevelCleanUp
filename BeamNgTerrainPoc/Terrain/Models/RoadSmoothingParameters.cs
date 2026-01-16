@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Processing;
 
 namespace BeamNgTerrainPoc.Terrain.Models;
 
@@ -265,6 +266,14 @@ public class RoadSmoothingParameters
     /// When true, the service should use PreBuiltSplines instead of extracting from layer map.
     /// </summary>
     public bool UsePreBuiltSplines => PreBuiltSplines?.Count > 0;
+
+    /// <summary>
+    /// Roundabout processing result from OsmGeometryProcessor.ConvertLinesToSplinesWithRoundabouts().
+    /// Contains information about detected roundabouts, their ring splines, and connection points.
+    /// Used by NetworkJunctionDetector for proper roundabout junction detection.
+    /// Null when roundabout detection was not performed or no roundabouts were found.
+    /// </summary>
+    public RoundaboutMerger.RoundaboutProcessingResult? RoundaboutProcessingResult { get; set; }
 
     // ========================================
     // TERRAIN CONTEXT (for export operations)

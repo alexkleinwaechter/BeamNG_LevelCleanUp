@@ -78,8 +78,26 @@ public class OsmQueryResult
     /// </summary>
     public IEnumerable<string> Categories => Features.Select(f => f.Category).Distinct().OrderBy(c => c);
     
+    /// <summary>
+    /// Gets all features that are part of a roundabout (junction=roundabout tag).
+    /// These features need special handling as they are often split at connecting roads.
+    /// </summary>
+    public IEnumerable<OsmFeature> RoundaboutFeatures => 
+        Features.Where(f => f.IsRoundabout && f.GeometryType == OsmGeometryType.LineString);
+    
+    /// <summary>
+    /// Gets all highway features excluding roundabout segments.
+    /// Use this when processing regular roads to avoid double-processing roundabouts.
+    /// </summary>
+    public IEnumerable<OsmFeature> NonRoundaboutHighways => 
+        Features.Where(f => f.Category == "highway" && 
+                           f.GeometryType == OsmGeometryType.LineString && 
+                           !f.IsRoundabout);
+    
     public override string ToString()
     {
-        return $"OsmQueryResult: {Features.Count} features ({Lines.Count()} lines, {Polygons.Count()} polygons, {Points.Count()} points)";
+        var roundaboutCount = RoundaboutFeatures.Count();
+        var roundaboutInfo = roundaboutCount > 0 ? $", {roundaboutCount} roundabout segments" : "";
+        return $"OsmQueryResult: {Features.Count} features ({Lines.Count()} lines, {Polygons.Count()} polygons, {Points.Count()} points{roundaboutInfo})";
     }
 }

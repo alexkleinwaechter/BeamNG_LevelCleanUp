@@ -39,7 +39,14 @@ public enum JunctionType
     ///     Two roads cross each other without either terminating.
     ///     Both roads pass through the crossing point continuously.
     /// </summary>
-    MidSplineCrossing
+    MidSplineCrossing,
+
+    /// <summary>
+    ///     Road connects to a roundabout ring.
+    ///     The roundabout ring is continuous; the connecting road terminates
+    ///     at the ring and forms a T-junction with it.
+    /// </summary>
+    Roundabout
 }
 
 /// <summary>

@@ -378,9 +378,15 @@ public class BankingOrchestrator
 
     /// <summary>
     /// Checks if a spline has banking enabled.
+    /// Note: Roundabout splines never have banking, even if the material has banking enabled.
     /// </summary>
     private static bool IsBankingEnabled(ParameterizedRoadSpline spline)
     {
+        // Roundabout splines should never be banked - they're circular and
+        // banking would create a tilted ring which doesn't make sense
+        if (spline.IsRoundabout)
+            return false;
+        
         var bankingParams = GetBankingParameters(spline);
         return bankingParams?.EnableAutoBanking == true;
     }
@@ -652,7 +658,14 @@ public class BankingOrchestrator
 
         foreach (var spline in network.Splines)
         {
-            Log($"  Spline ID={spline.SplineId}, Priority={spline.Priority}:");
+            Log($"  Spline ID={spline.SplineId}, Priority={spline.Priority}, IsRoundabout={spline.IsRoundabout}:");
+
+            // Roundabout splines are never banked
+            if (spline.IsRoundabout)
+            {
+                Log($"    [SKIP] IsRoundabout = TRUE (banking never applied to roundabouts)");
+                continue;
+            }
 
             // Check SplineParameters
             var splineParams = spline.Parameters.SplineParameters;

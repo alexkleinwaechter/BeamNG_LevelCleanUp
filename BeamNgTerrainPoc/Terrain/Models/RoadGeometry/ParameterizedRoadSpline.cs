@@ -61,6 +61,15 @@ public class ParameterizedRoadSpline
     public string? DisplayName { get; init; }
 
     /// <summary>
+    ///     Whether this spline represents a roundabout ring.
+    ///     Roundabout splines are treated specially:
+    ///     - They form closed loops
+    ///     - Banking (superelevation) is NOT applied to them
+    ///     - They receive uniform elevation harmonization
+    /// </summary>
+    public bool IsRoundabout { get; set; }
+
+    /// <summary>
     ///     Total length of the spline in meters.
     ///     Cached for quick access during junction detection.
     /// </summary>

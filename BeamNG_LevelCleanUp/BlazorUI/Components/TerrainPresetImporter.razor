@@ -881,6 +881,19 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.JunctionHarmonization.EndpointTaperDistanceMeters = junctionHarmonization["endpointTaperDistanceMeters"]!.GetValue<float>();
                 if (junctionHarmonization["endpointTerrainBlendStrength"] != null)
                     settings.JunctionHarmonization.EndpointTerrainBlendStrength = junctionHarmonization["endpointTerrainBlendStrength"]!.GetValue<float>();
+                // Roundabout settings
+                if (junctionHarmonization["enableRoundaboutDetection"] != null)
+                    settings.JunctionHarmonization.EnableRoundaboutDetection = junctionHarmonization["enableRoundaboutDetection"]!.GetValue<bool>();
+                if (junctionHarmonization["enableRoundaboutRoadTrimming"] != null)
+                    settings.JunctionHarmonization.EnableRoundaboutRoadTrimming = junctionHarmonization["enableRoundaboutRoadTrimming"]!.GetValue<bool>();
+                if (junctionHarmonization["roundaboutConnectionRadiusMeters"] != null)
+                    settings.JunctionHarmonization.RoundaboutConnectionRadiusMeters = junctionHarmonization["roundaboutConnectionRadiusMeters"]!.GetValue<float>();
+                if (junctionHarmonization["roundaboutOverlapToleranceMeters"] != null)
+                    settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters = junctionHarmonization["roundaboutOverlapToleranceMeters"]!.GetValue<float>();
+                if (junctionHarmonization["forceUniformRoundaboutElevation"] != null)
+                    settings.JunctionHarmonization.ForceUniformRoundaboutElevation = junctionHarmonization["forceUniformRoundaboutElevation"]!.GetValue<bool>();
+                if (junctionHarmonization["roundaboutBlendDistanceMeters"] != null)
+                    settings.JunctionHarmonization.RoundaboutBlendDistanceMeters = junctionHarmonization["roundaboutBlendDistanceMeters"]!.GetValue<float?>();
             }
 
             return settings;
@@ -984,6 +997,13 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.EnableEndpointTaper = settings.JunctionHarmonization.EnableEndpointTaper;
                 material.EndpointTaperDistanceMeters = settings.JunctionHarmonization.EndpointTaperDistanceMeters;
                 material.EndpointTerrainBlendStrength = settings.JunctionHarmonization.EndpointTerrainBlendStrength;
+                // Roundabout settings
+                material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
+                material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;
+                material.RoundaboutConnectionRadiusMeters = settings.JunctionHarmonization.RoundaboutConnectionRadiusMeters;
+                material.RoundaboutOverlapToleranceMeters = settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters;
+                material.ForceUniformRoundaboutElevation = settings.JunctionHarmonization.ForceUniformRoundaboutElevation;
+                material.RoundaboutBlendDistanceMeters = settings.JunctionHarmonization.RoundaboutBlendDistanceMeters;
             }
         }
     }

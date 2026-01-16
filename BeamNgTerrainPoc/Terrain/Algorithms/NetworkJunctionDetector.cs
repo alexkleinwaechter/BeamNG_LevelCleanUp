@@ -2,6 +2,7 @@ using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Processing;
 
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
@@ -94,7 +95,8 @@ public class NetworkJunctionDetector
                           $"{junctionsByType.GetValueOrDefault(JunctionType.CrossRoads)} X, " +
                           $"{junctionsByType.GetValueOrDefault(JunctionType.Complex)} Complex, " +
                           $"{junctionsByType.GetValueOrDefault(JunctionType.Endpoint)} Isolated, " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.MidSplineCrossing)} MidCrossing");
+                          $"{junctionsByType.GetValueOrDefault(JunctionType.MidSplineCrossing)} MidCrossing, " +
+                          $"{junctionsByType.GetValueOrDefault(JunctionType.Roundabout)} Roundabout");
 
         var crossMaterialCount = junctions.Count(j => j.IsCrossMaterial);
         if (crossMaterialCount > 0)
@@ -395,8 +397,8 @@ public class NetworkJunctionDetector
     {
         foreach (var junction in junctions)
         {
-            // Skip junctions that already have a specific type assigned (e.g., MidSplineCrossing)
-            if (junction.Type == JunctionType.MidSplineCrossing)
+            // Skip junctions that already have a specific type assigned (e.g., MidSplineCrossing, Roundabout)
+            if (junction.Type == JunctionType.MidSplineCrossing || junction.Type == JunctionType.Roundabout)
                 continue;
 
             var uniqueSplineIds = junction.Contributors
@@ -578,5 +580,377 @@ public class NetworkJunctionDetector
         }
 
         return crossings;
+    }
+
+    /// <summary>
+    /// Detects junctions where roads connect to roundabout rings.
+    /// Called after roundabout ring splines are added to the network.
+    /// 
+    /// For each roundabout, this method:
+    /// 1. Finds all road splines with endpoints near the roundabout ring
+    /// 2. Creates Roundabout-type junctions for each connection
+    /// 3. Updates the network's junction list with roundabout junctions
+    /// 4. Returns RoundaboutJunctionInfo for each roundabout for harmonization
+    /// </summary>
+    /// <param name="network">The unified road network containing roundabout ring splines.</param>
+    /// <param name="roundaboutInfos">Information about processed roundabouts from RoundaboutMerger.</param>
+    /// <param name="detectionRadius">Detection radius for connections (typically RoundaboutConnectionRadiusMeters).</param>
+    /// <returns>List of roundabout junction info for elevation harmonization.</returns>
+    public List<RoundaboutJunctionInfo> DetectRoundaboutJunctions(
+        UnifiedRoadNetwork network,
+        List<RoundaboutMerger.ProcessedRoundaboutInfo> roundaboutInfos,
+        float detectionRadius)
+    {
+        var perfLog = TerrainCreationLogger.Current;
+        perfLog?.LogSection("DetectRoundaboutJunctions");
+
+        var roundaboutJunctionInfos = new List<RoundaboutJunctionInfo>();
+        int totalRoundaboutJunctions = 0;
+
+        if (roundaboutInfos.Count == 0)
+        {
+            TerrainLogger.Detail("No roundabout infos provided for junction detection");
+            return roundaboutJunctionInfos;
+        }
+
+        // Build set of roundabout spline IDs for quick lookup
+        var roundaboutSplineIds = new HashSet<int>();
+        var roundaboutInfoBySplineIndex = new Dictionary<int, RoundaboutMerger.ProcessedRoundaboutInfo>();
+
+        foreach (var info in roundaboutInfos)
+        {
+            if (!info.IsValid) continue;
+
+            // Find the corresponding ParameterizedRoadSpline in the network
+            var matchingSpline = FindRoundaboutSplineInNetwork(network, info);
+            if (matchingSpline != null)
+            {
+                roundaboutSplineIds.Add(matchingSpline.SplineId);
+                roundaboutInfoBySplineIndex[matchingSpline.SplineId] = info;
+            }
+        }
+
+        if (roundaboutSplineIds.Count == 0)
+        {
+            TerrainLogger.Warning("No roundabout splines found in network - roundabout junction detection skipped");
+            return roundaboutJunctionInfos;
+        }
+
+        TerrainLogger.Info($"Detecting roundabout junctions for {roundaboutSplineIds.Count} roundabout(s)");
+
+        // For each roundabout, find connecting roads
+        foreach (var roundaboutSplineId in roundaboutSplineIds)
+        {
+            var roundaboutInfo = roundaboutInfoBySplineIndex[roundaboutSplineId];
+            var roundaboutSpline = network.GetSplineById(roundaboutSplineId);
+            if (roundaboutSpline == null) continue;
+
+            var junctionInfo = new RoundaboutJunctionInfo
+            {
+                RoundaboutSplineId = roundaboutSplineId,
+                CenterMeters = roundaboutInfo.CenterMeters,
+                RadiusMeters = roundaboutInfo.RadiusMeters
+            };
+
+            // Find all non-roundabout splines with endpoints near this roundabout
+            foreach (var spline in network.Splines)
+            {
+                // Skip roundabout ring splines
+                if (roundaboutSplineIds.Contains(spline.SplineId))
+                    continue;
+
+                // Check start endpoint
+                var distToStart = DistanceToRing(spline.StartPoint, roundaboutInfo.CenterMeters, roundaboutInfo.RadiusMeters);
+                if (distToStart <= detectionRadius)
+                {
+                    var junction = CreateRoundaboutJunction(
+                        network, roundaboutSpline, spline, 
+                        isConnectingRoadStart: true, 
+                        roundaboutInfo, junctionInfo);
+                    
+                    if (junction != null)
+                    {
+                        junctionInfo.Junctions.Add(junction);
+                        network.Junctions.Add(junction.ParentJunction);
+                        totalRoundaboutJunctions++;
+                    }
+                }
+
+                // Check end endpoint
+                var distToEnd = DistanceToRing(spline.EndPoint, roundaboutInfo.CenterMeters, roundaboutInfo.RadiusMeters);
+                if (distToEnd <= detectionRadius)
+                {
+                    var junction = CreateRoundaboutJunction(
+                        network, roundaboutSpline, spline, 
+                        isConnectingRoadStart: false, 
+                        roundaboutInfo, junctionInfo);
+                    
+                    if (junction != null)
+                    {
+                        junctionInfo.Junctions.Add(junction);
+                        network.Junctions.Add(junction.ParentJunction);
+                        totalRoundaboutJunctions++;
+                    }
+                }
+            }
+
+            if (junctionInfo.Junctions.Count > 0)
+            {
+                roundaboutJunctionInfos.Add(junctionInfo);
+                TerrainLogger.Detail($"  Roundabout {roundaboutSplineId}: " +
+                    $"{junctionInfo.Junctions.Count} connection(s), " +
+                    $"radius={roundaboutInfo.RadiusMeters:F1}m");
+            }
+        }
+
+        TerrainLogger.Info($"Detected {totalRoundaboutJunctions} roundabout junction(s) across {roundaboutJunctionInfos.Count} roundabout(s)");
+        perfLog?.Timing($"Detected {totalRoundaboutJunctions} roundabout junctions");
+
+        return roundaboutJunctionInfos;
+    }
+
+    /// <summary>
+    /// Calculates the distance from a point to a circular ring.
+    /// Returns the absolute distance to the ring (how far inside or outside).
+    /// </summary>
+    private static float DistanceToRing(Vector2 point, Vector2 center, float radius)
+    {
+        float distToCenter = Vector2.Distance(point, center);
+        return Math.Abs(distToCenter - radius);
+    }
+
+    /// <summary>
+    /// Finds the ParameterizedRoadSpline in the network that corresponds to a ProcessedRoundaboutInfo.
+    /// Matches by checking if spline center is near the roundabout center.
+    /// </summary>
+    private static ParameterizedRoadSpline? FindRoundaboutSplineInNetwork(
+        UnifiedRoadNetwork network,
+        RoundaboutMerger.ProcessedRoundaboutInfo roundaboutInfo)
+    {
+        // The roundabout spline should have been added to the network
+        // Look for a closed-loop spline near the roundabout center
+        const float matchTolerance = 5.0f; // 5 meters tolerance
+
+        foreach (var spline in network.Splines)
+        {
+            // Check if start and end are close (closed loop)
+            if (Vector2.Distance(spline.StartPoint, spline.EndPoint) > matchTolerance)
+                continue;
+
+            // Check if the center of the spline is near the roundabout center
+            var splineCenter = (spline.StartPoint + spline.EndPoint) / 2;
+            
+            // Better: calculate actual center from a point on the spline
+            var midPoint = spline.Spline.GetPointAtDistance(spline.TotalLengthMeters / 2);
+            var estimatedCenter = (spline.StartPoint + midPoint + spline.EndPoint) / 3;
+
+            if (Vector2.Distance(estimatedCenter, roundaboutInfo.CenterMeters) < roundaboutInfo.RadiusMeters * 2)
+            {
+                return spline;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Creates a RoundaboutJunction for a connecting road meeting a roundabout ring.
+    /// </summary>
+    private RoundaboutJunction? CreateRoundaboutJunction(
+        UnifiedRoadNetwork network,
+        ParameterizedRoadSpline roundaboutSpline,
+        ParameterizedRoadSpline connectingSpline,
+        bool isConnectingRoadStart,
+        RoundaboutMerger.ProcessedRoundaboutInfo roundaboutInfo,
+        RoundaboutJunctionInfo junctionInfo)
+    {
+        var endpoint = isConnectingRoadStart ? connectingSpline.StartPoint : connectingSpline.EndPoint;
+
+        // Find the closest cross-section on the connecting road's endpoint
+        var endpointCs = GetEndpointCrossSection(network, connectingSpline.SplineId, isConnectingRoadStart);
+        if (endpointCs == null)
+        {
+            TerrainLogger.Detail($"Could not find endpoint cross-section for spline {connectingSpline.SplineId}");
+            return null;
+        }
+
+        // Find the closest point on the roundabout ring
+        var closestRingDistance = FindClosestDistanceOnRing(roundaboutSpline.Spline, endpoint);
+        var closestRingPoint = roundaboutSpline.Spline.GetPointAtDistance(closestRingDistance);
+
+        // Find the closest cross-section on the roundabout ring
+        var ringCs = GetClosestCrossSectionOnSpline(network, roundaboutSpline.SplineId, closestRingPoint);
+        if (ringCs == null)
+        {
+            TerrainLogger.Detail($"Could not find ring cross-section for roundabout spline {roundaboutSpline.SplineId}");
+            return null;
+        }
+
+        // Calculate junction position (midpoint between endpoint and ring point)
+        var junctionPosition = (endpoint + closestRingPoint) / 2;
+
+        // Calculate angle around the roundabout
+        var angleDegrees = CalculateAngleFromCenter(roundaboutInfo.CenterMeters, closestRingPoint);
+
+        // Determine connection direction from ProcessedRoundaboutInfo if available
+        var direction = Osm.Models.RoundaboutConnectionDirection.Bidirectional;
+        // Check if we have processed connection info for this road
+        if (roundaboutInfo.OriginalRoundabout != null)
+        {
+            var originalConnection = roundaboutInfo.OriginalRoundabout.Connections
+                .FirstOrDefault(c => IsMatchingConnection(c, connectingSpline));
+            if (originalConnection != null)
+            {
+                direction = originalConnection.Direction;
+            }
+        }
+
+        // Create the parent NetworkJunction
+        var networkJunction = new NetworkJunction
+        {
+            Position = junctionPosition,
+            Type = JunctionType.Roundabout
+        };
+
+        // Add continuous contributor (roundabout ring)
+        networkJunction.Contributors.Add(new JunctionContributor
+        {
+            CrossSection = ringCs,
+            Spline = roundaboutSpline,
+            IsSplineStart = false,
+            IsSplineEnd = false // Ring is continuous
+        });
+
+        // Add terminating contributor (connecting road)
+        networkJunction.Contributors.Add(new JunctionContributor
+        {
+            CrossSection = endpointCs,
+            Spline = connectingSpline,
+            IsSplineStart = isConnectingRoadStart,
+            IsSplineEnd = !isConnectingRoadStart
+        });
+
+        // Assign junction ID
+        networkJunction.JunctionId = network.Junctions.Count;
+
+        // Create the RoundaboutJunction
+        var roundaboutJunction = new RoundaboutJunction
+        {
+            ParentJunction = networkJunction,
+            RoundaboutSplineId = roundaboutSpline.SplineId,
+            ConnectingRoadSplineId = connectingSpline.SplineId,
+            ConnectionPointMeters = closestRingPoint,
+            DistanceAlongRoundabout = closestRingDistance,
+            AngleDegrees = angleDegrees,
+            Direction = direction,
+            RoundaboutCenterMeters = roundaboutInfo.CenterMeters,
+            RoundaboutRadiusMeters = roundaboutInfo.RadiusMeters,
+            IsConnectingRoadStart = isConnectingRoadStart
+        };
+
+        return roundaboutJunction;
+    }
+
+    /// <summary>
+    /// Gets the endpoint cross-section for a spline.
+    /// </summary>
+    private static UnifiedCrossSection? GetEndpointCrossSection(
+        UnifiedRoadNetwork network, 
+        int splineId, 
+        bool isStart)
+    {
+        var crossSections = network.GetCrossSectionsForSpline(splineId).ToList();
+        if (crossSections.Count == 0)
+            return null;
+
+        return isStart ? crossSections[0] : crossSections[^1];
+    }
+
+    /// <summary>
+    /// Finds the closest cross-section on a spline to a given point.
+    /// </summary>
+    private static UnifiedCrossSection? GetClosestCrossSectionOnSpline(
+        UnifiedRoadNetwork network,
+        int splineId,
+        Vector2 targetPoint)
+    {
+        var crossSections = network.GetCrossSectionsForSpline(splineId).ToList();
+        if (crossSections.Count == 0)
+            return null;
+
+        return crossSections
+            .OrderBy(cs => Vector2.DistanceSquared(cs.CenterPoint, targetPoint))
+            .First();
+    }
+
+    /// <summary>
+    /// Finds the distance along a spline that is closest to a target point.
+    /// </summary>
+    private static float FindClosestDistanceOnRing(RoadSpline spline, Vector2 targetPoint)
+    {
+        const float sampleInterval = 0.5f; // 0.5 meter intervals
+        float closestDistance = 0;
+        float minDistSq = float.MaxValue;
+
+        for (float d = 0; d <= spline.TotalLength; d += sampleInterval)
+        {
+            var point = spline.GetPointAtDistance(d);
+            var distSq = Vector2.DistanceSquared(point, targetPoint);
+            if (distSq < minDistSq)
+            {
+                minDistSq = distSq;
+                closestDistance = d;
+            }
+        }
+
+        // Refine search around the found point
+        float searchStart = Math.Max(0, closestDistance - sampleInterval);
+        float searchEnd = Math.Min(spline.TotalLength, closestDistance + sampleInterval);
+        const float refineSampleInterval = 0.05f;
+
+        for (float d = searchStart; d <= searchEnd; d += refineSampleInterval)
+        {
+            var point = spline.GetPointAtDistance(d);
+            var distSq = Vector2.DistanceSquared(point, targetPoint);
+            if (distSq < minDistSq)
+            {
+                minDistSq = distSq;
+                closestDistance = d;
+            }
+        }
+
+        return closestDistance;
+    }
+
+    /// <summary>
+    /// Calculates the angle from center to a point (0 = East, 90 = North).
+    /// </summary>
+    private static float CalculateAngleFromCenter(Vector2 center, Vector2 point)
+    {
+        float dx = point.X - center.X;
+        float dy = point.Y - center.Y;
+        float angleRadians = MathF.Atan2(dy, dx);
+        float angleDegrees = angleRadians * 180f / MathF.PI;
+        if (angleDegrees < 0) angleDegrees += 360f;
+        return angleDegrees;
+    }
+
+    /// <summary>
+    /// Checks if a RoundaboutConnection matches a connecting spline.
+    /// </summary>
+    private static bool IsMatchingConnection(
+        Osm.Models.RoundaboutConnection connection,
+        ParameterizedRoadSpline spline)
+    {
+        // Match by display name if available
+        if (!string.IsNullOrEmpty(spline.DisplayName) && 
+            connection.ConnectingRoad != null &&
+            !string.IsNullOrEmpty(connection.ConnectingRoad.DisplayName))
+        {
+            return spline.DisplayName.Equals(connection.ConnectingRoad.DisplayName, 
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 }
