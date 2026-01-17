@@ -85,6 +85,39 @@ public partial class TerrainMaterialSettings
     }
 
     /// <summary>
+    ///     Gets the helper text for Master Spline Width field based on current value
+    /// </summary>
+    private string GetMasterSplineWidthHelperText()
+    {
+        if (!Material.MasterSplineWidthMeters.HasValue || Material.MasterSplineWidthMeters <= 0)
+            return "BeamNG spline width (empty = same as Road Surface Width)";
+
+        var effectiveSurfaceWidth = Material.RoadSurfaceWidthMeters.HasValue && Material.RoadSurfaceWidthMeters > 0
+            ? Material.RoadSurfaceWidthMeters.Value
+            : Material.RoadWidthMeters;
+
+        if (Material.MasterSplineWidthMeters < effectiveSurfaceWidth)
+            return $"Narrow spline ({Material.MasterSplineWidthMeters}m) within surface ({effectiveSurfaceWidth}m)";
+
+        if (Material.MasterSplineWidthMeters > effectiveSurfaceWidth)
+            return $"Wide spline ({Material.MasterSplineWidthMeters}m) extends beyond surface ({effectiveSurfaceWidth}m)";
+
+        return "BeamNG spline width (same as Road Surface Width)";
+    }
+
+    /// <summary>
+    ///     Gets the placeholder text for Master Spline Width field
+    /// </summary>
+    private string GetMasterSplineWidthPlaceholder()
+    {
+        var effectiveSurfaceWidth = Material.RoadSurfaceWidthMeters.HasValue && Material.RoadSurfaceWidthMeters > 0
+            ? Material.RoadSurfaceWidthMeters.Value
+            : Material.RoadWidthMeters;
+
+        return $"Same as Road Surface Width ({effectiveSurfaceWidth}m)";
+    }
+
+    /// <summary>
     ///     Gets all current validation warnings based on parameter combinations
     /// </summary>
     private List<ValidationWarning> GetValidationWarnings()
@@ -373,6 +406,7 @@ public partial class TerrainMaterialSettings
                 ["selectedPreset"] = Material.SelectedPreset.ToString(),
                 ["roadWidthMeters"] = Material.RoadWidthMeters,
                 ["roadSurfaceWidthMeters"] = Material.RoadSurfaceWidthMeters,
+                ["masterSplineWidthMeters"] = Material.MasterSplineWidthMeters,
                 ["terrainAffectedRangeMeters"] = Material.TerrainAffectedRangeMeters,
                 ["roadEdgeProtectionBufferMeters"] = Material.RoadEdgeProtectionBufferMeters,
                 ["enableMaxSlopeConstraint"] = Material.EnableMaxSlopeConstraint,
@@ -464,6 +498,8 @@ public partial class TerrainMaterialSettings
                 Material.RoadWidthMeters = jsonNode["roadWidthMeters"]!.GetValue<float>();
             if (jsonNode["roadSurfaceWidthMeters"] != null)
                 Material.RoadSurfaceWidthMeters = jsonNode["roadSurfaceWidthMeters"]!.GetValue<float>();
+            if (jsonNode["masterSplineWidthMeters"] != null)
+                Material.MasterSplineWidthMeters = jsonNode["masterSplineWidthMeters"]!.GetValue<float>();
             if (jsonNode["terrainAffectedRangeMeters"] != null)
                 Material.TerrainAffectedRangeMeters = jsonNode["terrainAffectedRangeMeters"]!.GetValue<float>();
             if (jsonNode["roadEdgeProtectionBufferMeters"] != null)
@@ -694,6 +730,7 @@ public partial class TerrainMaterialSettings
         // ========================================
         public float RoadWidthMeters { get; set; } = 8.0f;
         public float? RoadSurfaceWidthMeters { get; set; }
+        public float? MasterSplineWidthMeters { get; set; }
         public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
 
         /// <summary>
@@ -906,6 +943,7 @@ public partial class TerrainMaterialSettings
             // Primary parameters
             RoadWidthMeters = preset.RoadWidthMeters;
             RoadSurfaceWidthMeters = preset.RoadSurfaceWidthMeters;
+            MasterSplineWidthMeters = preset.MasterSplineWidthMeters;
             TerrainAffectedRangeMeters = preset.TerrainAffectedRangeMeters;
             RoadEdgeProtectionBufferMeters = preset.RoadEdgeProtectionBufferMeters;
             EnableMaxSlopeConstraint = preset.EnableMaxSlopeConstraint;
@@ -996,6 +1034,7 @@ public partial class TerrainMaterialSettings
                 // Primary parameters
                 RoadWidthMeters = RoadWidthMeters,
                 RoadSurfaceWidthMeters = RoadSurfaceWidthMeters,
+                MasterSplineWidthMeters = MasterSplineWidthMeters,
                 TerrainAffectedRangeMeters = TerrainAffectedRangeMeters,
                 RoadEdgeProtectionBufferMeters = RoadEdgeProtectionBufferMeters,
                 EnableMaxSlopeConstraint = EnableMaxSlopeConstraint,

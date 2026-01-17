@@ -115,6 +115,36 @@ public static class RoadParameterTooltips
                                                  PNG Mode: Informational only - your PNG already defines the painted width.
                                                  """;
 
+    public const string MasterSplineWidthMeters = """
+                                                  Default: Same as Road Surface Width | Range: 0.0 to 50.0
+                                                  Status: ACTIVELY USED
+
+                                                  Width of the exported MASTER SPLINE in BeamNG format (in meters).
+                                                  This controls the width value written to the master_splines.json file.
+
+                                                  When empty or 0: Uses Road Surface Width value (or Road Width if that is also empty).
+
+                                                  This allows you to have:
+                                                  - Road Width: Elevation smoothing corridor (terrain modification)
+                                                  - Road Surface Width: Painted material width (layer map / OSM rasterization)
+                                                  - Master Spline Width: BeamNG spline width (for road editor import)
+
+                                                  Use cases:
+                                                  - Same as Road Surface Width (default) - Spline matches painted road
+                                                  - Narrower than Surface Width - Spline leaves room for shoulders
+                                                  - Wider than Surface Width - Spline includes safety margins
+
+                                                  Example values:
+                                                  - 4.0 - Single lane / trail
+                                                  - 7.0 - Typical 2-lane road
+                                                  - 10.0 - Standard highway
+                                                  - 15.0 - Wide highway with shoulders
+
+                                                  [!] For BeamNG import:
+                                                  The width value is written to the master_splines.json file and used
+                                                  by the Master Spline Tool mod when importing roads into BeamNG.
+                                                  """;
+
     public const string TerrainAffectedRangeMeters = """
                                                      Default: 12.0 | Range: 0.0 to 50.0
                                                      Status: ACTIVELY USED

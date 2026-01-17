@@ -113,7 +113,7 @@ public static class MasterSplineExporter
                     continue;
 
                 // Use road surface width for the master spline
-                var roadWidth = paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
+                var roadWidth = paramSpline.Parameters.EffectiveMasterSplineWidthMeters;
 
                 // Create spline name: MaterialName_index (e.g., "Asphalt_001")
                 var splineName = $"{SanitizeName(materialName)}_{splineIndex:D3}";
@@ -200,7 +200,7 @@ public static class MasterSplineExporter
                 if (spline == null || spline.TotalLength < 1f)
                     continue;
 
-                var halfWidth = paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters / 2.0f;
+                var halfWidth = paramSpline.Parameters.EffectiveMasterSplineWidthMeters / 2.0f;
 
                 // Create individual spline image
                 using var splineImage = new Image<L16>(terrainSizePixels, terrainSizePixels, new L16(0));
@@ -422,7 +422,7 @@ public static class MasterSplineExporter
         var splinesDir = Path.Combine(baseDir, "splines");
         Directory.CreateDirectory(splinesDir);
 
-        var roadWidth = parameters.EffectiveRoadSurfaceWidthMeters;
+        var roadWidth = parameters.EffectiveMasterSplineWidthMeters;
         var terrainBaseHeight = parameters.TerrainBaseHeight;
         var nodeDistance = parameters.MasterSplineNodeDistanceMeters;
 
@@ -526,7 +526,7 @@ public static class MasterSplineExporter
         var splinesDir = Path.Combine(baseDir, "splines");
         Directory.CreateDirectory(splinesDir);
 
-        var roadWidth = parameters.EffectiveRoadSurfaceWidthMeters;
+        var roadWidth = parameters.EffectiveMasterSplineWidthMeters;
         var terrainBaseHeight = parameters.TerrainBaseHeight;
         var nodeDistance = parameters.MasterSplineNodeDistanceMeters;
 

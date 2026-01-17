@@ -361,6 +361,19 @@ Class="my-0">
                     </div>
                 </MudItem>
                 
+                <MudItem xs="12" sm="6">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField @bind-Value="Material.MasterSplineWidthMeters" 
+                                        Label="Master Spline Width (meters)" 
+                                        Variant="Variant.Outlined"
+                                        Min="0.0f" Max="50.0f" Step="0.5f"
+                                        HelperText="@GetMasterSplineWidthHelperText()"
+                                        Placeholder="@GetMasterSplineWidthPlaceholder()"
+                                        Class="flex-grow-1"/>
+                        <HelpAdornment TooltipText="@MasterSplineWidthMeters"/>
+                    </div>
+                </MudItem>
+                
                 <!-- Road Banking (Superelevation) -->
                 <MudItem xs="12">
                     <BankingSettingsPanel 
