@@ -61,14 +61,22 @@ public static class BankedTerrainHelper
 
     /// <summary>
     /// Gets the elevation at a road edge position considering banking.
+    /// Junction constraints take priority over calculated values.
     /// </summary>
     /// <param name="cs">The cross-section</param>
     /// <param name="isRightEdge">True for right edge, false for left edge</param>
-    /// <returns>Edge elevation considering banking</returns>
+    /// <returns>Edge elevation considering banking and junction constraints</returns>
     public static float GetEdgeElevation(UnifiedCrossSection cs, bool isRightEdge)
     {
         if (float.IsNaN(cs.TargetElevation))
             return float.NaN;
+
+        // Check for explicit junction constraints first - they override all other calculations
+        // These are set by junction harmonization when a road terminates at a higher-priority road
+        if (isRightEdge && cs.ConstrainedRightEdgeElevation.HasValue)
+            return cs.ConstrainedRightEdgeElevation.Value;
+        if (!isRightEdge && cs.ConstrainedLeftEdgeElevation.HasValue)
+            return cs.ConstrainedLeftEdgeElevation.Value;
 
         // If edge elevations have been calculated, use them
         if (isRightEdge)

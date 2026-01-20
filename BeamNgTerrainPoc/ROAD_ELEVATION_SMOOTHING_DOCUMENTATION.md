@@ -150,7 +150,7 @@ transitions = CountTransitions(skeleton, x, y);
 Walks skeleton from keypoints to extract ordered paths:
 - Starts from all skeleton pixels
 - Junction-aware: prefers straight-through paths (`PreferStraightThroughJunctions`)
-- **Angle threshold**: `JunctionAngleThreshold` (default: 45°)
+- **Angle threshold**: `JunctionAngleThreshold` (default: 45ï¿½)
 - Tracks walked arms to avoid duplicate extraction
 
 #### 1.7 Path Joining
@@ -190,7 +190,7 @@ for (distance = 0; distance <= totalLength; distance += intervalMeters)
     sample = {
         Position: GetPointAtDistance(distance),
         Tangent: GetTangentAtDistance(distance),   // Road direction
-        Normal: GetNormalAtDistance(distance)      // Perpendicular (rotate tangent 90°)
+        Normal: GetNormalAtDistance(distance)      // Perpendicular (rotate tangent 90ï¿½)
     };
 }
 ```
@@ -200,7 +200,7 @@ for (distance = 0; distance <= totalLength; distance += intervalMeters)
 // Tangent = derivative of spline at distance
 tangent = Normalize(splineX.Differentiate(d), splineY.Differentiate(d))
 
-// Normal = rotate tangent 90° counterclockwise: (x, y) ? (-y, x)
+// Normal = rotate tangent 90ï¿½ counterclockwise: (x, y) ? (-y, x)
 normal = Vector2(-tangent.Y, tangent.X)
 ```
 
@@ -292,7 +292,7 @@ smoothed[i] = smoothed[i] * (1 - strength) + globalAverage * strength
 
 #### 4.4 Max Slope Constraint (Optional)
 - **Parameter**: `EnableMaxSlopeConstraint` (default: false)
-- **Parameter**: `RoadMaxSlopeDegrees` (default: 4°)
+- **Parameter**: `RoadMaxSlopeDegrees` (default: 4ï¿½)
 - Iterative forward-backward passes limit maximum grade:
 
 ```csharp
@@ -388,12 +388,68 @@ For truly isolated endpoints (dead ends), blend back toward terrain:
 ```csharp
 // Quintic smoothstep for ultra-smooth taper
 t = distance / taperDistance
-blend = t³ * (t * (t * 6 - 15) + 10)
+blend = tï¿½ * (t * (t * 6 - 15) + 10)
 
 elevation = targetAtEndpoint * (1 - blend) + original * blend
 ```
 
 - **Parameter**: `EndpointTaperDistanceMeters` (default: 25m)
+
+---
+
+### 5.6 Junction Surface Constraints (T-Junctions)
+
+For T-junctions where a road terminates at a higher-priority road, the terminating road's 
+edge elevations must match the primary road's surface at the connection point. This prevents
+"step" artifacts when the primary road is sloped or banked.
+
+#### Constraint Fields
+```csharp
+public class UnifiedCrossSection
+{
+    // ... existing fields ...
+    
+    /// <summary>
+    /// Constrained elevation for the left edge at junction cross-sections.
+    /// When set, this overrides the banking-calculated edge elevation.
+    /// </summary>
+    public float? ConstrainedLeftEdgeElevation { get; set; }
+    
+    /// <summary>
+    /// Constrained elevation for the right edge at junction cross-sections.
+    /// When set, this overrides the banking-calculated edge elevation.
+    /// </summary>
+    public float? ConstrainedRightEdgeElevation { get; set; }
+    
+    /// <summary>
+    /// True if this cross-section has junction surface constraints applied.
+    /// </summary>
+    public bool HasJunctionConstraint => 
+        ConstrainedLeftEdgeElevation.HasValue || ConstrainedRightEdgeElevation.HasValue;
+}
+```
+
+#### How Constraints Work
+1. **Surface Calculation**: At T-junctions, `ComputeTJunctionElevation()` calculates the exact
+   surface elevation at the connection point, accounting for both banking (lateral tilt) and
+   longitudinal slope of the primary road.
+
+2. **Edge Constraint Application**: `JunctionSurfaceCalculator.ApplyEdgeConstraints()` sets
+   `ConstrainedLeftEdgeElevation` and `ConstrainedRightEdgeElevation` on the terminating
+   road's junction cross-section.
+
+3. **Constraint Propagation**: Constraints are interpolated along the terminating road with
+   distance-based falloff, creating a smooth transition from constrained to unconstrained edges.
+
+4. **Terrain Blending**: `BankedTerrainHelper.GetEdgeElevation()` checks constraint fields
+   FIRST before returning banking-calculated values, ensuring constraints take priority.
+
+#### Why Not Modify BankAngleRadians?
+An earlier approach (JunctionSlopeAdapter) tried to match slopes by modifying `BankAngleRadians`,
+but this was fundamentally flawed because:
+- `BankAngleRadians` represents **lateral tilt** (roll) for curves, not longitudinal slope (pitch)
+- Modifying it corrupted banking data and created incorrect terrain
+- The correct solution is to **constrain edge elevations directly** at the surface where roads meet
 
 ---
 
@@ -411,8 +467,8 @@ foreach cross-section:
 ```
 
 #### 6.2 Euclidean Distance Transform (Felzenszwalb & Huttenlocher)
-- **Complexity**: O(W × H) - linear in terrain size
-- **Performance**: ~0.3s for 4096×4096 terrain
+- **Complexity**: O(W ï¿½ H) - linear in terrain size
+- **Performance**: ~0.3s for 4096ï¿½4096 terrain
 - Returns exact Euclidean distance to nearest road pixel
 
 ```csharp
@@ -433,7 +489,7 @@ if (distance(worldPos, nearest) <= roadHalfWidth + blendRange)
 
 **Spatial Index**:
 - Grid-based (32-pixel cells)
-- 3×3 cell search for nearest neighbor
+- 3ï¿½3 cell search for nearest neighbor
 - **Critical**: Filters cross-sections with invalid TargetElevation (NaN, < -1000m)
 
 #### 6.4 Distance-Based Blending
@@ -460,8 +516,8 @@ foreach pixel:
 |----------|---------|-----------|
 | Linear | `t` | Visible transition points |
 | Cosine | `0.5 - 0.5 * cos(? * t)` | Smooth S-curve (default) |
-| Cubic | `t² * (3 - 2t)` | Very smooth, zero 1st derivative at ends |
-| Quintic | `t³ * (t * (6t - 15) + 10)` | Ultra-smooth, zero 1st & 2nd derivatives |
+| Cubic | `tï¿½ * (3 - 2t)` | Very smooth, zero 1st derivative at ends |
+| Quintic | `tï¿½ * (t * (6t - 15) + 10)` | Ultra-smooth, zero 1st & 2nd derivatives |
 
 ---
 
@@ -627,15 +683,15 @@ foreach path:
 
 ## Performance Characteristics
 
-| Operation | Complexity | Typical Time (4096×4096) |
+| Operation | Complexity | Typical Time (4096ï¿½4096) |
 |-----------|------------|--------------------------|
-| Zhang-Suen Thinning | O(iterations × pixels) | 2-5 seconds |
-| Distance Transform | O(W × H) | ~0.3 seconds |
+| Zhang-Suen Thinning | O(iterations ï¿½ pixels) | 2-5 seconds |
+| Distance Transform | O(W ï¿½ H) | ~0.3 seconds |
 | Elevation Smoothing | O(N) per path | < 100ms |
-| Terrain Blending | O(W × H) | ~0.5 seconds |
+| Terrain Blending | O(W ï¿½ H) | ~0.5 seconds |
 | **Total** | | **3-6 seconds** |
 
-Memory usage scales with terrain size: ~50MB per 4096×4096 float array.
+Memory usage scales with terrain size: ~50MB per 4096ï¿½4096 float array.
 
 ---
 

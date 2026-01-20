@@ -126,33 +126,37 @@ public class ProtectedBlendingProcessor
                     // BLEND ZONE - Use distance from owning spline for proper transition
                     // Check protection rules
 
-                    // Rule 1: If this pixel is inside any road's protection zone, don't blend toward terrain
+                    // Rule 1: If this pixel is inside any road's protection zone, USE the protected elevation
+                    // (The protection zone extends beyond the road core by RoadEdgeProtectionBufferMeters,
+                    // so these pixels should get the road's elevation, not terrain-blended elevation)
                     if (protectionMask[y, x])
                     {
+                        newH = targetElevation;
                         localProtected++;
-                        continue;
-                    }
-
-                    // Rule 2: Check if we're in the blend zone of a lower-priority road but within
-                    // the protection buffer of a higher-priority road.
-                    var higherPriorityElevation = FindHigherPriorityProtectedElevation(
-                        worldPos, ownerId, ownerPriority, network.Splines, splineParams, 
-                        crossSectionsBySpline, metersPerPixel);
-
-                    if (higherPriorityElevation.HasValue)
-                    {
-                        newH = higherPriorityElevation.Value;
-                        localProtectedByHigherPriority++;
                     }
                     else
                     {
-                        // Safe to blend - Smooth transition to terrain
-                        // Use distance from OWNING spline for blend calculation
-                        var t = (distToOwner - halfWidth) / blendRange;
-                        t = Math.Clamp(t, 0f, 1f);
+                        // Rule 2: Check if we're in the blend zone of a lower-priority road but within
+                        // the protection buffer of a higher-priority road.
+                        var higherPriorityElevation = FindHigherPriorityProtectedElevation(
+                            worldPos, ownerId, ownerPriority, network.Splines, splineParams, 
+                            crossSectionsBySpline, metersPerPixel);
 
-                        var blend = BlendFunctions.Apply(t, blendFunctionType);
-                        newH = targetElevation * (1f - blend) + original[y, x] * blend;
+                        if (higherPriorityElevation.HasValue)
+                        {
+                            newH = higherPriorityElevation.Value;
+                            localProtectedByHigherPriority++;
+                        }
+                        else
+                        {
+                            // Safe to blend - Smooth transition to terrain
+                            // Use distance from OWNING spline for blend calculation
+                            var t = (distToOwner - halfWidth) / blendRange;
+                            t = Math.Clamp(t, 0f, 1f);
+
+                            var blend = BlendFunctions.Apply(t, blendFunctionType);
+                            newH = targetElevation * (1f - blend) + original[y, x] * blend;
+                        }
                     }
 
                     localShoulder++;

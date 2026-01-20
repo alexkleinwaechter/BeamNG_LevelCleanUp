@@ -505,6 +505,10 @@ public partial class GenerateTerrain
 
     protected override void OnInitialized()
     {
+        // Configure snackbar to prevent duplicate key issues when messages arrive rapidly
+        Snackbar.Configuration.PreventDuplicates = true;
+        Snackbar.Configuration.MaxDisplayedSnackbars = 10;
+        
         // Configure TerrainLogger to forward messages to PubSub
         TerrainLogger.SetLogHandler((level, message) =>
         {
@@ -529,19 +533,32 @@ public partial class GenerateTerrain
                     {
                         case PubSubMessageType.Info:
                             _messages.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Info);
                             break;
                         case PubSubMessageType.Warning:
                             _warnings.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Warning);
                             break;
                         case PubSubMessageType.Error:
                             _errors.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Error);
                             break;
                     }
 
-                    await InvokeAsync(StateHasChanged);
+                    // Show snackbar and update UI on the main thread
+                    await InvokeAsync(() =>
+                    {
+                        switch (msg.MessageType)
+                        {
+                            case PubSubMessageType.Info:
+                                Snackbar.Add(msg.Message, Severity.Info);
+                                break;
+                            case PubSubMessageType.Warning:
+                                Snackbar.Add(msg.Message, Severity.Warning);
+                                break;
+                            case PubSubMessageType.Error:
+                                Snackbar.Add(msg.Message, Severity.Error);
+                                break;
+                        }
+                        StateHasChanged();
+                    });
                 }
             }
         });

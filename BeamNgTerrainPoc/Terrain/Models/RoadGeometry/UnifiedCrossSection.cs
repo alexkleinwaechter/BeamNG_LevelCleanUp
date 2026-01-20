@@ -165,6 +165,32 @@ public class UnifiedCrossSection
     public float RightEdgeElevation { get; set; } = float.NaN;
 
     // ========================================
+    // JUNCTION SURFACE CONSTRAINTS
+    // ========================================
+    // These fields allow junction harmonization to directly specify where a
+    // terminating road's edges should connect to a primary road's surface.
+    // When set, they OVERRIDE the calculated edge elevations from banking.
+
+    /// <summary>
+    ///     When set, this is an explicit constraint for the left edge elevation at a junction.
+    ///     This overrides any calculation from TargetElevation + banking.
+    ///     Set during junction harmonization when this cross-section terminates at a higher-priority road.
+    /// </summary>
+    public float? ConstrainedLeftEdgeElevation { get; set; }
+
+    /// <summary>
+    ///     When set, this is an explicit constraint for the right edge elevation at a junction.
+    ///     This overrides any calculation from TargetElevation + banking.
+    ///     Set during junction harmonization when this cross-section terminates at a higher-priority road.
+    /// </summary>
+    public float? ConstrainedRightEdgeElevation { get; set; }
+
+    /// <summary>
+    ///     When true, this cross-section is at or near a junction and should use constrained edge elevations.
+    /// </summary>
+    public bool HasJunctionConstraint => ConstrainedLeftEdgeElevation.HasValue || ConstrainedRightEdgeElevation.HasValue;
+
+    // ========================================
     // JUNCTION BANKING CONTEXT
     // ========================================
 

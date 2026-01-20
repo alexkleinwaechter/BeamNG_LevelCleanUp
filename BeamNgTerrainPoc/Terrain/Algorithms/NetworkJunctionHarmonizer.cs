@@ -27,6 +27,17 @@ public class NetworkJunctionHarmonizer
     private const float SmallElevationDifferenceMeters = 0.5f;
 
     private readonly NetworkJunctionDetector _detector;
+    
+    /// <summary>
+    ///     The current network being processed. Set during HarmonizeNetwork.
+    /// </summary>
+    private UnifiedRoadNetwork? _currentNetwork;
+    
+    /// <summary>
+    ///     Cross-sections grouped by spline ID for slope calculations.
+    ///     Built at the start of harmonization for efficient lookups.
+    /// </summary>
+    private Dictionary<int, List<UnifiedCrossSection>>? _crossSectionsBySpline;
 
     public NetworkJunctionHarmonizer()
     {
@@ -61,11 +72,18 @@ public class NetworkJunctionHarmonizer
             TerrainLogger.Info("NetworkJunctionHarmonizer: No cross-sections to harmonize");
             return result;
         }
+        
+        // Store network reference and build cross-section lookup for slope calculations
+        _currentNetwork = network;
+        _crossSectionsBySpline = network.CrossSections
+            .Where(cs => !cs.IsExcluded)
+            .GroupBy(cs => cs.OwnerSplineId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.DistanceAlongSpline).ToList());
 
         perfLog?.LogSection("NetworkJunctionHarmonizer");
         TerrainLogger.Info("=== UNIFIED NETWORK JUNCTION HARMONIZATION ===");
-        TerrainLogger.Info($"  Global detection radius: {globalDetectionRadius}m");
-        TerrainLogger.Info($"  Global blend distance: {globalBlendDistance}m");
+        TerrainLogger.Detail($"  Global detection radius: {globalDetectionRadius}m");
+        TerrainLogger.Detail($"  Global blend distance: {globalBlendDistance}m");
 
         // Capture pre-harmonization elevations for comparison
         var preHarmonizationElevations = CaptureElevations(network);
@@ -86,14 +104,14 @@ public class NetworkJunctionHarmonizer
         var existingRoundaboutCount = existingRoundaboutJunctions.Count;
         if (existingRoundaboutCount > 0)
         {
-            TerrainLogger.Info($"  Preserving {existingRoundaboutCount} existing roundabout junction(s)");
+            TerrainLogger.Detail($"  Preserving {existingRoundaboutCount} existing roundabout junction(s)");
         }
         
         // Always run standard junction detection to find regular junctions
         // DetectJunctions() finds: Endpoint, TJunction, YJunction, CrossRoads, Complex, MidSplineCrossing
         // It does NOT create Roundabout type junctions - those come from DetectRoundaboutJunctions()
         var detectedJunctions = _detector.DetectJunctions(network, globalDetectionRadius);
-        TerrainLogger.Info($"  Detected {detectedJunctions.Count} regular junction(s)");
+        TerrainLogger.Detail($"  Detected {detectedJunctions.Count} regular junction(s)");
         
         // Merge: combine detected junctions with preserved roundabout junctions
         List<NetworkJunction> junctions = detectedJunctions;
@@ -132,7 +150,7 @@ public class NetworkJunctionHarmonizer
         var excludedCount = sortedJunctions.Count(j => j.IsExcluded);
         if (excludedCount > 0)
         {
-            TerrainLogger.Info($"  {excludedCount} junction(s) marked as excluded, will be skipped");
+            TerrainLogger.Detail($"  {excludedCount} junction(s) marked as excluded, will be skipped");
         }
 
         // Step 3: Compute harmonized elevation for each junction (skip excluded)
@@ -271,10 +289,13 @@ public class NetworkJunctionHarmonizer
     ///     2. If elevation difference is small: Use weighted average based on priority
     ///     3. If elevation difference is large: Apply gradient ramp on terminating road
     ///     
-    ///     BANKING-AWARE: If the continuous road has banking, the harmonized elevation
-    ///     is calculated at the surface where the terminating road connects, not at
-    ///     the centerline. This prevents "cliff" artifacts where secondary roads meet
-    ///     banked primary roads.
+    ///     SURFACE-AWARE: The harmonized elevation is calculated at the ACTUAL surface
+    ///     where the terminating road connects, accounting for BOTH:
+    ///     - Banking (lateral tilt for curves)
+    ///     - Longitudinal slope (grade/pitch of the primary road)
+    ///     
+    ///     This prevents both "cliff" artifacts from banking AND "step" artifacts from
+    ///     slope mismatches at T-junctions.
     /// </summary>
     private void ComputeTJunctionElevation(NetworkJunction junction, float globalBlendDistance)
     {
@@ -293,30 +314,66 @@ public class NetworkJunctionHarmonizer
         var primaryContinuous = continuous.OrderByDescending(c => c.Spline.Priority).First();
         var primaryCS = primaryContinuous.CrossSection;
         
-        // Get the base elevation (centerline) of the continuous road
+        // Get the base elevation (centerline) of the continuous road AT ITS CROSS-SECTION LOCATION
         var E_c_centerline = primaryCS.TargetElevation;
         
-        // Check if the continuous road has banking
-        // If so, calculate the surface elevation at the connection point
+        // Calculate the surface elevation at the ACTUAL connection point
+        // This must account for BOTH:
+        // 1. Banking (lateral tilt) - handled by BankedTerrainHelper
+        // 2. Longitudinal slope (grade) - the primary road going uphill/downhill
         var E_c = E_c_centerline;
-        if (BankedTerrainHelper.HasBanking(primaryCS) && terminating.Count > 0)
+        
+        if (terminating.Count > 0)
         {
-            // Find where the terminating road's endpoint is relative to the continuous road
-            // The terminating road connects at a specific lateral offset from the continuous road's centerline
             var terminatingEndpoint = terminating[0].CrossSection.CenterPoint;
             
-            // Calculate the surface elevation at the connection point (accounting for banking)
-            E_c = BankedTerrainHelper.GetBankedElevation(primaryCS, terminatingEndpoint);
+            // Calculate how far the terminating endpoint is from the primary road's cross-section center
+            // in both the lateral (normal) and longitudinal (tangent) directions
+            var toEndpoint = terminatingEndpoint - primaryCS.CenterPoint;
+            var lateralOffset = Vector2.Dot(toEndpoint, primaryCS.NormalDirection);
+            var longitudinalOffset = Vector2.Dot(toEndpoint, primaryCS.TangentDirection);
+            
+            // Start with centerline elevation
+            var surfaceElevation = E_c_centerline;
+            
+            // Add banking contribution (lateral offset)
+            if (BankedTerrainHelper.HasBanking(primaryCS))
+            {
+                var bankingContribution = lateralOffset * MathF.Sin(primaryCS.BankAngleRadians);
+                surfaceElevation += bankingContribution;
+            }
+            
+            // Add longitudinal slope contribution
+            // Calculate the primary road's local slope from neighboring cross-sections
+            var longitudinalSlopeContribution = 0f;
+            var primarySlope = 0f;
+            if (MathF.Abs(longitudinalOffset) > 0.1f && _crossSectionsBySpline != null)
+            {
+                primarySlope = CalculatePrimaryRoadSlope(primaryContinuous);
+                if (!float.IsNaN(primarySlope))
+                {
+                    longitudinalSlopeContribution = longitudinalOffset * primarySlope;
+                }
+            }
+            
+            surfaceElevation += longitudinalSlopeContribution;
+            E_c = surfaceElevation;
+            
+            if (!float.IsNaN(E_c) && MathF.Abs(E_c - E_c_centerline) > 0.001f)
+            {
+                var slopeDegrees = MathF.Atan(primarySlope) * 180f / MathF.PI;
+                TerrainCreationLogger.Current?.Detail(
+                    $"T-Junction #{junction.JunctionId}: Surface elevation at connection = {E_c:F2}m " +
+                    $"(centerline={E_c_centerline:F2}m, lateral={lateralOffset:F2}m, " +
+                    $"longitudinal={longitudinalOffset:F2}m, slope={slopeDegrees:F1}°, " +
+                    $"slopeContrib={longitudinalSlopeContribution:F3}m, " +
+                    $"bank={BankingCalculator.RadiansToDegrees(primaryCS.BankAngleRadians):F1}°)");
+            }
             
             if (float.IsNaN(E_c))
             {
                 E_c = E_c_centerline; // Fallback
             }
-            
-            TerrainCreationLogger.Current?.Detail(
-                $"T-Junction #{junction.JunctionId}: Continuous road is banked " +
-                $"(bank angle: {BankingCalculator.RadiansToDegrees(primaryCS.BankAngleRadians):F1}�), " +
-                $"centerline elev={E_c_centerline:F2}m, surface elev at connection={E_c:F2}m");
         }
 
         // Calculate priority-weighted elevation from all terminating roads
@@ -355,11 +412,82 @@ public class NetworkJunctionHarmonizer
             // The gradient ramp on terminating roads is applied during propagation
             junction.HarmonizedElevation = E_c;
         }
+        
+        // PHASE 3: Set edge constraints on terminating roads
+        // Calculate the primary road's slope for edge constraint calculations
+        var primarySlopeForConstraints = _crossSectionsBySpline != null 
+            ? CalculatePrimaryRoadSlope(primaryContinuous) 
+            : 0f;
+        if (float.IsNaN(primarySlopeForConstraints))
+            primarySlopeForConstraints = 0f;
+        
+        // Apply edge constraints to each terminating road's cross-section
+        foreach (var t in terminating)
+        {
+            var terminatingCs = t.CrossSection;
+            
+            // Calculate constrained edge elevations where this road meets the primary surface
+            JunctionSurfaceCalculator.ApplyEdgeConstraints(
+                terminatingCs,
+                primaryCS,
+                primarySlopeForConstraints);
+            
+            TerrainCreationLogger.Current?.Detail(
+                $"T-Junction #{junction.JunctionId}: Spline {t.Spline.SplineId} CS#{terminatingCs.Index} " +
+                $"edges constrained to L={terminatingCs.ConstrainedLeftEdgeElevation:F3}m, " +
+                $"R={terminatingCs.ConstrainedRightEdgeElevation:F3}m (from primary surface)");
+        }
+    }
+
+    /// <summary>
+    /// Calculates the longitudinal slope of the primary road at/near the junction.
+    /// Returns the slope as rise/run (tangent of the angle).
+    /// Uses 3 cross-sections before and after the junction cross-section to get a local gradient.
+    /// </summary>
+    private float CalculatePrimaryRoadSlope(JunctionContributor primaryContributor)
+    {
+        if (_crossSectionsBySpline == null)
+            return float.NaN;
+            
+        if (!_crossSectionsBySpline.TryGetValue(primaryContributor.Spline.SplineId, out var primarySections))
+            return float.NaN;
+
+        var junctionCs = primaryContributor.CrossSection;
+        var junctionIndex = primarySections.FindIndex(cs => cs.Index == junctionCs.Index);
+
+        if (junctionIndex < 0)
+            return float.NaN;
+
+        // Get neighboring cross-sections to calculate slope
+        var prevIndex = Math.Max(0, junctionIndex - 3);
+        var nextIndex = Math.Min(primarySections.Count - 1, junctionIndex + 3);
+
+        if (prevIndex == nextIndex)
+            return 0f;
+
+        var cs1 = primarySections[prevIndex];
+        var cs2 = primarySections[nextIndex];
+
+        var distance = Vector2.Distance(cs1.CenterPoint, cs2.CenterPoint);
+        if (distance < 0.1f)
+            return 0f;
+
+        var elevDiff = cs2.TargetElevation - cs1.TargetElevation;
+        
+        return elevDiff / distance; // rise/run = slope
     }
 
     /// <summary>
     ///     Computes elevation for multi-way junctions (Y, X, Complex).
     ///     Uses priority-weighted average of all contributors.
+    ///     
+    ///     IMPORTANT: When all contributors have equal priority (same-material junctions),
+    ///     uses geometric heuristics as tiebreakers to determine the "dominant" road:
+    ///     1. Road length (longer roads are more important)
+    ///     2. Approach angle (roads approaching at sharp angles are typically joining)
+    ///     
+    ///     This prevents the "jagged junction" problem where equal-priority roads
+    ///     have no deterministic strategy for which adapts to which.
     /// </summary>
     private void ComputeMultiWayJunctionElevation(NetworkJunction junction)
     {
@@ -369,6 +497,18 @@ public class NetworkJunctionHarmonizer
             return;
         }
 
+        // Check if this is an equal-priority junction (same material roads meeting)
+        var priorities = junction.Contributors.Select(c => c.Spline.Priority).Distinct().ToList();
+        var isEqualPriority = priorities.Count == 1;
+
+        if (isEqualPriority && junction.Contributors.Count >= 2)
+        {
+            // Use geometric heuristics to determine dominant road
+            junction.HarmonizedElevation = ComputeEqualPriorityJunctionElevation(junction);
+            return;
+        }
+
+        // Standard priority-weighted average for mixed-priority junctions
         var totalWeight = 0f;
         var weightedSum = 0f;
 
@@ -390,9 +530,152 @@ public class NetworkJunctionHarmonizer
     }
 
     /// <summary>
+    ///     Computes elevation for junctions where all roads have equal priority.
+    ///     Uses geometric heuristics to determine which road is "dominant":
+    ///     
+    ///     1. Road length - Longer roads are typically main roads
+    ///     2. Straightness - Roads that approach at ~180� from each other are likely
+    ///        the same road (dominant), while roads at 90� are likely joining (secondary)
+    ///     
+    ///     The dominant road's elevation is used directly; secondary roads adapt to it.
+    /// </summary>
+    private float ComputeEqualPriorityJunctionElevation(NetworkJunction junction)
+    {
+        var contributors = junction.Contributors.ToList();
+        
+        // Log detailed info for debugging
+        TerrainCreationLogger.Current?.Detail(
+            $"Junction #{junction.JunctionId} ({junction.Type}): Computing equal-priority elevation for {contributors.Count} contributor(s)");
+        
+        foreach (var c in contributors)
+        {
+            TerrainCreationLogger.Current?.Detail(
+                $"  - Spline {c.Spline.SplineId} ({c.Spline.MaterialName}): " +
+                $"priority={c.Spline.Priority}, length={c.Spline.TotalLengthMeters:F0}m, " +
+                $"elevation={c.CrossSection.TargetElevation:F2}m, " +
+                $"isStart={c.IsSplineStart}, isEnd={c.IsSplineEnd}");
+        }
+        
+        if (contributors.Count == 2)
+        {
+            // For Y-junctions with 2 equal-priority roads:
+            // The LONGER road wins (more likely to be a main road)
+            var sorted = contributors.OrderByDescending(c => c.Spline.TotalLengthMeters).ToList();
+            var dominant = sorted[0];
+            var secondary = sorted[1];
+            
+            // Calculate the angle between the two roads
+            var angleBetween = junction.GetAngleBetween(dominant, secondary);
+            
+            // If lengths are very similar (within 20%), use elevation that requires less change
+            var lengthRatio = secondary.Spline.TotalLengthMeters / dominant.Spline.TotalLengthMeters;
+            if (lengthRatio > 0.8f)
+            {
+                // Lengths are similar - use average to minimize overall change
+                var avgElev = (dominant.CrossSection.TargetElevation + secondary.CrossSection.TargetElevation) / 2f;
+                
+                TerrainCreationLogger.Current?.Detail(
+                    $"Junction #{junction.JunctionId}: Equal priority, similar lengths " +
+                    $"(ratio={lengthRatio:F2}, angle={angleBetween:F0}�), using average elevation {avgElev:F2}m " +
+                    $"(dominant={dominant.CrossSection.TargetElevation:F2}m, secondary={secondary.CrossSection.TargetElevation:F2}m)");
+                
+                return avgElev;
+            }
+            
+            TerrainCreationLogger.Current?.Detail(
+                $"Junction #{junction.JunctionId}: Equal priority, dominant road is longer " +
+                $"({dominant.Spline.TotalLengthMeters:F0}m vs {secondary.Spline.TotalLengthMeters:F0}m, angle={angleBetween:F0}�), " +
+                $"using elevation {dominant.CrossSection.TargetElevation:F2}m");
+            
+            return dominant.CrossSection.TargetElevation;
+        }
+        
+        if (contributors.Count >= 3)
+        {
+            // For complex junctions (3+ roads):
+            // Find the two roads that are most "aligned" (approaching from opposite directions)
+            // These form the "through" route; other roads are joining
+            
+            var bestAlignmentPair = FindMostAlignedPair(junction, contributors);
+            
+            if (bestAlignmentPair != null)
+            {
+                var (roadA, roadB, angle) = bestAlignmentPair.Value;
+                
+                // The aligned pair forms the "main road" - use their average elevation
+                var mainRoadElev = (roadA.CrossSection.TargetElevation + roadB.CrossSection.TargetElevation) / 2f;
+                
+                TerrainCreationLogger.Current?.Detail(
+                    $"Junction #{junction.JunctionId}: Equal priority, found aligned pair " +
+                    $"(angle={angle:F0}�), using main road elevation {mainRoadElev:F2}m");
+                
+                return mainRoadElev;
+            }
+            
+            // Fallback: use length-weighted average
+            return ComputeLengthWeightedElevation(contributors);
+        }
+        
+        // Fallback for single contributor
+        return contributors[0].CrossSection.TargetElevation;
+    }
+
+    /// <summary>
+    ///     Finds the pair of contributors that approach the junction from the most opposite directions.
+    ///     This identifies the "through" route at complex junctions.
+    /// </summary>
+    /// <returns>Tuple of (contributorA, contributorB, angle) or null if no good pair found.</returns>
+    private static (JunctionContributor, JunctionContributor, float)? FindMostAlignedPair(
+        NetworkJunction junction,
+        List<JunctionContributor> contributors)
+    {
+        (JunctionContributor, JunctionContributor, float)? bestPair = null;
+        var bestAlignmentScore = 0f;
+        
+        // "Aligned" means approaching from opposite directions (angle close to 180�)
+        const float minAlignmentAngle = 140f; // At least 140� to be considered "aligned"
+        
+        for (int i = 0; i < contributors.Count; i++)
+        {
+            for (int j = i + 1; j < contributors.Count; j++)
+            {
+                var angle = junction.GetAngleBetween(contributors[i], contributors[j]);
+                
+                // Higher angle = more aligned (opposite directions)
+                if (angle > bestAlignmentScore && angle >= minAlignmentAngle)
+                {
+                    bestAlignmentScore = angle;
+                    bestPair = (contributors[i], contributors[j], angle);
+                }
+            }
+        }
+        
+        return bestPair;
+    }
+
+    /// <summary>
+    ///     Computes elevation weighted by road length.
+    ///     Longer roads get more weight.
+    /// </summary>
+    private static float ComputeLengthWeightedElevation(List<JunctionContributor> contributors)
+    {
+        var totalLength = contributors.Sum(c => c.Spline.TotalLengthMeters);
+        if (totalLength < 0.001f)
+            return contributors.Average(c => c.CrossSection.TargetElevation);
+        
+        var weightedSum = contributors.Sum(c => 
+            c.CrossSection.TargetElevation * c.Spline.TotalLengthMeters);
+        
+        return weightedSum / totalLength;
+    }
+
+    /// <summary>
     ///     Computes elevation for mid-spline crossings where two roads cross without either terminating.
     ///     Both roads pass through continuously, so we use priority-weighted average.
     ///     The higher-priority road has more influence on the crossing elevation.
+    ///     
+    ///     IMPORTANT: For equal-priority crossings (same material roads crossing), we use
+    ///     geometric heuristics similar to Y-junctions to determine which road dominates.
     /// </summary>
     private void ComputeMidSplineCrossingElevation(NetworkJunction junction)
     {
@@ -402,7 +685,18 @@ public class NetworkJunctionHarmonizer
             return;
         }
 
-        // For mid-spline crossings, all contributors are continuous (no endpoints)
+        // Check if this is an equal-priority crossing (same material roads meeting)
+        var priorities = junction.Contributors.Select(c => c.Spline.Priority).Distinct().ToList();
+        var isEqualPriority = priorities.Count == 1;
+
+        if (isEqualPriority && junction.Contributors.Count >= 2)
+        {
+            // Use geometric heuristics to determine dominant road, same as Y-junctions
+            junction.HarmonizedElevation = ComputeEqualPriorityMidSplineCrossingElevation(junction);
+            return;
+        }
+
+        // For mid-spline crossings with DIFFERENT priorities, all contributors are continuous (no endpoints)
         // Use priority-weighted average with emphasis on the higher-priority road
         var totalPriority = 0f;
         var weightedSum = 0f;
@@ -417,19 +711,77 @@ public class NetworkJunctionHarmonizer
         }
 
         if (totalPriority > 0)
-            {
-                junction.HarmonizedElevation = weightedSum / totalPriority;
-            }
-            else
-            {
-                // Fallback to simple average
-                junction.HarmonizedElevation = junction.Contributors.Average(c => c.CrossSection.TargetElevation);
-            }
-
-            TerrainCreationLogger.Current?.Detail($"MidSplineCrossing #{junction.JunctionId}: " +
-                              $"harmonized elevation = {junction.HarmonizedElevation:F2}m " +
-                              $"(from {junction.Contributors.Count} continuous roads)");
+        {
+            junction.HarmonizedElevation = weightedSum / totalPriority;
         }
+        else
+        {
+            // Fallback to simple average
+            junction.HarmonizedElevation = junction.Contributors.Average(c => c.CrossSection.TargetElevation);
+        }
+
+        TerrainCreationLogger.Current?.Detail($"MidSplineCrossing #{junction.JunctionId}: " +
+                          $"harmonized elevation = {junction.HarmonizedElevation:F2}m " +
+                          $"(from {junction.Contributors.Count} continuous roads, mixed priority)");
+    }
+
+    /// <summary>
+    ///     Computes elevation for mid-spline crossings where all roads have equal priority.
+    ///     Uses geometric heuristics to determine which road is "dominant":
+    ///     
+    ///     1. Road length - Longer roads are typically main roads
+    ///     2. Straightness at crossing - Roads that are straighter at the crossing point dominate
+    ///     
+    ///     The dominant road's elevation is preserved; other roads adapt to it.
+    /// </summary>
+    private float ComputeEqualPriorityMidSplineCrossingElevation(NetworkJunction junction)
+    {
+        var contributors = junction.Contributors.ToList();
+        
+        TerrainCreationLogger.Current?.Detail(
+            $"MidSplineCrossing #{junction.JunctionId}: Computing equal-priority elevation for {contributors.Count} continuous road(s)");
+        
+        foreach (var c in contributors)
+        {
+            TerrainCreationLogger.Current?.Detail(
+                $"  - Spline {c.Spline.SplineId} ({c.Spline.MaterialName}): " +
+                $"priority={c.Spline.Priority}, length={c.Spline.TotalLengthMeters:F0}m, " +
+                $"elevation at crossing={c.CrossSection.TargetElevation:F2}m");
+        }
+        
+        if (contributors.Count == 2)
+        {
+            // For 2 roads crossing:
+            // The LONGER road wins (more likely to be a main road)
+            var sorted = contributors.OrderByDescending(c => c.Spline.TotalLengthMeters).ToList();
+            var dominant = sorted[0];
+            var secondary = sorted[1];
+            
+            // If lengths are very similar (within 30% for crossings), use average
+            var lengthRatio = secondary.Spline.TotalLengthMeters / dominant.Spline.TotalLengthMeters;
+            if (lengthRatio > 0.7f)
+            {
+                // Lengths are similar - use average to minimize overall change
+                var avgElev = (dominant.CrossSection.TargetElevation + secondary.CrossSection.TargetElevation) / 2f;
+                
+                TerrainCreationLogger.Current?.Detail(
+                    $"MidSplineCrossing #{junction.JunctionId}: Equal priority, similar lengths " +
+                    $"(ratio={lengthRatio:F2}), using average elevation {avgElev:F2}m");
+                
+                return avgElev;
+            }
+            
+            TerrainCreationLogger.Current?.Detail(
+                $"MidSplineCrossing #{junction.JunctionId}: Equal priority, dominant road is longer " +
+                $"({dominant.Spline.TotalLengthMeters:F0}m vs {secondary.Spline.TotalLengthMeters:F0}m), " +
+                $"using elevation {dominant.CrossSection.TargetElevation:F2}m");
+            
+            return dominant.CrossSection.TargetElevation;
+        }
+        
+        // For 3+ roads crossing: use length-weighted average
+        return ComputeLengthWeightedElevation(contributors);
+    }
 
     /// <summary>
     ///     Propagates junction elevation constraints back along each affected spline.
@@ -437,6 +789,19 @@ public class NetworkJunctionHarmonizer
     ///     For T-junctions: Only propagates along terminating roads.
     ///     For Y/X junctions: Propagates along all contributing roads.
     ///     For Mid-spline crossings: Propagates in both directions from the crossing point.
+    ///     
+    ///     CRITICAL FIX FOR DENSE NETWORKS:
+    ///     When multiple junctions have overlapping blend zones (common in dense road networks),
+    ///     each cross-section accumulates weighted influences from ALL nearby junctions rather than
+    ///     letting each junction independently overwrite. This prevents elevation "steps" at the
+    ///     boundaries where different junction blend zones meet.
+    ///     
+    ///     Algorithm:
+    ///     1. First pass: Collect all junction influences for each cross-section
+    ///     2. Second pass: Compute final elevation as weighted average of all influences
+    ///     
+    ///     The weight for each junction is based on: (1 - blend_factor) where blend_factor 
+    ///     increases with distance. Closer junctions have more influence.
     /// </summary>
     /// <returns>Number of cross-sections modified.</returns>
     private int PropagateJunctionConstraints(
@@ -451,6 +816,17 @@ public class NetworkJunctionHarmonizer
             .GroupBy(cs => cs.OwnerSplineId)
             .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
 
+        // CRITICAL FIX: Capture ORIGINAL elevations BEFORE any propagation
+        // This prevents reading already-modified values when processing overlapping blend zones
+        var originalElevations = network.CrossSections
+            .Where(cs => !float.IsNaN(cs.TargetElevation))
+            .ToDictionary(cs => cs.Index, cs => cs.TargetElevation);
+
+        // NEW: Track all junction influences for each cross-section
+        // Key: cross-section Index, Value: list of (harmonized elevation, weight, junction ID)
+        var crossSectionInfluences = new Dictionary<int, List<(float elevation, float weight, int junctionId)>>();
+
+        // First pass: Collect all junction influences
         foreach (var junction in junctions.Where(j => j.Type != JunctionType.Endpoint && !j.IsExcluded))
         {
             // For T-junctions, only propagate along terminating roads
@@ -479,60 +855,209 @@ public class NetworkJunctionHarmonizer
                 // Get blend function type
                 var blendFunctionType = junctionParams?.BlendFunctionType ?? JunctionBlendFunctionType.Cosine;
 
-                // For mid-spline crossings, propagate in both directions from the crossing point
+                // For mid-spline crossings, collect influences bidirectionally
                 if (junction.Type == JunctionType.MidSplineCrossing)
                 {
-                    modifiedCount += PropagateBidirectionalFromCrossing(
+                    CollectBidirectionalInfluences(
                         splineSections, 
                         contributor.CrossSection, 
-                        junction.HarmonizedElevation, 
+                        junction,
                         blendDistance, 
-                        blendFunctionType);
+                        blendFunctionType,
+                        crossSectionInfluences);
                 }
                 else
                 {
-                    // For endpoints (Y, X, Complex), propagate from the endpoint
+                    // For endpoints (Y, X, Complex), collect influences from the endpoint
                     var distances = CalculateDistancesFromEndpoint(splineSections, contributor.IsSplineStart);
 
-                    // Apply blend
                     for (var i = 0; i < splineSections.Count; i++)
                     {
                         var dist = distances[i];
                         if (dist >= blendDistance) continue; // Outside blend zone
 
                         var cs = splineSections[i];
-                        var originalElevation = cs.TargetElevation;
-
+                        
                         // Calculate blend factor using configured function
                         var t = dist / blendDistance;
                         var blend = ApplyBlendFunction(t, blendFunctionType);
 
-                        // Blend between junction elevation and original path elevation
-                        cs.TargetElevation = junction.HarmonizedElevation * (1.0f - blend) + originalElevation * blend;
-
-                        if (MathF.Abs(cs.TargetElevation - originalElevation) > 0.001f)
-                            modifiedCount++;
+                        // Weight is inverse of blend: closer = higher weight
+                        // At junction center (t=0, blend=0): weight = 1.0 (full junction influence)
+                        // At blend boundary (t=1, blend=1): weight = 0.0 (no junction influence)
+                        var weight = 1.0f - blend;
+                        
+                        if (weight > 0.001f)
+                        {
+                            if (!crossSectionInfluences.TryGetValue(cs.Index, out var influences))
+                            {
+                                influences = new List<(float, float, int)>();
+                                crossSectionInfluences[cs.Index] = influences;
+                            }
+                            influences.Add((junction.HarmonizedElevation, weight, junction.JunctionId));
+                        }
                     }
                 }
             }
+        }
+
+        // Log junction influence statistics
+        var multiInfluenceCount = crossSectionInfluences.Count(kvp => kvp.Value.Count > 1);
+        if (multiInfluenceCount > 0)
+        {
+            TerrainLogger.Detail($"  {multiInfluenceCount} cross-sections have overlapping junction influences (will be blended)");
+            var maxInfluences = crossSectionInfluences.Max(kvp => kvp.Value.Count);
+            if (maxInfluences > 2)
+            {
+                TerrainLogger.Detail($"  Maximum overlapping influences: {maxInfluences}");
+            }
+        }
+
+        // Second pass: Apply weighted average of all influences
+        foreach (var (csIndex, influences) in crossSectionInfluences)
+        {
+            if (!originalElevations.TryGetValue(csIndex, out var originalElevation))
+                continue;
+
+            var cs = network.CrossSections.FirstOrDefault(c => c.Index == csIndex);
+            if (cs == null)
+                continue;
+
+            // Calculate weighted average of all junction influences
+            var totalWeight = influences.Sum(inf => inf.weight);
+            
+            if (totalWeight < 0.001f)
+                continue;
+
+            // Weighted elevation from all junctions
+            var weightedJunctionElevation = influences.Sum(inf => inf.elevation * inf.weight) / totalWeight;
+
+            // The total junction influence determines how much we blend from original
+            // Cap at 1.0 to avoid over-correction when many junctions overlap
+            var totalInfluence = MathF.Min(totalWeight, 1.0f);
+
+            // Final elevation: blend between weighted junction average and original
+            var newElevation = weightedJunctionElevation * totalInfluence + originalElevation * (1.0f - totalInfluence);
+
+            if (MathF.Abs(newElevation - cs.TargetElevation) > 0.001f)
+            {
+                cs.TargetElevation = newElevation;
+                modifiedCount++;
+            }
+        }
+
+        // Third pass: Propagate edge constraints for T-junctions
+        // This is separate from elevation propagation because edge constraints only apply to terminating roads
+        var edgeConstraintCount = PropagateEdgeConstraintsForTJunctions(
+            network, 
+            junctions.Where(j => j.Type == JunctionType.TJunction && !j.IsExcluded).ToList(),
+            crossSectionsBySpline,
+            globalBlendDistance);
+
+        TerrainLogger.Detail($"  Propagated junction constraints to {modifiedCount} cross-sections");
+        if (edgeConstraintCount > 0)
+        {
+            TerrainLogger.Detail($"  Propagated edge constraints to {edgeConstraintCount} cross-sections along terminating roads");
         }
 
         return modifiedCount;
     }
 
     /// <summary>
-    ///     Propagates junction elevation bidirectionally from a mid-spline crossing point.
-    ///     Finds the cross-section closest to the crossing and propagates blend in both directions.
+    /// Propagates edge constraints from T-junction terminating cross-sections along the terminating road.
+    /// Uses distance-based falloff to smoothly transition from constrained to unconstrained edges.
     /// </summary>
-    private int PropagateBidirectionalFromCrossing(
+    /// <returns>Number of cross-sections that received propagated edge constraints.</returns>
+    private int PropagateEdgeConstraintsForTJunctions(
+        UnifiedRoadNetwork network,
+        List<NetworkJunction> tJunctions,
+        Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
+        float globalBlendDistance)
+    {
+        var propagatedCount = 0;
+
+        foreach (var junction in tJunctions)
+        {
+            foreach (var terminating in junction.GetTerminatingRoads())
+            {
+                var terminatingCs = terminating.CrossSection;
+                
+                // Skip if no constraints were set on this terminating cross-section
+                if (!terminatingCs.HasJunctionConstraint)
+                    continue;
+
+                if (!crossSectionsBySpline.TryGetValue(terminating.Spline.SplineId, out var splineSections))
+                    continue;
+
+                // Get blend distance from spline parameters or use global
+                var blendDistance = globalBlendDistance;
+                var junctionParams = terminating.Spline.Parameters.JunctionHarmonizationParameters;
+                if (junctionParams != null)
+                    blendDistance = junctionParams.JunctionBlendDistanceMeters;
+
+                // Get blend function type
+                var blendFunctionType = junctionParams?.BlendFunctionType ?? JunctionBlendFunctionType.Cosine;
+
+                // Calculate distances from the terminating endpoint
+                var distances = CalculateDistancesFromEndpoint(splineSections, terminating.IsSplineStart);
+
+                // Propagate constraints along the terminating road
+                for (var i = 0; i < splineSections.Count; i++)
+                {
+                    var dist = distances[i];
+                    
+                    // Skip the junction cross-section itself (it already has constraints)
+                    if (splineSections[i].Index == terminatingCs.Index)
+                        continue;
+                    
+                    // Outside blend zone
+                    if (dist >= blendDistance)
+                        continue;
+
+                    var cs = splineSections[i];
+                    
+                    // Calculate blend factor using configured function
+                    var t = dist / blendDistance;
+                    var blend = ApplyBlendFunction(t, blendFunctionType);
+
+                    // Weight decreases with distance: at junction = 1.0, at blend boundary = 0.0
+                    var weight = 1.0f - blend;
+                    
+                    if (weight > 0.001f)
+                    {
+                        // Interpolate edge constraints
+                        var (interpolatedLeft, interpolatedRight) = JunctionSurfaceCalculator.InterpolateConstraints(
+                            terminatingCs,
+                            cs,
+                            weight);
+
+                        // Apply interpolated constraints
+                        if (interpolatedLeft.HasValue)
+                            cs.ConstrainedLeftEdgeElevation = interpolatedLeft.Value;
+                        if (interpolatedRight.HasValue)
+                            cs.ConstrainedRightEdgeElevation = interpolatedRight.Value;
+
+                        propagatedCount++;
+                    }
+                }
+            }
+        }
+
+        return propagatedCount;
+    }
+
+    /// <summary>
+    ///     Collects junction influences bidirectionally from a mid-spline crossing point.
+    ///     Used in the first pass of the multi-junction influence algorithm.
+    /// </summary>
+    private void CollectBidirectionalInfluences(
         List<UnifiedCrossSection> splineSections,
         UnifiedCrossSection crossingSection,
-        float harmonizedElevation,
+        NetworkJunction junction,
         float blendDistance,
-        JunctionBlendFunctionType blendFunctionType)
+        JunctionBlendFunctionType blendFunctionType,
+        Dictionary<int, List<(float elevation, float weight, int junctionId)>> crossSectionInfluences)
     {
-        var modifiedCount = 0;
-
         // Find the index of the crossing section (or closest to it)
         var crossingIndex = splineSections.FindIndex(cs => cs.Index == crossingSection.Index);
         if (crossingIndex < 0)
@@ -550,7 +1075,7 @@ public class NetworkJunctionHarmonizer
             }
         }
 
-        if (crossingIndex < 0) return 0;
+        if (crossingIndex < 0) return;
 
         // Propagate in the "backward" direction (toward spline start)
         var cumulativeDist = 0f;
@@ -564,15 +1089,19 @@ public class NetworkJunctionHarmonizer
             if (cumulativeDist >= blendDistance) break;
 
             var cs = splineSections[i];
-            var originalElevation = cs.TargetElevation;
-
             var t = cumulativeDist / blendDistance;
             var blend = ApplyBlendFunction(t, blendFunctionType);
+            var weight = 1.0f - blend;
 
-            cs.TargetElevation = harmonizedElevation * (1.0f - blend) + originalElevation * blend;
-
-            if (MathF.Abs(cs.TargetElevation - originalElevation) > 0.001f)
-                modifiedCount++;
+            if (weight > 0.001f)
+            {
+                if (!crossSectionInfluences.TryGetValue(cs.Index, out var influences))
+                {
+                    influences = new List<(float, float, int)>();
+                    crossSectionInfluences[cs.Index] = influences;
+                }
+                influences.Add((junction.HarmonizedElevation, weight, junction.JunctionId));
+            }
         }
 
         // Propagate in the "forward" direction (toward spline end)
@@ -587,18 +1116,20 @@ public class NetworkJunctionHarmonizer
             if (cumulativeDist >= blendDistance) break;
 
             var cs = splineSections[i];
-            var originalElevation = cs.TargetElevation;
-
             var t = cumulativeDist / blendDistance;
             var blend = ApplyBlendFunction(t, blendFunctionType);
+            var weight = 1.0f - blend;
 
-            cs.TargetElevation = harmonizedElevation * (1.0f - blend) + originalElevation * blend;
-
-            if (MathF.Abs(cs.TargetElevation - originalElevation) > 0.001f)
-                modifiedCount++;
+            if (weight > 0.001f)
+            {
+                if (!crossSectionInfluences.TryGetValue(cs.Index, out var influences))
+                {
+                    influences = new List<(float, float, int)>();
+                    crossSectionInfluences[cs.Index] = influences;
+                }
+                influences.Add((junction.HarmonizedElevation, weight, junction.JunctionId));
+            }
         }
-
-        return modifiedCount;
     }
 
     /// <summary>
@@ -706,6 +1237,11 @@ public class NetworkJunctionHarmonizer
     ///     to cross-sections within a "plateau radius" of the junction center.
     ///     CRITICAL: We must use preHarmonizationElevations to get the original road elevations,
     ///     NOT the current TargetElevation values which have already been modified by propagation.
+    ///     
+    ///     NOTE: This method intentionally EXCLUDES T-junctions. T-junction surface matching is
+    ///     handled by junction surface constraints (Phase 3) which set ConstrainedLeftEdgeElevation
+    ///     and ConstrainedRightEdgeElevation on terminating road cross-sections.
+    ///     See JUNCTION_SURFACE_CONSTRAINT_IMPLEMENTATION_PLAN.md for details.
     /// </summary>
     /// <returns>Number of cross-sections modified.</returns>
     private int ApplyMultiWayJunctionPlateauSmoothing(
@@ -726,7 +1262,7 @@ public class NetworkJunctionHarmonizer
         if (multiWayJunctions.Count == 0)
             return 0;
 
-        TerrainLogger.Info($"  Applying plateau smoothing to {multiWayJunctions.Count} multi-way junction(s)...");
+        TerrainLogger.Detail($"  Applying plateau smoothing to {multiWayJunctions.Count} multi-way junction(s)...");
 
         // Cache cross-sections by spline for faster access
         var crossSectionsBySpline = network.CrossSections
@@ -936,7 +1472,7 @@ public class NetworkJunctionHarmonizer
         float metersPerPixel,
         string outputPath)
     {
-        TerrainLogger.Info($"  Exporting junction debug image ({imageWidth}x{imageHeight})...");
+        TerrainLogger.Detail($"  Exporting junction debug image ({imageWidth}x{imageHeight})...");
 
         using var image = new Image<Rgba32>(imageWidth, imageHeight, new Rgba32(0, 0, 0, 255));
 
@@ -1019,7 +1555,7 @@ public class NetworkJunctionHarmonizer
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
         image.SaveAsPng(outputPath);
 
-        TerrainLogger.Info($"  Exported junction debug image: {outputPath}");
+        TerrainLogger.Detail($"  Exported junction debug image: {outputPath}");
     }
 
     #region Drawing Helpers
