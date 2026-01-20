@@ -1,29 +1,28 @@
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
-using BeamNgTerrainPoc.Terrain.Models;
 using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.State;
 
 /// <summary>
-/// Centralized state container for the Terrain Generation page.
-/// Consolidates all form fields and computed properties to reduce code-behind complexity.
+///     Centralized state container for the Terrain Generation page.
+///     Consolidates all form fields and computed properties to reduce code-behind complexity.
 /// </summary>
 public class TerrainGenerationState
 {
     // ========================================
     // WORKING DIRECTORY & LEVEL INFO
     // ========================================
-    
+
     public string WorkingDirectory { get; set; } = string.Empty;
     public string LevelName { get; set; } = string.Empty;
     public bool HasWorkingDirectory { get; set; }
     public bool HasExistingTerrainSettings { get; set; }
-    
+
     // ========================================
     // TERRAIN PARAMETERS
     // ========================================
-    
+
     public string TerrainName { get; set; } = "theTerrain";
     public int TerrainSize { get; set; } = 2048;
     public float MaxHeight { get; set; }
@@ -31,41 +30,41 @@ public class TerrainGenerationState
     public float TerrainBaseHeight { get; set; }
     public bool UpdateTerrainBlock { get; set; } = true;
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
-    
+
     /// <summary>
-    /// Global junction detection radius in meters.
-    /// Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
+    ///     Global junction detection radius in meters.
+    ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     /// </summary>
     public float GlobalJunctionDetectionRadiusMeters { get; set; } = 10.0f;
-    
+
     /// <summary>
-    /// Global junction blend distance in meters.
-    /// Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
+    ///     Global junction blend distance in meters.
+    ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     /// </summary>
     public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
-    
+
     /// <summary>
-    /// When true, flips the material processing order for road network building.
-    /// By default (true), materials at the top of the list (index 0) get higher priority
-    /// for junction harmonization. When false, materials at the bottom get higher priority.
-    /// This does NOT affect texture painting order (last material still wins for overlaps).
-    /// Default: true (top material = highest priority for road smoothing)
+    ///     When true, flips the material processing order for road network building.
+    ///     By default (true), materials at the top of the list (index 0) get higher priority
+    ///     for junction harmonization. When false, materials at the bottom get higher priority.
+    ///     This does NOT affect texture painting order (last material still wins for overlaps).
+    ///     Default: true (top material = highest priority for road smoothing)
     /// </summary>
-    public bool FlipMaterialProcessingOrder { get; set; } = true;
-    
+    public bool FlipMaterialProcessingOrder { get; set; }
+
     // ========================================
     // HEIGHTMAP SOURCE
     // ========================================
-    
+
     public HeightmapSourceType HeightmapSourceType { get; set; } = HeightmapSourceType.Png;
     public string? HeightmapPath { get; set; }
     public string? GeoTiffPath { get; set; }
     public string? GeoTiffDirectory { get; set; }
-    
+
     // ========================================
     // GEOTIFF METADATA
     // ========================================
-    
+
     public GeoBoundingBox? GeoBoundingBox { get; set; }
     public GeoBoundingBox? GeoTiffNativeBoundingBox { get; set; }
     public string? GeoTiffProjectionName { get; set; }
@@ -75,64 +74,64 @@ public class TerrainGenerationState
     public int GeoTiffOriginalHeight { get; set; }
     public double? GeoTiffMinElevation { get; set; }
     public double? GeoTiffMaxElevation { get; set; }
-    
+
     // ========================================
     // CROP SETTINGS
     // ========================================
-    
+
     public CropAnchor CropAnchor { get; set; } = CropAnchor.Center;
     public CropResult? CropResult { get; set; }
-    
+
     /// <summary>
-    /// Cached combined GeoTIFF path for directory mode (avoids re-combining on every crop change).
+    ///     Cached combined GeoTIFF path for directory mode (avoids re-combining on every crop change).
     /// </summary>
     public string? CachedCombinedGeoTiffPath { get; set; }
-    
+
     // ========================================
     // OSM DATA AVAILABILITY
     // ========================================
-    
+
     public bool CanFetchOsmData { get; set; }
     public string? OsmBlockedReason { get; set; }
     public GeoTiffValidationResult? GeoTiffValidationResult { get; set; }
-    
+
     // ========================================
     // TERRAIN MATERIALS
     // ========================================
-    
+
     public List<TerrainMaterialItemExtended> TerrainMaterials { get; } = new();
-    
+
     // ========================================
     // UI STATE
     // ========================================
-    
+
     public bool IsGenerating { get; set; }
     public bool IsLoading { get; set; }
-    
+
     // ========================================
     // MESSAGES & LOGS
     // ========================================
-    
+
     public List<string> Errors { get; } = new();
     public List<string> Warnings { get; } = new();
     public List<string> Messages { get; } = new();
-    
+
     // ========================================
     // COMPUTED PROPERTIES
     // ========================================
-    
+
     /// <summary>
-    /// Gets the effective bounding box for OSM queries.
-    /// Returns the cropped bounding box if cropping is enabled, otherwise returns the full bounding box.
-    /// This MUST be used for all OSM-related operations to ensure correct geographic extent.
+    ///     Gets the effective bounding box for OSM queries.
+    ///     Returns the cropped bounding box if cropping is enabled, otherwise returns the full bounding box.
+    ///     This MUST be used for all OSM-related operations to ensure correct geographic extent.
     /// </summary>
     public GeoBoundingBox? EffectiveBoundingBox =>
         CropResult is { NeedsCropping: true, CroppedBoundingBox: not null }
             ? CropResult.CroppedBoundingBox
             : GeoBoundingBox;
-    
+
     /// <summary>
-    /// Gets the output path for the terrain file.
+    ///     Gets the output path for the terrain file.
     /// </summary>
     public string GetOutputPath()
     {
@@ -140,9 +139,9 @@ public class TerrainGenerationState
             return "Not set";
         return Path.Combine(WorkingDirectory, $"{TerrainName}.ter");
     }
-    
+
     /// <summary>
-    /// Gets the debug output directory path.
+    ///     Gets the debug output directory path.
     /// </summary>
     public string GetDebugPath()
     {
@@ -150,9 +149,9 @@ public class TerrainGenerationState
             return "Not set";
         return Path.Combine(WorkingDirectory, "MT_TerrainGeneration");
     }
-    
+
     /// <summary>
-    /// Gets the working directory title for display.
+    ///     Gets the working directory title for display.
     /// </summary>
     public string GetWorkingDirectoryTitle()
     {
@@ -162,9 +161,9 @@ public class TerrainGenerationState
             return $"Working Directory > {WorkingDirectory}";
         return "Select Level Folder";
     }
-    
+
     /// <summary>
-    /// Checks if terrain generation can proceed.
+    ///     Checks if terrain generation can proceed.
     /// </summary>
     public bool CanGenerate()
     {
@@ -181,18 +180,18 @@ public class TerrainGenerationState
                TerrainMaterials.Any() &&
                !string.IsNullOrEmpty(TerrainName);
     }
-    
+
     /// <summary>
-    /// Gets the helper text for meters per pixel field.
+    ///     Gets the helper text for meters per pixel field.
     /// </summary>
     public string GetMetersPerPixelHelperText()
     {
         var terrainSizeKm = MetersPerPixel * TerrainSize / 1000f;
         return $"Terrain = {terrainSizeKm:F1}km × {terrainSizeKm:F1}km in-game";
     }
-    
+
     /// <summary>
-    /// Gets the heightmap source description for display.
+    ///     Gets the heightmap source description for display.
     /// </summary>
     public string GetHeightmapSourceDescription()
     {
@@ -204,13 +203,13 @@ public class TerrainGenerationState
             _ => "Unknown"
         };
     }
-    
+
     // ========================================
     // STATE MANAGEMENT
     // ========================================
-    
+
     /// <summary>
-    /// Clears all GeoTIFF metadata fields.
+    ///     Clears all GeoTIFF metadata fields.
     /// </summary>
     public void ClearGeoMetadata()
     {
@@ -223,12 +222,12 @@ public class TerrainGenerationState
         GeoTiffOriginalHeight = 0;
         GeoTiffMinElevation = null;
         GeoTiffMaxElevation = null;
-        
+
         CleanupCachedCombinedGeoTiff();
     }
-    
+
     /// <summary>
-    /// Cleans up the cached combined GeoTIFF file if it exists.
+    ///     Cleans up the cached combined GeoTIFF file if it exists.
     /// </summary>
     public void CleanupCachedCombinedGeoTiff()
     {
@@ -236,21 +235,19 @@ public class TerrainGenerationState
         {
             try
             {
-                if (File.Exists(CachedCombinedGeoTiffPath))
-                {
-                    File.Delete(CachedCombinedGeoTiffPath);
-                }
+                if (File.Exists(CachedCombinedGeoTiffPath)) File.Delete(CachedCombinedGeoTiffPath);
             }
             catch
             {
                 // Ignore cleanup errors
             }
+
             CachedCombinedGeoTiffPath = null;
         }
     }
-    
+
     /// <summary>
-    /// Clears all messages, warnings, and errors.
+    ///     Clears all messages, warnings, and errors.
     /// </summary>
     public void ClearMessages()
     {
@@ -258,9 +255,9 @@ public class TerrainGenerationState
         Warnings.Clear();
         Messages.Clear();
     }
-    
+
     /// <summary>
-    /// Resets all state to initial values.
+    ///     Resets all state to initial values.
     /// </summary>
     public void Reset()
     {
@@ -270,7 +267,7 @@ public class TerrainGenerationState
         HasExistingTerrainSettings = false;
         TerrainMaterials.Clear();
         ClearMessages();
-        
+
         HeightmapPath = null;
         TerrainSize = 2048;
         MaxHeight = 500.0f;
@@ -281,8 +278,8 @@ public class TerrainGenerationState
         EnableCrossMaterialHarmonization = true;
         GlobalJunctionDetectionRadiusMeters = 10.0f;
         GlobalJunctionBlendDistanceMeters = 30.0f;
-        FlipMaterialProcessingOrder = true;
-        
+        FlipMaterialProcessingOrder = false;
+
         HeightmapSourceType = HeightmapSourceType.Png;
         GeoTiffPath = null;
         GeoTiffDirectory = null;
@@ -291,7 +288,7 @@ public class TerrainGenerationState
         CanFetchOsmData = false;
         OsmBlockedReason = null;
         GeoTiffValidationResult = null;
-        
+
         ClearGeoMetadata();
     }
 }

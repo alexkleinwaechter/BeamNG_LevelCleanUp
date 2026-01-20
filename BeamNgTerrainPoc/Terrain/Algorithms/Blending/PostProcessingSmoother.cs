@@ -106,7 +106,7 @@ public class PostProcessingSmoother
             
             TerrainLogger.Info($"  Single parameter group - using simple mask");
             ApplySmoothingForGroup(heightMap, distanceField, network, metersPerPixel, 
-                key, splineIds, junctionOverlapSplineIds: null);
+                key, splineIds, junctionOverlapSplineIds: null, alreadySmoothedMask: null);
             
             TerrainLogger.Info("=== POST-PROCESSING SMOOTHING COMPLETE ===");
             return;
@@ -120,6 +120,12 @@ public class PostProcessingSmoother
         {
             TerrainLogger.Info($"  Found {junctionOverlaps.Count} cross-group junction(s) requiring overlap handling");
         }
+        
+        // OVERSMOOTHING FIX: Track pixels that have already been smoothed to prevent double-smoothing
+        // Junction pixels should only be smoothed ONCE by the first group that processes them
+        var height = heightMap.GetLength(0);
+        var width = heightMap.GetLength(1);
+        var alreadySmoothedMask = new bool[height, width];
         
         // Apply smoothing for each parameter group, with junction overlap expansion
         foreach (var group in parameterGroups)
@@ -136,7 +142,7 @@ public class PostProcessingSmoother
                               (overlappingSplineIds.Count > 0 ? $", +{overlappingSplineIds.Count} junction overlap(s)" : ""));
             
             ApplySmoothingForGroup(heightMap, distanceField, network, metersPerPixel,
-                key, splineIds, overlappingSplineIds);
+                key, splineIds, overlappingSplineIds, alreadySmoothedMask);
         }
 
         TerrainLogger.Info("=== POST-PROCESSING SMOOTHING COMPLETE ===");
@@ -144,6 +150,7 @@ public class PostProcessingSmoother
     
     /// <summary>
     /// Applies smoothing for a single parameter group, optionally including junction overlap regions.
+    /// Tracks which pixels have been smoothed to prevent double-smoothing at junctions.
     /// </summary>
     private static void ApplySmoothingForGroup(
         float[,] heightMap,
@@ -152,7 +159,8 @@ public class PostProcessingSmoother
         float metersPerPixel,
         SmoothingParameterKey key,
         HashSet<int> splineIds,
-        HashSet<int>? junctionOverlapSplineIds)
+        HashSet<int>? junctionOverlapSplineIds,
+        bool[,]? alreadySmoothedMask = null)
     {
         // Build a mask for the splines in this group
         var maxSmoothingDist = key.RoadWidth / 2.0f + key.MaskExtension;
@@ -165,6 +173,29 @@ public class PostProcessingSmoother
             ExpandMaskForJunctionOverlaps(
                 groupMask, network, splineIds, junctionOverlapSplineIds, 
                 maxSmoothingDist, metersPerPixel);
+        }
+        
+        // OVERSMOOTHING FIX: Remove pixels that have already been smoothed by previous groups
+        // This prevents junction areas from being smoothed multiple times
+        var skippedPixels = 0;
+        if (alreadySmoothedMask != null)
+        {
+            var height = groupMask.GetLength(0);
+            var width = groupMask.GetLength(1);
+            for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                if (groupMask[y, x] && alreadySmoothedMask[y, x])
+                {
+                    groupMask[y, x] = false;
+                    skippedPixels++;
+                }
+            }
+            
+            if (skippedPixels > 0)
+            {
+                TerrainLogger.Info($"    Skipping {skippedPixels:N0} already-smoothed pixels (preventing oversmoothing)");
+            }
         }
         
         var maskedPixels = CountMaskedPixels(groupMask);
@@ -193,6 +224,21 @@ public class PostProcessingSmoother
                 case PostProcessingSmoothingType.Bilateral:
                     ApplyBilateralSmoothing(heightMap, groupMask, key.KernelSize, key.Sigma);
                     break;
+            }
+        }
+        
+        // OVERSMOOTHING FIX: Mark these pixels as smoothed for future groups
+        if (alreadySmoothedMask != null)
+        {
+            var height = groupMask.GetLength(0);
+            var width = groupMask.GetLength(1);
+            for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                if (groupMask[y, x])
+                {
+                    alreadySmoothedMask[y, x] = true;
+                }
             }
         }
     }

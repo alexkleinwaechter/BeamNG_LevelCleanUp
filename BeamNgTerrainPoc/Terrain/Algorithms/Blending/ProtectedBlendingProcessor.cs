@@ -57,7 +57,8 @@ public class ProtectedBlendingProcessor
                 s.Parameters.TerrainAffectedRangeMeters,
                 s.Parameters.BlendFunctionType,
                 s.Parameters.RoadEdgeProtectionBufferMeters,
-                s.Priority));
+                s.Priority,
+                s.Parameters.SideMaxSlopeDegrees));
 
         // Build spatial index for cross-sections grouped by spline ID
         var crossSectionsBySpline = new SplineGroupedSpatialIndex(network.CrossSections, metersPerPixel);
@@ -124,39 +125,54 @@ public class ProtectedBlendingProcessor
                 else if (distToOwner <= halfWidth + blendRange)
                 {
                     // BLEND ZONE - Use distance from owning spline for proper transition
-                    // Check protection rules
+                    // 
+                    // KEY INSIGHT: The protection mask exists to prevent OTHER roads from modifying
+                    // pixels near THIS road. But we still need to create a proper embankment/blend
+                    // for this road's own transition to terrain.
+                    //
+                    // Previous bug: When protectionMask was true, we set newH = targetElevation directly,
+                    // which created vertical cliffs at the protection boundary.
+                    //
+                    // Fix: Always apply the slope/blend calculation for our own road's blend zone.
+                    // The protection mask only matters when checking if ANOTHER road should modify this pixel.
 
-                    // Rule 1: If this pixel is inside any road's protection zone, USE the protected elevation
-                    // (The protection zone extends beyond the road core by RoadEdgeProtectionBufferMeters,
-                    // so these pixels should get the road's elevation, not terrain-blended elevation)
-                    if (protectionMask[y, x])
+                    // Check if we're in the blend zone of a lower-priority road but within
+                    // the protection buffer of a higher-priority road.
+                    var higherPriorityElevation = FindHigherPriorityProtectedElevation(
+                        worldPos, ownerId, ownerPriority, network.Splines, splineParams, 
+                        crossSectionsBySpline, metersPerPixel);
+
+                    if (higherPriorityElevation.HasValue)
                     {
-                        newH = targetElevation;
-                        localProtected++;
+                        // A higher-priority road claims this pixel - use its elevation
+                        newH = higherPriorityElevation.Value;
+                        localProtectedByHigherPriority++;
                     }
                     else
                     {
-                        // Rule 2: Check if we're in the blend zone of a lower-priority road but within
-                        // the protection buffer of a higher-priority road.
-                        var higherPriorityElevation = FindHigherPriorityProtectedElevation(
-                            worldPos, ownerId, ownerPriority, network.Splines, splineParams, 
-                            crossSectionsBySpline, metersPerPixel);
+                        // This is our road's blend zone - apply proper embankment shaping
+                        // Use distance from OWNING spline for blend calculation
+                        var t = (distToOwner - halfWidth) / blendRange;
+                        t = Math.Clamp(t, 0f, 1f);
 
-                        if (higherPriorityElevation.HasValue)
-                        {
-                            newH = higherPriorityElevation.Value;
-                            localProtectedByHigherPriority++;
-                        }
-                        else
-                        {
-                            // Safe to blend - Smooth transition to terrain
-                            // Use distance from OWNING spline for blend calculation
-                            var t = (distToOwner - halfWidth) / blendRange;
-                            t = Math.Clamp(t, 0f, 1f);
-
-                            var blend = BlendFunctions.Apply(t, blendFunctionType);
-                            newH = targetElevation * (1f - blend) + original[y, x] * blend;
-                        }
+                        var blend = BlendFunctions.Apply(t, blendFunctionType);
+                        var blendedH = targetElevation * (1f - blend) + original[y, x] * blend;
+                        
+                        // Enforce maximum side slope constraint with smooth transition
+                        // This prevents steep "cliff" embankments when road elevation differs
+                        // significantly from terrain elevation, and ensures smooth transition
+                        // to terrain WITHIN the blend range
+                        newH = EnforceSideMaxSlope(
+                            targetElevation,
+                            original[y, x],
+                            blendedH,
+                            distToOwner - halfWidth,
+                            blendRange,
+                            ownerParams.SideMaxSlopeDegrees);
+                        
+                        // Track if this was in the protection zone (for statistics only)
+                        if (protectionMask[y, x])
+                            localProtected++;
                     }
 
                     localShoulder++;
@@ -290,6 +306,80 @@ public class ProtectedBlendingProcessor
             TerrainCreationLogger.Current?.Detail(
                 $"  Protected by higher-priority road buffer: {stats.ProtectedByHigherPriority:N0} pixels");
     }
+    
+    /// <summary>
+    /// Enforces the maximum side slope constraint on the blended elevation.
+    /// 
+    /// When the elevation difference between road and terrain is large relative to the blend range,
+    /// a simple blend function would create slopes steeper than SideMaxSlopeDegrees (creating cliffs).
+    /// 
+    /// This method ensures the embankment ALWAYS respects the maximum slope angle by:
+    /// 1. Following the max slope from road edge toward terrain
+    /// 2. When max slope reaches terrain level OR blend range ends, returning terrain elevation
+    /// 3. Never exceeding the specified maximum slope angle
+    /// 
+    /// IMPORTANT: If the blend range is too small for the elevation difference at the max slope,
+    /// the terrain will have a visible "step" at the blend boundary. This is unavoidable without
+    /// either increasing the blend range or accepting steeper slopes.
+    /// 
+    /// The fix for "cliff at blend boundary" is to simply follow the max slope continuously
+    /// and clamp to terrain when we reach it OR when we exit the blend range.
+    /// </summary>
+    private static float EnforceSideMaxSlope(
+        float roadElevation,
+        float terrainElevation,
+        float blendedElevation,
+        float distanceFromRoadEdge,
+        float blendRange,
+        float sideMaxSlopeDegrees)
+    {
+        // If distance is too small, no slope enforcement needed
+        if (distanceFromRoadEdge < 0.01f)
+            return blendedElevation;
+        
+        // Calculate the elevation difference between road and terrain
+        var elevationDiff = MathF.Abs(roadElevation - terrainElevation);
+        
+        // If difference is small, just use the blend function result
+        if (elevationDiff < 0.1f)
+            return blendedElevation;
+        
+        // Calculate max slope parameters
+        var maxSlopeRad = sideMaxSlopeDegrees * MathF.PI / 180f;
+        var tanMaxSlope = MathF.Tan(maxSlopeRad);
+        
+        // Calculate how much elevation can change at max slope over this distance
+        var maxElevationChange = distanceFromRoadEdge * tanMaxSlope;
+        
+        bool isCut = roadElevation > terrainElevation;
+        float slopeConstrainedElevation;
+        
+        if (isCut)
+        {
+            // Road above terrain - slope goes down, but never below terrain
+            slopeConstrainedElevation = MathF.Max(roadElevation - maxElevationChange, terrainElevation);
+        }
+        else
+        {
+            // Road below terrain - slope goes up, but never above terrain
+            slopeConstrainedElevation = MathF.Min(roadElevation + maxElevationChange, terrainElevation);
+        }
+        
+        // Check if slope constraint is needed (blend function alone would be steeper than max slope)
+        var blendExceedsSlope = isCut 
+            ? blendedElevation < slopeConstrainedElevation 
+            : blendedElevation > slopeConstrainedElevation;
+        
+        if (!blendExceedsSlope)
+        {
+            // Blend function is gentler than max slope - no constraint needed
+            return blendedElevation;
+        }
+        
+        // Slope constraint is active - use the slope-constrained elevation
+        // This already clamps to terrain elevation, so no cliff at the point where slope meets terrain
+        return slopeConstrainedElevation;
+    }
 
     /// <summary>
     /// Parameters for a spline's blending behavior.
@@ -299,5 +389,6 @@ public class ProtectedBlendingProcessor
         float BlendRange,
         BlendFunctionType BlendFunction,
         float ProtectionBuffer,
-        int Priority);
+        int Priority,
+        float SideMaxSlopeDegrees);
 }
