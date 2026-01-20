@@ -282,12 +282,16 @@ public class RoundaboutElevationHarmonizer
 
     /// <summary>
     /// Applies uniform elevation to all ring cross-sections.
-    /// When ForceUniformRoundaboutElevation is false, preserves the original
+    /// When ForceUniformRoundaboutElevation is false on ALL connecting roads, preserves the original
     /// calculated elevation for the ring (allows gradual changes around the ring).
     /// 
     /// Also updates per-junction target elevations:
-    /// - When ForceUniformRoundaboutElevation is true: all junctions use the global harmonized elevation
+    /// - When ForceUniformRoundaboutElevation is true on any connecting road: uses the global harmonized elevation for that junction
     /// - When false: each junction uses the ring elevation at its specific connection point
+    /// 
+    /// NOTE: The ring elevation is forced to uniform only if at least one connecting road has
+    /// ForceUniformRoundaboutElevation = true. If all connecting roads have it set to false,
+    /// the ring will follow terrain naturally.
     /// </summary>
     private int ApplyUniformRingElevation(
         List<UnifiedCrossSection> ringCrossSections,
@@ -297,9 +301,16 @@ public class RoundaboutElevationHarmonizer
         ref float maxElevationChange)
     {
         var modifiedCount = 0;
-        var roundaboutSpline = network.GetSplineById(roundaboutInfo.RoundaboutSplineId);
-        var junctionParams = roundaboutSpline?.Parameters.JunctionHarmonizationParameters
-                            ?? new JunctionHarmonizationParameters();
+
+        // Check if ANY connecting road wants uniform elevation
+        // If so, we need to apply uniform elevation to the ring
+        var anyConnectingRoadWantsUniform = roundaboutInfo.Junctions.Any(junction =>
+        {
+            var connectingSpline = network.GetSplineById(junction.ConnectingRoadSplineId);
+            var junctionParams = connectingSpline?.Parameters.JunctionHarmonizationParameters
+                                ?? new JunctionHarmonizationParameters();
+            return junctionParams.ForceUniformRoundaboutElevation;
+        });
 
         foreach (var cs in ringCrossSections)
         {
@@ -312,9 +323,10 @@ public class RoundaboutElevationHarmonizer
 
             var elevationChange = MathF.Abs(ringElevation - cs.TargetElevation);
 
-            if (junctionParams.ForceUniformRoundaboutElevation)
+            if (anyConnectingRoadWantsUniform)
             {
-                // Force uniform elevation around the entire ring
+                // Force uniform elevation around the entire ring because at least one
+                // connecting road has ForceUniformRoundaboutElevation = true
                 if (elevationChange > 0.001f)
                 {
                     maxElevationChange = MathF.Max(maxElevationChange, elevationChange);
@@ -322,20 +334,23 @@ public class RoundaboutElevationHarmonizer
                     modifiedCount++;
                 }
             }
-            // When ForceUniformRoundaboutElevation is false, do NOT modify the ring cross-sections.
+            // When ALL roads have ForceUniformRoundaboutElevation = false, do NOT modify the ring cross-sections.
             // This preserves the original calculated elevations which may vary around the ring
             // to follow terrain slope. The ring will naturally follow the terrain rather than
             // being forced to a single elevation.
         }
 
         // Update target elevation on all roundabout junctions
-        // When ForceUniformRoundaboutElevation is true: all use the global harmonized elevation
-        // When false: each junction uses the local ring elevation at its connection point
+        // Each junction uses its connecting road's ForceUniformRoundaboutElevation setting
         foreach (var junction in roundaboutInfo.Junctions)
         {
+            var connectingSpline = network.GetSplineById(junction.ConnectingRoadSplineId);
+            var junctionParams = connectingSpline?.Parameters.JunctionHarmonizationParameters
+                                ?? new JunctionHarmonizationParameters();
+
             if (junctionParams.ForceUniformRoundaboutElevation)
             {
-                // Use global harmonized elevation for all junctions
+                // Use global harmonized elevation for this junction
                 junction.TargetElevation = ringElevation;
             }
             else
@@ -394,13 +409,17 @@ public class RoundaboutElevationHarmonizer
     /// <summary>
     /// Blends connecting roads toward the roundabout elevation.
     /// 
-    /// When ForceUniformRoundaboutElevation is true:
-    ///   All connecting roads blend toward the uniform harmonized ring elevation.
+    /// When ForceUniformRoundaboutElevation is true (on the CONNECTING road's parameters):
+    ///   The connecting road blends toward the uniform harmonized ring elevation.
     /// 
-    /// When ForceUniformRoundaboutElevation is false:
-    ///   Each connecting road blends toward the local ring elevation at its specific
+    /// When ForceUniformRoundaboutElevation is false (on the CONNECTING road's parameters):
+    ///   The connecting road blends toward the local ring elevation at its specific
     ///   connection point. This allows roads to naturally meet the roundabout at their
     ///   own terrain-following elevation, avoiding artificial bumps or dips.
+    /// 
+    /// NOTE: The ForceUniformRoundaboutElevation setting is read from EACH CONNECTING ROAD's
+    /// parameters, not from the roundabout ring's parameters. This allows different road
+    /// materials to have different blending behaviors at the same roundabout.
     /// 
     /// IMPORTANT: The blend zone is limited to at most half the road length to avoid
     /// affecting the other end of the road (which may have its own junction).
@@ -415,12 +434,6 @@ public class RoundaboutElevationHarmonizer
         var blendedCount = 0;
         var perfLog = TerrainCreationLogger.Current;
 
-        // Get the roundabout spline's parameters to check ForceUniformRoundaboutElevation
-        var roundaboutSpline = network.GetSplineById(roundaboutInfo.RoundaboutSplineId);
-        var roundaboutJunctionParams = roundaboutSpline?.Parameters.JunctionHarmonizationParameters
-                                      ?? new JunctionHarmonizationParameters();
-        var forceUniform = roundaboutJunctionParams.ForceUniformRoundaboutElevation;
-
         // Get the ring cross-sections for per-connection-point elevation lookup
         crossSectionsBySpline.TryGetValue(roundaboutInfo.RoundaboutSplineId, out var ringCrossSections);
 
@@ -434,6 +447,12 @@ public class RoundaboutElevationHarmonizer
             var connectingSpline = network.GetSplineById(connectingSplineId);
             if (connectingSpline == null)
                 continue;
+
+            // Get ForceUniformRoundaboutElevation from the CONNECTING ROAD's parameters
+            // This allows each road material to control its own blending behavior
+            var connectingJunctionParams = connectingSpline.Parameters.JunctionHarmonizationParameters
+                                          ?? new JunctionHarmonizationParameters();
+            var forceUniform = connectingJunctionParams.ForceUniformRoundaboutElevation;
 
             // Determine the target elevation for this specific connection:
             // - If ForceUniformRoundaboutElevation is true: use the global harmonized elevation
@@ -502,8 +521,8 @@ public class RoundaboutElevationHarmonizer
 
             perfLog?.Detail($"    Blending spline {connectingSplineId}: " +
                 $"isStart={isSplineStart}, blendDistance={blendDistance:F1}m -> effective={effectiveBlendDistance:F1}m, " +
-                $"roadLength={roadLength:F1}m, targetElevation={targetElevation:F2}m (forceUniform={forceUniform}), " +
-                $"crossSections={connectingCrossSections.Count}");
+                $"roadLength={roadLength:F1}m, targetElevation={targetElevation:F2}m, " +
+                $"forceUniform={forceUniform} (from connecting road), crossSections={connectingCrossSections.Count}");
 
             // Collect blend info for logging (to show the ones CLOSEST to the roundabout)
             var blendLog = new List<(int idx, float dist, float t, float blend, float orig, float newElev, float delta)>();
