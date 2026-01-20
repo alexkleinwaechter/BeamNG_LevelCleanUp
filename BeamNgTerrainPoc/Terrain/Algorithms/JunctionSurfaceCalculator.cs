@@ -184,6 +184,127 @@ public static class JunctionSurfaceCalculator
     }
     
     /// <summary>
+    /// Calculates edge constraints for a cross-section by projecting its edges onto the primary road surface.
+    /// This is used for surface-following constraint propagation where each cross-section gets its own
+    /// calculated constraint based on where its edges actually project onto the primary road.
+    /// 
+    /// This is different from InterpolateConstraints which just blends between fixed values.
+    /// CalculateSurfaceFollowingConstraints calculates fresh values for each cross-section position.
+    /// </summary>
+    /// <param name="terminatingCS">The cross-section on the terminating road to calculate constraints for</param>
+    /// <param name="primaryCS">The cross-section of the primary (continuous) road near the junction</param>
+    /// <param name="primarySlope">Longitudinal slope of the primary road (rise/run)</param>
+    /// <param name="weight">Blend weight (0 = use unconstrained, 1 = use fully constrained to primary surface)</param>
+    /// <returns>Interpolated (leftEdge, rightEdge) values blended with the cross-section's natural edge elevations</returns>
+    public static (float? leftEdge, float? rightEdge) CalculateSurfaceFollowingConstraints(
+        UnifiedCrossSection terminatingCS,
+        UnifiedCrossSection primaryCS,
+        float primarySlope,
+        float weight)
+    {
+        if (weight < 0.001f)
+            return (null, null);
+        
+        // Calculate where this cross-section's edges project onto the primary road surface
+        var (primaryLeftElev, primaryRightElev) = CalculateConstrainedEdgeElevations(
+            terminatingCS, primaryCS, primarySlope);
+        
+        // Get the natural (unconstrained) edge elevations for this cross-section
+        var naturalLeftElev = GetUnconstrainedEdgeElevation(terminatingCS, isRightEdge: false);
+        var naturalRightElev = GetUnconstrainedEdgeElevation(terminatingCS, isRightEdge: true);
+        
+        float? interpolatedLeft = null;
+        float? interpolatedRight = null;
+        
+        if (!float.IsNaN(naturalLeftElev))
+        {
+            interpolatedLeft = primaryLeftElev * weight + naturalLeftElev * (1f - weight);
+        }
+        else
+        {
+            interpolatedLeft = primaryLeftElev;
+        }
+        
+        if (!float.IsNaN(naturalRightElev))
+        {
+            interpolatedRight = primaryRightElev * weight + naturalRightElev * (1f - weight);
+        }
+        else
+        {
+            interpolatedRight = primaryRightElev;
+        }
+        
+        return (interpolatedLeft, interpolatedRight);
+    }
+    
+    /// <summary>
+    /// Calculates FULL surface-following constraints including the centerline elevation.
+    /// This version returns both edge constraints AND the primary surface elevation at the centerline,
+    /// which is critical for ensuring the entire overlap zone is flat against the primary road.
+    /// 
+    /// The key insight is that for smooth T-junction transitions, we need:
+    /// 1. Edge elevations that match the primary surface at the edge positions
+    /// 2. Centerline elevation that ALSO matches the primary surface (not just edge average)
+    /// 
+    /// This prevents the "jagged junction" artifact where edges are correct but the
+    /// center of the terminating road doesn't properly follow the primary surface.
+    /// </summary>
+    /// <param name="terminatingCS">The cross-section on the terminating road</param>
+    /// <param name="primaryCS">The cross-section of the primary road near the junction</param>
+    /// <param name="primarySlope">Longitudinal slope of the primary road (rise/run)</param>
+    /// <param name="weight">Blend weight (0 = use natural, 1 = fully follow primary surface)</param>
+    /// <returns>Tuple of (leftEdge, rightEdge, centerlineElevation) all following the primary surface</returns>
+    public static (float? leftEdge, float? rightEdge, float? centerline) CalculateFullSurfaceFollowingConstraints(
+        UnifiedCrossSection terminatingCS,
+        UnifiedCrossSection primaryCS,
+        float primarySlope,
+        float weight)
+    {
+        if (weight < 0.001f)
+            return (null, null, null);
+        
+        // Calculate where this cross-section's edges AND CENTER project onto the primary road surface
+        var halfWidth = terminatingCS.EffectiveRoadWidth / 2.0f;
+        var leftEdgePos = terminatingCS.CenterPoint - terminatingCS.NormalDirection * halfWidth;
+        var rightEdgePos = terminatingCS.CenterPoint + terminatingCS.NormalDirection * halfWidth;
+        var centerPos = terminatingCS.CenterPoint;
+        
+        // Get primary surface elevation at all three positions
+        var primaryLeftElev = GetPrimarySurfaceElevation(leftEdgePos, primaryCS, primarySlope);
+        var primaryRightElev = GetPrimarySurfaceElevation(rightEdgePos, primaryCS, primarySlope);
+        var primaryCenterElev = GetPrimarySurfaceElevation(centerPos, primaryCS, primarySlope);
+        
+        // Get natural (unconstrained) elevations for this cross-section
+        var naturalLeftElev = GetUnconstrainedEdgeElevation(terminatingCS, isRightEdge: false);
+        var naturalRightElev = GetUnconstrainedEdgeElevation(terminatingCS, isRightEdge: true);
+        var naturalCenterElev = terminatingCS.TargetElevation;
+        
+        float? interpolatedLeft = null;
+        float? interpolatedRight = null;
+        float? interpolatedCenter = null;
+        
+        // Interpolate left edge
+        if (!float.IsNaN(naturalLeftElev))
+            interpolatedLeft = primaryLeftElev * weight + naturalLeftElev * (1f - weight);
+        else
+            interpolatedLeft = primaryLeftElev;
+        
+        // Interpolate right edge
+        if (!float.IsNaN(naturalRightElev))
+            interpolatedRight = primaryRightElev * weight + naturalRightElev * (1f - weight);
+        else
+            interpolatedRight = primaryRightElev;
+        
+        // Interpolate centerline - this is the key addition for smooth junctions
+        if (!float.IsNaN(naturalCenterElev))
+            interpolatedCenter = primaryCenterElev * weight + naturalCenterElev * (1f - weight);
+        else
+            interpolatedCenter = primaryCenterElev;
+        
+        return (interpolatedLeft, interpolatedRight, interpolatedCenter);
+    }
+    
+    /// <summary>
     /// Gets the edge elevation for a cross-section ignoring any constraints.
     /// Used when interpolating between constrained and unconstrained cross-sections.
     /// </summary>

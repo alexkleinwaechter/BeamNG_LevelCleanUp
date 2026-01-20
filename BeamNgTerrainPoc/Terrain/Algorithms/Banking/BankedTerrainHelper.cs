@@ -23,21 +23,59 @@ public static class BankedTerrainHelper
     private const float BankingThreshold = 0.0001f;
 
     /// <summary>
-    /// Gets the elevation at a world position considering road banking.
+    /// Gets the elevation at a world position considering road banking and junction constraints.
     /// </summary>
     /// <param name="cs">The nearest cross-section</param>
     /// <param name="worldPos">World position to query</param>
-    /// <returns>Elevation considering banking, or TargetElevation if no banking</returns>
+    /// <returns>Elevation considering banking and junction constraints, or TargetElevation if no banking</returns>
     public static float GetBankedElevation(UnifiedCrossSection cs, Vector2 worldPos)
     {
         if (float.IsNaN(cs.TargetElevation))
             return float.NaN;
 
+        // Calculate lateral offset to determine if we're on left or right side
+        var lateralOffset = CalculateLateralOffset(worldPos, cs);
+        var halfWidth = cs.EffectiveRoadWidth / 2.0f;
+
+        // Check for junction constraints - they override banking calculations
+        // This is critical for smooth T-junction transitions where the terminating road
+        // must match the primary road's sloped surface
+        if (cs.HasJunctionConstraint)
+        {
+            // Interpolate between left and right constrained elevations based on lateral position
+            var leftElev = cs.ConstrainedLeftEdgeElevation ?? GetUnconstrainedEdgeElevation(cs, halfWidth, isRight: false);
+            var rightElev = cs.ConstrainedRightEdgeElevation ?? GetUnconstrainedEdgeElevation(cs, halfWidth, isRight: true);
+            
+            // Normalize lateral offset to [0, 1] where 0 = left edge, 1 = right edge
+            var t = (lateralOffset + halfWidth) / (2 * halfWidth);
+            t = Math.Clamp(t, 0f, 1f);
+            
+            return Lerp(leftElev, rightElev, t);
+        }
+
+        // No junction constraints - use standard banking calculation
         if (!HasBanking(cs))
             return cs.TargetElevation;
 
-        var lateralOffset = CalculateLateralOffset(worldPos, cs);
         return BankedElevationCalculator.GetElevationAtOffset(cs, lateralOffset);
+    }
+    
+    /// <summary>
+    /// Gets the unconstrained edge elevation for banking calculations.
+    /// </summary>
+    private static float GetUnconstrainedEdgeElevation(UnifiedCrossSection cs, float halfWidth, bool isRight)
+    {
+        // Check pre-calculated edge elevations first
+        if (isRight && !float.IsNaN(cs.RightEdgeElevation))
+            return cs.RightEdgeElevation;
+        if (!isRight && !float.IsNaN(cs.LeftEdgeElevation))
+            return cs.LeftEdgeElevation;
+        
+        // Calculate from banking
+        var elevationDelta = halfWidth * MathF.Sin(cs.BankAngleRadians);
+        return isRight
+            ? cs.TargetElevation + elevationDelta
+            : cs.TargetElevation - elevationDelta;
     }
 
     /// <summary>
@@ -133,8 +171,8 @@ public static class BankedTerrainHelper
     }
 
     /// <summary>
-    /// Gets the elevation at a position within a road segment, considering banking.
-    /// Interpolates between the two cross-sections and applies banking offset.
+    /// Gets the elevation at a position within a road segment, considering banking and junction constraints.
+    /// Interpolates between the two cross-sections and applies banking offset or junction constraints.
     /// </summary>
     /// <param name="cs1">First cross-section</param>
     /// <param name="cs2">Second cross-section</param>
@@ -163,12 +201,36 @@ public static class BankedTerrainHelper
         var interpolatedCenter = Vector2.Lerp(cs1.CenterPoint, cs2.CenterPoint, t);
         var interpolatedNormal = Vector2.Normalize(
             Vector2.Lerp(cs1.NormalDirection, cs2.NormalDirection, t));
-        var interpolatedElevation = Lerp(cs1.TargetElevation, cs2.TargetElevation, t);
-        var interpolatedBankAngle = Lerp(cs1.BankAngleRadians, cs2.BankAngleRadians, t);
 
         // Calculate lateral offset from interpolated centerline
         var toPointFromInterpolated = worldPos - interpolatedCenter;
         var lateralOffset = Vector2.Dot(toPointFromInterpolated, interpolatedNormal);
+
+        // Check for junction constraints - if either cross-section has them, use edge-based interpolation
+        // This is critical for smooth T-junction transitions where edge constraints override banking
+        if (cs1.HasJunctionConstraint || cs2.HasJunctionConstraint)
+        {
+            // Get edge elevations (which respect junction constraints via GetEdgeElevation)
+            var leftElev1 = GetEdgeElevation(cs1, isRightEdge: false);
+            var rightElev1 = GetEdgeElevation(cs1, isRightEdge: true);
+            var leftElev2 = GetEdgeElevation(cs2, isRightEdge: false);
+            var rightElev2 = GetEdgeElevation(cs2, isRightEdge: true);
+            
+            // Interpolate edge elevations along the segment
+            var leftElev = Lerp(leftElev1, leftElev2, t);
+            var rightElev = Lerp(rightElev1, rightElev2, t);
+            
+            // Interpolate across the road width based on lateral position
+            var halfWidth = Lerp(cs1.EffectiveRoadWidth, cs2.EffectiveRoadWidth, t) / 2.0f;
+            var lateralT = (lateralOffset + halfWidth) / (2 * halfWidth);
+            lateralT = Math.Clamp(lateralT, 0f, 1f);
+            
+            return Lerp(leftElev, rightElev, lateralT);
+        }
+
+        // Standard banking calculation (no junction constraints)
+        var interpolatedElevation = Lerp(cs1.TargetElevation, cs2.TargetElevation, t);
+        var interpolatedBankAngle = Lerp(cs1.BankAngleRadians, cs2.BankAngleRadians, t);
 
         // Apply banking offset to interpolated elevation
         var elevationDelta = lateralOffset * MathF.Sin(interpolatedBankAngle);
@@ -200,6 +262,7 @@ public static class BankedTerrainHelper
     /// Gets the banking-aware elevation for a pixel within the road core.
     /// This version is optimized for use in the protection mask builder where
     /// we have pixel coordinates and need to determine banked elevation.
+    /// Handles junction constraints which take priority over banking calculations.
     /// </summary>
     /// <param name="cs1">First cross-section of the segment</param>
     /// <param name="cs2">Second cross-section of the segment</param>
@@ -210,10 +273,17 @@ public static class BankedTerrainHelper
         UnifiedCrossSection cs2,
         Vector2 pixelPos)
     {
+        // Check if either cross-section has junction constraints - these require full interpolation
+        // because the edge elevations may be constrained differently than banking would calculate
+        if (cs1.HasJunctionConstraint || cs2.HasJunctionConstraint)
+        {
+            return GetBankedElevationInSegment(cs1, cs2, pixelPos);
+        }
+        
         // Check if either cross-section has banking
         if (!HasBanking(cs1) && !HasBanking(cs2))
         {
-            // No banking - use simple average
+            // No banking and no junction constraints - use simple average
             return GetSegmentAverageElevation(cs1, cs2);
         }
 
@@ -222,11 +292,13 @@ public static class BankedTerrainHelper
     }
 
     /// <summary>
-    /// Checks if a road segment has any banking (either cross-section has banking).
+    /// Checks if a road segment has any banking or junction constraints that require
+    /// per-pixel elevation calculation (either cross-section has banking or constraints).
     /// </summary>
     public static bool SegmentHasBanking(UnifiedCrossSection cs1, UnifiedCrossSection cs2)
     {
-        return HasBanking(cs1) || HasBanking(cs2);
+        return HasBanking(cs1) || HasBanking(cs2) || 
+               cs1.HasJunctionConstraint || cs2.HasJunctionConstraint;
     }
 
     /// <summary>

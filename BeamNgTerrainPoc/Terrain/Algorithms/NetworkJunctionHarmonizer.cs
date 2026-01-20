@@ -965,7 +965,17 @@ public class NetworkJunctionHarmonizer
 
     /// <summary>
     /// Propagates edge constraints from T-junction terminating cross-sections along the terminating road.
-    /// Uses distance-based falloff to smoothly transition from constrained to unconstrained edges.
+    /// Uses SURFACE-FOLLOWING approach: instead of interpolating from a fixed junction constraint,
+    /// each cross-section's edges are projected onto the primary road's surface to calculate fresh
+    /// constraints. This handles sloped primary roads correctly - the terminating road "wraps around"
+    /// to match the continuously changing primary surface elevation.
+    /// 
+    /// CRITICAL: Also updates the centerline TargetElevation to follow the primary surface,
+    /// which prevents the "jagged junction" artifact where edges are correct but the center doesn't match.
+    /// 
+    /// IMPROVEMENT: For each terminating cross-section, finds the NEAREST primary road cross-section
+    /// rather than using the fixed junction cross-section. This handles curved/varying-slope primary
+    /// roads more accurately.
     /// </summary>
     /// <returns>Number of cross-sections that received propagated edge constraints.</returns>
     private int PropagateEdgeConstraintsForTJunctions(
@@ -978,6 +988,25 @@ public class NetworkJunctionHarmonizer
 
         foreach (var junction in tJunctions)
         {
+            // Get the primary (continuous) road for surface calculations
+            var continuousRoads = junction.GetContinuousRoads().ToList();
+            if (continuousRoads.Count == 0)
+                continue;
+            
+            var primaryContributor = continuousRoads.OrderByDescending(c => c.Spline.Priority).First();
+            var primarySplineId = primaryContributor.Spline.SplineId;
+            
+            // Get all cross-sections for the primary road (needed for finding nearest)
+            if (!crossSectionsBySpline.TryGetValue(primarySplineId, out var primarySections))
+                continue;
+            
+            // Calculate the primary road's slope for surface calculations
+            var primarySlope = _crossSectionsBySpline != null 
+                ? CalculatePrimaryRoadSlope(primaryContributor) 
+                : 0f;
+            if (float.IsNaN(primarySlope))
+                primarySlope = 0f;
+
             foreach (var terminating in junction.GetTerminatingRoads())
             {
                 var terminatingCs = terminating.CrossSection;
@@ -1001,7 +1030,7 @@ public class NetworkJunctionHarmonizer
                 // Calculate distances from the terminating endpoint
                 var distances = CalculateDistancesFromEndpoint(splineSections, terminating.IsSplineStart);
 
-                // Propagate constraints along the terminating road
+                // Propagate constraints along the terminating road using SURFACE-FOLLOWING approach
                 for (var i = 0; i < splineSections.Count; i++)
                 {
                     var dist = distances[i];
@@ -1025,17 +1054,34 @@ public class NetworkJunctionHarmonizer
                     
                     if (weight > 0.001f)
                     {
-                        // Interpolate edge constraints
-                        var (interpolatedLeft, interpolatedRight) = JunctionSurfaceCalculator.InterpolateConstraints(
-                            terminatingCs,
-                            cs,
-                            weight);
+                        // IMPROVEMENT: Find the nearest primary cross-section for this terminating cross-section
+                        // This provides more accurate surface projection for curved/varying-slope primary roads
+                        var nearestPrimaryCs = FindNearestPrimaryCrossSection(cs.CenterPoint, primarySections);
+                        
+                        // Calculate local slope at the nearest primary cross-section
+                        var localPrimarySlope = CalculateLocalSlopeAtCrossSection(primarySections, nearestPrimaryCs);
+                        if (float.IsNaN(localPrimarySlope))
+                            localPrimarySlope = primarySlope; // Fallback to junction slope
+                        
+                        // SURFACE-FOLLOWING: Calculate fresh constraints by projecting this cross-section's
+                        // edges AND CENTERLINE onto the primary road's surface, then blend with natural elevations
+                        var (interpolatedLeft, interpolatedRight, interpolatedCenter) = 
+                            JunctionSurfaceCalculator.CalculateFullSurfaceFollowingConstraints(
+                                cs,
+                                nearestPrimaryCs,
+                                localPrimarySlope,
+                                weight);
 
-                        // Apply interpolated constraints
+                        // Apply interpolated edge constraints
                         if (interpolatedLeft.HasValue)
                             cs.ConstrainedLeftEdgeElevation = interpolatedLeft.Value;
                         if (interpolatedRight.HasValue)
                             cs.ConstrainedRightEdgeElevation = interpolatedRight.Value;
+                        
+                        // CRITICAL: Also update centerline TargetElevation to follow the primary surface
+                        // This ensures the entire cross-section lies flat on the primary road, not just the edges
+                        if (interpolatedCenter.HasValue)
+                            cs.TargetElevation = interpolatedCenter.Value;
 
                         propagatedCount++;
                     }
@@ -1044,6 +1090,43 @@ public class NetworkJunctionHarmonizer
         }
 
         return propagatedCount;
+    }
+    
+    /// <summary>
+    /// Finds the nearest cross-section on the primary road to a given world position.
+    /// </summary>
+    private static UnifiedCrossSection FindNearestPrimaryCrossSection(
+        Vector2 worldPos,
+        List<UnifiedCrossSection> primarySections)
+    {
+        UnifiedCrossSection nearest = primarySections[0];
+        var minDist = float.MaxValue;
+        
+        foreach (var cs in primarySections)
+        {
+            var dist = Vector2.Distance(worldPos, cs.CenterPoint);
+            if (dist < minDist)
+            {
+                minDist = dist;
+                nearest = cs;
+            }
+        }
+        
+        return nearest;
+    }
+    
+    /// <summary>
+    /// Calculates the local longitudinal slope at a specific cross-section.
+    /// </summary>
+    private static float CalculateLocalSlopeAtCrossSection(
+        List<UnifiedCrossSection> sections,
+        UnifiedCrossSection targetCs)
+    {
+        var targetIndex = sections.FindIndex(cs => cs.Index == targetCs.Index);
+        if (targetIndex < 0)
+            return float.NaN;
+        
+        return JunctionSurfaceCalculator.CalculateLocalSlope(sections, targetIndex, sampleRadius: 3);
     }
 
     /// <summary>

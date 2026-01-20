@@ -227,6 +227,7 @@ public class ProtectedBlendingProcessor
 
     /// <summary>
     /// Checks if a pixel is within a higher-priority road's protection buffer zone.
+    /// Returns the banking/constraint-aware elevation at that position.
     /// </summary>
     private static float? FindHigherPriorityProtectedElevation(
         Vector2 worldPos,
@@ -267,7 +268,9 @@ public class ProtectedBlendingProcessor
                 if (params_.Priority > bestPriority ||
                     (params_.Priority == bestPriority && distToSpline < bestDistance))
                 {
-                    bestElevation = nearestCs.TargetElevation;
+                    // Use banking/junction-constraint-aware elevation calculation
+                    // This properly accounts for road tilt and junction surface constraints
+                    bestElevation = BankedTerrainHelper.GetBankedElevation(nearestCs, worldPos);
                     bestPriority = params_.Priority;
                     bestDistance = distToSpline;
                 }
