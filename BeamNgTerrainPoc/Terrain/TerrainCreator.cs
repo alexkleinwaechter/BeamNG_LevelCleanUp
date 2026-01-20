@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
+using BeamNG.Procedural3D.RoadMesh;
+using BeamNgTerrainPoc.Terrain.Export;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
@@ -181,6 +183,12 @@ public class TerrainCreator
                     heightMap2DForSpawn = smoothingResult.ModifiedHeightMap;
                     perfLog.Timing($"Road smoothing completed: {sw.Elapsed.TotalSeconds:F2}s");
                     perfLog.Info("Road smoothing completed successfully!");
+                }
+
+                // 3a-2. Export road mesh to DAE if requested
+                if (parameters.ExportRoadMeshDae && unifiedResult?.Network != null)
+                {
+                    await ExportRoadMeshDaeAsync(unifiedResult.Network, outputPath, parameters, debugBaseDir, perfLog);
                 }
             }
 
@@ -722,6 +730,103 @@ public class TerrainCreator
             {
                 log.Warning($"  Failed to save painted layer for '{materialName}': {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    ///     Exports the road network as a 3D mesh in DAE (Collada) format.
+    ///     The mesh uses BeamNG world coordinates, so when placed at position (0,0,0)
+    ///     in the BeamNG world editor, the road aligns perfectly with the terrain.
+    /// </summary>
+    private async Task ExportRoadMeshDaeAsync(
+        UnifiedRoadNetwork network,
+        string terrainOutputPath,
+        TerrainCreationParameters parameters,
+        string? debugBaseDir,
+        TerrainCreationLogger log)
+    {
+        var sw = Stopwatch.StartNew();
+        log.LogSection("Road Mesh DAE Export");
+
+        try
+        {
+            // Determine output path
+            var outputPath = parameters.RoadMeshDaeOutputPath;
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                var outputDir = Path.GetDirectoryName(terrainOutputPath) ?? ".";
+                outputPath = Path.Combine(outputDir, $"{parameters.TerrainName}_roads.dae");
+            }
+
+
+            log.Info($"Exporting road mesh to: {outputPath}");
+            log.Info($"  Network contains {network.Splines.Count} splines with {network.CrossSections.Count} cross-sections");
+            log.Info($"  Terrain size: {parameters.Size}x{parameters.Size} pixels, {parameters.MetersPerPixel}m/pixel");
+            log.Info($"  World size: {parameters.Size * parameters.MetersPerPixel}m x {parameters.Size * parameters.MetersPerPixel}m");
+            log.Info($"  Terrain base height: {parameters.TerrainBaseHeight}m");
+
+            // Configure mesh options from parameters
+            var meshOptions = new RoadMeshOptions
+            {
+                MaterialName = "road_asphalt",
+                TextureRepeatMetersU = parameters.RoadMeshTextureRepeatMeters,
+                TextureRepeatMetersV = 1.0f, // V goes 0-1 across road width
+                IncludeShoulders = parameters.RoadMeshIncludeShoulders,
+                ShoulderWidthMeters = parameters.RoadMeshShoulderWidthMeters,
+                SmoothNormals = true
+            };
+
+            var exporter = new RoadNetworkDaeExporter();
+            RoadDaeExportResult result;
+
+            if (parameters.ExportRoadMeshPerMaterial)
+            {
+                // Export separate DAE files per material
+                var outputDir = Path.GetDirectoryName(outputPath) ?? ".";
+                result = await Task.Run(() => exporter.ExportByMaterial(
+                    network,
+                    outputDir,
+                    parameters.Size,
+                    parameters.MetersPerPixel,
+                    parameters.TerrainBaseHeight,
+                    parameters.TerrainName,
+                    meshOptions));
+            }
+            else
+            {
+                // Export single combined DAE file
+                result = await Task.Run(() => exporter.Export(
+                    network, 
+                    outputPath, 
+                    parameters.Size,
+                    parameters.MetersPerPixel,
+                    parameters.TerrainBaseHeight,
+                    meshOptions));
+            }
+
+            sw.Stop();
+
+            if (result.Success)
+            {
+                log.Info($"Road mesh export completed successfully:");
+                log.Info($"  Meshes: {result.MeshCount}");
+                log.Info($"  Splines processed: {result.SplinesMeshed}");
+                log.Info($"  Vertices: {result.TotalVertices:N0}");
+                log.Info($"  Triangles: {result.TotalTriangles:N0}");
+                log.Info($"  Output: {result.OutputPath}");
+                log.Info($"  Place at BeamNG position (0, 0, 0) for perfect terrain alignment");
+                log.Timing($"Road mesh export: {sw.ElapsedMilliseconds}ms");
+            }
+            else
+            {
+                log.Warning($"Road mesh export completed with warnings: {result.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Failed to export road mesh DAE: {ex.Message}");
+            log.Detail($"Stack trace: {ex.StackTrace}");
+            // Don't throw - this is optional output, terrain generation should continue
         }
     }
 

@@ -193,6 +193,47 @@ public class TerrainCreationParameters
     public int CropHeight { get; set; } = 0;
 
     // ========================================
+    // ROAD MESH DAE EXPORT
+    // ========================================
+
+    /// <summary>
+    /// When true, exports the road network as a 3D mesh in DAE (Collada) format.
+    /// The DAE file can be imported into BeamNG as a TSStatic for visual road surfaces.
+    /// Default: false
+    /// </summary>
+    public bool ExportRoadMeshDae { get; set; } = true;
+
+    /// <summary>
+    /// Output path for the road mesh DAE file.
+    /// If not specified, defaults to "{TerrainName}_roads.dae" in the output directory.
+    /// </summary>
+    public string? RoadMeshDaeOutputPath { get; set; }
+
+    /// <summary>
+    /// UV repeat distance in meters along the road (U axis) for road mesh texturing.
+    /// Default: 10m means the texture repeats every 10 meters along the road.
+    /// </summary>
+    public float RoadMeshTextureRepeatMeters { get; set; } = 10f;
+
+    /// <summary>
+    /// When true, generates road meshes as separate DAE files per material.
+    /// When false (default), all roads are combined into a single DAE file.
+    /// </summary>
+    public bool ExportRoadMeshPerMaterial { get; set; } = false;
+
+    /// <summary>
+    /// When true, includes shoulder geometry alongside the road surface.
+    /// Default: false
+    /// </summary>
+    public bool RoadMeshIncludeShoulders { get; set; } = false;
+
+    /// <summary>
+    /// Shoulder width in meters (if shoulders are enabled).
+    /// Default: 1.5m
+    /// </summary>
+    public float RoadMeshShoulderWidthMeters { get; set; } = 1.5f;
+
+    // ========================================
     // OUTPUT PROPERTIES (populated after terrain generation)
     // ========================================
 

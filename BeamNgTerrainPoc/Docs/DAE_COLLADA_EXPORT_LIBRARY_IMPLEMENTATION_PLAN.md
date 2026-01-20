@@ -1,15 +1,15 @@
-# DAE Collada Export Library - Implementation Plan
+﻿# DAE Collada Export Library - Implementation Plan
 
 ## Implementation Status
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1 | ? TODO | Project Setup and Core Abstractions |
-| Phase 2 | ? TODO | Geometry Builder Implementation |
-| Phase 3 | ? TODO | DAE Collada Exporter |
-| Phase 4 | ? TODO | Road Network Mesh Generation |
-| Phase 5 | ? TODO | Integration with BeamNgTerrainPoc |
-| Phase 6 | ? TODO | Testing and Validation |
+| Phase 1 | ✅ DONE | Project Setup and Core Abstractions |
+| Phase 2 | ✅ DONE | Geometry Builder Implementation |
+| Phase 3 | ✅ DONE | DAE Collada Exporter |
+| Phase 4 | ✅ DONE | Road Network Mesh Generation |
+| Phase 5 | ✅ DONE | Integration with BeamNgTerrainPoc |
+| Phase 6 | 🔲 TODO | Testing and Validation |
 
 ---
 
@@ -474,8 +474,8 @@ public class RoadCrossSection
 
 **Algorithm**:
 1. For each consecutive pair of cross-sections, create a quad (2 triangles)
-2. Calculate edge positions using: `edge = center � (normal * halfWidth)`
-3. Apply banking: `edgeElevation = centerElevation � tan(bankAngle) * halfWidth`
+2. Calculate edge positions using: `edge = center ± (normal * halfWidth)`
+3. Apply banking: `edgeElevation = centerElevation ± tan(bankAngle) * halfWidth`
 4. Generate UV coordinates: U = distance along road, V = 0 (left) to 1 (right)
 5. Calculate normals: cross product of edge vectors
 

@@ -16,7 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Grille.BeamNG.Lib\Grille.BeamNG.Lib.csproj" />
-  </ItemGroup>
+      <ProjectReference Include="..\Grille.BeamNG.Lib\Grille.BeamNG.Lib.csproj" />
+      <ProjectReference Include="..\BeamNG.Procedural3D\BeamNG.Procedural3D.csproj" />
+    </ItemGroup>
 
-</Project>
+  </Project>
