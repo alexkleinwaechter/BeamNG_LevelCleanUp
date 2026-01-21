@@ -101,6 +101,13 @@ public class ParameterizedRoadSpline
     public OsmBridgeTunnel? StructureData { get; set; }
 
     /// <summary>
+    ///     Elevation profile for bridges/tunnels.
+    ///     Defines how elevation changes along the structure (linear, sag, arch, S-curve).
+    ///     Null for regular road splines that follow terrain.
+    /// </summary>
+    public StructureElevationProfile? ElevationProfile { get; set; }
+
+    /// <summary>
     ///     Total length of the spline in meters.
     ///     Cached for quick access during junction detection.
     /// </summary>

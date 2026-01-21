@@ -25,10 +25,12 @@ public class BridgeTunnelSplineMatcher
     private const float MinOverlapPercent = 50.0f;
 
     private readonly OsmGeometryProcessor _geometryProcessor;
+    private readonly StructureElevationCalculator _elevationCalculator;
 
     public BridgeTunnelSplineMatcher()
     {
         _geometryProcessor = new OsmGeometryProcessor();
+        _elevationCalculator = new StructureElevationCalculator();
     }
 
     /// <summary>
@@ -38,6 +40,20 @@ public class BridgeTunnelSplineMatcher
     public BridgeTunnelSplineMatcher(OsmGeometryProcessor geometryProcessor)
     {
         _geometryProcessor = geometryProcessor;
+        _elevationCalculator = new StructureElevationCalculator();
+    }
+
+    /// <summary>
+    /// Creates a matcher with custom geometry processor and elevation calculator.
+    /// </summary>
+    /// <param name="geometryProcessor">Geometry processor with transformer set.</param>
+    /// <param name="elevationCalculator">Elevation calculator with configured parameters.</param>
+    public BridgeTunnelSplineMatcher(
+        OsmGeometryProcessor geometryProcessor,
+        StructureElevationCalculator elevationCalculator)
+    {
+        _geometryProcessor = geometryProcessor;
+        _elevationCalculator = elevationCalculator;
     }
 
     /// <summary>
@@ -55,6 +71,27 @@ public class BridgeTunnelSplineMatcher
         GeoBoundingBox bbox,
         int terrainSize,
         float metersPerPixel)
+    {
+        return MatchAndAnnotate(splines, structuresResult, bbox, terrainSize, metersPerPixel, null);
+    }
+
+    /// <summary>
+    /// Matches bridge/tunnel structures to splines, marks them, and calculates elevation profiles.
+    /// </summary>
+    /// <param name="splines">Road splines to annotate.</param>
+    /// <param name="structuresResult">Bridge/tunnel structures from OSM query.</param>
+    /// <param name="bbox">Bounding box for coordinate transformation.</param>
+    /// <param name="terrainSize">Terrain size in pixels.</param>
+    /// <param name="metersPerPixel">Scale factor (meters per pixel).</param>
+    /// <param name="heightMap">Optional heightmap for elevation profile calculation. If null, profiles are not calculated.</param>
+    /// <returns>Statistics about matched structures.</returns>
+    public BridgeTunnelMatchResult MatchAndAnnotate(
+        List<ParameterizedRoadSpline> splines,
+        OsmBridgeTunnelQueryResult structuresResult,
+        GeoBoundingBox bbox,
+        int terrainSize,
+        float metersPerPixel,
+        float[,]? heightMap)
     {
         var result = new BridgeTunnelMatchResult
         {
@@ -98,6 +135,12 @@ public class BridgeTunnelSplineMatcher
                 var spline = splines.First(s => s.SplineId == match.SplineId);
                 ApplyMatchToSpline(spline, structure);
 
+                // Calculate and assign elevation profile if heightmap is available
+                if (heightMap != null)
+                {
+                    CalculateAndAssignElevationProfile(spline, structure, heightMap, metersPerPixel);
+                }
+
                 result.MatchedList.Add(match);
 
                 if (structure.IsBridge)
@@ -116,8 +159,69 @@ public class BridgeTunnelSplineMatcher
             }
         }
 
+        // Log elevation profile statistics
+        var splinesWithProfiles = splines.Count(s => s.ElevationProfile != null);
+        if (splinesWithProfiles > 0)
+        {
+            TerrainLogger.Info($"BridgeTunnelSplineMatcher: Calculated {splinesWithProfiles} elevation profiles");
+        }
+
         TerrainLogger.Info($"BridgeTunnelSplineMatcher: {result}");
         return result;
+    }
+
+    /// <summary>
+    /// Calculates and assigns an elevation profile to a matched spline.
+    /// </summary>
+    private void CalculateAndAssignElevationProfile(
+        ParameterizedRoadSpline spline,
+        OsmBridgeTunnel structure,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        try
+        {
+            // Sample terrain elevations at entry and exit points
+            float entryElevation = _elevationCalculator.SampleEntryElevation(structure, heightMap, metersPerPixel);
+            float exitElevation = _elevationCalculator.SampleExitElevation(structure, heightMap, metersPerPixel);
+
+            StructureElevationProfile profile;
+
+            if (structure.IsBridge)
+            {
+                profile = _elevationCalculator.CalculateBridgeProfile(structure, entryElevation, exitElevation);
+            }
+            else if (structure.IsTunnel)
+            {
+                // For tunnels, also sample terrain along the path for clearance calculation
+                var terrainSamples = _elevationCalculator.SampleTerrainAlongStructure(
+                    structure, heightMap, metersPerPixel);
+                profile = _elevationCalculator.CalculateTunnelProfile(
+                    structure, entryElevation, exitElevation, terrainSamples);
+            }
+            else
+            {
+                // Unknown structure type - use linear profile
+                profile = new StructureElevationProfile
+                {
+                    EntryElevation = entryElevation,
+                    ExitElevation = exitElevation,
+                    LengthMeters = structure.LengthMeters,
+                    CurveType = StructureElevationCurveType.Linear,
+                    CalculatedLowestPointElevation = Math.Min(entryElevation, exitElevation),
+                    CalculatedHighestPointElevation = Math.Max(entryElevation, exitElevation)
+                };
+            }
+
+            spline.ElevationProfile = profile;
+
+            TerrainLogger.Detail($"    Elevation profile: {profile.CurveType}, " +
+                               $"entry={entryElevation:F1}m, exit={exitElevation:F1}m");
+        }
+        catch (Exception ex)
+        {
+            TerrainLogger.Warning($"Failed to calculate elevation profile for {structure.DisplayName}: {ex.Message}");
+        }
     }
 
     /// <summary>

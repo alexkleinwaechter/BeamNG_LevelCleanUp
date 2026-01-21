@@ -101,6 +101,38 @@ public class TerrainCreationParameters
     /// </summary>
     public bool EnableBridgeTunnelDetection { get; set; } = true;
 
+    // ========================================
+    // STRUCTURE ELEVATION PARAMETERS
+    // ========================================
+
+    /// <summary>
+    ///     Minimum vertical clearance for tunnels below terrain surface (meters).
+    ///     This is the distance from terrain surface to tunnel ceiling.
+    ///     Default: 5.0m (reasonable rock/soil cover)
+    /// </summary>
+    public float TunnelMinClearanceMeters { get; set; } = 5.0f;
+
+    /// <summary>
+    ///     Assumed tunnel interior height (floor to ceiling) in meters.
+    ///     Used to calculate required floor elevation from clearance.
+    ///     Default: 5.0m (standard road tunnel height)
+    /// </summary>
+    public float TunnelInteriorHeightMeters { get; set; } = 5.0f;
+
+    /// <summary>
+    ///     Maximum grade (slope) percentage allowed for tunnel approaches.
+    ///     Steeper grades may be uncomfortable or unsafe for vehicles.
+    ///     Default: 6.0% (typical maximum for road tunnels)
+    /// </summary>
+    public float TunnelMaxGradePercent { get; set; } = 6.0f;
+
+    /// <summary>
+    ///     Minimum clearance for bridges above the obstacle (water, road, etc.).
+    ///     This affects bridge deck elevation calculation.
+    ///     Default: 5.0m (reasonable clearance for most obstacles)
+    /// </summary>
+    public float BridgeMinClearanceMeters { get; set; } = 5.0f;
+
     /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
