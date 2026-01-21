@@ -15,9 +15,9 @@ This document outlines the implementation plan for querying, caching, and integr
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1 | 🔲 TODO | Data Models for Bridges/Tunnels |
-| Phase 2 | 🔲 TODO | Overpass Query Service Extension |
-| Phase 3 | 🔲 TODO | Cache Implementation |
+| Phase 1 | ✅ DONE | Data Models for Bridges/Tunnels |
+| Phase 2 | ✅ DONE | Overpass Query Service Extension |
+| Phase 3 | ✅ DONE | Cache Implementation (included in Phase 2) |
 | Phase 4 | 🔲 TODO | Spline Annotation (Bridge/Tunnel Markers) |
 | Phase 5 | 🔲 TODO | Pipeline Integration (Road Smoothing) |
 | Phase 6 | 🔲 TODO | Pipeline Integration (Material Painting) |

@@ -5,22 +5,24 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Services;
 
 /// <summary>
 /// Unified cache manager for all OSM-related caches.
-/// Provides a single interface for managing road data and junction caches.
-/// This enables coordinated cache operations across both data types.
+/// Provides a single interface for managing road data, junction, and bridge/tunnel caches.
+/// This enables coordinated cache operations across all data types.
 /// </summary>
 public class OsmCacheManager
 {
     private readonly OsmQueryCache _roadCache;
     private readonly OsmJunctionCache _junctionCache;
+    private readonly OsmBridgeTunnelCache _bridgeTunnelCache;
 
     /// <summary>
     /// Creates a new cache manager with default caches.
-    /// Both caches use the same default directory and expiry settings.
+    /// All caches use the same default directory and expiry settings.
     /// </summary>
     public OsmCacheManager()
     {
         _roadCache = new OsmQueryCache();
         _junctionCache = new OsmJunctionCache();
+        _bridgeTunnelCache = new OsmBridgeTunnelCache();
     }
 
     /// <summary>
@@ -32,6 +34,7 @@ public class OsmCacheManager
     {
         _roadCache = new OsmQueryCache(cacheDirectory, cacheExpiry);
         _junctionCache = new OsmJunctionCache(cacheDirectory, cacheExpiry);
+        _bridgeTunnelCache = new OsmBridgeTunnelCache(cacheDirectory, cacheExpiry);
     }
 
     /// <summary>
@@ -39,10 +42,12 @@ public class OsmCacheManager
     /// </summary>
     /// <param name="roadCache">The road data cache to use.</param>
     /// <param name="junctionCache">The junction cache to use.</param>
-    public OsmCacheManager(OsmQueryCache roadCache, OsmJunctionCache junctionCache)
+    /// <param name="bridgeTunnelCache">The bridge/tunnel cache to use (optional, will create default if null).</param>
+    public OsmCacheManager(OsmQueryCache roadCache, OsmJunctionCache junctionCache, OsmBridgeTunnelCache? bridgeTunnelCache = null)
     {
         _roadCache = roadCache ?? throw new ArgumentNullException(nameof(roadCache));
         _junctionCache = junctionCache ?? throw new ArgumentNullException(nameof(junctionCache));
+        _bridgeTunnelCache = bridgeTunnelCache ?? new OsmBridgeTunnelCache();
     }
 
     /// <summary>
@@ -56,6 +61,11 @@ public class OsmCacheManager
     public OsmJunctionCache JunctionCache => _junctionCache;
 
     /// <summary>
+    /// Gets the bridge/tunnel cache.
+    /// </summary>
+    public OsmBridgeTunnelCache BridgeTunnelCache => _bridgeTunnelCache;
+
+    /// <summary>
     /// Gets the shared cache directory path.
     /// </summary>
     public string CacheDirectory => _roadCache.CacheDirectory;
@@ -67,7 +77,7 @@ public class OsmCacheManager
 
     /// <summary>
     /// Invalidates all cached data for a specific bounding box.
-    /// This removes both road data and junction caches for the region.
+    /// This removes road data, junction, and bridge/tunnel caches for the region.
     /// </summary>
     /// <param name="bbox">The bounding box to invalidate.</param>
     public void InvalidateAll(GeoBoundingBox bbox)
@@ -75,16 +85,18 @@ public class OsmCacheManager
         TerrainLogger.Info($"Invalidating all OSM caches for bbox: {bbox}");
         _roadCache.Invalidate(bbox);
         _junctionCache.Invalidate(bbox);
+        _bridgeTunnelCache.Invalidate(bbox);
     }
 
     /// <summary>
-    /// Clears all cached OSM data (both roads and junctions).
+    /// Clears all cached OSM data (roads, junctions, and bridges/tunnels).
     /// </summary>
     public void ClearAll()
     {
         TerrainLogger.Info("Clearing all OSM caches...");
         _roadCache.ClearAll();
         _junctionCache.ClearAll();
+        _bridgeTunnelCache.ClearAll();
     }
 
     /// <summary>
@@ -96,11 +108,13 @@ public class OsmCacheManager
         TerrainLogger.Info("Cleaning up expired OSM cache files...");
         var roadDeleted = _roadCache.CleanupExpired();
         var junctionDeleted = _junctionCache.CleanupExpired();
-        var total = roadDeleted + junctionDeleted;
+        var bridgeTunnelDeleted = _bridgeTunnelCache.CleanupExpired();
+        var total = roadDeleted + junctionDeleted + bridgeTunnelDeleted;
         
         if (total > 0)
         {
-            TerrainLogger.Info($"OSM cache cleanup complete: {total} expired files deleted ({roadDeleted} road, {junctionDeleted} junction)");
+            TerrainLogger.Info($"OSM cache cleanup complete: {total} expired files deleted " +
+                              $"({roadDeleted} road, {junctionDeleted} junction, {bridgeTunnelDeleted} bridge/tunnel)");
         }
         
         return total;
@@ -114,6 +128,7 @@ public class OsmCacheManager
     {
         var roadStats = _roadCache.GetStats();
         var junctionStats = _junctionCache.GetStats();
+        var bridgeTunnelStats = _bridgeTunnelCache.GetStats();
 
         return new OsmCacheStatistics
         {
@@ -122,12 +137,15 @@ public class OsmCacheManager
             RoadCacheDiskSizeBytes = roadStats.diskSizeBytes,
             JunctionCacheMemoryCount = junctionStats.memoryCount,
             JunctionCacheDiskCount = junctionStats.diskCount,
-            JunctionCacheDiskSizeBytes = junctionStats.diskSizeBytes
+            JunctionCacheDiskSizeBytes = junctionStats.diskSizeBytes,
+            BridgeTunnelCacheMemoryCount = bridgeTunnelStats.memoryCount,
+            BridgeTunnelCacheDiskCount = bridgeTunnelStats.diskCount,
+            BridgeTunnelCacheDiskSizeBytes = bridgeTunnelStats.diskSizeBytes
         };
     }
 
     /// <summary>
-    /// Checks if cached data exists for a bounding box (either road or junction data).
+    /// Checks if cached data exists for a bounding box (road, junction, or bridge/tunnel data).
     /// </summary>
     /// <param name="bbox">The bounding box to check.</param>
     /// <returns>True if any cached data exists for the region.</returns>
@@ -135,8 +153,9 @@ public class OsmCacheManager
     {
         var roadData = await _roadCache.GetAsync(bbox);
         var junctionData = await _junctionCache.GetAsync(bbox);
+        var bridgeTunnelData = await _bridgeTunnelCache.GetAsync(bbox);
         
-        return roadData != null || junctionData != null;
+        return roadData != null || junctionData != null || bridgeTunnelData != null;
     }
 
     /// <summary>
@@ -151,6 +170,7 @@ public class OsmCacheManager
         // Simply attempt to get cached data - this loads from disk to memory if available
         await _roadCache.GetAsync(bbox);
         await _junctionCache.GetAsync(bbox);
+        await _bridgeTunnelCache.GetAsync(bbox);
     }
 }
 
@@ -190,19 +210,34 @@ public class OsmCacheStatistics
     public long JunctionCacheDiskSizeBytes { get; set; }
 
     /// <summary>
+    /// Number of bridge/tunnel entries in memory cache.
+    /// </summary>
+    public int BridgeTunnelCacheMemoryCount { get; set; }
+
+    /// <summary>
+    /// Number of bridge/tunnel files on disk.
+    /// </summary>
+    public int BridgeTunnelCacheDiskCount { get; set; }
+
+    /// <summary>
+    /// Total size of bridge/tunnel cache files on disk in bytes.
+    /// </summary>
+    public long BridgeTunnelCacheDiskSizeBytes { get; set; }
+
+    /// <summary>
     /// Total entries in memory across all caches.
     /// </summary>
-    public int TotalMemoryCount => RoadCacheMemoryCount + JunctionCacheMemoryCount;
+    public int TotalMemoryCount => RoadCacheMemoryCount + JunctionCacheMemoryCount + BridgeTunnelCacheMemoryCount;
 
     /// <summary>
     /// Total files on disk across all caches.
     /// </summary>
-    public int TotalDiskCount => RoadCacheDiskCount + JunctionCacheDiskCount;
+    public int TotalDiskCount => RoadCacheDiskCount + JunctionCacheDiskCount + BridgeTunnelCacheDiskCount;
 
     /// <summary>
     /// Total disk space used by all caches in bytes.
     /// </summary>
-    public long TotalDiskSizeBytes => RoadCacheDiskSizeBytes + JunctionCacheDiskSizeBytes;
+    public long TotalDiskSizeBytes => RoadCacheDiskSizeBytes + JunctionCacheDiskSizeBytes + BridgeTunnelCacheDiskSizeBytes;
 
     /// <summary>
     /// Human-readable string representation of total disk size.
