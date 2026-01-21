@@ -165,17 +165,22 @@ public class TerrainCreator
                 sw.Restart();
                 perfLog.Info("Applying road smoothing...");
 
+                // Pass GeoBoundingBox for OSM junction detection
+                // This improves junction detection accuracy for OSM-sourced roads
                 (smoothingResult, unifiedResult) = ApplyRoadSmoothing(
                     heights,
                     parameters.Materials,
                     parameters.MetersPerPixel,
                     parameters.Size,
                     parameters.EnableCrossMaterialHarmonization,
+                    parameters.EnableCrossroadToTJunctionConversion,
+                    parameters.EnableExtendedOsmJunctionDetection,
                     parameters.GlobalJunctionDetectionRadiusMeters,
                     parameters.GlobalJunctionBlendDistanceMeters,
                     parameters.FlipMaterialProcessingOrder,
                     debugBaseDir,
-                    perfLog);
+                    perfLog,
+                    parameters.GeoBoundingBox);
 
                 if (smoothingResult != null)
                 {
@@ -497,25 +502,32 @@ public class TerrainCreator
         float metersPerPixel,
         int size,
         bool enableCrossMaterialHarmonization,
+        bool enableCrossroadToTJunctionConversion,
+        bool enableExtendedOsmJunctionDetection,
         float globalJunctionDetectionRadius,
         float globalJunctionBlendDistance,
         bool flipMaterialProcessingOrder,
         string? debugBaseDir,
-        TerrainCreationLogger log)
+        TerrainCreationLogger log,
+        GeoBoundingBox? geoBoundingBox = null)
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
 
         // Use the unified road smoother for network-centric processing
+        // Pass the bounding box for OSM junction detection (improves junction accuracy for OSM roads)
         var unifiedResult = _unifiedRoadSmoother.SmoothAllRoads(
             heightMap2D,
             materials,
             metersPerPixel,
             size,
             enableCrossMaterialHarmonization,
+            enableCrossroadToTJunctionConversion,
+            enableExtendedOsmJunctionDetection,
             globalJunctionDetectionRadius,
             globalJunctionBlendDistance,
-            flipMaterialProcessingOrder);
+            flipMaterialProcessingOrder,
+            geoBoundingBox);
 
         if (unifiedResult == null)
             return (null, null);

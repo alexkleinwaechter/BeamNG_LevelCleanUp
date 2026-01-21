@@ -2,10 +2,13 @@ using System.Diagnostics;
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
+using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
+using BeamNgTerrainPoc.Terrain.Osm.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -38,6 +41,7 @@ public class UnifiedRoadSmoother
     private readonly UnifiedRoadNetworkBuilder _networkBuilder;
     private readonly RoundaboutElevationHarmonizer _roundaboutHarmonizer;
     private readonly UnifiedTerrainBlender _terrainBlender;
+    private readonly IOsmJunctionQueryService _osmJunctionQueryService;
 
     public UnifiedRoadSmoother()
     {
@@ -49,6 +53,7 @@ public class UnifiedRoadSmoother
         _terrainBlender = new UnifiedTerrainBlender();
         _materialPainter = new MaterialPainter();
         _elevationCalculator = new OptimizedElevationSmoother();
+        _osmJunctionQueryService = new OsmJunctionQueryService();
     }
 
     /// <summary>
@@ -65,6 +70,14 @@ public class UnifiedRoadSmoother
     /// <param name="metersPerPixel">Scale factor for converting meters to pixels.</param>
     /// <param name="size">Terrain size in pixels.</param>
     /// <param name="enableCrossMaterialHarmonization">Whether to harmonize junctions across materials.</param>
+    /// <param name="enableCrossroadToTJunctionConversion">
+    ///     Whether to convert mid-spline crossings to T-junctions by splitting the secondary road.
+    ///     Disable for overpasses/underpasses where roads should maintain independent elevations.
+    /// </param>
+    /// <param name="enableExtendedOsmJunctionDetection">
+    ///     Whether to query OSM for junction hints when geographic bounding box is available.
+    ///     When disabled, only geometric junction detection is used.
+    /// </param>
     /// <param name="globalJunctionDetectionRadius">
     ///     Global junction detection radius in meters (used when material's
     ///     UseGlobalSettings is true).
@@ -77,6 +90,10 @@ public class UnifiedRoadSmoother
     ///     When true, materials at top of list (index 0) get higher priority for road
     ///     smoothing.
     /// </param>
+    /// <param name="geoBoundingBox">
+    ///     Optional geographic bounding box (WGS84). When provided, OSM junction hints
+    ///     are automatically queried to improve junction detection accuracy.
+    /// </param>
     /// <returns>Result containing smoothed heightmap, material layers, and network data.</returns>
     public UnifiedSmoothingResult? SmoothAllRoads(
         float[,] heightMap,
@@ -84,9 +101,12 @@ public class UnifiedRoadSmoother
         float metersPerPixel,
         int size,
         bool enableCrossMaterialHarmonization = true,
+        bool enableCrossroadToTJunctionConversion = true,
+        bool enableExtendedOsmJunctionDetection = true,
         float globalJunctionDetectionRadius = 10.0f,
         float globalJunctionBlendDistance = 30.0f,
-        bool flipMaterialProcessingOrder = true)
+        bool flipMaterialProcessingOrder = true,
+        GeoBoundingBox? geoBoundingBox = null)
     {
         var perfLog = TerrainCreationLogger.Current;
         var totalSw = Stopwatch.StartNew();
@@ -196,6 +216,7 @@ public class UnifiedRoadSmoother
         // Phase 3: Detect and harmonize junctions
         // This handles both within-material junctions (single material) and cross-material junctions (multiple materials)
         // IMPORTANT: Now banking-aware - uses edge elevations for banked roads when calculating connection points
+        // When OSM bounding box is available, OSM junction hints are used to improve detection accuracy
         if (ShouldHarmonize(roadMaterials))
         {
             perfLog?.LogSection("Phase 3: Junction Harmonization");
@@ -203,7 +224,44 @@ public class UnifiedRoadSmoother
             TerrainLogger.Info(
                 $"  Cross-material harmonization: {enableCrossMaterialHarmonization && roadMaterials.Count > 1}");
             TerrainLogger.Info($"  Banking-aware: {bankingApplied}");
+            TerrainLogger.Info($"  Extended OSM junction detection: {enableExtendedOsmJunctionDetection}");
             sw.Restart();
+
+            // Query OSM junctions if bounding box is available AND extended OSM detection is enabled
+            OsmJunctionQueryResult? osmJunctions = null;
+            if (enableExtendedOsmJunctionDetection && geoBoundingBox != null)
+            {
+                try
+                {
+                    osmJunctions = QueryOsmJunctions(geoBoundingBox, size, metersPerPixel);
+                }
+                catch (Exception ex)
+                {
+                    TerrainLogger.Warning($"  OSM junction query failed (continuing with geometric detection only): {ex.Message}");
+                }
+            }
+            else if (!enableExtendedOsmJunctionDetection && geoBoundingBox != null)
+            {
+                TerrainLogger.Info("  Extended OSM junction detection disabled, using geometric detection only");
+            }
+
+            // Detect junctions (with OSM hints if available)
+            if (osmJunctions != null && osmJunctions.Junctions.Count > 0)
+            {
+                TerrainLogger.Info($"  Using OSM junction hints: {osmJunctions.Junctions.Count} junctions " +
+                                  $"({osmJunctions.ExplicitJunctionCount} explicit, {osmJunctions.GeometricJunctionCount} geometric)");
+                
+                // Get included OSM junction types from the first material that has junction harmonization enabled
+                var includedOsmTypes = roadMaterials
+                    .FirstOrDefault(m => m.RoadParameters?.JunctionHarmonizationParameters?.EnableJunctionHarmonization == true)
+                    ?.RoadParameters?.JunctionHarmonizationParameters?.IncludedOsmJunctionTypes;
+                
+                _junctionDetector.DetectJunctionsWithOsm(network, osmJunctions, globalJunctionDetectionRadius, includedOsmTypes);
+            }
+            else
+            {
+                _junctionDetector.DetectJunctions(network, globalJunctionDetectionRadius);
+            }
 
             // Use global params, but harmonizer will respect per-material UseGlobalSettings
             var harmonizationResult = _junctionHarmonizer.HarmonizeNetwork(
@@ -211,7 +269,8 @@ public class UnifiedRoadSmoother
                 heightMap,
                 metersPerPixel,
                 globalJunctionDetectionRadius,
-                globalJunctionBlendDistance);
+                globalJunctionBlendDistance,
+                enableCrossroadToTJunctionConversion);
 
             perfLog?.Timing($"HarmonizeNetwork: {sw.Elapsed.TotalSeconds:F2}s, " +
                             $"modified {harmonizationResult.ModifiedCrossSections} cross-sections");
@@ -300,6 +359,64 @@ public class UnifiedRoadSmoother
     {
         return roadMaterials.Any(m =>
             m.RoadParameters?.GetSplineParameters()?.Banking?.EnableAutoBanking == true);
+    }
+
+    /// <summary>
+    ///     Queries OSM junction data for the given bounding box and transforms coordinates to terrain space.
+    ///     This provides junction hints from OpenStreetMap to improve junction detection accuracy.
+    /// </summary>
+    /// <param name="bbox">Geographic bounding box (WGS84).</param>
+    /// <param name="terrainSize">Terrain size in pixels.</param>
+    /// <param name="metersPerPixel">Scale factor for coordinate conversion.</param>
+    /// <returns>OSM junction query result with coordinates transformed to terrain meters.</returns>
+    private OsmJunctionQueryResult? QueryOsmJunctions(
+        GeoBoundingBox bbox,
+        int terrainSize,
+        float metersPerPixel)
+    {
+        var perfLog = TerrainCreationLogger.Current;
+        perfLog?.LogSection("OSM Junction Query");
+        
+        var sw = Stopwatch.StartNew();
+        
+        // Query OSM junctions (uses caching internally)
+        var result = _osmJunctionQueryService.QueryJunctionsAsync(bbox).GetAwaiter().GetResult();
+        
+        perfLog?.Timing($"OSM junction query: {sw.ElapsedMilliseconds}ms, {result.Junctions.Count} junctions");
+        
+        if (result.Junctions.Count == 0)
+        {
+            return result;
+        }
+        
+        // Transform junction coordinates from WGS84 to terrain meters
+        // Using simple linear interpolation since we don't have the GDAL transformer here
+        // This is the same approach used in OsmGeometryProcessor.TransformToTerrainCoordinate
+        var terrainSizeMeters = terrainSize * metersPerPixel;
+        var transformedCount = 0;
+        
+        foreach (var junction in result.Junctions)
+        {
+            if (junction.Location == null)
+                continue;
+            
+            // Normalize longitude/latitude to 0-1 range within bbox
+            var normalizedX = (junction.Location.Longitude - bbox.MinLongitude) / bbox.Width;
+            var normalizedY = (junction.Location.Latitude - bbox.MinLatitude) / bbox.Height;
+            
+            // Convert to terrain-space meters (bottom-left origin, matching BeamNG coordinate system)
+            // No Y inversion needed - latitude increases northward, which corresponds to
+            // increasing Y in BeamNG's bottom-up coordinate system
+            var meterX = (float)(normalizedX * terrainSizeMeters);
+            var meterY = (float)(normalizedY * terrainSizeMeters);
+            
+            junction.PositionMeters = new Vector2(meterX, meterY);
+            transformedCount++;
+        }
+        
+        TerrainLogger.Detail($"  Transformed {transformedCount} OSM junction coordinates to terrain meters");
+        
+        return result;
     }
 
     /// <summary>

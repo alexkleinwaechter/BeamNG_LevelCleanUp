@@ -61,7 +61,9 @@
     [Parameter] public string? GeoTiffDirectory { get; set; }
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
-    [Parameter] public float GlobalJunctionDetectionRadiusMeters { get; set; } = 10.0f;
+    [Parameter] public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
+    [Parameter] public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
+    [Parameter] public float GlobalJunctionDetectionRadiusMeters { get; set; } = 15.0f;
     [Parameter] public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
     [Parameter] public int CropOffsetX { get; set; }
     [Parameter] public int CropOffsetY { get; set; }
@@ -394,6 +396,8 @@
                 ["terrainBaseHeight"] = TerrainBaseHeight,
                 ["updateTerrainBlock"] = UpdateTerrainBlock,
                 ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization,
+                ["enableCrossroadToTJunctionConversion"] = EnableCrossroadToTJunctionConversion,
+                ["enableExtendedOsmJunctionDetection"] = EnableExtendedOsmJunctionDetection,
                 ["globalJunctionDetectionRadiusMeters"] = GlobalJunctionDetectionRadiusMeters,
                 ["globalJunctionBlendDistanceMeters"] = GlobalJunctionBlendDistanceMeters
             },

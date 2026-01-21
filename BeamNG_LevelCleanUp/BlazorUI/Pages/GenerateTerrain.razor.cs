@@ -7,8 +7,6 @@ using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
-using BeamNgTerrainPoc.Terrain.Models;
-using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using MudBlazor.Utilities;
@@ -18,6 +16,50 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Pages;
 
 public partial class GenerateTerrain
 {
+    // Analysis dialog options for fullscreen display
+    private static readonly DialogOptions AnalysisDialogOptions = new()
+    {
+        FullScreen = true,
+        CloseButton = true,
+        BackdropClick = false,
+        CloseOnEscapeKey = true
+    };
+
+    private readonly TerrainAnalysisOrchestrator _analysisOrchestrator = new();
+    private readonly TerrainAnalysisState _analysisState = new();
+    private readonly TerrainGenerationOrchestrator _generationOrchestrator = new();
+
+    // ========================================
+    // SERVICES
+    // ========================================
+    private readonly GeoTiffMetadataService _geoTiffService = new();
+    private readonly TerrainMaterialService _materialService = new();
+
+    // ========================================
+    // STATE (delegates to TerrainGenerationState)
+    // ========================================
+    private readonly TerrainGenerationState _state = new();
+
+    // ========================================
+    // UI-ONLY STATE (not in TerrainGenerationState)
+    // ========================================
+    private Anchor _anchor;
+    private CropAnchorSelector? _cropAnchorSelector;
+    private string _drawerHeight = "200px";
+    private string _drawerWidth = "100%";
+    private MudDropContainer<TerrainMaterialSettings.TerrainMaterialItemExtended> _dropContainer = null!;
+
+    // Analysis state
+    private bool _isAnalyzing;
+    private bool _openDrawer;
+
+    // Pending crop settings from preset import (applied after GeoTIFF metadata is loaded)
+    private (int offsetX, int offsetY)? _pendingCropOffsets;
+    private TerrainPresetExporter? _presetExporter;
+    private TerrainPresetImporter? _presetImporter;
+    private bool _showErrorLog;
+
+    private bool _showWarningLog;
     // ========================================
     // WIZARD MODE PROPERTIES
     // ========================================
@@ -36,49 +78,6 @@ public partial class GenerateTerrain
     /// </summary>
     private bool _terrainGeneratedInWizard { get; set; }
 
-    // ========================================
-    // SERVICES
-    // ========================================
-    private readonly GeoTiffMetadataService _geoTiffService = new();
-    private readonly TerrainMaterialService _materialService = new();
-    private readonly TerrainGenerationOrchestrator _generationOrchestrator = new();
-    private readonly TerrainAnalysisOrchestrator _analysisOrchestrator = new();
-
-    // ========================================
-    // STATE (delegates to TerrainGenerationState)
-    // ========================================
-    private readonly TerrainGenerationState _state = new();
-    private readonly TerrainAnalysisState _analysisState = new();
-
-    // ========================================
-    // UI-ONLY STATE (not in TerrainGenerationState)
-    // ========================================
-    private Anchor _anchor;
-    private string _drawerHeight = "200px";
-    private string _drawerWidth = "100%";
-    private MudDropContainer<TerrainMaterialSettings.TerrainMaterialItemExtended> _dropContainer = null!;
-    private bool _openDrawer;
-    private TerrainPresetExporter? _presetExporter;
-    private TerrainPresetImporter? _presetImporter;
-    private CropAnchorSelector? _cropAnchorSelector;
-    private bool _showErrorLog;
-    private bool _showWarningLog;
-    
-    // Analysis dialog options for fullscreen display
-    private static readonly DialogOptions AnalysisDialogOptions = new()
-    {
-        FullScreen = true,
-        CloseButton = true,
-        BackdropClick = false,
-        CloseOnEscapeKey = true
-    };
-    
-    // Analysis state
-    private bool _isAnalyzing;
-    
-    // Pending crop settings from preset import (applied after GeoTIFF metadata is loaded)
-    private (int offsetX, int offsetY)? _pendingCropOffsets;
-
     // Convenience accessors for state properties (to minimize razor changes)
     private List<string> _errors => _state.Errors;
     private List<string> _messages => _state.Messages;
@@ -89,6 +88,18 @@ public partial class GenerateTerrain
     {
         get => _state.EnableCrossMaterialHarmonization;
         set => _state.EnableCrossMaterialHarmonization = value;
+    }
+
+    private bool _enableCrossroadToTJunctionConversion
+    {
+        get => _state.EnableCrossroadToTJunctionConversion;
+        set => _state.EnableCrossroadToTJunctionConversion = value;
+    }
+
+    private bool _enableExtendedOsmJunctionDetection
+    {
+        get => _state.EnableExtendedOsmJunctionDetection;
+        set => _state.EnableExtendedOsmJunctionDetection = value;
     }
 
     private float _globalJunctionDetectionRadiusMeters
@@ -404,28 +415,41 @@ public partial class GenerateTerrain
     // WIZARD FOOTER HELPER METHODS
     // ========================================
 
-    private string GetBackButtonText() => WizardMode ? "Back to Assets" : "";
+    private string GetBackButtonText()
+    {
+        return WizardMode ? "Back to Assets" : "";
+    }
 
-    private string GetNextButtonText() => "";  // Not used - this is the last step
+    private string GetNextButtonText()
+    {
+        return "";
+        // Not used - this is the last step
+    }
 
-    private bool GetCanProceed() => WizardMode && _terrainGeneratedInWizard &&
-                                     WizardState?.TerrainCompletionDialogShown == true;
+    private bool GetCanProceed()
+    {
+        return WizardMode && _terrainGeneratedInWizard &&
+               WizardState?.TerrainCompletionDialogShown == true;
+    }
 
-    private bool GetShowFinishButton() => WizardMode && _terrainGeneratedInWizard &&
-                                           WizardState?.TerrainCompletionDialogShown == true;
+    private bool GetShowFinishButton()
+    {
+        return WizardMode && _terrainGeneratedInWizard &&
+               WizardState?.TerrainCompletionDialogShown == true;
+    }
 
-    private bool GetShowSkipButton() => WizardMode && !_terrainGeneratedInWizard;
+    private bool GetShowSkipButton()
+    {
+        return WizardMode && !_terrainGeneratedInWizard;
+    }
 
     private void OnBackClicked()
     {
         if (WizardMode)
         {
             // Set step back to 4 (assets) before navigating
-            if (WizardState != null)
-            {
-                WizardState.CurrentStep = 4;
-            }
-            
+            if (WizardState != null) WizardState.CurrentStep = 4;
+
             Navigation.NavigateTo("/CopyAssets?wizardMode=true");
         }
     }
@@ -433,20 +457,15 @@ public partial class GenerateTerrain
     private void SkipStep()
     {
         if (WizardState != null)
-        {
             // Mark as skipped (not generated) and finish wizard
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 "Terrain generation skipped. You can generate terrain later from this page.");
-        }
         Navigation.NavigateTo("/CreateLevel");
     }
 
     private void FinishWizard()
     {
-        if (WizardState != null)
-        {
-            WizardState.Step6_TerrainGenerated = true;
-        }
+        if (WizardState != null) WizardState.Step6_TerrainGenerated = true;
 
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Create Level Wizard completed! Your level '{WizardState?.LevelName}' is ready.");
@@ -455,7 +474,7 @@ public partial class GenerateTerrain
     }
 
     /// <summary>
-    /// Updates wizard state after successful terrain generation
+    ///     Updates wizard state after successful terrain generation
     /// </summary>
     private void UpdateWizardStateAfterGeneration()
     {
@@ -470,7 +489,7 @@ public partial class GenerateTerrain
     }
 
     /// <summary>
-    /// Shows the wizard completion dialog with next-steps instructions
+    ///     Shows the wizard completion dialog with next-steps instructions
     /// </summary>
     private async Task ShowTerrainWizardCompletionDialog()
     {
@@ -495,10 +514,7 @@ public partial class GenerateTerrain
         var result = await dialog.Result;
 
         // When dialog is closed, mark it as shown and trigger UI update
-        if (WizardState != null)
-        {
-            WizardState.TerrainCompletionDialogShown = true;
-        }
+        if (WizardState != null) WizardState.TerrainCompletionDialogShown = true;
 
         await InvokeAsync(StateHasChanged);
     }
@@ -508,7 +524,7 @@ public partial class GenerateTerrain
         // Configure snackbar to prevent duplicate key issues when messages arrive rapidly
         Snackbar.Configuration.PreventDuplicates = true;
         Snackbar.Configuration.MaxDisplayedSnackbars = 10;
-        
+
         // Configure TerrainLogger to forward messages to PubSub
         TerrainLogger.SetLogHandler((level, message) =>
         {
@@ -557,7 +573,6 @@ public partial class GenerateTerrain
                                 Snackbar.Add(msg.Message, Severity.Error);
                                 break;
                         }
-                        StateHasChanged();
                     });
                 }
             }
@@ -825,7 +840,7 @@ public partial class GenerateTerrain
             // Just refresh UI for other changes
             await InvokeAsync(StateHasChanged);
         }
-        
+
         // IMPORTANT: Refresh the drop container to ensure child TerrainMaterialSettings 
         // components receive the updated EffectiveBoundingBox for OSM queries
         _dropContainer?.Refresh();
@@ -964,7 +979,7 @@ public partial class GenerateTerrain
         // ========== Apply enhanced preset settings ==========
 
         // Apply heightmap source type
-        if (result.HeightmapSourceType.HasValue) 
+        if (result.HeightmapSourceType.HasValue)
             _heightmapSourceType = result.HeightmapSourceType.Value;
 
         // Apply terrain size BEFORE reading GeoTIFF (needed for crop calculations)
@@ -979,7 +994,7 @@ public partial class GenerateTerrain
             result.CropWidth.Value > 0 && result.CropHeight.Value > 0)
         {
             _pendingCropOffsets = (result.CropOffsetX.Value, result.CropOffsetY.Value);
-            
+
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Preset contains crop settings: offset ({result.CropOffsetX}, {result.CropOffsetY}), " +
                 $"size {result.CropWidth}x{result.CropHeight} - will apply after GeoTIFF loads");
@@ -991,14 +1006,14 @@ public partial class GenerateTerrain
 
         // Apply GeoTIFF paths and trigger metadata read
         // The GeoTIFF must be re-loaded to populate dimensions and bounding box
-        bool geoTiffLoaded = false;
-        
-        if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile && 
+        var geoTiffLoaded = false;
+
+        if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile &&
             !string.IsNullOrEmpty(result.GeoTiffPath))
         {
             _geoTiffPath = result.GeoTiffPath;
             _geoTiffDirectory = null; // Clear the other source
-            
+
             if (File.Exists(result.GeoTiffPath))
             {
                 // Read GeoTIFF metadata to restore bounding box and geo info
@@ -1011,12 +1026,12 @@ public partial class GenerateTerrain
                     $"GeoTIFF file not found: {result.GeoTiffPath}. Please browse to select the file.");
             }
         }
-        else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory && 
+        else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
                  !string.IsNullOrEmpty(result.GeoTiffDirectory))
         {
             _geoTiffDirectory = result.GeoTiffDirectory;
             _geoTiffPath = null; // Clear the other source
-            
+
             if (Directory.Exists(result.GeoTiffDirectory))
             {
                 await ReadGeoTiffMetadata();
@@ -1035,6 +1050,12 @@ public partial class GenerateTerrain
 
         if (result.EnableCrossMaterialHarmonization.HasValue)
             _enableCrossMaterialHarmonization = result.EnableCrossMaterialHarmonization.Value;
+
+        if (result.EnableCrossroadToTJunctionConversion.HasValue)
+            _enableCrossroadToTJunctionConversion = result.EnableCrossroadToTJunctionConversion.Value;
+
+        if (result.EnableExtendedOsmJunctionDetection.HasValue)
+            _enableExtendedOsmJunctionDetection = result.EnableExtendedOsmJunctionDetection.Value;
 
         if (result.GlobalJunctionDetectionRadiusMeters.HasValue)
             _globalJunctionDetectionRadiusMeters = result.GlobalJunctionDetectionRadiusMeters.Value;
@@ -1059,10 +1080,10 @@ public partial class GenerateTerrain
 
         // Refresh the drop container to reflect the new order in the UI
         _dropContainer?.Refresh();
-        
+
         // Trigger UI refresh
         await InvokeAsync(StateHasChanged);
-        
+
         // If GeoTIFF was loaded and we have pending crop offsets, apply them now
         // We need to wait for the UI to render the CropAnchorSelector first
         if (geoTiffLoaded && _pendingCropOffsets.HasValue)
@@ -1072,25 +1093,25 @@ public partial class GenerateTerrain
             await ApplyPendingCropOffsets();
         }
     }
-    
+
     /// <summary>
-    /// Applies pending crop offsets that were stored during preset import.
-    /// This should be called after the CropAnchorSelector component is rendered.
+    ///     Applies pending crop offsets that were stored during preset import.
+    ///     This should be called after the CropAnchorSelector component is rendered.
     /// </summary>
     private async Task ApplyPendingCropOffsets()
     {
         if (!_pendingCropOffsets.HasValue)
             return;
-            
+
         var (offsetX, offsetY) = _pendingCropOffsets.Value;
         _pendingCropOffsets = null;
-        
+
         if (_cropAnchorSelector != null)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Applying restored crop offsets: ({offsetX}, {offsetY})");
-            
-            await _cropAnchorSelector.SetCropOffsetsAsync(offsetX, offsetY, notifyChange: true);
+
+            await _cropAnchorSelector.SetCropOffsetsAsync(offsetX, offsetY);
         }
         else
         {
@@ -1234,7 +1255,7 @@ public partial class GenerateTerrain
 
         _isGenerating = true;
         await InvokeAsync(StateHasChanged);
-        
+
         // Yield to allow UI to render the loading state before starting heavy work
         await Task.Yield();
 
@@ -1253,11 +1274,9 @@ public partial class GenerateTerrain
                     $"Terrain file saved to: {GetOutputPath()}");
 
                 // Run post-generation tasks
-                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters).ConfigureAwait(false);
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add("Post-processing complete!", Severity.Success);
-                });
+                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters)
+                    .ConfigureAwait(false);
+                await InvokeAsync(() => { Snackbar.Add("Post-processing complete!", Severity.Success); });
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
@@ -1282,10 +1301,7 @@ public partial class GenerateTerrain
         catch (Exception ex)
         {
             ShowException(ex);
-            await InvokeAsync(() =>
-            {
-                Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error);
-            });
+            await InvokeAsync(() => { Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error); });
         }
         finally
         {
@@ -1319,31 +1335,31 @@ public partial class GenerateTerrain
     }
 
     private void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
-        {
-            _showErrorLog = msgType == PubSubMessageType.Error;
-            _showWarningLog = msgType == PubSubMessageType.Warning;
-            _openDrawer = true;
-            _anchor = anchor;
+    {
+        _showErrorLog = msgType == PubSubMessageType.Error;
+        _showWarningLog = msgType == PubSubMessageType.Warning;
+        _openDrawer = true;
+        _anchor = anchor;
 
-            switch (anchor)
-            {
-                case Anchor.Bottom:
-                    _drawerWidth = "100%";
-                    _drawerHeight = "200px";
-                    break;
-                default:
-                    _drawerWidth = "400px";
-                    _drawerHeight = "100%";
-                    break;
-            }
+        switch (anchor)
+        {
+            case Anchor.Bottom:
+                _drawerWidth = "100%";
+                _drawerHeight = "200px";
+                break;
+            default:
+                _drawerWidth = "400px";
+                _drawerHeight = "100%";
+                break;
         }
+    }
 
     // ========================================
     // HELP DIALOGS
     // ========================================
 
     /// <summary>
-    /// Opens the Material Order Help dialog explaining texture painting and elevation priority.
+    ///     Opens the Material Order Help dialog explaining texture painting and elevation priority.
     /// </summary>
     private async Task OpenMaterialOrderHelpDialog()
     {
@@ -1360,7 +1376,7 @@ public partial class GenerateTerrain
     }
 
     /// <summary>
-    /// Opens the Heightmap Source Help dialog explaining GeoTIFF sources and where to get elevation data.
+    ///     Opens the Heightmap Source Help dialog explaining GeoTIFF sources and where to get elevation data.
     /// </summary>
     private async Task OpenHeightmapSourceHelpDialog()
     {
@@ -1381,8 +1397,8 @@ public partial class GenerateTerrain
     // ========================================
 
     /// <summary>
-    /// Checks if terrain analysis can proceed.
-    /// Analysis requires at least one road material with road smoothing enabled.
+    ///     Checks if terrain analysis can proceed.
+    ///     Analysis requires at least one road material with road smoothing enabled.
     /// </summary>
     private bool CanAnalyze()
     {
@@ -1394,7 +1410,7 @@ public partial class GenerateTerrain
     }
 
     /// <summary>
-    /// Executes terrain analysis to preview splines and junctions before generation.
+    ///     Executes terrain analysis to preview splines and junctions before generation.
     /// </summary>
     private async Task ExecuteAnalysis()
     {
@@ -1402,7 +1418,7 @@ public partial class GenerateTerrain
 
         _isAnalyzing = true;
         await InvokeAsync(StateHasChanged);
-        
+
         // Yield to allow UI to render the loading state before starting heavy work
         await Task.Yield();
 
@@ -1412,10 +1428,7 @@ public partial class GenerateTerrain
             _analysisState.Reset();
 
             // Reorder materials if needed (same logic as generation)
-            if (ReorderMaterialsWithoutLayerMapsToEnd())
-            {
-                _dropContainer?.Refresh();
-            }
+            if (ReorderMaterialsWithoutLayerMapsToEnd()) _dropContainer?.Refresh();
 
             // Execute analysis via orchestrator (runs on background thread)
             var result = await _analysisOrchestrator.AnalyzeAsync(_state, _analysisState).ConfigureAwait(false);
@@ -1433,7 +1446,8 @@ public partial class GenerateTerrain
                 if (_analysisState.DebugImageData != null)
                 {
                     var debugImagePath = Path.Combine(_state.GetDebugPath(), "analysis_preview.png");
-                    await _analysisOrchestrator.SaveDebugImageAsync(_analysisState, debugImagePath).ConfigureAwait(false);
+                    await _analysisOrchestrator.SaveDebugImageAsync(_analysisState, debugImagePath)
+                        .ConfigureAwait(false);
                 }
 
                 // Show the fullscreen analysis dialog (must be on UI thread)
@@ -1441,19 +1455,13 @@ public partial class GenerateTerrain
             }
             else
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add(result.ErrorMessage ?? "Analysis failed", Severity.Error);
-                });
+                await InvokeAsync(() => { Snackbar.Add(result.ErrorMessage ?? "Analysis failed", Severity.Error); });
             }
         }
         catch (Exception ex)
         {
             ShowException(ex);
-            await InvokeAsync(() =>
-            {
-                Snackbar.Add($"Error during analysis: {ex.Message}", Severity.Error);
-            });
+            await InvokeAsync(() => { Snackbar.Add($"Error during analysis: {ex.Message}", Severity.Error); });
         }
         finally
         {
@@ -1463,7 +1471,7 @@ public partial class GenerateTerrain
     }
 
     /// <summary>
-    /// Shows the fullscreen analysis dialog using IDialogService.
+    ///     Shows the fullscreen analysis dialog using IDialogService.
     /// </summary>
     private async Task ShowAnalysisDialog()
     {
@@ -1474,26 +1482,24 @@ public partial class GenerateTerrain
         };
 
         var dialog = await DialogService.ShowAsync<TerrainAnalysisDialog>(
-            "Terrain Analysis Results", 
-            parameters, 
+            "Terrain Analysis Results",
+            parameters,
             AnalysisDialogOptions);
-        
+
         var dialogResult = await dialog.Result;
-        
+
         if (dialogResult == null || dialogResult.Canceled)
-        {
             // User cancelled - check if they wanted to clear analysis
             // The dialog returns Cancel for both Cancel and Clear buttons
             // We distinguish by checking if the dialog was explicitly closed vs cancelled
             return;
-        }
-        
+
         // User clicked "Apply & Generate"
         await ApplyAnalysisAndGenerate();
     }
 
     /// <summary>
-    /// Applies the analysis results (including exclusions) and starts terrain generation.
+    ///     Applies the analysis results (including exclusions) and starts terrain generation.
     /// </summary>
     private async Task ApplyAnalysisAndGenerate()
     {
@@ -1501,17 +1507,15 @@ public partial class GenerateTerrain
         _analysisState.ApplyExclusions();
 
         if (_analysisState.ExcludedCount > 0)
-        {
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Applied {_analysisState.ExcludedCount} junction exclusion(s) for terrain generation");
-        }
 
         // Execute terrain generation with the pre-analyzed network
         await ExecuteTerrainGenerationWithAnalysis();
     }
 
     /// <summary>
-    /// Executes terrain generation using the pre-analyzed road network.
+    ///     Executes terrain generation using the pre-analyzed road network.
     /// </summary>
     private async Task ExecuteTerrainGenerationWithAnalysis()
     {
@@ -1519,14 +1523,15 @@ public partial class GenerateTerrain
 
         _isGenerating = true;
         await InvokeAsync(StateHasChanged);
-        
+
         // Yield to allow UI to render the loading state before starting heavy work
         await Task.Yield();
 
         try
         {
             // Execute terrain generation with pre-analyzed network (runs on background thread)
-            var result = await _generationOrchestrator.ExecuteWithPreAnalyzedNetworkAsync(_state, _analysisState).ConfigureAwait(false);
+            var result = await _generationOrchestrator.ExecuteWithPreAnalyzedNetworkAsync(_state, _analysisState)
+                .ConfigureAwait(false);
 
             if (result.Success)
             {
@@ -1538,11 +1543,9 @@ public partial class GenerateTerrain
                     $"Terrain file saved to: {GetOutputPath()}");
 
                 // Run post-generation tasks
-                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters).ConfigureAwait(false);
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add("Post-processing complete!", Severity.Success);
-                });
+                await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters)
+                    .ConfigureAwait(false);
+                await InvokeAsync(() => { Snackbar.Add("Post-processing complete!", Severity.Success); });
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
@@ -1563,10 +1566,7 @@ public partial class GenerateTerrain
         catch (Exception ex)
         {
             ShowException(ex);
-            await InvokeAsync(() =>
-            {
-                Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error);
-            });
+            await InvokeAsync(() => { Snackbar.Add($"Error generating terrain: {ex.Message}", Severity.Error); });
         }
         finally
         {

@@ -32,10 +32,26 @@ public class TerrainGenerationState
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
 
     /// <summary>
+    ///     When true, converts mid-spline crossings (where two roads cross without either terminating)
+    ///     into T-junctions by splitting the secondary road at the crossing point.
+    ///     This enables proper elevation harmonization at crossings.
+    ///     Default: true
+    /// </summary>
+    public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
+
+    /// <summary>
+    ///     When true and geographic bounding box is available, queries OSM for junction hints
+    ///     to improve junction detection accuracy. OSM provides explicit junction tags
+    ///     (motorway exits, traffic signals, etc.) that enhance geometric detection.
+    ///     Default: true
+    /// </summary>
+    public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
+
+    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     /// </summary>
-    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 10.0f;
+    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 15.0f;
 
     /// <summary>
     ///     Global junction blend distance in meters.
@@ -187,7 +203,7 @@ public class TerrainGenerationState
     public string GetMetersPerPixelHelperText()
     {
         var terrainSizeKm = MetersPerPixel * TerrainSize / 1000f;
-        return $"Terrain = {terrainSizeKm:F1}km × {terrainSizeKm:F1}km in-game";
+        return $"Terrain = {terrainSizeKm:F1}km ï¿½ {terrainSizeKm:F1}km in-game";
     }
 
     /// <summary>
@@ -276,6 +292,8 @@ public class TerrainGenerationState
         TerrainBaseHeight = 0.0f;
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
+        EnableCrossroadToTJunctionConversion = true;
+        EnableExtendedOsmJunctionDetection = true;
         GlobalJunctionDetectionRadiusMeters = 10.0f;
         GlobalJunctionBlendDistanceMeters = 30.0f;
         FlipMaterialProcessingOrder = false;

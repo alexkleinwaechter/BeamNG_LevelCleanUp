@@ -1,37 +1,36 @@
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Logging;
-using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
-/// Detects junctions across the entire unified road network.
-/// Supports detection of:
-/// - Endpoint clusters (Y, X intersections)
-/// - T-junctions (endpoint touching middle of another road)
-/// - Complex intersections (roundabouts, 4+ roads meeting)
-/// 
-/// This detector operates on the unified network, meaning it can detect
-/// junctions between roads from different materials (cross-material junctions).
+///     Detects junctions across the entire unified road network.
+///     Supports detection of:
+///     - Endpoint clusters (Y, X intersections)
+///     - T-junctions (endpoint touching middle of another road)
+///     - Complex intersections (roundabouts, 4+ roads meeting)
+///     - OSM-sourced junctions (motorway exits, traffic signals, etc.)
+///     This detector operates on the unified network, meaning it can detect
+///     junctions between roads from different materials (cross-material junctions).
 /// </summary>
 public class NetworkJunctionDetector
 {
     /// <summary>
-    /// Spatial index cell size in meters for faster proximity queries.
+    ///     Spatial index cell size in meters for faster proximity queries.
     /// </summary>
     private const float SpatialIndexCellSize = 50f;
 
     /// <summary>
-    /// Detects all junctions in the unified road network.
-    /// 
-    /// Algorithm:
-    /// 1. Build spatial index of all cross-section endpoints
-    /// 2. Cluster endpoints within detection radius
-    /// 3. Classify junction types (T, Y, X, Complex)
-    /// 4. For T-junctions: identify continuous vs. terminating roads
-    /// 5. Detect mid-spline crossings (where two roads cross without either terminating)
+    ///     Detects all junctions in the unified road network.
+    ///     Algorithm:
+    ///     1. Build spatial index of all cross-section endpoints
+    ///     2. Cluster endpoints within detection radius
+    ///     3. Classify junction types (T, Y, X, Complex)
+    ///     4. For T-junctions: identify continuous vs. terminating roads
+    ///     5. Detect mid-spline crossings (where two roads cross without either terminating)
     /// </summary>
     /// <param name="network">The unified road network containing all splines and cross-sections.</param>
     /// <param name="globalDetectionRadius">Global detection radius in meters (can be overridden per-material).</param>
@@ -64,24 +63,24 @@ public class NetworkJunctionDetector
         // Step 4: Detect T-junctions (endpoint meeting middle of another road)
         var tJunctionCount = DetectTJunctions(junctions, network, spatialIndex, globalDetectionRadius);
         if (tJunctionCount > 0)
-        {
             TerrainLogger.Info($"  Detected {tJunctionCount} T-junction(s) (endpoint meeting middle of road)");
-        }
 
         // Step 5: Detect mid-spline crossings (two roads crossing without either terminating)
         var midSplineCrossings = DetectMidSplineCrossings(network, spatialIndex, globalDetectionRadius, junctions);
         if (midSplineCrossings.Count > 0)
         {
             junctions.AddRange(midSplineCrossings);
-            TerrainLogger.Info($"  Detected {midSplineCrossings.Count} mid-spline crossing(s) (roads crossing without endpoints)");
+            TerrainLogger.Info(
+                $"  Detected {midSplineCrossings.Count} mid-spline crossing(s) (roads crossing without endpoints)");
         }
-        perfLog?.Timing($"Mid-spline crossing detection complete");
+
+        perfLog?.Timing("Mid-spline crossing detection complete");
 
         // Step 6: Classify junction types
         ClassifyJunctions(junctions, network);
 
         // Step 7: Assign junction IDs and calculate centroids
-        for (int i = 0; i < junctions.Count; i++)
+        for (var i = 0; i < junctions.Count; i++)
         {
             junctions[i].JunctionId = i;
             junctions[i].CalculateCentroid();
@@ -90,19 +89,17 @@ public class NetworkJunctionDetector
         // Log junction statistics
         var junctionsByType = junctions.GroupBy(j => j.Type).ToDictionary(g => g.Key, g => g.Count());
         TerrainLogger.Info($"  Junction breakdown: " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.TJunction)} T, " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.YJunction)} Y, " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.CrossRoads)} X, " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.Complex)} Complex, " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.Endpoint)} Isolated, " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.MidSplineCrossing)} MidCrossing, " +
-                          $"{junctionsByType.GetValueOrDefault(JunctionType.Roundabout)} Roundabout");
+                           $"{junctionsByType.GetValueOrDefault(JunctionType.TJunction)} T, " +
+                           $"{junctionsByType.GetValueOrDefault(JunctionType.YJunction)} Y, " +
+                           $"{junctionsByType.GetValueOrDefault(JunctionType.CrossRoads)} X, " +
+                           $"{junctionsByType.GetValueOrDefault(JunctionType.Complex)} Complex, " +
+                           $"{junctionsByType.GetValueOrDefault(JunctionType.Endpoint)} Isolated, " +
+                           $"{junctionsByType.GetValueOrDefault(JunctionType.MidSplineCrossing)} MidCrossing, " +
+                           $"{junctionsByType.GetValueOrDefault(JunctionType.Roundabout)} Roundabout");
 
         var crossMaterialCount = junctions.Count(j => j.IsCrossMaterial);
         if (crossMaterialCount > 0)
-        {
             TerrainLogger.Info($"  {crossMaterialCount} junction(s) involve multiple materials");
-        }
 
         // Store junctions in the network
         network.Junctions.Clear();
@@ -114,7 +111,523 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Finds all spline endpoints (first and last cross-sections of each spline).
+    ///     Detects junctions using both geometric analysis AND OSM junction data.
+    ///     OSM junctions serve as "hints" that boost detection confidence and can
+    ///     create new junctions at locations that geometric analysis missed.
+    ///     This method:
+    ///     1. Filters OSM junctions to only include specified types
+    ///     2. Runs standard geometric detection
+    ///     3. Matches OSM junctions to geometric junctions within matchRadius
+    ///     4. Creates NEW junctions from unmatched OSM data
+    ///     5. Updates junction types based on OSM semantic information
+    /// </summary>
+    /// <param name="network">The unified road network containing all splines and cross-sections.</param>
+    /// <param name="osmJunctions">OSM junction query result containing explicitly tagged and geometric junctions.</param>
+    /// <param name="globalDetectionRadius">Global detection radius in meters (also used for OSM junction matching).</param>
+    /// <param name="includedOsmTypes">
+    ///     Optional list of OSM junction types to include in processing. If null or empty, all
+    ///     types are processed.
+    /// </param>
+    /// <returns>List of detected network junctions enhanced with OSM data.</returns>
+    public List<NetworkJunction> DetectJunctionsWithOsm(
+        UnifiedRoadNetwork network,
+        OsmJunctionQueryResult osmJunctions,
+        float globalDetectionRadius,
+        List<OsmJunctionType>? includedOsmTypes = null)
+    {
+        var perfLog = TerrainCreationLogger.Current;
+        perfLog?.LogSection("NetworkJunctionDetector (OSM-enhanced)");
+
+        // Step 1: Run standard geometric detection
+        var geometricJunctions = DetectJunctions(network, globalDetectionRadius);
+
+        if (osmJunctions.Junctions.Count == 0)
+        {
+            TerrainLogger.Info("  No OSM junctions provided, using geometric detection only");
+            return geometricJunctions;
+        }
+
+        // Step 1.5: Filter OSM junctions to only include specified types
+        var filteredOsmJunctions = osmJunctions.Junctions;
+        var filteredOutCount = 0;
+
+        if (includedOsmTypes != null && includedOsmTypes.Count > 0)
+        {
+            var includedSet = includedOsmTypes.ToHashSet();
+            filteredOsmJunctions = osmJunctions.Junctions
+                .Where(j => includedSet.Contains(j.Type))
+                .ToList();
+
+            filteredOutCount = osmJunctions.Junctions.Count - filteredOsmJunctions.Count;
+
+            if (filteredOutCount > 0)
+            {
+                // Log which types were included
+                var includedByType = filteredOsmJunctions
+                    .GroupBy(j => j.Type)
+                    .ToDictionary(g => g.Key, g => g.Count());
+
+                TerrainLogger.Info($"  Included {filteredOsmJunctions.Count} OSM junction(s) by type: " +
+                                   string.Join(", ", includedByType.Select(kvp => $"{kvp.Key}={kvp.Value}")) +
+                                   $" (filtered out {filteredOutCount})");
+            }
+        }
+
+        TerrainLogger.Info($"  OSM junction hints: {filteredOsmJunctions.Count} " +
+                           $"({osmJunctions.ExplicitJunctionCount} explicit, {osmJunctions.GeometricJunctionCount} geometric" +
+                           (filteredOutCount > 0 ? $", {filteredOutCount} filtered out" : "") + ")");
+
+        if (filteredOsmJunctions.Count == 0)
+        {
+            TerrainLogger.Info("  All OSM junctions were filtered out, using geometric detection only");
+            return geometricJunctions;
+        }
+
+        // Step 2: Match OSM junctions to geometric junctions
+        var unmatchedOsmJunctions = MatchOsmJunctionsToGeometric(
+            geometricJunctions,
+            filteredOsmJunctions,
+            globalDetectionRadius);
+
+        perfLog?.Timing(
+            $"Matched {osmJunctions.Junctions.Count - unmatchedOsmJunctions.Count} OSM junctions to geometric");
+
+        // Step 3: Create new junctions from unmatched OSM data
+        if (unmatchedOsmJunctions.Count > 0)
+        {
+            var newJunctions = CreateJunctionsFromUnmatchedOsm(
+                network,
+                unmatchedOsmJunctions,
+                geometricJunctions,
+                globalDetectionRadius);
+
+            if (newJunctions.Count > 0)
+            {
+                // Assign junction IDs to new junctions
+                var nextId = geometricJunctions.Count > 0
+                    ? geometricJunctions.Max(j => j.JunctionId) + 1
+                    : 0;
+
+                foreach (var junction in newJunctions) junction.JunctionId = nextId++;
+
+                geometricJunctions.AddRange(newJunctions);
+                TerrainLogger.Info($"  Created {newJunctions.Count} new junction(s) from unmatched OSM data");
+            }
+        }
+
+        // Step 4: Update junction types based on OSM semantic information
+        UpdateJunctionTypesFromOsm(geometricJunctions);
+
+        // Update network's junction list
+        network.Junctions.Clear();
+        network.Junctions.AddRange(geometricJunctions);
+
+        // Log enhanced statistics
+        var osmSourcedCount = geometricJunctions.Count(j => j.IsOsmSourced);
+        var osmHintedCount = geometricJunctions.Count(j => j.OsmHint != null && !j.IsOsmSourced);
+
+        TerrainLogger.Info($"  Junction summary: {geometricJunctions.Count} total, " +
+                           $"{osmHintedCount} OSM-matched, {osmSourcedCount} OSM-sourced");
+
+        // Log by OSM type
+        var osmTypeBreakdown = geometricJunctions
+            .Where(j => j.OsmHint != null)
+            .GroupBy(j => j.OsmHint!.Type)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        if (osmTypeBreakdown.Count > 0)
+            TerrainLogger.Info("  OSM junction types: " +
+                               string.Join(", ", osmTypeBreakdown.Select(kvp => $"{kvp.Key}={kvp.Value}")));
+
+        perfLog?.Timing($"OSM-enhanced junction detection complete: {geometricJunctions.Count} junctions");
+
+        return geometricJunctions;
+    }
+
+    /// <summary>
+    ///     Matches OSM junctions to geometric junctions within a search radius.
+    ///     Updates geometric junctions with OsmHint when matched.
+    /// </summary>
+    /// <param name="geometricJunctions">Junctions detected by geometric analysis.</param>
+    /// <param name="osmJunctions">OSM junction data to match.</param>
+    /// <param name="matchRadius">Maximum distance for matching (meters).</param>
+    /// <returns>List of unmatched OSM junctions that could not be paired with geometric detections.</returns>
+    private List<OsmJunction> MatchOsmJunctionsToGeometric(
+        List<NetworkJunction> geometricJunctions,
+        List<OsmJunction> osmJunctions,
+        float matchRadius)
+    {
+        var unmatchedOsm = new List<OsmJunction>();
+        var matchRadiusSq = matchRadius * matchRadius;
+
+        // Build spatial index of geometric junctions for faster lookup
+        var geoJunctionIndex = new Dictionary<(int, int), List<NetworkJunction>>();
+        const float cellSize = 50f;
+
+        foreach (var geoJunction in geometricJunctions)
+        {
+            var cellX = (int)(geoJunction.Position.X / cellSize);
+            var cellY = (int)(geoJunction.Position.Y / cellSize);
+            var key = (cellX, cellY);
+
+            if (!geoJunctionIndex.TryGetValue(key, out var list))
+            {
+                list = [];
+                geoJunctionIndex[key] = list;
+            }
+
+            list.Add(geoJunction);
+        }
+
+        foreach (var osmJunction in osmJunctions)
+        {
+            var osmPos = osmJunction.PositionMeters;
+
+            // Skip OSM junctions that haven't been transformed to terrain coordinates
+            if (osmPos == Vector2.Zero && osmJunction.Location != null)
+            {
+                TerrainLogger.Detail(
+                    $"Skipping OSM junction {osmJunction.OsmNodeId}: not transformed to terrain coordinates");
+                continue;
+            }
+
+            // Query nearby cells
+            var cellX = (int)(osmPos.X / cellSize);
+            var cellY = (int)(osmPos.Y / cellSize);
+
+            NetworkJunction? closestMatch = null;
+            var closestDistSq = float.MaxValue;
+
+            for (var dx = -1; dx <= 1; dx++)
+            for (var dy = -1; dy <= 1; dy++)
+            {
+                var key = (cellX + dx, cellY + dy);
+                if (!geoJunctionIndex.TryGetValue(key, out var candidates))
+                    continue;
+
+                foreach (var candidate in candidates)
+                {
+                    // Skip if already has an OSM hint
+                    if (candidate.OsmHint != null)
+                        continue;
+
+                    var distSq = Vector2.DistanceSquared(osmPos, candidate.Position);
+                    if (distSq <= matchRadiusSq && distSq < closestDistSq)
+                    {
+                        closestDistSq = distSq;
+                        closestMatch = candidate;
+                    }
+                }
+            }
+
+            if (closestMatch != null)
+            {
+                // Match found - update the geometric junction with OSM hint
+                closestMatch.OsmHint = osmJunction;
+                closestMatch.OsmMatchDistance = MathF.Sqrt(closestDistSq);
+
+                TerrainCreationLogger.Current?.Detail(
+                    $"Matched OSM junction {osmJunction.DisplayName} ({osmJunction.Type}) " +
+                    $"to geometric junction #{closestMatch.JunctionId} at {closestMatch.OsmMatchDistance:F1}m");
+            }
+            else
+            {
+                // No match found - add to unmatched list
+                unmatchedOsm.Add(osmJunction);
+            }
+        }
+
+        TerrainLogger.Info($"  OSM junction matching: {osmJunctions.Count - unmatchedOsm.Count} matched, " +
+                           $"{unmatchedOsm.Count} unmatched");
+
+        return unmatchedOsm;
+    }
+
+    /// <summary>
+    ///     Creates new NetworkJunction objects from OSM junctions that couldn't be matched
+    ///     to existing geometric detections.
+    ///     Algorithm:
+    ///     1. For each unmatched OSM junction, find nearby cross-sections
+    ///     2. If cross-sections from 2+ different splines are found, create junction
+    ///     3. Mark as OSM-sourced for tracking
+    ///     IMPORTANT: For OSM CrossRoads type (way_cnt:2-), we specifically look for
+    ///     mid-spline crossings since these represent 2 roads sharing a node (crossing point).
+    ///     These become MidSplineCrossing junctions that the CrossroadToTJunctionConverter processes.
+    ///     CRITICAL: OSM junctions should ONLY create new network junctions if there is NO
+    ///     existing geometric junction nearby. The proximity threshold must be LARGER than
+    ///     the match radius to account for positional differences between:
+    ///     - OSM node positions (from map data)
+    ///     - Geometric junction centroids (calculated from cross-section clusters)
+    ///     Using 1.5x the search radius ensures we don't create duplicates when positions differ.
+    /// </summary>
+    private List<NetworkJunction> CreateJunctionsFromUnmatchedOsm(
+        UnifiedRoadNetwork network,
+        List<OsmJunction> unmatchedOsm,
+        List<NetworkJunction> existingJunctions,
+        float searchRadius)
+    {
+        var newJunctions = new List<NetworkJunction>();
+
+        // Build spatial index of all cross-sections
+        var crossSectionIndex = BuildSpatialIndex(network.CrossSections);
+
+        // Track positions where we already have junctions to avoid duplicates
+        // CRITICAL: Use 1.5x the search radius to account for positional differences between
+        // OSM node positions and geometric junction centroids. This prevents creating duplicate
+        // junctions that cause overlapping harmonization zones (which creates bumps/artifacts).
+        var existingPositions = existingJunctions
+            .Select(j => j.Position)
+            .ToList();
+
+        // Use a larger proximity threshold than the search radius
+        // OSM junction positions can differ from geometric centroids by several meters
+        var proximityThreshold = searchRadius * 1.5f;
+
+        foreach (var osmJunction in unmatchedOsm)
+        {
+            var osmPos = osmJunction.PositionMeters;
+
+            // Skip OSM junctions that haven't been transformed to terrain coordinates
+            if (osmPos == Vector2.Zero && osmJunction.Location != null)
+            {
+                TerrainLogger.Detail(
+                    $"Skipping OSM junction {osmJunction.OsmNodeId}: not transformed to terrain coordinates");
+                continue;
+            }
+
+            // Skip if too close to existing junction (use 1.5x search radius to prevent duplicates)
+            // OSM node positions can differ from geometric junction centroids by several meters,
+            // so we need a larger threshold than just the search radius.
+            var closestExistingDist = existingPositions
+                .Select(p => Vector2.Distance(p, osmPos))
+                .DefaultIfEmpty(float.MaxValue)
+                .Min();
+
+            if (closestExistingDist < proximityThreshold)
+            {
+                TerrainCreationLogger.Current?.Detail(
+                    $"Skipping OSM junction {osmJunction.DisplayName} ({osmJunction.Type}): " +
+                    $"too close to existing junction ({closestExistingDist:F1}m < {proximityThreshold:F1}m threshold)");
+                continue;
+            }
+
+            // Find cross-sections from any spline within search radius
+            var nearbySections = QuerySpatialIndex(crossSectionIndex, osmPos, searchRadius).ToList();
+
+            if (nearbySections.Count == 0)
+            {
+                TerrainCreationLogger.Current?.Detail(
+                    $"Skipping OSM junction {osmJunction.DisplayName}: no nearby cross-sections");
+                continue;
+            }
+
+            // Group by spline ID to find how many different roads are nearby
+            var sectionsBySpline = nearbySections
+                .GroupBy(cs => cs.OwnerSplineId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(cs =>
+                    Vector2.DistanceSquared(cs.CenterPoint, osmPos)).First());
+
+            if (sectionsBySpline.Count < 2)
+            {
+                // Only one road nearby - might be a mid-road feature (crossing, traffic light)
+                // Still useful to record but mark differently
+                var singleSpline = network.GetSplineById(sectionsBySpline.Keys.First());
+                if (singleSpline != null && osmJunction.IsExplicitlyTagged)
+                {
+                    // Create a "feature point" junction for explicitly tagged OSM features
+                    // even if they're mid-road (e.g., traffic signals, crossings)
+                    var closestCs = sectionsBySpline.Values.First();
+
+                    var junction = new NetworkJunction
+                    {
+                        Position = osmPos,
+                        Type = MapOsmTypeToJunctionType(osmJunction.Type, 1),
+                        OsmHint = osmJunction,
+                        IsOsmSourced = true
+                    };
+
+                    junction.Contributors.Add(new JunctionContributor
+                    {
+                        CrossSection = closestCs,
+                        Spline = singleSpline,
+                        IsSplineStart = closestCs.IsSplineStart,
+                        IsSplineEnd = closestCs.IsSplineEnd
+                    });
+
+                    newJunctions.Add(junction);
+                    existingPositions.Add(osmPos);
+
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Created feature-point junction from OSM {osmJunction.DisplayName} ({osmJunction.Type})");
+                }
+
+                continue;
+            }
+
+            // Multiple roads nearby - create a proper junction
+            // For OSM CrossRoads, check if this is a mid-spline crossing (2 continuous roads)
+            var isMidSplineCrossing = false;
+            var continuousCount = 0;
+
+            foreach (var (splineId, closestCs) in sectionsBySpline)
+                // Check if this is a mid-spline cross-section (not an endpoint)
+                if (!closestCs.IsSplineStart && !closestCs.IsSplineEnd)
+                    continuousCount++;
+
+            // If 2+ roads pass through (neither terminates), this is a mid-spline crossing
+            if (continuousCount >= 2 &&
+                (osmJunction.Type == OsmJunctionType.CrossRoads || osmJunction.Type == OsmJunctionType.Unknown))
+                isMidSplineCrossing = true;
+
+            var junction2 = new NetworkJunction
+            {
+                Position = osmPos,
+                Type = isMidSplineCrossing
+                    ? JunctionType.MidSplineCrossing
+                    : MapOsmTypeToJunctionType(osmJunction.Type, sectionsBySpline.Count),
+                OsmHint = osmJunction,
+                IsOsmSourced = true
+            };
+
+            // Add contributors from each nearby spline
+            foreach (var (splineId, closestCs) in sectionsBySpline)
+            {
+                var spline = network.GetSplineById(splineId);
+                if (spline == null) continue;
+
+                junction2.Contributors.Add(new JunctionContributor
+                {
+                    CrossSection = closestCs,
+                    Spline = spline,
+                    IsSplineStart = closestCs.IsSplineStart,
+                    IsSplineEnd = closestCs.IsSplineEnd
+                });
+            }
+
+            newJunctions.Add(junction2);
+            existingPositions.Add(osmPos);
+
+            var typeDesc = isMidSplineCrossing ? "MidSplineCrossing" : junction2.Type.ToString();
+            TerrainCreationLogger.Current?.Detail(
+                $"Created {typeDesc} from OSM {osmJunction.DisplayName} ({osmJunction.Type}) " +
+                $"with {sectionsBySpline.Count} contributing roads ({continuousCount} continuous)");
+        }
+
+        return newJunctions;
+    }
+
+    /// <summary>
+    ///     Updates junction types based on OSM semantic information.
+    ///     This can refine generic junction types (T, Y, X) with more specific
+    ///     information from OSM tags (motorway_junction, traffic_signals, etc.).
+    ///     OSM CrossRoads type (from way_cnt:2-) indicates where 2+ roads share a node.
+    ///     These are converted to MidSplineCrossing type so the CrossroadToTJunctionConverter
+    ///     can properly split them into T-junctions.
+    /// </summary>
+    private void UpdateJunctionTypesFromOsm(List<NetworkJunction> junctions)
+    {
+        foreach (var junction in junctions.Where(j => j.OsmHint != null))
+        {
+            var osmType = junction.OsmHint!.Type;
+
+            // Mini-roundabouts should be marked as roundabout type
+            if (osmType == OsmJunctionType.MiniRoundabout)
+            {
+                junction.Type = JunctionType.Roundabout;
+            }
+            // Complex OSM junctions (5+ ways) should be marked as complex
+            else if (osmType == OsmJunctionType.ComplexJunction)
+            {
+                junction.Type = JunctionType.Complex;
+            }
+            // OSM CrossRoads (2 ways sharing a node) should be MidSplineCrossing
+            // This allows the CrossroadToTJunctionConverter to process them
+            else if (osmType == OsmJunctionType.CrossRoads &&
+                     junction.Type != JunctionType.TJunction && // Don't override if already T-junction
+                     junction.Type != JunctionType.Roundabout) // Don't override roundabouts
+            {
+                // Only mark as MidSplineCrossing if this junction has 2+ continuous contributors
+                // (roads that pass through without terminating)
+                var continuousCount = junction.Contributors.Count(c => c.IsContinuous);
+                if (continuousCount >= 2)
+                {
+                    junction.Type = JunctionType.MidSplineCrossing;
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Junction #{junction.JunctionId}: OSM CrossRoads hint converted to MidSplineCrossing " +
+                        $"({continuousCount} continuous roads)");
+                }
+            }
+            // Motorway junctions are typically T or Y junctions (ramp connections)
+            // Keep the geometric type but the OSM hint provides naming info
+        }
+    }
+
+    /// <summary>
+    ///     Maps OSM junction type to the appropriate JunctionType enum value.
+    ///     Mapping rules:
+    ///     - Explicit geometric types (TJunction, CrossRoads, ComplexJunction) map directly
+    ///     - Roundabout types (MiniRoundabout) map to Roundabout
+    ///     - Motorway junctions (ramp connections) map to TJunction (most common) or YJunction
+    ///     - Traffic control features (TrafficSignals, Stop, GiveWay) use road count geometry
+    ///     - Pedestrian crossings are treated as Endpoint (mid-road feature, not a junction)
+    ///     - TurningCircle is an Endpoint (road termination)
+    ///     - Unknown types fall back to road count heuristics
+    /// </summary>
+    /// <param name="osmType">The OSM junction type.</param>
+    /// <param name="roadCount">Number of roads meeting at the junction.</param>
+    /// <returns>The corresponding JunctionType.</returns>
+    private static JunctionType MapOsmTypeToJunctionType(OsmJunctionType osmType, int roadCount)
+    {
+        // First check explicit OSM types that have direct mappings
+        return osmType switch
+        {
+            // Roundabout types
+            OsmJunctionType.MiniRoundabout => JunctionType.Roundabout,
+
+            // Endpoint types (road terminations or mid-road features)
+            OsmJunctionType.TurningCircle => JunctionType.Endpoint,
+            OsmJunctionType.Crossing => JunctionType.Endpoint, // Pedestrian crossing - mid-road feature
+
+            // Geometric junction types from OSM way_cnt analysis
+            OsmJunctionType.ComplexJunction => JunctionType.Complex,
+            OsmJunctionType.CrossRoads => JunctionType.CrossRoads,
+            OsmJunctionType.TJunction => JunctionType.TJunction,
+
+            // Motorway junctions are typically T or Y shaped (ramp connections)
+            // Use road count to determine: 2 roads = Y, 3+ roads = T
+            OsmJunctionType.MotorwayJunction => roadCount <= 2 ? JunctionType.YJunction : JunctionType.TJunction,
+
+            // Traffic control features - use road count for geometry classification
+            // These tell us about traffic rules, not junction shape
+            OsmJunctionType.TrafficSignals => MapRoadCountToJunctionType(roadCount),
+            OsmJunctionType.Stop => MapRoadCountToJunctionType(roadCount),
+            OsmJunctionType.GiveWay => MapRoadCountToJunctionType(roadCount),
+
+            // Unknown - fall back to road count heuristics
+            OsmJunctionType.Unknown => MapRoadCountToJunctionType(roadCount),
+
+            // Default fallback for any new types added later
+            _ => MapRoadCountToJunctionType(roadCount)
+        };
+    }
+
+    /// <summary>
+    ///     Maps road count to junction type using geometric heuristics.
+    /// </summary>
+    private static JunctionType MapRoadCountToJunctionType(int roadCount)
+    {
+        return roadCount switch
+        {
+            1 => JunctionType.Endpoint,
+            2 => JunctionType.YJunction,
+            3 => JunctionType.TJunction,
+            4 => JunctionType.CrossRoads,
+            _ => JunctionType.Complex
+        };
+    }
+
+    /// <summary>
+    ///     Finds all spline endpoints (first and last cross-sections of each spline).
     /// </summary>
     private List<UnifiedCrossSection> FindSplineEndpoints(UnifiedRoadNetwork network)
     {
@@ -130,10 +643,7 @@ public class NetworkJunctionDetector
                 endpoints.Add(splineSections[0]);
 
                 // Last endpoint (if different from first)
-                if (splineSections.Count > 1)
-                {
-                    endpoints.Add(splineSections[^1]);
-                }
+                if (splineSections.Count > 1) endpoints.Add(splineSections[^1]);
             }
         }
 
@@ -141,8 +651,8 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Builds a spatial index for fast proximity queries.
-    /// Returns a dictionary mapping grid cell -> cross-sections in that cell.
+    ///     Builds a spatial index for fast proximity queries.
+    ///     Returns a dictionary mapping grid cell -> cross-sections in that cell.
     /// </summary>
     private Dictionary<(int, int), List<UnifiedCrossSection>> BuildSpatialIndex(
         List<UnifiedCrossSection> crossSections)
@@ -168,7 +678,7 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Queries the spatial index for cross-sections near a point.
+    ///     Queries the spatial index for cross-sections near a point.
     /// </summary>
     private IEnumerable<UnifiedCrossSection> QuerySpatialIndex(
         Dictionary<(int, int), List<UnifiedCrossSection>> index,
@@ -182,27 +692,18 @@ public class NetworkJunctionDetector
 
         var radiusSq = radius * radius;
 
-        for (int cx = minCellX; cx <= maxCellX; cx++)
-        {
-            for (int cy = minCellY; cy <= maxCellY; cy++)
-            {
-                if (index.TryGetValue((cx, cy), out var cell))
+        for (var cx = minCellX; cx <= maxCellX; cx++)
+        for (var cy = minCellY; cy <= maxCellY; cy++)
+            if (index.TryGetValue((cx, cy), out var cell))
+                foreach (var cs in cell)
                 {
-                    foreach (var cs in cell)
-                    {
-                        var distSq = Vector2.DistanceSquared(cs.CenterPoint, position);
-                        if (distSq <= radiusSq)
-                        {
-                            yield return cs;
-                        }
-                    }
+                    var distSq = Vector2.DistanceSquared(cs.CenterPoint, position);
+                    if (distSq <= radiusSq) yield return cs;
                 }
-            }
-        }
     }
 
     /// <summary>
-    /// Clusters nearby endpoints into junctions using transitive closure.
+    ///     Clusters nearby endpoints into junctions using transitive closure.
     /// </summary>
     private List<NetworkJunction> ClusterEndpointsIntoJunctions(
         List<UnifiedCrossSection> endpoints,
@@ -212,7 +713,7 @@ public class NetworkJunctionDetector
         var junctions = new List<NetworkJunction>();
         var assigned = new HashSet<int>(); // Track which endpoints are assigned (by their Index)
 
-        for (int i = 0; i < endpoints.Count; i++)
+        for (var i = 0; i < endpoints.Count; i++)
         {
             if (assigned.Contains(endpoints[i].Index))
                 continue;
@@ -226,23 +727,21 @@ public class NetworkJunctionDetector
             do
             {
                 expanded = false;
-                for (int j = 0; j < endpoints.Count; j++)
+                for (var j = 0; j < endpoints.Count; j++)
                 {
                     if (assigned.Contains(endpoints[j].Index))
                         continue;
 
                     // Get effective detection radius (use per-spline if available, else global)
-                    float detectionRadius = globalDetectionRadius;
+                    var detectionRadius = globalDetectionRadius;
                     var splineParams = network.GetParametersForSpline(endpoints[j].OwnerSplineId);
                     if (splineParams?.JunctionHarmonizationParameters != null)
-                    {
                         detectionRadius = splineParams.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
-                    }
 
                     // Check distance to any endpoint in current cluster
                     foreach (var idx in cluster)
                     {
-                        float dist = Vector2.Distance(endpoints[idx].CenterPoint, endpoints[j].CenterPoint);
+                        var dist = Vector2.Distance(endpoints[idx].CenterPoint, endpoints[j].CenterPoint);
                         if (dist <= detectionRadius)
                         {
                             cluster.Add(j);
@@ -270,26 +769,21 @@ public class NetworkJunctionDetector
                 });
             }
 
-            if (junction.Contributors.Count > 0)
-            {
-                junctions.Add(junction);
-            }
+            if (junction.Contributors.Count > 0) junctions.Add(junction);
         }
 
         return junctions;
     }
 
     /// <summary>
-    /// Detects T-junctions where an endpoint meets the middle of another road.
-    /// Updates junction classifications and adds continuous road cross-sections.
-    /// 
-    /// IMPORTANT: This handles two scenarios:
-    /// 1. A single endpoint near the middle of another spline (classic T-junction)
-    /// 2. Multiple endpoints clustered together, but one of them is near the MIDDLE 
-    ///    of another spline (the passing-through spline should dominate elevation)
-    /// 
-    /// For WITHIN-MATERIAL junctions: If spline A's endpoint is near spline B's middle,
-    /// spline B is the "continuous" road and A is the "terminating" road.
+    ///     Detects T-junctions where an endpoint meets the middle of another road.
+    ///     Updates junction classifications and adds continuous road cross-sections.
+    ///     IMPORTANT: This handles two scenarios:
+    ///     1. A single endpoint near the middle of another spline (classic T-junction)
+    ///     2. Multiple endpoints clustered together, but one of them is near the MIDDLE
+    ///     of another spline (the passing-through spline should dominate elevation)
+    ///     For WITHIN-MATERIAL junctions: If spline A's endpoint is near spline B's middle,
+    ///     spline B is the "continuous" road and A is the "terminating" road.
     /// </summary>
     /// <returns>Number of T-junctions detected.</returns>
     private int DetectTJunctions(
@@ -298,7 +792,7 @@ public class NetworkJunctionDetector
         Dictionary<(int, int), List<UnifiedCrossSection>> spatialIndex,
         float globalDetectionRadius)
     {
-        int tJunctionCount = 0;
+        var tJunctionCount = 0;
 
         // Process ALL junctions to find passing-through splines
         foreach (var junction in junctions.ToList())
@@ -308,15 +802,11 @@ public class NetworkJunctionDetector
             var junctionPosition = junction.Position;
 
             // Get effective detection radius (use maximum from all contributors)
-            float detectionRadius = globalDetectionRadius;
+            var detectionRadius = globalDetectionRadius;
             foreach (var contributor in junction.Contributors)
-            {
                 if (contributor.Spline.Parameters.JunctionHarmonizationParameters != null)
-                {
                     detectionRadius = Math.Max(detectionRadius,
                         contributor.Spline.Parameters.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters);
-                }
-            }
 
             // Get all spline IDs that have ENDPOINTS in this junction
             var splineIdsWithEndpoints = junction.Contributors
@@ -329,7 +819,8 @@ public class NetworkJunctionDetector
             // - Splines NOT in the junction at all (cross-material or just nearby)
             // - Splines that ARE in the junction with an endpoint, but ALSO pass through
             //   (this happens when a spline loops back or when the road is continuous)
-            var continuousContributors = new List<(UnifiedCrossSection cs, ParameterizedRoadSpline spline, float dist)>();
+            var continuousContributors =
+                new List<(UnifiedCrossSection cs, ParameterizedRoadSpline spline, float dist)>();
 
             foreach (var cs in QuerySpatialIndex(spatialIndex, junctionPosition, detectionRadius))
             {
@@ -338,7 +829,7 @@ public class NetworkJunctionDetector
                     continue;
 
                 // This is a mid-spline cross-section near the junction
-                float dist = Vector2.Distance(junctionPosition, cs.CenterPoint);
+                var dist = Vector2.Distance(junctionPosition, cs.CenterPoint);
                 var spline = network.GetSplineById(cs.OwnerSplineId);
                 if (spline == null)
                     continue;
@@ -365,12 +856,11 @@ public class NetworkJunctionDetector
                     .FirstOrDefault(c => c.Spline.SplineId == spline.SplineId && c.IsEndpoint);
 
                 if (existingEndpointContributor != null)
-                {
-                    // The spline has an endpoint here but also passes through nearby
-                    // This is unusual - log it but don't add duplicate
-                    TerrainCreationLogger.Current?.Detail($"Spline {spline.SplineId} has endpoint at junction but also passes through nearby");
+                    // The spline has an endpoint here but also passes through nearby.
+                    // This commonly happens with short splines or large detection radii.
+                    // It's not a problem - we simply skip adding a duplicate contributor.
+                    // Only log at Trace level since this is expected behavior.
                     continue;
-                }
 
                 // Add as new continuous contributor
                 junction.Contributors.Add(new JunctionContributor
@@ -391,7 +881,7 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Classifies each junction based on the number and type of contributors.
+    ///     Classifies each junction based on the number and type of contributors.
     /// </summary>
     private void ClassifyJunctions(List<NetworkJunction> junctions, UnifiedRoadNetwork network)
     {
@@ -407,17 +897,12 @@ public class NetworkJunctionDetector
                 .Count();
 
             if (uniqueSplineIds == 1 && junction.Contributors.Count == 1)
-            {
                 // Single endpoint, no connection to other roads
                 junction.Type = JunctionType.Endpoint;
-            }
             else if (junction.Contributors.Any(c => c.IsContinuous))
-            {
                 // At least one contributor passes through (not an endpoint) = T-junction
                 junction.Type = JunctionType.TJunction;
-            }
             else
-            {
                 // All contributors are endpoints
                 junction.Type = uniqueSplineIds switch
                 {
@@ -425,13 +910,12 @@ public class NetworkJunctionDetector
                     3 or 4 => JunctionType.CrossRoads,
                     _ => JunctionType.Complex
                 };
-            }
         }
     }
 
     /// <summary>
-    /// Gets the effective junction detection radius for a given location.
-    /// Uses the maximum radius among nearby splines.
+    ///     Gets the effective junction detection radius for a given location.
+    ///     Uses the maximum radius among nearby splines.
     /// </summary>
     /// <param name="network">The unified road network.</param>
     /// <param name="position">The position to query.</param>
@@ -443,7 +927,7 @@ public class NetworkJunctionDetector
         float globalDefault)
     {
         // Find nearby splines and use the maximum configured radius
-        float maxRadius = globalDefault;
+        var maxRadius = globalDefault;
 
         foreach (var spline in network.Splines)
         {
@@ -455,9 +939,7 @@ public class NetworkJunctionDetector
             {
                 var splineParams = spline.Parameters.JunctionHarmonizationParameters;
                 if (splineParams != null && splineParams.JunctionDetectionRadiusMeters > maxRadius)
-                {
                     maxRadius = splineParams.JunctionDetectionRadiusMeters;
-                }
             }
         }
 
@@ -465,15 +947,14 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Detects mid-spline crossings where two roads cross each other without either terminating.
-    /// This handles the case where roads physically intersect but neither has an endpoint at the crossing.
-    /// 
-    /// Algorithm:
-    /// 1. For each spline, sample cross-sections at regular intervals
-    /// 2. For each cross-section, check if any OTHER spline's cross-sections are very close
-    /// 3. If two mid-spline cross-sections from different splines are close, it's a crossing
-    /// 4. Cluster nearby crossings to avoid duplicates
-    /// 5. Skip crossings that are already covered by existing junctions
+    ///     Detects mid-spline crossings where two roads cross each other without either terminating.
+    ///     This handles the case where roads physically intersect but neither has an endpoint at the crossing.
+    ///     Algorithm:
+    ///     1. For each spline, sample cross-sections at regular intervals
+    ///     2. For each cross-section, check if any OTHER spline's cross-sections are very close
+    ///     3. If two mid-spline cross-sections from different splines are close, it's a crossing
+    ///     4. Cluster nearby crossings to avoid duplicates
+    ///     5. Skip crossings only if THOSE SAME TWO SPLINES are already connected at an existing junction
     /// </summary>
     private List<NetworkJunction> DetectMidSplineCrossings(
         UnifiedRoadNetwork network,
@@ -483,15 +964,42 @@ public class NetworkJunctionDetector
     {
         var crossings = new List<NetworkJunction>();
         var processedPairs = new HashSet<(int, int)>(); // Track spline pairs we've already found crossings for
-        
-        // Use a tighter radius for mid-spline crossing detection
-        // Crossings should be where roads actually overlap, not just nearby
-        float crossingDetectionRadius = globalDetectionRadius * 0.5f;
-        
+
+        // Use the full detection radius for mid-spline crossings
+        // The roads need to be within this distance to be considered "crossing"
+        // This accounts for road width - two 8m wide roads crossing need ~8-10m detection
+        var crossingDetectionRadius = globalDetectionRadius;
+
+        TerrainCreationLogger.Current?.Detail(
+            $"DetectMidSplineCrossings: Using detection radius = {crossingDetectionRadius:F1}m, " +
+            $"processing {network.Splines.Count} splines, {existingJunctions.Count} existing junctions");
+
+        // Build a set of spline pairs that are ALREADY connected at existing junctions
+        // Only skip mid-spline crossings for pairs that are already handled
+        var alreadyConnectedPairs = new HashSet<(int, int)>();
+        foreach (var junction in existingJunctions)
+        {
+            var splineIds = junction.Contributors.Select(c => c.Spline.SplineId).Distinct().ToList();
+            // Add all pairs of splines in this junction
+            for (var i = 0; i < splineIds.Count; i++)
+            for (var j = i + 1; j < splineIds.Count; j++)
+            {
+                var pairKey = splineIds[i] < splineIds[j]
+                    ? (splineIds[i], splineIds[j])
+                    : (splineIds[j], splineIds[i]);
+                alreadyConnectedPairs.Add(pairKey);
+            }
+        }
+
+        TerrainCreationLogger.Current?.Detail(
+            $"DetectMidSplineCrossings: {alreadyConnectedPairs.Count} spline pairs already connected at existing junctions");
+
         // Track positions where we've already created crossings to avoid duplicates
-        var existingJunctionPositions = existingJunctions
-            .Select(j => j.Position)
-            .ToList();
+        var newCrossingPositions = new List<Vector2>();
+
+        var totalMidSplineSectionsChecked = 0;
+        var skippedAlreadyConnected = 0;
+        var candidateCrossingsFound = 0;
 
         foreach (var spline in network.Splines)
         {
@@ -499,20 +1007,19 @@ public class NetworkJunctionDetector
                 .Where(cs => !cs.IsSplineStart && !cs.IsSplineEnd) // Only mid-spline sections
                 .ToList();
 
-            // Sample every Nth cross-section to reduce computation (crossings span multiple sections)
-            int sampleInterval = Math.Max(1, splineSections.Count / 50); // Sample ~50 points per spline
-            
-            for (int i = 0; i < splineSections.Count; i += sampleInterval)
+            // Sample more frequently to catch crossings - at least every 5 meters
+            // But limit to ~100 samples per spline to avoid excessive computation
+            var maxSamples = 100;
+            var sampleInterval = Math.Max(1, splineSections.Count / maxSamples);
+
+            for (var i = 0; i < splineSections.Count; i += sampleInterval)
             {
                 var cs = splineSections[i];
-                
-                // Skip if too close to an existing junction
-                if (existingJunctionPositions.Any(p => Vector2.Distance(p, cs.CenterPoint) < crossingDetectionRadius))
-                    continue;
+                totalMidSplineSectionsChecked++;
 
                 // Find cross-sections from OTHER splines that are very close
                 var nearbySections = QuerySpatialIndex(spatialIndex, cs.CenterPoint, crossingDetectionRadius)
-                    .Where(other => 
+                    .Where(other =>
                         other.OwnerSplineId != spline.SplineId && // Different spline
                         !other.IsSplineStart && !other.IsSplineEnd) // Also mid-spline
                     .ToList();
@@ -520,22 +1027,34 @@ public class NetworkJunctionDetector
                 if (nearbySections.Count == 0)
                     continue;
 
+                candidateCrossingsFound++;
+
                 // Group by spline to find unique crossings
                 var crossingSplines = nearbySections
                     .GroupBy(s => s.OwnerSplineId)
-                    .Select(g => (SplineId: g.Key, ClosestSection: g.OrderBy(s => 
+                    .Select(g => (SplineId: g.Key, ClosestSection: g.OrderBy(s =>
                         Vector2.Distance(s.CenterPoint, cs.CenterPoint)).First()))
                     .ToList();
 
                 foreach (var (otherSplineId, otherCs) in crossingSplines)
                 {
                     // Create a canonical pair key to avoid duplicates
-                    var pairKey = spline.SplineId < otherSplineId 
-                        ? (spline.SplineId, otherSplineId) 
+                    var pairKey = spline.SplineId < otherSplineId
+                        ? (spline.SplineId, otherSplineId)
                         : (otherSplineId, spline.SplineId);
 
+                    // Skip if we've already processed this pair in this detection run
                     if (processedPairs.Contains(pairKey))
                         continue;
+
+                    // Skip if these two splines are ALREADY connected at an existing junction
+                    // (e.g., one has an endpoint meeting the other - that's a T-junction, not a crossing)
+                    if (alreadyConnectedPairs.Contains(pairKey))
+                    {
+                        skippedAlreadyConnected++;
+                        processedPairs.Add(pairKey); // Don't check this pair again
+                        continue;
+                    }
 
                     var otherSpline = network.GetSplineById(otherSplineId);
                     if (otherSpline == null)
@@ -543,9 +1062,10 @@ public class NetworkJunctionDetector
 
                     // Calculate crossing point as midpoint between the two closest cross-sections
                     var crossingPoint = (cs.CenterPoint + otherCs.CenterPoint) / 2f;
-                    
-                    // Double-check this isn't near an existing junction
-                    if (existingJunctionPositions.Any(p => Vector2.Distance(p, crossingPoint) < crossingDetectionRadius))
+
+                    // Check this isn't too close to another crossing we just created
+                    if (newCrossingPositions.Any(p =>
+                            Vector2.Distance(p, crossingPoint) < crossingDetectionRadius * 0.5f))
                         continue;
 
                     // Create a new junction for this mid-spline crossing
@@ -574,23 +1094,33 @@ public class NetworkJunctionDetector
 
                     crossings.Add(junction);
                     processedPairs.Add(pairKey);
-                    existingJunctionPositions.Add(crossingPoint); // Prevent nearby duplicates
+                    newCrossingPositions.Add(crossingPoint); // Prevent nearby duplicates
+
+                    TerrainCreationLogger.Current?.Detail(
+                        $"MidSplineCrossing detected: Spline {spline.SplineId} x Spline {otherSplineId} " +
+                        $"at ({crossingPoint.X:F1}, {crossingPoint.Y:F1}), " +
+                        $"distance between CS = {Vector2.Distance(cs.CenterPoint, otherCs.CenterPoint):F2}m");
                 }
             }
         }
+
+        TerrainCreationLogger.Current?.Detail(
+            $"DetectMidSplineCrossings summary: Checked {totalMidSplineSectionsChecked} mid-spline sections, " +
+            $"skipped {skippedAlreadyConnected} pairs already connected at junctions, " +
+            $"found {candidateCrossingsFound} candidate locations, " +
+            $"created {crossings.Count} crossing junctions");
 
         return crossings;
     }
 
     /// <summary>
-    /// Detects junctions where roads connect to roundabout rings.
-    /// Called after roundabout ring splines are added to the network.
-    /// 
-    /// For each roundabout, this method:
-    /// 1. Finds all road splines with endpoints near the roundabout ring
-    /// 2. Creates Roundabout-type junctions for each connection
-    /// 3. Updates the network's junction list with roundabout junctions
-    /// 4. Returns RoundaboutJunctionInfo for each roundabout for harmonization
+    ///     Detects junctions where roads connect to roundabout rings.
+    ///     Called after roundabout ring splines are added to the network.
+    ///     For each roundabout, this method:
+    ///     1. Finds all road splines with endpoints near the roundabout ring
+    ///     2. Creates Roundabout-type junctions for each connection
+    ///     3. Updates the network's junction list with roundabout junctions
+    ///     4. Returns RoundaboutJunctionInfo for each roundabout for harmonization
     /// </summary>
     /// <param name="network">The unified road network containing roundabout ring splines.</param>
     /// <param name="roundaboutInfos">Information about processed roundabouts from RoundaboutMerger.</param>
@@ -605,7 +1135,7 @@ public class NetworkJunctionDetector
         perfLog?.LogSection("DetectRoundaboutJunctions");
 
         var roundaboutJunctionInfos = new List<RoundaboutJunctionInfo>();
-        int totalRoundaboutJunctions = 0;
+        var totalRoundaboutJunctions = 0;
 
         if (roundaboutInfos.Count == 0)
         {
@@ -660,14 +1190,15 @@ public class NetworkJunctionDetector
                     continue;
 
                 // Check start endpoint
-                var distToStart = DistanceToRing(spline.StartPoint, roundaboutInfo.CenterMeters, roundaboutInfo.RadiusMeters);
+                var distToStart = DistanceToRing(spline.StartPoint, roundaboutInfo.CenterMeters,
+                    roundaboutInfo.RadiusMeters);
                 if (distToStart <= detectionRadius)
                 {
                     var junction = CreateRoundaboutJunction(
-                        network, roundaboutSpline, spline, 
-                        isConnectingRoadStart: true, 
+                        network, roundaboutSpline, spline,
+                        true,
                         roundaboutInfo, junctionInfo);
-                    
+
                     if (junction != null)
                     {
                         junctionInfo.Junctions.Add(junction);
@@ -677,14 +1208,15 @@ public class NetworkJunctionDetector
                 }
 
                 // Check end endpoint
-                var distToEnd = DistanceToRing(spline.EndPoint, roundaboutInfo.CenterMeters, roundaboutInfo.RadiusMeters);
+                var distToEnd = DistanceToRing(spline.EndPoint, roundaboutInfo.CenterMeters,
+                    roundaboutInfo.RadiusMeters);
                 if (distToEnd <= detectionRadius)
                 {
                     var junction = CreateRoundaboutJunction(
-                        network, roundaboutSpline, spline, 
-                        isConnectingRoadStart: false, 
+                        network, roundaboutSpline, spline,
+                        false,
                         roundaboutInfo, junctionInfo);
-                    
+
                     if (junction != null)
                     {
                         junctionInfo.Junctions.Add(junction);
@@ -698,30 +1230,31 @@ public class NetworkJunctionDetector
             {
                 roundaboutJunctionInfos.Add(junctionInfo);
                 TerrainLogger.Detail($"  Roundabout {roundaboutSplineId}: " +
-                    $"{junctionInfo.Junctions.Count} connection(s), " +
-                    $"radius={roundaboutInfo.RadiusMeters:F1}m");
+                                     $"{junctionInfo.Junctions.Count} connection(s), " +
+                                     $"radius={roundaboutInfo.RadiusMeters:F1}m");
             }
         }
 
-        TerrainLogger.Info($"Detected {totalRoundaboutJunctions} roundabout junction(s) across {roundaboutJunctionInfos.Count} roundabout(s)");
+        TerrainLogger.Info(
+            $"Detected {totalRoundaboutJunctions} roundabout junction(s) across {roundaboutJunctionInfos.Count} roundabout(s)");
         perfLog?.Timing($"Detected {totalRoundaboutJunctions} roundabout junctions");
 
         return roundaboutJunctionInfos;
     }
 
     /// <summary>
-    /// Calculates the distance from a point to a circular ring.
-    /// Returns the absolute distance to the ring (how far inside or outside).
+    ///     Calculates the distance from a point to a circular ring.
+    ///     Returns the absolute distance to the ring (how far inside or outside).
     /// </summary>
     private static float DistanceToRing(Vector2 point, Vector2 center, float radius)
     {
-        float distToCenter = Vector2.Distance(point, center);
+        var distToCenter = Vector2.Distance(point, center);
         return Math.Abs(distToCenter - radius);
     }
 
     /// <summary>
-    /// Finds the ParameterizedRoadSpline in the network that corresponds to a ProcessedRoundaboutInfo.
-    /// Matches by checking if spline center is near the roundabout center.
+    ///     Finds the ParameterizedRoadSpline in the network that corresponds to a ProcessedRoundaboutInfo.
+    ///     Matches by checking if spline center is near the roundabout center.
     /// </summary>
     private static ParameterizedRoadSpline? FindRoundaboutSplineInNetwork(
         UnifiedRoadNetwork network,
@@ -739,22 +1272,20 @@ public class NetworkJunctionDetector
 
             // Check if the center of the spline is near the roundabout center
             var splineCenter = (spline.StartPoint + spline.EndPoint) / 2;
-            
+
             // Better: calculate actual center from a point on the spline
             var midPoint = spline.Spline.GetPointAtDistance(spline.TotalLengthMeters / 2);
             var estimatedCenter = (spline.StartPoint + midPoint + spline.EndPoint) / 3;
 
             if (Vector2.Distance(estimatedCenter, roundaboutInfo.CenterMeters) < roundaboutInfo.RadiusMeters * 2)
-            {
                 return spline;
-            }
         }
 
         return null;
     }
 
     /// <summary>
-    /// Creates a RoundaboutJunction for a connecting road meeting a roundabout ring.
+    ///     Creates a RoundaboutJunction for a connecting road meeting a roundabout ring.
     /// </summary>
     private RoundaboutJunction? CreateRoundaboutJunction(
         UnifiedRoadNetwork network,
@@ -782,7 +1313,8 @@ public class NetworkJunctionDetector
         var ringCs = GetClosestCrossSectionOnSpline(network, roundaboutSpline.SplineId, closestRingPoint);
         if (ringCs == null)
         {
-            TerrainLogger.Detail($"Could not find ring cross-section for roundabout spline {roundaboutSpline.SplineId}");
+            TerrainLogger.Detail(
+                $"Could not find ring cross-section for roundabout spline {roundaboutSpline.SplineId}");
             return null;
         }
 
@@ -793,16 +1325,13 @@ public class NetworkJunctionDetector
         var angleDegrees = CalculateAngleFromCenter(roundaboutInfo.CenterMeters, closestRingPoint);
 
         // Determine connection direction from ProcessedRoundaboutInfo if available
-        var direction = Osm.Models.RoundaboutConnectionDirection.Bidirectional;
+        var direction = RoundaboutConnectionDirection.Bidirectional;
         // Check if we have processed connection info for this road
         if (roundaboutInfo.OriginalRoundabout != null)
         {
             var originalConnection = roundaboutInfo.OriginalRoundabout.Connections
                 .FirstOrDefault(c => IsMatchingConnection(c, connectingSpline));
-            if (originalConnection != null)
-            {
-                direction = originalConnection.Direction;
-            }
+            if (originalConnection != null) direction = originalConnection.Direction;
         }
 
         // Create the parent NetworkJunction
@@ -852,11 +1381,11 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Gets the endpoint cross-section for a spline.
+    ///     Gets the endpoint cross-section for a spline.
     /// </summary>
     private static UnifiedCrossSection? GetEndpointCrossSection(
-        UnifiedRoadNetwork network, 
-        int splineId, 
+        UnifiedRoadNetwork network,
+        int splineId,
         bool isStart)
     {
         var crossSections = network.GetCrossSectionsForSpline(splineId).ToList();
@@ -867,7 +1396,7 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Finds the closest cross-section on a spline to a given point.
+    ///     Finds the closest cross-section on a spline to a given point.
     /// </summary>
     private static UnifiedCrossSection? GetClosestCrossSectionOnSpline(
         UnifiedRoadNetwork network,
@@ -884,13 +1413,13 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Finds the distance along a spline that is closest to a target point.
+    ///     Finds the distance along a spline that is closest to a target point.
     /// </summary>
     private static float FindClosestDistanceOnRing(RoadSpline spline, Vector2 targetPoint)
     {
         const float sampleInterval = 0.5f; // 0.5 meter intervals
         float closestDistance = 0;
-        float minDistSq = float.MaxValue;
+        var minDistSq = float.MaxValue;
 
         for (float d = 0; d <= spline.TotalLength; d += sampleInterval)
         {
@@ -904,11 +1433,11 @@ public class NetworkJunctionDetector
         }
 
         // Refine search around the found point
-        float searchStart = Math.Max(0, closestDistance - sampleInterval);
-        float searchEnd = Math.Min(spline.TotalLength, closestDistance + sampleInterval);
+        var searchStart = Math.Max(0, closestDistance - sampleInterval);
+        var searchEnd = Math.Min(spline.TotalLength, closestDistance + sampleInterval);
         const float refineSampleInterval = 0.05f;
 
-        for (float d = searchStart; d <= searchEnd; d += refineSampleInterval)
+        for (var d = searchStart; d <= searchEnd; d += refineSampleInterval)
         {
             var point = spline.GetPointAtDistance(d);
             var distSq = Vector2.DistanceSquared(point, targetPoint);
@@ -923,33 +1452,31 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    /// Calculates the angle from center to a point (0 = East, 90 = North).
+    ///     Calculates the angle from center to a point (0 = East, 90 = North).
     /// </summary>
     private static float CalculateAngleFromCenter(Vector2 center, Vector2 point)
     {
-        float dx = point.X - center.X;
-        float dy = point.Y - center.Y;
-        float angleRadians = MathF.Atan2(dy, dx);
-        float angleDegrees = angleRadians * 180f / MathF.PI;
+        var dx = point.X - center.X;
+        var dy = point.Y - center.Y;
+        var angleRadians = MathF.Atan2(dy, dx);
+        var angleDegrees = angleRadians * 180f / MathF.PI;
         if (angleDegrees < 0) angleDegrees += 360f;
         return angleDegrees;
     }
 
     /// <summary>
-    /// Checks if a RoundaboutConnection matches a connecting spline.
+    ///     Checks if a RoundaboutConnection matches a connecting spline.
     /// </summary>
     private static bool IsMatchingConnection(
-        Osm.Models.RoundaboutConnection connection,
+        RoundaboutConnection connection,
         ParameterizedRoadSpline spline)
     {
         // Match by display name if available
-        if (!string.IsNullOrEmpty(spline.DisplayName) && 
+        if (!string.IsNullOrEmpty(spline.DisplayName) &&
             connection.ConnectingRoad != null &&
             !string.IsNullOrEmpty(connection.ConnectingRoad.DisplayName))
-        {
-            return spline.DisplayName.Equals(connection.ConnectingRoad.DisplayName, 
+            return spline.DisplayName.Equals(connection.ConnectingRoad.DisplayName,
                 StringComparison.OrdinalIgnoreCase);
-        }
 
         return false;
     }

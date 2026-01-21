@@ -1,3 +1,5 @@
+using BeamNgTerrainPoc.Terrain.Osm.Models;
+
 namespace BeamNgTerrainPoc.Terrain.Models;
 
 /// <summary>
@@ -183,6 +185,33 @@ public class JunctionHarmonizationParameters
     /// </summary>
     public float EffectiveRoundaboutBlendDistanceMeters =>
         RoundaboutBlendDistanceMeters ?? JunctionBlendDistanceMeters;
+
+    // ========================================
+    // OSM JUNCTION FILTERING
+    // ========================================
+
+    /// <summary>
+    ///     List of OSM junction types to include in processing.
+    ///     Only junctions of these types will be processed during OSM-enhanced junction detection.
+    ///     All other OSM junction types will be filtered out and ignored.
+    ///     Available types:
+    ///     - CrossRoads: 4-way intersections (way_cnt:4)
+    ///     - TJunction: 3-way intersections (way_cnt:3)
+    ///     - ComplexJunction: 5+ way intersections (way_cnt:5+)
+    ///     - TrafficSignals: Intersections with traffic lights
+    ///     - Stop: Intersections with stop signs
+    ///     - GiveWay: Intersections with yield signs
+    ///     - MotorwayJunction: Highway exits/entrances
+    ///     - MiniRoundabout: Small single-node roundabouts
+    ///     - TurningCircle: Road termination circles
+    ///     - Crossing: Pedestrian crossings
+    ///     Default: [CrossRoads] - Only process 4-way intersections from OSM data
+    /// </summary>
+    public List<OsmJunctionType> IncludedOsmJunctionTypes { get; set; } =
+    [
+        OsmJunctionType.CrossRoads,
+        OsmJunctionType.TJunction
+    ];
 
     // ========================================
     // DEBUG OPTIONS

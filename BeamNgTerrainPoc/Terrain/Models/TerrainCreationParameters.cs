@@ -72,6 +72,26 @@ public class TerrainCreationParameters
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
 
     /// <summary>
+    ///     Enable crossroad to T-junction conversion.
+    ///     When enabled, mid-spline crossings (where two roads cross without either terminating)
+    ///     are converted to T-junctions by splitting the secondary road at the crossing point.
+    ///     This enables proper elevation harmonization at crossings.
+    ///     Disable this for special scenarios like overpasses/underpasses where roads should
+    ///     maintain independent elevations.
+    ///     Default: true
+    /// </summary>
+    public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
+
+    /// <summary>
+    ///     Enable extended OSM junction detection.
+    ///     When enabled and geographic bounding box is available, queries OSM for junction hints
+    ///     (motorway exits, traffic signals, stop signs, etc.) to improve junction detection accuracy.
+    ///     When disabled, only geometric junction detection is used.
+    ///     Default: true
+    /// </summary>
+    public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
+
+    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     ///     Maximum distance between path endpoints to consider them part of the same junction.
@@ -79,9 +99,9 @@ public class TerrainCreationParameters
     ///     - 5-8m: Narrow roads (single lane)
     ///     - 8-12m: Standard roads
     ///     - 12-15m: Wide roads (highways)
-    ///     Default: 10.0
+    ///     Default: 15.0
     /// </summary>
-    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 10.0f;
+    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 15.0f;
 
     /// <summary>
     ///     Global junction blend distance in meters.

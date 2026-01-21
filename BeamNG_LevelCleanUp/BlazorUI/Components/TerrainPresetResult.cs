@@ -84,6 +84,18 @@ public class TerrainPresetResult
     public bool? EnableCrossMaterialHarmonization { get; set; }
 
     /// <summary>
+    ///     Whether to enable crossroad to T-junction conversion.
+    ///     When enabled, mid-spline crossings are converted to T-junctions for proper elevation harmonization.
+    /// </summary>
+    public bool? EnableCrossroadToTJunctionConversion { get; set; }
+
+    /// <summary>
+    ///     Whether to enable extended OSM junction detection.
+    ///     When enabled, queries OSM for junction hints to improve detection accuracy.
+    /// </summary>
+    public bool? EnableExtendedOsmJunctionDetection { get; set; }
+
+    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's UseGlobalJunctionSettings is true.
     /// </summary>

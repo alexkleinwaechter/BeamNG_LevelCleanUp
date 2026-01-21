@@ -99,6 +99,8 @@
                                        GeoTiffDirectory="@_geoTiffDirectory"
                                        UpdateTerrainBlock="@_updateTerrainBlock"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
+                                       EnableCrossroadToTJunctionConversion="@_enableCrossroadToTJunctionConversion"
+                                       EnableExtendedOsmJunctionDetection="@_enableExtendedOsmJunctionDetection"
                                        GlobalJunctionDetectionRadiusMeters="@_globalJunctionDetectionRadiusMeters"
                                        GlobalJunctionBlendDistanceMeters="@_globalJunctionBlendDistanceMeters"
                                        CropOffsetX="@(_cropResult?.OffsetX ?? 0)"
@@ -244,8 +246,8 @@
                                         </MudText>
                                     }
                                     <MudText Typo="Typo.body2">
-                                        <strong>SW:</strong> @_geoBoundingBox.MinLatitude.ToString("F6")°, @_geoBoundingBox.MinLongitude.ToString("F6")° |
-                                        <strong>NE:</strong> @_geoBoundingBox.MaxLatitude.ToString("F6")°, @_geoBoundingBox.MaxLongitude.ToString("F6")°
+                                        <strong>SW:</strong> @_geoBoundingBox.MinLatitude.ToString("F6")ï¿½, @_geoBoundingBox.MinLongitude.ToString("F6")ï¿½ |
+                                        <strong>NE:</strong> @_geoBoundingBox.MaxLatitude.ToString("F6")ï¿½, @_geoBoundingBox.MaxLongitude.ToString("F6")ï¿½
                                     </MudText>
                                     @if (_geoTiffMinElevation.HasValue && _geoTiffMaxElevation.HasValue)
                                     {
@@ -260,8 +262,8 @@
                                             <strong>DEM Resolution:</strong> @GetNativePixelSizeDescription()
                                         </MudText>
                                         <MudText Typo="Typo.body2">
-                                            <strong>Source Size:</strong> @_geoTiffOriginalWidth × @_geoTiffOriginalHeight px
-                                            (@GetRealWorldWidthKm().ToString("F1")km × @GetRealWorldHeightKm().ToString("F1")km)
+                                            <strong>Source Size:</strong> @_geoTiffOriginalWidth ï¿½ @_geoTiffOriginalHeight px
+                                            (@GetRealWorldWidthKm().ToString("F1")km ï¿½ @GetRealWorldHeightKm().ToString("F1")km)
                                         </MudText>
                                     }
                                     <MudText Typo="Typo.caption" Class="mt-1">
@@ -278,8 +280,8 @@
                                             Cropped Region (Used for OSM)
                                         </MudText>
                                         <MudText Typo="Typo.body2">
-                                            <strong>SW:</strong> @_cropResult.CroppedBoundingBox.MinLatitude.ToString("F6")°, @_cropResult.CroppedBoundingBox.MinLongitude.ToString("F6")° |
-                                            <strong>NE:</strong> @_cropResult.CroppedBoundingBox.MaxLatitude.ToString("F6")°, @_cropResult.CroppedBoundingBox.MaxLongitude.ToString("F6")°
+                                            <strong>SW:</strong> @_cropResult.CroppedBoundingBox.MinLatitude.ToString("F6")ï¿½, @_cropResult.CroppedBoundingBox.MinLongitude.ToString("F6")ï¿½ |
+                                            <strong>NE:</strong> @_cropResult.CroppedBoundingBox.MaxLatitude.ToString("F6")ï¿½, @_cropResult.CroppedBoundingBox.MaxLongitude.ToString("F6")ï¿½
                                         </MudText>
                                         @if (_cropResult.CroppedMinElevation.HasValue && _cropResult.CroppedMaxElevation.HasValue)
                                         {
@@ -490,6 +492,34 @@
                                                  Variant="Variant.Outlined"
                                                  Min="5.0f" Max="100.0f" Step="5.0f"
                                                  HelperText="Distance to blend elevations at junctions" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudCheckBox @bind-Value="_enableCrossroadToTJunctionConversion"
+                                                 Label="Crossroad to T-Junction Conversion"
+                                                 Color="Color.Primary" />
+                                    <MudTooltip Text="When enabled, mid-spline crossings (where two roads cross without either terminating) are converted to T-junctions by splitting the secondary road. This enables proper elevation harmonization at crossings. Disable for overpasses/underpasses where roads should maintain independent elevations.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Split crossing roads for proper blending
+                                </MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudCheckBox @bind-Value="_enableExtendedOsmJunctionDetection"
+                                                 Label="Extended OSM Junction Detection"
+                                                 Color="Color.Primary" />
+                                    <MudTooltip Text="When enabled and using GeoTIFF/OSM source, queries OpenStreetMap for explicit junction tags (motorway exits, traffic signals, stop signs) to improve junction detection accuracy. Only applies when geographic coordinates are available.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Use OSM junction hints (if applicable)
+                                </MudText>
                             </MudItem>
                         }
                     </MudGrid>

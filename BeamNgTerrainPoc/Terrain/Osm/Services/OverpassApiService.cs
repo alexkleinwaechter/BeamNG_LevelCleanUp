@@ -10,6 +10,7 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Services;
 
 /// <summary>
 /// Service for querying OpenStreetMap data via the Overpass API.
+/// Uses round-robin retry across multiple endpoints for resilience.
 /// </summary>
 public class OverpassApiService : IOverpassApiService, IDisposable
 {
@@ -18,14 +19,21 @@ public class OverpassApiService : IOverpassApiService, IDisposable
     private readonly bool _ownsHttpClient;
     
     /// <summary>
-    /// Default Overpass API endpoint.
+    /// Available Overpass API endpoints for round-robin failover.
+    /// Order matters: primary endpoints first, then fallbacks.
     /// </summary>
-    public const string DefaultEndpoint = "https://overpass-api.de/api/interpreter";
+    public static readonly string[] AvailableEndpoints =
+    [
+        "https://overpass.private.coffee/api/interpreter",
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.osm.jp/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+    ];
     
     /// <summary>
-    /// Alternative endpoint (Kumi Systems).
+    /// Default Overpass API endpoint (first in the list).
     /// </summary>
-    public const string AlternativeEndpoint = "https://overpass.kumi.systems/api/interpreter";
+    public static string DefaultEndpoint => AvailableEndpoints[0];
     
     /// <summary>
     /// Default timeout for queries in seconds (increased for larger areas).
@@ -33,17 +41,19 @@ public class OverpassApiService : IOverpassApiService, IDisposable
     public const int DefaultTimeoutSeconds = 180;
     
     /// <summary>
-    /// Maximum number of retry attempts for failed requests.
+    /// Maximum number of complete rounds through all endpoints.
+    /// Total attempts = MaxRounds * AvailableEndpoints.Length
     /// </summary>
-    public const int MaxRetryAttempts = 3;
+    public const int MaxRounds = 3;
     
     /// <summary>
-    /// Base delay for exponential backoff in milliseconds.
+    /// Delay in milliseconds between rounds (not between individual endpoint attempts).
+    /// Applied with exponential backoff: Round 1 = 0ms, Round 2 = 2000ms, Round 3 = 4000ms
     /// </summary>
-    public const int BaseRetryDelayMs = 2000;
+    public const int BaseRoundDelayMs = 2000;
     
     /// <summary>
-    /// The endpoint URL being used.
+    /// The primary endpoint URL being used.
     /// </summary>
     public string Endpoint { get; }
     
@@ -109,114 +119,115 @@ public class OverpassApiService : IOverpassApiService, IDisposable
     /// <inheritdoc />
     public async Task<string> ExecuteRawQueryAsync(string query, CancellationToken cancellationToken = default)
     {
-        return await ExecuteRawQueryWithRetryAsync(query, Endpoint, cancellationToken);
+        return await ExecuteRawQueryWithRoundRobinAsync(query, cancellationToken);
     }
     
     /// <summary>
-    /// Executes a query with retry logic and optional endpoint fallback.
+    /// Executes a query with round-robin retry across all available endpoints.
+    /// Cycles through all endpoints on each failure, with no delay between servers
+    /// within a round, but adds delay between complete rounds.
     /// </summary>
-    private async Task<string> ExecuteRawQueryWithRetryAsync(
-        string query, 
-        string endpoint,
+    private async Task<string> ExecuteRawQueryWithRoundRobinAsync(
+        string query,
         CancellationToken cancellationToken)
     {
-        TerrainLogger.Info($"Executing Overpass query ({query.Length} chars)...");
+        var totalEndpoints = AvailableEndpoints.Length;
+        var totalAttempts = MaxRounds * totalEndpoints;
+        
+        TerrainLogger.Info($"Executing Overpass query ({query.Length} chars) with round-robin across {totalEndpoints} endpoints...");
         
         Exception? lastException = null;
+        string? lastErrorMessage = null;
         
-        for (int attempt = 1; attempt <= MaxRetryAttempts; attempt++)
+        for (int round = 0; round < MaxRounds; round++)
         {
-            try
+            // Add delay between rounds (not before the first round)
+            if (round > 0)
             {
-                var content = new FormUrlEncodedContent(new[]
+                var roundDelayMs = BaseRoundDelayMs * round; // 0ms, 2000ms, 4000ms
+                TerrainLogger.Info($"Starting round {round + 1}/{MaxRounds} after {roundDelayMs}ms delay...");
+                await Task.Delay(roundDelayMs, cancellationToken);
+            }
+            
+            for (int endpointIndex = 0; endpointIndex < totalEndpoints; endpointIndex++)
+            {
+                var endpoint = AvailableEndpoints[endpointIndex];
+                var attemptNumber = round * totalEndpoints + endpointIndex + 1;
+                var endpointName = GetEndpointShortName(endpoint);
+                
+                try
                 {
-                    new KeyValuePair<string, string>("data", query)
-                });
-                
-                var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    return await response.Content.ReadAsStringAsync(cancellationToken);
-                }
-                
-                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                
-                // Check if it's a retryable error (timeout, too busy, gateway errors)
-                var isRetryable = IsRetryableError(response.StatusCode, errorBody);
-                
-                if (!isRetryable || attempt == MaxRetryAttempts)
-                {
-                    var errorMsg = $"Overpass API returned {response.StatusCode}";
+                    TerrainLogger.Info($"Attempt {attemptNumber}/{totalAttempts}: Trying {endpointName}...");
+                    
+                    var content = new FormUrlEncodedContent(new[]
+                    {
+                        new KeyValuePair<string, string>("data", query)
+                    });
+                    
+                    var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
+                    
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var result = await response.Content.ReadAsStringAsync(cancellationToken);
+                        TerrainLogger.Info($"Success on {endpointName} (attempt {attemptNumber}/{totalAttempts})");
+                        return result;
+                    }
+                    
+                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var isRetryable = IsRetryableError(response.StatusCode, errorBody);
+                    
+                    lastErrorMessage = $"Overpass API ({endpointName}) returned {response.StatusCode}";
                     if (errorBody.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
                         errorBody.Contains("too busy", StringComparison.OrdinalIgnoreCase))
                     {
-                        errorMsg += " - Server is busy. Try again later or use a smaller area.";
+                        lastErrorMessage += " - Server is busy";
                     }
-                    TerrainLogger.Error(errorMsg);
-                    throw new HttpRequestException(errorMsg);
+                    
+                    TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts}, retryable: {isRetryable})");
+                    
+                    // For non-retryable errors, still try the next endpoint in round-robin
+                    // Only skip to next endpoint, don't throw yet
+                    lastException = new HttpRequestException(lastErrorMessage);
                 }
-                
-                // Calculate backoff delay with exponential increase
-                var delayMs = BaseRetryDelayMs * (int)Math.Pow(2, attempt - 1);
-                TerrainLogger.Warning($"Overpass API request failed (attempt {attempt}/{MaxRetryAttempts}). " +
-                                      $"Retrying in {delayMs / 1000.0:F1}s... Reason: {response.StatusCode}");
-                
-                await Task.Delay(delayMs, cancellationToken);
-            }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                // HTTP client timeout (not user cancellation)
-                lastException = new HttpRequestException("Request timed out");
-                
-                if (attempt == MaxRetryAttempts)
+                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    break;
+                    // HTTP client timeout (not user cancellation)
+                    lastErrorMessage = $"Request to {endpointName} timed out";
+                    lastException = new HttpRequestException(lastErrorMessage);
+                    TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
                 }
-                
-                var delayMs = BaseRetryDelayMs * (int)Math.Pow(2, attempt - 1);
-                TerrainLogger.Warning($"Overpass API request timed out (attempt {attempt}/{MaxRetryAttempts}). " +
-                                      $"Retrying in {delayMs / 1000.0:F1}s...");
-                
-                await Task.Delay(delayMs, cancellationToken);
-            }
-            catch (HttpRequestException ex)
-            {
-                lastException = ex;
-                
-                if (attempt == MaxRetryAttempts)
+                catch (HttpRequestException ex)
                 {
-                    break;
+                    lastErrorMessage = $"Request to {endpointName} failed: {ex.Message}";
+                    lastException = ex;
+                    TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
                 }
                 
-                var delayMs = BaseRetryDelayMs * (int)Math.Pow(2, attempt - 1);
-                TerrainLogger.Warning($"Overpass API request failed (attempt {attempt}/{MaxRetryAttempts}). " +
-                                      $"Retrying in {delayMs / 1000.0:F1}s... Error: {ex.Message}");
-                
-                await Task.Delay(delayMs, cancellationToken);
+                // No delay between endpoints within the same round - immediately try the next one
             }
         }
         
-        // If we exhausted retries on default endpoint, try the alternative endpoint
-        if (endpoint == DefaultEndpoint && endpoint != AlternativeEndpoint)
+        // All rounds exhausted
+        var finalMessage = $"Overpass API request failed after {totalAttempts} attempts across {totalEndpoints} endpoints ({MaxRounds} rounds). Last error: {lastErrorMessage}";
+        TerrainLogger.Error(finalMessage);
+        
+        throw lastException ?? new HttpRequestException(finalMessage);
+    }
+    
+    /// <summary>
+    /// Gets a short, readable name for an endpoint URL for logging purposes.
+    /// </summary>
+    private static string GetEndpointShortName(string endpoint)
+    {
+        try
         {
-            TerrainLogger.Info($"Trying alternative Overpass endpoint: {AlternativeEndpoint}");
-            try
-            {
-                return await ExecuteRawQueryWithRetryAsync(query, AlternativeEndpoint, cancellationToken);
-            }
-            catch (Exception altEx)
-            {
-                TerrainLogger.Warning($"Alternative endpoint also failed: {altEx.Message}");
-                // Fall through to throw the original exception
-            }
+            var uri = new Uri(endpoint);
+            return uri.Host;
         }
-        
-        // Log the final error before throwing
-        var errorMessage = lastException?.Message ?? "Overpass API request failed after all retries";
-        TerrainLogger.Error($"Overpass API request failed: {errorMessage}");
-        
-        throw lastException ?? new HttpRequestException(errorMessage);
+        catch
+        {
+            return endpoint;
+        }
     }
     
     /// <summary>

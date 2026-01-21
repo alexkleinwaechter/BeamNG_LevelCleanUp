@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
@@ -132,6 +133,25 @@ public class NetworkJunction
     ///     Reason for exclusion (user-provided or auto-detected).
     /// </summary>
     public string? ExclusionReason { get; set; }
+
+    /// <summary>
+    ///     OSM junction hint that was matched to this junction.
+    ///     Provides additional semantic information from OpenStreetMap.
+    /// </summary>
+    public OsmJunction? OsmHint { get; set; }
+
+    /// <summary>
+    ///     Whether this junction was created from unmatched OSM data.
+    ///     These junctions may not have been detected by geometric analysis
+    ///     but were explicitly tagged in OpenStreetMap.
+    /// </summary>
+    public bool IsOsmSourced { get; set; }
+
+    /// <summary>
+    ///     Distance from the OSM junction hint to this junction's position.
+    ///     Only set when OsmHint is not null.
+    /// </summary>
+    public float? OsmMatchDistance { get; set; }
 
     /// <summary>
     ///     The maximum priority among all contributors.
