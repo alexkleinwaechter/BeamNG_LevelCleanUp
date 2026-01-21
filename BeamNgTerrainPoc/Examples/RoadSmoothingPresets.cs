@@ -444,9 +444,9 @@ public static class RoadSmoothingPresets
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
         SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 9,
-        SmoothingSigma = 2.0f,
-        SmoothingMaskExtensionMeters = 2.5f,
+        SmoothingKernelSize = 5,
+        SmoothingSigma = 0.8f,
+        SmoothingMaskExtensionMeters = 1f,
         SmoothingIterations = 1,
 
         SplineParameters = new SplineRoadParameters
@@ -517,9 +517,9 @@ public static class RoadSmoothingPresets
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
         SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 7,
-        SmoothingSigma = 1.5f,
-        SmoothingMaskExtensionMeters = 2.0f,
+        SmoothingKernelSize = 5,
+        SmoothingSigma = 0.8f,
+        SmoothingMaskExtensionMeters = 1f,
         SmoothingIterations = 1,
 
         SplineParameters = new SplineRoadParameters
@@ -586,12 +586,12 @@ public static class RoadSmoothingPresets
         SideMaxSlopeDegrees = 50.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
 
-        // POST-PROCESSING - Minimal
+        // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
         SmoothingType = PostProcessingSmoothingType.Gaussian,
         SmoothingKernelSize = 5,
         SmoothingSigma = 0.8f,
-        SmoothingMaskExtensionMeters = 1.0f,
+        SmoothingMaskExtensionMeters = 1f,
         SmoothingIterations = 1,
 
         SplineParameters = new SplineRoadParameters
@@ -658,12 +658,12 @@ public static class RoadSmoothingPresets
         SideMaxSlopeDegrees = 50.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
 
-        // POST-PROCESSING - Light
+        // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
         SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 3,
-        SmoothingSigma = 0.5f,
-        SmoothingMaskExtensionMeters = 1.0f,
+        SmoothingKernelSize = 5,
+        SmoothingSigma = 0.8f,
+        SmoothingMaskExtensionMeters = 1f,
         SmoothingIterations = 1,
 
         SplineParameters = new SplineRoadParameters
@@ -732,13 +732,13 @@ public static class RoadSmoothingPresets
         SideMaxSlopeDegrees = 25.0f,
         BlendFunctionType = BlendFunctionType.Cosine,
 
-        // POST-PROCESSING - Heavy for smooth surface
+        // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
         SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 9,
-        SmoothingSigma = 2.0f,
-        SmoothingMaskExtensionMeters = 1.0f,
-        SmoothingIterations = 2,
+        SmoothingKernelSize = 5,
+        SmoothingSigma = 0.8f,
+        SmoothingMaskExtensionMeters = 1f,
+        SmoothingIterations = 1,
 
         SplineParameters = new SplineRoadParameters
         {
