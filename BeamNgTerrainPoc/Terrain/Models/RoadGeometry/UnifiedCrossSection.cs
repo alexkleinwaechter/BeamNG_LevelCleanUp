@@ -199,6 +199,30 @@ public class UnifiedCrossSection
     /// </summary>
     public JunctionBankingBehavior JunctionBankingBehavior { get; set; } = JunctionBankingBehavior.Normal;
 
+    // ========================================
+    // BRIDGE/TUNNEL STRUCTURE FLAGS
+    // ========================================
+
+    /// <summary>
+    ///     Whether this cross-section is part of a bridge.
+    ///     Inherited from the owning spline's IsBridge property.
+    ///     Bridge cross-sections are excluded from terrain smoothing and material painting.
+    /// </summary>
+    public bool IsBridge { get; set; }
+
+    /// <summary>
+    ///     Whether this cross-section is part of a tunnel.
+    ///     Inherited from the owning spline's IsTunnel property.
+    ///     Tunnel cross-sections are excluded from terrain smoothing and material painting.
+    /// </summary>
+    public bool IsTunnel { get; set; }
+
+    /// <summary>
+    ///     Whether this cross-section is part of any elevated/underground structure.
+    ///     When true, this cross-section should be excluded from terrain smoothing.
+    /// </summary>
+    public bool IsStructure => IsBridge || IsTunnel;
+
     /// <summary>
     ///     Banking blending factor for junction transitions (0-1).
     ///     0 = at junction center (apply junction behavior fully)
@@ -246,7 +270,10 @@ public class UnifiedCrossSection
             Priority = ownerSpline.Priority,
             IsExcluded = false,
             // OSM roads have OsmRoadType set, PNG roads have it null
-            IsFromOsmSource = !string.IsNullOrEmpty(ownerSpline.OsmRoadType)
+            IsFromOsmSource = !string.IsNullOrEmpty(ownerSpline.OsmRoadType),
+            // Propagate structure flags from the owning spline
+            IsBridge = ownerSpline.IsBridge,
+            IsTunnel = ownerSpline.IsTunnel
         };
     }
 

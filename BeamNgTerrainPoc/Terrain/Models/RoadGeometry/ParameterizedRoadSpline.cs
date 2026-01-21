@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
@@ -68,6 +69,36 @@ public class ParameterizedRoadSpline
     ///     - They receive uniform elevation harmonization
     /// </summary>
     public bool IsRoundabout { get; set; }
+
+    /// <summary>
+    ///     Whether this spline represents a bridge structure.
+    ///     Bridge splines are excluded from terrain smoothing and material painting.
+    /// </summary>
+    public bool IsBridge { get; set; }
+
+    /// <summary>
+    ///     Whether this spline represents a tunnel structure.
+    ///     Tunnel splines are excluded from terrain smoothing and material painting.
+    /// </summary>
+    public bool IsTunnel { get; set; }
+
+    /// <summary>
+    ///     Combined check for any elevated/underground structure.
+    ///     When true, this spline should be excluded from terrain modification and material painting.
+    /// </summary>
+    public bool IsStructure => IsBridge || IsTunnel;
+
+    /// <summary>
+    ///     Vertical layer (0 = ground level, positive = elevated, negative = underground).
+    ///     Used for bridge/tunnel ordering and DAE placement.
+    /// </summary>
+    public int Layer { get; set; }
+
+    /// <summary>
+    ///     Reference to the original OSM bridge/tunnel data (if applicable).
+    ///     Contains structure type, name, and other metadata for DAE generation.
+    /// </summary>
+    public OsmBridgeTunnel? StructureData { get; set; }
 
     /// <summary>
     ///     Total length of the spline in meters.
