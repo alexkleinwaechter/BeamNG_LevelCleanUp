@@ -1,6 +1,7 @@
 @using BeamNgTerrainPoc.Terrain.Osm.Services
 @using System.Diagnostics
 @inject ISnackbar Snackbar
+@implements IDisposable
 
 <MudExpansionPanels Class="@Class">
     <MudExpansionPanel Text="@GetTitle()" Dense="true">
@@ -73,7 +74,25 @@
 
     protected override void OnInitialized()
     {
+        // Subscribe to cache change notifications
+        OsmQueryCache.CacheChanged += OnCacheChanged;
         RefreshStats();
+    }
+    
+    private void OnCacheChanged()
+    {
+        // Use InvokeAsync to ensure we're on the UI thread
+        InvokeAsync(() =>
+        {
+            RefreshStats();
+            StateHasChanged();
+        });
+    }
+    
+    public void Dispose()
+    {
+        // Unsubscribe to prevent memory leaks
+        OsmQueryCache.CacheChanged -= OnCacheChanged;
     }
 
     private string GetTitle()

@@ -16,6 +16,12 @@ public class OsmQueryCache
     /// </summary>
     private const int CacheVersion = 2; // v2: Added [JsonConstructor] to GeoBoundingBox/GeoCoordinate
     
+    /// <summary>
+    /// Event raised when any OSM cache is modified (added, invalidated, or cleared).
+    /// Useful for UI components that need to refresh when cache state changes.
+    /// </summary>
+    public static event Action? CacheChanged;
+    
     private readonly Dictionary<string, OsmQueryResult> _memoryCache = new();
     private readonly string _cacheDirectory;
     private readonly TimeSpan _cacheExpiry;
@@ -288,6 +294,7 @@ public class OsmQueryCache
             var json = JsonSerializer.Serialize(result, JsonOptions);
             await File.WriteAllTextAsync(filePath, json);
             TerrainLogger.Info($"OSM result cached: {cacheKey}");
+            CacheChanged?.Invoke();
         }
         catch (Exception ex)
         {
@@ -311,6 +318,7 @@ public class OsmQueryCache
             {
                 File.Delete(filePath);
                 TerrainLogger.Info($"OSM cache invalidated: {cacheKey}");
+                CacheChanged?.Invoke();
             }
             catch (Exception ex)
             {
@@ -334,6 +342,8 @@ public class OsmQueryCache
                 File.Delete(file);
             }
             TerrainLogger.Info($"OSM cache cleared: {files.Length} files deleted");
+            if (files.Length > 0)
+                CacheChanged?.Invoke();
         }
         catch (Exception ex)
         {
@@ -405,6 +415,7 @@ public class OsmQueryCache
             if (deletedCount > 0)
             {
                 TerrainLogger.Info($"OSM cache cleanup: {deletedCount} expired files deleted");
+                CacheChanged?.Invoke();
             }
         }
         catch (Exception ex)
@@ -413,5 +424,13 @@ public class OsmQueryCache
         }
         
         return deletedCount;
+    }
+    
+    /// <summary>
+    /// Raises the CacheChanged event manually. Useful when external code modifies the cache.
+    /// </summary>
+    public static void RaiseCacheChanged()
+    {
+        CacheChanged?.Invoke();
     }
 }

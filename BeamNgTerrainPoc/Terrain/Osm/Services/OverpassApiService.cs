@@ -169,6 +169,26 @@ public class OverpassApiService : IOverpassApiService, IDisposable
                     if (response.IsSuccessStatusCode)
                     {
                         var result = await response.Content.ReadAsStringAsync(cancellationToken);
+                        
+                        // Validate that the response is actually JSON, not an HTML error page
+                        // Overpass API can return 200 OK with HTML when overloaded
+                        var trimmed = result.TrimStart();
+                        if (trimmed.StartsWith('<'))
+                        {
+                            lastErrorMessage = $"Overpass API ({endpointName}) returned HTML instead of JSON (server error page)";
+                            lastException = new HttpRequestException(lastErrorMessage);
+                            TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
+                            continue; // Try next endpoint
+                        }
+                        
+                        if (!trimmed.StartsWith('{') && !trimmed.StartsWith('['))
+                        {
+                            lastErrorMessage = $"Overpass API ({endpointName}) returned invalid response (not JSON)";
+                            lastException = new HttpRequestException(lastErrorMessage);
+                            TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
+                            continue; // Try next endpoint
+                        }
+                        
                         TerrainLogger.Info($"Success on {endpointName} (attempt {attemptNumber}/{totalAttempts})");
                         return result;
                     }

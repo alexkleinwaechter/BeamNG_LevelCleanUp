@@ -258,6 +258,7 @@ public class OsmJunctionCache
             var json = JsonSerializer.Serialize(result, JsonOptions);
             await File.WriteAllTextAsync(filePath, json);
             TerrainLogger.Info($"OSM junction result cached: {cacheKey} ({result.Junctions.Count} junctions)");
+            OsmQueryCache.RaiseCacheChanged();
         }
         catch (Exception ex)
         {
@@ -281,6 +282,7 @@ public class OsmJunctionCache
             {
                 File.Delete(filePath);
                 TerrainLogger.Info($"OSM junction cache invalidated: {cacheKey}");
+                OsmQueryCache.RaiseCacheChanged();
             }
             catch (Exception ex)
             {
@@ -304,6 +306,8 @@ public class OsmJunctionCache
                 File.Delete(file);
             }
             TerrainLogger.Info($"OSM junction cache cleared: {files.Length} files deleted");
+            if (files.Length > 0)
+                OsmQueryCache.RaiseCacheChanged();
         }
         catch (Exception ex)
         {
@@ -375,6 +379,7 @@ public class OsmJunctionCache
             if (deletedCount > 0)
             {
                 TerrainLogger.Info($"OSM junction cache cleanup: {deletedCount} expired files deleted");
+                OsmQueryCache.RaiseCacheChanged();
             }
         }
         catch (Exception ex)
