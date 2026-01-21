@@ -1,0 +1,196 @@
+@using BeamNgTerrainPoc.Terrain.Osm.Models
+@using BeamNgTerrainPoc.Terrain.Osm.Services
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@inject ISnackbar Snackbar
+
+@if (_isLoading)
+{
+    <MudAlert Severity="Severity.Info" Dense="true" Class="@Class">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            <MudText Typo="Typo.body2">Querying bridge and tunnel data from OSM...</MudText>
+        </MudStack>
+    </MudAlert>
+}
+else if (_queryResult != null && _queryResult.TotalCount > 0)
+{
+    <MudAlert Severity="Severity.Info" Dense="true" Class="@Class" Icon="@Icons.Material.Filled.Architecture">
+        <MudText Typo="Typo.subtitle2">
+            <MudIcon Icon="@Icons.Material.Filled.Architecture" Size="Size.Small" Class="mr-1" />
+            Detected Structures (Bridge/Tunnel)
+        </MudText>
+        <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mt-2">
+            @if (_queryResult.BridgeCount > 0)
+            {
+                <div>
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Icon="@BridgeIcon">
+                        @_queryResult.BridgeCount Bridge@(_queryResult.BridgeCount != 1 ? "s" : "")
+                    </MudChip>
+                </div>
+            }
+            @if (_queryResult.TunnelCount > 0)
+            {
+                <div>
+                    <MudChip T="string" Color="Color.Dark" Size="Size.Small" Icon="@TunnelIcon">
+                        @_queryResult.TunnelCount Tunnel@(_queryResult.TunnelCount != 1 ? "s" : "")
+                    </MudChip>
+                </div>
+            }
+            @if (_queryResult.CulvertCount > 0)
+            {
+                <div>
+                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Icon="@CulvertIcon">
+                        @_queryResult.CulvertCount Culvert@(_queryResult.CulvertCount != 1 ? "s" : "")
+                    </MudChip>
+                </div>
+            }
+        </MudStack>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+            @if (_queryResult.IsFromCache)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Cached" Size="Size.Small" Class="mr-1" />
+                <text>From cache (queried @GetTimeSinceQuery())</text>
+            }
+            else
+            {
+                <MudIcon Icon="@Icons.Material.Filled.CloudDownload" Size="Size.Small" Class="mr-1" />
+                <text>Fresh query from OSM</text>
+            }
+            @if (EnableBridgeTunnelDetection)
+            {
+                <text> • These structures will be excluded from terrain smoothing</text>
+            }
+        </MudText>
+    </MudAlert>
+}
+else if (_queryResult != null && _queryResult.TotalCount == 0 && GeoBoundingBox != null)
+{
+    <MudAlert Severity="Severity.Success" Dense="true" Class="@Class" Icon="@Icons.Material.Filled.CheckCircle">
+        <MudText Typo="Typo.body2">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+            No bridge or tunnel structures found in the selected area
+        </MudText>
+    </MudAlert>
+}
+else if (_error != null)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="@Class">
+        <MudText Typo="Typo.body2">
+            <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="mr-1" />
+            Could not query bridge/tunnel data: @_error
+        </MudText>
+    </MudAlert>
+}
+
+@code {
+    // Icons for structure types
+    private const string BridgeIcon = Icons.Material.Filled.Architecture;
+    private const string TunnelIcon = Icons.Material.Filled.Subway;
+    private const string CulvertIcon = Icons.Material.Filled.Waves;
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    /// <summary>
+    /// Geographic bounding box to query. When this changes, the component will re-query.
+    /// </summary>
+    [Parameter]
+    public GeoBoundingBox? GeoBoundingBox { get; set; }
+
+    /// <summary>
+    /// Whether bridge/tunnel detection is enabled. Controls the messaging shown.
+    /// </summary>
+    [Parameter]
+    public bool EnableBridgeTunnelDetection { get; set; } = true;
+
+    /// <summary>
+    /// Event callback when query results are available.
+    /// </summary>
+    [Parameter]
+    public EventCallback<OsmBridgeTunnelQueryResult?> OnQueryCompleted { get; set; }
+
+    private OsmBridgeTunnelQueryResult? _queryResult;
+    private bool _isLoading;
+    private string? _error;
+    private GeoBoundingBox? _lastQueriedBbox;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Only re-query if the bounding box has changed
+        if (GeoBoundingBox != null && !BoundingBoxEquals(GeoBoundingBox, _lastQueriedBbox))
+        {
+            await QueryBridgeTunnelDataAsync();
+        }
+        else if (GeoBoundingBox == null)
+        {
+            _queryResult = null;
+            _error = null;
+            _lastQueriedBbox = null;
+        }
+    }
+
+    private async Task QueryBridgeTunnelDataAsync()
+    {
+        if (GeoBoundingBox == null) return;
+
+        _isLoading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var queryService = new OsmBridgeTunnelQueryService();
+            _queryResult = await queryService.QueryBridgesAndTunnelsAsync(GeoBoundingBox);
+            _lastQueriedBbox = GeoBoundingBox;
+
+            // Notify parent component
+            await OnQueryCompleted.InvokeAsync(_queryResult);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _queryResult = null;
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static bool BoundingBoxEquals(GeoBoundingBox? a, GeoBoundingBox? b)
+    {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        
+        return Math.Abs(a.MinLatitude - b.MinLatitude) < 0.0001 &&
+               Math.Abs(a.MinLongitude - b.MinLongitude) < 0.0001 &&
+               Math.Abs(a.MaxLatitude - b.MaxLatitude) < 0.0001 &&
+               Math.Abs(a.MaxLongitude - b.MaxLongitude) < 0.0001;
+    }
+
+    private string GetTimeSinceQuery()
+    {
+        if (_queryResult == null) return "unknown";
+
+        var elapsed = DateTime.UtcNow - _queryResult.QueryTime;
+        
+        if (elapsed.TotalMinutes < 1)
+            return "just now";
+        if (elapsed.TotalHours < 1)
+            return $"{(int)elapsed.TotalMinutes} min ago";
+        if (elapsed.TotalDays < 1)
+            return $"{(int)elapsed.TotalHours} hours ago";
+        
+        return $"{(int)elapsed.TotalDays} days ago";
+    }
+
+    /// <summary>
+    /// Manually refresh the query (can be called from parent).
+    /// </summary>
+    public async Task RefreshAsync()
+    {
+        _lastQueriedBbox = null; // Force re-query
+        await QueryBridgeTunnelDataAsync();
+    }
+}

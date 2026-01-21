@@ -101,6 +101,7 @@
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
                                        EnableCrossroadToTJunctionConversion="@_enableCrossroadToTJunctionConversion"
                                        EnableExtendedOsmJunctionDetection="@_enableExtendedOsmJunctionDetection"
+                                       EnableBridgeTunnelDetection="@_enableBridgeTunnelDetection"
                                        GlobalJunctionDetectionRadiusMeters="@_globalJunctionDetectionRadiusMeters"
                                        GlobalJunctionBlendDistanceMeters="@_globalJunctionBlendDistanceMeters"
                                        CropOffsetX="@(_cropResult?.OffsetX ?? 0)"
@@ -299,6 +300,11 @@
                                         </MudText>
                                     </MudAlert>
                                 }
+
+                                @* Bridge/Tunnel Statistics - only show when we have a bounding box *@
+                                <BridgeTunnelStatistics GeoBoundingBox="@EffectiveBoundingBox"
+                                                       EnableBridgeTunnelDetection="@_enableBridgeTunnelDetection"
+                                                       Class="mt-2" />
                             </MudItem>
                         }
 
@@ -519,6 +525,20 @@
                                 </div>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">
                                     Use OSM junction hints (if applicable)
+                                </MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudCheckBox @bind-Value="_enableBridgeTunnelDetection"
+                                                 Label="Bridge/Tunnel Detection"
+                                                 Color="Color.Primary" />
+                                    <MudTooltip Text="When enabled and using GeoTIFF/OSM source, queries OpenStreetMap for bridge and tunnel segments. These structures are excluded from terrain smoothing and material painting, as they require separate 3D mesh generation. Only applies when geographic coordinates are available.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Exclude bridges/tunnels from terrain
                                 </MudText>
                             </MudItem>
                         }

@@ -48,6 +48,15 @@ public class TerrainGenerationState
     public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
 
     /// <summary>
+    ///     When true and geographic bounding box is available, queries OSM for bridge and tunnel
+    ///     segments and excludes them from terrain smoothing and material painting.
+    ///     Bridge/tunnel splines will be marked for later processing (e.g., procedural DAE generation).
+    ///     When disabled, all road splines are processed normally without structure detection.
+    ///     Default: true
+    /// </summary>
+    public bool EnableBridgeTunnelDetection { get; set; } = true;
+
+    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     /// </summary>

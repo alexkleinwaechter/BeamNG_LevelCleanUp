@@ -96,6 +96,12 @@ public class TerrainPresetResult
     public bool? EnableExtendedOsmJunctionDetection { get; set; }
 
     /// <summary>
+    ///     Whether to enable bridge/tunnel detection from OSM.
+    ///     When enabled, queries OSM for bridge and tunnel segments which are excluded from terrain smoothing.
+    /// </summary>
+    public bool? EnableBridgeTunnelDetection { get; set; }
+
+    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's UseGlobalJunctionSettings is true.
     /// </summary>

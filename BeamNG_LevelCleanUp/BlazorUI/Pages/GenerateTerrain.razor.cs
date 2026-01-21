@@ -102,6 +102,12 @@ public partial class GenerateTerrain
         set => _state.EnableExtendedOsmJunctionDetection = value;
     }
 
+    private bool _enableBridgeTunnelDetection
+    {
+        get => _state.EnableBridgeTunnelDetection;
+        set => _state.EnableBridgeTunnelDetection = value;
+    }
+
     private float _globalJunctionDetectionRadiusMeters
     {
         get => _state.GlobalJunctionDetectionRadiusMeters;
@@ -1056,6 +1062,9 @@ public partial class GenerateTerrain
 
         if (result.EnableExtendedOsmJunctionDetection.HasValue)
             _enableExtendedOsmJunctionDetection = result.EnableExtendedOsmJunctionDetection.Value;
+
+        if (result.EnableBridgeTunnelDetection.HasValue)
+            _enableBridgeTunnelDetection = result.EnableBridgeTunnelDetection.Value;
 
         if (result.GlobalJunctionDetectionRadiusMeters.HasValue)
             _globalJunctionDetectionRadiusMeters = result.GlobalJunctionDetectionRadiusMeters.Value;

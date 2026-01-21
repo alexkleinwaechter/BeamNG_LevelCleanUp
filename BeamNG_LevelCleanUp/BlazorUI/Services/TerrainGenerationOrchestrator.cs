@@ -676,6 +676,7 @@ public class TerrainGenerationOrchestrator
             EnableCrossMaterialHarmonization = state.EnableCrossMaterialHarmonization,
             EnableCrossroadToTJunctionConversion = state.EnableCrossroadToTJunctionConversion,
             EnableExtendedOsmJunctionDetection = state.EnableExtendedOsmJunctionDetection,
+            EnableBridgeTunnelDetection = state.EnableBridgeTunnelDetection,
             GlobalJunctionDetectionRadiusMeters = state.GlobalJunctionDetectionRadiusMeters,
             GlobalJunctionBlendDistanceMeters = state.GlobalJunctionBlendDistanceMeters,
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
