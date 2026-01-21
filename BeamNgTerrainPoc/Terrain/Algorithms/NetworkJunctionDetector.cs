@@ -628,6 +628,8 @@ public class NetworkJunctionDetector
 
     /// <summary>
     ///     Finds all spline endpoints (first and last cross-sections of each spline).
+    ///     Excludes bridge and tunnel splines from junction detection - they have
+    ///     independent elevation profiles and should not be harmonized with ground-level roads.
     /// </summary>
     private List<UnifiedCrossSection> FindSplineEndpoints(UnifiedRoadNetwork network)
     {
@@ -635,6 +637,13 @@ public class NetworkJunctionDetector
 
         foreach (var spline in network.Splines)
         {
+            // Skip bridge/tunnel splines - they don't participate in junction harmonization
+            // with ground-level roads. Bridges pass over, tunnels pass under.
+            if (spline.IsStructure)
+            {
+                continue;
+            }
+
             var splineSections = network.GetCrossSectionsForSpline(spline.SplineId).ToList();
 
             if (splineSections.Count >= 1)

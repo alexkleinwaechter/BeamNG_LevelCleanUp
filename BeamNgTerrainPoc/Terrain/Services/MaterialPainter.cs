@@ -30,6 +30,8 @@ public class MaterialPainter
     ///     Generates layer masks for each material based on spline ownership.
     ///     Uses RoadSurfaceWidthMeters for painting (may differ from RoadWidthMeters used for elevation).
     ///     Samples the original spline directly for accurate curve following.
+    ///     Bridge and tunnel splines are excluded from painting - they will have
+    ///     their materials applied to the procedural 3D mesh instead of the terrain.
     /// </summary>
     /// <param name="network">The unified road network with all splines.</param>
     /// <param name="width">Width of the output masks in pixels.</param>
@@ -42,14 +44,18 @@ public class MaterialPainter
         int height,
         float metersPerPixel)
     {
+        // Filter out structure splines (bridges/tunnels) - they don't paint on terrain
+        var groundLevelSplines = network.Splines.Where(s => !s.IsStructure).ToList();
+        var structureCount = network.Splines.Count - groundLevelSplines.Count;
+
         TerrainLogger.Info("=== MATERIAL PAINTING ===");
-        TerrainLogger.Info($"  Network: {network.Splines.Count} splines");
+        TerrainLogger.Info($"  Network: {groundLevelSplines.Count} splines ({structureCount} structures excluded)");
         TerrainLogger.Info($"  Output: {width}x{height} pixels");
 
         var layers = new Dictionary<string, byte[,]>();
 
         // Get unique material names (preserving order from splines)
-        var materialNames = network.Splines
+        var materialNames = groundLevelSplines
             .Select(s => s.MaterialName)
             .Distinct()
             .ToList();
@@ -59,8 +65,8 @@ public class MaterialPainter
         // Initialize layer for each material
         foreach (var name in materialNames) layers[name] = new byte[height, width];
 
-        // Group splines by material
-        var splinesByMaterial = network.Splines
+        // Group splines by material (using filtered ground-level splines only)
+        var splinesByMaterial = groundLevelSplines
             .GroupBy(s => s.MaterialName)
             .ToDictionary(g => g.Key, g => g.ToList());
 

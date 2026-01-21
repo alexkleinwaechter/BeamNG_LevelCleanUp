@@ -42,6 +42,8 @@ public class UnifiedRoadSmoother
     private readonly RoundaboutElevationHarmonizer _roundaboutHarmonizer;
     private readonly UnifiedTerrainBlender _terrainBlender;
     private readonly IOsmJunctionQueryService _osmJunctionQueryService;
+    private readonly IOsmBridgeTunnelQueryService _bridgeTunnelQueryService;
+    private readonly BridgeTunnelSplineMatcher _bridgeTunnelMatcher;
 
     public UnifiedRoadSmoother()
     {
@@ -54,6 +56,8 @@ public class UnifiedRoadSmoother
         _materialPainter = new MaterialPainter();
         _elevationCalculator = new OptimizedElevationSmoother();
         _osmJunctionQueryService = new OsmJunctionQueryService();
+        _bridgeTunnelQueryService = new OsmBridgeTunnelQueryService();
+        _bridgeTunnelMatcher = new BridgeTunnelSplineMatcher();
     }
 
     /// <summary>
@@ -77,6 +81,11 @@ public class UnifiedRoadSmoother
     /// <param name="enableExtendedOsmJunctionDetection">
     ///     Whether to query OSM for junction hints when geographic bounding box is available.
     ///     When disabled, only geometric junction detection is used.
+    /// </param>
+    /// <param name="enableBridgeTunnelDetection">
+    ///     Whether to query OSM for bridge and tunnel segments when geographic bounding box is available.
+    ///     When enabled, bridge/tunnel splines are marked and excluded from terrain smoothing.
+    ///     When disabled, all road splines are processed normally.
     /// </param>
     /// <param name="globalJunctionDetectionRadius">
     ///     Global junction detection radius in meters (used when material's
@@ -103,6 +112,7 @@ public class UnifiedRoadSmoother
         bool enableCrossMaterialHarmonization = true,
         bool enableCrossroadToTJunctionConversion = true,
         bool enableExtendedOsmJunctionDetection = true,
+        bool enableBridgeTunnelDetection = true,
         float globalJunctionDetectionRadius = 10.0f,
         float globalJunctionBlendDistance = 30.0f,
         bool flipMaterialProcessingOrder = true,
@@ -140,6 +150,64 @@ public class UnifiedRoadSmoother
 
         TerrainLogger.Info(
             $"  Network built: {network.Splines.Count} splines, {network.CrossSections.Count} cross-sections");
+
+        // Phase 1.3: Detect and annotate bridge/tunnel splines
+        // This must happen BEFORE elevation calculation so that bridge/tunnel splines
+        // are excluded from terrain-based elevation smoothing. Bridges/tunnels will
+        // have their own independent elevation profiles calculated later.
+        if (enableBridgeTunnelDetection && geoBoundingBox != null)
+        {
+            perfLog?.LogSection("Phase 1.3: Bridge/Tunnel Detection");
+            TerrainLogger.Info("Phase 1.3: Detecting bridge and tunnel segments...");
+            sw.Restart();
+
+            try
+            {
+                var bridgeTunnelResult = QueryBridgesAndTunnels(geoBoundingBox);
+                if (bridgeTunnelResult != null && bridgeTunnelResult.Structures.Count > 0)
+                {
+                    var matchResult = _bridgeTunnelMatcher.MatchAndAnnotate(
+                        network.Splines,
+                        bridgeTunnelResult,
+                        geoBoundingBox,
+                        size,
+                        metersPerPixel);
+
+                    TerrainLogger.Info($"  Bridge/Tunnel matching: {matchResult.MatchedBridges} bridges, " +
+                                      $"{matchResult.MatchedTunnels} tunnels matched out of {matchResult.TotalStructures} total");
+
+                    if (matchResult.UnmatchedStructures > 0)
+                    {
+                        TerrainLogger.Warning($"  {matchResult.UnmatchedStructures} structures could not be matched to splines");
+                    }
+
+                    // Count how many cross-sections are now marked as structures
+                    var structureCrossSections = network.CrossSections.Count(cs => cs.IsStructure);
+                    if (structureCrossSections > 0)
+                    {
+                        TerrainLogger.Info($"  {structureCrossSections} cross-sections marked as structures (excluded from terrain smoothing)");
+                    }
+                }
+                else
+                {
+                    TerrainLogger.Info("  No bridge/tunnel structures found in area");
+                }
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"  Bridge/tunnel detection failed (continuing without): {ex.Message}");
+            }
+
+            perfLog?.Timing($"BridgeTunnelDetection: {sw.Elapsed.TotalSeconds:F2}s");
+        }
+        else if (enableBridgeTunnelDetection && geoBoundingBox == null)
+        {
+            TerrainLogger.Info("Phase 1.3: Bridge/tunnel detection skipped (no geographic bounding box available)");
+        }
+        else
+        {
+            TerrainLogger.Info("Phase 1.3: Bridge/tunnel detection disabled");
+        }
 
         // Phase 1.5: Identify roundabout splines early (before banking)
         // This must happen BEFORE banking pre-calculation so that roundabout splines
@@ -420,6 +488,35 @@ public class UnifiedRoadSmoother
     }
 
     /// <summary>
+    ///     Queries OSM bridge and tunnel data for the given bounding box.
+    ///     Uses the cached query service to avoid repeated API calls.
+    /// </summary>
+    /// <param name="bbox">Geographic bounding box (WGS84).</param>
+    /// <returns>Bridge/tunnel query result or null if query fails.</returns>
+    private OsmBridgeTunnelQueryResult? QueryBridgesAndTunnels(GeoBoundingBox bbox)
+    {
+        var perfLog = TerrainCreationLogger.Current;
+        
+        var sw = Stopwatch.StartNew();
+        
+        try
+        {
+            // Query OSM bridges and tunnels (uses caching internally)
+            var result = _bridgeTunnelQueryService.QueryBridgesAndTunnelsAsync(bbox).GetAwaiter().GetResult();
+            
+            perfLog?.Timing($"OSM bridge/tunnel query: {sw.ElapsedMilliseconds}ms, " +
+                           $"{result.BridgeCount} bridges, {result.TunnelCount} tunnels");
+            
+            return result;
+        }
+        catch (Exception ex)
+        {
+            TerrainLogger.Error($"Failed to query OSM bridges/tunnels: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
     ///     Determines if any materials have roundabout data that needs processing.
     /// </summary>
     private static bool HasRoundaboutsInNetwork(UnifiedRoadNetwork network, List<MaterialDefinition> roadMaterials)
@@ -603,6 +700,8 @@ public class UnifiedRoadSmoother
     /// <summary>
     ///     Calculates target elevations for all cross-sections in the network.
     ///     Each spline uses its own parameters for elevation calculation.
+    ///     Bridge and tunnel splines are EXCLUDED from this calculation - they
+    ///     will have their own independent elevation profiles calculated separately.
     /// </summary>
     private void CalculateNetworkElevations(
         UnifiedRoadNetwork network,
@@ -610,6 +709,7 @@ public class UnifiedRoadSmoother
         float metersPerPixel)
     {
         var totalCalculated = 0;
+        var structureSplines = 0;
 
         // Group cross-sections by spline for efficient processing
         var crossSectionsBySpline = network.CrossSections
@@ -621,6 +721,29 @@ public class UnifiedRoadSmoother
             if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
                 continue;
 
+            // Get heightmap dimensions (reused across iterations)
+            var mapHeight = heightMap.GetLength(0);
+            var mapWidth = heightMap.GetLength(1);
+
+            // Skip bridge/tunnel splines - they don't use terrain-based elevations
+            // Their elevations will be calculated separately based on structure profiles
+            if (spline.IsStructure)
+            {
+                structureSplines++;
+                // Still sample original terrain elevation for reference (e.g., tunnel depth calculation)
+                foreach (var cs in crossSections)
+                {
+                    var px = (int)(cs.CenterPoint.X / metersPerPixel);
+                    var py = (int)(cs.CenterPoint.Y / metersPerPixel);
+                    px = Math.Clamp(px, 0, mapWidth - 1);
+                    py = Math.Clamp(py, 0, mapHeight - 1);
+                    cs.OriginalTerrainElevation = heightMap[py, px];
+                    // Mark as excluded from terrain modification
+                    cs.IsExcluded = true;
+                }
+                continue;
+            }
+
             var parameters = spline.Parameters;
 
             // Create a temporary RoadGeometry for compatibility with existing elevation calculator
@@ -631,8 +754,6 @@ public class UnifiedRoadSmoother
             foreach (var ucs in crossSections) tempGeometry.CrossSections.Add(ucs.ToCrossSection());
 
             // Sample raw terrain elevations BEFORE smoothing for OriginalTerrainElevation
-            var mapHeight = heightMap.GetLength(0);
-            var mapWidth = heightMap.GetLength(1);
             for (var i = 0; i < crossSections.Count; i++)
             {
                 var px = (int)(crossSections[i].CenterPoint.X / metersPerPixel);
@@ -653,7 +774,12 @@ public class UnifiedRoadSmoother
             }
         }
 
-        TerrainCreationLogger.Current?.Detail($"Calculated elevations for {totalCalculated} cross-sections");
+        var logMessage = $"Calculated elevations for {totalCalculated} cross-sections";
+        if (structureSplines > 0)
+        {
+            logMessage += $" ({structureSplines} structure spline(s) excluded)";
+        }
+        TerrainCreationLogger.Current?.Detail(logMessage);
     }
 
     /// <summary>

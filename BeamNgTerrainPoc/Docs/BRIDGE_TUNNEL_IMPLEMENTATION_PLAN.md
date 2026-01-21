@@ -19,10 +19,10 @@ This document outlines the implementation plan for querying, caching, and integr
 | Phase 2 | ✅ DONE | Overpass Query Service Extension |
 | Phase 3 | ✅ DONE | Cache Implementation (included in Phase 2) |
 | Phase 4 | ✅ DONE | Spline Annotation (Bridge/Tunnel Markers) |
-| Phase 5 | 🔲 TODO | Pipeline Integration (Road Smoothing) |
-| Phase 6 | 🔲 TODO | Pipeline Integration (Material Painting) |
+| Phase 5 | ✅ DONE | Pipeline Integration (Road Smoothing) |
+| Phase 6 | ✅ DONE | Pipeline Integration (Material Painting) |
 | Phase 7 | 🔲 TODO | UI Integration (Optional Visualization) |
-| Phase 8 | 🔲 TODO | Configuration Options (Enable/Disable) |
+| Phase 8 | ✅ DONE | Configuration Options (Enable/Disable) |
 
 ---
 
