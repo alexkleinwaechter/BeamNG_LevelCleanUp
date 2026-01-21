@@ -140,9 +140,26 @@ public class OsmBridgeTunnel
     public float LengthMeters { get; set; }
     
     /// <summary>
-    /// Road width in meters (from OSM width tag or estimated from highway type).
+    /// Road width in meters - only used as fallback if no spline match.
+    /// In normal flow, width comes from the matched spline's RoadSmoothingParameters.
     /// </summary>
     public float WidthMeters { get; set; }
+    
+    /// <summary>
+    /// Gets the effective width for this structure.
+    /// Uses the matched spline's user-defined width for seamless road continuity.
+    /// </summary>
+    public float GetEffectiveWidth(ParameterizedRoadSpline? matchedSpline)
+    {
+        // Primary: Use the user-defined road width from the material parameters
+        if (matchedSpline != null)
+        {
+            return matchedSpline.Parameters.RoadWidthMeters;
+        }
+        
+        // Fallback only if no spline match (shouldn't happen in normal flow)
+        return WidthMeters > 0 ? WidthMeters : 6.0f;
+    }
 }
 ```
 
@@ -258,21 +275,26 @@ out geom;
    - Extract `layer` tag (default 0 if not present)
    - Get highway type for width estimation
 
-4. **Width Estimation** (when not tagged):
+4. **Width Handling**:
+   - Bridge/tunnel width is **NOT estimated from OSM highway type**
+   - Instead, width comes from the **matched spline's `RoadSmoothingParameters.RoadWidthMeters`**
+   - This ensures seamless continuity between the road surface and the structure
+   - The `OsmBridgeTunnel.WidthMeters` property is only used as a fallback if no spline match is found
+
 ```csharp
-public static float EstimateRoadWidth(string? highwayType) => highwayType?.ToLower() switch
+// Width is determined from the matched spline, not from OSM data
+// This ensures the bridge/tunnel has the same width as the road it connects to
+public float GetEffectiveWidth(ParameterizedRoadSpline? matchedSpline)
 {
-    "motorway" => 14.0f,      // 2x 3.5m lanes per direction
-    "trunk" => 10.0f,         // 2x 3.5m lanes + shoulder
-    "primary" => 8.0f,        // 2 lanes
-    "secondary" => 7.0f,
-    "tertiary" => 6.0f,
-    "residential" => 5.5f,
-    "service" => 4.0f,
-    "track" => 3.0f,
-    "path" or "footway" => 2.0f,
-    _ => 6.0f  // Default
-};
+    // Primary: Use the user-defined road width from the material
+    if (matchedSpline != null)
+    {
+        return matchedSpline.Parameters.RoadWidthMeters;
+    }
+    
+    // Fallback only if no spline match (shouldn't happen in normal flow)
+    return WidthMeters > 0 ? WidthMeters : 6.0f;
+}
 ```
 
 ### Step 2.3: Integration with Existing OverpassApiService
@@ -622,6 +644,405 @@ public float DistanceToStructure { get; set; }
 
 ---
 
+## Phase 5B: Structure Elevation Profiles
+
+### Overview: How Bridges and Tunnels Handle Elevation
+
+Unlike regular road splines that follow terrain, **bridges and tunnels have independent elevation profiles** that:
+- Start at a known entry elevation (where they connect to regular road)
+- End at a known exit elevation (where they reconnect to regular road)
+- Follow a smooth curve between these points
+- For tunnels: ensure adequate underground clearance
+
+### Step 5B.1: Elevation Profile Data Model
+
+**File**: `BeamNgTerrainPoc/Terrain/Osm/Models/StructureElevationProfile.cs`
+
+```csharp
+namespace BeamNgTerrainPoc.Terrain.Osm.Models;
+
+/// <summary>
+/// Defines the elevation profile for a bridge or tunnel structure.
+/// </summary>
+public class StructureElevationProfile
+{
+    /// <summary>Entry point elevation (where structure meets road at start).</summary>
+    public float EntryElevation { get; set; }
+    
+    /// <summary>Exit point elevation (where structure meets road at end).</summary>
+    public float ExitElevation { get; set; }
+    
+    /// <summary>Total length of the structure in meters.</summary>
+    public float LengthMeters { get; set; }
+    
+    /// <summary>Type of elevation curve to use.</summary>
+    public StructureElevationCurveType CurveType { get; set; }
+    
+    /// <summary>
+    /// For tunnels: minimum clearance below terrain surface (default 5m).
+    /// For bridges: minimum clearance above obstacle (water, road, etc.).
+    /// </summary>
+    public float MinimumClearanceMeters { get; set; } = 5.0f;
+    
+    /// <summary>
+    /// Terrain elevations sampled along the structure centerline.
+    /// Used for tunnel depth calculations.
+    /// </summary>
+    public float[]? TerrainElevationsAlongPath { get; set; }
+    
+    /// <summary>
+    /// Calculated lowest point elevation for the structure.
+    /// For tunnels: ensures this is at least MinimumClearanceMeters below terrain.
+    /// </summary>
+    public float CalculatedLowestPointElevation { get; set; }
+}
+
+/// <summary>
+/// Types of elevation curves for structures.
+/// </summary>
+public enum StructureElevationCurveType
+{
+    /// <summary>Flat profile - constant grade from entry to exit.</summary>
+    Linear,
+    
+    /// <summary>Smooth parabolic curve (sag or crest).</summary>
+    Parabolic,
+    
+    /// <summary>S-curve for tunnels - descent, level, ascent.</summary>
+    SCurve,
+    
+    /// <summary>Symmetric arch for bridges.</summary>
+    Arch
+}
+```
+
+### Step 5B.2: Bridge Elevation Calculation
+
+**Bridges** typically have one of these profiles based on length:
+
+```
+SHORT BRIDGE (< 50m) - Linear Profile
+════════════════════════════════════════════════════════
+Entry ─────────────────────────────────────────── Exit
+       Flat or constant grade between endpoints
+
+MEDIUM BRIDGE (50-200m) - Slight Sag Curve  
+════════════════════════════════════════════════════════
+Entry ──────╲                           ╱────── Exit
+             ╲─────────────────────────╱
+              Gentle sag for drainage (0.5-1% dip at center)
+
+LONG BRIDGE (> 200m) - Arch Profile
+════════════════════════════════════════════════════════
+                    ╱─────╲
+Entry ─────────────╱       ╲─────────────── Exit
+       Gradual rise to center, then descent
+       (for cable-stayed/suspension bridges)
+```
+
+**Algorithm for Bridge Elevation**:
+
+```csharp
+public float CalculateBridgeElevation(float distanceAlongStructure, StructureElevationProfile profile)
+{
+    float t = distanceAlongStructure / profile.LengthMeters;  // 0 to 1
+    float baseElevation = Lerp(profile.EntryElevation, profile.ExitElevation, t);
+    
+    return profile.CurveType switch
+    {
+        StructureElevationCurveType.Linear => baseElevation,
+        
+        StructureElevationCurveType.Parabolic => 
+            // Sag curve: lowest at center (for drainage)
+            baseElevation - SagCurveOffset(t, profile.LengthMeters),
+            
+        StructureElevationCurveType.Arch =>
+            // Arch: highest at center
+            baseElevation + ArchCurveOffset(t, profile.LengthMeters),
+            
+        _ => baseElevation
+    };
+}
+
+// Sag curve: parabola with vertex at t=0.5
+private float SagCurveOffset(float t, float length)
+{
+    // Max sag = 0.5% of length, capped at 2m
+    float maxSag = Math.Min(length * 0.005f, 2.0f);
+    // Parabola: 4 * maxSag * t * (1 - t) peaks at t=0.5
+    return 4f * maxSag * t * (1f - t);
+}
+
+// Arch curve: for long bridges
+private float ArchCurveOffset(float t, float length)
+{
+    if (length < 200f) return 0f;  // No arch for short bridges
+    // Max rise = 1% of length, capped at 10m
+    float maxRise = Math.Min(length * 0.01f, 10.0f);
+    return 4f * maxRise * t * (1f - t);
+}
+```
+
+### Step 5B.3: Tunnel Elevation Calculation
+
+**Tunnels** have more complex requirements:
+1. Must maintain minimum clearance below terrain surface
+2. Entry/exit elevations set by connecting roads
+3. May need to go deeper than entry/exit to clear terrain
+4. Need smooth transition curves (no sudden drops)
+
+```
+SHORT TUNNEL (< 100m) - Simple Through-Cut
+════════════════════════════════════════════════════════
+Terrain:    ████████████████████████████
+            ████████████████████████████
+Entry ──────────────────────────────────────── Exit
+            ▓▓▓▓▓▓▓▓ TUNNEL ▓▓▓▓▓▓▓▓▓
+            (Linear interpolation, ensure 5m clearance)
+
+MEDIUM TUNNEL (100-500m) - Descent and Ascent
+════════════════════════════════════════════════════════
+Terrain:         ████████████████████
+                █████████████████████████
+Entry ────╲                              ╱──── Exit
+           ╲────────────────────────────╱
+            ▓▓▓▓▓▓▓▓▓▓ TUNNEL ▓▓▓▓▓▓▓▓▓▓
+            (S-curve to go under terrain peak)
+
+LONG TUNNEL (> 500m) - Deep Profile
+════════════════════════════════════════════════════════
+Terrain:    ████████████████████████████████████
+            ███████████████████████████████████████
+Entry ────╲                                    ╱──── Exit
+           ╲                                  ╱
+            ╲────────────────────────────────╱
+             ▓▓▓▓▓▓▓▓▓▓▓▓▓ TUNNEL ▓▓▓▓▓▓▓▓▓▓▓▓
+             (Gradual descent, level section, gradual ascent)
+```
+
+**Algorithm for Tunnel Elevation**:
+
+```csharp
+public StructureElevationProfile CalculateTunnelProfile(
+    OsmBridgeTunnel tunnel,
+    float entryElevation,
+    float exitElevation,
+    float[] terrainElevationsAlongPath,
+    float minClearance = 5.0f,
+    float maxGradePercent = 6.0f)
+{
+    var profile = new StructureElevationProfile
+    {
+        EntryElevation = entryElevation,
+        ExitElevation = exitElevation,
+        LengthMeters = tunnel.LengthMeters,
+        MinimumClearanceMeters = minClearance,
+        TerrainElevationsAlongPath = terrainElevationsAlongPath
+    };
+    
+    // Find the maximum terrain elevation along the tunnel path
+    float maxTerrainElevation = terrainElevationsAlongPath.Max();
+    
+    // Required tunnel floor elevation to maintain clearance
+    // (assuming 5m tunnel height, need 5m clearance above tunnel ceiling)
+    float tunnelHeight = 5.0f;
+    float requiredFloorElevation = maxTerrainElevation - minClearance - tunnelHeight;
+    
+    // Check if linear interpolation between entry/exit provides enough depth
+    float midpointLinear = (entryElevation + exitElevation) / 2f;
+    float midpointTerrain = terrainElevationsAlongPath[terrainElevationsAlongPath.Length / 2];
+    
+    if (midpointLinear <= midpointTerrain - minClearance - tunnelHeight)
+    {
+        // Linear profile is deep enough
+        profile.CurveType = StructureElevationCurveType.Linear;
+        profile.CalculatedLowestPointElevation = Math.Min(entryElevation, exitElevation);
+    }
+    else
+    {
+        // Need to go deeper - use S-curve
+        profile.CurveType = StructureElevationCurveType.SCurve;
+        profile.CalculatedLowestPointElevation = CalculateRequiredLowestPoint(
+            terrainElevationsAlongPath, minClearance, tunnelHeight);
+        
+        // Validate that the required grade is achievable
+        ValidateTunnelGrade(profile, maxGradePercent);
+    }
+    
+    return profile;
+}
+
+public float CalculateTunnelElevation(float distanceAlongStructure, StructureElevationProfile profile)
+{
+    float t = distanceAlongStructure / profile.LengthMeters;  // 0 to 1
+    
+    return profile.CurveType switch
+    {
+        StructureElevationCurveType.Linear => 
+            Lerp(profile.EntryElevation, profile.ExitElevation, t),
+            
+        StructureElevationCurveType.SCurve =>
+            CalculateSCurveElevation(t, profile),
+            
+        _ => Lerp(profile.EntryElevation, profile.ExitElevation, t)
+    };
+}
+
+/// <summary>
+/// S-curve profile for tunnels that need to dip below terrain.
+/// Divides tunnel into: descent (25%), level (50%), ascent (25%)
+/// </summary>
+private float CalculateSCurveElevation(float t, StructureElevationProfile profile)
+{
+    float lowestPoint = profile.CalculatedLowestPointElevation;
+    
+    if (t <= 0.25f)
+    {
+        // Descent phase: smooth transition from entry to lowest point
+        float localT = t / 0.25f;  // 0 to 1 within this phase
+        float smoothT = SmoothStep(localT);  // Ease in/out
+        return Lerp(profile.EntryElevation, lowestPoint, smoothT);
+    }
+    else if (t <= 0.75f)
+    {
+        // Level phase: constant elevation at lowest point
+        return lowestPoint;
+    }
+    else
+    {
+        // Ascent phase: smooth transition from lowest point to exit
+        float localT = (t - 0.75f) / 0.25f;  // 0 to 1 within this phase
+        float smoothT = SmoothStep(localT);
+        return Lerp(lowestPoint, profile.ExitElevation, smoothT);
+    }
+}
+
+// Smooth interpolation (ease in/out)
+private float SmoothStep(float t) => t * t * (3f - 2f * t);
+```
+
+### Step 5B.4: Sampling Terrain Along Structure Path
+
+Before calculating tunnel profiles, we need terrain elevations along the path:
+
+```csharp
+public float[] SampleTerrainAlongStructure(
+    OsmBridgeTunnel structure,
+    float[,] heightMap,
+    float metersPerPixel,
+    int sampleCount = 20)
+{
+    var elevations = new float[sampleCount];
+    
+    for (int i = 0; i < sampleCount; i++)
+    {
+        float t = i / (float)(sampleCount - 1);
+        
+        // Interpolate position along structure
+        Vector2 worldPos = InterpolateAlongStructure(structure, t);
+        
+        // Convert to heightmap coordinates
+        int pixelX = (int)(worldPos.X / metersPerPixel);
+        int pixelY = (int)(worldPos.Y / metersPerPixel);
+        
+        // Sample terrain (with bounds checking)
+        elevations[i] = SampleHeightmapSafe(heightMap, pixelX, pixelY);
+    }
+    
+    return elevations;
+}
+```
+
+### Step 5B.5: Integration with Cross-Section Generation
+
+When generating cross-sections for structure splines:
+
+```csharp
+// In UnifiedRoadNetworkBuilder or cross-section generation:
+
+foreach (var spline in network.Splines.Where(s => s.IsStructure))
+{
+    // Calculate elevation profile for this structure
+    var profile = spline.IsTunnel 
+        ? CalculateTunnelProfile(spline.StructureData, entryElev, exitElev, terrainSamples)
+        : CalculateBridgeProfile(spline.StructureData, entryElev, exitElev);
+    
+    // Store profile for later use (DAE generation)
+    spline.ElevationProfile = profile;
+    
+    // Generate cross-sections with calculated elevations
+    foreach (var crossSection in GetCrossSectionsForSpline(spline.SplineId))
+    {
+        float distance = crossSection.DistanceAlongSpline;
+        
+        // Override terrain-based elevation with structure elevation
+        crossSection.TargetElevation = spline.IsTunnel
+            ? CalculateTunnelElevation(distance, profile)
+            : CalculateBridgeElevation(distance, profile);
+        
+        // Mark as structure (for exclusion from terrain modification)
+        crossSection.IsStructure = true;
+    }
+}
+```
+
+### Step 5B.6: Extend ParameterizedRoadSpline
+
+Add elevation profile storage:
+
+```csharp
+public class ParameterizedRoadSpline
+{
+    // ... existing properties ...
+    
+    /// <summary>
+    /// Elevation profile for bridges/tunnels.
+    /// Null for regular road splines.
+    /// </summary>
+    public StructureElevationProfile? ElevationProfile { get; set; }
+}
+```
+
+### Step 5B.7: Configuration Parameters
+
+**File**: `BeamNgTerrainPoc/Terrain/Models/TerrainCreationParameters.cs`
+
+```csharp
+// ========================================
+// STRUCTURE ELEVATION PARAMETERS
+// ========================================
+
+/// <summary>
+/// Minimum vertical clearance for tunnels below terrain surface (meters).
+/// This is the distance from terrain surface to tunnel ceiling.
+/// Default: 5.0m (reasonable rock/soil cover)
+/// </summary>
+public float TunnelMinClearanceMeters { get; set; } = 5.0f;
+
+/// <summary>
+/// Assumed tunnel interior height (floor to ceiling) in meters.
+/// Used to calculate required floor elevation from clearance.
+/// Default: 5.0m (standard road tunnel height)
+/// </summary>
+public float TunnelInteriorHeightMeters { get; set; } = 5.0f;
+
+/// <summary>
+/// Maximum grade (slope) percentage allowed for tunnel approaches.
+/// Steeper grades may be uncomfortable or unsafe for vehicles.
+/// Default: 6.0% (typical maximum for road tunnels)
+/// </summary>
+public float TunnelMaxGradePercent { get; set; } = 6.0f;
+
+/// <summary>
+/// Minimum clearance for bridges above the obstacle (water, road, etc.).
+/// This affects bridge deck elevation calculation.
+/// Default: 5.0m (reasonable clearance for most obstacles)
+/// </summary>
+public float BridgeMinClearanceMeters { get; set; } = 5.0f;
+```
+
+---
+
 ## Phase 6: Pipeline Integration (Material Painting)
 
 ### Step 6.1: Exclude Structure Areas from Layer Maps
@@ -786,16 +1207,18 @@ BeamNgTerrainPoc/
 │   ├── Osm/
 │   │   ├── Models/
 │   │   │   ├── OsmBridgeTunnel.cs              (NEW)
-│   │   │   └── OsmBridgeTunnelQueryResult.cs   (NEW)
+│   │   │   ├── OsmBridgeTunnelQueryResult.cs   (NEW)
+│   │   │   └── StructureElevationProfile.cs    (NEW)
 │   │   ├── Services/
 │   │   │   ├── IOsmBridgeTunnelQueryService.cs (NEW)
 │   │   │   ├── OsmBridgeTunnelQueryService.cs  (NEW)
 │   │   │   ├── OsmBridgeTunnelCache.cs         (NEW)
 │   │   │   └── OsmCacheManager.cs              (MODIFIED)
 │   │   └── Processing/
-│   │       └── BridgeTunnelSplineMatcher.cs    (NEW)
+│   │       ├── BridgeTunnelSplineMatcher.cs    (NEW)
+│   │       └── StructureElevationCalculator.cs (NEW)
 │   ├── Models/
-│   │   ├── TerrainCreationParameters.cs        (MODIFIED - add Enable flags)
+│   │   ├── TerrainCreationParameters.cs        (MODIFIED - add Enable flags + elevation params)
 │   │   └── RoadGeometry/
 │   │       ├── ParameterizedRoadSpline.cs      (MODIFIED)
 │   │       └── UnifiedCrossSection.cs          (MODIFIED)
