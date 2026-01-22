@@ -280,34 +280,29 @@ public class ParameterizedRoadSpline
 }
 ```
 
-### Step 2.2: Extend UnifiedCrossSection (Optional)
+### Step 2.2: UnifiedCrossSection - NOT REQUIRED
 
 **File**: `BeamNgTerrainPoc/Terrain/Models/RoadGeometry/UnifiedCrossSection.cs`
 
-If cross-sections need to know about structure status:
+> **NOTE**: Adding `IsBridge`/`IsTunnel` properties to `UnifiedCrossSection` is **NOT REQUIRED**.
+>
+> Cross-sections already have:
+> - `OwnerSplineId` property - links back to the owning `ParameterizedRoadSpline`
+> - `IsExcluded` property - can be set to `true` for structure cross-sections
+>
+> **Recommendation**: Look up the owning spline's `IsStructure` flag via `OwnerSplineId` during processing,
+> then set `IsExcluded = true` for structure cross-sections. This avoids duplicating data and keeps
+> the single source of truth on `ParameterizedRoadSpline`.
 
 ```csharp
-public class UnifiedCrossSection
+// Example: Mark structure cross-sections as excluded during processing
+foreach (var crossSection in crossSections)
 {
-    // ... existing properties ...
-    
-    /// <summary>
-    /// Whether this cross-section is part of a bridge.
-    /// Inherited from the owning spline's IsBridge property.
-    /// </summary>
-    public bool IsBridge { get; set; }
-    
-    /// <summary>
-    /// Whether this cross-section is part of a tunnel.
-    /// Inherited from the owning spline's IsTunnel property.
-    /// </summary>
-    public bool IsTunnel { get; set; }
-    
-    /// <summary>
-    /// Whether this cross-section is part of any structure.
-    /// When true, this cross-section should be excluded from terrain smoothing.
-    /// </summary>
-    public bool IsStructure => IsBridge || IsTunnel;
+    var owningSpline = network.Splines.FirstOrDefault(s => s.SplineId == crossSection.OwnerSplineId);
+    if (owningSpline?.IsStructure == true)
+    {
+        crossSection.IsExcluded = true;
+    }
 }
 ```
 
@@ -525,35 +520,48 @@ After creating splines with metadata, merge only non-structure splines:
 /// 
 /// Rules:
 /// - Two non-structure splines can be merged if endpoints are within tolerance
-/// - Structure splines (bridges/tunnels) are NEVER merged with anything
-/// - This preserves accurate structure boundaries from OSM data
+/// - Structure splines (bridges/tunnels) are kept separate ONLY if their exclusion is enabled
+/// - If a structure type's exclusion is disabled, those splines are treated as normal roads
+/// - This preserves accurate structure boundaries while allowing backward-compatible behavior
 /// </summary>
+/// <param name="excludeBridges">When true, bridge splines are kept separate. When false, bridges are merged like normal roads.</param>
+/// <param name="excludeTunnels">When true, tunnel splines are kept separate. When false, tunnels are merged like normal roads.</param>
 public List<RoadSpline> MergeNonStructureSplines(
     List<RoadSpline> splines,
-    float endpointJoinToleranceMeters = 1.0f)
+    float endpointJoinToleranceMeters = 1.0f,
+    bool excludeBridges = true,
+    bool excludeTunnels = true)
 {
     if (splines.Count <= 1)
         return splines;
     
-    // Separate structure and non-structure splines
-    var structureSplines = splines.Where(s => s.IsStructure).ToList();
-    var normalSplines = splines.Where(s => !s.IsStructure).ToList();
+    // Determine which splines should be kept separate based on configuration
+    // A spline is "protected" (kept separate) only if:
+    // - It's a bridge AND excludeBridges is true, OR
+    // - It's a tunnel AND excludeTunnels is true
+    var protectedSplines = splines.Where(s => 
+        (s.IsBridge && excludeBridges) || 
+        (s.IsTunnel && excludeTunnels)).ToList();
     
-    TerrainLogger.Info($"Selective merge: {structureSplines.Count} structure splines (kept separate), {normalSplines.Count} normal splines (eligible for merging)");
+    // All other splines are eligible for merging (including disabled structure types)
+    var mergeableSplines = splines.Where(s => 
+        !((s.IsBridge && excludeBridges) || (s.IsTunnel && excludeTunnels))).ToList();
     
-    // Only merge the normal (non-structure) splines
-    if (normalSplines.Count > 1)
+    TerrainLogger.Info($"Selective merge: {protectedSplines.Count} protected splines (kept separate), {mergeableSplines.Count} splines (eligible for merging)");
+    
+    // Only merge the mergeable splines
+    if (mergeableSplines.Count > 1)
     {
-        // Extract control points from normal splines
-        var normalPaths = normalSplines.Select(s => s.ControlPoints.ToList()).ToList();
+        // Extract control points from mergeable splines
+        var mergeablePaths = mergeableSplines.Select(s => s.ControlPoints.ToList()).ToList();
         
-        // Use existing ConnectAdjacentPaths logic on normal roads only
-        var mergedPaths = ConnectAdjacentPaths(normalPaths, endpointJoinToleranceMeters);
+        // Use existing ConnectAdjacentPaths logic
+        var mergedPaths = ConnectAdjacentPaths(mergeablePaths, endpointJoinToleranceMeters);
         
-        TerrainLogger.Info($"  Merged {normalSplines.Count} normal paths into {mergedPaths.Count}");
+        TerrainLogger.Info($"  Merged {mergeableSplines.Count} paths into {mergedPaths.Count}");
         
-        // Recreate splines from merged paths (all non-structure)
-        normalSplines = mergedPaths
+        // Recreate splines from merged paths (all treated as non-structure for terrain purposes)
+        mergeableSplines = mergedPaths
             .Where(p => p.Count >= 2)
             .Select(p => new RoadSpline(p, SplineInterpolationType.SmoothInterpolated)
             {
@@ -565,29 +573,36 @@ public List<RoadSpline> MergeNonStructureSplines(
             .ToList();
     }
     
-    // Combine: structure splines (unchanged) + merged normal splines
+    // Combine: protected splines (unchanged) + merged splines
     var result = new List<RoadSpline>();
-    result.AddRange(structureSplines);
-    result.AddRange(normalSplines);
+    result.AddRange(protectedSplines);
+    result.AddRange(mergeableSplines);
     
     return result;
 }
 ```
 
+> **BACKWARD COMPATIBILITY NOTE**: When both `excludeBridges` and `excludeTunnels` are `false`,
+> this method behaves identically to the original `ConnectAdjacentPaths()` - all splines are
+> merged based on endpoint proximity, with no special handling for bridge/tunnel tags.
+
 ### Updated Method Signature
 
-The main conversion method can now optionally merge non-structure splines:
+The main conversion method can now optionally merge non-structure splines, respecting configuration:
 
 ```csharp
 /// <summary>
 /// Converts line features to RoadSpline objects, preserving structure metadata.
-/// Optionally merges adjacent non-structure splines for better road continuity.
+/// Optionally merges adjacent splines for better road continuity.
+/// Structure splines are kept separate only when their exclusion is enabled.
 /// </summary>
-/// <param name="mergeNonStructureSplines">
-/// When true, adjacent non-structure splines are merged after creation.
-/// Structure splines (bridges/tunnels) are never merged.
+/// <param name="mergeSplines">
+/// When true, adjacent splines are merged after creation.
+/// Structure splines (bridges/tunnels) are kept separate only if their exclusion is enabled.
 /// Default: true (recommended for better road continuity)
 /// </param>
+/// <param name="excludeBridges">When true, bridge splines are kept separate. When false, bridges merge like normal roads.</param>
+/// <param name="excludeTunnels">When true, tunnel splines are kept separate. When false, tunnels merge like normal roads.</param>
 public List<RoadSpline> ConvertLinesToSplinesWithStructureMetadata(
     List<OsmFeature> lineFeatures,
     GeoBoundingBox bbox,
@@ -597,46 +612,66 @@ public List<RoadSpline> ConvertLinesToSplinesWithStructureMetadata(
     float minPathLengthMeters = 1.0f,
     float duplicatePointToleranceMeters = 0.01f,
     float endpointJoinToleranceMeters = 1.0f,
-    bool mergeNonStructureSplines = true)  // NEW parameter
+    bool mergeSplines = true,
+    bool excludeBridges = true,   // NEW: from configuration
+    bool excludeTunnels = true)   // NEW: from configuration
 {
     // ... existing spline creation code (Step 3.2) ...
     
-    // NEW: Optionally merge non-structure splines
-    if (mergeNonStructureSplines && splines.Count > 1)
+    // Optionally merge splines, respecting exclusion configuration
+    if (mergeSplines && splines.Count > 1)
     {
-        splines = MergeNonStructureSplines(splines, endpointJoinToleranceMeters);
+        splines = MergeNonStructureSplines(splines, endpointJoinToleranceMeters, 
+            excludeBridges, excludeTunnels);
     }
     
     return splines;
 }
 ```
 
+> **BACKWARD COMPATIBILITY**: When `excludeBridges = false` AND `excludeTunnels = false`,
+> this method produces identical results to the original `ConvertLinesToSplines()` method -
+> all paths are merged based on endpoint proximity with no special structure handling.
+
 ### Why Selective Merging Works
 
 ```
-BEFORE MERGING:
+BEFORE MERGING (excludeBridges=true, excludeTunnels=true):
   [Road A] → [Bridge B] → [Road C] → [Road D] → [Tunnel E] → [Road F]
      ↓           ↓           ↓           ↓           ↓           ↓
   Spline 1   Spline 2    Spline 3   Spline 4   Spline 5    Spline 6
   
-AFTER SELECTIVE MERGING:
+AFTER SELECTIVE MERGING (excludeBridges=true, excludeTunnels=true):
   [Road A] → [Bridge B] → [Road C+D merged] → [Tunnel E] → [Road F]
      ↓           ↓              ↓                  ↓           ↓
   Spline 1   Spline 2       Spline 3           Spline 4    Spline 5
-  (merged)   (KEPT)         (merged)           (KEPT)      (merged)
+  (merged)   (PROTECTED)    (merged)           (PROTECTED) (merged)
+
+BACKWARD COMPATIBLE MODE (excludeBridges=false, excludeTunnels=false):
+  [Road A] → [Bridge B] → [Road C] → [Road D] → [Tunnel E] → [Road F]
+     ↓           ↓           ↓           ↓           ↓           ↓
+  Spline 1   Spline 2    Spline 3   Spline 4   Spline 5    Spline 6
+                    ↓ ALL MERGED (same as original behavior) ↓
+  [Road A + Bridge B + Road C + Road D + Tunnel E + Road F]
+                              ↓
+                          Spline 1 (single merged spline)
 ```
 
-Benefits:
+Benefits when structure exclusion is enabled:
 - **Structure boundaries preserved**: Bridge and tunnel start/end points stay accurate
 - **Better road continuity**: Normal road segments merge into longer splines
 - **Fewer artificial endpoints**: Reduces junction detection noise at OSM way splits
 - **Smoother elevation profiles**: Longer splines = smoother longitudinal smoothing
 
+Benefits when structure exclusion is disabled (backward compatible):
+- **Identical behavior to original code**: All paths merged regardless of tags
+- **No changes to terrain output**: Bridges/tunnels treated as normal roads
+
 ---
 
 ### Step 3.4: Update Callers to Use New Method
 
-The callers that populate `RoadSmoothingParameters.PreBuiltSplines` need to use the new method when structure detection is needed.
+The callers that populate `RoadSmoothingParameters.PreBuiltSplines` need to use the new method, passing configuration from `TerrainCreationParameters`:
 
 **File**: Where OSM features are converted to splines (likely in UI/service code)
 
@@ -646,11 +681,19 @@ var splines = osmProcessor.ConvertLinesToSplines(
     roadFeatures, bbox, terrainSize, metersPerPixel, interpolationType);
 parameters.PreBuiltSplines = splines;
 
-// AFTER (with structure detection and selective merging):
+// AFTER (with structure detection, respecting configuration):
 var splines = osmProcessor.ConvertLinesToSplinesWithStructureMetadata(
     roadFeatures, bbox, terrainSize, metersPerPixel, interpolationType,
-    mergeNonStructureSplines: true);  // Merge normal roads, keep structures separate
+    mergeSplines: true,
+    excludeBridges: terrainParams.ExcludeBridgesFromTerrain,  // From config
+    excludeTunnels: terrainParams.ExcludeTunnelsFromTerrain); // From config
 parameters.PreBuiltSplines = splines;
+
+// BACKWARD COMPATIBLE MODE (both exclusions disabled = original behavior):
+// When terrainParams.ExcludeBridgesFromTerrain = false AND
+//      terrainParams.ExcludeTunnelsFromTerrain = false:
+// - All splines are merged (bridges/tunnels treated as normal roads)
+// - Output is identical to the original ConvertLinesToSplines() method
 ```
 
 ---
@@ -818,25 +861,11 @@ This approach keeps `RoadSpline` unchanged but requires careful index synchroniz
 
 ### Step 4.1: Exclude Structure Splines from Terrain Smoothing
 
-The exact location depends on how smoothing is structured. The pattern is:
+There are two approaches, depending on where in the pipeline exclusion is applied:
 
-```csharp
-// When applying elevation smoothing to cross-sections:
-foreach (var crossSection in crossSections)
-{
-    // Skip structure cross-sections - they don't modify terrain
-    if (crossSection.IsStructure)
-    {
-        // Optionally mark as excluded for debugging
-        crossSection.IsExcluded = true;
-        continue;
-    }
-    
-    // ... existing smoothing logic ...
-}
-```
+#### Option A: Spline-Level Exclusion (RECOMMENDED)
 
-Or at the spline level:
+Filter at the spline level before cross-sections are processed:
 
 ```csharp
 // When iterating splines for terrain modification:
@@ -852,6 +881,34 @@ foreach (var spline in network.Splines)
     // ... apply smoothing ...
 }
 ```
+
+#### Option B: Cross-Section Level Using OwnerSplineId
+
+If processing happens at cross-section level, look up the owning spline's structure status:
+
+```csharp
+// Build a lookup dictionary for fast spline access
+var splineLookup = network.Splines.ToDictionary(s => s.SplineId);
+
+// When applying elevation smoothing to cross-sections:
+foreach (var crossSection in crossSections)
+{
+    // Look up owning spline to check structure status
+    if (splineLookup.TryGetValue(crossSection.OwnerSplineId, out var owningSpline) 
+        && owningSpline.IsStructure)
+    {
+        // Mark as excluded and skip - no terrain modification for structures
+        crossSection.IsExcluded = true;
+        continue;
+    }
+    
+    // ... existing smoothing logic ...
+}
+```
+
+> **Note**: Option B uses the existing `OwnerSplineId` property on `UnifiedCrossSection` to look up
+> structure status from `ParameterizedRoadSpline`. This avoids adding redundant `IsBridge`/`IsTunnel`
+> properties to `UnifiedCrossSection` (see Phase 2 Step 2.2).
 
 ### Step 4.2: Handle Structure Entry/Exit Points (Future Enhancement)
 
@@ -961,12 +1018,35 @@ if (shouldExclude)
 
 ### Behavior Summary
 
-| ExcludeBridges | ExcludeTunnels | Bridge Behavior | Tunnel Behavior |
-|----------------|----------------|-----------------|-----------------|
-| `true` | `true` | Excluded | Excluded |
-| `true` | `false` | Excluded | Normal road |
-| `false` | `true` | Normal road | Excluded |
-| `false` | `false` | Normal road | Normal road |
+| ExcludeBridges | ExcludeTunnels | Bridge Behavior | Tunnel Behavior | Spline Merging |
+|----------------|----------------|-----------------|-----------------|----------------|
+| `true` | `true` | Excluded | Excluded | Bridges & tunnels kept separate |
+| `true` | `false` | Excluded | Normal road | Only bridges kept separate |
+| `false` | `true` | Normal road | Excluded | Only tunnels kept separate |
+| `false` | `false` | Normal road | Normal road | **All merged (backward compatible)** |
+
+### Step 6.3: Backward Compatibility Guarantee
+
+When BOTH `ExcludeBridgesFromTerrain` AND `ExcludeTunnelsFromTerrain` are set to `false`:
+
+1. **Spline Merging**: All splines are merged based on endpoint proximity - identical to original `ConvertLinesToSplines()` behavior
+2. **Terrain Smoothing**: All roads (including bridges/tunnels) receive terrain smoothing - identical to original behavior
+3. **Material Painting**: All roads (including bridges/tunnels) are painted - identical to original behavior
+4. **Output**: Terrain files are byte-for-byte identical to what the original code would produce
+
+This ensures users can completely disable the bridge/tunnel feature and get the exact same results as before the feature was implemented.
+
+```csharp
+// To achieve full backward compatibility, set both to false:
+terrainParams.ExcludeBridgesFromTerrain = false;
+terrainParams.ExcludeTunnelsFromTerrain = false;
+
+// This results in:
+// - ConvertLinesToSplinesWithStructureMetadata() merges ALL splines (no protection)
+// - Smoothing processes ALL splines (no exclusion check passes)
+// - Painting includes ALL splines (no exclusion check passes)
+// - Output identical to original code
+```
 
 ---
 
@@ -1110,7 +1190,7 @@ BeamNgTerrainPoc/
 │   │   └── RoadGeometry/
 │   │       ├── RoadSpline.cs                 (MODIFIED - add structure metadata properties)
 │   │       ├── ParameterizedRoadSpline.cs    (MODIFIED - add structure flags)
-│   │       └── UnifiedCrossSection.cs        (MODIFIED - optional structure flags)
+│   │       └── UnifiedCrossSection.cs        (NO CHANGES - use existing OwnerSplineId + IsExcluded)
 │   └── Services/
 │       └── UnifiedRoadNetworkBuilder.cs      (MODIFIED - copy flags from RoadSpline)
 └── Docs/
@@ -1122,7 +1202,7 @@ BeamNG_LevelCleanUp/
         └── TerrainCreator.razor              (MODIFIED - add UI controls)
 ```
 
-**Total: 7-8 files modified, 0 new files (compared to 10+ new files in original plan)**
+**Total: 6-7 files modified, 0 new files (compared to 10+ new files in original plan)**
 
 ---
 
@@ -1270,7 +1350,8 @@ public float BridgeMinClearanceMeters { get; set; } = 5.0f;
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ Generate Cross-Sections                            │                  │
-│     │ - NEW: Propagate IsBridge/IsTunnel to cross-sections│                 │
+│     │ - Uses existing OwnerSplineId to link to spline    │                  │
+│     │ - NO changes needed to UnifiedCrossSection         │                  │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
 │  6. ROAD SMOOTHING (modified - skip structures)                              │
@@ -1328,7 +1409,8 @@ public float BridgeMinClearanceMeters { get; set; } = 5.0f;
 - [ ] Add logging for structure detection statistics
 
 ### Phase 4: Terrain Smoothing
-- [ ] Add exclusion check in smoothing code
+- [ ] Add spline-level exclusion check (recommended) OR cross-section level using `OwnerSplineId`
+- [ ] Use existing `IsExcluded` property on cross-sections for structure exclusion
 - [ ] Test with real bridge/tunnel data
 
 ### Phase 5: Material Painting
