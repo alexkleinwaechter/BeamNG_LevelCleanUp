@@ -313,23 +313,362 @@ public class UnifiedCrossSection
 
 ---
 
-## Phase 3: Propagate Flags During Spline Creation
+## Phase 3: Propagate Flags Through the Spline Creation Pipeline
 
-### Step 3.1: Update UnifiedRoadNetworkBuilder.BuildNetworkFromOsmFeatures()
+### Architecture Analysis
+
+The current data flow loses OSM metadata:
+
+```
+OsmFeature → ConvertLinesToSplines() → RoadSpline → PreBuiltSplines → BuildNetwork() → ParameterizedRoadSpline
+                    ↑
+            Metadata LOST here!
+```
+
+The `OsmGeometryProcessor.ConvertLinesToSplines()` method returns `List<RoadSpline>` without preserving the original `OsmFeature` bridge/tunnel tags. The `RoadSmoothingParameters.PreBuiltSplines` property stores only `List<RoadSpline>`.
+
+**Solution**: Add structure metadata directly to `RoadSpline`, then propagate to `ParameterizedRoadSpline` in `BuildNetwork()`.
+
+---
+
+### Step 3.1: Add Structure Metadata to RoadSpline
+
+**File**: `BeamNgTerrainPoc/Terrain/Models/RoadGeometry/RoadSpline.cs`
+
+Add these properties to carry structure information through the pipeline:
+
+```csharp
+public class RoadSpline
+{
+    // ... existing properties ...
+    
+    // ========================================
+    // STRUCTURE METADATA (Bridge/Tunnel)
+    // ========================================
+    
+    /// <summary>
+    /// Whether this spline represents a bridge (from OSM bridge=* tag).
+    /// Set during spline creation from OsmFeature.
+    /// </summary>
+    public bool IsBridge { get; set; }
+    
+    /// <summary>
+    /// Whether this spline represents a tunnel (from OSM tunnel=* or covered=yes tag).
+    /// Set during spline creation from OsmFeature.
+    /// </summary>
+    public bool IsTunnel { get; set; }
+    
+    /// <summary>
+    /// Combined check for any elevated/underground structure.
+    /// </summary>
+    public bool IsStructure => IsBridge || IsTunnel;
+    
+    /// <summary>
+    /// Detailed structure type (None, Bridge, Tunnel, BuildingPassage, Culvert).
+    /// Set during spline creation from OsmFeature.GetStructureType().
+    /// </summary>
+    public StructureType StructureType { get; set; } = StructureType.None;
+    
+    /// <summary>
+    /// Vertical layer from OSM (0 = ground level, positive = elevated, negative = underground).
+    /// Set during spline creation from OsmFeature.Layer.
+    /// </summary>
+    public int Layer { get; set; } = 0;
+    
+    /// <summary>
+    /// Bridge structure type (beam, arch, suspension, etc.) for future DAE generation.
+    /// Set during spline creation from OsmFeature.BridgeStructureType.
+    /// </summary>
+    public string? BridgeStructureType { get; set; }
+}
+```
+
+---
+
+### Step 3.2: Update OsmGeometryProcessor.ConvertLinesToSplines()
+
+**File**: `BeamNgTerrainPoc/Terrain/Osm/Processing/OsmGeometryProcessor.cs`
+
+Modify `ConvertLinesToSplines()` to preserve structure metadata. The key change is in the spline creation loop (around line 750):
+
+```csharp
+// CURRENT CODE (around line 750):
+try
+{
+    var spline = new RoadSpline(cleanPath, interpolationType);
+    splines.Add(spline);
+}
+
+// UPDATED CODE - preserve structure metadata:
+// This requires tracking which OsmFeature each path came from.
+// Since ConnectAdjacentPaths() may merge paths from different features,
+// we need a different approach.
+```
+
+**Problem**: `ConnectAdjacentPaths()` merges multiple OSM ways into single paths, breaking the 1:1 mapping between `OsmFeature` and `RoadSpline`.
+
+**Solution**: Create splines BEFORE path connection, preserving per-feature metadata:
+
+```csharp
+/// <summary>
+/// Converts line features to RoadSpline objects, preserving structure metadata.
+/// This is an alternative to ConvertLinesToSplines() that maintains the 1:1
+/// mapping between OsmFeature and RoadSpline for structure detection.
+/// 
+/// NOTE: This method does NOT connect adjacent paths because that would
+/// merge bridges with non-bridges. Each OSM way becomes one spline.
+/// </summary>
+public List<RoadSpline> ConvertLinesToSplinesWithStructureMetadata(
+    List<OsmFeature> lineFeatures,
+    GeoBoundingBox bbox,
+    int terrainSize,
+    float metersPerPixel,
+    SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated,
+    float minPathLengthMeters = 1.0f,
+    float duplicatePointToleranceMeters = 0.01f)
+{
+    var splines = new List<RoadSpline>();
+    int skippedZeroLength = 0;
+    int skippedTooFewPoints = 0;
+    int bridgeCount = 0;
+    int tunnelCount = 0;
+    
+    foreach (var feature in lineFeatures.Where(f => f.GeometryType == OsmGeometryType.LineString))
+    {
+        // Transform to terrain-space coordinates (bottom-left origin for heightmap)
+        var terrainCoords = TransformToTerrainCoordinates(feature.Coordinates, bbox, terrainSize);
+        
+        // Crop to terrain bounds
+        var croppedCoords = CropLineToTerrain(terrainCoords, terrainSize);
+        
+        if (croppedCoords.Count < 2)
+        {
+            skippedTooFewPoints++;
+            continue;
+        }
+        
+        // Convert from pixel coordinates to meter coordinates
+        var meterCoords = croppedCoords
+            .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
+            .ToList();
+        
+        // Remove duplicate consecutive points
+        var uniqueCoords = RemoveDuplicateConsecutivePoints(meterCoords, duplicatePointToleranceMeters);
+        
+        if (uniqueCoords.Count < 2)
+        {
+            skippedTooFewPoints++;
+            continue;
+        }
+        
+        // Calculate total path length and skip if too short
+        float totalLength = CalculatePathLength(uniqueCoords);
+        if (totalLength < minPathLengthMeters)
+        {
+            skippedZeroLength++;
+            continue;
+        }
+        
+        try
+        {
+            var spline = new RoadSpline(uniqueCoords, interpolationType);
+            
+            // NEW: Copy structure metadata from OsmFeature
+            spline.IsBridge = feature.IsBridge;
+            spline.IsTunnel = feature.IsTunnel;
+            spline.StructureType = feature.GetStructureType();
+            spline.Layer = feature.Layer;
+            spline.BridgeStructureType = feature.BridgeStructureType;
+            
+            splines.Add(spline);
+            
+            // Track statistics
+            if (feature.IsBridge) bridgeCount++;
+            if (feature.IsTunnel) tunnelCount++;
+        }
+        catch (Exception ex)
+        {
+            TerrainLogger.Warning($"Failed to create spline from feature {feature.Id}: {ex.Message}");
+        }
+    }
+    
+    TerrainLogger.Info($"Created {splines.Count} splines from {lineFeatures.Count} OSM line features");
+    if (skippedTooFewPoints > 0)
+        TerrainLogger.Info($"  Skipped {skippedTooFewPoints} paths with too few points");
+    if (skippedZeroLength > 0)
+        TerrainLogger.Info($"  Skipped {skippedZeroLength} paths shorter than {minPathLengthMeters:F1}m");
+    if (bridgeCount > 0 || tunnelCount > 0)
+        TerrainLogger.Info($"  Structure metadata: {bridgeCount} bridges, {tunnelCount} tunnels");
+    
+    return splines;
+}
+```
+
+**Key Decision**: We use **selective merging** based on structure type:
+- **Structure splines** (bridges/tunnels) → Keep separate, never merge
+- **Non-structure splines** (normal roads) → Can be merged for better continuity
+
+This gives us the best of both worlds:
+- Accurate bridge/tunnel boundaries (no merging across structure boundaries)
+- Better road continuity for normal roads (fewer gaps, smoother junctions)
+
+---
+
+### Step 3.3: Add Selective Path Merging (Post-Processing)
+
+After creating splines with metadata, merge only non-structure splines:
+
+```csharp
+/// <summary>
+/// Merges adjacent non-structure splines while keeping structure splines separate.
+/// This post-processing step improves road continuity without breaking structure detection.
+/// 
+/// Rules:
+/// - Two non-structure splines can be merged if endpoints are within tolerance
+/// - Structure splines (bridges/tunnels) are NEVER merged with anything
+/// - This preserves accurate structure boundaries from OSM data
+/// </summary>
+public List<RoadSpline> MergeNonStructureSplines(
+    List<RoadSpline> splines,
+    float endpointJoinToleranceMeters = 1.0f)
+{
+    if (splines.Count <= 1)
+        return splines;
+    
+    // Separate structure and non-structure splines
+    var structureSplines = splines.Where(s => s.IsStructure).ToList();
+    var normalSplines = splines.Where(s => !s.IsStructure).ToList();
+    
+    TerrainLogger.Info($"Selective merge: {structureSplines.Count} structure splines (kept separate), {normalSplines.Count} normal splines (eligible for merging)");
+    
+    // Only merge the normal (non-structure) splines
+    if (normalSplines.Count > 1)
+    {
+        // Extract control points from normal splines
+        var normalPaths = normalSplines.Select(s => s.ControlPoints.ToList()).ToList();
+        
+        // Use existing ConnectAdjacentPaths logic on normal roads only
+        var mergedPaths = ConnectAdjacentPaths(normalPaths, endpointJoinToleranceMeters);
+        
+        TerrainLogger.Info($"  Merged {normalSplines.Count} normal paths into {mergedPaths.Count}");
+        
+        // Recreate splines from merged paths (all non-structure)
+        normalSplines = mergedPaths
+            .Where(p => p.Count >= 2)
+            .Select(p => new RoadSpline(p, SplineInterpolationType.SmoothInterpolated)
+            {
+                IsBridge = false,
+                IsTunnel = false,
+                StructureType = StructureType.None,
+                Layer = 0
+            })
+            .ToList();
+    }
+    
+    // Combine: structure splines (unchanged) + merged normal splines
+    var result = new List<RoadSpline>();
+    result.AddRange(structureSplines);
+    result.AddRange(normalSplines);
+    
+    return result;
+}
+```
+
+### Updated Method Signature
+
+The main conversion method can now optionally merge non-structure splines:
+
+```csharp
+/// <summary>
+/// Converts line features to RoadSpline objects, preserving structure metadata.
+/// Optionally merges adjacent non-structure splines for better road continuity.
+/// </summary>
+/// <param name="mergeNonStructureSplines">
+/// When true, adjacent non-structure splines are merged after creation.
+/// Structure splines (bridges/tunnels) are never merged.
+/// Default: true (recommended for better road continuity)
+/// </param>
+public List<RoadSpline> ConvertLinesToSplinesWithStructureMetadata(
+    List<OsmFeature> lineFeatures,
+    GeoBoundingBox bbox,
+    int terrainSize,
+    float metersPerPixel,
+    SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated,
+    float minPathLengthMeters = 1.0f,
+    float duplicatePointToleranceMeters = 0.01f,
+    float endpointJoinToleranceMeters = 1.0f,
+    bool mergeNonStructureSplines = true)  // NEW parameter
+{
+    // ... existing spline creation code (Step 3.2) ...
+    
+    // NEW: Optionally merge non-structure splines
+    if (mergeNonStructureSplines && splines.Count > 1)
+    {
+        splines = MergeNonStructureSplines(splines, endpointJoinToleranceMeters);
+    }
+    
+    return splines;
+}
+```
+
+### Why Selective Merging Works
+
+```
+BEFORE MERGING:
+  [Road A] → [Bridge B] → [Road C] → [Road D] → [Tunnel E] → [Road F]
+     ↓           ↓           ↓           ↓           ↓           ↓
+  Spline 1   Spline 2    Spline 3   Spline 4   Spline 5    Spline 6
+  
+AFTER SELECTIVE MERGING:
+  [Road A] → [Bridge B] → [Road C+D merged] → [Tunnel E] → [Road F]
+     ↓           ↓              ↓                  ↓           ↓
+  Spline 1   Spline 2       Spline 3           Spline 4    Spline 5
+  (merged)   (KEPT)         (merged)           (KEPT)      (merged)
+```
+
+Benefits:
+- **Structure boundaries preserved**: Bridge and tunnel start/end points stay accurate
+- **Better road continuity**: Normal road segments merge into longer splines
+- **Fewer artificial endpoints**: Reduces junction detection noise at OSM way splits
+- **Smoother elevation profiles**: Longer splines = smoother longitudinal smoothing
+
+---
+
+### Step 3.4: Update Callers to Use New Method
+
+The callers that populate `RoadSmoothingParameters.PreBuiltSplines` need to use the new method when structure detection is needed.
+
+**File**: Where OSM features are converted to splines (likely in UI/service code)
+
+```csharp
+// BEFORE:
+var splines = osmProcessor.ConvertLinesToSplines(
+    roadFeatures, bbox, terrainSize, metersPerPixel, interpolationType);
+parameters.PreBuiltSplines = splines;
+
+// AFTER (with structure detection and selective merging):
+var splines = osmProcessor.ConvertLinesToSplinesWithStructureMetadata(
+    roadFeatures, bbox, terrainSize, metersPerPixel, interpolationType,
+    mergeNonStructureSplines: true);  // Merge normal roads, keep structures separate
+parameters.PreBuiltSplines = splines;
+```
+
+---
+
+### Step 3.5: Update UnifiedRoadNetworkBuilder.BuildNetwork()
 
 **File**: `BeamNgTerrainPoc/Terrain/Services/UnifiedRoadNetworkBuilder.cs`
 
-The key change is in the loop that converts `OsmFeature` to `ParameterizedRoadSpline`:
+Now that `RoadSpline` carries structure metadata, copy it to `ParameterizedRoadSpline` in the loop (around line 113):
 
 ```csharp
-// Current code (around line 1000-1030):
-foreach (var feature in lineFeatures)
+// Current code (around line 113):
+foreach (var spline in splines)
 {
-    var spline = ConvertFeatureToSpline(feature, bbox, terrainSize, metersPerPixel, interpolationType);
-    if (spline == null) continue;
-    
-    // ... existing filtering ...
-    
+    // Determine OSM road type if available
+    string? osmRoadType = null;
+    string? displayName = null;
+
     var paramSpline = new ParameterizedRoadSpline
     {
         Spline = spline,
@@ -337,20 +676,18 @@ foreach (var feature in lineFeatures)
         MaterialName = material.MaterialName,
         SplineId = splineIdCounter,
         OsmRoadType = osmRoadType,
-        DisplayName = feature.DisplayName
+        DisplayName = displayName
     };
     
     // ... rest of code ...
 }
 
-// UPDATED code - add structure flag propagation:
-foreach (var feature in lineFeatures)
+// UPDATED code - copy structure flags from RoadSpline:
+foreach (var spline in splines)
 {
-    var spline = ConvertFeatureToSpline(feature, bbox, terrainSize, metersPerPixel, interpolationType);
-    if (spline == null) continue;
-    
-    // ... existing filtering ...
-    
+    string? osmRoadType = null;
+    string? displayName = null;
+
     var paramSpline = new ParameterizedRoadSpline
     {
         Spline = spline,
@@ -358,42 +695,122 @@ foreach (var feature in lineFeatures)
         MaterialName = material.MaterialName,
         SplineId = splineIdCounter,
         OsmRoadType = osmRoadType,
-        DisplayName = feature.DisplayName,
+        DisplayName = displayName,
         
-        // NEW: Copy structure flags directly from OSM feature
-        IsBridge = feature.IsBridge,
-        IsTunnel = feature.IsTunnel,
-        StructureType = feature.GetStructureType(),
-        Layer = feature.Layer,
-        BridgeStructureType = feature.BridgeStructureType
+        // NEW: Copy structure flags from RoadSpline (which got them from OsmFeature)
+        IsBridge = spline.IsBridge,
+        IsTunnel = spline.IsTunnel,
+        StructureType = spline.StructureType,
+        Layer = spline.Layer,
+        BridgeStructureType = spline.BridgeStructureType
     };
     
     // ... rest of code ...
 }
 ```
 
-**That's the entire change to the network builder.**
+---
 
-The relationship is 1:1:
-- One OSM feature (way) → One spline
-- Feature tags → Spline flags
+### Step 3.5: Log Structure Statistics
 
-No geometric matching. No complexity.
-
-### Step 3.2: Log Structure Statistics
-
-Add logging after building the network:
+Add logging after building the network (around line 160):
 
 ```csharp
-// After all splines are added to network:
+// Log network statistics
+var stats = network.GetStatistics();
+TerrainLogger.Info(stats.ToString());
+
+// NEW: Log structure statistics
 var bridgeCount = network.Splines.Count(s => s.IsBridge);
 var tunnelCount = network.Splines.Count(s => s.IsTunnel);
 
 if (bridgeCount > 0 || tunnelCount > 0)
 {
-    TerrainLogger.Info($"Structure detection: {bridgeCount} bridges, {tunnelCount} tunnels marked for exclusion");
+    TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
+}
+
+return network;
+```
+
+---
+
+### Data Flow After Changes
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    UPDATED BRIDGE/TUNNEL DATA FLOW                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. OSM PARSING (Phase 1 changes)                                            │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ OsmFeature                                         │                  │
+│     │ - Tags["bridge"], Tags["tunnel"] (existing)        │                  │
+│     │ - NEW: IsBridge, IsTunnel computed properties      │                  │
+│     │ - NEW: GetStructureType(), Layer, BridgeStructureType│                │
+│     └────────────────────────┬───────────────────────────┘                  │
+│                              │                                               │
+│  2. SPLINE CREATION (Phase 3 changes)                                        │
+│                              ▼                                               │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ OsmGeometryProcessor.ConvertLinesToSplinesWithStructureMetadata()│    │
+│     │ - Creates RoadSpline for each OsmFeature           │                  │
+│     │ - NEW: Copies IsBridge/IsTunnel/StructureType/Layer│                  │
+│     │        from OsmFeature to RoadSpline               │                  │
+│     │ - Does NOT merge adjacent paths (preserves 1:1)    │                  │
+│     └────────────────────────┬───────────────────────────┘                  │
+│                              │                                               │
+│  3. PREBUILT SPLINES (existing, no changes)                                  │
+│                              ▼                                               │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ RoadSmoothingParameters.PreBuiltSplines            │                  │
+│     │ - List<RoadSpline> with structure metadata         │                  │
+│     └────────────────────────┬───────────────────────────┘                  │
+│                              │                                               │
+│  4. NETWORK BUILDING (Phase 3 changes)                                       │
+│                              ▼                                               │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ UnifiedRoadNetworkBuilder.BuildNetwork()           │                  │
+│     │ - Creates ParameterizedRoadSpline from RoadSpline  │                  │
+│     │ - NEW: Copies IsBridge/IsTunnel/StructureType/Layer│                  │
+│     │        from RoadSpline to ParameterizedRoadSpline  │                  │
+│     └────────────────────────┬───────────────────────────┘                  │
+│                              │                                               │
+│  5. TERRAIN PROCESSING (Phase 4-5 changes)                                   │
+│                              ▼                                               │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ Smoothing & Material Painting                      │                  │
+│     │ - Check paramSpline.IsStructure                    │                  │
+│     │ - Skip if bridge/tunnel                            │                  │
+│     └────────────────────────────────────────────────────┘                  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Alternative: Parallel Metadata List
+
+If modifying `RoadSpline` is not desirable, an alternative is to add a parallel metadata list:
+
+```csharp
+// In RoadSmoothingParameters:
+public List<RoadSpline>? PreBuiltSplines { get; set; }
+
+// NEW: Parallel list of structure metadata (same length as PreBuiltSplines)
+public List<SplineStructureMetadata>? PreBuiltSplineMetadata { get; set; }
+
+// NEW: Helper class
+public class SplineStructureMetadata
+{
+    public bool IsBridge { get; set; }
+    public bool IsTunnel { get; set; }
+    public StructureType StructureType { get; set; }
+    public int Layer { get; set; }
+    public string? BridgeStructureType { get; set; }
 }
 ```
+
+This approach keeps `RoadSpline` unchanged but requires careful index synchronization. The recommended approach is to add properties to `RoadSpline` directly.
 
 ---
 
@@ -602,7 +1019,7 @@ if (shouldExclude)
 │                    SIMPLIFIED BRIDGE/TUNNEL DATA FLOW                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  1. OSM QUERY (existing)                                                     │
+│  1. OSM QUERY (existing - unchanged)                                         │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ OverpassApiService.QueryAllFeaturesAsync()         │                  │
 │     │ - Queries highway=* features                       │                  │
@@ -618,17 +1035,34 @@ if (shouldExclude)
 │     │ - NEW: feature.IsBridge, feature.IsTunnel (computed)│                 │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  3. SPLINE CREATION (modified)                                               │
+│  3. SPLINE CREATION (modified - NEW METHOD)                                  │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
-│     │ UnifiedRoadNetworkBuilder.BuildNetworkFromOsmFeatures()│              │
-│     │ - Converts OsmFeature → ParameterizedRoadSpline    │                  │
+│     │ OsmGeometryProcessor.ConvertLinesToSplinesWithStructureMetadata()│    │
+│     │ - Converts OsmFeature → RoadSpline (1:1 mapping)   │                  │
 │     │ - NEW: Copies IsBridge/IsTunnel from feature       │                  │
 │     │        spline.IsBridge = feature.IsBridge          │                  │
 │     │        spline.IsTunnel = feature.IsTunnel          │                  │
+│     │ - Does NOT merge adjacent paths (preserves metadata)│                 │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  4. TERRAIN SMOOTHING (modified)                                             │
+│  4. PREBUILT SPLINES (existing structure, carries new data)                  │
+│                              ▼                                               │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ RoadSmoothingParameters.PreBuiltSplines            │                  │
+│     │ - List<RoadSpline> with structure metadata attached│                  │
+│     └────────────────────────┬───────────────────────────┘                  │
+│                              │                                               │
+│  5. NETWORK BUILDING (modified)                                              │
+│                              ▼                                               │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ UnifiedRoadNetworkBuilder.BuildNetwork()           │                  │
+│     │ - Converts RoadSpline → ParameterizedRoadSpline    │                  │
+│     │ - NEW: Copies structure flags from RoadSpline      │                  │
+│     │        paramSpline.IsBridge = spline.IsBridge      │                  │
+│     └────────────────────────┬───────────────────────────┘                  │
+│                              │                                               │
+│  6. TERRAIN SMOOTHING (modified)                                             │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ Elevation Smoothing                                │                  │
@@ -637,7 +1071,7 @@ if (shouldExclude)
 │     │   - else: apply smoothing                          │                  │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  5. MATERIAL PAINTING (modified)                                             │
+│  7. MATERIAL PAINTING (modified)                                             │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ Layer Map Rasterization                            │                  │
@@ -667,15 +1101,18 @@ if (shouldExclude)
 BeamNgTerrainPoc/
 ├── Terrain/
 │   ├── Osm/
-│   │   └── Models/
-│   │       └── OsmFeature.cs                 (MODIFIED - add IsBridge, IsTunnel properties)
+│   │   ├── Models/
+│   │   │   └── OsmFeature.cs                 (MODIFIED - add IsBridge, IsTunnel properties)
+│   │   └── Processing/
+│   │       └── OsmGeometryProcessor.cs       (MODIFIED - add ConvertLinesToSplinesWithStructureMetadata)
 │   ├── Models/
 │   │   ├── TerrainCreationParameters.cs      (MODIFIED - add config options)
 │   │   └── RoadGeometry/
+│   │       ├── RoadSpline.cs                 (MODIFIED - add structure metadata properties)
 │   │       ├── ParameterizedRoadSpline.cs    (MODIFIED - add structure flags)
 │   │       └── UnifiedCrossSection.cs        (MODIFIED - optional structure flags)
 │   └── Services/
-│       └── UnifiedRoadNetworkBuilder.cs      (MODIFIED - copy flags during spline creation)
+│       └── UnifiedRoadNetworkBuilder.cs      (MODIFIED - copy flags from RoadSpline)
 └── Docs/
     └── BRIDGE_TUNNEL_IMPLEMENTATION_PLAN.md  (THIS FILE)
 
@@ -685,7 +1122,7 @@ BeamNG_LevelCleanUp/
         └── TerrainCreator.razor              (MODIFIED - add UI controls)
 ```
 
-**Total: 5-6 files modified, 0 new files (compared to 10+ new files in original plan)**
+**Total: 7-8 files modified, 0 new files (compared to 10+ new files in original plan)**
 
 ---
 
@@ -810,37 +1247,47 @@ public float BridgeMinClearanceMeters { get; set; } = 5.0f;
 │     │ - NEW: Computed IsBridge/IsTunnel properties       │                  │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  3. NETWORK BUILDING (modified - copy flags)                                 │
+│  3. SPLINE CREATION (modified - new method)                                  │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
-│     │ UnifiedRoadNetworkBuilder.BuildNetworkFromOsmFeatures()│              │
-│     │ - Converts OsmFeature → ParameterizedRoadSpline    │                  │
+│     │ OsmGeometryProcessor.ConvertLinesToSplinesWithStructureMetadata()│    │
+│     │ - Converts OsmFeature → RoadSpline (1:1 mapping)   │                  │
 │     │ - NEW: spline.IsBridge = feature.IsBridge          │                  │
 │     │        spline.IsTunnel = feature.IsTunnel          │                  │
+│     │ - Stored in RoadSmoothingParameters.PreBuiltSplines│                  │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  4. CROSS-SECTION GENERATION                                                 │
+│  4. NETWORK BUILDING (modified - copy flags)                                 │
+│                              ▼                                               │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ UnifiedRoadNetworkBuilder.BuildNetwork()           │                  │
+│     │ - Converts RoadSpline → ParameterizedRoadSpline    │                  │
+│     │ - NEW: paramSpline.IsBridge = spline.IsBridge      │                  │
+│     │        paramSpline.IsTunnel = spline.IsTunnel      │                  │
+│     └────────────────────────┬───────────────────────────┘                  │
+│                              │                                               │
+│  5. CROSS-SECTION GENERATION                                                 │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ Generate Cross-Sections                            │                  │
 │     │ - NEW: Propagate IsBridge/IsTunnel to cross-sections│                 │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  5. ROAD SMOOTHING (modified - skip structures)                              │
+│  6. ROAD SMOOTHING (modified - skip structures)                              │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ Elevation Smoothing Service                        │                  │
 │     │ - NEW: if (spline.IsStructure) SKIP                │                  │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  6. MATERIAL PAINTING (modified - skip structures)                           │
+│  7. MATERIAL PAINTING (modified - skip structures)                           │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ Layer Map Rasterization                            │                  │
 │     │ - NEW: if (spline.IsStructure) SKIP                │                  │
 │     └────────────────────────┬───────────────────────────┘                  │
 │                              │                                               │
-│  7. FUTURE: DAE GENERATION                                                   │
+│  8. FUTURE: DAE GENERATION                                                   │
 │                              ▼                                               │
 │     ┌────────────────────────────────────────────────────┐                  │
 │     │ Procedural Bridge/Tunnel DAE Generator             │                  │
@@ -871,8 +1318,13 @@ public float BridgeMinClearanceMeters { get; set; } = 5.0f;
 - [ ] Add `Layer` property
 - [ ] Add `BridgeStructureType` property
 
-### Phase 3: Spline Creation
-- [ ] Modify `BuildNetworkFromOsmFeatures()` to copy structure flags
+### Phase 3: Spline Creation Pipeline
+- [ ] Add structure metadata properties to `RoadSpline` class
+- [ ] Create `ConvertLinesToSplinesWithStructureMetadata()` method in `OsmGeometryProcessor`
+- [ ] Copy metadata from `OsmFeature` to `RoadSpline` during conversion
+- [ ] Implement `MergeNonStructureSplines()` for selective path merging
+- [ ] Update callers to use new method when structure detection is needed
+- [ ] Modify `UnifiedRoadNetworkBuilder.BuildNetwork()` to copy flags from `RoadSpline`
 - [ ] Add logging for structure detection statistics
 
 ### Phase 4: Terrain Smoothing
