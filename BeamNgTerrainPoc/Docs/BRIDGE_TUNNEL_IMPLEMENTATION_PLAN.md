@@ -28,20 +28,7 @@ This document outlines the implementation plan for detecting and handling bridge
 
 ## Key Architectural Decision: Tag-Based Detection (No Separate Query)
 
-### Problem with Separate Query Approach
-
-The original plan proposed:
-1. Query road features → convert to splines
-2. Query bridge/tunnel structures separately  
-3. Match structures to splines geometrically
-
-**This is fundamentally flawed because:**
-
-- OSM **usually splits ways** at bridge/tunnel boundaries, but **not always**
-- When a bridge exists in the middle of a longer OSM way that wasn't split, geometric matching marks the **ENTIRE spline** as a structure
-- Result: Roads before and after a short bridge are incorrectly excluded from terrain smoothing
-
-### Correct Approach: Read Tags During Parsing
+## Read Tags During Parsing the OSM Data for feature retrieval
 
 OSM ways with road features (`highway=*`) may also have structure tags:
 - `bridge=yes` (or `bridge=viaduct`, `bridge=cantilever`, etc.)
@@ -54,8 +41,6 @@ Since OSM convention is to split ways at structure boundaries, each `OsmFeature`
 - Either entirely a bridge
 - Or entirely a tunnel  
 - Or entirely a normal road
-
-**No geometric matching required. No separate query required.**
 
 ---
 
