@@ -487,6 +487,7 @@ public class TerrainGenerationOrchestrator
         if (osmQueryResult == null)
         {
             var cache = new OsmQueryCache();
+            // TODO: Cache loading here is very slow. Deserializing performance problem?
             osmQueryResult = await cache.GetAsync(effectiveBoundingBox);
 
             if (osmQueryResult == null)
