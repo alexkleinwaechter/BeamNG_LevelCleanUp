@@ -38,7 +38,8 @@
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version;
         var name = "BeamNG Mapping Tools - version";
-        return $"{name} {version.Major}.{version.Minor}.{version.Build}";
+        var suffix = "test build for sealandair";
+        return $"{name} {version.Major}.{version.Minor}.{version.Build} {suffix}";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
