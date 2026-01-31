@@ -53,16 +53,16 @@ public class UnifiedRoadNetworkBuilder
         var perfLog = TerrainCreationLogger.Current;
         var network = new UnifiedRoadNetwork();
         var splineIdCounter = 0;
-        
+
         // Filter to materials with road parameters
         var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
-        
+
         if (roadMaterials.Count == 0)
         {
             TerrainLogger.Info("UnifiedRoadNetworkBuilder: No road materials to process");
             return network;
         }
-        
+
         // Material order handling for priority calculation:
         // - Materials are listed in UI with index 0 at top
         // - For TEXTURE PAINTING: the LAST material (highest index) wins overlaps
@@ -84,42 +84,42 @@ public class UnifiedRoadNetworkBuilder
         {
             TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order NORMAL - bottom material gets highest priority");
         }
-        
+
         TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network from {roadMaterials.Count} road material(s)");
         perfLog?.LogSection("UnifiedRoadNetworkBuilder");
-        
+
         // Process each material
         for (var materialIndex = 0; materialIndex < roadMaterials.Count; materialIndex++)
         {
             var material = roadMaterials[materialIndex];
             var parameters = material.RoadParameters!;
-            
+
             TerrainLogger.Info($"  Processing material: {material.MaterialName}");
-            
+
             try
             {
                 // Get splines from this material (either pre-built or extracted from layer)
                 var splines = ExtractSplinesFromMaterial(material, parameters, metersPerPixel, terrainSize);
-                
+
                 if (splines.Count == 0)
                 {
                     TerrainLogger.Warning($"    No splines extracted for material: {material.MaterialName}");
                     continue;
                 }
-                
+
                 TerrainLogger.Info($"    Extracted {splines.Count} spline(s)");
-                
+
                 // Convert to ParameterizedRoadSpline and add to network
                 foreach (var spline in splines)
                 {
                     // Determine OSM road type if available
                     string? osmRoadType = null;
                     string? displayName = null;
-                    
+
                     // For OSM-based materials, we could extract road type from the spline
                     // This would require additional metadata to be passed through
                     // For now, we use width-based priority as fallback
-                    
+
                     var paramSpline = new ParameterizedRoadSpline
                     {
                         Spline = spline,
@@ -129,17 +129,17 @@ public class UnifiedRoadNetworkBuilder
                         OsmRoadType = osmRoadType,
                         DisplayName = displayName
                     };
-                    
+
                     // Calculate priority using the cascade:
                     // 1. OSM road type (if available)
                     // 2. Road width
                     // 3. Material order (earlier = higher priority)
                     paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
-                    
+
                     network.AddSpline(paramSpline);
                     splineIdCounter++;
                 }
-                
+
                 TerrainLogger.Info($"    Added {splines.Count} spline(s) with priority range " +
                                   $"[{network.Splines.Where(s => s.MaterialName == material.MaterialName).Min(s => s.Priority)}-" +
                                   $"{network.Splines.Where(s => s.MaterialName == material.MaterialName).Max(s => s.Priority)}]");
@@ -149,17 +149,17 @@ public class UnifiedRoadNetworkBuilder
                 TerrainLogger.Error($"    Error processing material '{material.MaterialName}': {ex.Message}");
             }
         }
-        
+
         // Generate cross-sections for all splines
         if (network.Splines.Count > 0)
         {
             GenerateCrossSections(network, metersPerPixel);
         }
-        
+
         // Log network statistics
         var stats = network.GetStatistics();
         TerrainLogger.Info(stats.ToString());
-        
+
         return network;
     }
 
@@ -182,39 +182,39 @@ public class UnifiedRoadNetworkBuilder
     {
         var network = new UnifiedRoadNetwork();
         var splineIdCounter = 0;
-        
+
         var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
-        
+
         if (roadMaterials.Count == 0)
         {
             return network;
         }
-        
+
         TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network with OSM metadata from {roadMaterials.Count} material(s)");
-        
+
         for (var materialIndex = 0; materialIndex < roadMaterials.Count; materialIndex++)
         {
             var material = roadMaterials[materialIndex];
             var parameters = material.RoadParameters!;
-            
+
             try
             {
                 var splines = ExtractSplinesFromMaterial(material, parameters, metersPerPixel, terrainSize);
-                
+
                 // Get OSM road types for this material if available
                 var roadTypesForMaterial = osmRoadTypes.GetValueOrDefault(material.MaterialName);
-                
+
                 for (var splineIndex = 0; splineIndex < splines.Count; splineIndex++)
                 {
                     var spline = splines[splineIndex];
-                    
+
                     // Get OSM road type if available
                     string? osmRoadType = null;
                     if (roadTypesForMaterial != null && splineIndex < roadTypesForMaterial.Count)
                     {
                         osmRoadType = roadTypesForMaterial[splineIndex];
                     }
-                    
+
                     var paramSpline = new ParameterizedRoadSpline
                     {
                         Spline = spline,
@@ -223,9 +223,9 @@ public class UnifiedRoadNetworkBuilder
                         SplineId = splineIdCounter,
                         OsmRoadType = osmRoadType
                     };
-                    
+
                     paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
-                    
+
                     network.AddSpline(paramSpline);
                     splineIdCounter++;
                 }
@@ -235,12 +235,12 @@ public class UnifiedRoadNetworkBuilder
                 TerrainLogger.Error($"Error processing material '{material.MaterialName}': {ex.Message}");
             }
         }
-        
+
         if (network.Splines.Count > 0)
         {
             GenerateCrossSections(network, metersPerPixel);
         }
-        
+
         return network;
     }
 
@@ -260,17 +260,17 @@ public class UnifiedRoadNetworkBuilder
             TerrainLogger.Info($"    Using {parameters.PreBuiltSplines!.Count} pre-built splines from OSM");
             return FilterShortSplines(parameters.PreBuiltSplines!, parameters.CrossSectionIntervalMeters);
         }
-        
+
         // Fall back to extracting from layer image
         if (string.IsNullOrEmpty(material.LayerImagePath))
         {
             TerrainLogger.Warning($"    Material '{material.MaterialName}' has no layer image path");
             return [];
         }
-        
+
         // Load and process layer image
         var roadLayer = LoadLayerImage(material.LayerImagePath, terrainSize);
-        
+
         return ExtractSplinesFromLayerImage(roadLayer, parameters, metersPerPixel);
     }
 
@@ -283,50 +283,50 @@ public class UnifiedRoadNetworkBuilder
         float metersPerPixel)
     {
         var splines = new List<RoadSpline>();
-        
+
         // Get spline parameters
         var splineParams = parameters.GetSplineParameters();
         var interpolationType = splineParams.SplineInterpolationType;
-        
+
         // Extract centerline paths using skeletonization
         var centerlinePathsPixels = _skeletonExtractor.ExtractCenterlinePaths(roadLayer, parameters);
-        
+
         if (centerlinePathsPixels.Count == 0)
         {
             return splines;
         }
-        
+
         TerrainLogger.Info($"    Extracted {centerlinePathsPixels.Count} skeleton path(s)");
-        
+
         // Merge broken curves
         var mergedPathPixels = MergeBrokenCurves(centerlinePathsPixels, roadLayer, parameters);
-        
+
         TerrainLogger.Info($"    After merging: {mergedPathPixels.Count} path(s)");
-        
+
         // Track simplification statistics for aggregated logging
         var totalWorldPoints = 0;
         var totalSimplifiedPoints = 0;
         var simplifiedPathCount = 0;
-        
+
         // Convert to splines
         foreach (var pathPixels in mergedPathPixels)
         {
             if (pathPixels.Count < 2)
                 continue;
-            
+
             // Convert to world coordinates (meters)
             var worldPoints = pathPixels
                 .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
                 .ToList();
-            
+
             // CRITICAL: Simplify the dense skeleton path to sparse control points like OSM has.
             // The skeleton produces pixel-by-pixel points that create jagged splines.
             // By simplifying first, we get clean waypoints that spline interpolation can smooth.
             var simplifiedPoints = SimplifyPathForSpline(worldPoints, splineParams, metersPerPixel);
-            
+
             if (simplifiedPoints.Count < 2)
                 continue;
-            
+
             // Track simplification stats
             if (simplifiedPoints.Count < worldPoints.Count)
             {
@@ -334,11 +334,11 @@ public class UnifiedRoadNetworkBuilder
                 totalSimplifiedPoints += simplifiedPoints.Count;
                 simplifiedPathCount++;
             }
-            
+
             try
             {
                 var spline = new RoadSpline(simplifiedPoints, interpolationType);
-                
+
                 // Filter short paths
                 var estimatedCrossSections = (int)(spline.TotalLength / parameters.CrossSectionIntervalMeters);
                 if (estimatedCrossSections >= MinCrossSectionsPerPath)
@@ -351,13 +351,13 @@ public class UnifiedRoadNetworkBuilder
                 TerrainLogger.Warning($"    Failed to create spline: {ex.Message}");
             }
         }
-        
+
         // Log aggregated simplification summary
         if (simplifiedPathCount > 0)
         {
             TerrainLogger.Info($"    Path simplification: {simplifiedPathCount} path(s), {totalWorldPoints} -> {totalSimplifiedPoints} total control points");
         }
-        
+
         return splines;
     }
 
@@ -378,16 +378,16 @@ public class UnifiedRoadNetworkBuilder
     {
         if (densePoints.Count < 3)
             return densePoints;
-        
+
         // Step 1: Ramer-Douglas-Peucker simplification
         // Convert tolerance from pixels to meters
         var rdpTolerance = splineParams.SimplifyTolerancePixels * metersPerPixel;
-        
+
         // Use a minimum tolerance to avoid excessive control points (at least 0.5 pixels worth)
         var effectiveTolerance = Math.Max(rdpTolerance, metersPerPixel * 0.5f);
-        
+
         var simplified = RamerDouglasPeucker(densePoints, effectiveTolerance);
-        
+
         // Step 2: If still very dense, enforce minimum spacing
         // Target roughly 1 control point per 5-10 meters of road for good spline quality
         var targetSpacing = 5.0f * metersPerPixel; // Minimum 5 pixels worth of spacing
@@ -395,7 +395,7 @@ public class UnifiedRoadNetworkBuilder
         {
             simplified = EnforceMinimumSpacing(simplified, targetSpacing);
         }
-        
+
         // Step 3: Apply Chaikin corner-cutting smoothing to the control points themselves
         // This pre-smooths the waypoints before spline interpolation
         // Only apply when using smooth interpolation mode (not linear)
@@ -404,7 +404,7 @@ public class UnifiedRoadNetworkBuilder
             // One iteration of Chaikin smoothing on the control points
             simplified = ChaikinSmooth(simplified, 1);
         }
-        
+
         return simplified;
     }
 
@@ -416,14 +416,14 @@ public class UnifiedRoadNetworkBuilder
     {
         if (points.Count < 3)
             return new List<Vector2>(points);
-        
+
         // Find the point with maximum distance from the line between first and last
         float maxDistance = 0;
         int maxIndex = 0;
-        
+
         var lineStart = points[0];
         var lineEnd = points[^1];
-        
+
         for (int i = 1; i < points.Count - 1; i++)
         {
             var distance = PerpendicularDistance(points[i], lineStart, lineEnd);
@@ -433,13 +433,13 @@ public class UnifiedRoadNetworkBuilder
                 maxIndex = i;
             }
         }
-        
+
         // If max distance is greater than epsilon, recursively simplify
         if (maxDistance > epsilon)
         {
             var left = RamerDouglasPeucker(points.Take(maxIndex + 1).ToList(), epsilon);
             var right = RamerDouglasPeucker(points.Skip(maxIndex).ToList(), epsilon);
-            
+
             // Combine results (avoiding duplicate point at maxIndex)
             var result = new List<Vector2>(left);
             result.AddRange(right.Skip(1));
@@ -451,7 +451,7 @@ public class UnifiedRoadNetworkBuilder
             return new List<Vector2> { lineStart, lineEnd };
         }
     }
-    
+
     /// <summary>
     /// Calculates perpendicular distance from a point to a line segment.
     /// </summary>
@@ -459,25 +459,25 @@ public class UnifiedRoadNetworkBuilder
     {
         var dx = lineEnd.X - lineStart.X;
         var dy = lineEnd.Y - lineStart.Y;
-        
+
         var lineLengthSquared = dx * dx + dy * dy;
-        
+
         if (lineLengthSquared < 0.0001f)
         {
             // Line segment is essentially a point
             return Vector2.Distance(point, lineStart);
         }
-        
+
         // Project point onto line and find perpendicular distance
         var t = ((point.X - lineStart.X) * dx + (point.Y - lineStart.Y) * dy) / lineLengthSquared;
         t = Math.Clamp(t, 0, 1);
-        
+
         var projectionX = lineStart.X + t * dx;
         var projectionY = lineStart.Y + t * dy;
-        
+
         return Vector2.Distance(point, new Vector2(projectionX, projectionY));
     }
-    
+
     /// <summary>
     /// Enforces minimum spacing between consecutive points by removing points that are too close.
     /// </summary>
@@ -485,10 +485,10 @@ public class UnifiedRoadNetworkBuilder
     {
         if (points.Count < 3)
             return points;
-        
+
         var result = new List<Vector2> { points[0] };
         var minSpacingSquared = minSpacing * minSpacing;
-        
+
         for (int i = 1; i < points.Count - 1; i++)
         {
             var distSquared = Vector2.DistanceSquared(result[^1], points[i]);
@@ -497,13 +497,13 @@ public class UnifiedRoadNetworkBuilder
                 result.Add(points[i]);
             }
         }
-        
+
         // Always include the last point
         result.Add(points[^1]);
-        
+
         return result;
     }
-    
+
     /// <summary>
     /// Chaikin corner-cutting smoothing algorithm.
     /// Creates smoother control points by iteratively cutting corners.
@@ -512,22 +512,22 @@ public class UnifiedRoadNetworkBuilder
     {
         if (points.Count < 3 || iterations <= 0)
             return points;
-        
+
         var result = new List<Vector2>(points);
-        
+
         for (int iter = 0; iter < iterations; iter++)
         {
             var smoothed = new List<Vector2>();
-            
+
             // Keep the first point
             smoothed.Add(result[0]);
-            
+
             // Apply corner cutting to intermediate segments
             for (int i = 0; i < result.Count - 1; i++)
             {
                 var p0 = result[i];
                 var p1 = result[i + 1];
-                
+
                 // Create two new points at 1/4 and 3/4 along the segment
                 var q = new Vector2(
                     0.75f * p0.X + 0.25f * p1.X,
@@ -535,88 +535,20 @@ public class UnifiedRoadNetworkBuilder
                 var r = new Vector2(
                     0.25f * p0.X + 0.75f * p1.X,
                     0.25f * p0.Y + 0.75f * p1.Y);
-                
+
                 // Don't duplicate start/end points
                 if (i > 0)
                     smoothed.Add(q);
                 if (i < result.Count - 2)
                     smoothed.Add(r);
             }
-            
+
             // Keep the last point
             smoothed.Add(result[^1]);
-            
+
             result = smoothed;
         }
-        
-        return result;
-    }
 
-    /// <summary>
-    /// Densifies control points near the start and end of a spline path.
-    /// This improves junction harmonization for OSM roads by providing more control points
-    /// for the blend algorithm to work with near endpoints (similar to how PNG roads have
-    /// more dense control points after simplification).
-    /// </summary>
-    /// <param name="points">The sparse control points from OSM.</param>
-    /// <param name="densifyRadius">How far from endpoints to densify (in meters).</param>
-    /// <param name="targetSpacing">Target spacing between densified points (in meters).</param>
-    /// <returns>Points with additional interpolated points near endpoints.</returns>
-    private static List<Vector2> DensifyNearEndpoints(List<Vector2> points, float densifyRadius = 30f, float targetSpacing = 3f)
-    {
-        if (points.Count < 2)
-            return points;
-        
-        var result = new List<Vector2>();
-        
-        // Calculate cumulative distances along the path
-        var distances = new List<float> { 0f };
-        for (int i = 1; i < points.Count; i++)
-        {
-            distances.Add(distances[^1] + Vector2.Distance(points[i - 1], points[i]));
-        }
-        var totalLength = distances[^1];
-        
-        // If the path is shorter than 2x densifyRadius, densify the whole thing
-        var effectiveStartRadius = Math.Min(densifyRadius, totalLength / 2);
-        var effectiveEndRadius = Math.Min(densifyRadius, totalLength / 2);
-        var endThreshold = totalLength - effectiveEndRadius;
-        
-        // Process each segment
-        for (int i = 0; i < points.Count - 1; i++)
-        {
-            var p0 = points[i];
-            var p1 = points[i + 1];
-            var segmentStart = distances[i];
-            var segmentEnd = distances[i + 1];
-            var segmentLength = segmentEnd - segmentStart;
-            
-            // Always add the start point of the segment
-            if (i == 0 || result.Count == 0 || Vector2.DistanceSquared(result[^1], p0) > 0.01f)
-            {
-                result.Add(p0);
-            }
-            
-            // Check if this segment is near start or end
-            var isNearStart = segmentStart < effectiveStartRadius;
-            var isNearEnd = segmentEnd > endThreshold;
-            
-            if ((isNearStart || isNearEnd) && segmentLength > targetSpacing * 1.5f)
-            {
-                // Densify this segment
-                var numPoints = (int)Math.Ceiling(segmentLength / targetSpacing);
-                for (int j = 1; j < numPoints; j++)
-                {
-                    var t = (float)j / numPoints;
-                    var interpolated = Vector2.Lerp(p0, p1, t);
-                    result.Add(interpolated);
-                }
-            }
-        }
-        
-        // Always add the last point
-        result.Add(points[^1]);
-        
         return result;
     }
 
@@ -642,38 +574,38 @@ public class UnifiedRoadNetworkBuilder
     private void GenerateCrossSections(UnifiedRoadNetwork network, float metersPerPixel)
     {
         var globalIndex = 0;
-        
+
         // Sort splines by priority (highest first) to ensure deterministic ordering
         var orderedSplines = network.Splines.OrderByDescending(s => s.Priority).ToList();
-        
+
         foreach (var paramSpline in orderedSplines)
         {
             var parameters = paramSpline.Parameters;
             var spline = paramSpline.Spline;
-            
+
             // Sample the spline at regular intervals
             var samples = spline.SampleByDistance(parameters.CrossSectionIntervalMeters);
-            
+
             var crossSections = new List<UnifiedCrossSection>();
-            
+
             for (var localIndex = 0; localIndex < samples.Count; localIndex++)
             {
                 var sample = samples[localIndex];
-                
+
                 var crossSection = UnifiedCrossSection.FromSplineSample(
                     sample,
                     paramSpline,
                     globalIndex,
                     localIndex);
-                
+
                 // Mark start/end cross-sections
                 crossSection.IsSplineStart = localIndex == 0;
                 crossSection.IsSplineEnd = localIndex == samples.Count - 1;
-                
+
                 crossSections.Add(crossSection);
                 globalIndex++;
             }
-            
+
             // Smooth cross-section normals to reduce bumpiness in road edges and elevation transitions.
             // Apply to ALL splines (both OSM and PNG) for consistent junction harmonization behavior.
             // Originally this was only for PNG splines, but OSM splines also benefit from smoothing.
@@ -681,17 +613,17 @@ public class UnifiedRoadNetworkBuilder
             {
                 SmoothCrossSectionNormals(crossSections);
             }
-            
+
             // Add all cross-sections to the network
             foreach (var cs in crossSections)
             {
                 network.AddCrossSection(cs);
             }
         }
-        
+
         TerrainLogger.Info($"    Generated {network.CrossSections.Count} cross-sections from {network.Splines.Count} splines");
     }
-    
+
     /// <summary>
     /// Smooths the normal vectors of cross-sections using a moving average filter.
     /// This reduces the jaggedness that comes from skeleton-extracted PNG paths,
@@ -704,42 +636,42 @@ public class UnifiedRoadNetworkBuilder
     {
         if (crossSections.Count < 5)
             return;
-        
+
         const int windowHalfSize = 2; // 5-point moving average (2 + 1 + 2)
-        
+
         // Store original normals
         var originalNormals = crossSections.Select(cs => cs.NormalDirection).ToList();
         var originalTangents = crossSections.Select(cs => cs.TangentDirection).ToList();
-        
+
         // Apply moving average to normals
         for (var i = 0; i < crossSections.Count; i++)
         {
             var sumNormal = Vector2.Zero;
             var sumTangent = Vector2.Zero;
             var count = 0;
-            
+
             for (var j = i - windowHalfSize; j <= i + windowHalfSize; j++)
             {
                 if (j < 0 || j >= crossSections.Count)
                     continue;
-                
+
                 sumNormal += originalNormals[j];
                 sumTangent += originalTangents[j];
                 count++;
             }
-            
+
             if (count > 0)
             {
                 // Normalize the averaged vectors
                 var avgNormal = sumNormal / count;
                 var avgTangent = sumTangent / count;
-                
+
                 var normalLength = avgNormal.Length();
                 var tangentLength = avgTangent.Length();
-                
+
                 if (normalLength > 0.001f)
                     crossSections[i].NormalDirection = avgNormal / normalLength;
-                
+
                 if (tangentLength > 0.001f)
                     crossSections[i].TangentDirection = avgTangent / tangentLength;
             }
@@ -752,15 +684,15 @@ public class UnifiedRoadNetworkBuilder
     private byte[,] LoadLayerImage(string layerPath, int expectedSize)
     {
         using var image = Image.Load<L8>(layerPath);
-        
+
         if (image.Width != expectedSize || image.Height != expectedSize)
         {
             throw new InvalidOperationException(
                 $"Layer image size ({image.Width}x{image.Height}) does not match terrain size ({expectedSize}x{expectedSize})");
         }
-        
+
         var layer = new byte[expectedSize, expectedSize];
-        
+
         for (var y = 0; y < expectedSize; y++)
         {
             for (var x = 0; x < expectedSize; x++)
@@ -770,7 +702,7 @@ public class UnifiedRoadNetworkBuilder
                 layer[flippedY, x] = image[x, y].PackedValue;
             }
         }
-        
+
         return layer;
     }
 
@@ -785,28 +717,28 @@ public class UnifiedRoadNetworkBuilder
     {
         if (rawPaths.Count <= 1)
             return rawPaths;
-        
+
         var sp = parameters.GetSplineParameters();
         var maxGap = (int)Math.Max(2, Math.Round(sp.BridgeEndpointMaxDistancePixels));
         var maxAngleDeg = Math.Max(10f, sp.JunctionAngleThreshold);
-        
+
         // Main merge loop
         var paths = rawPaths.Select(p => p.ToList()).ToList();
         bool merged;
         var pass = 0;
-        
+
         do
         {
             pass++;
             merged = false;
-            
+
             for (var i = 0; i < paths.Count && !merged; i++)
             {
                 for (var j = i + 1; j < paths.Count && !merged; j++)
                 {
                     var a = paths[i];
                     var b = paths[j];
-                    
+
                     if (TryMerge(a, b, maxGap, maxAngleDeg, roadMask, out var mergedPath) ||
                         TryMerge(a, Reverse(b), maxGap, maxAngleDeg, roadMask, out mergedPath) ||
                         TryMerge(Reverse(a), b, maxGap, maxAngleDeg, roadMask, out mergedPath) ||
@@ -819,12 +751,12 @@ public class UnifiedRoadNetworkBuilder
                 }
             }
         } while (merged && paths.Count > 1);
-        
+
         if (pass > 1)
         {
             TerrainLogger.Info($"    Path merging: {pass - 1} merge(s), remaining {paths.Count} paths");
         }
-        
+
         return paths;
     }
 
@@ -845,25 +777,25 @@ public class UnifiedRoadNetworkBuilder
     {
         merged = null!;
         if (a.Count == 0 || b.Count == 0) return false;
-        
+
         var aEnd = a[^1];
         var bStart = b[0];
-        
+
         // Proximity check
         var dist = Vector2.Distance(aEnd, bStart);
         if (dist > maxGap) return false;
-        
+
         // Direction continuity check
         var aDir = TangentAtEnd(a, true);
         var bDir = TangentAtEnd(b, false);
         if (aDir.Length() < 1e-3f || bDir.Length() < 1e-3f) return false;
-        
+
         var ang = AngleBetween(aDir, bDir);
         if (ang > maxAngleDeg) return false;
-        
+
         // Connectivity check through road mask
         if (!IsBridgeInsideRoadMask(aEnd, bStart, roadMask)) return false;
-        
+
         // Merge paths
         merged = new List<Vector2>(a.Count + b.Count - 1);
         merged.AddRange(a);
@@ -875,7 +807,7 @@ public class UnifiedRoadNetworkBuilder
     private static Vector2 TangentAtEnd(List<Vector2> p, bool atEnd)
     {
         if (p.Count < 2) return Vector2.Zero;
-        
+
         if (atEnd)
         {
             var a = p[Math.Max(0, p.Count - 3)];
@@ -903,11 +835,11 @@ public class UnifiedRoadNetworkBuilder
         var w = mask.GetLength(1);
         var h = mask.GetLength(0);
         int x0 = (int)a.X, y0 = (int)a.Y, x1 = (int)b.X, y1 = (int)b.Y;
-        
+
         int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
         int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
         var err = dx + dy;
-        
+
         int total = 0, inside = 0;
         while (true)
         {
@@ -916,253 +848,13 @@ public class UnifiedRoadNetworkBuilder
                 total++;
                 if (mask[y0, x0] > 0) inside++;
             }
-            
+
             if (x0 == x1 && y0 == y1) break;
             var e2 = 2 * err;
             if (e2 >= dy) { err += dy; x0 += sx; }
             if (e2 <= dx) { err += dx; y0 += sy; }
         }
-        
+
         return total == 0 ? false : inside / (float)total >= 0.6f;
-    }
-
-    /// <summary>
-    /// Calculates priority from road width when OSM type is not available.
-    /// Uses a linear scale where wider roads have higher priority.
-    /// </summary>
-    /// <param name="roadWidthMeters">Road width in meters.</param>
-    /// <returns>Priority value (typically 10-100).</returns>
-    public static int CalculateWidthBasedPriority(float roadWidthMeters)
-    {
-        return ParameterizedRoadSpline.GetWidthBasedPriority(roadWidthMeters);
-    }
-
-    /// <summary>
-    /// Builds a unified road network from materials with OSM feature data.
-    /// This overload extracts OSM road types from the features for proper priority calculation.
-    /// </summary>
-    /// <param name="materials">List of material definitions with OSM layer sources.</param>
-    /// <param name="osmQueryResult">The OSM query result containing all features.</param>
-    /// <param name="bbox">Geographic bounding box for coordinate transformation.</param>
-    /// <param name="heightMap">The terrain heightmap.</param>
-    /// <param name="metersPerPixel">Scale factor.</param>
-    /// <param name="terrainSize">Terrain size in pixels.</param>
-    /// <returns>A unified road network with OSM road type priorities.</returns>
-    public UnifiedRoadNetwork BuildNetworkFromOsmFeatures(
-        List<MaterialDefinition> materials,
-        OsmQueryResult osmQueryResult,
-        GeoBoundingBox bbox,
-        float[,] heightMap,
-        float metersPerPixel,
-        int terrainSize)
-    {
-        var network = new UnifiedRoadNetwork();
-        var splineIdCounter = 0;
-        
-        var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
-        
-        if (roadMaterials.Count == 0)
-        {
-            TerrainLogger.Info("UnifiedRoadNetworkBuilder: No road materials to process");
-            return network;
-        }
-        
-        TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network from OSM features for {roadMaterials.Count} material(s)");
-        
-        for (var materialIndex = 0; materialIndex < roadMaterials.Count; materialIndex++)
-        {
-            var material = roadMaterials[materialIndex];
-            var parameters = material.RoadParameters!;
-            
-            TerrainLogger.Info($"  Processing material: {material.MaterialName}");
-            
-            try
-            {
-                // Check if material uses OSM layer source
-                if (material.LayerSource?.SourceType == LayerSourceType.OsmFeatures &&
-                    material.LayerSource.SelectedOsmFeatures?.Count > 0)
-                {
-                    // Get the full features from the query result
-                    var selectedFeatureIds = material.LayerSource.SelectedOsmFeatures.Select(s => s.FeatureId).ToHashSet();
-                    var lineFeatures = osmQueryResult.Features
-                        .Where(f => selectedFeatureIds.Contains(f.Id) && f.GeometryType == OsmGeometryType.LineString)
-                        .ToList();
-                    
-                    if (lineFeatures.Count == 0)
-                    {
-                        TerrainLogger.Warning($"    No line features found for material: {material.MaterialName}");
-                        continue;
-                    }
-                    
-                    TerrainLogger.Info($"    Found {lineFeatures.Count} OSM line feature(s)");
-                    
-                    // Get spline interpolation type from parameters
-                    var interpolationType = parameters.GetSplineParameters().SplineInterpolationType;
-                    
-                    // Convert each OSM feature to a spline with its road type
-                    foreach (var feature in lineFeatures)
-                    {
-                        var spline = ConvertFeatureToSpline(feature, bbox, terrainSize, metersPerPixel, interpolationType);
-                        if (spline == null) continue;
-                        
-                        // Filter short splines
-                        var estimatedCrossSections = (int)(spline.TotalLength / parameters.CrossSectionIntervalMeters);
-                        if (estimatedCrossSections < MinCrossSectionsPerPath)
-                        {
-                            continue;
-                        }
-                        
-                        // Extract OSM road type from feature tags
-                        string? osmRoadType = null;
-                        if (feature.Tags.TryGetValue("highway", out var highwayType))
-                        {
-                            osmRoadType = highwayType;
-                        }
-                        
-                        var paramSpline = new ParameterizedRoadSpline
-                        {
-                            Spline = spline,
-                            Parameters = parameters,
-                            MaterialName = material.MaterialName,
-                            SplineId = splineIdCounter,
-                            OsmRoadType = osmRoadType,
-                            DisplayName = feature.DisplayName
-                        };
-                        
-                        paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
-                        
-                        network.AddSpline(paramSpline);
-                        splineIdCounter++;
-                    }
-                    
-                    var splineCount = network.Splines.Count(s => s.MaterialName == material.MaterialName);
-                    if (splineCount > 0)
-                    {
-                        var priorities = network.Splines.Where(s => s.MaterialName == material.MaterialName);
-                        TerrainLogger.Info($"    Added {splineCount} spline(s) with priority range " +
-                                          $"[{priorities.Min(s => s.Priority)}-{priorities.Max(s => s.Priority)}]");
-                    }
-                }
-                else
-                {
-                    // Fall back to standard extraction (PNG or pre-built splines)
-                    var splines = ExtractSplinesFromMaterial(material, parameters, metersPerPixel, terrainSize);
-                    
-                    if (splines.Count == 0)
-                    {
-                        TerrainLogger.Warning($"    No splines extracted for material: {material.MaterialName}");
-                        continue;
-                    }
-                    
-                    foreach (var spline in splines)
-                    {
-                        var paramSpline = new ParameterizedRoadSpline
-                        {
-                            Spline = spline,
-                            Parameters = parameters,
-                            MaterialName = material.MaterialName,
-                            SplineId = splineIdCounter
-                        };
-                        
-                        paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
-                        
-                        network.AddSpline(paramSpline);
-                        splineIdCounter++;
-                    }
-                    
-                    TerrainLogger.Info($"    Added {splines.Count} spline(s) from PNG/pre-built source");
-                }
-            }
-            catch (Exception ex)
-            {
-                TerrainLogger.Error($"    Error processing material '{material.MaterialName}': {ex.Message}");
-            }
-        }
-        
-        // Generate cross-sections for all splines
-        if (network.Splines.Count > 0)
-        {
-            GenerateCrossSections(network, metersPerPixel);
-        }
-        
-        // Log network statistics
-        var stats = network.GetStatistics();
-        TerrainLogger.Info(stats.ToString());
-        
-        return network;
-    }
-
-    /// <summary>
-    /// Converts a single OSM feature to a RoadSpline.
-    /// </summary>
-    private RoadSpline? ConvertFeatureToSpline(
-        OsmFeature feature,
-        GeoBoundingBox bbox,
-        int terrainSize,
-        float metersPerPixel,
-        SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated)
-    {
-        if (feature.Coordinates.Count < 2)
-            return null;
-        
-        // Transform coordinates to terrain space, then to meters
-        var terrainCoords = feature.Coordinates
-            .Select(c => _osmProcessor.TransformToTerrainCoordinate(c, bbox, terrainSize))
-            .ToList();
-        
-        // Crop to terrain bounds
-        var croppedCoords = _osmProcessor.CropLineToTerrain(terrainCoords, terrainSize);
-        
-        if (croppedCoords.Count < 2)
-            return null;
-        
-        // Convert to meter coordinates
-        var meterCoords = croppedCoords
-            .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
-            .ToList();
-        
-        // Remove duplicate consecutive points
-        var uniqueCoords = RemoveDuplicateConsecutivePoints(meterCoords, 0.01f);
-        
-        if (uniqueCoords.Count < 2)
-            return null;
-        
-        // Densify control points near endpoints for better junction harmonization
-        // OSM roads have sparse waypoints which can cause poor blending at junctions
-        // This adds interpolated points near start/end to match PNG road behavior
-        var densifiedCoords = DensifyNearEndpoints(uniqueCoords, densifyRadius: 30f, targetSpacing: 3f);
-        
-        try
-        {
-            return new RoadSpline(densifiedCoords, interpolationType);
-        }
-        catch (Exception ex)
-        {
-            TerrainLogger.Warning($"Failed to create spline from OSM feature {feature.Id}: {ex.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Removes consecutive duplicate points from a path.
-    /// </summary>
-    private static List<Vector2> RemoveDuplicateConsecutivePoints(List<Vector2> points, float tolerance)
-    {
-        if (points.Count < 2)
-            return points;
-        
-        var result = new List<Vector2> { points[0] };
-        var toleranceSquared = tolerance * tolerance;
-        
-        for (int i = 1; i < points.Count; i++)
-        {
-            var distSquared = Vector2.DistanceSquared(result[^1], points[i]);
-            if (distSquared > toleranceSquared)
-            {
-                result.Add(points[i]);
-            }
-        }
-        
-        return result;
     }
 }
