@@ -246,6 +246,34 @@ public class TerrainCreationParameters
     public float RoadMeshShoulderWidthMeters { get; set; } = 1.5f;
 
     // ========================================
+    // BRIDGE/TUNNEL STRUCTURE CONFIGURATION
+    // ========================================
+
+    /// <summary>
+    ///     When true, bridges are excluded from terrain smoothing and material painting.
+    ///     When false, bridge ways are treated as normal roads (legacy behavior).
+    ///     This prevents bridge structures from modifying the terrain beneath them,
+    ///     as bridges should be elevated above the terrain on support structures.
+    ///     Default: true (bridges are excluded)
+    /// </summary>
+    public bool ExcludeBridgesFromTerrain { get; set; } = false;
+
+    /// <summary>
+    ///     When true, tunnels are excluded from terrain smoothing and material painting.
+    ///     When false, tunnel ways are treated as normal roads (legacy behavior).
+    ///     This prevents tunnel structures from modifying the terrain surface,
+    ///     as tunnels should pass through the terrain without surface modification.
+    ///     Default: true (tunnels are excluded)
+    /// </summary>
+    public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+
+    /// <summary>
+    ///     Convenience property to check if any structure exclusion is enabled.
+    ///     Returns true if bridges OR tunnels are excluded from terrain processing.
+    /// </summary>
+    public bool ExcludeStructuresFromTerrain => ExcludeBridgesFromTerrain || ExcludeTunnelsFromTerrain;
+
+    // ========================================
     // OUTPUT PROPERTIES (populated after terrain generation)
     // ========================================
 

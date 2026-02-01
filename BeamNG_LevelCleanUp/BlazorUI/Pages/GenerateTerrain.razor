@@ -103,6 +103,8 @@
                                        EnableExtendedOsmJunctionDetection="@_enableExtendedOsmJunctionDetection"
                                        GlobalJunctionDetectionRadiusMeters="@_globalJunctionDetectionRadiusMeters"
                                        GlobalJunctionBlendDistanceMeters="@_globalJunctionBlendDistanceMeters"
+                                       ExcludeBridgesFromTerrain="@_excludeBridgesFromTerrain"
+                                       ExcludeTunnelsFromTerrain="@_excludeTunnelsFromTerrain"
                                        CropOffsetX="@(_cropResult?.OffsetX ?? 0)"
                                        CropOffsetY="@(_cropResult?.OffsetY ?? 0)"
                                        CropWidth="@(_cropResult?.CropWidth ?? 0)"
@@ -522,6 +524,46 @@
                                 </MudText>
                             </MudItem>
                         }
+
+                        @* Bridge/Tunnel Structure Handling *@
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Architecture" Size="Size.Small" Class="mr-1" />
+                                Bridge/Tunnel Structure Handling
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                Configure how bridge and tunnel structures are processed during terrain generation.
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_excludeBridgesFromTerrain"
+                                             Label="Exclude Bridges"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When enabled, roads tagged as bridges in OSM are excluded from terrain smoothing and material painting. This prevents bridge structures from modifying the terrain beneath them, as bridges should be elevated above the terrain on support structures.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Don't modify terrain under bridges
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_excludeTunnelsFromTerrain"
+                                             Label="Exclude Tunnels"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When enabled, roads tagged as tunnels in OSM are excluded from terrain smoothing and material painting. This prevents tunnel structures from modifying the terrain surface, as tunnels should pass through the terrain without surface modification.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Don't modify terrain over tunnels
+                            </MudText>
+                        </MudItem>
                     </MudGrid>
                 </MudPaper>
             }

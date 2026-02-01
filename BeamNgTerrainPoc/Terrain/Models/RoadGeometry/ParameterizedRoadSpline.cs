@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
@@ -68,6 +69,44 @@ public class ParameterizedRoadSpline
     ///     - They receive uniform elevation harmonization
     /// </summary>
     public bool IsRoundabout { get; set; }
+
+    // ========================================
+    // STRUCTURE METADATA (Bridge/Tunnel)
+    // ========================================
+
+    /// <summary>
+    ///     Whether this spline represents a bridge structure.
+    ///     Bridge splines are excluded from terrain smoothing and material painting.
+    /// </summary>
+    public bool IsBridge { get; set; }
+
+    /// <summary>
+    ///     Whether this spline represents a tunnel structure.
+    ///     Tunnel splines are excluded from terrain smoothing and material painting.
+    /// </summary>
+    public bool IsTunnel { get; set; }
+
+    /// <summary>
+    ///     Combined check for any elevated/underground structure.
+    /// </summary>
+    public bool IsStructure => IsBridge || IsTunnel;
+
+    /// <summary>
+    ///     Detailed structure type (None, Bridge, Tunnel, BuildingPassage, Culvert).
+    /// </summary>
+    public StructureType StructureType { get; set; } = StructureType.None;
+
+    /// <summary>
+    ///     Vertical layer (0 = ground level, positive = elevated, negative = underground).
+    ///     Used for multi-level crossings and DAE placement.
+    /// </summary>
+    public int Layer { get; set; } = 0;
+
+    /// <summary>
+    ///     Bridge structure type (beam, arch, suspension, etc.) for DAE generation.
+    ///     Null if not a bridge or type not specified.
+    /// </summary>
+    public string? BridgeStructureType { get; set; }
 
     /// <summary>
     ///     Total length of the spline in meters.

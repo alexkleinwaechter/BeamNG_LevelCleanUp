@@ -65,6 +65,8 @@
     [Parameter] public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
     [Parameter] public float GlobalJunctionDetectionRadiusMeters { get; set; } = 15.0f;
     [Parameter] public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
+    [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
+    [Parameter] public bool ExcludeTunnelsFromTerrain { get; set; } = false;
     [Parameter] public int CropOffsetX { get; set; }
     [Parameter] public int CropOffsetY { get; set; }
     [Parameter] public int CropWidth { get; set; }
@@ -399,7 +401,9 @@
                 ["enableCrossroadToTJunctionConversion"] = EnableCrossroadToTJunctionConversion,
                 ["enableExtendedOsmJunctionDetection"] = EnableExtendedOsmJunctionDetection,
                 ["globalJunctionDetectionRadiusMeters"] = GlobalJunctionDetectionRadiusMeters,
-                ["globalJunctionBlendDistanceMeters"] = GlobalJunctionBlendDistanceMeters
+                ["globalJunctionBlendDistanceMeters"] = GlobalJunctionBlendDistanceMeters,
+                ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
+                ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain
             },
             ["cropSettings"] = new JsonObject
             {

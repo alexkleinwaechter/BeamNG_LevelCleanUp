@@ -461,11 +461,13 @@ public class TerrainGenerationOrchestrator
         {
             layerImagePath = mat.LayerMapPath;
             if (mat.IsRoadMaterial)
-                roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
+                roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
+                    state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
         }
         else if (mat.IsRoadMaterial)
         {
-            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
+            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
+                state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
         }
 
         return (layerImagePath, roadParams);
@@ -543,8 +545,9 @@ public class TerrainGenerationOrchestrator
             var interpolationType = mat.SplineInterpolationType;
 
             // Build road params early to access junction harmonization settings
-            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
-            
+            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
+                state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
+
             // Check if roundabout detection is enabled
             var junctionParams = roadParams.JunctionHarmonizationParameters;
             var enableRoundaboutDetection = junctionParams?.EnableRoundaboutDetection ?? true;
@@ -582,7 +585,9 @@ public class TerrainGenerationOrchestrator
                     minPathLengthMeters,
                     duplicatePointToleranceMeters: 0.01f,
                     endpointJoinToleranceMeters: 1.0f,
-                    debugOutputPath: roundaboutDebugPath);
+                    debugOutputPath: roundaboutDebugPath,
+                    excludeBridges: state.ExcludeBridgesFromTerrain,
+                    excludeTunnels: state.ExcludeTunnelsFromTerrain);
                 
                 // Store roundabout info in road params for potential use in junction detection
                 if (detectedRoundabouts.Count > 0)
@@ -603,7 +608,9 @@ public class TerrainGenerationOrchestrator
                     state.TerrainSize,
                     state.MetersPerPixel,
                     interpolationType,
-                    minPathLengthMeters);
+                    minPathLengthMeters,
+                    excludeBridges: state.ExcludeBridgesFromTerrain,
+                    excludeTunnels: state.ExcludeTunnelsFromTerrain);
             }
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
@@ -625,7 +632,9 @@ public class TerrainGenerationOrchestrator
                 splines,
                 state.TerrainSize,
                 state.MetersPerPixel,
-                effectiveRoadSurfaceWidth);
+                effectiveRoadSurfaceWidth,
+                excludeBridges: state.ExcludeBridgesFromTerrain,
+                excludeTunnels: state.ExcludeTunnelsFromTerrain);
 
             layerImagePath = await SaveLayerMapToPngAsync(roadMask, debugPath, mat.InternalName);
         }
@@ -680,6 +689,8 @@ public class TerrainGenerationOrchestrator
             GlobalJunctionDetectionRadiusMeters = state.GlobalJunctionDetectionRadiusMeters,
             GlobalJunctionBlendDistanceMeters = state.GlobalJunctionBlendDistanceMeters,
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
+            ExcludeBridgesFromTerrain = state.ExcludeBridgesFromTerrain,
+            ExcludeTunnelsFromTerrain = state.ExcludeTunnelsFromTerrain,
             AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0
         };
 

@@ -127,7 +127,14 @@ public class UnifiedRoadNetworkBuilder
                         MaterialName = material.MaterialName,
                         SplineId = splineIdCounter,
                         OsmRoadType = osmRoadType,
-                        DisplayName = displayName
+                        DisplayName = displayName,
+
+                        // Copy structure flags from RoadSpline (which got them from OsmFeature)
+                        IsBridge = spline.IsBridge,
+                        IsTunnel = spline.IsTunnel,
+                        StructureType = spline.StructureType,
+                        Layer = spline.Layer,
+                        BridgeStructureType = spline.BridgeStructureType
                     };
 
                     // Calculate priority using the cascade:
@@ -159,6 +166,15 @@ public class UnifiedRoadNetworkBuilder
         // Log network statistics
         var stats = network.GetStatistics();
         TerrainLogger.Info(stats.ToString());
+
+        // Log structure statistics
+        var bridgeCount = network.Splines.Count(s => s.IsBridge);
+        var tunnelCount = network.Splines.Count(s => s.IsTunnel);
+
+        if (bridgeCount > 0 || tunnelCount > 0)
+        {
+            TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
+        }
 
         return network;
     }
@@ -221,7 +237,14 @@ public class UnifiedRoadNetworkBuilder
                         Parameters = parameters,
                         MaterialName = material.MaterialName,
                         SplineId = splineIdCounter,
-                        OsmRoadType = osmRoadType
+                        OsmRoadType = osmRoadType,
+
+                        // Copy structure flags from RoadSpline (which got them from OsmFeature)
+                        IsBridge = spline.IsBridge,
+                        IsTunnel = spline.IsTunnel,
+                        StructureType = spline.StructureType,
+                        Layer = spline.Layer,
+                        BridgeStructureType = spline.BridgeStructureType
                     };
 
                     paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
@@ -239,6 +262,15 @@ public class UnifiedRoadNetworkBuilder
         if (network.Splines.Count > 0)
         {
             GenerateCrossSections(network, metersPerPixel);
+        }
+
+        // Log structure statistics
+        var bridgeCount = network.Splines.Count(s => s.IsBridge);
+        var tunnelCount = network.Splines.Count(s => s.IsTunnel);
+
+        if (bridgeCount > 0 || tunnelCount > 0)
+        {
+            TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
         }
 
         return network;

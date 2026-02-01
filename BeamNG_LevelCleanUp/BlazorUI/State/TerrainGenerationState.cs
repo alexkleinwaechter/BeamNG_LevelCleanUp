@@ -69,6 +69,24 @@ public class TerrainGenerationState
     public bool FlipMaterialProcessingOrder { get; set; }
 
     // ========================================
+    // BRIDGE/TUNNEL STRUCTURE CONFIGURATION
+    // ========================================
+
+    /// <summary>
+    ///     When true, bridges are excluded from terrain smoothing and material painting.
+    ///     When false, bridge ways are treated as normal roads (legacy behavior).
+    ///     Default: true (bridges are excluded)
+    /// </summary>
+    public bool ExcludeBridgesFromTerrain { get; set; } = false;
+
+    /// <summary>
+    ///     When true, tunnels are excluded from terrain smoothing and material painting.
+    ///     When false, tunnel ways are treated as normal roads (legacy behavior).
+    ///     Default: true (tunnels are excluded)
+    /// </summary>
+    public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+
+    // ========================================
     // HEIGHTMAP SOURCE
     // ========================================
 

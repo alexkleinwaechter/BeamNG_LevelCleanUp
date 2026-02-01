@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git -C d:Sourcebeamng_mapping_pro log --oneline --all)"
+    ]
+  }
+}

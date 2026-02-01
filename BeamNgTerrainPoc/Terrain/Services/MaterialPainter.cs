@@ -74,6 +74,16 @@ public class MaterialPainter
 
             foreach (var paramSpline in splines)
             {
+                // Phase 5: Exclude bridge/tunnel structures from material painting if configured
+                if ((paramSpline.IsBridge && paramSpline.Parameters.ExcludeBridgesFromTerrain) ||
+                    (paramSpline.IsTunnel && paramSpline.Parameters.ExcludeTunnelsFromTerrain))
+                {
+                    TerrainLogger.Detail(
+                        $"Excluding {(paramSpline.IsBridge ? "bridge" : "tunnel")} spline from material painting: " +
+                        $"{materialName}");
+                    continue;
+                }
+
                 // Use RoadSurfaceWidthMeters if set, otherwise RoadWidthMeters
                 var surfaceHalfWidth = paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters / 2.0f;
 

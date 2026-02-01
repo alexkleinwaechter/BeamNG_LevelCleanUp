@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using MathNet.Numerics.Interpolation;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -96,6 +97,45 @@ public class RoadSpline
     ///     Total arc length of the spline
     /// </summary>
     public float TotalLength { get; }
+
+    // ========================================
+    // STRUCTURE METADATA (Bridge/Tunnel)
+    // ========================================
+
+    /// <summary>
+    ///     Whether this spline represents a bridge (from OSM bridge=* tag).
+    ///     Set during spline creation from OsmFeature.
+    /// </summary>
+    public bool IsBridge { get; set; }
+
+    /// <summary>
+    ///     Whether this spline represents a tunnel (from OSM tunnel=* or covered=yes tag).
+    ///     Set during spline creation from OsmFeature.
+    /// </summary>
+    public bool IsTunnel { get; set; }
+
+    /// <summary>
+    ///     Combined check for any elevated/underground structure.
+    /// </summary>
+    public bool IsStructure => IsBridge || IsTunnel;
+
+    /// <summary>
+    ///     Detailed structure type (None, Bridge, Tunnel, BuildingPassage, Culvert).
+    ///     Set during spline creation from OsmFeature.GetStructureType().
+    /// </summary>
+    public StructureType StructureType { get; set; } = StructureType.None;
+
+    /// <summary>
+    ///     Vertical layer from OSM (0 = ground level, positive = elevated, negative = underground).
+    ///     Set during spline creation from OsmFeature.Layer.
+    /// </summary>
+    public int Layer { get; set; } = 0;
+
+    /// <summary>
+    ///     Bridge structure type (beam, arch, suspension, etc.) for future DAE generation.
+    ///     Set during spline creation from OsmFeature.BridgeStructureType.
+    /// </summary>
+    public string? BridgeStructureType { get; set; }
 
     /// <summary>
     ///     Creates a smooth interpolated road spline (Akima/cubic).

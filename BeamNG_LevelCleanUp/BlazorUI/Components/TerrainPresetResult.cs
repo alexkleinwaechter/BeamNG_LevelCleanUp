@@ -108,6 +108,18 @@ public class TerrainPresetResult
     public float? GlobalJunctionBlendDistanceMeters { get; set; }
 
     /// <summary>
+    ///     When true, bridges are excluded from terrain smoothing and material painting.
+    ///     When false, bridge ways are treated as normal roads (legacy behavior).
+    /// </summary>
+    public bool? ExcludeBridgesFromTerrain { get; set; }
+
+    /// <summary>
+    ///     When true, tunnels are excluded from terrain smoothing and material painting.
+    ///     When false, tunnel ways are treated as normal roads (legacy behavior).
+    /// </summary>
+    public bool? ExcludeTunnelsFromTerrain { get; set; }
+
+    /// <summary>
     ///     Terrain size in pixels (e.g., 1024, 2048, 4096).
     /// </summary>
     public int? TerrainSize { get; set; }

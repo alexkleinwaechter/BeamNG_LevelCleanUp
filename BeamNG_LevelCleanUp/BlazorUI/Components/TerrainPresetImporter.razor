@@ -582,6 +582,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.GlobalJunctionDetectionRadiusMeters = terrainOptions["globalJunctionDetectionRadiusMeters"]!.GetValue<float>();
                 if (terrainOptions["globalJunctionBlendDistanceMeters"] != null)
                     result.GlobalJunctionBlendDistanceMeters = terrainOptions["globalJunctionBlendDistanceMeters"]!.GetValue<float>();
+                if (terrainOptions["excludeBridgesFromTerrain"] != null)
+                    result.ExcludeBridgesFromTerrain = terrainOptions["excludeBridgesFromTerrain"]!.GetValue<bool>();
+                if (terrainOptions["excludeTunnelsFromTerrain"] != null)
+                    result.ExcludeTunnelsFromTerrain = terrainOptions["excludeTunnelsFromTerrain"]!.GetValue<bool>();
             }
 
             // Import crop/selection settings

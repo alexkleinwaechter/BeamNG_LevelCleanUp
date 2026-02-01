@@ -3,6 +3,27 @@ using BeamNgTerrainPoc.Terrain.GeoTiff;
 namespace BeamNgTerrainPoc.Terrain.Osm.Models;
 
 /// <summary>
+/// Type of structure (bridge, tunnel, etc.) if a feature represents one.
+/// </summary>
+public enum StructureType
+{
+    /// <summary>Not a structure - normal road at ground level.</summary>
+    None,
+
+    /// <summary>Way passes over an obstacle (water, road, valley, etc.).</summary>
+    Bridge,
+
+    /// <summary>Way passes through terrain (underground).</summary>
+    Tunnel,
+
+    /// <summary>Covered passage through a building.</summary>
+    BuildingPassage,
+
+    /// <summary>Small tunnel for water drainage under road.</summary>
+    Culvert
+}
+
+/// <summary>
 /// Type of OSM element.
 /// </summary>
 public enum OsmFeatureType
@@ -158,6 +179,126 @@ public class OsmFeature
         Tags.TryGetValue("junction", out var junction) && 
         junction.Equals("roundabout", StringComparison.OrdinalIgnoreCase);
     
+    // ========================================
+    // STRUCTURE METADATA (Bridge/Tunnel)
+    // ========================================
+
+    /// <summary>
+    /// Whether this feature represents a bridge (has bridge=* tag, excluding "no").
+    /// </summary>
+    public bool IsBridge
+    {
+        get
+        {
+            if (!Tags.TryGetValue("bridge", out var bridgeValue))
+                return false;
+
+            return !bridgeValue.Equals("no", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Whether this feature represents a tunnel (has tunnel=* or covered=yes tag).
+    /// </summary>
+    public bool IsTunnel
+    {
+        get
+        {
+            if (Tags.TryGetValue("tunnel", out var tunnelValue))
+            {
+                if (!tunnelValue.Equals("no", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            if (Tags.TryGetValue("covered", out var coveredValue))
+            {
+                if (coveredValue.Equals("yes", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether this feature is any kind of elevated or underground structure.
+    /// </summary>
+    public bool IsStructure => IsBridge || IsTunnel;
+
+    /// <summary>
+    /// Gets the specific structure type from OSM tags.
+    /// </summary>
+    public StructureType GetStructureType()
+    {
+        if (!IsStructure)
+            return StructureType.None;
+
+        if (IsBridge)
+            return StructureType.Bridge;
+
+        if (Tags.TryGetValue("tunnel", out var tunnelValue))
+        {
+            return tunnelValue.ToLowerInvariant() switch
+            {
+                "building_passage" => StructureType.BuildingPassage,
+                "culvert" => StructureType.Culvert,
+                _ => StructureType.Tunnel
+            };
+        }
+
+        if (Tags.TryGetValue("covered", out var coveredValue) &&
+            coveredValue.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return StructureType.BuildingPassage;
+        }
+
+        return StructureType.Tunnel;
+    }
+
+    /// <summary>
+    /// Gets the vertical layer from OSM tags (default 0).
+    /// Bridges typically have positive layers, tunnels negative.
+    /// </summary>
+    public int Layer
+    {
+        get
+        {
+            if (Tags.TryGetValue("layer", out var layerValue) &&
+                int.TryParse(layerValue, out var layer))
+            {
+                return layer;
+            }
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Gets bridge structure type (beam, arch, suspension, etc.) if specified.
+    /// </summary>
+    public string? BridgeStructureType
+    {
+        get
+        {
+            if (Tags.TryGetValue("bridge:structure", out var structureType))
+                return structureType;
+
+            if (Tags.TryGetValue("bridge", out var bridgeValue))
+            {
+                return bridgeValue.ToLowerInvariant() switch
+                {
+                    "viaduct" => "viaduct",
+                    "cantilever" => "cantilever",
+                    "suspension" => "suspension",
+                    "movable" => "movable",
+                    "aqueduct" => "aqueduct",
+                    _ => null
+                };
+            }
+
+            return null;
+        }
+    }
+
     public override string ToString()
     {
         return $"{GeometryType} - {DisplayName} ({Coordinates.Count} coords)";

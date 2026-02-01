@@ -1017,8 +1017,12 @@ public partial class TerrainMaterialSettings
         /// </summary>
         /// <param name="debugOutputDirectory">Base directory for debug output files.</param>
         /// <param name="terrainBaseHeight">Base height (Z offset) for the terrain in world units.</param>
+        /// <param name="excludeBridgesFromTerrain">When true, bridges are excluded from terrain smoothing and material painting.</param>
+        /// <param name="excludeTunnelsFromTerrain">When true, tunnels are excluded from terrain smoothing and material painting.</param>
         public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null,
-            float terrainBaseHeight = 0.0f)
+            float terrainBaseHeight = 0.0f,
+            bool excludeBridgesFromTerrain = false,
+            bool excludeTunnelsFromTerrain = false)
         {
             // Create a subfolder for this material's debug output to avoid overwriting other materials' images
             string? materialDebugDirectory = null;
@@ -1057,6 +1061,10 @@ public partial class TerrainMaterialSettings
                 // Terrain context
                 TerrainBaseHeight = terrainBaseHeight,
                 MasterSplineNodeDistanceMeters = MasterSplineNodeDistanceMeters,
+
+                // Bridge/Tunnel exclusion
+                ExcludeBridgesFromTerrain = excludeBridgesFromTerrain,
+                ExcludeTunnelsFromTerrain = excludeTunnelsFromTerrain,
 
                 // Debug - use material-specific subfolder, always export debug images
                 DebugOutputDirectory = materialDebugDirectory,

@@ -623,6 +623,20 @@ public class UnifiedRoadSmoother
 
             var parameters = spline.Parameters;
 
+            // Phase 4: Exclude bridge/tunnel structures from elevation smoothing if configured
+            if ((spline.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
+                (spline.IsTunnel && parameters.ExcludeTunnelsFromTerrain))
+            {
+                // Mark all cross-sections from this structure as excluded
+                foreach (var cs in crossSections)
+                    cs.IsExcluded = true;
+
+                TerrainCreationLogger.Current?.Detail(
+                    $"Excluding {(spline.IsBridge ? "bridge" : "tunnel")} spline {spline.SplineId} " +
+                    $"from elevation smoothing ({crossSections.Count} cross-sections)");
+                continue;
+            }
+
             // Create a temporary RoadGeometry for compatibility with existing elevation calculator
             var tempGeometry = new RoadGeometry(new byte[1, 1], parameters);
             tempGeometry.CrossSections.Clear();

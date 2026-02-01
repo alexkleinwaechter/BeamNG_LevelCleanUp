@@ -318,11 +318,13 @@ public class TerrainAnalysisOrchestrator
         {
             layerImagePath = mat.LayerMapPath;
             if (mat.IsRoadMaterial)
-                roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
+                roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
+                    state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
         }
         else if (mat.IsRoadMaterial)
         {
-            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
+            roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
+                state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
         }
 
         return (layerImagePath, roadParams);
@@ -381,7 +383,8 @@ public class TerrainAnalysisOrchestrator
                     interpolationType,
                     minPathLengthMeters);
 
-                roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight);
+                roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
+                    state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
                 roadParams.PreBuiltSplines = splines;
 
                 var effectiveRoadSurfaceWidth = mat.RoadSurfaceWidthMeters is > 0

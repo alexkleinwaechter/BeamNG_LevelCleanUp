@@ -114,6 +114,18 @@ public partial class GenerateTerrain
         set => _state.GlobalJunctionBlendDistanceMeters = value;
     }
 
+    private bool _excludeBridgesFromTerrain
+    {
+        get => _state.ExcludeBridgesFromTerrain;
+        set => _state.ExcludeBridgesFromTerrain = value;
+    }
+
+    private bool _excludeTunnelsFromTerrain
+    {
+        get => _state.ExcludeTunnelsFromTerrain;
+        set => _state.ExcludeTunnelsFromTerrain = value;
+    }
+
     private GeoBoundingBox? _geoBoundingBox
     {
         get => _state.GeoBoundingBox;
@@ -1062,6 +1074,12 @@ public partial class GenerateTerrain
 
         if (result.GlobalJunctionBlendDistanceMeters.HasValue)
             _globalJunctionBlendDistanceMeters = result.GlobalJunctionBlendDistanceMeters.Value;
+
+        if (result.ExcludeBridgesFromTerrain.HasValue)
+            _excludeBridgesFromTerrain = result.ExcludeBridgesFromTerrain.Value;
+
+        if (result.ExcludeTunnelsFromTerrain.HasValue)
+            _excludeTunnelsFromTerrain = result.ExcludeTunnelsFromTerrain.Value;
 
         // Apply GeoTIFF metadata from preset (as fallback if GeoTIFF couldn't be loaded)
         if (!geoTiffLoaded)

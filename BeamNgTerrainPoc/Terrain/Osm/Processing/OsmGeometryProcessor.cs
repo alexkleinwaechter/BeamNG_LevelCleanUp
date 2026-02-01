@@ -492,17 +492,24 @@ public class OsmGeometryProcessor
     /// Rasterizes road splines to a binary layer map.
     /// This ensures the layer map matches the interpolated spline path used for elevation smoothing.
     /// Use this instead of RasterizeLinesToLayerMap() for road materials with pre-built splines.
+    /// 
+    /// BACKWARD COMPATIBILITY: When both excludeBridges and excludeTunnels are false,
+    /// all splines are rasterized - identical to the original behavior.
     /// </summary>
     /// <param name="splines">Road splines (in meter coordinates)</param>
     /// <param name="terrainSize">Size of terrain in pixels</param>
     /// <param name="metersPerPixel">Scale factor</param>
     /// <param name="roadSurfaceWidthMeters">Road surface width in meters</param>
+    /// <param name="excludeBridges">When true, bridge splines are excluded from rasterization. When false, bridges are included (backward compatible).</param>
+    /// <param name="excludeTunnels">When true, tunnel splines are excluded from rasterization. When false, tunnels are included (backward compatible).</param>
     /// <returns>Binary mask where 255 = road surface, 0 = no road</returns>
     public byte[,] RasterizeSplinesToLayerMap(
         List<RoadSpline> splines,
         int terrainSize,
         float metersPerPixel,
-        float roadSurfaceWidthMeters)
+        float roadSurfaceWidthMeters,
+        bool excludeBridges = false,
+        bool excludeTunnels = false)
     {
         var result = new byte[terrainSize, terrainSize];
         var halfWidthMeters = roadSurfaceWidthMeters / 2f;
@@ -510,8 +517,26 @@ public class OsmGeometryProcessor
         // Fine sampling interval for accurate curve representation
         var sampleIntervalMeters = Math.Min(0.25f, metersPerPixel * 0.5f);
         
+        int includedCount = 0;
+        int excludedBridgeCount = 0;
+        int excludedTunnelCount = 0;
+        
         foreach (var spline in splines)
         {
+            // Check if this spline should be excluded based on structure type
+            bool shouldExclude = 
+                (spline.IsBridge && excludeBridges) ||
+                (spline.IsTunnel && excludeTunnels);
+            
+            if (shouldExclude)
+            {
+                if (spline.IsBridge) excludedBridgeCount++;
+                if (spline.IsTunnel) excludedTunnelCount++;
+                continue;
+            }
+            
+            includedCount++;
+            
             // Sample the spline at fine intervals (using the INTERPOLATED path)
             var samples = spline.SampleByDistance(sampleIntervalMeters);
             
@@ -544,7 +569,13 @@ public class OsmGeometryProcessor
             }
         }
         
-        TerrainLogger.Info($"Rasterized {splines.Count} splines to layer map (width={roadSurfaceWidthMeters}m, samples every {sampleIntervalMeters:F2}m)");
+        var logMessage = $"Rasterized {includedCount} splines to layer map (width={roadSurfaceWidthMeters}m, samples every {sampleIntervalMeters:F2}m)";
+        if (excludedBridgeCount > 0 || excludedTunnelCount > 0)
+        {
+            logMessage += $" - excluded {excludedBridgeCount} bridge(s) and {excludedTunnelCount} tunnel(s) from material painting";
+        }
+        TerrainLogger.Info(logMessage);
+        
         return result;
     }
     
@@ -661,6 +692,10 @@ public class OsmGeometryProcessor
     /// 
     /// OSM ways are connected at shared endpoints before spline creation to avoid
     /// gaps that would cause elevation discontinuities.
+    /// 
+    /// BACKWARD COMPATIBILITY: When both excludeBridges and excludeTunnels are false,
+    /// all splines are merged together like normal roads - identical to the original behavior.
+    /// Structure paths are only kept separate when their exclusion flag is true.
     /// </summary>
     /// <param name="lineFeatures">OSM line features to convert.</param>
     /// <param name="bbox">Geographic bounding box (WGS84).</param>
@@ -670,6 +705,8 @@ public class OsmGeometryProcessor
     /// <param name="minPathLengthMeters">Minimum path length to include (default 1m). Paths shorter than this are skipped.</param>
     /// <param name="duplicatePointToleranceMeters">Tolerance for removing duplicate consecutive points (default 0.01m = 1cm).</param>
     /// <param name="endpointJoinToleranceMeters">Tolerance for joining endpoints of adjacent ways (default 1m).</param>
+    /// <param name="excludeBridges">When true, bridge splines are kept separate from merging. When false, bridges are merged like normal roads (backward compatible).</param>
+    /// <param name="excludeTunnels">When true, tunnel splines are kept separate from merging. When false, tunnels are merged like normal roads (backward compatible).</param>
     /// <returns>List of road splines in meter coordinates.</returns>
     public List<RoadSpline> ConvertLinesToSplines(
         List<OsmFeature> lineFeatures,
@@ -679,40 +716,52 @@ public class OsmGeometryProcessor
         SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated,
         float minPathLengthMeters = 1.0f,
         float duplicatePointToleranceMeters = 0.01f,
-        float endpointJoinToleranceMeters = 1.0f)
+        float endpointJoinToleranceMeters = 1.0f,
+        bool excludeBridges = false,
+        bool excludeTunnels = false)
     {
         var splines = new List<RoadSpline>();
         int skippedZeroLength = 0;
         int skippedTooFewPoints = 0;
-        
+
         // Step 1: Transform all features to meter coordinates first
+        // Track structure metadata (IsBridge/IsTunnel) for each path
         var allPaths = new List<List<Vector2>>();
-        
+        var pathMetadata = new List<(bool IsBridge, bool IsTunnel, StructureType StructureType, int Layer, string? BridgeStructureType)>();
+
         foreach (var feature in lineFeatures.Where(f => f.GeometryType == OsmGeometryType.LineString))
         {
             // Transform to terrain-space coordinates (bottom-left origin for heightmap)
             var terrainCoords = TransformToTerrainCoordinates(feature.Coordinates, bbox, terrainSize);
-            
+
             // Crop to terrain bounds
             var croppedCoords = CropLineToTerrain(terrainCoords, terrainSize);
-            
+
             if (croppedCoords.Count < 2)
             {
                 skippedTooFewPoints++;
                 continue;
             }
-            
+
             // Convert from pixel coordinates to meter coordinates
             var meterCoords = croppedCoords
                 .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
                 .ToList();
-            
+
             // Remove duplicate consecutive points
             var uniqueCoords = RemoveDuplicateConsecutivePoints(meterCoords, duplicatePointToleranceMeters);
-            
+
             if (uniqueCoords.Count >= 2)
             {
                 allPaths.Add(uniqueCoords);
+                // Store structure metadata from OsmFeature
+                pathMetadata.Add((
+                    feature.IsBridge,
+                    feature.IsTunnel,
+                    feature.GetStructureType(),
+                    feature.Layer,
+                    feature.BridgeStructureType
+                ));
             }
             else
             {
@@ -721,13 +770,89 @@ public class OsmGeometryProcessor
         }
         
         TerrainLogger.Info($"Prepared {allPaths.Count} paths from {lineFeatures.Count} OSM line features");
-        
-        // Step 2: Connect paths that share endpoints (OSM ways are often split at intersections)
-        var connectedPaths = ConnectAdjacentPaths(allPaths, endpointJoinToleranceMeters);
-        
-        TerrainLogger.Info($"After connecting adjacent paths: {connectedPaths.Count} connected paths (was {allPaths.Count})");
-        
-        // Step 3: Create splines from connected paths
+
+        // Step 2: Separate structure paths from regular paths for selective merging
+        // BACKWARD COMPATIBILITY: Only keep structures separate when their exclusion is enabled
+        // When both excludeBridges and excludeTunnels are false, all paths are merged together
+        var structurePaths = new List<(List<Vector2> Path, int Index)>();
+        var regularPaths = new List<List<Vector2>>();
+        var regularPathIndices = new List<int>();
+
+        for (int i = 0; i < allPaths.Count; i++)
+        {
+            // A path is "protected" (kept separate) only if:
+            // - It's a bridge AND excludeBridges is true, OR
+            // - It's a tunnel AND excludeTunnels is true
+            bool isProtectedStructure = 
+                (pathMetadata[i].IsBridge && excludeBridges) ||
+                (pathMetadata[i].IsTunnel && excludeTunnels);
+
+            if (isProtectedStructure)
+            {
+                structurePaths.Add((allPaths[i], i));
+            }
+            else
+            {
+                regularPaths.Add(allPaths[i]);
+                regularPathIndices.Add(i);
+            }
+        }
+
+        TerrainLogger.Info($"Separated paths: {structurePaths.Count} protected structure paths (kept separate), {regularPaths.Count} regular paths (will merge)");
+        if (!excludeBridges && !excludeTunnels)
+            TerrainLogger.Info("  (Backward compatible mode: all structures treated as normal roads)");
+
+        // Step 3: Connect only regular (non-structure) paths
+        var connectedPaths = regularPaths.Count > 0
+            ? ConnectAdjacentPaths(regularPaths, endpointJoinToleranceMeters)
+            : new List<List<Vector2>>();
+
+        TerrainLogger.Info($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPaths.Count})");
+
+        // Step 4: Create splines from structure paths (preserve metadata)
+        int bridgeCount = 0;
+        int tunnelCount = 0;
+
+        foreach (var (path, index) in structurePaths)
+        {
+            var cleanPath = RemoveDuplicateConsecutivePoints(path, duplicatePointToleranceMeters);
+
+            if (cleanPath.Count < 2)
+            {
+                skippedTooFewPoints++;
+                continue;
+            }
+
+            float totalLength = CalculatePathLength(cleanPath);
+            if (totalLength < minPathLengthMeters)
+            {
+                skippedZeroLength++;
+                continue;
+            }
+
+            try
+            {
+                var spline = new RoadSpline(cleanPath, interpolationType)
+                {
+                    // Copy structure metadata from OsmFeature
+                    IsBridge = pathMetadata[index].IsBridge,
+                    IsTunnel = pathMetadata[index].IsTunnel,
+                    StructureType = pathMetadata[index].StructureType,
+                    Layer = pathMetadata[index].Layer,
+                    BridgeStructureType = pathMetadata[index].BridgeStructureType
+                };
+                splines.Add(spline);
+
+                if (spline.IsBridge) bridgeCount++;
+                if (spline.IsTunnel) tunnelCount++;
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Failed to create structure spline: {ex.Message}");
+            }
+        }
+
+        // Step 5: Create splines from regular (merged) paths
         foreach (var path in connectedPaths)
         {
             // Remove any duplicate points that might have been introduced by joining
@@ -749,7 +874,15 @@ public class OsmGeometryProcessor
             
             try
             {
-                var spline = new RoadSpline(cleanPath, interpolationType);
+                var spline = new RoadSpline(cleanPath, interpolationType)
+                {
+                    // Regular (merged) paths are NOT structures
+                    IsBridge = false,
+                    IsTunnel = false,
+                    StructureType = StructureType.None,
+                    Layer = 0,
+                    BridgeStructureType = null
+                };
                 splines.Add(spline);
             }
             catch (Exception ex)
@@ -757,8 +890,10 @@ public class OsmGeometryProcessor
                 TerrainLogger.Warning($"Failed to create spline from connected path: {ex.Message}");
             }
         }
-        
-        TerrainLogger.Info($"Created {splines.Count} splines from connected paths");
+
+        TerrainLogger.Info($"Created {splines.Count} splines total ({structurePaths.Count} structures + {connectedPaths.Count} regular roads)");
+        if (bridgeCount > 0 || tunnelCount > 0)
+            TerrainLogger.Info($"  Structure metadata: {bridgeCount} bridge(s), {tunnelCount} tunnel(s)");
         if (skippedTooFewPoints > 0)
             TerrainLogger.Info($"  Skipped {skippedTooFewPoints} paths with too few points");
         if (skippedZeroLength > 0)
@@ -766,7 +901,7 @@ public class OsmGeometryProcessor
         TerrainLogger.Info($"  Coordinate system: meters (metersPerPixel={metersPerPixel})");
         return splines;
     }
-    
+
     /// <summary>
     /// Connects paths that share endpoints to form longer continuous paths.
     /// This is critical for OSM data where roads are split at intersections.
@@ -943,6 +1078,8 @@ public class OsmGeometryProcessor
     /// <param name="minPathLengthMeters">Minimum path length to include.</param>
     /// <param name="duplicatePointToleranceMeters">Tolerance for removing duplicate points.</param>
     /// <param name="endpointJoinToleranceMeters">Tolerance for joining endpoints.</param>
+    /// <param name="excludeBridges">When true, bridge splines are kept separate. When false, bridges merge like normal roads.</param>
+    /// <param name="excludeTunnels">When true, tunnel splines are kept separate. When false, tunnels merge like normal roads.</param>
     /// <returns>List of road splines including both regular roads and roundabout rings.</returns>
     public List<RoadSpline> ConvertLinesToSplinesWithRoundabouts(
         List<OsmFeature> lineFeatures,
@@ -957,7 +1094,9 @@ public class OsmGeometryProcessor
         float overlapToleranceMeters = 2.0f,
         float minPathLengthMeters = 1.0f,
         float duplicatePointToleranceMeters = 0.01f,
-        float endpointJoinToleranceMeters = 1.0f)
+        float endpointJoinToleranceMeters = 1.0f,
+        bool excludeBridges = false,
+        bool excludeTunnels = false)
     {
         // Use the full overload and discard the roundabout processing result
         return ConvertLinesToSplinesWithRoundabouts(
@@ -974,7 +1113,9 @@ public class OsmGeometryProcessor
             overlapToleranceMeters,
             minPathLengthMeters,
             duplicatePointToleranceMeters,
-            endpointJoinToleranceMeters);
+            endpointJoinToleranceMeters,
+            excludeBridges: excludeBridges,
+            excludeTunnels: excludeTunnels);
     }
     
     /// <summary>
@@ -996,6 +1137,8 @@ public class OsmGeometryProcessor
     /// <param name="duplicatePointToleranceMeters">Tolerance for removing duplicate points.</param>
     /// <param name="endpointJoinToleranceMeters">Tolerance for joining endpoints.</param>
     /// <param name="debugOutputPath">Optional path to save a debug image showing roundabout processing.</param>
+    /// <param name="excludeBridges">When true, bridge splines are kept separate. When false, bridges merge like normal roads.</param>
+    /// <param name="excludeTunnels">When true, tunnel splines are kept separate. When false, tunnels merge like normal roads.</param>
     /// <returns>List of road splines including both regular roads and roundabout rings.</returns>
     public List<RoadSpline> ConvertLinesToSplinesWithRoundabouts(
         List<OsmFeature> lineFeatures,
@@ -1012,7 +1155,9 @@ public class OsmGeometryProcessor
         float minPathLengthMeters = 1.0f,
         float duplicatePointToleranceMeters = 0.01f,
         float endpointJoinToleranceMeters = 1.0f,
-        string? debugOutputPath = null)
+        string? debugOutputPath = null,
+        bool excludeBridges = false,
+        bool excludeTunnels = false)
     {
         // Build a set of feature IDs that belong to this material
         // This is CRITICAL for ensuring roundabout splines are only created once
@@ -1101,7 +1246,9 @@ public class OsmGeometryProcessor
             interpolationType,
             minPathLengthMeters,
             duplicatePointToleranceMeters,
-            endpointJoinToleranceMeters);
+            endpointJoinToleranceMeters,
+            excludeBridges,
+            excludeTunnels);
         
         // Step 6: Combine results
         var allSplines = new List<RoadSpline>();
