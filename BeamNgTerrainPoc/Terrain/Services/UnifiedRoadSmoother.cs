@@ -42,6 +42,7 @@ public class UnifiedRoadSmoother
     private readonly RoundaboutElevationHarmonizer _roundaboutHarmonizer;
     private readonly UnifiedTerrainBlender _terrainBlender;
     private readonly IOsmJunctionQueryService _osmJunctionQueryService;
+    private StructureElevationIntegrator _structureElevationIntegrator;
 
     public UnifiedRoadSmoother()
     {
@@ -54,6 +55,17 @@ public class UnifiedRoadSmoother
         _materialPainter = new MaterialPainter();
         _elevationCalculator = new OptimizedElevationSmoother();
         _osmJunctionQueryService = new OsmJunctionQueryService();
+        _structureElevationIntegrator = new StructureElevationIntegrator();
+    }
+
+    /// <summary>
+    ///     Configures the structure elevation integrator with parameters from TerrainCreationParameters.
+    ///     Should be called before SmoothAllRoads if custom structure elevation parameters are needed.
+    /// </summary>
+    /// <param name="parameters">The terrain creation parameters containing structure elevation settings.</param>
+    public void ConfigureStructureElevationParameters(TerrainCreationParameters parameters)
+    {
+        _structureElevationIntegrator = StructureElevationIntegrator.FromParameters(parameters);
     }
 
     /// <summary>
@@ -161,6 +173,40 @@ public class UnifiedRoadSmoother
         sw.Restart();
         CalculateNetworkElevations(network, heightMap, metersPerPixel);
         perfLog?.Timing($"CalculateNetworkElevations: {sw.Elapsed.TotalSeconds:F2}s");
+
+        // Phase 2.3: Calculate elevation profiles for bridge/tunnel structures
+        // This calculates independent elevation profiles for structures that are excluded from terrain smoothing.
+        // The profiles are stored on the splines for future DAE generation even though the cross-sections
+        // are excluded from terrain modification.
+        var structureCount = network.Splines.Count(s => s.IsStructure);
+        if (structureCount > 0)
+        {
+            perfLog?.LogSection("Phase 2.3: Structure Elevation Profiles");
+            TerrainLogger.Info($"Phase 2.3: Calculating elevation profiles for {structureCount} structure(s)...");
+            sw.Restart();
+            
+            // Calculate profiles for excluded structures (profiles stored for DAE generation)
+            var structureResult = _structureElevationIntegrator.IntegrateStructureElevationsSelective(
+                network, heightMap, metersPerPixel,
+                excludeBridges: roadMaterials.Any(m => m.RoadParameters?.ExcludeBridgesFromTerrain == true),
+                excludeTunnels: roadMaterials.Any(m => m.RoadParameters?.ExcludeTunnelsFromTerrain == true));
+            
+            perfLog?.Timing($"StructureElevationProfiles: {sw.Elapsed.TotalSeconds:F2}s");
+            
+            if (structureResult.TotalStructuresProcessed > 0)
+            {
+                TerrainLogger.Info($"  Calculated profiles for {structureResult.BridgesProcessed} bridge(s), " +
+                                  $"{structureResult.TunnelsProcessed} tunnel(s)");
+            }
+            
+            if (structureResult.ValidationMessages.Count > 0)
+            {
+                foreach (var msg in structureResult.ValidationMessages)
+                {
+                    TerrainLogger.Warning($"  Structure validation: {msg}");
+                }
+            }
+        }
 
         // Phase 2.5: Pre-calculate banking (bank angles and edge elevations)
         // This must happen BEFORE junction harmonization so that the harmonizer can

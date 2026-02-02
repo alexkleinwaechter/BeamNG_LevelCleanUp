@@ -20,12 +20,12 @@ This document outlines the implementation plan for calculating elevation profile
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1 | 🔲 TODO | Elevation Profile Data Model |
-| Phase 2 | 🔲 TODO | Bridge Elevation Calculation |
-| Phase 3 | 🔲 TODO | Tunnel Elevation Calculation |
-| Phase 4 | 🔲 TODO | Terrain Sampling Along Structure Path |
-| Phase 5 | 🔲 TODO | Integration with Cross-Section Generation |
-| Phase 6 | 🔲 TODO | Configuration Parameters |
+| Phase 1 | ✅ DONE | Elevation Profile Data Model |
+| Phase 2 | ✅ DONE | Bridge Elevation Calculation |
+| Phase 3 | ✅ DONE | Tunnel Elevation Calculation |
+| Phase 4 | ✅ DONE | Terrain Sampling Along Structure Path |
+| Phase 5 | ✅ DONE | Integration with Cross-Section Generation |
+| Phase 6 | ✅ DONE | Configuration Parameters |
 
 ---
 
@@ -386,49 +386,103 @@ private float SampleHeightmapSafe(float[,] heightMap, int x, int y)
 
 ## Phase 5: Integration with Cross-Section Generation
 
-When generating cross-sections for structure splines:
+**Status: ✅ DONE**
+
+### Implementation
+
+A new `StructureElevationIntegrator` class was created to orchestrate the integration between structure elevation profiles and the road network's cross-section processing pipeline.
+
+**File**: `BeamNgTerrainPoc/Terrain/Osm/Processing/StructureElevationIntegrator.cs`
+
+### Key Features
+
+1. **Automatic Entry/Exit Elevation Detection**
+   - Finds connecting roads at structure endpoints within a configurable tolerance (default 15m)
+   - Falls back to original terrain elevation if no connecting road found
+   - Uses cross-section target elevations from non-structure splines
+
+2. **Profile Calculation and Storage**
+   - Automatically selects bridge or tunnel profile calculation based on spline type
+   - For tunnels, samples terrain along the path for clearance validation
+   - Stores calculated profiles on `ParameterizedRoadSpline.ElevationProfile` for future DAE generation
+
+3. **Cross-Section Integration Options**
+   - `IntegrateStructureElevations()`: Applies profile elevations to cross-sections (replaces terrain-based values)
+   - `IntegrateStructureElevationsSelective()`: Calculates profiles without modifying excluded cross-sections (for DAE-only use)
+
+4. **Validation and Logging**
+   - Tracks bridges/tunnels processed, cross-sections modified
+   - Collects validation messages for grade violations or other issues
+   - Comprehensive logging of profile summaries
+
+### Integration Point in UnifiedRoadSmoother
+
+The integrator is called after Phase 2 (elevation calculation) as **Phase 2.3** in `UnifiedRoadSmoother.SmoothAllRoads()`:
 
 ```csharp
-// In UnifiedRoadNetworkBuilder or cross-section generation:
-
-foreach (var spline in network.Splines.Where(s => s.IsStructure))
+// Phase 2.3: Calculate elevation profiles for bridge/tunnel structures
+var structureCount = network.Splines.Count(s => s.IsStructure);
+if (structureCount > 0)
 {
-    // Get entry/exit elevations from connecting road splines
-    float entryElev = GetConnectingRoadElevation(spline, isEntry: true);
-    float exitElev = GetConnectingRoadElevation(spline, isEntry: false);
-    
-    // Sample terrain along structure for tunnel calculations
-    var terrainSamples = SampleTerrainAlongStructure(spline, heightMap, metersPerPixel);
-    
-    // Calculate elevation profile for this structure
-    var profile = spline.IsTunnel 
-        ? CalculateTunnelProfile(spline, entryElev, exitElev, terrainSamples)
-        : CalculateBridgeProfile(spline, entryElev, exitElev);
-    
-    // Store profile for later use (DAE generation)
-    spline.ElevationProfile = profile;
-    
-    // Generate cross-sections with calculated elevations
-    foreach (var crossSection in GetCrossSectionsForSpline(spline.SplineId))
-    {
-        float distance = crossSection.DistanceAlongSpline;
-        
-        // Override terrain-based elevation with structure elevation
-        crossSection.TargetElevation = spline.IsTunnel
-            ? CalculateTunnelElevation(distance, profile)
-            : CalculateBridgeElevation(distance, profile);
-        
-        // Mark as structure (already done by base implementation)
-        crossSection.IsStructure = true;
-    }
+    var structureResult = _structureElevationIntegrator.IntegrateStructureElevationsSelective(
+        network, heightMap, metersPerPixel,
+        excludeBridges: roadMaterials.Any(m => m.RoadParameters?.ExcludeBridgesFromTerrain == true),
+        excludeTunnels: roadMaterials.Any(m => m.RoadParameters?.ExcludeTunnelsFromTerrain == true));
 }
+```
 
-private float GetConnectingRoadElevation(ParameterizedRoadSpline structureSpline, bool isEntry)
+### Why Selective Integration?
+
+When structures are excluded from terrain smoothing (which is the normal case):
+- Cross-sections are marked `IsExcluded = true` and don't affect terrain
+- We still calculate and store elevation profiles for future procedural DAE generation
+- The profiles describe how the bridge deck or tunnel floor should be positioned
+
+When structures are NOT excluded (legacy mode):
+- Cross-sections would have terrain-based elevations applied
+- The integrator could optionally override these with profile elevations
+- This maintains backward compatibility
+
+### Data Flow After Implementation
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    STRUCTURE ELEVATION INTEGRATION FLOW                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Phase 2: CalculateNetworkElevations()                                       │
+│     └─> Bridge/tunnel cross-sections marked IsExcluded = true               │
+│     └─> Non-structure cross-sections get terrain-smoothed elevations        │
+│                                                                              │
+│  Phase 2.3: IntegrateStructureElevationsSelective()                          │
+│     ┌────────────────────────────────────────────────────┐                  │
+│     │ For each structure spline:                          │                  │
+│     │  1. Find connecting road elevations (entry/exit)    │                  │
+│     │  2. Sample terrain along path (tunnels)             │                  │
+│     │  3. Calculate profile (Linear/Parabolic/Arch/SCurve)│                  │
+│     │  4. Store profile on spline.ElevationProfile        │                  │
+│     │  5. (Optional) Apply to cross-sections              │                  │
+│     └────────────────────────────────────────────────────┘                  │
+│                                                                              │
+│  Output: ParameterizedRoadSpline.ElevationProfile populated                  │
+│     └─> Available for Phase 5 (DAE generation) in future                    │
+│     └─> Contains entry/exit elevations, curve type, min/max points         │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### StructureElevationIntegrationResult
+
+```csharp
+public class StructureElevationIntegrationResult
 {
-    // Find the road spline that connects at the entry/exit point
-    // Return its elevation at the connection point
-    // Fall back to terrain elevation if no connecting road found
-    // Implementation depends on junction detection data
+    public int BridgesProcessed { get; set; }
+    public int TunnelsProcessed { get; set; }
+    public int CrossSectionsModified { get; set; }
+    public long ProcessingTimeMs { get; set; }
+    public List<string> ValidationMessages { get; }
+    public int TotalStructuresProcessed => BridgesProcessed + TunnelsProcessed;
+    public bool AllValid => ValidationMessages.Count == 0;
 }
 ```
 
@@ -436,40 +490,179 @@ private float GetConnectingRoadElevation(ParameterizedRoadSpline structureSpline
 
 ## Phase 6: Configuration Parameters
 
+**Status: ✅ DONE**
+
+### Implementation
+
+Configuration parameters for structure elevation profiles have been added to `TerrainCreationParameters.cs` and integrated with the processing pipeline.
+
 **File**: `BeamNgTerrainPoc/Terrain/Models/TerrainCreationParameters.cs`
+
+### Added Parameters
 
 ```csharp
 // ========================================
-// STRUCTURE ELEVATION PARAMETERS
+// STRUCTURE ELEVATION PROFILE PARAMETERS
 // ========================================
 
 /// <summary>
-/// Minimum vertical clearance for tunnels below terrain surface (meters).
-/// This is the distance from terrain surface to tunnel ceiling.
-/// Default: 5.0m (reasonable rock/soil cover)
+///     Minimum vertical clearance for tunnels below terrain surface (meters).
+///     This is the distance from terrain surface to tunnel ceiling.
+///     Default: 5.0m (reasonable rock/soil cover)
 /// </summary>
 public float TunnelMinClearanceMeters { get; set; } = 5.0f;
 
 /// <summary>
-/// Assumed tunnel interior height (floor to ceiling) in meters.
-/// Used to calculate required floor elevation from clearance.
-/// Default: 5.0m (standard road tunnel height)
+///     Assumed tunnel interior height (floor to ceiling) in meters.
+///     Used to calculate required floor elevation from clearance.
+///     Default: 5.0m (standard road tunnel height)
 /// </summary>
 public float TunnelInteriorHeightMeters { get; set; } = 5.0f;
 
 /// <summary>
-/// Maximum grade (slope) percentage allowed for tunnel approaches.
-/// Steeper grades may be uncomfortable or unsafe for vehicles.
-/// Default: 6.0% (typical maximum for road tunnels)
+///     Maximum grade (slope) percentage allowed for tunnel approaches.
+///     Steeper grades may be uncomfortable or unsafe for vehicles.
+///     Default: 6.0% (typical maximum for road tunnels)
 /// </summary>
 public float TunnelMaxGradePercent { get; set; } = 6.0f;
 
 /// <summary>
-/// Minimum clearance for bridges above the obstacle (water, road, etc.).
-/// This affects bridge deck elevation calculation.
-/// Default: 5.0m (reasonable clearance for most obstacles)
+///     Minimum clearance for bridges above the obstacle (water, road, etc.).
+///     This affects bridge deck elevation calculation.
+///     Default: 5.0m (reasonable clearance for most obstacles)
 /// </summary>
 public float BridgeMinClearanceMeters { get; set; } = 5.0f;
+
+/// <summary>
+///     Maximum length for a "short" bridge that uses linear profile.
+///     Bridges shorter than this get simple linear interpolation.
+///     Default: 50m
+/// </summary>
+public float ShortBridgeMaxLengthMeters { get; set; } = 50.0f;
+
+/// <summary>
+///     Maximum length for a "medium" bridge that uses sag curve.
+///     Bridges between ShortBridgeMaxLength and this value get parabolic sag curve.
+///     Bridges longer than this get arch profile.
+///     Default: 200m
+/// </summary>
+public float MediumBridgeMaxLengthMeters { get; set; } = 200.0f;
+
+/// <summary>
+///     Maximum length for a "short" tunnel that uses linear profile.
+///     Tunnels shorter than this get simple linear interpolation (if clearance allows).
+///     Default: 100m
+/// </summary>
+public float ShortTunnelMaxLengthMeters { get; set; } = 100.0f;
+
+/// <summary>
+///     Number of terrain samples to take along each structure path.
+///     More samples provide better accuracy for tunnel clearance calculations.
+///     Default: 20 samples
+/// </summary>
+public int StructureTerrainSampleCount { get; set; } = 20;
+
+/// <summary>
+///     Tolerance in meters for detecting connecting roads at structure endpoints.
+///     Used to find entry/exit elevations from adjacent roads.
+///     Default: 15m
+/// </summary>
+public float StructureConnectionToleranceMeters { get; set; } = 15.0f;
+```
+
+### Integration with StructureElevationIntegrator
+
+The `StructureElevationIntegrator` class now provides methods to apply these parameters:
+
+**File**: `BeamNgTerrainPoc/Terrain/Osm/Processing/StructureElevationIntegrator.cs`
+
+```csharp
+/// <summary>
+/// Creates a StructureElevationIntegrator configured from TerrainCreationParameters.
+/// </summary>
+public static StructureElevationIntegrator FromParameters(TerrainCreationParameters parameters)
+{
+    var calculator = new StructureElevationCalculator
+    {
+        // Tunnel parameters
+        TunnelMinClearanceMeters = parameters.TunnelMinClearanceMeters,
+        TunnelInteriorHeightMeters = parameters.TunnelInteriorHeightMeters,
+        TunnelMaxGradePercent = parameters.TunnelMaxGradePercent,
+        ShortTunnelMaxLengthMeters = parameters.ShortTunnelMaxLengthMeters,
+        
+        // Bridge parameters
+        ShortBridgeMaxLengthMeters = parameters.ShortBridgeMaxLengthMeters,
+        MediumBridgeMaxLengthMeters = parameters.MediumBridgeMaxLengthMeters,
+        
+        // Terrain sampling
+        DefaultTerrainSampleCount = parameters.StructureTerrainSampleCount
+    };
+
+    return new StructureElevationIntegrator(calculator)
+    {
+        ConnectionTolerance = parameters.StructureConnectionToleranceMeters,
+        TerrainSampleCount = parameters.StructureTerrainSampleCount
+    };
+}
+
+/// <summary>
+/// Applies configuration from TerrainCreationParameters to this integrator.
+/// </summary>
+public void ApplyParameters(TerrainCreationParameters parameters)
+{
+    // Update calculator parameters
+    _calculator.TunnelMinClearanceMeters = parameters.TunnelMinClearanceMeters;
+    _calculator.TunnelInteriorHeightMeters = parameters.TunnelInteriorHeightMeters;
+    _calculator.TunnelMaxGradePercent = parameters.TunnelMaxGradePercent;
+    _calculator.ShortTunnelMaxLengthMeters = parameters.ShortTunnelMaxLengthMeters;
+    _calculator.ShortBridgeMaxLengthMeters = parameters.ShortBridgeMaxLengthMeters;
+    _calculator.MediumBridgeMaxLengthMeters = parameters.MediumBridgeMaxLengthMeters;
+    _calculator.DefaultTerrainSampleCount = parameters.StructureTerrainSampleCount;
+
+    // Update integrator parameters
+    ConnectionTolerance = parameters.StructureConnectionToleranceMeters;
+    TerrainSampleCount = parameters.StructureTerrainSampleCount;
+}
+```
+
+### Integration with UnifiedRoadSmoother
+
+The `UnifiedRoadSmoother` now provides a method to configure structure elevation parameters:
+
+**File**: `BeamNgTerrainPoc/Terrain/Services/UnifiedRoadSmoother.cs`
+
+```csharp
+/// <summary>
+///     Configures the structure elevation integrator with parameters from TerrainCreationParameters.
+///     Should be called before SmoothAllRoads if custom structure elevation parameters are needed.
+/// </summary>
+public void ConfigureStructureElevationParameters(TerrainCreationParameters parameters)
+{
+    _structureElevationIntegrator = StructureElevationIntegrator.FromParameters(parameters);
+}
+```
+
+### Integration with TerrainCreator
+
+The `TerrainCreator.ApplyRoadSmoothing` method now passes `TerrainCreationParameters` to configure structure elevation processing:
+
+**File**: `BeamNgTerrainPoc/Terrain/TerrainCreator.cs`
+
+```csharp
+private (SmoothingResult?, UnifiedSmoothingResult?) ApplyRoadSmoothing(
+    float[] heightMap1D,
+    List<MaterialDefinition> materials,
+    // ... other parameters ...
+    TerrainCreationParameters? terrainParameters = null)
+{
+    // Configure structure elevation parameters if provided
+    if (terrainParameters != null)
+    {
+        _unifiedRoadSmoother.ConfigureStructureElevationParameters(terrainParameters);
+    }
+    
+    // ... rest of method ...
+}
 ```
 
 ---
@@ -546,13 +739,16 @@ BeamNgTerrainPoc/
 ├── Terrain/
 │   ├── Osm/
 │   │   ├── Models/
-│   │   │   └── StructureElevationProfile.cs    (NEW)
+│   │   │   └── StructureElevationProfile.cs    (Phase 1 - DONE)
 │   │   └── Processing/
-│   │       └── StructureElevationCalculator.cs (NEW)
+│   │       ├── StructureElevationCalculator.cs (Phases 2-4 - DONE)
+│   │       └── StructureElevationIntegrator.cs (Phase 5 - DONE - NEW)
+│   ├── Services/
+│   │   └── UnifiedRoadSmoother.cs              (Phase 5 - DONE - MODIFIED)
 │   └── Models/
-│       ├── TerrainCreationParameters.cs        (MODIFIED - add elevation params)
+│       ├── TerrainCreationParameters.cs        (Phase 6 - TODO - add elevation params)
 │       └── RoadGeometry/
-│           └── ParameterizedRoadSpline.cs      (MODIFIED - add ElevationProfile)
+│           └── ParameterizedRoadSpline.cs      (Phase 1 - DONE - ElevationProfile property)
 └── Docs/
     └── BRIDGE_TUNNEL_ELEVATION_IMPLEMENTATION_PLAN.md (THIS FILE)
 ```

@@ -274,6 +274,74 @@ public class TerrainCreationParameters
     public bool ExcludeStructuresFromTerrain => ExcludeBridgesFromTerrain || ExcludeTunnelsFromTerrain;
 
     // ========================================
+    // STRUCTURE ELEVATION PROFILE PARAMETERS
+    // ========================================
+
+    /// <summary>
+    ///     Minimum vertical clearance for tunnels below terrain surface (meters).
+    ///     This is the distance from terrain surface to tunnel ceiling.
+    ///     Default: 5.0m (reasonable rock/soil cover)
+    /// </summary>
+    public float TunnelMinClearanceMeters { get; set; } = 5.0f;
+
+    /// <summary>
+    ///     Assumed tunnel interior height (floor to ceiling) in meters.
+    ///     Used to calculate required floor elevation from clearance.
+    ///     Default: 5.0m (standard road tunnel height)
+    /// </summary>
+    public float TunnelInteriorHeightMeters { get; set; } = 5.0f;
+
+    /// <summary>
+    ///     Maximum grade (slope) percentage allowed for tunnel approaches.
+    ///     Steeper grades may be uncomfortable or unsafe for vehicles.
+    ///     Default: 6.0% (typical maximum for road tunnels)
+    /// </summary>
+    public float TunnelMaxGradePercent { get; set; } = 6.0f;
+
+    /// <summary>
+    ///     Minimum clearance for bridges above the obstacle (water, road, etc.).
+    ///     This affects bridge deck elevation calculation.
+    ///     Default: 5.0m (reasonable clearance for most obstacles)
+    /// </summary>
+    public float BridgeMinClearanceMeters { get; set; } = 5.0f;
+
+    /// <summary>
+    ///     Maximum length for a "short" bridge that uses linear profile.
+    ///     Bridges shorter than this get simple linear interpolation.
+    ///     Default: 50m
+    /// </summary>
+    public float ShortBridgeMaxLengthMeters { get; set; } = 50.0f;
+
+    /// <summary>
+    ///     Maximum length for a "medium" bridge that uses sag curve.
+    ///     Bridges between ShortBridgeMaxLength and this value get parabolic sag curve.
+    ///     Bridges longer than this get arch profile.
+    ///     Default: 200m
+    /// </summary>
+    public float MediumBridgeMaxLengthMeters { get; set; } = 200.0f;
+
+    /// <summary>
+    ///     Maximum length for a "short" tunnel that uses linear profile.
+    ///     Tunnels shorter than this get simple linear interpolation (if clearance allows).
+    ///     Default: 100m
+    /// </summary>
+    public float ShortTunnelMaxLengthMeters { get; set; } = 100.0f;
+
+    /// <summary>
+    ///     Number of terrain samples to take along each structure path.
+    ///     More samples provide better accuracy for tunnel clearance calculations.
+    ///     Default: 20 samples
+    /// </summary>
+    public int StructureTerrainSampleCount { get; set; } = 20;
+
+    /// <summary>
+    ///     Tolerance in meters for detecting connecting roads at structure endpoints.
+    ///     Used to find entry/exit elevations from adjacent roads.
+    ///     Default: 15m
+    /// </summary>
+    public float StructureConnectionToleranceMeters { get; set; } = 15.0f;
+
+    // ========================================
     // OUTPUT PROPERTIES (populated after terrain generation)
     // ========================================
 

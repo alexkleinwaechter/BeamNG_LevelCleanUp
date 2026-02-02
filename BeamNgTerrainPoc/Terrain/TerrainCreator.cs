@@ -180,7 +180,8 @@ public class TerrainCreator
                     parameters.FlipMaterialProcessingOrder,
                     debugBaseDir,
                     perfLog,
-                    parameters.GeoBoundingBox);
+                    parameters.GeoBoundingBox,
+                    parameters);
 
                 if (smoothingResult != null)
                 {
@@ -509,10 +510,17 @@ public class TerrainCreator
         bool flipMaterialProcessingOrder,
         string? debugBaseDir,
         TerrainCreationLogger log,
-        GeoBoundingBox? geoBoundingBox = null)
+        GeoBoundingBox? geoBoundingBox = null,
+        TerrainCreationParameters? terrainParameters = null)
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
+
+        // Configure structure elevation parameters if provided
+        if (terrainParameters != null)
+        {
+            _unifiedRoadSmoother.ConfigureStructureElevationParameters(terrainParameters);
+        }
 
         // Use the unified road smoother for network-centric processing
         // Pass the bounding box for OSM junction detection (improves junction accuracy for OSM roads)

@@ -109,6 +109,26 @@ public class ParameterizedRoadSpline
     public string? BridgeStructureType { get; set; }
 
     /// <summary>
+    ///     Elevation profile for bridges and tunnels.
+    ///     Defines how the structure's elevation varies along its length,
+    ///     independent of the underlying terrain.
+    ///     Null for regular road splines that follow terrain elevation.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///     This profile is used to:
+    ///     - Calculate proper deck/floor elevation at any point along the structure
+    ///     - Generate cross-sections with correct target elevations
+    ///     - Support future procedural DAE geometry generation
+    ///     </para>
+    ///     <para>
+    ///     The profile contains entry/exit elevations from connecting roads,
+    ///     curve type (linear, arch, S-curve), and terrain sampling data for tunnels.
+    ///     </para>
+    /// </remarks>
+    public StructureElevationProfile? ElevationProfile { get; set; }
+
+    /// <summary>
     ///     Total length of the spline in meters.
     ///     Cached for quick access during junction detection.
     /// </summary>
