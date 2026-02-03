@@ -204,8 +204,8 @@ public class TerrainGenerationOrchestrator
                     state.MaxHeight,
                     state.TerrainBaseHeight,
                     state.MetersPerPixel);
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"[Perf] UpdateOrCreateTerrainBlock: {taskStopwatch.ElapsedMilliseconds}ms");
+                // Log timing to file only
+                Console.WriteLine($"[Perf] UpdateOrCreateTerrainBlock: {taskStopwatch.ElapsedMilliseconds}ms");
 
                 if (terrainBlockUpdated)
                     PubSubChannel.SendMessage(PubSubMessageType.Info, "TerrainBlock updated in items.level.json");
@@ -217,13 +217,13 @@ public class TerrainGenerationOrchestrator
             // Handle spawn points
             taskStopwatch.Restart();
             HandleSpawnPoints(state, terrainParameters);
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"[Perf] SpawnPoint handling: {taskStopwatch.ElapsedMilliseconds}ms");
+            // Log timing to file only
+            Console.WriteLine($"[Perf] SpawnPoint handling: {taskStopwatch.ElapsedMilliseconds}ms");
         });
 
         postGenStopwatch.Stop();
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"[Perf] Total post-generation tasks: {postGenStopwatch.ElapsedMilliseconds}ms");
+        // Log timing to file only
+        Console.WriteLine($"[Perf] Total post-generation tasks: {postGenStopwatch.ElapsedMilliseconds}ms");
     }
 
     /// <summary>
@@ -287,8 +287,8 @@ public class TerrainGenerationOrchestrator
 
         try
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Clearing previous debug files from: {Path.GetFileName(debugPath)}");
+            // Log to file only - not important for users
+            Console.WriteLine($"Clearing previous debug files from: {Path.GetFileName(debugPath)}");
 
             var filesDeleted = 0;
             var foldersDeleted = 0;
@@ -302,8 +302,8 @@ public class TerrainGenerationOrchestrator
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"Could not delete file {Path.GetFileName(file)}: {ex.Message}");
+                    // Log warning only to console/file
+                    Console.WriteLine($"WARNING: Could not delete file {Path.GetFileName(file)}: {ex.Message}");
                 }
 
             // Delete all subdirectories (material-specific debug folders)
@@ -315,13 +315,12 @@ public class TerrainGenerationOrchestrator
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"Could not delete folder {Path.GetFileName(dir)}: {ex.Message}");
+                    // Log warning only to console/file
+                    Console.WriteLine($"WARNING: Could not delete folder {Path.GetFileName(dir)}: {ex.Message}");
                 }
 
             if (filesDeleted > 0 || foldersDeleted > 0)
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Cleared {filesDeleted} file(s) and {foldersDeleted} folder(s) from debug directory");
+                Console.WriteLine($"Cleared {filesDeleted} file(s) and {foldersDeleted} folder(s) from debug directory");
         }
         catch (Exception ex)
         {
@@ -334,14 +333,13 @@ public class TerrainGenerationOrchestrator
     {
         if (state.CropResult is { NeedsCropping: true, CroppedBoundingBox: not null })
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Using CROPPED bounding box for OSM: {state.CropResult.CroppedBoundingBox}");
+            // Log to file only - technical detail
+            Console.WriteLine($"Using CROPPED bounding box for OSM: {state.CropResult.CroppedBoundingBox}");
             return state.CropResult.CroppedBoundingBox;
         }
 
         if (state.GeoBoundingBox != null)
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Using FULL bounding box for OSM: {state.GeoBoundingBox}");
+            Console.WriteLine($"Using FULL bounding box for OSM: {state.GeoBoundingBox}");
 
         return state.GeoBoundingBox;
     }
@@ -375,7 +373,8 @@ public class TerrainGenerationOrchestrator
                 state.CropResult.CropHeight,
                 state.TerrainSize);
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
+            // Log to file only - technical detail
+            Console.WriteLine(
                 $"Using CROPPED coordinate transformer: crop origin ({state.CropResult.OffsetX}, {state.CropResult.OffsetY}), " +
                 $"crop size {state.CropResult.CropWidth}x{state.CropResult.CropHeight} -> terrain {state.TerrainSize}x{state.TerrainSize}");
         }
@@ -389,7 +388,8 @@ public class TerrainGenerationOrchestrator
                 state.TerrainSize);
         }
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
+        // Log to file only - technical detail
+        Console.WriteLine(
             $"Using GDAL coordinate transformer for OSM features (reprojection: {transformer.UsesReprojection})");
 
         return transformer;
@@ -480,11 +480,8 @@ public class TerrainGenerationOrchestrator
             GeoCoordinateTransformer? coordinateTransformer,
             string debugPath,
             TerrainGenerationState state,
-            OsmQueryResult? osmQueryResult)
+        OsmQueryResult? osmQueryResult)
     {
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Processing OSM features for material: {mat.InternalName}");
-
         // Fetch OSM data if not cached
         if (osmQueryResult == null)
         {
@@ -613,7 +610,8 @@ public class TerrainGenerationOrchestrator
                     excludeTunnels: state.ExcludeTunnelsFromTerrain);
             }
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
+            // Log to file only - per-material detail
+            Console.WriteLine(
                 $"Created {splines.Count} splines from {lineFeatures.Count} OSM line features " +
                 $"(interpolation: {interpolationType}, roundabout detection: {enableRoundaboutDetection})");
 
@@ -664,8 +662,8 @@ public class TerrainGenerationOrchestrator
 
         var layerImagePath = await SaveLayerMapToPngAsync(layerMap, debugPath, mat.InternalName);
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Rasterized {polygonFeatures.Count} OSM polygons for {mat.InternalName}");
+        // Log to file only - per-material detail
+        Console.WriteLine($"Rasterized {polygonFeatures.Count} OSM polygons for {mat.InternalName}");
 
         return layerImagePath;
     }
@@ -752,7 +750,8 @@ public class TerrainGenerationOrchestrator
         parameters.CropWidth = state.CropResult.CropWidth;
         parameters.CropHeight = state.CropResult.CropHeight;
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
+        // Log to file only - technical detail
+        Console.WriteLine(
             $"Applying GeoTIFF crop: offset ({state.CropResult.OffsetX}, {state.CropResult.OffsetY}), " +
             $"size {state.CropResult.CropWidth}x{state.CropResult.CropHeight}");
     }
@@ -767,15 +766,15 @@ public class TerrainGenerationOrchestrator
         if (state.MaxHeight <= 0 && parameters.MaxHeight > 0)
         {
             state.MaxHeight = parameters.MaxHeight;
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Max height auto-calculated from GeoTIFF: {state.MaxHeight:F1}m");
+            // Log to file only - auto-calculation detail
+            Console.WriteLine($"Max height auto-calculated from GeoTIFF: {state.MaxHeight:F1}m");
         }
 
         if (parameters.TerrainBaseHeight != state.TerrainBaseHeight && parameters.GeoTiffMinElevation.HasValue)
         {
             state.TerrainBaseHeight = parameters.TerrainBaseHeight;
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Base height auto-calculated from GeoTIFF min elevation: {state.TerrainBaseHeight:F1}m");
+            // Log to file only - auto-calculation detail
+            Console.WriteLine($"Base height auto-calculated from GeoTIFF min elevation: {state.TerrainBaseHeight:F1}m");
         }
     }
 
@@ -787,24 +786,24 @@ public class TerrainGenerationOrchestrator
         {
             if (terrainParameters?.ExtractedSpawnPoint != null)
             {
-                var spawnPoint = CreateSpawnPointFromExtracted(terrainParameters.ExtractedSpawnPoint);
+            var spawnPoint = CreateSpawnPointFromExtracted(terrainParameters.ExtractedSpawnPoint);
                 if (SpawnPointUpdater.CreateSpawnPoint(state.WorkingDirectory, spawnPoint))
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Created spawn point at ({spawnPoint.X:F1}, {spawnPoint.Y:F1}, {spawnPoint.Z:F1})");
+                    // Log to file only - detail message
+                    Console.WriteLine($"Created spawn point at ({spawnPoint.X:F1}, {spawnPoint.Y:F1}, {spawnPoint.Z:F1})");
             }
-            else
+        else
             {
                 if (SpawnPointUpdater.CreateSpawnPoint(state.WorkingDirectory))
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        "Created default spawn point 'spawn_default_MT'");
+                    // Log to file only - detail message
+                    Console.WriteLine("Created default spawn point 'spawn_default_MT'");
             }
         }
         else if (terrainParameters?.ExtractedSpawnPoint != null)
         {
             var spawnPoint = CreateSpawnPointFromExtracted(terrainParameters.ExtractedSpawnPoint);
             if (SpawnPointUpdater.UpdateSpawnPoint(state.WorkingDirectory, spawnPoint))
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Spawn point updated at ({spawnPoint.X:F1}, {spawnPoint.Y:F1}, {spawnPoint.Z:F1})");
+                // Log to file only - detail message
+                Console.WriteLine($"Spawn point updated at ({spawnPoint.X:F1}, {spawnPoint.Y:F1}, {spawnPoint.Z:F1})");
         }
         else
         {
@@ -842,8 +841,8 @@ public class TerrainGenerationOrchestrator
 
         await image.SaveAsPngAsync(filePath);
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Saved OSM layer map: {Path.GetFileName(filePath)}");
+        // Log to file only - per-file detail
+        Console.WriteLine($"Saved OSM layer map: {Path.GetFileName(filePath)}");
 
         return filePath;
     }
@@ -913,9 +912,9 @@ public class TerrainGenerationOrchestrator
                 state.MetersPerPixel,
                 debugPath);
 
-            if (exportedCount > 0)
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Exported {exportedCount} OSM layer maps to osm_layer folder");
+        if (exportedCount > 0)
+                // Log to file only - detail message
+                Console.WriteLine($"Exported {exportedCount} OSM layer maps to osm_layer folder");
         }
         catch (Exception ex)
         {

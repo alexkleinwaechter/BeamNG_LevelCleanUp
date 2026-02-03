@@ -182,7 +182,7 @@ public class NetworkJunctionHarmonizer
         }
         else
         {
-            TerrainLogger.Info("  Crossroad to T-junction conversion disabled (mid-spline crossings will retain independent elevations)");
+            TerrainCreationLogger.Current?.InfoFileOnly("  Crossroad to T-junction conversion disabled (mid-spline crossings will retain independent elevations)");
         }
 
         if (junctions.Count == 0)

@@ -170,7 +170,8 @@ public class TerrainAnalysisOrchestrator
         try
         {
             await File.WriteAllBytesAsync(outputPath, analysisState.DebugImageData);
-            // Debug image save confirmation is minor status - only log failures
+            // Debug image save confirmation is minor status - only log to console (file)
+            Console.WriteLine($"Analysis debug image saved: {Path.GetFileName(outputPath)}");
             return true;
         }
         catch (Exception ex)

@@ -39,6 +39,7 @@ public class NetworkJunctionDetector
         UnifiedRoadNetwork network,
         float globalDetectionRadius)
     {
+        TerrainLogger.SuppressDetailedLogging = true;
         var perfLog = TerrainCreationLogger.Current;
         perfLog?.LogSection("NetworkJunctionDetector");
 
@@ -63,15 +64,16 @@ public class NetworkJunctionDetector
         // Step 4: Detect T-junctions (endpoint meeting middle of another road)
         var tJunctionCount = DetectTJunctions(junctions, network, spatialIndex, globalDetectionRadius);
         if (tJunctionCount > 0)
-            TerrainLogger.Info($"  Detected {tJunctionCount} T-junction(s) (endpoint meeting middle of road)");
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"Detected {tJunctionCount} T-junction(s) (endpoint meeting middle of road)");
 
         // Step 5: Detect mid-spline crossings (two roads crossing without either terminating)
         var midSplineCrossings = DetectMidSplineCrossings(network, spatialIndex, globalDetectionRadius, junctions);
         if (midSplineCrossings.Count > 0)
         {
             junctions.AddRange(midSplineCrossings);
-            TerrainLogger.Info(
-                $"  Detected {midSplineCrossings.Count} mid-spline crossing(s) (roads crossing without endpoints)");
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"Detected {midSplineCrossings.Count} mid-spline crossing(s) (roads crossing without endpoints)");
         }
 
         perfLog?.Timing("Mid-spline crossing detection complete");
@@ -86,27 +88,27 @@ public class NetworkJunctionDetector
             junctions[i].CalculateCentroid();
         }
 
-        // Log junction statistics
+        // Log junction statistics (to file only - summary info)
         var junctionsByType = junctions.GroupBy(j => j.Type).ToDictionary(g => g.Key, g => g.Count());
-        TerrainLogger.Info($"  Junction breakdown: " +
-                           $"{junctionsByType.GetValueOrDefault(JunctionType.TJunction)} T, " +
-                           $"{junctionsByType.GetValueOrDefault(JunctionType.YJunction)} Y, " +
-                           $"{junctionsByType.GetValueOrDefault(JunctionType.CrossRoads)} X, " +
-                           $"{junctionsByType.GetValueOrDefault(JunctionType.Complex)} Complex, " +
-                           $"{junctionsByType.GetValueOrDefault(JunctionType.Endpoint)} Isolated, " +
-                           $"{junctionsByType.GetValueOrDefault(JunctionType.MidSplineCrossing)} MidCrossing, " +
-                           $"{junctionsByType.GetValueOrDefault(JunctionType.Roundabout)} Roundabout");
+        TerrainCreationLogger.Current?.InfoFileOnly($"Junction breakdown: " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.TJunction)} T, " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.YJunction)} Y, " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.CrossRoads)} X, " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.Complex)} Complex, " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.Endpoint)} Isolated, " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.MidSplineCrossing)} MidCrossing, " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.Roundabout)} Roundabout");
 
         var crossMaterialCount = junctions.Count(j => j.IsCrossMaterial);
         if (crossMaterialCount > 0)
-            TerrainLogger.Info($"  {crossMaterialCount} junction(s) involve multiple materials");
+            TerrainCreationLogger.Current?.InfoFileOnly($"{crossMaterialCount} junction(s) involve multiple materials");
 
         // Store junctions in the network
         network.Junctions.Clear();
         network.Junctions.AddRange(junctions);
 
         perfLog?.Timing($"Detected {junctions.Count} total junctions");
-
+        TerrainLogger.SuppressDetailedLogging = false;
         return junctions;
     }
 
@@ -135,6 +137,7 @@ public class NetworkJunctionDetector
         float globalDetectionRadius,
         List<OsmJunctionType>? includedOsmTypes = null)
     {
+        TerrainLogger.SuppressDetailedLogging = true;
         var perfLog = TerrainCreationLogger.Current;
         perfLog?.LogSection("NetworkJunctionDetector (OSM-enhanced)");
 
@@ -167,15 +170,17 @@ public class NetworkJunctionDetector
                     .GroupBy(j => j.Type)
                     .ToDictionary(g => g.Key, g => g.Count());
 
-                TerrainLogger.Info($"  Included {filteredOsmJunctions.Count} OSM junction(s) by type: " +
-                                   string.Join(", ", includedByType.Select(kvp => $"{kvp.Key}={kvp.Value}")) +
-                                   $" (filtered out {filteredOutCount})");
+                TerrainCreationLogger.Current?.InfoFileOnly(
+                    $"Included {filteredOsmJunctions.Count} OSM junction(s) by type: " +
+                    string.Join(", ", includedByType.Select(kvp => $"{kvp.Key}={kvp.Value}")) +
+                    $" (filtered out {filteredOutCount})");
             }
         }
 
-        TerrainLogger.Info($"  OSM junction hints: {filteredOsmJunctions.Count} " +
-                           $"({osmJunctions.ExplicitJunctionCount} explicit, {osmJunctions.GeometricJunctionCount} geometric" +
-                           (filteredOutCount > 0 ? $", {filteredOutCount} filtered out" : "") + ")");
+        TerrainCreationLogger.Current?.InfoFileOnly($"OSM junction hints: {filteredOsmJunctions.Count} " +
+                                                    $"({osmJunctions.ExplicitJunctionCount} explicit, {osmJunctions.GeometricJunctionCount} geometric" +
+                                                    (filteredOutCount > 0 ? $", {filteredOutCount} filtered out" : "") +
+                                                    ")");
 
         if (filteredOsmJunctions.Count == 0)
         {
@@ -211,7 +216,8 @@ public class NetworkJunctionDetector
                 foreach (var junction in newJunctions) junction.JunctionId = nextId++;
 
                 geometricJunctions.AddRange(newJunctions);
-                TerrainLogger.Info($"  Created {newJunctions.Count} new junction(s) from unmatched OSM data");
+                TerrainCreationLogger.Current?.InfoFileOnly(
+                    $"Created {newJunctions.Count} new junction(s) from unmatched OSM data");
             }
         }
 
@@ -226,8 +232,8 @@ public class NetworkJunctionDetector
         var osmSourcedCount = geometricJunctions.Count(j => j.IsOsmSourced);
         var osmHintedCount = geometricJunctions.Count(j => j.OsmHint != null && !j.IsOsmSourced);
 
-        TerrainLogger.Info($"  Junction summary: {geometricJunctions.Count} total, " +
-                           $"{osmHintedCount} OSM-matched, {osmSourcedCount} OSM-sourced");
+        TerrainCreationLogger.Current?.InfoFileOnly($"Junction summary: {geometricJunctions.Count} total, " +
+                                                    $"{osmHintedCount} OSM-matched, {osmSourcedCount} OSM-sourced");
 
         // Log by OSM type
         var osmTypeBreakdown = geometricJunctions
@@ -236,11 +242,13 @@ public class NetworkJunctionDetector
             .ToDictionary(g => g.Key, g => g.Count());
 
         if (osmTypeBreakdown.Count > 0)
-            TerrainLogger.Info("  OSM junction types: " +
-                               string.Join(", ", osmTypeBreakdown.Select(kvp => $"{kvp.Key}={kvp.Value}")));
+            TerrainCreationLogger.Current?.InfoFileOnly("OSM junction types: " +
+                                                        string.Join(", ",
+                                                            osmTypeBreakdown.Select(kvp => $"{kvp.Key}={kvp.Value}")));
 
         perfLog?.Timing($"OSM-enhanced junction detection complete: {geometricJunctions.Count} junctions");
 
+        TerrainLogger.SuppressDetailedLogging = false;
         return geometricJunctions;
     }
 
@@ -279,6 +287,7 @@ public class NetworkJunctionDetector
             list.Add(geoJunction);
         }
 
+        TerrainLogger.SuppressDetailedLogging = true;
         foreach (var osmJunction in osmJunctions)
         {
             var osmPos = osmJunction.PositionMeters;
@@ -337,8 +346,10 @@ public class NetworkJunctionDetector
             }
         }
 
-        TerrainLogger.Info($"  OSM junction matching: {osmJunctions.Count - unmatchedOsm.Count} matched, " +
-                           $"{unmatchedOsm.Count} unmatched");
+        TerrainLogger.SuppressDetailedLogging = false;
+        TerrainCreationLogger.Current?.InfoFileOnly(
+            $"OSM junction matching: {osmJunctions.Count - unmatchedOsm.Count} matched, " +
+            $"{unmatchedOsm.Count} unmatched");
 
         return unmatchedOsm;
     }
@@ -383,6 +394,7 @@ public class NetworkJunctionDetector
         // OSM junction positions can differ from geometric centroids by several meters
         var proximityThreshold = searchRadius * 1.5f;
 
+        TerrainLogger.SuppressDetailedLogging = true;
         foreach (var osmJunction in unmatchedOsm)
         {
             var osmPos = osmJunction.PositionMeters;
@@ -513,6 +525,7 @@ public class NetworkJunctionDetector
                 $"with {sectionsBySpline.Count} contributing roads ({continuousCount} continuous)");
         }
 
+        TerrainLogger.SuppressDetailedLogging = false;
         return newJunctions;
     }
 
@@ -1169,6 +1182,7 @@ public class NetworkJunctionDetector
         TerrainLogger.Info($"Detecting roundabout junctions for {roundaboutSplineIds.Count} roundabout(s)");
 
         // For each roundabout, find connecting roads
+        TerrainLogger.SuppressDetailedLogging = true;
         foreach (var roundaboutSplineId in roundaboutSplineIds)
         {
             var roundaboutInfo = roundaboutInfoBySplineIndex[roundaboutSplineId];
@@ -1234,6 +1248,8 @@ public class NetworkJunctionDetector
                                      $"radius={roundaboutInfo.RadiusMeters:F1}m");
             }
         }
+
+        TerrainLogger.SuppressDetailedLogging = false;
 
         TerrainLogger.Info(
             $"Detected {totalRoundaboutJunctions} roundabout junction(s) across {roundaboutJunctionInfos.Count} roundabout(s)");

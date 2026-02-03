@@ -100,27 +100,27 @@ public class UnifiedTerrainBlender
         TerrainLogger.Info($"  Terrain: {width}x{height} pixels, {metersPerPixel}m/pixel");
 
         // Step 1: Build COMBINED road core mask from ALL splines (for EDT)
-        TerrainLogger.Info("Step 1: Building combined road core mask...");
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 1: Building combined road core mask...");
         var sw = Stopwatch.StartNew();
         var combinedCoreMask = _maskBuilder.BuildCombinedRoadCoreMask(network, width, height, metersPerPixel);
         perfLog?.Timing($"  BuildCombinedRoadCoreMask: {sw.ElapsedMilliseconds}ms");
 
         // Step 2: Build road core PROTECTION mask with ownership (tracks which spline owns each road core pixel)
-        TerrainLogger.Info("Step 2: Building road core protection mask with ownership...");
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 2: Building road core protection mask with ownership...");
         sw.Restart();
         var protectionResult = _maskBuilder.BuildRoadCoreProtectionMaskWithOwnership(
             network, width, height, metersPerPixel);
         perfLog?.Timing($"  BuildRoadCoreProtectionMaskWithOwnership: {sw.ElapsedMilliseconds}ms");
 
         // Step 3: Compute SINGLE global EDT from combined mask
-        TerrainLogger.Info("Step 3: Computing global distance field (EDT)...");
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 3: Computing global distance field (EDT)...");
         sw.Restart();
         var distanceField = DistanceFieldCalculator.ComputeDistanceField(combinedCoreMask, metersPerPixel);
         _lastDistanceField = distanceField;
         perfLog?.Timing($"  ComputeDistanceField: {sw.ElapsedMilliseconds}ms");
 
         // Step 4: Build elevation map with per-pixel source spline tracking (respecting core ownership)
-        TerrainLogger.Info("Step 4: Building elevation map with ownership...");
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 4: Building elevation map with ownership...");
         sw.Restart();
         var elevationResult = _elevationMapBuilder.BuildElevationMapWithOwnership(
             network, width, height, metersPerPixel,
@@ -130,7 +130,7 @@ public class UnifiedTerrainBlender
         perfLog?.Timing($"  BuildElevationMapWithOwnership: {sw.ElapsedMilliseconds}ms");
 
         // Step 5: Apply protected blending
-        TerrainLogger.Info("Step 5: Applying protected blending...");
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 5: Applying protected blending...");
         sw.Restart();
         var (result, _) = _blendingProcessor.ApplyProtectedBlending(
             originalHeightMap,

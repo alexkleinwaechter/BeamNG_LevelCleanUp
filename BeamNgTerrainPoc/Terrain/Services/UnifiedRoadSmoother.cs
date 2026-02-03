@@ -150,7 +150,7 @@ public class UnifiedRoadSmoother
             return null;
         }
 
-        TerrainLogger.Info(
+        TerrainCreationLogger.Current?.InfoFileOnly(
             $"  Network built: {network.Splines.Count} splines, {network.CrossSections.Count} cross-sections");
 
         // Phase 1.5: Identify roundabout splines early (before banking)
@@ -159,17 +159,17 @@ public class UnifiedRoadSmoother
         // We ALWAYS run this phase to catch closed-loop splines even without RoundaboutProcessingResult.
         {
             perfLog?.LogSection("Phase 1.5: Roundabout Identification");
-            TerrainLogger.Info("Phase 1.5: Identifying roundabout splines...");
+            TerrainCreationLogger.Current?.InfoFileOnly("Phase 1.5: Identifying roundabout splines...");
             sw.Restart();
             IdentifyRoundaboutSplines(roadMaterials, network);
             var roundaboutCount = network.Splines.Count(s => s.IsRoundabout);
-            TerrainLogger.Info($"  Identified {roundaboutCount} roundabout spline(s)");
+            TerrainCreationLogger.Current?.InfoFileOnly($"  Identified {roundaboutCount} roundabout spline(s)");
             perfLog?.Timing($"IdentifyRoundaboutSplines: {sw.Elapsed.TotalSeconds:F2}s");
         }
 
         // Phase 2: Calculate target elevations for each spline
         perfLog?.LogSection("Phase 2: Elevation Calculation");
-        TerrainLogger.Info("Phase 2: Calculating target elevations...");
+        TerrainCreationLogger.Current?.InfoFileOnly("Phase 2: Calculating target elevations...");
         sw.Restart();
         CalculateNetworkElevations(network, heightMap, metersPerPixel);
         perfLog?.Timing($"CalculateNetworkElevations: {sw.Elapsed.TotalSeconds:F2}s");
@@ -182,7 +182,7 @@ public class UnifiedRoadSmoother
         if (structureCount > 0)
         {
             perfLog?.LogSection("Phase 2.3: Structure Elevation Profiles");
-            TerrainLogger.Info($"Phase 2.3: Calculating elevation profiles for {structureCount} structure(s)...");
+            TerrainCreationLogger.Current?.InfoFileOnly($"Phase 2.3: Calculating elevation profiles for {structureCount} structure(s)...");
             sw.Restart();
             
             // Calculate profiles for excluded structures (profiles stored for DAE generation)
@@ -195,7 +195,7 @@ public class UnifiedRoadSmoother
             
             if (structureResult.TotalStructuresProcessed > 0)
             {
-                TerrainLogger.Info($"  Calculated profiles for {structureResult.BridgesProcessed} bridge(s), " +
+                TerrainCreationLogger.Current?.InfoFileOnly($"  Calculated profiles for {structureResult.BridgesProcessed} bridge(s), " +
                                   $"{structureResult.TunnelsProcessed} tunnel(s)");
             }
             
@@ -217,7 +217,7 @@ public class UnifiedRoadSmoother
         if (HasAnyBankingEnabled(roadMaterials))
         {
             perfLog?.LogSection("Phase 2.5: Banking Pre-calculation");
-            TerrainLogger.Info("Phase 2.5: Pre-calculating road banking (for junction awareness)...");
+            TerrainCreationLogger.Current?.InfoFileOnly("Phase 2.5: Pre-calculating road banking (for junction awareness)...");
             sw.Restart();
             bankingApplied = _bankingOrchestrator.ApplyBankingPreCalculation(network, globalJunctionBlendDistance);
             perfLog?.Timing($"ApplyBankingPreCalculation: {sw.Elapsed.TotalSeconds:F2}s");
@@ -230,7 +230,7 @@ public class UnifiedRoadSmoother
         if (HasRoundaboutsInNetwork(network, roadMaterials))
         {
             perfLog?.LogSection("Phase 2.6: Roundabout Elevation Harmonization");
-            TerrainLogger.Info("Phase 2.6: Processing roundabout elevations...");
+            TerrainCreationLogger.Current?.InfoFileOnly("Phase 2.6: Processing roundabout elevations...");
             sw.Restart();
 
             // Step 1: Collect roundabout processing results from all materials
@@ -251,7 +251,7 @@ public class UnifiedRoadSmoother
                     metersPerPixel,
                     globalJunctionBlendDistance);
 
-                TerrainLogger.Info($"  Processed {roundaboutHarmonizationResult.RoundaboutsProcessed} roundabout(s), " +
+                TerrainCreationLogger.Current?.InfoFileOnly($"  Processed {roundaboutHarmonizationResult.RoundaboutsProcessed} roundabout(s), " +
                                    $"modified {roundaboutHarmonizationResult.RingCrossSectionsModified} ring cross-sections, " +
                                    $"blended {roundaboutHarmonizationResult.ConnectingRoadCrossSectionsBlended} connecting road cross-sections");
             }
@@ -267,10 +267,10 @@ public class UnifiedRoadSmoother
         {
             perfLog?.LogSection("Phase 3: Junction Harmonization");
             TerrainLogger.Info("Phase 3: Detecting and harmonizing junctions...");
-            TerrainLogger.Info(
+            TerrainCreationLogger.Current?.InfoFileOnly(
                 $"  Cross-material harmonization: {enableCrossMaterialHarmonization && roadMaterials.Count > 1}");
-            TerrainLogger.Info($"  Banking-aware: {bankingApplied}");
-            TerrainLogger.Info($"  Extended OSM junction detection: {enableExtendedOsmJunctionDetection}");
+            TerrainCreationLogger.Current?.InfoFileOnly($"  Banking-aware: {bankingApplied}");
+            TerrainCreationLogger.Current?.InfoFileOnly($"  Extended OSM junction detection: {enableExtendedOsmJunctionDetection}");
             sw.Restart();
 
             // Query OSM junctions if bounding box is available AND extended OSM detection is enabled
@@ -288,13 +288,13 @@ public class UnifiedRoadSmoother
             }
             else if (!enableExtendedOsmJunctionDetection && geoBoundingBox != null)
             {
-                TerrainLogger.Info("  Extended OSM junction detection disabled, using geometric detection only");
+                TerrainCreationLogger.Current?.InfoFileOnly("  Extended OSM junction detection disabled, using geometric detection only");
             }
 
             // Detect junctions (with OSM hints if available)
             if (osmJunctions != null && osmJunctions.Junctions.Count > 0)
             {
-                TerrainLogger.Info($"  Using OSM junction hints: {osmJunctions.Junctions.Count} junctions " +
+                TerrainCreationLogger.Current?.InfoFileOnly($"  Using OSM junction hints: {osmJunctions.Junctions.Count} junctions " +
                                   $"({osmJunctions.ExplicitJunctionCount} explicit, {osmJunctions.GeometricJunctionCount} geometric)");
                 
                 // Get included OSM junction types from the first material that has junction harmonization enabled
@@ -326,7 +326,7 @@ public class UnifiedRoadSmoother
         }
         else
         {
-            TerrainLogger.Info("Phase 3: Junction harmonization skipped (no materials have it enabled)");
+            TerrainCreationLogger.Current?.InfoFileOnly("Phase 3: Junction harmonization skipped (no materials have it enabled)");
         }
 
         // Phase 3.5: Finalize banking (adapt secondary roads to banked junctions)
@@ -336,7 +336,7 @@ public class UnifiedRoadSmoother
         if (bankingApplied)
         {
             perfLog?.LogSection("Phase 3.5: Banking Finalization");
-            TerrainLogger.Info("Phase 3.5: Finalizing road banking (adapting to junctions)...");
+            TerrainCreationLogger.Current?.InfoFileOnly("Phase 3.5: Finalizing road banking (adapting to junctions)...");
             sw.Restart();
             _bankingOrchestrator.FinalizeBankingAfterHarmonization(network, globalJunctionBlendDistance);
             perfLog?.Timing($"FinalizeBankingAfterHarmonization: {sw.Elapsed.TotalSeconds:F2}s");

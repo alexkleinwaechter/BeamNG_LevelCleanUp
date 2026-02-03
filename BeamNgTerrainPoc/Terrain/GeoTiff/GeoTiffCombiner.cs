@@ -4,20 +4,20 @@ using OSGeo.GDAL;
 namespace BeamNgTerrainPoc.Terrain.GeoTiff;
 
 /// <summary>
-/// Combines multiple GeoTIFF tiles into a single merged GeoTIFF file.
-/// Useful when terrain data spans multiple tiles (e.g., SRTM or ASTER GDEM tiles).
+///     Combines multiple GeoTIFF tiles into a single merged GeoTIFF file.
+///     Useful when terrain data spans multiple tiles (e.g., SRTM or ASTER GDEM tiles).
 /// </summary>
 public class GeoTiffCombiner
 {
-    private readonly GeoTiffReader _reader = new();
-
     /// <summary>
-    /// Supported GeoTIFF file extensions.
+    ///     Supported GeoTIFF file extensions.
     /// </summary>
     private static readonly string[] SupportedExtensions = [".tif", ".tiff", ".geotiff"];
 
+    private readonly GeoTiffReader _reader = new();
+
     /// <summary>
-    /// Combines all GeoTIFF files in a directory into a single merged file.
+    ///     Combines all GeoTIFF files in a directory into a single merged file.
     /// </summary>
     /// <param name="inputDirectory">Directory containing GeoTIFF tiles</param>
     /// <param name="outputPath">Path for the combined output file</param>
@@ -40,7 +40,7 @@ public class GeoTiffCombiner
         if (inputFiles.Count == 1)
         {
             TerrainLogger.Info("Single file found, copying directly");
-            File.Copy(inputFiles[0], outputPath, overwrite: true);
+            File.Copy(inputFiles[0], outputPath, true);
             var info = _reader.GetGeoTiffInfo(outputPath);
             return info.BoundingBox;
         }
@@ -50,22 +50,20 @@ public class GeoTiffCombiner
     }
 
     /// <summary>
-    /// Finds all GeoTIFF files in a directory.
+    ///     Finds all GeoTIFF files in a directory.
     /// </summary>
     private List<string> FindGeoTiffFiles(string directory)
     {
         var files = new List<string>();
 
         foreach (var ext in SupportedExtensions)
-        {
             files.AddRange(Directory.GetFiles(directory, $"*{ext}", SearchOption.TopDirectoryOnly));
-        }
 
         return files.OrderBy(f => f).ToList();
     }
 
     /// <summary>
-    /// Internal method to combine multiple GeoTIFF files.
+    ///     Internal method to combine multiple GeoTIFF files.
     /// </summary>
     private GeoBoundingBox CombineFilesInternal(List<string> inputFiles, string outputPath)
     {
@@ -78,15 +76,15 @@ public class GeoTiffCombiner
         // Analyze all input files to determine overall bounds
         double minX = double.MaxValue, minY = double.MaxValue;
         double maxX = double.MinValue, maxY = double.MinValue;
-        double[] geoTransform = new double[6];
+        var geoTransform = new double[6];
         double pixelSizeX = 0, pixelSizeY = 0;
         string? projection = null;
-        DataType dataType = DataType.GDT_Unknown;
-        int bandCount = 0;
+        var dataType = DataType.GDT_Unknown;
+        var bandCount = 0;
 
         // Enable suppressed logging for bulk operations
         var previousSuppressState = TerrainLogger.SuppressDetailedLogging;
-        TerrainLogger.SuppressDetailedLogging = inputFiles.Count > 10;
+        TerrainLogger.SuppressDetailedLogging = false;
 
         try
         {
@@ -94,7 +92,7 @@ public class GeoTiffCombiner
             TerrainLogger.Info($"Analyzing {inputFiles.Count} tiles for bounds...");
             var analyzedCount = 0;
             int? firstTileWidth = null, firstTileHeight = null;
-            
+
             foreach (var file in inputFiles)
             {
                 using var dataset = Gdal.Open(file, Access.GA_ReadOnly);
@@ -121,37 +119,34 @@ public class GeoTiffCombiner
                 {
                     // Log info about tiles with different dimensions (common for edge tiles)
                     if (dataset.RasterXSize != firstTileWidth || dataset.RasterYSize != firstTileHeight)
-                    {
-                        TerrainLogger.Detail($"Tile {Path.GetFileName(file)} has different size: {dataset.RasterXSize}x{dataset.RasterYSize} (first tile: {firstTileWidth}x{firstTileHeight})");
-                    }
+                        TerrainLogger.Detail(
+                            $"Tile {Path.GetFileName(file)} has different size: {dataset.RasterXSize}x{dataset.RasterYSize} (first tile: {firstTileWidth}x{firstTileHeight})");
                 }
 
                 // Calculate tile bounds
-                double tileMinX = geoTransform[0];
-                double tileMaxY = geoTransform[3];
-                double tileMaxX = tileMinX + geoTransform[1] * dataset.RasterXSize;
-                double tileMinY = tileMaxY + geoTransform[5] * dataset.RasterYSize;
+                var tileMinX = geoTransform[0];
+                var tileMaxY = geoTransform[3];
+                var tileMaxX = tileMinX + geoTransform[1] * dataset.RasterXSize;
+                var tileMinY = tileMaxY + geoTransform[5] * dataset.RasterYSize;
 
                 // Update overall bounds
                 minX = Math.Min(minX, tileMinX);
                 minY = Math.Min(minY, tileMinY);
                 maxX = Math.Max(maxX, tileMaxX);
                 maxY = Math.Max(maxY, tileMaxY);
-                
+
                 analyzedCount++;
-                
-                // Report progress every 100 tiles or at completion
-                if (analyzedCount % 100 == 0 || analyzedCount == inputFiles.Count)
-                {
+
+                // Report progress every 10 tiles or at completion
+                if (analyzedCount % 10 == 0 || analyzedCount == inputFiles.Count)
                     TerrainLogger.Info($"Analyzed {analyzedCount}/{inputFiles.Count} tiles...");
-                }
             }
 
             TerrainLogger.Info($"Combined extent: X[{minX:F4} - {maxX:F4}], Y[{minY:F4} - {maxY:F4}]");
 
             // Calculate total output dimensions
-            int totalWidth = (int)Math.Round((maxX - minX) / pixelSizeX);
-            int totalHeight = (int)Math.Round((maxY - minY) / pixelSizeY);
+            var totalWidth = (int)Math.Round((maxX - minX) / pixelSizeX);
+            var totalHeight = (int)Math.Round((maxY - minY) / pixelSizeY);
 
             TerrainLogger.Info($"Output dimensions: {totalWidth}x{totalHeight} pixels");
 
@@ -167,12 +162,12 @@ public class GeoTiffCombiner
 
             // Set output geotransform
             outputDataset.SetGeoTransform([
-                minX,           // Origin X
-                pixelSizeX,     // Pixel width
-                0,              // Rotation X
-                maxY,           // Origin Y (top)
-                0,              // Rotation Y
-                -pixelSizeY     // Pixel height (negative)
+                minX, // Origin X
+                pixelSizeX, // Pixel width
+                0, // Rotation X
+                maxY, // Origin Y (top)
+                0, // Rotation Y
+                -pixelSizeY // Pixel height (negative)
             ]);
 
             if (!string.IsNullOrEmpty(projection))
@@ -181,49 +176,52 @@ public class GeoTiffCombiner
             // Second pass: copy data from each tile
             TerrainLogger.Info($"Copying {inputFiles.Count} tiles to combined image...");
             var copiedCount = 0;
-            
+
             foreach (var file in inputFiles)
             {
                 using var inputDataset = Gdal.Open(file, Access.GA_ReadOnly);
                 if (inputDataset == null) continue;
 
                 // Get THIS tile's actual dimensions (tiles may have different sizes)
-                int thisTileWidth = inputDataset.RasterXSize;
-                int thisTileHeight = inputDataset.RasterYSize;
+                var thisTileWidth = inputDataset.RasterXSize;
+                var thisTileHeight = inputDataset.RasterYSize;
 
                 var inputGeoTransform = new double[6];
                 inputDataset.GetGeoTransform(inputGeoTransform);
 
                 // Calculate offset in output image
-                int xOffset = (int)Math.Round((inputGeoTransform[0] - minX) / pixelSizeX);
-                int yOffset = (int)Math.Round((maxY - inputGeoTransform[3]) / pixelSizeY);
+                var xOffset = (int)Math.Round((inputGeoTransform[0] - minX) / pixelSizeX);
+                var yOffset = (int)Math.Round((maxY - inputGeoTransform[3]) / pixelSizeY);
 
                 // Clamp offsets using THIS tile's dimensions
                 xOffset = Math.Max(0, Math.Min(xOffset, totalWidth - thisTileWidth));
                 yOffset = Math.Max(0, Math.Min(yOffset, totalHeight - thisTileHeight));
 
                 // Use Detail for per-tile messages (suppressed from UI when many tiles)
-                TerrainLogger.Detail($"Copying tile {Path.GetFileName(file)} ({thisTileWidth}x{thisTileHeight}) to offset ({xOffset}, {yOffset})");
+                TerrainLogger.SuppressDetailedLogging = true;
+                TerrainLogger.Detail(
+                    $"Copying tile {Path.GetFileName(file)} ({thisTileWidth}x{thisTileHeight}) to offset ({xOffset}, {yOffset})");
 
                 // Copy each band
-                for (int bandIndex = 1; bandIndex <= bandCount; bandIndex++)
+                for (var bandIndex = 1; bandIndex <= bandCount; bandIndex++)
                 {
                     var inputBand = inputDataset.GetRasterBand(bandIndex);
                     var outputBand = outputDataset.GetRasterBand(bandIndex);
 
                     // Use THIS tile's dimensions for buffer and read/write
                     var buffer = new double[thisTileWidth * thisTileHeight];
-                    inputBand.ReadRaster(0, 0, thisTileWidth, thisTileHeight, buffer, thisTileWidth, thisTileHeight, 0, 0);
-                    outputBand.WriteRaster(xOffset, yOffset, thisTileWidth, thisTileHeight, buffer, thisTileWidth, thisTileHeight, 0, 0);
+                    inputBand.ReadRaster(0, 0, thisTileWidth, thisTileHeight, buffer, thisTileWidth, thisTileHeight, 0,
+                        0);
+                    outputBand.WriteRaster(xOffset, yOffset, thisTileWidth, thisTileHeight, buffer, thisTileWidth,
+                        thisTileHeight, 0, 0);
                 }
-                
+
                 copiedCount++;
-                
-                // Report progress every 100 tiles or at completion
-                if (copiedCount % 100 == 0 || copiedCount == inputFiles.Count)
-                {
+
+                // Report progress every 10 tiles or at completion
+                TerrainLogger.SuppressDetailedLogging = false;
+                if (copiedCount % 10 == 0 || copiedCount == inputFiles.Count)
                     TerrainLogger.Info($"Copied {copiedCount}/{inputFiles.Count} tiles...");
-                }
             }
 
             outputDataset.FlushCache();
@@ -252,27 +250,27 @@ public class GeoTiffCombiner
     }
 
     /// <summary>
-    /// Combines multiple GeoTIFF files and returns the import result directly.
+    ///     Combines multiple GeoTIFF files and returns the import result directly.
     /// </summary>
     /// <param name="inputDirectory">Directory containing GeoTIFF tiles</param>
     /// <param name="targetSize">Optional target size to resize the combined heightmap to (must be power of 2)</param>
     /// <param name="tempDirectory">Directory for temporary files (optional, uses system temp if null)</param>
     /// <returns>Import result with combined heightmap and bounding box</returns>
     public async Task<GeoTiffImportResult> CombineAndImportAsync(
-        string inputDirectory, 
+        string inputDirectory,
         int? targetSize = null,
         string? tempDirectory = null)
     {
         return await CombineAndImportAsync(
-            inputDirectory, 
-            targetSize, 
-            null, null, null, null, 
+            inputDirectory,
+            targetSize,
+            null, null, null, null,
             tempDirectory);
     }
 
     /// <summary>
-    /// Combines multiple GeoTIFF files with optional cropping and returns the import result directly.
-    /// The crop is applied to the combined result.
+    ///     Combines multiple GeoTIFF files with optional cropping and returns the import result directly.
+    ///     The crop is applied to the combined result.
     /// </summary>
     /// <param name="inputDirectory">Directory containing GeoTIFF tiles</param>
     /// <param name="targetSize">Optional target size to resize the combined heightmap to (must be power of 2)</param>
@@ -283,7 +281,7 @@ public class GeoTiffCombiner
     /// <param name="tempDirectory">Directory for temporary files (optional, uses system temp if null)</param>
     /// <returns>Import result with combined (and optionally cropped) heightmap and bounding box</returns>
     public async Task<GeoTiffImportResult> CombineAndImportAsync(
-        string inputDirectory, 
+        string inputDirectory,
         int? targetSize,
         int? cropOffsetX,
         int? cropOffsetY,
@@ -297,9 +295,9 @@ public class GeoTiffCombiner
         try
         {
             await CombineGeoTiffsAsync(inputDirectory, combinedPath);
-            
+
             // Apply cropping to the combined result if specified
-            bool shouldCrop = cropOffsetX.HasValue && cropOffsetY.HasValue &&
+            var shouldCrop = cropOffsetX.HasValue && cropOffsetY.HasValue &&
                              cropWidth.HasValue && cropHeight.HasValue &&
                              cropWidth.Value > 0 && cropHeight.Value > 0;
 
@@ -308,16 +306,16 @@ public class GeoTiffCombiner
                 TerrainLogger.Info(
                     $"Applying crop to combined tiles: offset ({cropOffsetX}, {cropOffsetY}), " +
                     $"size {cropWidth}x{cropHeight}");
-                    
+
                 return _reader.ReadGeoTiff(
-                    combinedPath, 
+                    combinedPath,
                     targetSize,
                     cropOffsetX,
                     cropOffsetY,
                     cropWidth,
                     cropHeight);
             }
-            
+
             return _reader.ReadGeoTiff(combinedPath, targetSize);
         }
         finally

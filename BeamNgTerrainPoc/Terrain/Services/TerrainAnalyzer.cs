@@ -136,10 +136,10 @@ public class TerrainAnalyzer
                 };
             }
 
-            TerrainLogger.Info($"  Analyzing {roadMaterials.Count} road material(s)...");
+            TerrainCreationLogger.Current?.InfoFileOnly($"  Analyzing {roadMaterials.Count} road material(s)...");
 
             // Phase 1: Build unified road network from all materials
-            TerrainLogger.Info("  Phase 1: Building unified road network...");
+            TerrainCreationLogger.Current?.InfoFileOnly("  Phase 1: Building unified road network...");
             var network = _networkBuilder.BuildNetwork(materials, heightMap, metersPerPixel, size);
 
             if (network.Splines.Count == 0)
@@ -155,16 +155,16 @@ public class TerrainAnalyzer
             TerrainCreationLogger.Current?.Detail($"Built network: {network.Splines.Count} splines, {network.CrossSections.Count} cross-sections");
 
             // Phase 2: Calculate target elevations for each spline
-            TerrainLogger.Info("  Phase 2: Calculating target elevations...");
+            TerrainCreationLogger.Current?.InfoFileOnly("  Phase 2: Calculating target elevations...");
             CalculateNetworkElevations(network, heightMap, metersPerPixel);
 
             // Capture pre-harmonization elevations for comparison
             _preHarmonizationElevations = CaptureElevations(network);
 
             // Phase 3: Detect junctions
-            TerrainLogger.Info("  Phase 3: Detecting junctions...");
+            TerrainCreationLogger.Current?.InfoFileOnly("  Phase 3: Detecting junctions...");
             var junctions = _junctionDetector.DetectJunctions(network, globalJunctionDetectionRadius);
-            TerrainLogger.Info($"    Detected {junctions.Count} junction(s)");
+            TerrainCreationLogger.Current?.InfoFileOnly($"    Detected {junctions.Count} junction(s)");
 
             // Store the analyzed network for later modification
             _analyzedNetwork = network;
@@ -176,7 +176,7 @@ public class TerrainAnalyzer
 
             if (generateDebugImage)
             {
-                TerrainLogger.Info("  Generating analysis preview image...");
+                TerrainCreationLogger.Current?.InfoFileOnly("  Generating analysis preview image...");
                 debugImageData = GenerateAnalysisDebugImage(
                     network,
                     _preHarmonizationElevations,
@@ -187,7 +187,7 @@ public class TerrainAnalyzer
 
             // Calculate statistics
             var stats = network.GetStatistics();
-            TerrainLogger.Info($"  Analysis complete: {stats.TotalSplines} splines, {stats.TotalJunctions} junctions, {stats.TotalRoadLengthMeters:F1}m total");
+            TerrainCreationLogger.Current?.InfoFileOnly($"  Analysis complete: {stats.TotalSplines} splines, {stats.TotalJunctions} junctions, {stats.TotalRoadLengthMeters:F1}m total");
             TerrainCreationLogger.Current?.Detail($"Cross-sections: {stats.TotalCrossSections}");
             TerrainLogger.Info("=== TERRAIN ANALYSIS COMPLETE ===");
 

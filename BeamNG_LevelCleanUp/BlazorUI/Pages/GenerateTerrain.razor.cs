@@ -538,6 +538,8 @@ public partial class GenerateTerrain
         Snackbar.Configuration.MaxDisplayedSnackbars = 10;
 
         // Configure TerrainLogger to forward messages to PubSub
+        // Enable suppression of detailed/per-item messages to reduce UI clutter
+        TerrainLogger.SuppressDetailedLogging = true;
         TerrainLogger.SetLogHandler((level, message) =>
         {
             var pubSubType = level switch
@@ -737,7 +739,7 @@ public partial class GenerateTerrain
             if (result.SuggestedTerrainSize.HasValue && !_hasExistingTerrainSettings)
                 _terrainSize = result.SuggestedTerrainSize.Value;
             else if (result.SuggestedTerrainSize.HasValue && _hasExistingTerrainSettings)
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                Console.WriteLine(
                     $"Keeping terrain size {_terrainSize} from terrain.json (GeoTIFF suggests {result.SuggestedTerrainSize.Value})");
 
             // Auto-populate maxHeight and terrainBaseHeight from GeoTIFF elevation data
@@ -747,7 +749,7 @@ public partial class GenerateTerrain
                 _maxHeight = (float)elevationRange;
                 _terrainBaseHeight = (float)_geoTiffMinElevation.Value;
 
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                Console.WriteLine(
                     $"Auto-calculated: Max Height = {_maxHeight:F1}m, Base Height = {_terrainBaseHeight:F1}m");
             }
 
@@ -776,18 +778,15 @@ public partial class GenerateTerrain
 
         if (Math.Abs(_metersPerPixel - 1.0f) < 0.01f && suggestedMpp > 1.5f)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                "⚠️ Geographic scale mismatch detected!");
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"   Source DEM covers ~{suggestedMpp * result.SuggestedTerrainSize.Value / 1000:F1}km but terrain is {result.SuggestedTerrainSize.Value}px");
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"   Suggested: Set 'Meters per Pixel' to {suggestedMpp:F1} for real-world scale");
+            // Log scale mismatch to file only - technical detail that users rarely act on
+            Console.WriteLine("⚠️ Geographic scale mismatch detected!");
+            Console.WriteLine($"   Source DEM covers ~{suggestedMpp * result.SuggestedTerrainSize.Value / 1000:F1}km but terrain is {result.SuggestedTerrainSize.Value}px");
+            Console.WriteLine($"   Suggested: Set 'Meters per Pixel' to {suggestedMpp:F1} for real-world scale");
         }
         else
         {
             var totalSizeKm = _metersPerPixel * result.SuggestedTerrainSize.Value / 1000f;
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Terrain scale: {_metersPerPixel:F1}m/px = {totalSizeKm:F1}km × {totalSizeKm:F1}km in-game");
+            Console.WriteLine($"Terrain scale: {_metersPerPixel:F1}m/px = {totalSizeKm:F1}km × {totalSizeKm:F1}km in-game");
         }
     }
 
@@ -842,7 +841,7 @@ public partial class GenerateTerrain
             _maxHeight = (float)elevationRange;
             _terrainBaseHeight = (float)_geoTiffMinElevation.Value;
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
+            Console.WriteLine(
                 $"Using full image elevation: Max Height = {_maxHeight:F1}m, Base Height = {_terrainBaseHeight:F1}m");
 
             await InvokeAsync(StateHasChanged);
@@ -907,7 +906,7 @@ public partial class GenerateTerrain
                 _maxHeight = (float)elevationRange;
                 _terrainBaseHeight = (float)croppedMin.Value;
 
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                Console.WriteLine(
                     $"Cropped elevation: {croppedMin:F1}m to {croppedMax:F1}m (Max Height = {_maxHeight:F1}m, Base = {_terrainBaseHeight:F1}m)");
             }
             else
@@ -1007,7 +1006,8 @@ public partial class GenerateTerrain
         {
             _pendingCropOffsets = (result.CropOffsetX.Value, result.CropOffsetY.Value);
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
+            // Log to file only - technical preset import detail
+            Console.WriteLine(
                 $"Preset contains crop settings: offset ({result.CropOffsetX}, {result.CropOffsetY}), " +
                 $"size {result.CropWidth}x{result.CropHeight} - will apply after GeoTIFF loads");
         }
@@ -1126,8 +1126,8 @@ public partial class GenerateTerrain
 
         if (_cropAnchorSelector != null)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Applying restored crop offsets: ({offsetX}, {offsetY})");
+            // Log to file only - technical detail
+            Console.WriteLine($"Applying restored crop offsets: ({offsetX}, {offsetY})");
 
             await _cropAnchorSelector.SetCropOffsetsAsync(offsetX, offsetY);
         }
@@ -1266,7 +1266,8 @@ public partial class GenerateTerrain
                 $"Reordered {movedCount} material(s) without layer maps to end of list. " +
                 "Materials without layers at positions > 0 cannot claim pixels.",
                 Severity.Info);
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
+            // Log to file only - detailed operation
+            Console.WriteLine(
                 $"Moved {movedCount} material(s) without layer maps to end of list for correct terrain generation.");
             _dropContainer?.Refresh();
         }

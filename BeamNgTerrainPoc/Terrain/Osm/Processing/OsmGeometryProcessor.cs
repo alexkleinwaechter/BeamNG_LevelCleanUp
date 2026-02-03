@@ -28,7 +28,7 @@ public class OsmGeometryProcessor
         _transformer = transformer;
         if (transformer != null)
         {
-            TerrainLogger.Info($"OsmGeometryProcessor: Using GDAL coordinate transformer (reprojection: {transformer.UsesReprojection})");
+            Console.WriteLine($"OsmGeometryProcessor: Using GDAL coordinate transformer (reprojection: {transformer.UsesReprojection})");
         }
     }
 
@@ -154,7 +154,7 @@ public class OsmGeometryProcessor
             result.Add(feature);
         }
         
-        TerrainLogger.Info($"Cropped {features.Count} features to {result.Count} within bbox");
+        Console.WriteLine($"Cropped {features.Count} features to {result.Count} within bbox");
         return result;
     }
     
@@ -298,7 +298,7 @@ public class OsmGeometryProcessor
         
         if (featuresWithHoles > 0 || featuresWithParts > 0)
         {
-            TerrainLogger.Info($"Rasterized multipolygons: {featuresWithHoles} features with {totalInnerRings} holes, {featuresWithParts} features with {totalParts} additional parts");
+            Console.WriteLine($"Rasterized multipolygons: {featuresWithHoles} features with {totalInnerRings} holes, {featuresWithParts} features with {totalParts} additional parts");
         }
         
         return result;
@@ -574,7 +574,7 @@ public class OsmGeometryProcessor
         {
             logMessage += $" - excluded {excludedBridgeCount} bridge(s) and {excludedTunnelCount} tunnel(s) from material painting";
         }
-        TerrainLogger.Info(logMessage);
+        Console.WriteLine(logMessage);
         
         return result;
     }
@@ -769,7 +769,7 @@ public class OsmGeometryProcessor
             }
         }
         
-        TerrainLogger.Info($"Prepared {allPaths.Count} paths from {lineFeatures.Count} OSM line features");
+        Console.WriteLine($"Prepared {allPaths.Count} paths from {lineFeatures.Count} OSM line features");
 
         // Step 2: Separate structure paths from regular paths for selective merging
         // BACKWARD COMPATIBILITY: Only keep structures separate when their exclusion is enabled
@@ -798,16 +798,16 @@ public class OsmGeometryProcessor
             }
         }
 
-        TerrainLogger.Info($"Separated paths: {structurePaths.Count} protected structure paths (kept separate), {regularPaths.Count} regular paths (will merge)");
+        Console.WriteLine($"Separated paths: {structurePaths.Count} protected structure paths (kept separate), {regularPaths.Count} regular paths (will merge)");
         if (!excludeBridges && !excludeTunnels)
-            TerrainLogger.Info("  (Backward compatible mode: all structures treated as normal roads)");
+            Console.WriteLine("  (Backward compatible mode: all structures treated as normal roads)");
 
         // Step 3: Connect only regular (non-structure) paths
         var connectedPaths = regularPaths.Count > 0
             ? ConnectAdjacentPaths(regularPaths, endpointJoinToleranceMeters)
             : new List<List<Vector2>>();
 
-        TerrainLogger.Info($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPaths.Count})");
+        Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPaths.Count})");
 
         // Step 4: Create splines from structure paths (preserve metadata)
         int bridgeCount = 0;
@@ -891,14 +891,14 @@ public class OsmGeometryProcessor
             }
         }
 
-        TerrainLogger.Info($"Created {splines.Count} splines total ({structurePaths.Count} structures + {connectedPaths.Count} regular roads)");
+        Console.WriteLine($"Created {splines.Count} splines total ({structurePaths.Count} structures + {connectedPaths.Count} regular roads)");
         if (bridgeCount > 0 || tunnelCount > 0)
-            TerrainLogger.Info($"  Structure metadata: {bridgeCount} bridge(s), {tunnelCount} tunnel(s)");
+            Console.WriteLine($"  Structure metadata: {bridgeCount} bridge(s), {tunnelCount} tunnel(s)");
         if (skippedTooFewPoints > 0)
-            TerrainLogger.Info($"  Skipped {skippedTooFewPoints} paths with too few points");
+            Console.WriteLine($"  Skipped {skippedTooFewPoints} paths with too few points");
         if (skippedZeroLength > 0)
-            TerrainLogger.Info($"  Skipped {skippedZeroLength} paths shorter than {minPathLengthMeters:F1}m");
-        TerrainLogger.Info($"  Coordinate system: meters (metersPerPixel={metersPerPixel})");
+            Console.WriteLine($"  Skipped {skippedZeroLength} paths shorter than {minPathLengthMeters:F1}m");
+        Console.WriteLine($"  Coordinate system: meters (metersPerPixel={metersPerPixel})");
         return splines;
     }
 
@@ -997,7 +997,7 @@ public class OsmGeometryProcessor
             }
         } while (didMerge && iterations < 1000); // Safety limit
         
-        TerrainLogger.Info($"  Path joining: {totalMerges} merges in {iterations} iterations, tolerance={tolerance:F2}m");
+        Console.WriteLine($"  Path joining: {totalMerges} merges in {iterations} iterations, tolerance={tolerance:F2}m");
         
         return result;
     }
@@ -1186,7 +1186,7 @@ public class OsmGeometryProcessor
         }
         roundaboutWayIds = wayIdSet;
         
-        TerrainLogger.Info($"ConvertLinesToSplinesWithRoundabouts: Detected {allDetectedRoundabouts.Count} roundabout(s) total, " +
+        Console.WriteLine($"ConvertLinesToSplinesWithRoundabouts: Detected {allDetectedRoundabouts.Count} roundabout(s) total, " +
             $"{detectedRoundabouts.Count} belong to this material ({wayIdSet.Count} way segments)" +
             (skippedRoundabouts > 0 ? $", skipped {skippedRoundabouts} roundabout(s) belonging to other materials" : ""));
         
@@ -1233,7 +1233,7 @@ public class OsmGeometryProcessor
             .Where(f => f.Coordinates.Count >= 2) // Ensure still valid after trimming
             .ToList();
         
-        TerrainLogger.Info($"  Regular roads after excluding roundabouts and deleted: {regularFeatures.Count} " +
+        Console.WriteLine($"  Regular roads after excluding roundabouts and deleted: {regularFeatures.Count} " +
             $"(excluded {lineFeatures.Count - regularFeatures.Count - deletedFeatureIds.Count} roundabout ways, " +
             $"{deletedFeatureIds.Count} deleted roads)");
         
@@ -1255,7 +1255,7 @@ public class OsmGeometryProcessor
         allSplines.AddRange(roundaboutSplines);
         allSplines.AddRange(regularSplines);
         
-        TerrainLogger.Info($"ConvertLinesToSplinesWithRoundabouts: Total {allSplines.Count} splines " +
+        Console.WriteLine($"ConvertLinesToSplinesWithRoundabouts: Total {allSplines.Count} splines " +
             $"({roundaboutSplines.Count} roundabout rings + {regularSplines.Count} regular roads)");
         
         // Step 7: Export debug image if requested and roundabouts were detected
@@ -1375,7 +1375,7 @@ public class OsmGeometryProcessor
         
         // Add text overlay with spline count
         // (ImageSharp doesn't have easy text drawing, so we'll just add info to the log)
-        TerrainLogger.Info($"OSM Spline Debug Image: {splines.Count} splines, terrain {terrainSize}x{terrainSize}");
+        Console.WriteLine($"OSM Spline Debug Image: {splines.Count} splines, terrain {terrainSize}x{terrainSize}");
         
         // Ensure directory exists
         var directory = Path.GetDirectoryName(outputPath);
@@ -1383,7 +1383,7 @@ public class OsmGeometryProcessor
             Directory.CreateDirectory(directory);
         
         image.SaveAsPng(outputPath);
-        TerrainLogger.Info($"Exported OSM spline debug image: {outputPath}");
+        Console.WriteLine($"Exported OSM spline debug image: {outputPath}");
     }
     
     /// <summary>
