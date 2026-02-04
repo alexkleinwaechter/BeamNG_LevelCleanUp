@@ -1,9 +1,12 @@
 @using BeamNgTerrainPoc.Terrain.GeoTiff
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 @using BeamNgTerrainPoc.Terrain.Osm.Services
+@using Microsoft.JSInterop
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
-<MudDialog>
+<MudDialog Class="fullscreen-selector-dialog">
     <TitleContent>
         <MudStack Row="true" AlignItems="AlignItems.Center">
             <MudIcon Icon="@Icons.Material.Filled.Map" Class="mr-2" />
@@ -30,112 +33,109 @@
         }
         else if (_queryResult != null)
         {
-            <MudGrid Spacing="2">
-                @* Left side: Filters and List *@
-                <MudItem xs="12" md="6">
-                    <div style="display: flex; flex-direction: column; height: 500px;">
-                        @* Category Filter - fixed height *@
-                        <div style="flex-shrink: 0;">
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">Filter by Category</MudText>
-                            <MudChipSet T="string" @bind-SelectedValues="_selectedCategories" 
-                                        SelectionMode="SelectionMode.MultiSelection"
-                                        Class="mb-3">
-                                @foreach (var category in _availableCategories)
-                                {
-                                    <MudChip Value="@category" 
-                                             Color="@GetCategoryColor(category)"
-                                             Variant="@(IsCategorySelected(category) ? Variant.Filled : Variant.Outlined)"
-                                             SelectedColor="@GetCategoryColor(category)">
-                                        @GetCategoryDisplayName(category)
-                                    </MudChip>
-                                }
-                            </MudChipSet>
-                            
-                            @* Geometry Type Filter *@
-                            <MudStack Row="true" Class="mb-3" Spacing="3">
-                                <MudCheckBox @bind-Value="_showLines" Label="Lines (Roads)" Color="Color.Primary" />
-                                <MudCheckBox @bind-Value="_showPolygons" Label="Polygons (Areas)" Color="Color.Secondary" />
-                            </MudStack>
-                            
-                            @* Search *@
-                            <MudTextField @bind-Value="_searchText"
-                                          Placeholder="Search feature types..."
-                                          Variant="Variant.Outlined"
-                                          Adornment="Adornment.Start"
-                                          AdornmentIcon="@Icons.Material.Filled.Search"
-                                          Immediate="true"
-                                          Class="mb-3"
-                                          Clearable="true" />
-                        </div>
-                        
-                        @* Grouped Feature List - grows to fill remaining space *@
-                        <MudPaper Elevation="0" Outlined="true" Style="flex: 1; overflow-y: auto; min-height: 0;">
-                            <MudList T="FeatureGroup" @bind-SelectedValues="_selectedGroups"
-                                     SelectionMode="SelectionMode.MultiSelection"
-                                     Dense="true">
-                                @foreach (var group in FilteredGroups)
-                                {
-                                    <MudListItem Value="@group">
-                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                            <MudIcon Icon="@GetGroupIcon(group)" 
-                                                     Size="Size.Small" 
-                                                     Color="@GetGroupIconColor(group)" />
-                                            <MudText Typo="Typo.body2" Style="flex: 1;">
-                                                @group.DisplayName
-                                            </MudText>
-                                            <MudChip T="string" 
-                                                     Size="Size.Small" 
-                                                     Color="Color.Default"
-                                                     Variant="Variant.Text">
-                                                @group.FeatureCount
-                                            </MudChip>
-                                            <MudChip T="string" 
-                                                     Size="Size.Small" 
-                                                     Color="@GetGeometryColorForGroup(group)"
-                                                     Variant="Variant.Filled">
-                                                @group.GeometryType
-                                            </MudChip>
-                                        </MudStack>
-                                    </MudListItem>
-                                }
-                            </MudList>
-                        </MudPaper>
-                        
-                        @* Status text - fixed height *@
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2" Style="flex-shrink: 0;">
-                            @FilteredGroups.Count() types available · @_selectedGroups.Sum(g => g.FeatureCount) features in @_selectedGroups.Count selected types
-                        </MudText>
-                    </div>
-                </MudItem>
-                
-                @* Right side: Preview - same height as left column *@
-                <MudItem xs="12" md="6">
-                    <div style="display: flex; flex-direction: column; height: 500px;">
-                        <MudText Typo="Typo.subtitle2" Class="mb-2">Preview</MudText>
-                        <MudPaper Class="pa-2" Elevation="1" Style="flex: 1; background: #1a1a2e; min-height: 0; display: flex;">
-                            <OsmFeaturePreview Features="@GetSelectedOsmFeatures()"
-                                               BoundingBox="@BoundingBox"
-                                               TerrainSize="@PreviewSize" />
-                        </MudPaper>
-                        
-                        @* Quick Actions *@
-                        <MudStack Row="true" Spacing="2" Class="mt-2">
+            <div class="selector-content">
+                @* Left Panel - Filters *@
+                <div class="selector-filters">
+                    @* Category Filter *@
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Filter by Category</MudText>
+                    <MudChipSet T="string" @bind-SelectedValues="_selectedCategories" 
+                                SelectionMode="SelectionMode.MultiSelection"
+                                Class="mb-2">
+                        @foreach (var category in _availableCategories)
+                        {
+                            <MudChip Value="@category" 
+                                     Color="@GetCategoryColor(category)"
+                                     Variant="@(IsCategorySelected(category) ? Variant.Filled : Variant.Outlined)"
+                                     SelectedColor="@GetCategoryColor(category)"
+                                     Size="Size.Small">
+                                @GetCategoryDisplayName(category)
+                            </MudChip>
+                        }
+                    </MudChipSet>
+                    
+                    @* Geometry Type Filter *@
+                    <MudStack Row="true" Class="mb-2" Spacing="2">
+                        <MudCheckBox @bind-Value="_showLines" Label="Lines" Color="Color.Primary" Dense="true" />
+                        <MudCheckBox @bind-Value="_showPolygons" Label="Polygons" Color="Color.Secondary" Dense="true" />
+                    </MudStack>
+                    
+                    @* Search *@
+                    <MudTextField @bind-Value="_searchText"
+                                  Placeholder="Search..."
+                                  Variant="Variant.Outlined"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Immediate="true"
+                                  Margin="Margin.Dense"
+                                  Class="mb-2"
+                                  Clearable="true" />
+                    
+                    @* Feature List - fills remaining space *@
+                    <MudPaper Elevation="0" Outlined="true" Class="feature-list-container">
+                        <MudList T="FeatureGroup" @bind-SelectedValues="_selectedGroups"
+                                 SelectionMode="SelectionMode.MultiSelection"
+                                 Dense="true">
+                            @foreach (var group in FilteredGroups)
+                            {
+                                <MudListItem Value="@group">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIcon Icon="@GetGroupIcon(group)" 
+                                                 Size="Size.Small" 
+                                                 Color="@GetGroupIconColor(group)" />
+                                        <MudText Typo="Typo.body2" Style="flex: 1;">
+                                            @group.DisplayName
+                                        </MudText>
+                                        <MudChip T="string" 
+                                                 Size="Size.Small" 
+                                                 Color="Color.Default"
+                                                 Variant="Variant.Text">
+                                            @group.FeatureCount
+                                        </MudChip>
+                                        <MudChip T="string" 
+                                                 Size="Size.Small" 
+                                                 Color="@GetGeometryColorForGroup(group)"
+                                                 Variant="Variant.Filled">
+                                            @group.GeometryType
+                                        </MudChip>
+                                    </MudStack>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    </MudPaper>
+                    
+                    @* Quick Actions & Status *@
+                    <div class="filter-footer">
+                        <MudStack Row="true" Spacing="2">
                             <MudButton Variant="Variant.Text" 
                                        Size="Size.Small" 
                                        OnClick="SelectAllFiltered"
                                        StartIcon="@Icons.Material.Filled.SelectAll">
-                                Select All Visible
+                                Select All
                             </MudButton>
                             <MudButton Variant="Variant.Text" 
                                        Size="Size.Small" 
                                        OnClick="ClearSelection"
                                        StartIcon="@Icons.Material.Filled.Clear">
-                                Clear Selection
+                                Clear
                             </MudButton>
                         </MudStack>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @FilteredGroups.Count() types · @_selectedGroups.Sum(g => g.FeatureCount) features selected
+                        </MudText>
                     </div>
-                </MudItem>
-            </MudGrid>
+                </div>
+                
+                @* Right Panel - Preview Fills Space *@
+                <div class="selector-preview">
+                    @* Preview container - measured for responsive sizing, fills entire right area *@
+                    <div class="preview-container" @ref="_previewContainerRef">
+                        <OsmFeaturePreview Features="@GetSelectedOsmFeatures()"
+                                           BoundingBox="@BoundingBox"
+                                           PreviewPixelSize="@_calculatedPreviewSize"
+                                           TerrainSize="@PreviewSize" />
+                    </div>
+                </div>
+            </div>
         }
     </DialogContent>
     <DialogActions>
@@ -148,6 +148,70 @@
         </MudButton>
     </DialogActions>
 </MudDialog>
+
+<style>
+    .fullscreen-selector-dialog .mud-dialog-content {
+        padding: 12px !important;
+        overflow: hidden;
+    }
+    
+    .selector-content {
+        display: flex;
+        height: calc(100vh - 130px);
+        min-height: 0;
+        gap: 16px;
+    }
+    
+    .selector-filters {
+        width: 400px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        /* Don't stretch children - align to top */
+        justify-content: flex-start;
+    }
+    
+    .feature-list-container {
+        /* Take available space but don't push footer down when list is small */
+        flex: 1 1 auto;
+        overflow-y: auto;
+        min-height: 0;
+        /* This ensures the list content starts at the top */
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* Ensure the MudList inside doesn't stretch items */
+    .feature-list-container .mud-list {
+        flex: 0 0 auto;
+    }
+    
+    .filter-footer {
+        flex-shrink: 0;
+        padding-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        /* Push footer to bottom when list is small */
+        margin-top: auto;
+    }
+    
+    .selector-preview {
+        flex: 1;
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        background: #1a1a2e;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .preview-container {
+        width: 100%;
+        height: 100%;
+    }
+</style>
 
 @code {
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
@@ -171,6 +235,12 @@
     // Cached filtered groups to avoid recomputation on every render
     private List<FeatureGroup>? _cachedFilteredGroups;
     private string? _lastFilterKey;
+    
+    // Responsive preview sizing
+    private ElementReference _previewContainerRef;
+    private DotNetObjectReference<OsmFeatureSelectorDialog>? _jsRef;
+    private int _calculatedPreviewSize = 420; // Default fallback
+    private bool _isInitialized;
     
     private int PreviewSize => Math.Min(512, TerrainSize);
     
@@ -224,6 +294,82 @@
     protected override async Task OnInitializedAsync()
     {
         await FetchOsmData().ConfigureAwait(false);
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Initialize resize observer when data is loaded (not on firstRender since data loads async)
+        if (!_isInitialized && _queryResult != null && !_isLoading)
+        {
+            _isInitialized = true;
+            
+            // Wait for layout to stabilize
+            await Task.Delay(100);
+            
+            // Calculate initial preview size
+            await CalculatePreviewSizeAsync();
+            
+            // Set up resize observer
+            _jsRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("setupFeatureSelectorResizeObserver", _previewContainerRef, _jsRef);
+            }
+            catch
+            {
+                // Continue without resize observer
+            }
+        }
+    }
+    
+    private async Task CalculatePreviewSizeAsync()
+    {
+        try
+        {
+            var size = await JS.InvokeAsync<ElementSize>("getElementSize", _previewContainerRef);
+            
+            if (size.Width > 0 && size.Height > 0)
+            {
+                // Calculate square size that maximally fills the container
+                // Account for the footer controls height (about 32px)
+                const int footerHeight = 32;
+                var availableWidth = size.Width;
+                var availableHeight = size.Height - footerHeight;
+                
+                // Use the smaller dimension for a square preview, maximizing size
+                _calculatedPreviewSize = (int)Math.Min(availableWidth, availableHeight);
+                _calculatedPreviewSize = Math.Max(_calculatedPreviewSize, 200); // Minimum size
+                
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch
+        {
+            // Keep default size on error
+        }
+    }
+    
+    [JSInvokable]
+    public async Task OnPreviewContainerResized()
+    {
+        if (!_isInitialized) return;
+        await CalculatePreviewSizeAsync();
+    }
+    
+    public async ValueTask DisposeAsync()
+    {
+        if (_jsRef != null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("removeFeatureSelectorResizeObserver", _previewContainerRef);
+            }
+            catch
+            {
+                // Ignore disposal errors
+            }
+            _jsRef.Dispose();
+        }
     }
     
     private async Task FetchOsmData()

@@ -199,6 +199,12 @@ public class OsmGeoJsonParser
         var outerRings = AssembleRingsFromSegments(outerSegments);
         var innerRings = AssembleRingsFromSegments(innerSegments);
 
+        // Log aggregate ring assembly results if any assembly occurred
+        if (outerSegments.Count > 1 || innerSegments.Count > 1)
+        {
+            TerrainLogger.Detail($"Ring assembly: outer {outerSegments.Count} segments -> {outerRings.Count} rings, inner {innerSegments.Count} segments -> {innerRings.Count} rings");
+        }
+
         // Return the first (largest) outer ring as the main polygon,
         // with additional outer rings as "parts" (for multi-polygon support)
         List<GeoCoordinate> mainOuter;
@@ -319,7 +325,6 @@ public class OsmGeoJsonParser
             }
         }
 
-        TerrainLogger.Info($"  Ring assembly: {segments.Count} segments -> {result.Count} rings");
         return result;
     }
 

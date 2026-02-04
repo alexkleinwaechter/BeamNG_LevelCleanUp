@@ -49,6 +49,9 @@ public partial class GenerateTerrain
     private string _drawerWidth = "100%";
     private MudDropContainer<TerrainMaterialSettings.TerrainMaterialItemExtended> _dropContainer = null!;
 
+    // Persistent snackbars for long operations
+    private Snackbar? _geoTiffLoadingSnackbar;
+
     // Analysis state
     private bool _isAnalyzing;
     private bool _openDrawer;
@@ -60,6 +63,8 @@ public partial class GenerateTerrain
     private bool _showErrorLog;
 
     private bool _showWarningLog;
+
+    private Snackbar? _terrainGenerationSnackbar;
     // ========================================
     // WIZARD MODE PROPERTIES
     // ========================================
@@ -710,6 +715,13 @@ public partial class GenerateTerrain
         _osmBlockedReason = null;
         _geoTiffValidationResult = null;
 
+        // Show persistent loading snackbar
+        await InvokeAsync(() =>
+        {
+            _geoTiffLoadingSnackbar = Snackbar.Add("Reading GeoTIFF metadata...", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+        });
+
         try
         {
             GeoTiffMetadataService.GeoTiffMetadataResult? result = null;
@@ -761,6 +773,18 @@ public partial class GenerateTerrain
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Could not read GeoTIFF metadata: {ex.Message}. OSM features will not be available until terrain generation.");
         }
+        finally
+        {
+            // Remove the loading snackbar
+            await InvokeAsync(() =>
+            {
+                if (_geoTiffLoadingSnackbar != null)
+                {
+                    Snackbar.Remove(_geoTiffLoadingSnackbar);
+                    _geoTiffLoadingSnackbar = null;
+                }
+            });
+        }
     }
 
     private void LogScaleInformation(GeoTiffMetadataService.GeoTiffMetadataResult result)
@@ -780,13 +804,15 @@ public partial class GenerateTerrain
         {
             // Log scale mismatch to file only - technical detail that users rarely act on
             Console.WriteLine("⚠️ Geographic scale mismatch detected!");
-            Console.WriteLine($"   Source DEM covers ~{suggestedMpp * result.SuggestedTerrainSize.Value / 1000:F1}km but terrain is {result.SuggestedTerrainSize.Value}px");
+            Console.WriteLine(
+                $"   Source DEM covers ~{suggestedMpp * result.SuggestedTerrainSize.Value / 1000:F1}km but terrain is {result.SuggestedTerrainSize.Value}px");
             Console.WriteLine($"   Suggested: Set 'Meters per Pixel' to {suggestedMpp:F1} for real-world scale");
         }
         else
         {
             var totalSizeKm = _metersPerPixel * result.SuggestedTerrainSize.Value / 1000f;
-            Console.WriteLine($"Terrain scale: {_metersPerPixel:F1}m/px = {totalSizeKm:F1}km × {totalSizeKm:F1}km in-game");
+            Console.WriteLine(
+                $"Terrain scale: {_metersPerPixel:F1}m/px = {totalSizeKm:F1}km × {totalSizeKm:F1}km in-game");
         }
     }
 
@@ -1278,6 +1304,13 @@ public partial class GenerateTerrain
         // Yield to allow UI to render the loading state before starting heavy work
         await Task.Yield();
 
+        // Show persistent snackbar for terrain generation
+        await InvokeAsync(() =>
+        {
+            _terrainGenerationSnackbar = Snackbar.Add("Generating terrain... This may take a while.", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+        });
+
         try
         {
             // Execute terrain generation via orchestrator (runs on background thread)
@@ -1324,6 +1357,16 @@ public partial class GenerateTerrain
         }
         finally
         {
+            // Remove the terrain generation snackbar
+            await InvokeAsync(() =>
+            {
+                if (_terrainGenerationSnackbar != null)
+                {
+                    Snackbar.Remove(_terrainGenerationSnackbar);
+                    _terrainGenerationSnackbar = null;
+                }
+            });
+
             _isGenerating = false;
             await InvokeAsync(StateHasChanged);
         }
@@ -1546,6 +1589,14 @@ public partial class GenerateTerrain
         // Yield to allow UI to render the loading state before starting heavy work
         await Task.Yield();
 
+        // Show persistent snackbar for terrain generation
+        await InvokeAsync(() =>
+        {
+            _terrainGenerationSnackbar = Snackbar.Add(
+                "Generating terrain with pre-analyzed network... This may take a while.", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+        });
+
         try
         {
             // Execute terrain generation with pre-analyzed network (runs on background thread)
@@ -1589,6 +1640,16 @@ public partial class GenerateTerrain
         }
         finally
         {
+            // Remove the terrain generation snackbar
+            await InvokeAsync(() =>
+            {
+                if (_terrainGenerationSnackbar != null)
+                {
+                    Snackbar.Remove(_terrainGenerationSnackbar);
+                    _terrainGenerationSnackbar = null;
+                }
+            });
+
             _isGenerating = false;
             await InvokeAsync(StateHasChanged);
         }

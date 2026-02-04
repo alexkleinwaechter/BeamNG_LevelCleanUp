@@ -313,10 +313,11 @@ public partial class TerrainMaterialSettings
             { x => x.ExistingSelections, Material.SelectedOsmFeatures }
         };
 
+        // Use fullscreen dialog for better map interaction and preview
         var options = new DialogOptions
         {
-            MaxWidth = MaxWidth.Large,
-            FullWidth = true,
+            FullScreen = true,
+            CloseButton = true,
             CloseOnEscapeKey = true
         };
 

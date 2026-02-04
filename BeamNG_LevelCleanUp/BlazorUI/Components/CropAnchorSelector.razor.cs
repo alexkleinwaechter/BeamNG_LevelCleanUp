@@ -2,6 +2,7 @@ using System.Globalization;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using MudBlazor;
 using MouseEventArgs = Microsoft.AspNetCore.Components.Web.MouseEventArgs;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Components;
@@ -17,8 +18,10 @@ public partial class CropAnchorSelector
     private const int MaxMinimapSize = 300;
     private const int MinMinimapSize = 200;
 
-    // Enlarged view constants
-    private const int EnlargedMaxSize = 700;
+    // Zoom state for minimap
+    private float _minimapZoomLevel = 1.0f;
+    private (float X, float Y) _minimapViewCenter = (0.5f, 0.5f);
+    private GeoBoundingBox? _minimapEffectiveBoundingBox;
 
     private int _dragStartOffsetX;
     private int _dragStartOffsetY;
@@ -27,7 +30,6 @@ public partial class CropAnchorSelector
 
     // Dragging state
     private bool _isDragging;
-    private bool _isDraggingEnlarged;
     private bool _isInitialized;
     private float _mapOpacity = 0.85f;
     private ElementReference _minimapElement;
@@ -46,14 +48,14 @@ public partial class CropAnchorSelector
     // Calculated selection bounding box (updated on offset change)
     private GeoBoundingBox? _selectionBoundingBox;
 
-    // Enlarged view state
-    private bool _showEnlargedView;
-
-    // OSM map background toggle and opacity
+    // OSM map background toggle
     private bool _showOsmBackground = true;
 
     // Injected JS Runtime for clipboard and window.open
     [Inject] private IJSRuntime JS { get; set; } = default!;
+    
+    // Injected Dialog Service for fullscreen crop dialog
+    [Inject] private IDialogService DialogService { get; set; } = default!;
 
     /// <summary>
     ///     Title displayed at the top of the component.
@@ -187,10 +189,11 @@ public partial class CropAnchorSelector
         _previousNativePixelSizeMeters = NativePixelSizeMeters;
         _previousBoundingBox = OriginalBoundingBox;
 
-        // If a new GeoTIFF was loaded, center the selection
+        // If a new GeoTIFF was loaded, center the selection and reset zoom
         if (isNewGeoTiff && OriginalWidth > 0 && OriginalHeight > 0)
         {
             CenterSelection();
+            ResetAllZoomStates();
             _isInitialized = true;
             _needsEventNotification = true; // Mark for notification in OnAfterRenderAsync
         }
@@ -348,10 +351,12 @@ public partial class CropAnchorSelector
         var deltaX = e.ClientX - _dragStartX;
         var deltaY = e.ClientY - _dragStartY;
 
-        // Convert screen pixels to source pixels using the minimap scale
-        var scale = GetMinimapScale();
-        var sourcePixelDeltaX = (int)(deltaX / scale);
-        var sourcePixelDeltaY = (int)(deltaY / scale);
+        // Convert screen pixels to source pixels, accounting for zoom
+        // When zoomed in, the effective scale is larger (pixels represent less source area)
+        var baseScale = GetMinimapScale();
+        var effectiveScale = baseScale * _minimapZoomLevel;
+        var sourcePixelDeltaX = (int)(deltaX / effectiveScale);
+        var sourcePixelDeltaY = (int)(deltaY / effectiveScale);
 
         // Update offsets
         CropOffsetX = _dragStartOffsetX + sourcePixelDeltaX;
@@ -434,6 +439,59 @@ public partial class CropAnchorSelector
 
     #endregion
 
+    #region Zoom Event Handlers
+
+    /// <summary>
+    /// Called when the minimap zoom level changes.
+    /// </summary>
+    private void OnMinimapZoomChanged(float newZoom)
+    {
+        _minimapZoomLevel = newZoom;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Called when the minimap view center changes (panning).
+    /// </summary>
+    private void OnMinimapViewCenterChanged((float X, float Y) newCenter)
+    {
+        _minimapViewCenter = newCenter;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Called when the minimap's effective bounding box changes.
+    /// </summary>
+    private void OnMinimapEffectiveBoundsChanged(GeoBoundingBox? bounds)
+    {
+        _minimapEffectiveBoundingBox = bounds;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Resets the minimap zoom to default.
+    /// </summary>
+    private void ResetMinimapZoom()
+    {
+        _minimapZoomLevel = 1.0f;
+        _minimapViewCenter = (0.5f, 0.5f);
+        _minimapEffectiveBoundingBox = null;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Resets all zoom states.
+    /// Called when a new GeoTIFF is loaded.
+    /// </summary>
+    private void ResetAllZoomStates()
+    {
+        _minimapZoomLevel = 1.0f;
+        _minimapViewCenter = (0.5f, 0.5f);
+        _minimapEffectiveBoundingBox = null;
+    }
+
+    #endregion
+
     #region Minimap Rendering
 
     private double GetMinimapScale()
@@ -479,151 +537,119 @@ public partial class CropAnchorSelector
 
     private string GetSelectionStyle()
     {
-        var scale = GetMinimapScale();
+        return GetSelectionStyleWithZoom(
+            GetMinimapScale(),
+            _minimapZoomLevel,
+            _minimapViewCenter,
+            GetMinimapDisplayWidth(),
+            GetMinimapDisplayHeight());
+    }
 
-        // Calculate selection size in display pixels
+    /// <summary>
+    /// Calculates the selection style accounting for zoom and pan state.
+    /// When zoomed, the selection rectangle position/size must account for the visible portion.
+    /// 
+    /// COORDINATE SYSTEM NOTE:
+    /// - ViewCenter uses geographic convention: Y=0 is south (bottom), Y=1 is north (top)
+    /// - Pixel coordinates use screen convention: Y=0 is top, Y=OriginalHeight is bottom
+    /// - Therefore we must INVERT the Y axis when converting ViewCenter.Y to pixel coordinates
+    /// </summary>
+    private string GetSelectionStyleWithZoom(double baseScale, float zoomLevel, (float X, float Y) viewCenter, int displayWidth, int displayHeight)
+    {
         var selW = SelectionWidthPixels;
         var selH = SelectionHeightPixels;
-        var displayWidth = Math.Max(10, (int)(selW * scale));
-        var displayHeight = Math.Max(10, (int)(selH * scale));
 
-        // Calculate selection position in display pixels
-        var displayLeft = (int)(CropOffsetX * scale);
-        var displayTop = (int)(CropOffsetY * scale);
+        // If not zoomed, use simple calculation
+        if (zoomLevel <= 1.01f)
+        {
+            var simpleDisplayWidth = Math.Max(10, (int)(selW * baseScale));
+            var simpleDisplayHeight = Math.Max(10, (int)(selH * baseScale));
+            var simpleDisplayLeft = (int)(CropOffsetX * baseScale);
+            var simpleDisplayTop = (int)(CropOffsetY * baseScale);
+            return $"width: {simpleDisplayWidth}px; height: {simpleDisplayHeight}px; left: {simpleDisplayLeft}px; top: {simpleDisplayTop}px;";
+        }
 
-        return $"width: {displayWidth}px; height: {displayHeight}px; left: {displayLeft}px; top: {displayTop}px;";
+        // When zoomed, calculate visible portion in source pixels
+        var visibleSourceWidth = OriginalWidth / zoomLevel;
+        var visibleSourceHeight = OriginalHeight / zoomLevel;
+
+        // Calculate the center of visible area in source pixels
+        // X: ViewCenter.X = 0 -> left (pixel 0), ViewCenter.X = 1 -> right (pixel OriginalWidth)
+        var visibleCenterX = OriginalWidth * viewCenter.X;
+        // Y: ViewCenter.Y = 0 -> south/bottom (pixel OriginalHeight), ViewCenter.Y = 1 -> north/top (pixel 0)
+        // We need to INVERT the Y axis: pixelY = OriginalHeight * (1 - ViewCenter.Y)
+        var visibleCenterY = OriginalHeight * (1.0f - viewCenter.Y);
+        
+        var visibleLeft = visibleCenterX - visibleSourceWidth / 2;
+        var visibleTop = visibleCenterY - visibleSourceHeight / 2;
+
+        // Calculate selection position relative to visible area
+        var relativeLeft = CropOffsetX - visibleLeft;
+        var relativeTop = CropOffsetY - visibleTop;
+
+        // Scale from visible source area to display pixels
+        var scaleX = displayWidth / visibleSourceWidth;
+        var scaleY = displayHeight / visibleSourceHeight;
+
+        var displayLeft = (int)(relativeLeft * scaleX);
+        var displayTop = (int)(relativeTop * scaleY);
+        var scaledWidth = Math.Max(10, (int)(selW * scaleX));
+        var scaledHeight = Math.Max(10, (int)(selH * scaleY));
+
+        // Check if selection is visible (intersects with display area)
+        if (displayLeft + scaledWidth < 0 || displayLeft > displayWidth ||
+            displayTop + scaledHeight < 0 || displayTop > displayHeight)
+        {
+            return "display: none;"; // Selection is outside visible area
+        }
+
+        return $"width: {scaledWidth}px; height: {scaledHeight}px; left: {displayLeft}px; top: {displayTop}px;";
     }
 
     #endregion
 
-    #region Enlarged View
+    #region Fullscreen Dialog
 
     /// <summary>
-    ///     Opens the enlarged view overlay for more precise selection.
+    ///     Opens the fullscreen crop dialog for more precise selection.
     /// </summary>
-    private void OpenEnlargedView()
+    private async Task OpenFullScreenDialog()
     {
-        _showEnlargedView = true;
-        StateHasChanged();
-    }
-
-    /// <summary>
-    ///     Closes the enlarged view overlay.
-    /// </summary>
-    private void CloseEnlargedView()
-    {
-        _showEnlargedView = false;
-        _isDraggingEnlarged = false;
-        StateHasChanged();
-    }
-
-    /// <summary>
-    ///     Gets the scale factor for the enlarged view.
-    /// </summary>
-    private double GetEnlargedScale()
-    {
-        var maxDimension = Math.Max(OriginalWidth, OriginalHeight);
-        if (maxDimension <= 0) return 1.0;
-        return (double)EnlargedMaxSize / maxDimension;
-    }
-
-    /// <summary>
-    ///     Gets the style for the enlarged map container.
-    /// </summary>
-    private string GetEnlargedMapStyle()
-    {
-        var scale = GetEnlargedScale();
-        var displayWidth = (int)(OriginalWidth * scale);
-        var displayHeight = (int)(OriginalHeight * scale);
-        return $"width: {displayWidth}px; height: {displayHeight}px;";
-    }
-
-    /// <summary>
-    ///     Gets the display width for the enlarged view (for OsmMapTileBackground).
-    /// </summary>
-    private int GetEnlargedDisplayWidth()
-    {
-        var scale = GetEnlargedScale();
-        return (int)(OriginalWidth * scale);
-    }
-
-    /// <summary>
-    ///     Gets the display height for the enlarged view (for OsmMapTileBackground).
-    /// </summary>
-    private int GetEnlargedDisplayHeight()
-    {
-        var scale = GetEnlargedScale();
-        return (int)(OriginalHeight * scale);
-    }
-
-    /// <summary>
-    ///     Gets the selection rectangle style for the enlarged view.
-    /// </summary>
-    private string GetEnlargedSelectionStyle()
-    {
-        var scale = GetEnlargedScale();
-
-        var selW = SelectionWidthPixels;
-        var selH = SelectionHeightPixels;
-        var displayWidth = Math.Max(20, (int)(selW * scale));
-        var displayHeight = Math.Max(20, (int)(selH * scale));
-
-        var displayLeft = (int)(CropOffsetX * scale);
-        var displayTop = (int)(CropOffsetY * scale);
-
-        return $"width: {displayWidth}px; height: {displayHeight}px; left: {displayLeft}px; top: {displayTop}px;";
-    }
-
-    #region Enlarged View Mouse Handling
-
-    private void OnEnlargedMouseDown(MouseEventArgs e)
-    {
-        _isDraggingEnlarged = true;
-        _dragStartX = e.ClientX;
-        _dragStartY = e.ClientY;
-        _dragStartOffsetX = CropOffsetX;
-        _dragStartOffsetY = CropOffsetY;
-    }
-
-    private async Task OnEnlargedMouseMove(MouseEventArgs e)
-    {
-        if (!_isDraggingEnlarged) return;
-
-        var deltaX = e.ClientX - _dragStartX;
-        var deltaY = e.ClientY - _dragStartY;
-
-        var scale = GetEnlargedScale();
-        var sourcePixelDeltaX = (int)(deltaX / scale);
-        var sourcePixelDeltaY = (int)(deltaY / scale);
-
-        CropOffsetX = _dragStartOffsetX + sourcePixelDeltaX;
-        CropOffsetY = _dragStartOffsetY + sourcePixelDeltaY;
-
-        ClampOffsets();
-        RecalculateSelectionBoundingBox();
-
-        StateHasChanged();
-    }
-
-    private async Task OnEnlargedMouseUp(MouseEventArgs e)
-    {
-        if (_isDraggingEnlarged)
+        var parameters = new DialogParameters<CropAnchorSelectorDialog>
         {
-            _isDraggingEnlarged = false;
+            { x => x.Title, Title },
+            { x => x.OriginalWidth, OriginalWidth },
+            { x => x.OriginalHeight, OriginalHeight },
+            { x => x.TargetSize, TargetSize },
+            { x => x.MetersPerPixel, MetersPerPixel },
+            { x => x.NativePixelSizeMeters, NativePixelSizeMeters },
+            { x => x.OriginalBoundingBox, OriginalBoundingBox },
+            { x => x.InitialOffsetX, CropOffsetX },
+            { x => x.InitialOffsetY, CropOffsetY }
+        };
+
+        var options = new DialogOptions
+        {
+            FullScreen = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        var dialog = await DialogService.ShowAsync<CropAnchorSelectorDialog>(
+            "GeoTIFF Selection", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: CropDialogResult cropResult })
+        {
+            // Apply the result from the dialog
+            CropOffsetX = cropResult.OffsetX;
+            CropOffsetY = cropResult.OffsetY;
+            ClampOffsets();
+            RecalculateSelectionBoundingBox();
             await NotifyCropResultChanged();
+            StateHasChanged();
         }
     }
-
-    private async Task OnEnlargedMouseLeave(MouseEventArgs e)
-    {
-        if (_isDraggingEnlarged)
-        {
-            _isDraggingEnlarged = false;
-            await NotifyCropResultChanged();
-        }
-    }
-
-    #endregion
 
     #endregion
 

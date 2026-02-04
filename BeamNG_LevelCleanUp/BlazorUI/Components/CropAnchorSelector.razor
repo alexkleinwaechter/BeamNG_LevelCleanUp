@@ -104,8 +104,8 @@
                                    Size="Size.Small"
                                    Color="Color.Primary"
                                    StartIcon="@Icons.Material.Filled.Fullscreen"
-                                   OnClick="OpenEnlargedView">
-                            Enlarge
+                                   OnClick="OpenFullScreenDialog">
+                            Open Full Screen
                         </MudButton>
                     }
                 </div>
@@ -118,7 +118,7 @@
                          @onmouseup="OnMinimapMouseUp"
                          @onmouseleave="OnMinimapMouseLeave">
                         
-                        @* OSM tile background using shared component *@
+                        @* OSM tile background using shared component - zoom disabled on minimap to prevent page scroll *@
                         @if (OriginalBoundingBox != null)
                         {
                             <OsmMapTileBackground BoundingBox="@OriginalBoundingBox"
@@ -127,6 +127,10 @@
                                                   IsVisible="@_showOsmBackground"
                                                   Opacity="@_mapOpacity"
                                                   ShowAttribution="false"
+                                                  EnableScrollZoom="false"
+                                                  ZoomLevel="1.0f"
+                                                  MinZoom="1.0f"
+                                                  MaxZoom="1.0f"
                                                   ZIndex="1" />
                         }
                         
@@ -168,102 +172,6 @@
     }
 </MudPaper>
 
-@* Enlarged View Overlay *@
-@if (_showEnlargedView && OriginalBoundingBox != null)
-{
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" OnClick="CloseEnlargedView">
-        <div class="enlarged-overlay-container" @onclick:stopPropagation="true">
-            <MudPaper Class="pa-4" Elevation="8" Style="max-width: 95vw; max-height: 95vh; display: flex; flex-direction: column;">
-                @* Header *@
-                <div class="d-flex align-center justify-space-between mb-3">
-                    <MudText Typo="Typo.h6">
-                        <MudIcon Icon="@Icons.Material.Filled.Crop" Class="mr-2" />
-                        GeoTIFF Selection - Enlarged View
-                    </MudText>
-                    <div class="d-flex align-center gap-2">
-                        @* Map opacity slider *@
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Map:</MudText>
-                        <MudSlider T="float" @bind-Value="_mapOpacity"
-                                   Size="Size.Small"
-                                   Min="0.0f" Max="1.0f" Step="0.1f"
-                                   Style="width: 100px;"
-                                   Immediate="true" />
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Style="width: 36px;">@(_mapOpacity.ToString("P0"))</MudText>
-                        <MudIconButton Icon="@Icons.Material.Filled.Close"
-                                       Size="Size.Medium"
-                                       OnClick="CloseEnlargedView" />
-                    </div>
-                </div>
-                
-                @* Info bar *@
-                <div class="d-flex align-center gap-4 mb-3">
-                    <MudText Typo="Typo.body2">
-                        <strong>Source:</strong> @OriginalWidth × @OriginalHeight px (@GetSourceRealWorldSize())
-                    </MudText>
-                    <MudText Typo="Typo.body2">
-                        <strong>Selection:</strong> @SelectionWidthPixels × @SelectionHeightPixels px (@GetSelectionRealWorldSize())
-                    </MudText>
-                    <MudText Typo="Typo.body2">
-                        <strong>Offset:</strong> (@CropOffsetX, @CropOffsetY)
-                    </MudText>
-                    @if (_selectionBoundingBox != null)
-                    {
-                        <MudText Typo="Typo.body2">
-                            <strong>Center:</strong> @_selectionBoundingBox.Center.Latitude.ToString("F4")°, @_selectionBoundingBox.Center.Longitude.ToString("F4")°
-                        </MudText>
-                    }
-                </div>
-                
-                @* Large interactive map *@
-                <div class="enlarged-map-container" style="flex: 1; min-height: 0;">
-                    <div class="enlarged-map-source"
-                         style="@GetEnlargedMapStyle()"
-                         @onmousedown="OnEnlargedMouseDown"
-                         @onmousemove="OnEnlargedMouseMove"
-                         @onmouseup="OnEnlargedMouseUp"
-                         @onmouseleave="OnEnlargedMouseLeave">
-                        
-                        @* OSM tile background - larger size for more detail *@
-                        <OsmMapTileBackground BoundingBox="@OriginalBoundingBox"
-                                              DisplayWidth="@GetEnlargedDisplayWidth()"
-                                              DisplayHeight="@GetEnlargedDisplayHeight()"
-                                              IsVisible="true"
-                                              Opacity="@_mapOpacity"
-                                              MaxTiles="100"
-                                              ShowAttribution="false"
-                                              ZIndex="1" />
-                        
-                        @* Selection rectangle *@
-                        <div class="minimap-selection @(_isDraggingEnlarged ? "dragging" : "")"
-                             style="@GetEnlargedSelectionStyle()">
-                            <MudIcon Icon="@Icons.Material.Filled.OpenWith" 
-                                     Size="Size.Medium" 
-                                     Style="color: white; opacity: 0.9;" />
-                        </div>
-                        
-                        @* Grid overlay *@
-                        <div class="minimap-grid"></div>
-                    </div>
-                </div>
-                
-                @* Footer *@
-                <div class="d-flex align-center justify-space-between mt-3">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        <MudIcon Icon="@Icons.Material.Filled.PanTool" Size="Size.Small" Class="mr-1" />
-                        Drag the selection rectangle to reposition. Map data © OpenStreetMap contributors.
-                    </MudText>
-                    <MudButton Variant="Variant.Filled"
-                               Color="Color.Primary"
-                               OnClick="CloseEnlargedView"
-                               StartIcon="@Icons.Material.Filled.Check">
-                        Done
-                    </MudButton>
-                </div>
-            </MudPaper>
-        </div>
-    </MudOverlay>
-}
-
 <style>
     .minimap-container {
         display: flex;
@@ -297,9 +205,11 @@
         cursor: move;
         transition: opacity 0.1s, box-shadow 0.1s;
         z-index: 10;
+        pointer-events: auto;
     }
     
-    .minimap-selection:hover {
+    .minimap-selection:hover,
+    .minimap-selection.hover {
         opacity: 0.65;
         box-shadow: 0 0 12px rgba(0,0,0,0.6);
     }
@@ -327,31 +237,4 @@
         text-align: center;
     }
     
-    /* Enlarged overlay styles */
-    .enlarged-overlay-container {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        height: 100%;
-        padding: 20px;
-    }
-    
-    .enlarged-map-container {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0, 0, 0, 0.2);
-        border-radius: 4px;
-        overflow: hidden;
-    }
-    
-    .enlarged-map-source {
-        position: relative;
-        background: linear-gradient(135deg, rgba(60, 60, 80, 0.5) 0%, rgba(40, 40, 60, 0.6) 100%);
-        border: 2px solid rgba(100, 100, 100, 0.5);
-        border-radius: 4px;
-        cursor: crosshair;
-        overflow: hidden;
-    }
 </style>

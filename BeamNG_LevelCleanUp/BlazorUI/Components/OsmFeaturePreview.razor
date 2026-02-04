@@ -4,74 +4,84 @@
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 
 <div class="osm-preview-container" style="width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;">
-    @if (BoundingBox != null)
-    {
-        @* Main preview area - fills all available space *@
-        <div class="osm-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 0;">
-            @* Fixed-size square container - calculate size to fit in container *@
-            <div class="osm-preview-square" @ref="_previewSquare" style="position: relative; width: @(PreviewPixelSize)px; height: @(PreviewPixelSize)px;">
-                @* OSM Map Tile Background - exact same pixel size *@
-                <OsmMapTileBackground BoundingBox="@BoundingBox"
-                                      DisplayWidth="@PreviewPixelSize"
-                                      DisplayHeight="@PreviewPixelSize"
-                                      IsVisible="@ShowMapBackground"
-                                      Opacity="@_mapOpacity"
-                                      ShowAttribution="false"
-                                      ZIndex="0" />
+@if (BoundingBox != null)
+{
+    @* Main preview area - uses all available space *@
+    <div class="osm-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 0;">
+        @* Square container sized by parent - fills as much space as possible *@
+        <div class="osm-preview-square" @ref="_previewSquare" style="position: relative; width: @(EffectivePreviewPixelSize)px; height: @(EffectivePreviewPixelSize)px;">
+            @* OSM Map Tile Background - exact same pixel size, with zoom support *@
+            <OsmMapTileBackground BoundingBox="@BoundingBox"
+                                  DisplayWidth="@EffectivePreviewPixelSize"
+                                  DisplayHeight="@EffectivePreviewPixelSize"
+                                  IsVisible="@ShowMapBackground"
+                                  Opacity="@_mapOpacity"
+                                  ShowAttribution="false"
+                                  EnableScrollZoom="true"
+                                  ZoomLevel="@_zoomLevel"
+                                  ZoomLevelChanged="@OnZoomLevelChanged"
+                                  ViewCenter="@_viewCenter"
+                                  ViewCenterChanged="@OnViewCenterChanged"
+                                  EffectiveBoundingBoxChanged="@OnEffectiveBoundingBoxChanged"
+                                  MinZoom="1.0f"
+                                  MaxZoom="10.0f"
+                                  ZIndex="0" />
                 
-                @* SVG overlay for features - exact same pixel size, no scaling *@
-                <svg width="@PreviewPixelSize" height="@PreviewPixelSize" 
-                     viewBox="0 0 @PreviewPixelSize @PreviewPixelSize"
-                     style="position: absolute; top: 0; left: 0; background: @(ShowMapBackground ? "transparent" : "#2d2d3a"); border-radius: 4px; z-index: 1;">
+            @* SVG overlay for features - exact same pixel size, uses EffectiveBoundingBox for coordinate transformation *@
+            <svg width="@EffectivePreviewPixelSize" height="@EffectivePreviewPixelSize" 
+                 viewBox="0 0 @EffectivePreviewPixelSize @EffectivePreviewPixelSize"
+                 style="position: absolute; top: 0; left: 0; background: @(ShowMapBackground ? "transparent" : "#2d2d3a"); border-radius: 4px; z-index: 1; pointer-events: none;">
                     
-                    @* Grid lines (only show when map is off) *@
-                    @if (!ShowMapBackground)
+                @* Grid lines (only show when map is off) *@
+                @if (!ShowMapBackground)
+                {
+                    @for (var i = 0; i <= EffectivePreviewPixelSize; i += EffectivePreviewPixelSize / 8)
                     {
-                        @for (var i = 0; i <= PreviewPixelSize; i += PreviewPixelSize / 8)
-                        {
-                            <line x1="@i" y1="0" x2="@i" y2="@PreviewPixelSize" 
-                                  stroke="#444" stroke-width="1" />
-                            <line x1="0" y1="@i" x2="@PreviewPixelSize" y2="@i" 
-                                  stroke="#444" stroke-width="1" />
-                        }
+                        <line x1="@i" y1="0" x2="@i" y2="@EffectivePreviewPixelSize" 
+                              stroke="#444" stroke-width="1" />
+                        <line x1="0" y1="@i" x2="@EffectivePreviewPixelSize" y2="@i" 
+                              stroke="#444" stroke-width="1" />
                     }
+                }
                     
-                    @* Features (if any selected) *@
-                    @if (Features != null)
+                @* Features (if any selected) - use effective bounds for zoomed transformation *@
+                @if (Features != null)
+                {
+                    @foreach (var feature in Features)
                     {
-                        @foreach (var feature in Features)
-                        {
-                            var pixelCoords = TransformToPixel(feature.Coordinates);
-                            var pointsString = GetPointsString(pixelCoords);
+                        var pixelCoords = TransformToPixelWithZoom(feature.Coordinates);
+                        var pointsString = GetPointsString(pixelCoords);
                             
-                            @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
-                            {
-                                <polygon points="@pointsString" 
-                                         fill="@GetFillColor(feature)" 
-                                         stroke="@GetStrokeColor(feature)"
-                                         stroke-width="2"
-                                         opacity="@(ShowMapBackground ? "0.8" : "0.6")" />
-                            }
-                            else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
-                            {
-                                <polyline points="@pointsString"
-                                          fill="none"
-                                          stroke="@GetStrokeColor(feature)"
-                                          stroke-width="@(ShowMapBackground ? "3" : "2")"
-                                          stroke-linecap="round"
-                                          stroke-linejoin="round" />
-                            }
+                        @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
+                        {
+                            <polygon points="@pointsString" 
+                                     fill="@GetFillColor(feature)" 
+                                     stroke="@GetStrokeColor(feature)"
+                                     stroke-width="@GetStrokeWidth(feature)"
+                                     opacity="@(ShowMapBackground ? "0.8" : "0.6")" />
+                        }
+                        else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
+                        {
+                            <polyline points="@pointsString"
+                                      fill="none"
+                                      stroke="@GetStrokeColor(feature)"
+                                      stroke-width="@GetLineStrokeWidth(feature)"
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round" />
                         }
                     }
+                }
                     
-                    @* Border *@
-                    <rect x="0" y="0" width="@PreviewPixelSize" height="@PreviewPixelSize"
-                          fill="none" stroke="@(ShowMapBackground ? "#fff" : "#666")" stroke-width="2" />
-                </svg>
-            </div>
+            @* Border *@
+                <rect x="0" y="0" width="@EffectivePreviewPixelSize" height="@EffectivePreviewPixelSize"
+                      fill="none" stroke="@(ShowMapBackground ? "#fff" : "#666")" stroke-width="2" />
+            </svg>
+                
+            @* Note: Zoom indicator is provided by OsmMapTileBackground component *@
         </div>
+    </div>
         
-        @* Footer with toggle, opacity slider, and legend - fixed height *@
+        @* Footer with toggle, opacity slider, zoom controls, and legend - fixed height *@
         <div class="d-flex align-center justify-space-between" style="height: 28px; padding: 0 4px; flex-shrink: 0;">
             <div class="d-flex align-center gap-1" style="flex: 1;">
                 <MudSwitch T="bool" @bind-Value="ShowMapBackground" 
@@ -87,6 +97,17 @@
                                Style="width: 80px; margin: 0;"
                                Immediate="true" />
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Style="width: 32px;">@(_mapOpacity.ToString("P0"))</MudText>
+                }
+                @if (_zoomLevel > 1.01f)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               Color="Color.Warning"
+                               OnClick="ResetZoom"
+                               Style="padding: 0 4px; min-width: auto; margin-left: 8px;">
+                        <MudIcon Icon="@Icons.Material.Filled.ZoomOutMap" Size="Size.Small" />
+                        <MudText Typo="Typo.caption" Style="margin-left: 2px;">Reset</MudText>
+                    </MudButton>
                 }
             </div>
             <MudText Typo="Typo.caption" Style="color: #aaa;">
@@ -110,130 +131,10 @@
 </div>
 
 @code {
-private ElementReference _previewSquare;
-private float _mapOpacity = 0.7f;
-    
-[Parameter] public IEnumerable<OsmFeature>? Features { get; set; }
-[Parameter] public GeoBoundingBox? BoundingBox { get; set; }
-[Parameter] public int TerrainSize { get; set; } = 512;
-    
-    /// <summary>
-    /// Whether to show the OSM map tile background. Defaults to true.
-    /// </summary>
-    [Parameter] public bool ShowMapBackground { get; set; } = true;
-    
-    /// <summary>
-    /// Fixed pixel size for the preview. Both SVG and map tiles use this exact size.
-    /// This ensures perfect alignment between the two layers.
-    /// </summary>
-    private int PreviewPixelSize => 420;
-    
-    /// <summary>
-    /// Transforms geographic coordinates to pixel coordinates for SVG rendering.
-    /// Uses PreviewPixelSize for the output coordinate space.
-    /// </summary>
-    private List<(float X, float Y)> TransformToPixel(List<GeoCoordinate> coords)
-    {
-        if (BoundingBox == null || coords == null || !coords.Any())
-            return new List<(float, float)>();
-        
-        var result = new List<(float X, float Y)>();
-        
-        // Calculate bounding box dimensions
-        var bboxWidth = BoundingBox.MaxLongitude - BoundingBox.MinLongitude;
-        var bboxHeight = BoundingBox.MaxLatitude - BoundingBox.MinLatitude;
-        
-        // Avoid division by zero
-        if (Math.Abs(bboxWidth) < 1e-10 || Math.Abs(bboxHeight) < 1e-10)
-            return result;
-        
-        foreach (var coord in coords)
-        {
-            // Normalize to 0-1 range within the bounding box
-            var normalizedX = (coord.Longitude - BoundingBox.MinLongitude) / bboxWidth;
-            var normalizedY = (coord.Latitude - BoundingBox.MinLatitude) / bboxHeight;
-            
-            // Convert to pixel coordinates using PreviewPixelSize
-            // Y is inverted: SVG has Y increasing downward, but latitude increases upward
-            var pixelX = (float)(normalizedX * PreviewPixelSize);
-            var pixelY = (float)((1.0 - normalizedY) * PreviewPixelSize);
-            
-            // Clamp to valid range (features might extend slightly outside bbox)
-            pixelX = Math.Clamp(pixelX, -50, PreviewPixelSize + 50);
-            pixelY = Math.Clamp(pixelY, -50, PreviewPixelSize + 50);
-            
-            result.Add((pixelX, pixelY));
-        }
-        
-        return result;
-    }
-    
-    private string GetPointsString(List<(float X, float Y)> coords)
-    {
-        if (coords == null || coords.Count < 2)
-            return string.Empty;
-        
-        // Use InvariantCulture to ensure decimal point (not comma) in SVG
-        return string.Join(" ", coords.Select(c => 
-            string.Format(CultureInfo.InvariantCulture, "{0:F1},{1:F1}", c.X, c.Y)));
-    }
-    
-    private string GetFillColor(OsmFeature feature)
-    {
-        return feature.Category switch
-        {
-            "landuse" => feature.SubCategory switch
-            {
-                "forest" => "#2d5a3d",
-                "grass" => "#4a7c4e",
-                "meadow" => "#5a8c5e",
-                "farmland" => "#8b7355",
-                "residential" => "#6a6a6a",
-                "industrial" => "#5a5a5a",
-                "commercial" => "#6a5a5a",
-                _ => "#5a5a6a"
-            },
-            "natural" => feature.SubCategory switch
-            {
-                "wood" => "#2d5a3d",
-                "water" => "#3d5a8d",
-                "wetland" => "#4a6a7a",
-                "grassland" => "#5a8c5e",
-                "scrub" => "#5a7a5a",
-                "sand" => "#c2b280",
-                "rock" => "#7a7a7a",
-                _ => "#5a6a5a"
-            },
-            "building" => "#7a5a5a",
-            "waterway" => "#3d5a8d",
-            _ => "#5a5a5a"
-        };
-    }
-    
-    private string GetStrokeColor(OsmFeature feature)
-    {
-        return feature.Category switch
-        {
-            "highway" => feature.SubCategory switch
-            {
-                "motorway" => "#e8a030",
-                "trunk" => "#e8a030",
-                "primary" => "#e8a030",
-                "secondary" => "#f0d040",
-                "tertiary" => "#ffffff",
-                "residential" => "#cccccc",
-                "service" => "#aaaaaa",
-                "track" => "#8b7355",
-                "path" => "#8b7355",
-                "footway" => "#8b8b8b",
-                _ => "#cccccc"
-            },
-            "railway" => "#8a8a8a",
-            "waterway" => "#5080c0",
-            "landuse" => "#4a6a4a",
-            "natural" => "#4a6a5a",
-            "building" => "#8a5a5a",
-            _ => "#8a8a8a"
-        };
-    }
+
+    // Zoom state
+
+    // Track previous bounding box to reset zoom when it changes
+
 }
+

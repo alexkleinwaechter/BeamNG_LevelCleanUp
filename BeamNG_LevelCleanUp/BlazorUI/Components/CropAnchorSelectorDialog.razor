@@ -1,0 +1,244 @@
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+<MudDialog Style="height: 100%; display: flex; flex-direction: column;">
+    <TitleContent>
+        <div class="d-flex align-center justify-space-between" style="width: 100%;">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.Crop" />
+                <MudText Typo="Typo.h6">GeoTIFF Selection - @Title</MudText>
+            </MudStack>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                @if (_selectionBoundingBox != null)
+                {
+                    <MudTooltip Text="Copy center coordinates">
+                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                       Size="Size.Small"
+                                       OnClick="CopyCoordinatesToClipboard" />
+                    </MudTooltip>
+                    <MudTooltip Text="Open in Google Maps">
+                        <MudIconButton Icon="@Icons.Material.Filled.Map"
+                                       Size="Size.Small"
+                                       OnClick="OpenInGoogleMaps" />
+                    </MudTooltip>
+                }
+                <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Map:</MudText>
+                <MudSlider T="float" @bind-Value="_mapOpacity"
+                           Size="Size.Small"
+                           Min="0.0f" Max="1.0f" Step="0.1f"
+                           Style="width: 100px;"
+                           Immediate="true" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="width: 36px;">@(_mapOpacity.ToString("P0"))</MudText>
+            </MudStack>
+        </div>
+    </TitleContent>
+    
+    <DialogContent>
+        <div class="crop-dialog-content" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
+            @* Info Bar *@
+            <div class="crop-dialog-info-bar pa-2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4" Style="flex-wrap: wrap;">
+                    <MudText Typo="Typo.body2">
+                        <MudIcon Icon="@Icons.Material.Filled.PhotoSizeSelectLarge" Size="Size.Small" Class="mr-1" />
+                        <strong>Source:</strong> @OriginalWidth × @OriginalHeight px (@GetSourceRealWorldSize())
+                    </MudText>
+                    <MudDivider Vertical="true" FlexItem="true" />
+                    <MudText Typo="Typo.body2">
+                        <MudIcon Icon="@Icons.Material.Filled.CropSquare" Size="Size.Small" Class="mr-1" />
+                        <strong>Selection:</strong> @SelectionWidthPixels × @SelectionHeightPixels px (@GetSelectionRealWorldSize())
+                    </MudText>
+                    <MudDivider Vertical="true" FlexItem="true" />
+                    <MudText Typo="Typo.body2">
+                        <strong>Offset:</strong> (@CropOffsetX, @CropOffsetY)
+                    </MudText>
+                    @if (_selectionBoundingBox != null)
+                    {
+                        <MudDivider Vertical="true" FlexItem="true" />
+                        <MudText Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.MyLocation" Size="Size.Small" Class="mr-1" />
+                            <strong>Center:</strong> @_selectionBoundingBox.Center.Latitude.ToString("F5")°, @_selectionBoundingBox.Center.Longitude.ToString("F5")°
+                        </MudText>
+                    }
+                    <MudSpacer />
+                    @if (_zoomLevel > 1.01f)
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Size="Size.Small"
+                                   Color="Color.Warning"
+                                   StartIcon="@Icons.Material.Filled.ZoomOutMap"
+                                   OnClick="ResetZoom">
+                            Reset Zoom (@_zoomLevel.ToString("F1")x)
+                        </MudButton>
+                    }
+                </MudStack>
+            </div>
+            
+            @* Main Map Area - fills all available space *@
+            <div class="crop-dialog-map-area" @ref="_mapAreaRef">
+                @if (_displayWidth > 0 && _displayHeight > 0)
+                {
+                    <div class="crop-dialog-map-wrapper"
+                         style="@GetMapWrapperStyle()"
+                         @onmousedown="OnMouseDown"
+                         @onmousemove="OnMouseMoveWithHitTest"
+                         @onmouseup="OnMouseUp"
+                         @onmouseleave="OnMouseLeave">
+                        
+                        @* OSM tile background *@
+                        @if (OriginalBoundingBox != null)
+                        {
+                            <OsmMapTileBackground BoundingBox="@OriginalBoundingBox"
+                                                  DisplayWidth="@_displayWidth"
+                                                  DisplayHeight="@_displayHeight"
+                                                  IsVisible="true"
+                                                  Opacity="@_mapOpacity"
+                                                  MaxTiles="200"
+                                                  ShowAttribution="false"
+                                                  EnableScrollZoom="true"
+                                                  EnablePanning="@(!_isMouseOverSelection && !_isDragging)"
+                                                  ZoomLevel="@_zoomLevel"
+                                                  ZoomLevelChanged="@OnZoomChanged"
+                                                  ViewCenter="@_viewCenter"
+                                                  ViewCenterChanged="@OnViewCenterChanged"
+                                                  EffectiveBoundingBoxChanged="@OnEffectiveBoundsChanged"
+                                                  MinZoom="1.0f"
+                                                  MaxZoom="@GetMaxZoom()"
+                                                  ZIndex="1" />
+                        }
+                        
+                        @* Selection rectangle *@
+                        <div class="crop-selection @(_isDragging ? "dragging" : "") @(_isMouseOverSelection ? "hover" : "")"
+                             style="@GetSelectionStyle(); pointer-events: none;">
+                            <MudIcon Icon="@Icons.Material.Filled.OpenWith" 
+                                     Size="Size.Large" 
+                                     Style="color: white; opacity: 0.9;" />
+                        </div>
+                        
+                        @* Grid overlay *@
+                        <div class="crop-grid"></div>
+                    </div>
+                }
+                else
+                {
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                }
+            </div>
+            
+            @* Footer hints *@
+            <div class="crop-dialog-footer pa-2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        <MudIcon Icon="@Icons.Material.Filled.PanTool" Size="Size.Small" Class="mr-1" />
+                        Drag the selection box to reposition • Scroll wheel to zoom • Drag outside selection to pan the map
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color: inherit;">OpenStreetMap</a> contributors
+                    </MudText>
+                </MudStack>
+            </div>
+        </div>
+    </DialogContent>
+    
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Text">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirm">
+            <MudIcon Icon="@Icons.Material.Filled.Check" Class="mr-1" />
+            Apply Selection
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .crop-dialog-content {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+        background: #1a1a2e;
+    }
+    
+    .crop-dialog-info-bar {
+        flex-shrink: 0;
+        background: rgba(0, 0, 0, 0.3);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .crop-dialog-map-area {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        min-height: 0;
+        overflow: hidden;
+    }
+    
+    .crop-dialog-map-wrapper {
+        position: relative;
+        background: linear-gradient(135deg, rgba(60, 60, 80, 0.5) 0%, rgba(40, 40, 60, 0.6) 100%);
+        border: 2px solid rgba(100, 100, 100, 0.5);
+        border-radius: 4px;
+        cursor: crosshair;
+        overflow: hidden;
+    }
+    
+    .crop-selection {
+        position: absolute;
+        background: var(--mud-palette-primary);
+        opacity: 0.5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 3px solid white;
+        border-radius: 4px;
+        box-shadow: 0 0 12px rgba(0,0,0,0.6), inset 0 0 20px rgba(255,255,255,0.1);
+        cursor: move;
+        transition: opacity 0.15s, box-shadow 0.15s, border-color 0.15s;
+        z-index: 10;
+    }
+    
+    .crop-selection:hover,
+    .crop-selection.hover {
+        opacity: 0.65;
+        box-shadow: 0 0 20px rgba(0,0,0,0.7), inset 0 0 30px rgba(255,255,255,0.15);
+        border-color: #fff;
+    }
+    
+    .crop-selection.dragging {
+        opacity: 0.75;
+        box-shadow: 0 0 24px rgba(var(--mud-palette-primary-rgb), 0.8), inset 0 0 30px rgba(255,255,255,0.2);
+        border-color: var(--mud-palette-primary-lighten);
+    }
+    
+    .crop-grid {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: 
+            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px);
+        background-size: 12.5% 12.5%;
+        pointer-events: none;
+        z-index: 5;
+    }
+    
+    .crop-dialog-footer {
+        flex-shrink: 0;
+        background: rgba(0, 0, 0, 0.3);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+</style>
+
+@code {
+
+    // State
+
+    // Drag state
+
+    // Display dimensions - calculated dynamically
+
+}
