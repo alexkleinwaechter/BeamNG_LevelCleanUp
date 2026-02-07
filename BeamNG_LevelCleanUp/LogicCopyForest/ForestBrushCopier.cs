@@ -95,6 +95,9 @@ public class ForestBrushCopier
             // 3. Copy all shape files and their materials using existing DaeCopier
             _materialCopier.BeginBatch();
 
+            var copiedShapeCount = 0;
+            var failedShapeNames = new List<string>();
+
             foreach (var (name, itemDataNode) in itemDataToCopy)
             {
                 var shapeFile = itemDataNode["shapeFile"]?.GetValue<string>();
@@ -108,13 +111,23 @@ public class ForestBrushCopier
 
                 if (!CopyShapeFileWithMaterials(shapeFile, name))
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"Failed to copy shape file for {name}");
+                    failedShapeNames.Add(name);
                     // Continue with other files, don't fail entire operation
+                }
+                else
+                {
+                    copiedShapeCount++;
                 }
             }
 
             _materialCopier.EndBatch();
+
+            if (failedShapeNames.Any())
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Failed to copy {failedShapeNames.Count} shape file(s): {string.Join(", ", failedShapeNames.Take(10))}"
+                    + (failedShapeNames.Count > 10 ? $" ...and {failedShapeNames.Count - 10} more" : ""));
+            }
 
             // 4. Write/merge managedItemData.json in target
             if (!MergeManagedItemData(itemDataToCopy))
@@ -132,7 +145,7 @@ public class ForestBrushCopier
             }
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Successfully copied {brushesToCopy.Count} forest brushes and {itemDataToCopy.Count} item definitions");
+                $"Successfully copied {brushesToCopy.Count} forest brushes, {itemDataToCopy.Count} item definitions, and {copiedShapeCount} shape file(s)");
 
             return true;
         }
@@ -240,15 +253,7 @@ public class ForestBrushCopier
             };
 
             // Use DaeCopier to copy the DAE file and its materials
-            var success = _daeCopier.Copy(copyAsset);
-
-            if (success)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"  Copied shape: {Path.GetFileName(sourceShapePath)} with {materialsJson.Count} material(s)");
-            }
-
-            return success;
+            return _daeCopier.Copy(copyAsset);
         }
         catch (Exception ex)
         {
@@ -318,9 +323,6 @@ public class ForestBrushCopier
             // Write merged data
             var options = BeamJsonOptions.GetJsonSerializerOptions();
             File.WriteAllText(targetPath, targetObj.ToJsonString(options));
-
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Merged {itemDataToCopy.Count} ForestItemData entries into managedItemData.json");
 
             return true;
         }
@@ -476,9 +478,6 @@ public class ForestBrushCopier
             // Combine and write (existing lines first, then new lines)
             var allLines = existingLines.Concat(newLines);
             File.WriteAllLines(targetPath, allLines);
-
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Added {brushesToCopy.Count} brushes to main.forestbrushes4.json");
 
             return true;
         }

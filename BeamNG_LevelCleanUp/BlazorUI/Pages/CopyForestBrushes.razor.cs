@@ -426,6 +426,8 @@ public partial class CopyForestBrushes
     protected async Task ScanAssets()
     {
         _fileSelectDisabled = true;
+        _staticSnackbar = Snackbar.Add("Scanning forest brushes. Please be patient...", Severity.Normal,
+            config => { config.VisibleStateDuration = int.MaxValue; });
         await Task.Run(() =>
         {
             try
@@ -442,9 +444,11 @@ public partial class CopyForestBrushes
                 _fileSelectDisabled = false;
             }
         });
+        Snackbar.Remove(_staticSnackbar);
         FillCopyList();
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            "Done! Scanning Forest Brushes finished. Please select brushes to copy.");
+        Snackbar.Add(
+            $"Scanning finished. Found {BindingListCopy.Count} forest brush(es). Please select brushes to copy.",
+            Severity.Success);
 
         await InvokeAsync(StateHasChanged);
     }
@@ -776,6 +780,8 @@ public partial class CopyForestBrushes
     private async Task ScanAssetsWizardMode()
     {
         _fileSelectDisabled = true;
+        _staticSnackbar = Snackbar.Add("Scanning forest brushes. Please be patient...", Severity.Normal,
+            config => { config.VisibleStateDuration = int.MaxValue; });
         await Task.Run(() =>
         {
             try
@@ -793,11 +799,14 @@ public partial class CopyForestBrushes
             }
         });
 
+        Snackbar.Remove(_staticSnackbar);
+
         BindingListCopy = new List<GridFileListItem>();
         FillCopyList();
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Found {BindingListCopy.Count} forest brushes in {_levelNameCopyFrom}. Select brushes to copy.");
+        Snackbar.Add(
+            $"Found {BindingListCopy.Count} forest brushes in {_levelNameCopyFrom}. Select brushes to copy.",
+            Severity.Success);
 
         await InvokeAsync(StateHasChanged);
     }

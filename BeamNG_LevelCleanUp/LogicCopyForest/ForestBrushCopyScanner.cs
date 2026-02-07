@@ -38,9 +38,6 @@ public class ForestBrushCopyScanner
             return;
         }
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Found forest brushes file: {Path.GetFileName(brushesPath)}");
-
         var brushes = ParseForestBrushesNdjson(brushesPath);
         if (!brushes.Any())
         {
@@ -100,6 +97,7 @@ public class ForestBrushCopyScanner
     {
         var brushes = new Dictionary<string, ForestBrushInfo>(StringComparer.OrdinalIgnoreCase);
         var elements = new List<(string parentName, ForestBrushElementInfo element)>();
+        var parseFailureCount = 0;
 
         try
         {
@@ -217,8 +215,7 @@ public class ForestBrushCopyScanner
                 }
                 catch (Exception ex)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"Failed to parse forest brush line: {ex.Message}");
+                    parseFailureCount++;
                 }
             }
         }
@@ -227,6 +224,12 @@ public class ForestBrushCopyScanner
             PubSubChannel.SendMessage(PubSubMessageType.Error,
                 $"Failed to read forest brushes file: {ex.Message}");
             return new List<ForestBrushInfo>();
+        }
+
+        if (parseFailureCount > 0)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Failed to parse {parseFailureCount} line(s) in forest brushes file");
         }
 
         // Link elements to brushes
@@ -272,7 +275,7 @@ public class ForestBrushCopyScanner
 
         if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 "managedItemData.json not found - forest item data will be incomplete");
             return result;
         }
