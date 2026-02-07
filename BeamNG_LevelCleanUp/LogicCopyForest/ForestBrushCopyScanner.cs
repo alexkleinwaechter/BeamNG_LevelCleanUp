@@ -244,6 +244,22 @@ public class ForestBrushCopyScanner
             }
         }
 
+        // For brushes that have child elements, remove the brush-level DirectForestItemData
+        // from ReferencedItemDataNames. In BeamNG, brushes with elements often have a
+        // forestItemData property set to the brush's own name (e.g., "garbage"), which is
+        // NOT an actual ForestItemData key in managedItemData.json. The real ForestItemData
+        // references come from the child ForestBrushElement entries (e.g., "garbage_bin_a").
+        // Only keep DirectForestItemData in ReferencedItemDataNames for single-item brushes
+        // (brushes with no child elements).
+        foreach (var brush in brushes.Values)
+        {
+            if (brush.Elements.Count > 0 && !string.IsNullOrEmpty(brush.DirectForestItemData))
+            {
+                brush.ReferencedItemDataNames.Remove(brush.DirectForestItemData);
+                brush.DirectForestItemData = null;
+            }
+        }
+
         return brushes.Values.ToList();
     }
 
