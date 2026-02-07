@@ -146,8 +146,8 @@ public class GroundCoverDependencyHelper
             var newMaterialName = $"{materialName}_{_levelNameCopyFrom}";
 
             // Target path inside the TARGET level (like GroundCoverCopier)
-            var targetPath = Path.Join(_targetNamePath, Constants.GroundCover,
-                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+            var targetPath = Path.Join(_targetNamePath, "art",
+                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "shapes", "groundcover");
             Directory.CreateDirectory(targetPath);
 
             // Create a temporary CopyAsset for the material copier

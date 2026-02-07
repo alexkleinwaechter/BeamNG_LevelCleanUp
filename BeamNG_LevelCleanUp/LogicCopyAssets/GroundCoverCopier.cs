@@ -283,7 +283,7 @@ public class GroundCoverCopier
                     var cleanShapeFilename = FileUtils.StripLinkExtension(shapeFilename);
                     var fileName = Path.GetFileName(cleanShapeFilename);
                     var newPath =
-                        $"/levels/{_targetLevelName}/art/shapes/groundcover/MT_{_levelNameCopyFrom}/{fileName}";
+                        $"/levels/{_targetLevelName}/art/MT_{_levelNameCopyFrom}/shapes/groundcover/{fileName}";
                     typeNode["shapeFilename"] = newPath;
                 }
             }
@@ -401,8 +401,8 @@ public class GroundCoverCopier
             CopyAssetType = CopyAssetType.Terrain,
             Name = material.Name,
             Materials = new List<MaterialJson> { material },
-            TargetPath = Path.Join(_namePath, Constants.GroundCover,
-                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+            TargetPath = Path.Join(_namePath, "art",
+                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "shapes", "groundcover")
         };
 
         // Copy material with new name (uses MaterialCopier's new parameter)
@@ -423,8 +423,8 @@ public class GroundCoverCopier
 
             var fileName = Path.GetFileName(daeFilePath);
             var sourcePath = PathResolver.ResolvePath(PathResolver.LevelPathCopyFrom, daeFilePath, true);
-            var targetPath = Path.Join(_namePath, "art", "shapes", "groundcover",
-                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+            var targetPath = Path.Join(_namePath, "art",
+                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "shapes", "groundcover");
             Directory.CreateDirectory(targetPath);
 
             var targetFilePath = Path.Join(targetPath, fileName);

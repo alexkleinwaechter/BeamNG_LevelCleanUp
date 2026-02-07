@@ -384,6 +384,10 @@ public static class TerrainTextureHelper
 
         foreach (var matFile in material.MaterialFiles)
         {
+            // Skip core game assets (/assets/ paths) — the game resolves these
+            // from its own content archives; they must not be copied or path-rewritten.
+            if (matFile.IsGameAsset) continue;
+
             var originalPath = matFile.OriginalJsonPath;
             string newPath;
 

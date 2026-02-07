@@ -12,48 +12,53 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Pages;
 
 public partial class CreateLevel
 {
-    private static CreateLevelWizardState _wizardState = new();
+    private static readonly CreateLevelWizardState _wizardState = new();
+    private readonly CompressionLevel _compressionLevel = CompressionLevel.Optimal;
+    private readonly List<string> _errors = new();
+    private readonly List<string> _messages = new();
+    private readonly List<string> _warnings = new();
+
+    private readonly Func<FileInfo, string> converter = p => p?.Name;
+    private Anchor _anchor;
+    private string _beamInstallDir;
+    private bool _isInitializing;
+    private string _levelAuthors;
+    private string _levelBiome;
+    private string _levelCountry;
+    private string _levelDescription;
+    private string _levelFeatures;
+    private string _levelRegion;
+    private string _levelRoads;
+    private string _levelSuitableFor;
+    private bool _openDrawer;
+    private BeamFileReader _reader;
+    private bool _showErrorLog;
+    private bool _showWarningLog;
+
+    private string _sourceLevelName;
+    private string _sourceLevelPath;
+    private Snackbar _staticSnackbar;
+    private string _targetLevelName;
+    private string _targetLevelPath;
+    private List<FileInfo> _vanillaLevels = new();
+    private FileInfo _vanillaLevelSourceSelected;
+    private MudExpansionPanels FileSelect;
+    private string height;
+    private string width;
 
     /// <summary>
     ///     Exposes the wizard state for other pages (e.g., CopyTerrains in wizard mode)
     /// </summary>
-    public static CreateLevelWizardState GetWizardState() => _wizardState;
-
-    private string _sourceLevelName;
-    private string _sourceLevelPath;
-    private string _targetLevelPath;
-    private string _targetLevelName;
-    private string _levelDescription;
-    private string _levelCountry;
-    private string _levelRegion;
-    private string _levelBiome;
-    private string _levelRoads;
-    private string _levelSuitableFor;
-    private string _levelFeatures;
-    private string _levelAuthors;
-    private BeamFileReader _reader;
-    private List<string> _errors = new();
-    private List<string> _messages = new();
-    private List<string> _warnings = new();
-    private Snackbar _staticSnackbar;
-    private bool _openDrawer;
-    private Anchor _anchor;
-    private string width;
-    private string height;
-    private bool _showErrorLog;
-    private bool _showWarningLog;
-    private bool _isInitializing;
-    private List<FileInfo> _vanillaLevels = new();
-    private FileInfo _vanillaLevelSourceSelected;
-    private string _beamInstallDir;
-    private MudExpansionPanels FileSelect;
-    private CompressionLevel _compressionLevel = CompressionLevel.Optimal;
+    public static CreateLevelWizardState GetWizardState()
+    {
+        return _wizardState;
+    }
 
     protected override void OnInitialized()
     {
         // IMPORTANT: Always reset to default working directory on page init
         AppPaths.EnsureWorkingDirectory();
-        
+
         // Subscribe to PubSub messages
         var consumer = Task.Run(async () =>
         {
@@ -197,7 +202,6 @@ public partial class CreateLevel
 
                 Directory.CreateDirectory(targetRoot);
                 Directory.CreateDirectory(Path.Join(targetLevelNamePath, "art", "terrains"));
-                Directory.CreateDirectory(Path.Join(targetLevelNamePath, "art", "shapes", "groundcover"));
                 Directory.CreateDirectory(Path.Join(targetLevelNamePath, "main", "MissionGroup"));
 
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "Created directory structure");
@@ -205,9 +209,6 @@ public partial class CreateLevel
                 // 2. Create empty terrain material files
                 File.WriteAllText(
                     Path.Join(targetLevelNamePath, "art", "terrains", "main.materials.json"),
-                    "{}");
-                File.WriteAllText(
-                    Path.Join(targetLevelNamePath, "art", "shapes", "groundcover", "main.materials.json"),
                     "{}");
 
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "Created empty material files");
@@ -264,10 +265,7 @@ public partial class CreateLevel
             Snackbar.Add("Level initialization complete!", Severity.Success);
 
             // Collapse source selection panel
-            if (FileSelect?.Panels.Count > 1)
-            {
-                await FileSelect.Panels[1].CollapseAsync();
-            }
+            if (FileSelect?.Panels.Count > 1) await FileSelect.Panels[1].CollapseAsync();
         }
         catch (Exception ex)
         {
@@ -329,10 +327,7 @@ public partial class CreateLevel
                 var dialog = await DialogService.ShowAsync<SimpleDialog>("Level Already Exists", parameters, options);
                 var result = await dialog.Result;
 
-                if (result.Canceled)
-                {
-                    return; // User canceled, don't proceed with copy
-                }
+                if (result.Canceled) return; // User canceled, don't proceed with copy
 
                 // Delete the existing directory before copying
                 customChangesChecker.DeleteTargetDirectory();
@@ -537,6 +532,4 @@ public partial class CreateLevel
                 break;
         }
     }
-
-    private readonly Func<FileInfo, string> converter = p => p?.Name;
 }

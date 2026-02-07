@@ -669,8 +669,8 @@ internal class BeamFileReader
                 Name = item.Name,
                 Materials = materialsJson != null ? materialsJson : new List<MaterialJson>(),
                 MaterialsDae = daeMaterials,
-                TargetPath = Path.Join(_levelNamePath, Constants.Dae,
-                    $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
+                TargetPath = Path.Join(_levelNamePath, "art",
+                    $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "shapes"),
                 DaeFilePath = item.FullName
             };
             var fileInfo = new FileInfo(item.FullName);
@@ -1089,8 +1089,8 @@ internal class BeamFileReader
                                     Name = item.Name,
                                     Materials = new List<MaterialJson> { item },
                                     SourceMaterialJsonPath = fi.FullName,
-                                    TargetPath = Path.Join(_levelNamePath, Constants.RouteRoad,
-                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                                    TargetPath = Path.Join(_levelNamePath, "art",
+                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "road")
                                 };
                                 asset.SizeMb =
                                     Math.Round(
@@ -1121,8 +1121,8 @@ internal class BeamFileReader
                                 {
                                     asset.Materials.Add(material);
                                     asset.SourceMaterialJsonPath = fi.FullName;
-                                    asset.TargetPath = Path.Join(_levelNamePath, Constants.Decals,
-                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+                                    asset.TargetPath = Path.Join(_levelNamePath, "art",
+                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "decals");
                                 }
 
                             asset.SizeMb =

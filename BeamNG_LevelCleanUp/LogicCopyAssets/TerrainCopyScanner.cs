@@ -97,6 +97,9 @@ public class TerrainCopyScanner
                         (propName.EndsWith("Tex", StringComparison.OrdinalIgnoreCase) ||
                          propName.EndsWith("Map", StringComparison.OrdinalIgnoreCase)))
                     {
+                        // Paths starting with /assets/ reference BeamNG core game assets
+                        var isGameAsset = propValue.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase);
+
                         var fi = new FileInfo(PathResolver.ResolvePath(_levelPathCopyFrom, propValue, false));
                         if (!fi.Exists) fi = FileUtils.ResolveImageFileName(fi.FullName);
 
@@ -105,7 +108,8 @@ public class TerrainCopyScanner
                             File = fi,
                             MapType = propName,
                             Missing = !fi.Exists,
-                            OriginalJsonPath = propValue // Store the original JSON path
+                            OriginalJsonPath = propValue, // Store the original JSON path
+                            IsGameAsset = isGameAsset
                         });
                     }
                 }

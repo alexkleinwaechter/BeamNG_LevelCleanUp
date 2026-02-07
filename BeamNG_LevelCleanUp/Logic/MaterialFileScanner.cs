@@ -31,6 +31,12 @@ internal class MaterialFileScanner
             if (!string.IsNullOrEmpty(val))
             {
                 if (val.StartsWith("./")) val = val.Remove(0, 2);
+
+                // Paths starting with /assets/ reference BeamNG core game assets
+                // (stored in the game's content archives, not in any level).
+                // Mark them so the copy pipeline can skip them.
+                var isGameAsset = val.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase);
+
                 if (val.Count(c => c == '/') == 0) val = Path.Join(Path.GetDirectoryName(_matJsonPath), val);
                 var filePath = PathResolver.ResolvePath(_levelPath, val, false);
                 var fileInfo = FileUtils.ResolveImageFileName(filePath);
@@ -40,7 +46,8 @@ internal class MaterialFileScanner
                     Missing = !fileInfo.Exists,
                     File = fileInfo,
                     MapType = prop.Name,
-                    OriginalJsonPath = val
+                    OriginalJsonPath = val,
+                    IsGameAsset = isGameAsset
                 });
             }
         }

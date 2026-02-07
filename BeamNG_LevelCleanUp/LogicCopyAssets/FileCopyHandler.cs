@@ -108,7 +108,18 @@ public class FileCopyHandler
 
         if (destinationFilePath2 != null)
         {
-            targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath2));
+            if (FileUtils.IsLinkFile(destinationFilePath2))
+            {
+                // For .link files, append .link to preserve the full extension chain
+                // e.g., target.png → target.png.link (not target.link)
+                if (!FileUtils.IsLinkFile(targetFile))
+                    targetFile += FileUtils.LinkExtension;
+            }
+            else
+            {
+                targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath2));
+            }
+
             File.Copy(destinationFilePath2, targetFile, true);
         }
         else
