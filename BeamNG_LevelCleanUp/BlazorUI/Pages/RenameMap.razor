@@ -39,9 +39,8 @@
 
             @if (!string.IsNullOrEmpty(_renameCurrentName))
             {
-                <MudTextField Immediate @bind-Value="_renameCurrentName" ReadOnly Label="Current name of selected level" Variant="Variant.Text"></MudTextField>
-                <MudTextField Immediate @bind-Value="_renameNewNamePath" Label="Your new name included in filepaths" Variant="Variant.Text"></MudTextField>
-                <MudTextField Immediate @bind-Value="_renameNewTitle" Label="Your new display title in info.json" Variant="Variant.Text"></MudTextField>
+                <MudTextField Immediate @bind-Value="_renameCurrentName" ReadOnly Label="Current name of selected level" Variant="Variant.Text" Class="mb-4"></MudTextField>
+                <LevelInfoForm Model="@_levelInfo" ModelChanged="@(_ => StateHasChanged())"/>
             }
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
                 <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
@@ -71,7 +70,7 @@
                 {
                     <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
                 }
-                @if (!string.IsNullOrEmpty(_renameCurrentName) && !string.IsNullOrEmpty(_renameNewNamePath) && !string.IsNullOrEmpty(_renameNewTitle))
+                @if (!string.IsNullOrEmpty(_renameCurrentName) && !string.IsNullOrEmpty(_levelInfo.LevelPath) && !string.IsNullOrEmpty(_levelInfo.DisplayName))
                 {
                     <MudButton Color="Color.Primary" OnClick="@RenameDialog">Rename Level</MudButton>
                 }
@@ -102,8 +101,7 @@
 
 @code {
     private string _renameCurrentName { get; set; }
-    private string _renameNewNamePath { get; set; }
-    private string _renameNewTitle { get; set; }
+    private readonly LevelInfoModel _levelInfo = new();
 
     private string _levelName { get; set; }
     private string _levelPath { get; set; }
@@ -143,8 +141,7 @@
         _levelName = null;
         _levelPath = null;
         _beamLogFilePath = null;
-        _renameNewNamePath = null;
-        _renameNewTitle = null;
+        _levelInfo.Reset();
         _missingFiles = new List<string>();
         _errors = new List<string>();
         _warnings = new List<string>();
@@ -188,6 +185,7 @@
             Reader = new BeamFileReader(_levelPath, string.Empty);
             _levelName = Reader.GetLevelName();
             _renameCurrentName = _levelName;
+            ReadExistingInfoJson();
         });
 
         _fileSelectDisabled = false;
@@ -330,6 +328,7 @@
         if (!string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelPath))
         {
             _renameCurrentName = _levelName;
+            ReadExistingInfoJson();
             _staticSnackbar
                 = Snackbar.Add($"The level {_levelName} is still loaded. You can either rename it now or load another level for renaming.",
                     Severity.Info);
@@ -401,7 +400,7 @@
             {
                 await Task.Run(() =>
                 {
-                    Reader.RenameLevel(StringUtils.SanitizeFileName(_renameNewNamePath), _renameNewTitle);
+                    Reader.RenameLevel(StringUtils.SanitizeFileName(_levelInfo.LevelPath), _levelInfo.DisplayName, _levelInfo);
                     _levelName = Reader.GetLevelName();
                 });
                 _renameCurrentName = _levelName;
@@ -440,6 +439,31 @@
             {
                 ShowException(ex);
             }
+        }
+    }
+
+    private void ReadExistingInfoJson()
+    {
+        try
+        {
+            var namePath = ZipFileHandler.GetNamePath(_levelPath);
+            var infoJsonPath = Path.Join(namePath, "info.json");
+            if (!File.Exists(infoJsonPath)) return;
+
+            var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(infoJsonPath);
+            _levelInfo.DisplayName = jsonNode["title"]?.GetValue<string>();
+            _levelInfo.Description = jsonNode["description"]?.GetValue<string>();
+            _levelInfo.Country = jsonNode["country"]?.GetValue<string>();
+            _levelInfo.Region = jsonNode["region"]?.GetValue<string>();
+            _levelInfo.Biome = jsonNode["biome"]?.GetValue<string>();
+            _levelInfo.Roads = jsonNode["roads"]?.GetValue<string>();
+            _levelInfo.SuitableFor = jsonNode["suitablefor"]?.GetValue<string>();
+            _levelInfo.Features = jsonNode["features"]?.GetValue<string>();
+            _levelInfo.Authors = jsonNode["authors"]?.GetValue<string>();
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Could not read info.json metadata: {ex.Message}");
         }
     }
 
@@ -494,4 +518,4 @@
         }
     }
 
-}}
+}

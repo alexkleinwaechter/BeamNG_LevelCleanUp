@@ -14,127 +14,65 @@
     <ChildContent>
         <div class="content @(_wizardState.IsActive ? "wizard-content" : "")">
             <h3>Create New BeamNG Level</h3>
-            
-            <MudExpansionPanels @ref="FileSelect">
-                <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
-                    <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
-                                        Description="The game install directory. If empty some features are missing.">
-                    </FileSelectComponent>
-                </MudExpansionPanel>
-                
-                <MudExpansionPanel Text="@GetSourceMapTitle()" Expanded="@(!_wizardState.Step1_SetupComplete)">
-                    <FileSelectComponent OnFileSelected="OnSourceMapSelected"
-                                        Description="Select a source map to copy base level data from"
-                                        Disabled="@(_wizardState.Step1_SetupComplete)">
-                    </FileSelectComponent>
-                    
-                    @if (_vanillaLevels.Any())
-                    {
-                        <MudSelect T="FileInfo" ToStringFunc="@converter"
-                                  ValueChanged="OnVanillaSourceSelected"
-                                  Value="@_vanillaLevelSourceSelected"
-                                  Label="Or select a vanilla level" 
-                                  AnchorOrigin="Origin.BottomCenter" 
-                                  Variant="Variant.Outlined" 
-                                  Clearable
-                                  Disabled="@(_wizardState.Step1_SetupComplete)">
-                            @foreach (var item in _vanillaLevels)
-                            {
-                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
-                            }
-                        </MudSelect>
-                    }
-                    
-                    <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
-                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;"/>
-                        Copies: Sky, sun, clouds, time-of-day, terrain config, and water settings from selected level.
-                    </MudText>
-                </MudExpansionPanel>
-            </MudExpansionPanels>
 
-            @if (!string.IsNullOrEmpty(_sourceLevelName) && !_wizardState.Step1_SetupComplete)
+            @if (!_wizardState.Step1_SetupComplete)
             {
+                <MudText Typo="Typo.body1" Class="mb-4 mt-2">
+                    Configure your new level below. Fill in the level details, select a source map to copy base settings
+                    from (sky, sun, clouds, time-of-day, water), choose a terrain size, then click
+                    <b>Initialize New Level</b>. The source map will be extracted and analyzed during initialization. 
+                    Then we start the wizard for copying terrains, forest brushes, and assets, followed by terrain generation. 
+                    You can skip copying terrain materials, forest brushes, or assets if you want to set those up manually later in the editor. 
+                    If you skip copying assets, the level will still be initialized with sky, sun, clouds, time-of-day, water settings, 
+                    and terrain config from the source map (if provided).
+                </MudText>
+
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
-                    <MudText Typo="Typo.h6" Class="mb-4">New Level Configuration</MudText>
-                    
-                    <MudTextField @bind-Value="_targetLevelPath" 
-                                 Label="Level Path (folder name)" 
-                                 HelperText="e.g., my_custom_map (lowercase, no spaces)"
-                                 Variant="Variant.Outlined"
-                                 Required="true"
-                                 Immediate="true"
-                                 Class="mb-4"/>
-                    
-                    <MudTextField @bind-Value="_targetLevelName" 
-                                 Label="Level Display Name" 
-                                 HelperText="e.g., My Custom Map"
-                                 Variant="Variant.Outlined"
-                                 Required="true"
-                                 Immediate="true"
-                                 Class="mb-4"/>
-                    
-                    <MudTextField @bind-Value="_levelDescription" 
-                                 Label="Description" 
-                                 HelperText="A brief description of your level"
-                                 Variant="Variant.Outlined"
-                                 Lines="2"
-                                 Class="mb-4"/>
-                    
-                    <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="_levelCountry" 
-                                         Label="Country" 
-                                         HelperText="e.g., USA, Germany, Japan"
-                                         Variant="Variant.Outlined"
-                                         Class="mb-4"/>
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="_levelRegion" 
-                                         Label="Region" 
-                                         HelperText="e.g., California, Bavaria"
-                                         Variant="Variant.Outlined"
-                                         Class="mb-4"/>
-                        </MudItem>
-                    </MudGrid>
-                    
-                    <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="_levelBiome" 
-                                         Label="Biome" 
-                                         HelperText="e.g., Desert, Forest, Urban"
-                                         Variant="Variant.Outlined"
-                                         Class="mb-4"/>
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="_levelRoads" 
-                                         Label="Roads" 
-                                         HelperText="e.g., Paved, Dirt, Mixed"
-                                         Variant="Variant.Outlined"
-                                         Class="mb-4"/>
-                        </MudItem>
-                    </MudGrid>
-                    
-                    <MudTextField @bind-Value="_levelSuitableFor" 
-                                 Label="Suitable For" 
-                                 HelperText="e.g., Racing, Off-road, Cruising"
-                                 Variant="Variant.Outlined"
-                                 Class="mb-4"/>
-                    
-                    <MudTextField @bind-Value="_levelFeatures" 
-                                 Label="Features" 
-                                 HelperText="e.g., Traffic, AI paths, Scenarios"
-                                 Variant="Variant.Outlined"
-                                 Class="mb-4"/>
-                    
-                    <MudTextField @bind-Value="_levelAuthors" 
-                                 Label="Authors" 
-                                 HelperText="Your name or team name"
-                                 Variant="Variant.Outlined"
-                                 Class="mb-4"/>
-                    
-                    <MudSelect T="int" 
-                              @bind-Value="_wizardState.TerrainSize" 
-                              Label="Terrain Size" 
+                    <MudText Typo="Typo.h6" Class="mb-4">Level Details</MudText>
+
+                    <LevelInfoForm Model="@_levelInfo"
+                                  ModelChanged="@(_ => StateHasChanged())"/>
+                </MudPaper>
+
+                <MudExpansionPanels @ref="FileSelect" Class="mt-4">
+                    <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
+                        <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
+                                            Description="The game install directory. If empty some features are missing.">
+                        </FileSelectComponent>
+                    </MudExpansionPanel>
+
+                    <MudExpansionPanel Text="@GetSourceMapTitle()" Expanded="false">
+                        <FileSelectComponent OnFileSelected="OnSourceMapSelected"
+                                            Description="Select a source map to copy base level data from">
+                        </FileSelectComponent>
+
+                        @if (_vanillaLevels.Any())
+                        {
+                            <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                      ValueChanged="OnVanillaSourceSelected"
+                                      Value="@_vanillaLevelSourceSelected"
+                                      Label="Or select a vanilla level"
+                                      AnchorOrigin="Origin.BottomCenter"
+                                      Variant="Variant.Outlined"
+                                      Clearable>
+                                @foreach (var item in _vanillaLevels)
+                                {
+                                    <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+
+                        <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
+                            <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;"/>
+                            Copies: Sky, sun, clouds, time-of-day, terrain config, and water settings from selected level.
+                        </MudText>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudSelect T="int"
+                              @bind-Value="_wizardState.TerrainSize"
+                              Label="Terrain Size"
                               HelperText="Size of the terrain in meters (power of 2)"
                               Variant="Variant.Outlined"
                               Class="mb-4">
@@ -146,9 +84,9 @@
                         <MudSelectItem Value="8192">8192 x 8192</MudSelectItem>
                         <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
                     </MudSelect>
-                    
-                    <MudButton OnClick="@InitializeNewLevel" 
-                              Color="Color.Primary" 
+
+                    <MudButton OnClick="@InitializeNewLevel"
+                              Color="Color.Primary"
                               Variant="Variant.Filled"
                               Disabled="@(!CanInitialize() || _isInitializing)"
                               StartIcon="@(_isInitializing ? null : Icons.Material.Filled.Create)">

@@ -22,14 +22,7 @@ public partial class CreateLevel
     private Anchor _anchor;
     private string _beamInstallDir;
     private bool _isInitializing;
-    private string _levelAuthors;
-    private string _levelBiome;
-    private string _levelCountry;
-    private string _levelDescription;
-    private string _levelFeatures;
-    private string _levelRegion;
-    private string _levelRoads;
-    private string _levelSuitableFor;
+    private readonly LevelInfoModel _levelInfo = new();
     private bool _openDrawer;
     private BeamFileReader _reader;
     private bool _showErrorLog;
@@ -37,9 +30,8 @@ public partial class CreateLevel
 
     private string _sourceLevelName;
     private string _sourceLevelPath;
+    private string _sourceZipPath;
     private Snackbar _staticSnackbar;
-    private string _targetLevelName;
-    private string _targetLevelPath;
     private List<FileInfo> _vanillaLevels = new();
     private FileInfo _vanillaLevelSourceSelected;
     private MudExpansionPanels FileSelect;
@@ -89,85 +81,29 @@ public partial class CreateLevel
         });
     }
 
-    protected async Task OnSourceMapSelected(string file)
+    protected void OnSourceMapSelected(string file)
     {
-        SetDefaultWorkingDirectory();
-
-        // CRITICAL: Clean up any existing _unpacked and _copyFrom folders BEFORE extracting
-        // This ensures we start completely fresh and don't have stale data from previous runs
-        CleanupWorkingDirectories();
-
-        // If file is in a different folder than working directory, copy it first
-        if (ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(file))
-        {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Copy source level to {ZipFileHandler.WorkingDirectory} ...");
-            try
-            {
-                var target = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
-                File.Copy(file, target, true);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, "Copy source level finished");
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Error,
-                    $"Error copying source level to working directory: {ex.Message}");
-                ShowException(ex);
-                return;
-            }
-        }
-
-        await Task.Run(() =>
-        {
-            try
-            {
-                _staticSnackbar = Snackbar.Add("Unzipping source level...", Severity.Normal,
-                    config => { config.VisibleStateDuration = int.MaxValue; });
-
-                _sourceLevelPath = ZipFileHandler.ExtractToDirectory(
-                    Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)),
-                    "_copyFrom",
-                    true);
-
-                _reader = new BeamFileReader(_sourceLevelPath, null);
-                _sourceLevelName = _reader.GetLevelName();
-
-                _wizardState.SourceLevelPath = _sourceLevelPath;
-                _wizardState.SourceLevelName = _sourceLevelName;
-
-                Snackbar.Add("Source level loaded successfully", Severity.Success);
-                Snackbar.Remove(_staticSnackbar);
-            }
-            catch (Exception ex)
-            {
-                ShowException(ex);
-            }
-        });
-
+        _sourceZipPath = file;
+        _sourceLevelName = Path.GetFileNameWithoutExtension(file);
+        _vanillaLevelSourceSelected = null;
         StateHasChanged();
     }
 
-    protected async Task OnVanillaSourceSelected(FileInfo file)
+    protected void OnVanillaSourceSelected(FileInfo file)
     {
         if (file == null)
         {
             _vanillaLevelSourceSelected = null;
+            _sourceZipPath = null;
+            _sourceLevelName = null;
+            StateHasChanged();
             return;
         }
 
-        SetDefaultWorkingDirectory();
-
-        // CRITICAL: Clean up any existing _unpacked and _copyFrom folders BEFORE extracting
-        // This ensures we start completely fresh and don't have stale data from previous runs
-        CleanupWorkingDirectories();
-
         _vanillaLevelSourceSelected = file;
-        var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
-
-        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
-        File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
-
-        await OnSourceMapSelected(target);
+        _sourceZipPath = file.FullName;
+        _sourceLevelName = Path.GetFileNameWithoutExtension(file.Name);
+        StateHasChanged();
     }
 
     protected async Task InitializeNewLevel()
@@ -185,20 +121,48 @@ public partial class CreateLevel
 
             await Task.Run(() =>
             {
-                // 1. Create target directory structure
+                // 1. Set up working directory and clean up previous data
+                SetDefaultWorkingDirectory();
+                CleanupWorkingDirectories();
+
+                // 2. Copy source file to working directory if needed
+                var sourceFile = _sourceZipPath;
+                if (ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(sourceFile))
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Copying source level to working directory...");
+                    var target = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(sourceFile));
+                    File.Copy(sourceFile, target, true);
+                    sourceFile = target;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info, "Source level copied");
+                }
+
+                // 3. Extract source level
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Extracting source level...");
+                _sourceLevelPath = ZipFileHandler.ExtractToDirectory(sourceFile, "_copyFrom", true);
+                _reader = new BeamFileReader(_sourceLevelPath, null);
+                var resolvedName = _reader.GetLevelName();
+                if (!string.IsNullOrEmpty(resolvedName))
+                    _sourceLevelName = resolvedName;
+
+                _wizardState.SourceLevelPath = _sourceLevelPath;
+                _wizardState.SourceLevelName = _sourceLevelName;
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Source level extracted successfully");
+
+                // 4. Create target directory structure
                 // targetRoot will be: WorkingDirectory/_unpacked/levels/targetLevelPath
-                _targetLevelPath = StringUtils.SanitizeFileName(_targetLevelPath);
+                var sanitizedPath = StringUtils.SanitizeFileName(_levelInfo.LevelPath);
                 var targetRoot = Path.Join(
                     ZipFileHandler.WorkingDirectory,
                     "_unpacked",
                     "levels",
-                    _targetLevelPath);
+                    sanitizedPath);
 
                 _wizardState.TargetLevelRootPath = targetRoot;
                 // targetLevelNamePath is the same as targetRoot since we're already in levels/levelname
                 var targetLevelNamePath = targetRoot;
-                _wizardState.TargetLevelPath = _targetLevelPath;
-                _wizardState.LevelName = _targetLevelName;
+                _wizardState.TargetLevelPath = sanitizedPath;
+                _wizardState.LevelName = _levelInfo.DisplayName;
 
                 Directory.CreateDirectory(targetRoot);
                 Directory.CreateDirectory(Path.Join(targetLevelNamePath, "art", "terrains"));
@@ -206,31 +170,31 @@ public partial class CreateLevel
 
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "Created directory structure");
 
-                // 2. Create empty terrain material files
+                // 5. Create empty terrain material files
                 File.WriteAllText(
                     Path.Join(targetLevelNamePath, "art", "terrains", "main.materials.json"),
                     "{}");
 
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "Created empty material files");
 
-                // 3. Create info.json and mainLevel.lua
+                // 6. Create info.json and mainLevel.lua
                 InfoJsonGenerator.CreateInfoJson(
                     targetLevelNamePath,
-                    _targetLevelName,
-                    _levelDescription,
-                    _levelCountry,
-                    _levelRegion,
-                    _levelBiome,
-                    _levelRoads,
-                    _levelSuitableFor,
-                    _levelFeatures,
-                    _levelAuthors);
+                    _levelInfo.DisplayName,
+                    _levelInfo.Description,
+                    _levelInfo.Country,
+                    _levelInfo.Region,
+                    _levelInfo.Biome,
+                    _levelInfo.Roads,
+                    _levelInfo.SuitableFor,
+                    _levelInfo.Features,
+                    _levelInfo.Authors);
                 InfoJsonGenerator.CreateMainLevelLua(targetLevelNamePath);
 
-                // 4. Generate preview image
-                LevelPreviewGenerator.GeneratePreviewImage(targetLevelNamePath, _targetLevelPath, _targetLevelName);
+                // 7. Generate preview image
+                LevelPreviewGenerator.GeneratePreviewImage(targetLevelNamePath, sanitizedPath, _levelInfo.DisplayName);
 
-                // 5. Copy MissionGroup data
+                // 8. Copy MissionGroup data
                 _reader.ReadMissionGroupsForCreateLevel();
 
                 // Also read materials from source level for copying referenced materials
@@ -245,12 +209,12 @@ public partial class CreateLevel
                     sourceLevelNamePath,
                     targetRoot,
                     targetLevelNamePath,
-                    _targetLevelPath,
+                    sanitizedPath,
                     BeamFileReader.MaterialsJson); // Pass source materials
 
                 missionGroupCopier.CopyMissionGroupData();
 
-                // 6. Update wizard state
+                // 9. Update wizard state
                 _wizardState.CopiedMissionGroupAssets = new List<Asset>(BeamFileReader.Assets);
                 _wizardState.Step1_SetupComplete = true;
                 _wizardState.Step2_MissionGroupsCopied = true;
@@ -263,9 +227,6 @@ public partial class CreateLevel
 
             Snackbar.Remove(_staticSnackbar);
             Snackbar.Add("Level initialization complete!", Severity.Success);
-
-            // Collapse source selection panel
-            if (FileSelect?.Panels.Count > 1) await FileSelect.Panels[1].CollapseAsync();
         }
         catch (Exception ex)
         {
@@ -374,16 +335,8 @@ public partial class CreateLevel
         // Clear local page variables
         _sourceLevelName = null;
         _sourceLevelPath = null;
-        _targetLevelPath = null;
-        _targetLevelName = null;
-        _levelDescription = null;
-        _levelCountry = null;
-        _levelRegion = null;
-        _levelBiome = null;
-        _levelRoads = null;
-        _levelSuitableFor = null;
-        _levelFeatures = null;
-        _levelAuthors = null;
+        _sourceZipPath = null;
+        _levelInfo.Reset();
         _reader = null;
         _errors.Clear();
         _warnings.Clear();
@@ -395,9 +348,9 @@ public partial class CreateLevel
 
     private bool CanInitialize()
     {
-        return !string.IsNullOrWhiteSpace(_targetLevelPath) &&
-               !string.IsNullOrWhiteSpace(_targetLevelName) &&
-               !string.IsNullOrEmpty(_sourceLevelName);
+        return !string.IsNullOrWhiteSpace(_levelInfo.LevelPath) &&
+               !string.IsNullOrWhiteSpace(_levelInfo.DisplayName) &&
+               !string.IsNullOrEmpty(_sourceZipPath);
     }
 
     private string GetSourceMapTitle()
@@ -477,7 +430,7 @@ public partial class CreateLevel
                 {
                     $"# Create Level Log - {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
                     $"# Source: {_sourceLevelName}",
-                    $"# Target: {_targetLevelName} ({_targetLevelPath})",
+                    $"# Target: {_levelInfo.DisplayName} ({_levelInfo.LevelPath})",
                     ""
                 };
                 messagesWithHeader.AddRange(_messages);

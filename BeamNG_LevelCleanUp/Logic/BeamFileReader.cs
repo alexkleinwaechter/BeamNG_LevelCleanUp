@@ -600,14 +600,14 @@ internal class BeamFileReader
         return new List<string>();
     }
 
-    internal void RenameLevel(string newNameForPath, string newNameForTitle)
+    internal void RenameLevel(string newNameForPath, string newNameForTitle, LevelInfoModel levelInfo = null)
     {
         _newName = newNameForPath;
         _levelRenamer = new LevelRenamer();
         var dirInfo = new DirectoryInfo(_levelPath);
         if (dirInfo != null)
         {
-            _levelRenamer.EditInfoJson(_levelNamePath, newNameForTitle);
+            _levelRenamer.EditInfoJson(_levelNamePath, newNameForTitle, levelInfo);
             WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
             WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
             WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
@@ -619,6 +619,10 @@ internal class BeamFileReader
         var dirInfoOld = new DirectoryInfo(_levelNamePath);
         var targetDir = Path.Join(dirInfoOld.Parent.FullName, newNameForPath);
         Directory.Move(dirInfoOld.FullName, targetDir);
+
+        // Update internal paths to reflect the new directory location
+        _levelNamePath = targetDir;
+        _levelPath = dirInfoOld.Parent.FullName;
 
         // checking directory has
         // been renamed or not
