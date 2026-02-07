@@ -188,14 +188,27 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
 
     private float GetMaxZoom()
     {
-        const int MinSelectionDisplaySize = 60;
+        // Calculate how much zoom is needed so the selection rectangle fills
+        // a reasonable portion of the display (at least MinSelectionDisplaySize pixels).
+        // For large source images where the selection is tiny at zoom=1, we need MORE zoom,
+        // not less. Zooming in makes the selection bigger on screen.
+        const int DesiredSelectionDisplaySize = 200;
+        const float AbsoluteMaxZoom = 50.0f;
+        
         var scale = GetScale();
-        var selectionDisplayWidth = (int)(SelectionWidthPixels * scale);
-        var selectionDisplayHeight = (int)(SelectionHeightPixels * scale);
-        var smallerDimension = Math.Min(selectionDisplayWidth, selectionDisplayHeight);
-
-        if (smallerDimension <= MinSelectionDisplaySize) return 1.0f;
-        return Math.Min((float)smallerDimension / MinSelectionDisplaySize, 12.0f);
+        var selectionDisplaySize = (int)(Math.Min(SelectionWidthPixels, SelectionHeightPixels) * scale);
+        
+        if (selectionDisplaySize <= 0) return 1.0f;
+        
+        // If the selection is already large enough at zoom=1, allow moderate zoom
+        if (selectionDisplaySize >= DesiredSelectionDisplaySize)
+            return Math.Min((float)selectionDisplaySize / DesiredSelectionDisplaySize * 4.0f, AbsoluteMaxZoom);
+        
+        // Selection is small at zoom=1 (large source image): allow enough zoom
+        // to make the selection comfortably visible and positionable
+        var neededZoom = (float)DesiredSelectionDisplaySize / selectionDisplaySize;
+        // Allow extra zoom beyond just making it visible, capped at absolute max
+        return Math.Min(neededZoom * 3.0f, AbsoluteMaxZoom);
     }
 
     private void ClampOffsets()
