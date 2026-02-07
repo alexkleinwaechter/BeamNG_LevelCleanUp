@@ -858,9 +858,6 @@ internal class BeamFileReader
 
                 foreach (var terrainMaterialFile in _terrainMaterialFiles)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Scanning terrain materials from {terrainMaterialFile.Name}");
-
                     var terrainScanner = new TerrainCopyScanner(
                         terrainMaterialFile.FullName,
                         _levelPathCopyFrom,
@@ -874,12 +871,8 @@ internal class BeamFileReader
                 // This updates the BaseColorHex and RoughnessValue properties of each CopyAsset
                 if (CopyAssets.Any(a => a.CopyAssetType == CopyAssetType.Terrain))
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        "Extracting terrain material colors from .ter file...");
                     TerrainCopyScanner.ExtractTerrainMaterialColors(_levelNamePathCopyFrom, CopyAssets);
                     
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        "Extracting terrain material roughness from .ter file...");
                     TerrainCopyScanner.ExtractTerrainMaterialRoughness(_levelNamePathCopyFrom, CopyAssets);
                 }
             }
@@ -910,9 +903,6 @@ internal class BeamFileReader
 
                 foreach (var groundCoverFile in _groundCoverFiles)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Scanning groundcovers from {groundCoverFile.Name} at {groundCoverFile.DirectoryName}");
-
                     var groundCoverScanner = new GroundCoverCopyScanner(_levelPathCopyFrom);
                     groundCoverScanner.ScanGroundCovers(groundCoverFile);
 

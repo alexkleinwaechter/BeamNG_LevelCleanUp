@@ -116,8 +116,6 @@ public class PbrUpgradeHandler
                 return;
             }
 
-            var updatedCount = 0;
-
             foreach (var levelJsonFile in levelJsonFiles)
             {
                 // Check if this file contains TerrainBlock entries
@@ -130,16 +128,9 @@ public class PbrUpgradeHandler
                     continue;
 
                 // Process the file
-                if (UpdateTerrainBlockInFile(levelJsonFile.FullName, textureSetName))
-                    updatedCount++;
+                UpdateTerrainBlockInFile(levelJsonFile.FullName, textureSetName);
             }
 
-            if (updatedCount > 0)
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Updated materialTextureSet to '{textureSetName}' in {updatedCount} file(s)");
-            else
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    "No TerrainBlock objects found to update.");
         }
         catch (Exception ex)
         {
@@ -216,9 +207,6 @@ public class PbrUpgradeHandler
                         };
                         lines[i] = jsonNode.ToJsonString(jsonOptions);
                         updated = true;
-
-                        PubSubChannel.SendMessage(PubSubMessageType.Info,
-                            $"Updated TerrainBlock in {Path.GetFileName(filePath)}: materialTextureSet = '{textureSetName}'");
                     }
                 }
                 catch (JsonException)
@@ -313,17 +301,10 @@ public class PbrUpgradeHandler
 
                 // Only update if the size is different
                 if (currentBaseTexSize == terrainSize)
-                {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"TerrainMaterialTextureSet '{prop.Key}' already has correct baseTexSize: {terrainSize}x{terrainSize}");
                     continue;
-                }
 
                 // Update baseTexSize to match terrain size
                 textureSetNode["baseTexSize"] = new JsonArray(terrainSize, terrainSize);
-
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Updated TerrainMaterialTextureSet '{prop.Key}' baseTexSize: {currentBaseTexSize}x{currentBaseTexSize} -> {terrainSize}x{terrainSize}");
 
                 updated = true;
             }
@@ -333,9 +314,6 @@ public class PbrUpgradeHandler
                 // Write the updated JSON back to the file
                 File.WriteAllText(targetFile.FullName,
                     jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
-
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Successfully updated TerrainMaterialTextureSet baseTexSize to {terrainSize}x{terrainSize}");
             }
 
             return updated;

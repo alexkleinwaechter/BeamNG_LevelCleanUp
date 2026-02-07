@@ -435,6 +435,8 @@ public partial class CopyTerrains
     protected async Task ScanAssets()
     {
         _fileSelectDisabled = true;
+        _staticSnackbar = Snackbar.Add("Scanning terrain materials. Please be patient...", Severity.Normal,
+            config => { config.VisibleStateDuration = int.MaxValue; });
         await Task.Run(() =>
         {
             try
@@ -455,9 +457,11 @@ public partial class CopyTerrains
                 _fileSelectDisabled = false;
             }
         });
+        Snackbar.Remove(_staticSnackbar);
         FillCopyList();
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            "Done! Scanning Terrain Materials finished. Please select materials to copy.");
+        Snackbar.Add(
+            $"Scanning finished. Found {BindingListCopy.Count} terrain material(s). Please select materials to copy.",
+            Severity.Success);
 
         // Force UI update after scanning completes
         await InvokeAsync(StateHasChanged);
@@ -640,6 +644,7 @@ public partial class CopyTerrains
             PathResolver.WizardTerrainSize = null;
 
             Snackbar.Remove(_staticSnackbar);
+            Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
 
             // Write operation logs (info, warnings, errors)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");
@@ -843,6 +848,8 @@ public partial class CopyTerrains
     private async Task ScanAssetsWizardMode()
     {
         _fileSelectDisabled = true;
+        _staticSnackbar = Snackbar.Add("Scanning terrain materials. Please be patient...", Severity.Normal,
+            config => { config.VisibleStateDuration = int.MaxValue; });
         await Task.Run(() =>
         {
             try
@@ -860,12 +867,15 @@ public partial class CopyTerrains
             }
         });
 
+        Snackbar.Remove(_staticSnackbar);
+
         // Clear and refill the copy list
         BindingListCopy = new List<GridFileListItem>();
         FillCopyList();
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Found {BindingListCopy.Count} terrain materials in {_levelNameCopyFrom}. Select materials to copy.");
+        Snackbar.Add(
+            $"Found {BindingListCopy.Count} terrain material(s) in {_levelNameCopyFrom}. Select materials to copy.",
+            Severity.Success);
 
         await InvokeAsync(StateHasChanged);
     }
@@ -1048,6 +1058,7 @@ public partial class CopyTerrains
                 _showDeployButton = true;
             });
             Snackbar.Remove(_staticSnackbar);
+            Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
 
             // Write operation logs (info, warnings, errors)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");

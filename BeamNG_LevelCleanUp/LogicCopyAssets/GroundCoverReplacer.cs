@@ -183,9 +183,6 @@ public class GroundCoverReplacer
                     if (newGroundCover != null)
                     {
                         newGroundCovers.Add(newGroundCover);
-                        var newName = newGroundCover["name"]?.ToString();
-                        PubSubChannel.SendMessage(PubSubMessageType.Info,
-                            $"Copied groundcover '{sourceGroundCoverName}' as '{newName}' (layer: {sourceInternalName} → {targetInternalName})");
                     }
                 }
             }
@@ -208,9 +205,6 @@ public class GroundCoverReplacer
             if (shouldDelete)
             {
                 deletedGroundCoverNames.Add(gcName);
-                var displayName = gcNode["name"]?.ToString() ?? gcName;
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Deleted groundcover '{displayName}' (all layers referenced replaced materials)");
             }
             else if (modified)
             {
@@ -357,20 +351,13 @@ public class GroundCoverReplacer
         var removedCount = typesToRemove.Count;
         if (removedCount > 0)
         {
-            var gcName = groundCover["name"]?.ToString() ?? "unknown";
             var remainingCount = types.Count;
 
             if (remainingCount == 0)
-            {
                 // All Types removed -> should delete entire groundcover
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Groundcover '{gcName}': Removed all {removedCount} layer(s) referencing replaced materials (will delete entire groundcover)");
                 return (true, true);
-            }
 
             // Some Types removed, but others remain
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Groundcover '{gcName}': Removed {removedCount} layer(s) referencing replaced materials ({remainingCount} layer(s) remaining)");
             return (true, false);
         }
 
@@ -416,8 +403,6 @@ public class GroundCoverReplacer
                     if (potentialMaterialSuffix.Length > 3)
                     {
                         cleanSourceName = cleanSourceName.Substring(0, lastUnderscoreIndex);
-                        PubSubChannel.SendMessage(PubSubMessageType.Info,
-                            $"Cleaned groundcover name: '{sourceGroundCoverName}' -> '{cleanSourceName}' (removed material suffix '{potentialMaterialSuffix}' and level suffix)");
                     }
                 }
             }
@@ -566,11 +551,7 @@ public class GroundCoverReplacer
                 if (!string.IsNullOrEmpty(name))
                 {
                     if (existingGroundCovers.ContainsKey(name))
-                    {
                         replacedCount++;
-                        PubSubChannel.SendMessage(PubSubMessageType.Info,
-                            $"Replacing existing groundcover '{name}' with updated version");
-                    }
 
                     existingGroundCovers[name] = newGC;
                 }

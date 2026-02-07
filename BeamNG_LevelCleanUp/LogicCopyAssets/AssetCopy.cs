@@ -258,8 +258,6 @@ public class AssetCopy
             if (sourceSizes != null)
             {
                 // Use source sizes
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Using texture sizes from source level: base={sourceSizes.BaseTexSize}, detail={sourceSizes.DetailTexSize}, macro={sourceSizes.MacroTexSize}");
                 pbrUpgradeHandler.AddTerrainMaterialTextureSet(
                     terrainSize,
                     sourceSizes.DetailTexSize,
@@ -267,8 +265,6 @@ public class AssetCopy
             }
             else
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"No TerrainMaterialTextureSet found in source level. Using fallback size: {terrainSize}");
                 pbrUpgradeHandler.AddTerrainMaterialTextureSet(terrainSize, terrainSize, terrainSize);
             }
         }
