@@ -129,10 +129,6 @@ public static class TerrainTextureHelper
                             sizes.MacroTexSize = enumerator.Current.GetInt32();
                     }
 
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Texture sizes from {Path.GetFileName(materialFile)} ({property.Name}): " +
-                        $"base={sizes.BaseTexSize}, detail={sizes.DetailTexSize}, macro={sizes.MacroTexSize}");
-
                     return sizes;
                 }
 
@@ -234,9 +230,6 @@ public static class TerrainTextureHelper
             "roughnessBaseTex"
         };
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Scanning {Path.GetFileName(materialsJsonPath)} for base texture properties...");
-
         try
         {
             using var jsonDoc = JsonUtils.GetValidJsonDocumentFromFilePath(materialsJsonPath);
@@ -282,9 +275,6 @@ public static class TerrainTextureHelper
                     }
                 }
             }
-
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Scanned {materialsFound} TerrainMaterial entries, checked {propertiesScanned} properties, found {texturePaths.Count} existing texture files");
         }
         catch (Exception ex)
         {
@@ -421,9 +411,6 @@ public static class TerrainTextureHelper
 
                     // Prepare the new path for batch update
                     newPath = pathConverter.GetBeamNgJsonPathOrFileName(generatedPngPath, false);
-
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Replaced {matFile.MapType} with generated texture: {Path.GetFileName(generatedPngPath)}");
 
                     // Also update the corresponding size property if it exists
                     var sizePropertyName = matFile.MapType + "Size";
@@ -583,11 +570,6 @@ public static class TerrainTextureHelper
     /// <returns>Number of textures resized</returns>
     public static int ResizeBaseTexturesToTerrainSize(string levelPath, int targetTerrainSize)
     {
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"=== Resizing base textures to {targetTerrainSize}x{targetTerrainSize} ===");
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Level path: {levelPath}");
-        
         // Find the terrain materials.json file dynamically
         var materialsJsonPath = FindTerrainMaterialsJsonPath(levelPath);
         if (string.IsNullOrEmpty(materialsJsonPath))
@@ -636,8 +618,6 @@ public static class TerrainTextureHelper
                 // Skip if already the correct size
                 if (currentWidth == targetTerrainSize && currentHeight == targetTerrainSize)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"  {Path.GetFileName(textureFile)}: already {currentWidth}x{currentHeight} ?");
                     skippedCorrectSize++;
                     continue;
                 }
@@ -645,22 +625,14 @@ public static class TerrainTextureHelper
                 // Skip if not a power of 2 (might not be a terrain base texture)
                 if (!IsPowerOfTwo(currentWidth) || !IsPowerOfTwo(currentHeight))
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"  {Path.GetFileName(textureFile)}: non-power-of-2 ({currentWidth}x{currentHeight}), skipping");
                     skippedNotPowerOfTwo++;
                     continue;
                 }
 
                 // Resize the image
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"  {Path.GetFileName(textureFile)}: resizing {currentWidth}x{currentHeight} ? {targetTerrainSize}x{targetTerrainSize}...");
-                
                 using var image = Image.Load(textureFile);
                 image.Mutate(x => x.Resize(targetTerrainSize, targetTerrainSize));
                 image.SaveAsPng(textureFile);
-
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"  {Path.GetFileName(textureFile)}: resized successfully ?");
 
                 resizedCount++;
             }

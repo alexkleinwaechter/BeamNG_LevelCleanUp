@@ -86,8 +86,6 @@ public class TerrainTextureGenerator
             // Check if file already exists to avoid regenerating
             if (File.Exists(outputPath))
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Terrain texture {actualFileName}.png already exists, reusing.");
                 return outputPath;
             }
 
@@ -107,9 +105,6 @@ public class TerrainTextureGenerator
                     GenerateRgbaImage(outputPath, r, g, b);
                     break;
             }
-
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Generated terrain texture: {actualFileName}.png ({_terrainSize}x{_terrainSize}, {textureType})");
 
             return outputPath;
         }

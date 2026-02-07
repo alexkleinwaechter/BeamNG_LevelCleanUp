@@ -271,8 +271,6 @@ public class TerrainCopyScanner
                     !string.IsNullOrEmpty(hexColor))
                 {
                     copyAsset.BaseColorHex = hexColor;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"  {internalName}: extracted color {hexColor}");
                 }
             }
             
@@ -367,8 +365,6 @@ public class TerrainCopyScanner
                     // This allows user to switch between presets and always return to the calculated value
                     copyAsset.CalculatedRoughnessValue = roughnessValue;
                     copyAsset.RoughnessPreset = TerrainRoughnessPreset.Calculated;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"  {internalName}: extracted roughness {roughnessValue}");
                 }
             }
             

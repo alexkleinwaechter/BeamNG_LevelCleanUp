@@ -219,9 +219,6 @@ public class TerrainMaterialReplacer
             // Write to cached target JSON instead of writing to disk immediately
             WriteReplacedTerrainMaterialBatch(targetKey, sourceMaterialObj, replaceTargetMaterialName);
 
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Successfully replaced terrain material '{replaceTargetMaterialName}' with '{material.Name}'");
-
             return true;
         }
         catch (Exception ex)
@@ -244,16 +241,10 @@ public class TerrainMaterialReplacer
 
         // Remove old entry with the same key from cached JSON
         if (_targetJsonCache.AsObject().ContainsKey(targetKey))
-        {
             _targetJsonCache.AsObject().Remove(targetKey);
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Removed existing material '{replaceTargetMaterialName}' (key: {targetKey})");
-        }
 
         // Add new material with the same key to cached JSON
         _targetJsonCache.AsObject().Add(KeyValuePair.Create(targetKey, JsonNode.Parse(toText)));
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Replaced material with key '{targetKey}'");
     }
 
     private void WriteReplacedTerrainMaterial(
@@ -267,16 +258,10 @@ public class TerrainMaterialReplacer
 
         // Remove old entry with the same key
         if (targetJsonNode.AsObject().ContainsKey(targetKey))
-        {
             targetJsonNode.AsObject().Remove(targetKey);
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"Removed existing material '{replaceTargetMaterialName}' (key: {targetKey})");
-        }
 
         // Add new material with the same key
         targetJsonNode.AsObject().Add(KeyValuePair.Create(targetKey, JsonNode.Parse(toText)));
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Replaced material with key '{targetKey}'");
 
         File.WriteAllText(targetJsonFile.FullName,
             targetJsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));

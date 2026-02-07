@@ -201,11 +201,7 @@ public class GroundCoverCopier
             {
                 // Find the original groundcover from pre-parsed cache (O(1) lookup)
                 if (!_parsedGroundCovers.TryGetValue(groundCoverName, out var originalJsonLine))
-                {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"Groundcover '{groundCoverName}' not found in cache");
                     continue;
-                }
 
                 var newName = $"gc_{groundCoverName}_{_levelNameCopyFrom}";
 
