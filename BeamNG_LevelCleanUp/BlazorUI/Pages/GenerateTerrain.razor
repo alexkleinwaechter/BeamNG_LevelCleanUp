@@ -248,8 +248,8 @@
                                         </MudText>
                                     }
                                     <MudText Typo="Typo.body2">
-                                        <strong>SW:</strong> @_geoBoundingBox.MinLatitude.ToString("F6")�, @_geoBoundingBox.MinLongitude.ToString("F6")� |
-                                        <strong>NE:</strong> @_geoBoundingBox.MaxLatitude.ToString("F6")�, @_geoBoundingBox.MaxLongitude.ToString("F6")�
+                                        <strong>SW:</strong> @_geoBoundingBox.MinLatitude.ToString("F6")°, @_geoBoundingBox.MinLongitude.ToString("F6")° |
+                                        <strong>NE:</strong> @_geoBoundingBox.MaxLatitude.ToString("F6")°, @_geoBoundingBox.MaxLongitude.ToString("F6")°
                                     </MudText>
                                     @if (_geoTiffMinElevation.HasValue && _geoTiffMaxElevation.HasValue)
                                     {
@@ -264,8 +264,8 @@
                                             <strong>DEM Resolution:</strong> @GetNativePixelSizeDescription()
                                         </MudText>
                                         <MudText Typo="Typo.body2">
-                                            <strong>Source Size:</strong> @_geoTiffOriginalWidth � @_geoTiffOriginalHeight px
-                                            (@GetRealWorldWidthKm().ToString("F1")km � @GetRealWorldHeightKm().ToString("F1")km)
+                                            <strong>Source Size:</strong> @_geoTiffOriginalWidth &times; @_geoTiffOriginalHeight px
+                                            (@GetRealWorldWidthKm().ToString("F1")km &times; @GetRealWorldHeightKm().ToString("F1")km)
                                         </MudText>
                                     }
                                     <MudText Typo="Typo.caption" Class="mt-1">
@@ -282,8 +282,8 @@
                                             Cropped Region (Used for OSM)
                                         </MudText>
                                         <MudText Typo="Typo.body2">
-                                            <strong>SW:</strong> @_cropResult.CroppedBoundingBox.MinLatitude.ToString("F6")�, @_cropResult.CroppedBoundingBox.MinLongitude.ToString("F6")� |
-                                            <strong>NE:</strong> @_cropResult.CroppedBoundingBox.MaxLatitude.ToString("F6")�, @_cropResult.CroppedBoundingBox.MaxLongitude.ToString("F6")�
+                                            <strong>SW:</strong> @_cropResult.CroppedBoundingBox.MinLatitude.ToString("F6")°, @_cropResult.CroppedBoundingBox.MinLongitude.ToString("F6")° |
+                                            <strong>NE:</strong> @_cropResult.CroppedBoundingBox.MaxLatitude.ToString("F6")°, @_cropResult.CroppedBoundingBox.MaxLongitude.ToString("F6")°
                                         </MudText>
                                         @if (_cropResult.CroppedMinElevation.HasValue && _cropResult.CroppedMaxElevation.HasValue)
                                         {

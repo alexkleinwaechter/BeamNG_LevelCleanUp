@@ -221,7 +221,7 @@ public class TerrainGenerationState
     public string GetMetersPerPixelHelperText()
     {
         var terrainSizeKm = MetersPerPixel * TerrainSize / 1000f;
-        return $"Terrain = {terrainSizeKm:F1}km � {terrainSizeKm:F1}km in-game";
+        return $"Terrain = {terrainSizeKm:F1}km × {terrainSizeKm:F1}km in-game";
     }
 
     /// <summary>

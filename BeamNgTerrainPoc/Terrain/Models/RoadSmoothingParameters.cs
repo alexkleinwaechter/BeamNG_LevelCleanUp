@@ -67,8 +67,8 @@ public class RoadSmoothingParameters
     /// <summary>
     ///     Distance from road edge to blend terrain in meters.
     ///     This creates the embankment/transition zone between road and natural terrain.
-    ///     Total terrain impact width = RoadWidthMeters + (TerrainAffectedRangeMeters � 2)
-    ///     Example: 8m road + (12m � 2) = 32m total width
+    ///     Total terrain impact width = RoadWidthMeters + (TerrainAffectedRangeMeters × 2)
+    ///     Example: 8m road + (12m × 2) = 32m total width
     ///     Typical values:
     ///     - 8-12m: Narrow mountain road (tight integration)
     ///     - 12-15m: Standard highway (realistic)
@@ -129,9 +129,9 @@ public class RoadSmoothingParameters
     ///     Only enforced when EnableMaxSlopeConstraint = true.
     ///     Prevents unrealistic steepness on the road itself.
     ///     Typical values:
-    ///     - 1-2�: Racing circuit (ultra-flat)
-    ///     - 4-6�: Highway standard
-    ///     - 8-10�: Mountain road (steep but driveable)
+    ///     - 1-2°: Racing circuit (ultra-flat)
+    ///     - 4-6°: Highway standard
+    ///     - 8-10°: Mountain road (steep but driveable)
     ///     Default: 4.0
     /// </summary>
     public float RoadMaxSlopeDegrees { get; set; } = 4.0f;
@@ -140,9 +140,9 @@ public class RoadSmoothingParameters
     ///     Maximum slope for embankments/sides in degrees.
     ///     Controls how sharply terrain transitions from road edge to natural terrain.
     ///     Typical values:
-    ///     - 20-25�: Gentle embankment (1:2.5 ratio)
-    ///     - 30�: Standard embankment (1:1.7 ratio)
-    ///     - 35-40�: Steep embankment (1:1.2 ratio)
+    ///     - 20-25°: Gentle embankment (1:2.5 ratio)
+    ///     - 30°: Standard embankment (1:1.7 ratio)
+    ///     - 35-40°: Steep embankment (1:1.2 ratio)
     ///     Default: 30.0
     /// </summary>
     public float SideMaxSlopeDegrees { get; set; } = 30.0f;
@@ -319,8 +319,8 @@ public class RoadSmoothingParameters
     ///     Export the smoothed heightmap as a grayscale image with road outlines overlaid.
     ///     Shows:
     ///     - Smoothed heightmap as grayscale background (black=low, white=high)
-    ///     - Thin cyan outline at road edges (� roadWidth/2)
-    ///     - Thin magenta outline at terrain blending edges (� roadWidth/2 + terrainAffectedRange)
+    ///     - Thin cyan outline at road edges (± roadWidth/2)
+    ///     - Thin magenta outline at terrain blending edges (± roadWidth/2 + terrainAffectedRange)
     ///     Only works with Spline approach (requires distance field).
     ///     Output file: smoothed_heightmap_with_road_outlines.png
     ///     Default: true (always export debug images to MT_TerrainGeneration folder)

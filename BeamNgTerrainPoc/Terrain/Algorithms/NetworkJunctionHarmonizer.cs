@@ -569,8 +569,8 @@ public class NetworkJunctionHarmonizer
     ///     Computes elevation for junctions where all roads have equal priority.
     ///     Uses geometric heuristics to determine which road is "dominant":
     ///     1. Road length - Longer roads are typically main roads
-    ///     2. Straightness - Roads that approach at ~180� from each other are likely
-    ///     the same road (dominant), while roads at 90� are likely joining (secondary)
+    ///     2. Straightness - Roads that approach at ~180° from each other are likely
+    ///     the same road (dominant), while roads at 90° are likely joining (secondary)
     ///     The dominant road's elevation is used directly; secondary roads adapt to it.
     /// </summary>
     private float ComputeEqualPriorityJunctionElevation(NetworkJunction junction)
@@ -608,7 +608,7 @@ public class NetworkJunctionHarmonizer
 
                 TerrainCreationLogger.Current?.Detail(
                     $"Junction #{junction.JunctionId}: Equal priority, similar lengths " +
-                    $"(ratio={lengthRatio:F2}, angle={angleBetween:F0}�), using average elevation {avgElev:F2}m " +
+                    $"(ratio={lengthRatio:F2}, angle={angleBetween:F0}°), using average elevation {avgElev:F2}m " +
                     $"(dominant={dominant.CrossSection.TargetElevation:F2}m, secondary={secondary.CrossSection.TargetElevation:F2}m)");
 
                 return avgElev;
@@ -616,7 +616,7 @@ public class NetworkJunctionHarmonizer
 
             TerrainCreationLogger.Current?.Detail(
                 $"Junction #{junction.JunctionId}: Equal priority, dominant road is longer " +
-                $"({dominant.Spline.TotalLengthMeters:F0}m vs {secondary.Spline.TotalLengthMeters:F0}m, angle={angleBetween:F0}�), " +
+                $"({dominant.Spline.TotalLengthMeters:F0}m vs {secondary.Spline.TotalLengthMeters:F0}m, angle={angleBetween:F0}°), " +
                 $"using elevation {dominant.CrossSection.TargetElevation:F2}m");
 
             return dominant.CrossSection.TargetElevation;
@@ -639,7 +639,7 @@ public class NetworkJunctionHarmonizer
 
                 TerrainCreationLogger.Current?.Detail(
                     $"Junction #{junction.JunctionId}: Equal priority, found aligned pair " +
-                    $"(angle={angle:F0}�), using main road elevation {mainRoadElev:F2}m");
+                    $"(angle={angle:F0}°), using main road elevation {mainRoadElev:F2}m");
 
                 return mainRoadElev;
             }
@@ -664,8 +664,8 @@ public class NetworkJunctionHarmonizer
         (JunctionContributor, JunctionContributor, float)? bestPair = null;
         var bestAlignmentScore = 0f;
 
-        // "Aligned" means approaching from opposite directions (angle close to 180�)
-        const float minAlignmentAngle = 140f; // At least 140� to be considered "aligned"
+        // "Aligned" means approaching from opposite directions (angle close to 180°)
+        const float minAlignmentAngle = 140f; // At least 140° to be considered "aligned"
 
         for (var i = 0; i < contributors.Count; i++)
         for (var j = i + 1; j < contributors.Count; j++)

@@ -935,10 +935,10 @@ public class TerrainCreator
     {
         log.Info("=== Road Smoothing Statistics ===");
         log.Info($"Pixels modified: {stats.PixelsModified:N0}");
-        log.Info($"Max road slope: {stats.MaxRoadSlope:F2}�");
+        log.Info($"Max road slope: {stats.MaxRoadSlope:F2}°");
         log.Info($"Max discontinuity: {stats.MaxDiscontinuity:F3}m");
-        log.Info($"Cut volume: {stats.TotalCutVolume:F2} m�");
-        log.Info($"Fill volume: {stats.TotalFillVolume:F2} m�");
+        log.Info($"Cut volume: {stats.TotalCutVolume:F2} m³");
+        log.Info($"Fill volume: {stats.TotalFillVolume:F2} m³");
         log.Info($"Constraints met: {stats.MeetsAllConstraints}");
 
         if (stats.ConstraintViolations.Any())
