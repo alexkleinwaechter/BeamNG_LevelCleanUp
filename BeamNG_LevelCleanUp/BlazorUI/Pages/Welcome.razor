@@ -4,92 +4,40 @@
 
 <ErrorBoundary>
     <ChildContent>
-        @* Hero Section *@
-        <MudPaper Class="pa-4 mb-4" Style="background: linear-gradient(135deg, #1a237e 0%, #ff6f00 100%); border-radius: 12px;">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Spacing="3">
-                <MudImage Src="app-icon.ico" Alt="BeamNG Mapping Tools" Width="48" Height="48" Style="object-fit: contain;" />
-                <MudStack Spacing="0">
-                    <MudText Typo="Typo.h4" Style="color: white; font-weight: 700;">
-                        BeamNG Mapping Tools
-                    </MudText>
-                    <MudText Typo="Typo.body2" Style="color: rgba(255,255,255,0.85);">
-                        Useful tools for BeamNG.drive mapbuilders
-                    </MudText>
-                </MudStack>
-            </MudStack>
-        </MudPaper>
-
-        @* Safety Notice *@
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6" Icon="@Icons.Material.Filled.Shield">
-            <MudText Typo="Typo.body2">
-                <strong>Your files are safe!</strong> All processing happens in a temp folder (<code>%LocalAppData%\BeamNG_LevelCleanUp\temp</code>). 
-                Source ZIPs stay untouched. Still, keeping backups is always smart!
-            </MudText>
-        </MudAlert>
-
-        @* Quick Actions *@
-        <MudText Typo="Typo.h5" Class="mb-4" Style="font-weight: 600;">
-            <MudIcon Icon="@Icons.Material.Filled.RocketLaunch" Class="mr-2" Style="vertical-align: middle;" />
-            Quick Start
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2 mb-5">
+            All processing uses a temp folder &mdash; source ZIPs stay untouched.
         </MudText>
+
+        @* Featured Tools *@
         <MudGrid Spacing="4" Class="mb-6">
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="height: 100%; cursor: pointer; transition: all 0.3s ease;" @onclick='() => NavigateTo("/CreateLevel")'>
-                    <MudCardContent Class="d-flex flex-column align-center pa-6">
-                        <MudAvatar Size="Size.Large" Style="background: linear-gradient(135deg, #4caf50, #8bc34a); width: 72px; height: 72px;" Class="mb-4">
-                            <MudIcon Icon="@Icons.Material.Filled.AddCircle" Style="font-size: 2.5rem;" />
-                        </MudAvatar>
-                        <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-2">Create New Level</MudText>
-                        <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary">
-                            Start fresh with a guided wizard. Configure terrain, materials, and assets from any map.
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="height: 100%; cursor: pointer; transition: all 0.3s ease;" @onclick='() => NavigateTo("/GenerateTerrain")'>
-                    <MudCardContent Class="d-flex flex-column align-center pa-6">
-                        <MudAvatar Size="Size.Large" Style="background: linear-gradient(135deg, #2196f3, #03a9f4); width: 72px; height: 72px;" Class="mb-4">
-                            <MudIcon Icon="@Icons.Material.Filled.Terrain" Style="font-size: 2.5rem;" />
-                        </MudAvatar>
-                        <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-2">Generate Terrain</MudText>
-                        <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary">
-                            Create terrain from PNG heightmaps or GeoTIFF with OSM road smoothing and material layers.
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="height: 100%; cursor: pointer; transition: all 0.3s ease;" @onclick='() => NavigateTo("/MapShrink")'>
-                    <MudCardContent Class="d-flex flex-column align-center pa-6">
-                        <MudAvatar Size="Size.Large" Style="background: linear-gradient(135deg, #ff9800, #ffc107); width: 72px; height: 72px;" Class="mb-4">
-                            <MudIcon Icon="@Icons.Material.Filled.Compress" Style="font-size: 2.5rem;" />
-                        </MudAvatar>
-                        <MudText Typo="Typo.h6" Align="Align.Center" Class="mb-2">Map Shrinker</MudText>
-                        <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary">
-                            Remove unused assets and files. Create lean deployment packages.
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
+            @foreach (var tool in _featured)
+            {
+                <MudItem xs="12" md="4">
+                    <MudCard Class="tool-card tool-card--featured" @onclick="() => NavigateTo(tool.Route)"
+                             Style="@($"height: 100%; cursor: pointer; border-left: 3px solid {tool.Color};")">
+                        <MudCardContent Class="pa-5">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                                <MudIcon Icon="@tool.Icon" Style="@($"color: {tool.Color};")" />
+                                <MudText Typo="Typo.h6" Style="font-weight: 600;">@tool.Title</MudText>
+                            </MudStack>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">@tool.Description</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
         </MudGrid>
 
-        @* All Tools Section *@
-        <MudText Typo="Typo.h5" Class="mb-4" Style="font-weight: 600;">
-            <MudIcon Icon="@Icons.Material.Filled.Construction" Class="mr-2" Style="vertical-align: middle;" />
-            All Tools
-        </MudText>
-        <MudGrid Spacing="3">
-            @foreach (var tool in _tools)
+        @* More Tools *@
+        <MudText Typo="Typo.overline" Class="mb-3" Style="letter-spacing: 1.5px;">More Tools</MudText>
+        <MudGrid Spacing="3" Class="mb-6">
+            @foreach (var tool in _more)
             {
                 <MudItem xs="12" sm="6" md="4" lg="3">
                     <MudCard Class="tool-card" Style="height: 100%; cursor: pointer;" @onclick="() => NavigateTo(tool.Route)">
                         <MudCardContent Class="pa-4">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-3">
-                                <MudAvatar Size="Size.Medium" Style="@($"background: {tool.Color};")">
-                                    <MudIcon Icon="@tool.Icon" />
-                                </MudAvatar>
-                                <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@tool.Title</MudText>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                                <MudIcon Icon="@tool.Icon" Size="Size.Small" Style="@($"color: {tool.Color};")" />
+                                <MudText Typo="Typo.subtitle2" Style="font-weight: 600;">@tool.Title</MudText>
                                 @if (tool.IsExperimental)
                                 {
                                     <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Beta</MudChip>
@@ -103,7 +51,7 @@
         </MudGrid>
 
         @* Footer Links *@
-        <MudDivider Class="my-6" />
+        <MudDivider Class="my-4" />
         <MudStack Row="true" Justify="Justify.Center" Spacing="4" Class="mb-4">
             <MudLink Href="https://www.beamng.com/threads/beamng-tool-for-map-creators-updated-2025-11-15.89058/" Target="_blank" Color="Color.Primary">
                 <MudIcon Icon="@Icons.Material.Filled.Forum" Class="mr-1" Size="Size.Small" /> BeamNG Forums
@@ -119,37 +67,38 @@
 </ErrorBoundary>
 
 <style>
-    .feature-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
-    }
-
     .tool-card {
-        transition: all 0.2s ease;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
         border: 1px solid transparent;
     }
 
     .tool-card:hover {
         border-color: var(--mud-palette-primary);
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+    }
+
+    .tool-card--featured:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
     }
 </style>
 
 @code {
     private record ToolInfo(string Title, string Description, string Icon, string Route, string Color, bool IsExperimental = false);
 
-    private readonly List<ToolInfo> _tools =
+    private readonly List<ToolInfo> _featured =
     [
-        new("Create Level", "Wizard to create a fresh level with all settings configured", Icons.Material.Filled.AddCircle, "/CreateLevel", "#4caf50"),
-        new("Generate Terrain", "Create .ter files from heightmaps with road smoothing", Icons.Material.Filled.Terrain, "/GenerateTerrain", "#2196f3"),
-        new("Map Shrinker", "Remove orphaned files and shrink deployment size", Icons.Material.Filled.Compress, "/MapShrink", "#ff9800"),
+        new("Create Level Wizard", "Guided wizard to set up a new level with terrain, materials, and assets from any source map.", Icons.Material.Filled.AddCircle, "/CreateLevel", "#4caf50"),
+        new("Generate Terrain", "Create .ter files from PNG heightmaps or GeoTIFF with smooth OSM roads and material layers.", Icons.Material.Filled.Terrain, "/GenerateTerrain", "#2196f3"),
+        new("Map Shrinker", "Remove orphaned files and unused assets to create lean deployment packages.", Icons.Material.Filled.Compress, "/MapShrink", "#ff9800")
+    ];
+
+    private readonly List<ToolInfo> _more =
+    [
         new("Rename Map", "Change map name in filesystem and internal references", Icons.Material.Filled.DriveFileRenameOutline, "/RenameMap", "#9c27b0"),
-        new("Copy Assets", "Copy decalroads, decals, and DAE assets between maps", Icons.Material.Filled.ContentCopy, "/CopyAssets", "#00bcd4", false),
-        new("Terrain Materials", "Copy or replace terrain materials with groundcover support", Icons.Material.Filled.Layers, "/CopyTerrains", "#795548"),
-        new("Forest Brushes", "Copy vegetation brushes and all dependencies", Icons.Material.Filled.Forest, "/CopyForestBrushes", "#8bc34a"),
-        new("Convert to Forest", "Convert TSStatic assets to efficient forest items", Icons.Material.Filled.Transform, "/ConvertToForest", "#607d8b"),
-        new("Utilities", "Move map position and other helper tools", Icons.Material.Filled.Build, "/Utilities", "#78909c")
+        new("Copy Assets", "Copy decalroads, decals, and DAE assets between maps", Icons.Material.Filled.ContentCopy, "/CopyAssets", "#00bcd4"),
+        new("Copy Terrain Materials", "Copy or replace terrain materials with groundcover support", Icons.Material.Filled.Layers, "/CopyTerrains", "#795548"),
+        new("Copy Forest Brushes", "Copy forest items and all dependencies", Icons.Material.Filled.Forest, "/CopyForestBrushes", "#8bc34a"),
+        new("Convert to Forest", "Convert TSStatic assets to forest items", Icons.Material.Filled.Transform, "/ConvertToForest", "#607d8b"),
+        new("Utilities", "Move map position together with all objects", Icons.Material.Filled.Build, "/Utilities", "#78909c")
     ];
 
     private void NavigateTo(string route)
