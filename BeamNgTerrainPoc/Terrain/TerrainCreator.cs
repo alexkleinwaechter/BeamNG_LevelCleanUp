@@ -770,11 +770,12 @@ public class TerrainCreator
 
         try
         {
-            // Determine output path
+            // Determine output path - use MT_TerrainGeneration folder for debug/export assets
             var outputPath = parameters.RoadMeshDaeOutputPath;
             if (string.IsNullOrEmpty(outputPath))
             {
-                var outputDir = Path.GetDirectoryName(terrainOutputPath) ?? ".";
+                // Use debugBaseDir (MT_TerrainGeneration) if available, otherwise fall back to terrain output directory
+                var outputDir = !string.IsNullOrEmpty(debugBaseDir) ? debugBaseDir : Path.GetDirectoryName(terrainOutputPath) ?? ".";
                 outputPath = Path.Combine(outputDir, $"{parameters.TerrainName}_roads.dae");
             }
 
