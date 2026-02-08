@@ -1,10 +1,14 @@
 <Project Sdk="WixToolset.Sdk/5.0.0">
-  <PropertyGroup>
-    <OutputType>Package</OutputType>
-    <OutputName>BeamNG_LevelCleanUp_Setup</OutputName>
-    <!-- Target 64-bit Windows -->
-    <InstallerPlatform>x64</InstallerPlatform>
-  </PropertyGroup>
+<PropertyGroup>
+  <OutputType>Package</OutputType>
+  <OutputName>BeamNG_LevelCleanUp_Setup</OutputName>
+  <!-- Target 64-bit Windows -->
+  <InstallerPlatform>x64</InstallerPlatform>
+  <!-- Suppress validation errors that require Windows Installer service -->
+  <SuppressValidation>true</SuppressValidation>
+  <!-- Skip ICE validation completely -->
+  <SuppressIces>all</SuppressIces>
+</PropertyGroup>
   
   <!-- Read AssemblyVersion from the main project file before WiX preprocessing -->
   <Target Name="ReadVersionFromMainProject" BeforeTargets="BeforeCompile">

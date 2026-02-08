@@ -10,7 +10,7 @@
   Installs to: C:\Program Files\BeamNG Mapping Tools
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
   <Package Name="BeamNG Mapping Tools" 
            Manufacturer="Alexander Kleinwaechter" 
@@ -52,11 +52,30 @@
                   DllEntry="WixShellExec"
                   Impersonate="yes" />
     
+    <!-- Custom action to remove AppData folders on uninstall using PowerShell -->
+    <!-- This removes both BeamNG_LevelCleanUp and BeamNG_LevelCleanUp.WebView2 folders from LocalAppData -->
+    <SetProperty Id="RemoveAppDataFolders" 
+                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $path = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $path) { Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue } }&quot;"
+                 Before="RemoveAppDataFolders"
+                 Sequence="execute" />
+    
+    <CustomAction Id="RemoveAppDataFolders"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+    
+    <InstallExecuteSequence>
+      <Custom Action="RemoveAppDataFolders" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+    
     <Feature Id="MainApplication" Title="BeamNG Mapping Tools" Level="1">
       <ComponentGroupRef Id="AppComponents" />
       <ComponentRef Id="MainExeComponent" />
       <ComponentRef Id="ProgramMenuShortcut" />
       <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="AppDataCleanupComponent" />
     </Feature>
     
   </Package>
@@ -102,6 +121,14 @@
                 Target="[INSTALLFOLDER]BeamNG_LevelCleanUp.exe"
                 WorkingDirectory="INSTALLFOLDER" />
       <RegistryValue Root="HKCU" Key="Software\BeamNG_LevelCleanUp" Name="desktopshortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    
+    <!-- Component for registry tracking and cleanup -->
+    <Component Id="AppDataCleanupComponent" Guid="E4F5A6B7-C8D9-0123-E4F5-A6B7C8D90124" Directory="INSTALLFOLDER" Bitness="always64">
+      <RegistryValue Root="HKCU" Key="Software\BeamNG_LevelCleanUp" Name="AppDataTracking" Type="string" Value="[LocalAppDataFolder]" KeyPath="yes" />
+      
+      <!-- Remove registry key on uninstall -->
+      <RemoveRegistryKey Root="HKCU" Key="Software\BeamNG_LevelCleanUp" Action="removeOnUninstall" />
     </Component>
   </Fragment>
 
