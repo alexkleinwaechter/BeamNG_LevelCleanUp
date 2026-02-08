@@ -94,6 +94,45 @@ public class OsmQueryResult
                            f.GeometryType == OsmGeometryType.LineString && 
                            !f.IsRoundabout);
     
+    /// <summary>
+    /// Merges multiple chunk results into a single result, deduplicating features by (type, id).
+    /// Overpass <c>out geom</c> returns complete way geometry in every chunk that intersects it,
+    /// so we keep the first occurrence and skip duplicates.
+    /// </summary>
+    /// <param name="chunkResults">Chunk results to merge.</param>
+    /// <param name="fullBbox">The original full bounding box that was split into chunks.</param>
+    /// <returns>A merged result with deduplicated features.</returns>
+    public static OsmQueryResult MergeChunks(IReadOnlyList<OsmQueryResult> chunkResults, GeoBoundingBox fullBbox)
+    {
+        var seen = new HashSet<(string type, long id)>();
+        var mergedFeatures = new List<OsmFeature>();
+        int totalNodes = 0, totalWays = 0, totalRelations = 0;
+
+        foreach (var chunk in chunkResults)
+        {
+            totalNodes += chunk.NodeCount;
+            totalWays += chunk.WayCount;
+            totalRelations += chunk.RelationCount;
+
+            foreach (var feature in chunk.Features)
+            {
+                if (seen.Add((feature.FeatureType.ToString(), feature.Id)))
+                    mergedFeatures.Add(feature);
+            }
+        }
+
+        return new OsmQueryResult
+        {
+            BoundingBox = fullBbox,
+            Features = mergedFeatures,
+            QueryTime = DateTime.UtcNow,
+            IsFromCache = false,
+            NodeCount = totalNodes,
+            WayCount = totalWays,
+            RelationCount = totalRelations
+        };
+    }
+
     public override string ToString()
     {
         var roundaboutCount = RoundaboutFeatures.Count();

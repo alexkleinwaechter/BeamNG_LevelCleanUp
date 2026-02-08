@@ -340,20 +340,13 @@ public class TerrainAnalysisOrchestrator
             TerrainGenerationState state,
             OsmQueryResult? osmQueryResult)
     {
-        // Fetch OSM data if not cached
+        // Fetch OSM data if not cached (uses chunked parallel queries for large areas)
         if (osmQueryResult == null)
         {
-            var cache = new OsmQueryCache();
-            osmQueryResult = await cache.GetAsync(effectiveBoundingBox);
-
-            if (osmQueryResult == null)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    "Fetching OSM data from Overpass API...");
-                var service = new OverpassApiService();
-                osmQueryResult = await service.QueryAllFeaturesAsync(effectiveBoundingBox);
-                await cache.SetAsync(effectiveBoundingBox, osmQueryResult);
-            }
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "Fetching OSM data (chunked parallel queries for large areas)...");
+            using var chunkedService = new ChunkedOverpassQueryService();
+            osmQueryResult = await chunkedService.QueryAllFeaturesChunkedAsync(effectiveBoundingBox);
         }
 
         var processor = new OsmGeometryProcessor();

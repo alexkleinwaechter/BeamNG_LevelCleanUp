@@ -148,7 +148,7 @@ public class GeoBoundingBox
     /// </summary>
     public override string ToString()
     {
-        return $"BBox[SW: ({MinLatitude:F4}°, {MinLongitude:F4}°), NE: ({MaxLatitude:F4}°, {MaxLongitude:F4}°)]";
+        return $"BBox[SW: ({MinLatitude:F4}ï¿½, {MinLongitude:F4}ï¿½), NE: ({MaxLatitude:F4}ï¿½, {MaxLongitude:F4}ï¿½)]";
     }
 
     /// <summary>
@@ -241,6 +241,70 @@ public class GeoBoundingBox
             return null;
         }
     }
+
+    /// <summary>
+    /// Approximate meters per degree of latitude (roughly constant).
+    /// </summary>
+    private const double MetersPerDegreeLat = 111_320.0;
+
+    /// <summary>
+    /// Splits this bounding box into a grid of roughly equal-sized chunks.
+    /// Chunk sizes are approximate because degree-to-meter conversion varies with latitude.
+    /// </summary>
+    /// <param name="chunkSizeMeters">Target chunk size in meters (default 1000m).</param>
+    /// <returns>List of chunk bounding boxes covering this bbox.</returns>
+    public List<GeoBoundingBox> SplitIntoChunks(double chunkSizeMeters = 1000.0)
+    {
+        // Calculate meters-per-degree at the center latitude
+        var centerLatRad = Center.Latitude * Math.PI / 180.0;
+        var metersPerDegreeLon = MetersPerDegreeLat * Math.Cos(centerLatRad);
+
+        // Convert chunk size from meters to degrees
+        var chunkDegreesLat = chunkSizeMeters / MetersPerDegreeLat;
+        var chunkDegreesLon = chunkSizeMeters / metersPerDegreeLon;
+
+        // Calculate grid dimensions
+        var cols = Math.Max(1, (int)Math.Ceiling(Width / chunkDegreesLon));
+        var rows = Math.Max(1, (int)Math.Ceiling(Height / chunkDegreesLat));
+
+        // If bbox fits in a single chunk, return it as-is
+        if (cols == 1 && rows == 1)
+            return [this];
+
+        var chunks = new List<GeoBoundingBox>(cols * rows);
+
+        for (var row = 0; row < rows; row++)
+        {
+            for (var col = 0; col < cols; col++)
+            {
+                var chunkMinLon = MinLongitude + col * chunkDegreesLon;
+                var chunkMinLat = MinLatitude + row * chunkDegreesLat;
+                var chunkMaxLon = Math.Min(MinLongitude + (col + 1) * chunkDegreesLon, MaxLongitude);
+                var chunkMaxLat = Math.Min(MinLatitude + (row + 1) * chunkDegreesLat, MaxLatitude);
+
+                chunks.Add(new GeoBoundingBox(chunkMinLon, chunkMinLat, chunkMaxLon, chunkMaxLat));
+            }
+        }
+
+        return chunks;
+    }
+
+    /// <summary>
+    /// Estimates the approximate width of this bounding box in meters.
+    /// </summary>
+    public double ApproximateWidthMeters
+    {
+        get
+        {
+            var centerLatRad = Center.Latitude * Math.PI / 180.0;
+            return Width * MetersPerDegreeLat * Math.Cos(centerLatRad);
+        }
+    }
+
+    /// <summary>
+    /// Estimates the approximate height of this bounding box in meters.
+    /// </summary>
+    public double ApproximateHeightMeters => Height * MetersPerDegreeLat;
 
     /// <summary>
     /// Checks if the given projection WKT represents WGS84 (EPSG:4326) or a similar geographic CRS.

@@ -17,7 +17,8 @@
       "Bash(cmd /c \"findstr /s /i /assets/ \"\"D:\\\\Source\\\\beamng_mapping_pro\\\\examples_for_ai\\\\levels\\\\east_coast_usa\\\\*materials.json\"\"\")",
       "Bash(cmd /c \"dir D:\\\\Source\\\\beamng_mapping_pro\\\\examples_for_ai\\\\levels\\\\east_coast_usa\\\\ 2>&1\")",
       "Bash(cmd /c \"dir D:\\\\Source\\\\beamng_mapping_pro\\\\examples_for_ai\\\\levels\\\\ 2>&1\")",
-      "Bash(cmd /c \"dir /s /b D:\\\\Source\\\\beamng_mapping_pro\\\\examples_for_ai 2>&1\")"
+      "Bash(cmd /c \"dir /s /b D:\\\\Source\\\\beamng_mapping_pro\\\\examples_for_ai 2>&1\")",
+      "Bash(findstr:*)"
     ]
   }
 }

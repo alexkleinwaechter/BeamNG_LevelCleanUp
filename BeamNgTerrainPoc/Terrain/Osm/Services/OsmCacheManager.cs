@@ -19,7 +19,7 @@ public class OsmCacheManager
     /// </summary>
     public OsmCacheManager()
     {
-        _roadCache = new OsmQueryCache();
+        _roadCache = OsmQueryCache.Shared;
         _junctionCache = new OsmJunctionCache();
     }
 

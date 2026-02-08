@@ -120,7 +120,7 @@
                             </MudButton>
                         </MudStack>
                         <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            @FilteredGroups.Count() types · @_selectedGroups.Sum(g => g.FeatureCount) features selected
+                            @FilteredGroups.Count() types ï¿½ @_selectedGroups.Sum(g => g.FeatureCount) features selected
                         </MudText>
                     </div>
                 </div>
@@ -388,22 +388,12 @@
         
         try
         {
-            // Check cache first - run on background thread
+            // Check cache first, then use chunked parallel queries for large areas
             OsmQueryResult? queryResult = null;
             await Task.Run(async () =>
             {
-                var cache = new OsmQueryCache();
-                queryResult = await cache.GetAsync(BoundingBox);
-                
-                if (queryResult == null)
-                {
-                    // Fetch from API
-                    var service = new OverpassApiService();
-                    queryResult = await service.QueryAllFeaturesAsync(BoundingBox);
-                    
-                    // Cache the result
-                    await cache.SetAsync(BoundingBox, queryResult);
-                }
+                using var chunkedService = new ChunkedOverpassQueryService();
+                queryResult = await chunkedService.QueryAllFeaturesChunkedAsync(BoundingBox);
             }).ConfigureAwait(false);
             
             _queryResult = queryResult;
@@ -474,8 +464,7 @@
         // Clear cache and retry
         if (BoundingBox != null)
         {
-            var cache = new OsmQueryCache();
-            cache.Invalidate(BoundingBox);
+            OsmQueryCache.Shared.Invalidate(BoundingBox);
         }
         await FetchOsmData();
     }
