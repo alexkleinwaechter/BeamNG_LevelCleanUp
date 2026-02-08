@@ -6,6 +6,20 @@
     <InstallerPlatform>x64</InstallerPlatform>
   </PropertyGroup>
   
+  <!-- Read AssemblyVersion from the main project file before WiX preprocessing -->
+  <Target Name="ReadVersionFromMainProject" BeforeTargets="BeforeCompile">
+    <XmlPeek XmlInputPath="..\BeamNG_LevelCleanUp\BeamNG_LevelCleanUp.csproj"
+             Query="/Project/PropertyGroup/AssemblyVersion/text()">
+      <Output TaskParameter="Result" PropertyName="ProductVersion" />
+    </XmlPeek>
+    
+    <Message Text="Auto-detected version from BeamNG_LevelCleanUp.csproj: $(ProductVersion)" Importance="high" />
+    
+    <PropertyGroup>
+      <DefineConstants>ProductVersion=$(ProductVersion)</DefineConstants>
+    </PropertyGroup>
+  </Target>
+  
   <ItemGroup>
     <PackageReference Include="WixToolset.Heat" Version="5.0.0" />
     <PackageReference Include="WixToolset.UI.wixext" Version="5.0.0" />
