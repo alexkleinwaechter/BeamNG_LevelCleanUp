@@ -157,7 +157,6 @@ public class TerrainCreator
             // 3a. Apply road smoothing if road materials exist
             SmoothingResult? smoothingResult = null;
             UnifiedSmoothingResult? unifiedResult = null;
-            float[,]? heightMap2DForSpawn = null;
             
             if (parameters.Materials.Any(m => m.RoadParameters != null))
             {
@@ -185,8 +184,6 @@ public class TerrainCreator
 
                 if (smoothingResult != null)
                 {
-                    heights = ConvertTo1DArray(smoothingResult.ModifiedHeightMap);
-                    heightMap2DForSpawn = smoothingResult.ModifiedHeightMap;
                     perfLog.Timing($"Road smoothing completed: {sw.Elapsed.TotalSeconds:F2}s");
                     perfLog.Info("Road smoothing completed successfully!");
                 }
@@ -198,16 +195,17 @@ public class TerrainCreator
                 }
             }
 
+            // Build the canonical 2D heightmap for terrain assembly:
+            // - If road smoothing was applied, use the smoothed 2D heightmap directly (avoids a redundant 2D→1D→2D round-trip)
+            // - Otherwise, convert the 1D heightmap to 2D once (needed for both spawn extraction and terrain assembly)
+            var heightMap2D = smoothingResult != null
+                ? smoothingResult.ModifiedHeightMap
+                : ConvertTo2DArray(heights, parameters.Size);
+
             // 3b. Extract spawn point from road splines (requires heightmap)
             // This is done INSIDE TerrainCreator because we have access to the smoothed heightmap
             perfLog.LogSection("Spawn Point Extraction");
             sw.Restart();
-            
-            // Use smoothed heightmap if available, otherwise convert the original
-            if (heightMap2DForSpawn == null)
-            {
-                heightMap2DForSpawn = ConvertTo2DArray(heights, parameters.Size);
-            }
             
             // Try to extract spawn point from the unified road network first (works for PNG roads)
             // This captures splines created during smoothing, not just pre-built OSM splines.
@@ -217,7 +215,7 @@ public class TerrainCreator
                 // Use the new network-based extraction (works for both PNG and OSM)
                 parameters.ExtractedSpawnPoint = SpawnPointData.ExtractFromNetwork(
                     unifiedResult.Network,
-                    heightMap2DForSpawn,
+                    heightMap2D,
                     parameters.Size,
                     parameters.MetersPerPixel,
                     parameters.TerrainBaseHeight);
@@ -227,7 +225,7 @@ public class TerrainCreator
                 // Fallback to material-based extraction (for OSM roads with PreBuiltSplines)
                 parameters.ExtractedSpawnPoint = SpawnPointData.ExtractFromRoads(
                     parameters.Materials,
-                    heightMap2DForSpawn,
+                    heightMap2D,
                     parameters.Size,
                     parameters.MetersPerPixel,
                     parameters.TerrainBaseHeight);
@@ -291,10 +289,11 @@ public class TerrainCreator
             
             if (isGeoTiffSource)
             {
-                var validHeights = heights.Where(h => !float.IsNaN(h) && !float.IsInfinity(h) && h >= 0 && h < parameters.MaxHeight * 0.95f).ToList();
-                medianHeight = validHeights.Count > 0 
-                    ? validHeights.OrderBy(h => h).ElementAt(validHeights.Count / 2) 
-                    : 0.23f;
+                var maxThreshold = parameters.MaxHeight * 0.95f;
+                medianHeight = QuickSelect.FilteredMedian(
+                    heightMap2D,
+                    h => !float.IsNaN(h) && !float.IsInfinity(h) && h >= 0 && h < maxThreshold,
+                    defaultValue: 0.23f);
                 perfLog.Info($"  Pre-save analysis (GeoTIFF): median height = {medianHeight:F2}m, maxHeight = {parameters.MaxHeight:F2}m");
             }
             else
@@ -302,9 +301,12 @@ public class TerrainCreator
                 perfLog.Info($"  Pre-save analysis (PNG): maxHeight = {parameters.MaxHeight:F2}m (peaks at maxHeight are valid)");
             }
             
-            for (var i = 0; i < terrain.Data.Length; i++)
+            var size = parameters.Size;
+            for (var y = 0; y < size; y++)
+            for (var x = 0; x < size; x++)
             {
-                var height = heights[i];
+                var i = y * size + x;
+                var height = heightMap2D[y, x];
                 var needsFix = false;
                 
                 // Check for problematic values - some checks only apply to GeoTIFF
@@ -331,9 +333,7 @@ public class TerrainCreator
                 {
                     // GeoTIFF ONLY: Check for isolated near-max spikes
                     // For PNG: near-max values are valid terrain features
-                    var x = i % parameters.Size;
-                    var y = i / parameters.Size;
-                    var neighborAvg = GetNeighborAverageHeight(heights, x, y, parameters.Size, 3);
+                    var neighborAvg = GetNeighborAverageHeight(heightMap2D, x, y, size, 3);
                     
                     // If we're near max but neighbors are much lower, this is a spike
                     if (neighborAvg < parameters.MaxHeight * 0.5f)
@@ -346,9 +346,7 @@ public class TerrainCreator
                 if (needsFix)
                 {
                     // Try to get a sensible replacement value
-                    var x = i % parameters.Size;
-                    var y = i / parameters.Size;
-                    var neighborAvg = GetNeighborAverageHeight(heights, x, y, parameters.Size, 3);
+                    var neighborAvg = GetNeighborAverageHeight(heightMap2D, x, y, size, 3);
                     
                     // Use neighbor average if valid, otherwise use median, otherwise use default
                     if (!float.IsNaN(neighborAvg) && neighborAvg >= 0 && neighborAvg < parameters.MaxHeight * 0.95f)
@@ -364,7 +362,7 @@ public class TerrainCreator
                         height = 0.23f; // BeamNG default
                     }
                     
-                    heights[i] = height; // Update the array too
+                    heightMap2D[y, x] = height; // Update the array too
                     spikeFixCount++;
                 }
                 
@@ -433,7 +431,7 @@ public class TerrainCreator
                 sw.Restart();
                 perfLog.Info("Saving modified heightmap...");
                 SaveModifiedHeightmap(
-                    smoothingResult.ModifiedHeightMap,
+                    heightMap2D,
                     outputPath,
                     parameters.MaxHeight,
                     parameters.Size,
@@ -1017,7 +1015,49 @@ public class TerrainCreator
     }
 
     /// <summary>
-    ///     Calculates the average height of neighboring pixels.
+    ///     Calculates the average height of neighboring pixels from a 2D heightmap.
+    ///     Used for spike detection and correction during terrain data assembly.
+    /// </summary>
+    /// <param name="heights">The height array (2D)</param>
+    /// <param name="x">X coordinate</param>
+    /// <param name="y">Y coordinate</param>
+    /// <param name="size">Terrain size</param>
+    /// <param name="radius">Search radius in pixels</param>
+    /// <returns>Average height of valid neighbors, or NaN if no valid neighbors</returns>
+    private static float GetNeighborAverageHeight(float[,] heights, int x, int y, int size, int radius)
+    {
+        var sum = 0f;
+        var count = 0;
+
+        for (var dy = -radius; dy <= radius; dy++)
+        {
+            for (var dx = -radius; dx <= radius; dx++)
+            {
+                if (dx == 0 && dy == 0)
+                    continue; // Skip center pixel
+
+                var nx = x + dx;
+                var ny = y + dy;
+
+                if (nx >= 0 && nx < size && ny >= 0 && ny < size)
+                {
+                    var h = heights[ny, nx];
+                    
+                    // Only include valid heights (not NaN, not negative, not at extreme max)
+                    if (!float.IsNaN(h) && !float.IsInfinity(h) && h >= 0)
+                    {
+                        sum += h;
+                        count++;
+                    }
+                }
+            }
+        }
+
+        return count > 0 ? sum / count : float.NaN;
+    }
+
+    /// <summary>
+    ///     Calculates the average height of neighboring pixels from a 1D heightmap.
     ///     Used for spike detection and correction during terrain data assembly.
     /// </summary>
     /// <param name="heights">The height array (1D, row-major)</param>

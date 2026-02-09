@@ -23,25 +23,22 @@ public static class HeightmapProcessor
         // BeamNG expects bottom-up (0,0 = bottom-left)
         // We need to flip vertically during read
         
-        for (int y = 0; y < size; y++)
+        // Use row-level span access for much faster pixel reads
+        // (avoids per-pixel bounds checks and enables better memory access patterns)
+        heightmapImage.ProcessPixelRows(accessor =>
         {
-            for (int x = 0; x < size; x++)
+            for (int y = 0; y < size; y++)
             {
-                // Read from top-down image
-                var pixel = heightmapImage[x, y];
-                
-                // Convert to 0-1 range
-                float normalizedHeight = pixel.PackedValue / 65535f;
-                
-                // Scale to world height
-                float worldHeight = normalizedHeight * maxHeight;
-                
-                // Write to bottom-up array (flip Y)
+                var row = accessor.GetRowSpan(y);
                 int flippedY = size - 1 - y;
-                int index = flippedY * size + x;
-                heights[index] = worldHeight;
+                int rowOffset = flippedY * size;
+                
+                for (int x = 0; x < size; x++)
+                {
+                    heights[rowOffset + x] = row[x].PackedValue / 65535f * maxHeight;
+                }
             }
-        }
+        });
         
         return heights;
     }

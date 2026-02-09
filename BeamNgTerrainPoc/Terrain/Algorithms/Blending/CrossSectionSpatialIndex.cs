@@ -47,10 +47,13 @@ public class CrossSectionSpatialIndex
 
             var key = GetGridKey(cs.CenterPoint);
 
-            if (!_index.ContainsKey(key))
-                _index[key] = [];
+            if (!_index.TryGetValue(key, out var list))
+            {
+                list = [];
+                _index[key] = list;
+            }
 
-            _index[key].Add(cs);
+            list.Add(cs);
         }
 
         if (skippedInvalid > 0)
@@ -175,16 +178,21 @@ public class SplineGroupedSpatialIndex
 
         foreach (var cs in sections.Where(s => !s.IsExcluded && IsValidTargetElevation(s.TargetElevation)))
         {
-            if (!_indexBySpline.ContainsKey(cs.OwnerSplineId))
-                _indexBySpline[cs.OwnerSplineId] = new Dictionary<(int, int), List<UnifiedCrossSection>>();
+            if (!_indexBySpline.TryGetValue(cs.OwnerSplineId, out var splineIndex))
+            {
+                splineIndex = new Dictionary<(int, int), List<UnifiedCrossSection>>();
+                _indexBySpline[cs.OwnerSplineId] = splineIndex;
+            }
 
-            var splineIndex = _indexBySpline[cs.OwnerSplineId];
             var key = GetGridKey(cs.CenterPoint);
 
-            if (!splineIndex.ContainsKey(key))
-                splineIndex[key] = [];
+            if (!splineIndex.TryGetValue(key, out var list))
+            {
+                list = [];
+                splineIndex[key] = list;
+            }
 
-            splineIndex[key].Add(cs);
+            list.Add(cs);
         }
     }
 

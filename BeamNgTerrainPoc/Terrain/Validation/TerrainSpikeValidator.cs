@@ -432,12 +432,26 @@ public static class TerrainSpikeValidator
         if (heightsMeters.Length == 0)
             return stats;
 
-        var sortedHeights = heightsMeters.OrderBy(h => h).ToArray();
-        
-        stats.MinHeight = sortedHeights[0];
-        stats.MaxHeight = sortedHeights[^1];
-        stats.MedianHeight = sortedHeights[sortedHeights.Length / 2];
-        stats.AverageHeight = heightsMeters.Average();
+        // Use a copy for QuickSelect since it partially reorders the data
+        var heightsCopy = new float[heightsMeters.Length];
+        Array.Copy(heightsMeters, heightsCopy, heightsMeters.Length);
+
+        // Single pass for min, max, sum
+        var min = float.MaxValue;
+        var max = float.MinValue;
+        var sum = 0.0;
+        for (var i = 0; i < heightsCopy.Length; i++)
+        {
+            var h = heightsCopy[i];
+            if (h < min) min = h;
+            if (h > max) max = h;
+            sum += h;
+        }
+
+        stats.MinHeight = min;
+        stats.MaxHeight = max;
+        stats.AverageHeight = (float)(sum / heightsCopy.Length);
+        stats.MedianHeight = Processing.QuickSelect.Median(heightsCopy.AsSpan());
 
         stats.MinRawHeight = rawHeights.Min();
         stats.MaxRawHeight = rawHeights.Max();
