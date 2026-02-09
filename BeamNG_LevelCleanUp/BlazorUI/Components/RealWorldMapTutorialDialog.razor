@@ -1,0 +1,247 @@
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Map" Class="mr-2" />
+            Real-World Maps in BeamNG &mdash; Step by Step
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <div style="max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 8px;">
+
+            <MudText Typo="Typo.body1" Class="mb-4">
+                This tutorial walks you through the complete workflow of turning a real-world location
+                into a driveable BeamNG level &mdash; from downloading elevation data to your first test drive.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            @* Getting Elevation Data *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Small" Class="mr-1" />
+                Get Elevation Data
+            </MudText>
+
+            <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-4">
+                <MudTimelineItem Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Open <MudLink Href="https://mapng.com/" Target="_blank" Color="Color.Primary"><strong>mapng.com</strong>
+                        <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Class="ml-1" /></MudLink>
+                        and navigate to the location you want to recreate.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Use <strong>GPXZ Premium Global</strong> as the elevation source for best results 
+                        (requires a free API key &mdash; up to 100 requests/day at no cost).
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Save the selected area as <strong>GeoTIFF</strong>.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Unzip the downloaded <code>geotiff.zip</code> if it contains tiled data.
+                    </MudText>
+                </MudTimelineItem>
+            </MudTimeline>
+
+            <MudDivider Class="my-4" />
+
+            @* Create a Level *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.AddCircle" Size="Size.Small" Class="mr-1" />
+                Create Your Level
+            </MudText>
+
+            <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-4">
+                <MudTimelineItem Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Start the <strong>Create Level Wizard</strong>. The terrain size is not important at this step &mdash; you can change it later.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Choose a <strong>vanilla source map</strong> that fits best to your area of choice.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Copy <strong>all materials</strong> in the wizard step.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Copy <strong>all forest brushes</strong> for later use.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Copy assets is up to you &mdash; optional but can be useful.
+                    </MudText>
+                </MudTimelineItem>
+            </MudTimeline>
+
+            <MudDivider Class="my-4" />
+
+            @* Generate Terrain *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Terrain" Size="Size.Small" Class="mr-1" />
+                Generate Terrain
+            </MudText>
+
+            <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-4">
+                <MudTimelineItem Color="Color.Info" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        In the <strong>Generate Terrain</strong> wizard, select your GeoTIFF file or GeoTIFF tiles folder.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Info" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Set the <strong>terrain size</strong> and make sure <strong>Meters Per Pixel</strong> is correct &mdash; 
+                        you can find this value in the extracted GeoTIFF info. For testing, keep the size small to save time.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Info" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        The <strong>default parameters</strong> are fine for the beginning.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Info" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Move a default material like <strong>grass</strong> to the top of the material list.
+                    </MudText>
+                </MudTimelineItem>
+            </MudTimeline>
+
+            <MudDivider Class="my-4" />
+
+            @* OSM & Roads *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Route" Size="Size.Small" Class="mr-1" />
+                Configure OSM Layers &amp; Roads
+            </MudText>
+
+            <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-4">
+                <MudTimelineItem Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        For every material you can select <strong>OSM Shapes</strong> to assign OpenStreetMap features &mdash; 
+                        e.g. forest areas for a forest material.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Order your road materials from <strong>least important to most important</strong> &mdash; 
+                        e.g. dirt (track), asphalt (tertiary road), asphalt2 (highway). 
+                        This ensures that asphalt is painted over dirt and not vice versa.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        On your <strong>asphalt material</strong>, select OSM road types like 
+                        <em>primary, secondary, trunk, motorway</em>, etc.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        On your <strong>dirt material</strong>, select OSM road types like 
+                        <em>track, path</em>, etc.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        For roads, enable <strong>"Enable Road Smoothing"</strong> and pick a road preset. 
+                        It works for both PNG and OSM sources.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Warning" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        Hit <strong>"Generate Terrain"</strong>!
+                    </MudText>
+                </MudTimelineItem>
+            </MudTimeline>
+
+            <MudDivider Class="my-4" />
+
+            @* First Run & Iteration *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.DirectionsCar" Size="Size.Small" Class="mr-1" />
+                First Run &amp; Iteration
+            </MudText>
+
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                <strong>Important:</strong> Follow these steps carefully after the first generation!
+            </MudAlert>
+
+            <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-4">
+                <MudTimelineItem Color="Color.Error" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        After generation, <strong>save your preset</strong>, then finish the wizard, 
+                        then hit the button to <strong>copy your level to the BeamNG userfolder</strong>. 
+                        This step is really important.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Error" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        <strong>Test-drive your level</strong> in BeamNG.drive.
+                    </MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Error" Variant="Variant.Filled" Size="Size.Small">
+                    <MudText Typo="Typo.body2">
+                        <strong>Refine:</strong> Go to <em>Generate Terrain</em>, select your level folder 
+                        in the BeamNG userfolder, load your preset, make changes, generate, repeat.
+                    </MudText>
+                </MudTimelineItem>
+            </MudTimeline>
+
+            <MudDivider Class="my-4" />
+
+            @* Bonus: Output Files *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" Class="mr-1" />
+                Generated Output
+            </MudText>
+
+            <MudText Typo="Typo.body2" Class="mb-3">
+                Inside your level folder you will find a <code>MT_TerrainGeneration</code> directory containing:
+            </MudText>
+
+            <MudList T="string" Dense="true" Class="mb-4">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Description" IconColor="Color.Info">
+                    Logs and debug images for every generation step
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Image" IconColor="Color.Info">
+                    All OSM layer images used during generation
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Route" IconColor="Color.Success">
+                    <code>splines/master_splines.json</code> &mdash; load this in BeamNG with the 
+                    <strong>"Load and Save Mastersplines"</strong> companion mod (linked on the start page). 
+                    All generated roads become editable mastersplines for decal roads and more.
+                </MudListItem>
+            </MudList>
+
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">
+                <strong>Have fun building your real-world map!</strong>
+            </MudAlert>
+
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Primary" Variant="Variant.Filled">
+            Got it!
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private void Close()
+    {
+        MudDialog.Close();
+    }
+}

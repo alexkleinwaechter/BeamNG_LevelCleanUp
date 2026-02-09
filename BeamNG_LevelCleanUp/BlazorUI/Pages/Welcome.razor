@@ -1,6 +1,9 @@
 ﻿@page "/"
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
+@inject IDialogService DialogService
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
 
 <ErrorBoundary>
     <ChildContent>
@@ -50,6 +53,42 @@
             }
         </MudGrid>
 
+        @* Companion Mods *@
+        <MudText Typo="Typo.overline" Class="mb-3" Style="letter-spacing: 1.5px;">Companion World-Editor Mods</MudText>
+        <MudGrid Spacing="3" Class="mb-6">
+            @foreach (var mod in _companionMods)
+            {
+                <MudItem xs="12" sm="6">
+                    <MudCard Class="tool-card" Style="height: 100%; cursor: pointer;" @onclick="() => OpenLink(mod.Url)">
+                        <MudCardContent Class="pa-4">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                                <MudIcon Icon="@mod.Icon" Size="Size.Small" Style="@($"color: {mod.Color};")" />
+                                <MudText Typo="Typo.subtitle2" Style="font-weight: 600;">@mod.Title</MudText>
+                                <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Color="Color.Secondary" />
+                            </MudStack>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">@mod.Description</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+
+        @* Getting Started Tutorial *@
+        <MudText Typo="Typo.overline" Class="mb-3" Style="letter-spacing: 1.5px;">Getting Started</MudText>
+        <MudGrid Spacing="3" Class="mb-6">
+            <MudItem xs="12" sm="6">
+                <MudCard Class="tool-card" Style="height: 100%; cursor: pointer;" @onclick="OpenRealWorldMapTutorial">
+                    <MudCardContent Class="pa-4">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Map" Size="Size.Small" Style="color: #4caf50;" />
+                            <MudText Typo="Typo.subtitle2" Style="font-weight: 600;">Real-World Map Tutorial</MudText>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Step-by-step guide to creating a BeamNG level from real-world elevation data, OSM roads, and terrain materials.</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+
         @* Footer Links *@
         <MudDivider Class="my-4" />
         <MudStack Row="true" Justify="Justify.Center" Spacing="4" Class="mb-4">
@@ -83,6 +122,7 @@
 
 @code {
     private record ToolInfo(string Title, string Description, string Icon, string Route, string Color, bool IsExperimental = false);
+    private record ModInfo(string Title, string Description, string Icon, string Url, string Color);
 
     private readonly List<ToolInfo> _featured =
     [
@@ -101,9 +141,32 @@
         new("Utilities", "Move map position together with all objects", Icons.Material.Filled.Build, "/Utilities", "#78909c")
     ];
 
+    private readonly List<ModInfo> _companionMods =
+    [
+        new("Load and Save Mastersplines", "The companion mod for loading the master splines resulting from the terrain generation feature. All mastersplines of the road network are available in BeamNG with this mod.", Icons.Material.Filled.Route, "https://www.beamng.com/threads/experimental-load-and-save-mastersplines.107762/", "#e91e63"),
+        new("Replicate Lights and Objects", "A BeamNG.drive world editor extension that automatically replicates lights and TSStatic objects relative to template shapes throughout your map.", Icons.Material.Filled.ContentCopy, "https://www.beamng.com/threads/replicate-lights-and-objects-world-editor-plugin.106833/", "#ff5722")
+    ];
+
     private void NavigateTo(string route)
     {
         NavigationManager.NavigateTo(route);
+    }
+
+    private async Task OpenLink(string url)
+    {
+        await JS.InvokeVoidAsync("window.open", url, "_blank");
+    }
+
+    private async Task OpenRealWorldMapTutorial()
+    {
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+            CloseButton = true
+        };
+        await DialogService.ShowAsync<BeamNG_LevelCleanUp.BlazorUI.Components.RealWorldMapTutorialDialog>("Real-World Map Tutorial", options);
     }
 
     protected override void OnInitialized()
