@@ -148,15 +148,6 @@ public class NetworkJunction
     public bool IsOsmSourced { get; set; }
 
     /// <summary>
-    ///     Whether this T-junction was converted from a MidSplineCrossing by CrossroadToTJunctionConverter.
-    ///     Converted crossroads need different handling than natural T-junctions:
-    ///     - The continuous road should also get some elevation influence at the crossing
-    ///     - The harmonized elevation should always follow the continuous road's surface
-    ///     - Plateau smoothing should be applied to prevent elevation dips
-    /// </summary>
-    public bool IsConvertedFromCrossing { get; set; }
-
-    /// <summary>
     ///     Distance from the OSM junction hint to this junction's position.
     ///     Only set when OsmHint is not null.
     /// </summary>
