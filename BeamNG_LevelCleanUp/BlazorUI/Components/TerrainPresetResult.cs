@@ -317,12 +317,12 @@ public class JunctionHarmonizationSettings
     public bool UseGlobalSettings { get; set; } = true;
 
     public bool EnableJunctionHarmonization { get; set; } = true;
-    public float JunctionDetectionRadiusMeters { get; set; } = 20.0f;
-    public float JunctionBlendDistanceMeters { get; set; } = 40.0f;
+    public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
+    public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
     public string BlendFunctionType { get; set; } = "Cosine";
     public bool EnableEndpointTaper { get; set; } = true;
     public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
-    public float EndpointTerrainBlendStrength { get; set; } = 0.3f;
+    public float EndpointTerrainBlendStrength { get; set; } = 1f;
 
     // Roundabout settings
     public bool EnableRoundaboutDetection { get; set; } = true;

@@ -967,7 +967,7 @@ public class NetworkJunctionDetector
     ///     2. For each cross-section, check if any OTHER spline's cross-sections are very close
     ///     3. If two mid-spline cross-sections from different splines are close, it's a crossing
     ///     4. Cluster nearby crossings to avoid duplicates
-    ///     5. Skip crossings only if THOSE SAME TWO SPLINES are already connected at an existing junction
+    ///     5. Skip crossings only if there's already a junction AT THIS LOCATION (not just same spline pair elsewhere)
     /// </summary>
     private List<NetworkJunction> DetectMidSplineCrossings(
         UnifiedRoadNetwork network,
@@ -976,7 +976,7 @@ public class NetworkJunctionDetector
         List<NetworkJunction> existingJunctions)
     {
         var crossings = new List<NetworkJunction>();
-        var processedPairs = new HashSet<(int, int)>(); // Track spline pairs we've already found crossings for
+        var processedPairs = new HashSet<(int, int, int, int)>(); // Track (splineA, splineB, gridX, gridY) to allow same pair at different locations
 
         // Use the full detection radius for mid-spline crossings
         // The roads need to be within this distance to be considered "crossing"
@@ -987,31 +987,24 @@ public class NetworkJunctionDetector
             $"DetectMidSplineCrossings: Using detection radius = {crossingDetectionRadius:F1}m, " +
             $"processing {network.Splines.Count} splines, {existingJunctions.Count} existing junctions");
 
-        // Build a set of spline pairs that are ALREADY connected at existing junctions
-        // Only skip mid-spline crossings for pairs that are already handled
-        var alreadyConnectedPairs = new HashSet<(int, int)>();
-        foreach (var junction in existingJunctions)
-        {
-            var splineIds = junction.Contributors.Select(c => c.Spline.SplineId).Distinct().ToList();
-            // Add all pairs of splines in this junction
-            for (var i = 0; i < splineIds.Count; i++)
-            for (var j = i + 1; j < splineIds.Count; j++)
-            {
-                var pairKey = splineIds[i] < splineIds[j]
-                    ? (splineIds[i], splineIds[j])
-                    : (splineIds[j], splineIds[i]);
-                alreadyConnectedPairs.Add(pairKey);
-            }
-        }
+        // Build a spatial lookup of existing junction positions
+        // We only skip a mid-spline crossing if there's already a junction NEAR that specific location
+        // (same spline pair connected elsewhere on the network should NOT prevent detecting a crossing here)
+        var existingJunctionPositions = existingJunctions
+            .Select(j => j.Position)
+            .ToList();
+
+        // Grid cell size for deduplication - use 2x detection radius to allow same pair at distant locations
+        var gridCellSize = crossingDetectionRadius * 2f;
 
         TerrainCreationLogger.Current?.Detail(
-            $"DetectMidSplineCrossings: {alreadyConnectedPairs.Count} spline pairs already connected at existing junctions");
+            $"DetectMidSplineCrossings: {existingJunctions.Count} existing junctions to check for proximity");
 
         // Track positions where we've already created crossings to avoid duplicates
         var newCrossingPositions = new List<Vector2>();
 
         var totalMidSplineSectionsChecked = 0;
-        var skippedAlreadyConnected = 0;
+        var skippedNearExistingJunction = 0;
         var candidateCrossingsFound = 0;
 
         foreach (var spline in network.Splines)
@@ -1051,30 +1044,37 @@ public class NetworkJunctionDetector
 
                 foreach (var (otherSplineId, otherCs) in crossingSplines)
                 {
-                    // Create a canonical pair key to avoid duplicates
-                    var pairKey = spline.SplineId < otherSplineId
-                        ? (spline.SplineId, otherSplineId)
-                        : (otherSplineId, spline.SplineId);
+                    // Calculate crossing point as midpoint between the two closest cross-sections
+                    var crossingPoint = (cs.CenterPoint + otherCs.CenterPoint) / 2f;
 
-                    // Skip if we've already processed this pair in this detection run
+                    // Create a location-aware pair key to allow same spline pair at different locations
+                    var gridX = (int)(crossingPoint.X / gridCellSize);
+                    var gridY = (int)(crossingPoint.Y / gridCellSize);
+                    var pairKey = spline.SplineId < otherSplineId
+                        ? (spline.SplineId, otherSplineId, gridX, gridY)
+                        : (otherSplineId, spline.SplineId, gridX, gridY);
+
+                    // Skip if we've already processed this pair at this location
                     if (processedPairs.Contains(pairKey))
                         continue;
 
-                    // Skip if these two splines are ALREADY connected at an existing junction
-                    // (e.g., one has an endpoint meeting the other - that's a T-junction, not a crossing)
-                    if (alreadyConnectedPairs.Contains(pairKey))
+                    // Skip if there's already an existing junction NEAR this crossing point
+                    // This prevents duplicating junctions that were detected via endpoint clustering
+                    var nearestExistingDist = existingJunctionPositions
+                        .Select(p => Vector2.Distance(p, crossingPoint))
+                        .DefaultIfEmpty(float.MaxValue)
+                        .Min();
+
+                    if (nearestExistingDist < crossingDetectionRadius)
                     {
-                        skippedAlreadyConnected++;
-                        processedPairs.Add(pairKey); // Don't check this pair again
+                        skippedNearExistingJunction++;
+                        processedPairs.Add(pairKey);
                         continue;
                     }
 
                     var otherSpline = network.GetSplineById(otherSplineId);
                     if (otherSpline == null)
                         continue;
-
-                    // Calculate crossing point as midpoint between the two closest cross-sections
-                    var crossingPoint = (cs.CenterPoint + otherCs.CenterPoint) / 2f;
 
                     // Check this isn't too close to another crossing we just created
                     if (newCrossingPositions.Any(p =>
@@ -1119,7 +1119,7 @@ public class NetworkJunctionDetector
 
         TerrainCreationLogger.Current?.Detail(
             $"DetectMidSplineCrossings summary: Checked {totalMidSplineSectionsChecked} mid-spline sections, " +
-            $"skipped {skippedAlreadyConnected} pairs already connected at junctions, " +
+            $"skipped {skippedNearExistingJunction} near existing junctions, " +
             $"found {candidateCrossingsFound} candidate locations, " +
             $"created {crossings.Count} crossing junctions");
 

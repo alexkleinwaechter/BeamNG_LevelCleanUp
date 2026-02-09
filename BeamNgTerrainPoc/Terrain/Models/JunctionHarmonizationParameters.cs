@@ -49,7 +49,7 @@ public class JunctionHarmonizationParameters
     ///     - 12-15m: Wide roads (highways)
     ///     Default: 10.0
     /// </summary>
-    public float JunctionDetectionRadiusMeters { get; set; } = 10.0f;
+    public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
 
     // ========================================
     // JUNCTION BLENDING
@@ -93,7 +93,7 @@ public class JunctionHarmonizationParameters
     ///     - 30-50m: Long taper (gradual ending)
     ///     Default: 25.0
     /// </summary>
-    public float EndpointTaperDistanceMeters { get; set; } = 25.0f;
+    public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
 
     /// <summary>
     ///     How much to blend endpoint elevation toward terrain (0-1).
@@ -102,7 +102,7 @@ public class JunctionHarmonizationParameters
     ///     1.0 = fully blend to terrain elevation
     ///     Default: 0.3 (subtle blend - road mostly keeps its elevation)
     /// </summary>
-    public float EndpointTerrainBlendStrength { get; set; } = 0.3f;
+    public float EndpointTerrainBlendStrength { get; set; } = 1f;
 
     // ========================================
     // ROUNDABOUT SETTINGS

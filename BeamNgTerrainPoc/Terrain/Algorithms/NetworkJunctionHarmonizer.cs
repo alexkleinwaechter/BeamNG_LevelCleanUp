@@ -182,7 +182,8 @@ public class NetworkJunctionHarmonizer
         }
         else
         {
-            TerrainCreationLogger.Current?.InfoFileOnly("  Crossroad to T-junction conversion disabled (mid-spline crossings will retain independent elevations)");
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                "  Crossroad to T-junction conversion disabled (mid-spline crossings will retain independent elevations)");
         }
 
         if (junctions.Count == 0)
@@ -431,7 +432,18 @@ public class NetworkJunctionHarmonizer
 
         var deltaE = MathF.Abs(E_c - E_t);
 
-        if (deltaE < SmallElevationDifferenceMeters)
+        if (junction.IsConvertedFromCrossing)
+        {
+            // CONVERTED CROSSROAD: Always use continuous road's surface elevation.
+            // At a converted crossing, the secondary road must fully adapt to the primary
+            // road's surface. Using a weighted average would create a visible step because:
+            // 1. The primary road continues at E_c (unmodified)
+            // 2. The average (E_c+E_t)/2 is LESS than E_c
+            // 3. The junction CS gets overwritten to the average in propagation
+            // 4. Result: step of (E_c-E_t)/2 at the crossing
+            junction.HarmonizedElevation = E_c;
+        }
+        else if (deltaE < SmallElevationDifferenceMeters)
         {
             // Small difference - use priority-weighted average
             var continuousPriority = continuous.Sum(c => (float)c.Spline.Priority);
@@ -852,7 +864,16 @@ public class NetworkJunctionHarmonizer
             IEnumerable<JunctionContributor> contributorsToPropagate;
 
             if (junction.Type == JunctionType.TJunction)
-                contributorsToPropagate = junction.GetTerminatingRoads();
+            {
+                if (junction.IsConvertedFromCrossing)
+                    // Converted crossroads: propagate along ALL roads (including continuous)
+                    // to ensure smooth terrain transition on the primary road side too.
+                    // The continuous road's blend is shorter (applied below) so it only 
+                    // affects cross-sections very close to the crossing.
+                    contributorsToPropagate = junction.Contributors;
+                else
+                    contributorsToPropagate = junction.GetTerminatingRoads();
+            }
             else
                 contributorsToPropagate = junction.Contributors;
 
@@ -866,11 +887,21 @@ public class NetworkJunctionHarmonizer
                 var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters;
                 if (junctionParams != null) blendDistance = junctionParams.JunctionBlendDistanceMeters;
 
+                // For converted crossroad T-junctions, use a shorter blend distance
+                // for the continuous road. The continuous road should mostly keep its
+                // natural elevation - we only blend close to the crossing to ensure
+                // smooth terrain transition.
+                if (junction.IsConvertedFromCrossing && contributor.IsContinuous)
+                    blendDistance = MathF.Min(blendDistance * 0.4f, contributor.Spline.Parameters.RoadWidthMeters * 3f);
+
                 // Get blend function type
                 var blendFunctionType = junctionParams?.BlendFunctionType ?? JunctionBlendFunctionType.Cosine;
 
-                // For mid-spline crossings, collect influences bidirectionally
-                if (junction.Type == JunctionType.MidSplineCrossing)
+                // For mid-spline crossings, collect influences bidirectionally.
+                // Also use bidirectional for continuous roads in converted crossroad T-junctions,
+                // since the continuous road passes THROUGH the crossing (not an endpoint).
+                if (junction.Type == JunctionType.MidSplineCrossing ||
+                    (junction.IsConvertedFromCrossing && contributor.IsContinuous))
                 {
                     CollectBidirectionalInfluences(
                         splineSections,
@@ -882,15 +913,19 @@ public class NetworkJunctionHarmonizer
                 }
                 else
                 {
-                    // For endpoints (Y, X, Complex), collect influences from the endpoint
-                    var distances = CalculateDistancesFromEndpoint(splineSections, contributor.IsSplineStart);
+                    // For endpoints (Y, X, Complex, T-junction terminating), collect influences from the endpoint
+                    // CRITICAL: For T-junctions created from mid-spline crossings, we must only
+                    // propagate along the correct segment of the split spline
+                    var segmentSections = GetSegmentForContributor(splineSections, contributor);
+                    var distances = CalculateDistancesFromEndpoint(segmentSections, contributor.IsSplineStart);
 
-                    for (var i = 0; i < splineSections.Count; i++)
+                    for (var i = 0; i < segmentSections.Count; i++)
+
                     {
                         var dist = distances[i];
                         if (dist >= blendDistance) continue; // Outside blend zone
 
-                        var cs = splineSections[i];
+                        var cs = segmentSections[i];
 
                         // Calculate blend factor using configured function
                         var t = dist / blendDistance;
@@ -934,6 +969,14 @@ public class NetworkJunctionHarmonizer
 
             var cs = network.CrossSections.FirstOrDefault(c => c.Index == csIndex);
             if (cs == null)
+                continue;
+
+            // CRITICAL: Don't overwrite cross-sections that already have junction edge constraints.
+            // ApplyEdgeConstraints (in ComputeTJunctionElevation) sets TargetElevation to the
+            // primary road's surface elevation, which is MORE accurate than the harmonized
+            // elevation blend. The third pass (edge constraint propagation) also skips these
+            // cross-sections expecting the surface-following value to be preserved.
+            if (cs.HasJunctionConstraint)
                 continue;
 
             // Calculate weighted average of all junction influences
@@ -1028,6 +1071,10 @@ public class NetworkJunctionHarmonizer
                 if (!crossSectionsBySpline.TryGetValue(terminating.Spline.SplineId, out var splineSections))
                     continue;
 
+                // CRITICAL: For T-junctions created from mid-spline crossings, we must only
+                // propagate along the correct segment of the split spline
+                var segmentSections = GetSegmentForContributor(splineSections, terminating);
+
                 // Get blend distance from spline parameters or use global
                 var blendDistance = globalBlendDistance;
                 var junctionParams = terminating.Spline.Parameters.JunctionHarmonizationParameters;
@@ -1038,22 +1085,22 @@ public class NetworkJunctionHarmonizer
                 var blendFunctionType = junctionParams?.BlendFunctionType ?? JunctionBlendFunctionType.Cosine;
 
                 // Calculate distances from the terminating endpoint
-                var distances = CalculateDistancesFromEndpoint(splineSections, terminating.IsSplineStart);
+                var distances = CalculateDistancesFromEndpoint(segmentSections, terminating.IsSplineStart);
 
                 // Propagate constraints along the terminating road using SURFACE-FOLLOWING approach
-                for (var i = 0; i < splineSections.Count; i++)
+                for (var i = 0; i < segmentSections.Count; i++)
                 {
                     var dist = distances[i];
 
                     // Skip the junction cross-section itself (it already has constraints)
-                    if (splineSections[i].Index == terminatingCs.Index)
+                    if (segmentSections[i].Index == terminatingCs.Index)
                         continue;
 
                     // Outside blend zone
                     if (dist >= blendDistance)
                         continue;
 
-                    var cs = splineSections[i];
+                    var cs = segmentSections[i];
 
                     // Calculate blend factor using configured function
                     var t = dist / blendDistance;
@@ -1295,6 +1342,65 @@ public class NetworkJunctionHarmonizer
     }
 
     /// <summary>
+    ///     Gets the subset of cross-sections that belong to the terminating road's segment.
+    ///     When the CrossroadToTJunctionConverter splits a spline, both segments still share
+    ///     the same OwnerSplineId. This method finds the correct segment by looking for the
+    ///     split boundary (a mid-spline cross-section marked as IsSplineStart or IsSplineEnd).
+    ///     For non-split splines, returns the full list unchanged.
+    /// </summary>
+    /// <param name="allSplineSections">All cross-sections for the spline (may contain multiple segments).</param>
+    /// <param name="contributor">The junction contributor whose segment we want.</param>
+    /// <returns>Only the cross-sections belonging to this contributor's segment.</returns>
+    private static List<UnifiedCrossSection> GetSegmentForContributor(
+        List<UnifiedCrossSection> allSplineSections,
+        JunctionContributor contributor)
+    {
+        var junctionCs = contributor.CrossSection;
+        var junctionCsIndex = allSplineSections.FindIndex(cs => cs.Index == junctionCs.Index);
+        if (junctionCsIndex < 0)
+            return allSplineSections; // Couldn't find it, return all
+
+        // Check if this is a split spline by looking for mid-spline endpoint markers.
+        // The CrossroadToTJunctionConverter sets IsSplineEnd on the last CS of segment A
+        // and IsSplineStart on the first CS of segment B. The crossing CS is shared and has
+        // BOTH: IsSplineEnd (as end of A) AND IsSplineStart (as start of B) on the same object,
+        // but in practice segment A's last CS and segment B's first CS are the same object.
+        //
+        // For the contributor where IsSplineEnd = true (segment A ending at crossing):
+        //   - The junction CS is at the END of the segment
+        //   - Take all CS from index 0 up to and including the junction CS
+        // For the contributor where IsSplineStart = true (segment B starting at crossing):
+        //   - The junction CS is at the START of the segment  
+        //   - Take all CS from the junction CS to the end
+
+        if (contributor.IsSplineEnd)
+        {
+            // This segment ends at the crossing point.
+            // Check if the junction CS is NOT the actual last CS of the full spline.
+            // If it's in the middle, this is a split segment.
+            if (junctionCsIndex < allSplineSections.Count - 1)
+            {
+                // This is segment A: from spline start to crossing (inclusive)
+                return allSplineSections.Take(junctionCsIndex + 1).ToList();
+            }
+        }
+        else if (contributor.IsSplineStart)
+        {
+            // This segment starts at the crossing point.
+            // Check if the junction CS is NOT the actual first CS of the full spline.
+            // If it's in the middle, this is a split segment.
+            if (junctionCsIndex > 0)
+            {
+                // This is segment B: from crossing to spline end (inclusive)
+                return allSplineSections.Skip(junctionCsIndex).ToList();
+            }
+        }
+
+        // Not a split spline, or junction CS is at the natural endpoint - return all sections
+        return allSplineSections;
+    }
+
+    /// <summary>
     ///     Calculates cumulative distances from a spline endpoint.
     /// </summary>
     private float[] CalculateDistancesFromEndpoint(List<UnifiedCrossSection> sections, bool fromStart)
@@ -1328,9 +1434,11 @@ public class NetworkJunctionHarmonizer
     ///     to cross-sections within a "plateau radius" of the junction center.
     ///     CRITICAL: We must use preHarmonizationElevations to get the original road elevations,
     ///     NOT the current TargetElevation values which have already been modified by propagation.
-    ///     NOTE: This method intentionally EXCLUDES T-junctions. T-junction surface matching is
-    ///     handled by junction surface constraints (Phase 3) which set ConstrainedLeftEdgeElevation
+    ///     NOTE: This method intentionally EXCLUDES natural T-junctions. T-junction surface matching
+    ///     is handled by junction surface constraints (Phase 3) which set ConstrainedLeftEdgeElevation
     ///     and ConstrainedRightEdgeElevation on terminating road cross-sections.
+    ///     HOWEVER: T-junctions converted from mid-spline crossings ARE included, because they are
+    ///     fundamentally crossroads that need smooth plateau transitions, not natural T-junctions.
     ///     See JUNCTION_SURFACE_CONSTRAINT_IMPLEMENTATION_PLAN.md for details.
     /// </summary>
     /// <returns>Number of cross-sections modified.</returns>
@@ -1342,12 +1450,16 @@ public class NetworkJunctionHarmonizer
     {
         var smoothedCount = 0;
 
-        // Only process multi-way junctions (Y, CrossRoads, Complex) - not T-junctions, isolated endpoints, or excluded
+        // Process multi-way junctions (Y, CrossRoads, Complex) AND converted crossroad T-junctions.
+        // Natural T-junctions are excluded (handled by surface constraints).
+        // Converted crossroad T-junctions are included because they are fundamentally crossroads
+        // that need plateau smoothing for clean elevation transitions.
         var multiWayJunctions = junctions.Where(j =>
             !j.IsExcluded &&
             (j.Type == JunctionType.YJunction ||
              j.Type == JunctionType.CrossRoads ||
-             j.Type == JunctionType.Complex)).ToList();
+             j.Type == JunctionType.Complex ||
+             (j.Type == JunctionType.TJunction && j.IsConvertedFromCrossing))).ToList();
 
         if (multiWayJunctions.Count == 0)
             return 0;

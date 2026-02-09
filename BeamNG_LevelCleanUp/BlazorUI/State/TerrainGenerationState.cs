@@ -51,7 +51,7 @@ public class TerrainGenerationState
     ///     Global junction detection radius in meters.
     ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     /// </summary>
-    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 15.0f;
+    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 5.0f;
 
     /// <summary>
     ///     Global junction blend distance in meters.
@@ -312,7 +312,7 @@ public class TerrainGenerationState
         EnableCrossMaterialHarmonization = true;
         EnableCrossroadToTJunctionConversion = true;
         EnableExtendedOsmJunctionDetection = true;
-        GlobalJunctionDetectionRadiusMeters = 10.0f;
+        GlobalJunctionDetectionRadiusMeters = 5.0f;
         GlobalJunctionBlendDistanceMeters = 30.0f;
         FlipMaterialProcessingOrder = false;
 

@@ -80,7 +80,7 @@ public class TerrainCreationParameters
     ///     maintain independent elevations.
     ///     Default: true
     /// </summary>
-    public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
+    public bool EnableCrossroadToTJunctionConversion { get; set; } = false;
 
     /// <summary>
     ///     Enable extended OSM junction detection.
@@ -101,7 +101,7 @@ public class TerrainCreationParameters
     ///     - 12-15m: Wide roads (highways)
     ///     Default: 15.0
     /// </summary>
-    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 15.0f;
+    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 5.0f;
 
     /// <summary>
     ///     Global junction blend distance in meters.

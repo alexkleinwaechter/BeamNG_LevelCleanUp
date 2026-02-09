@@ -301,7 +301,8 @@ public class CrossroadToTJunctionConverter
         var junction = new NetworkJunction
         {
             Position = junctionPosition,
-            Type = JunctionType.TJunction
+            Type = JunctionType.TJunction,
+            IsConvertedFromCrossing = true
         };
 
         // Add the primary road as continuous contributor
