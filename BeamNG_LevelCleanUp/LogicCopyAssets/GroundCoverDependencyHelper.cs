@@ -61,9 +61,6 @@ public class GroundCoverDependencyHelper
         // Track terrain material names
         _terrainMaterialNames = terrainMaterials.Select(m => m.Name).ToHashSet();
 
-        PubSubChannel.SendMessage(PubSubMessageType.Info,
-            $"Loaded {terrainMaterials.Count} terrain materials and {regularMaterials.Count} regular materials from source.");
-
         // Build lookup dictionary: Terrain materials take priority over regular materials
         _materialLookup = new Dictionary<string, MaterialJson>();
 
@@ -146,8 +143,8 @@ public class GroundCoverDependencyHelper
             var newMaterialName = $"{materialName}_{_levelNameCopyFrom}";
 
             // Target path inside the TARGET level (like GroundCoverCopier)
-            var targetPath = Path.Join(_targetNamePath, Constants.GroundCover,
-                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+            var targetPath = Path.Join(_targetNamePath, "art",
+                $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "shapes", "groundcover");
             Directory.CreateDirectory(targetPath);
 
             // Create a temporary CopyAsset for the material copier
@@ -162,8 +159,6 @@ public class GroundCoverDependencyHelper
             // Copy the material with the new name
             if (_materialCopier.Copy(materialCopyAsset, newMaterialName))
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Copied groundcover material '{materialName}' as '{newMaterialName}' for groundcover '{groundCoverName}'");
                 return newMaterialName;
             }
 
@@ -201,8 +196,6 @@ public class GroundCoverDependencyHelper
             if (_daeCopier.Copy(daeCopyAsset))
             {
                 _copiedDaeFiles.Add(daeFilePath);
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Copied DAE file '{Path.GetFileName(daeFilePath)}' for groundcover");
             }
             else
             {

@@ -13,12 +13,12 @@
         <div class="content">
             <h3>MapShrink</h3>
             <MudExpansionPanels @ref="FileSelect">
-                <MudExpansionPanel Text="@GetBeamInstallDir()" IsInitiallyExpanded="false">
+                <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
                     <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
                                          Description="The game install directory. If empty some features are missing.">
                     </FileSelectComponent>
                 </MudExpansionPanel>
-                <MudExpansionPanel Text="@GetFileSelectTitle()" IsInitiallyExpanded="true">
+                <MudExpansionPanel Text="@GetFileSelectTitle()" Expanded="true">
                     <FileSelectComponent OnFileSelected="FileSelected"
                                          Description="Always use a copy of your project."
                                          Disabled="@_fileSelectDisabled">
@@ -175,14 +175,19 @@
         Reader = null;
         _vanillaLevelSourceSelected = null;
 
-        ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
+        // Copy file to centralized working directory if not already there
+        var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
+        if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Copy(file, targetFile, true);
+        }
 
         await Task.Run(() =>
         {
             try
             {
                 _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-                _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
+                _levelPath = ZipFileHandler.ExtractToDirectory(targetFile, "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
                 Snackbar.Remove(_staticSnackbar);
             }
@@ -224,13 +229,16 @@
             PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
         }
 
-        Reader.WriteLogFile(_warnings, "Log_Shrinker_Warnings");
-        Reader.WriteLogFile(_errors, "Log_Shrinker_Errors");
+        // Write operation logs (info, warnings, errors) using consistent naming convention
+        Reader.WriteOperationLogs(_messages, _warnings, _errors, "Shrinker");
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Done! Analyzing finished. Please check the logfiles in {Reader.GetLevelPath()}");
     }
 
     protected override void OnInitialized()
     {
+        // IMPORTANT: Always reset to default working directory on page init
+        AppPaths.EnsureWorkingDirectory();
+        
         _fileSelectExpanded = true;
         var consumer = Task.Run(async () =>
         {
@@ -439,11 +447,6 @@
 
     public void SetDefaultWorkingDirectory()
     {
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory) || _vanillaLevelSourceSelected != null)
-        {
-            ZipFileHandler.WorkingDirectory = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BeamNgMT");
-            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
-        }
+        AppPaths.EnsureWorkingDirectory();
     }
-
-}
+}}}

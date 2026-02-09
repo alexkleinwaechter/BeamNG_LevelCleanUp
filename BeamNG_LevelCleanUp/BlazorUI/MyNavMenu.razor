@@ -1,10 +1,13 @@
 ﻿@using Microsoft.AspNetCore.Components.Routing
 <MudNavMenu>
-    <MudNavLink Href="/" Match="NavLinkMatch.Prefix">Start</MudNavLink>
-    <MudNavLink Href="/MapShrink" Match="NavLinkMatch.Prefix">Map Shrinker</MudNavLink>
-    <MudNavLink Href="/RenameMap" Match="NavLinkMatch.Prefix">Rename Map</MudNavLink>
-    <MudNavLink Href="/CopyAssets" Match="NavLinkMatch.Prefix">Copy Assets</MudNavLink>
-    <MudNavLink Href="/CopyTerrains" Match="NavLinkMatch.Prefix">Copy Terrain Materials</MudNavLink>
-    <MudNavLink Href="/ConvertToForest" Match="NavLinkMatch.Prefix">Convert Assets to Forestitems</MudNavLink>
-    <MudNavLink Href="/Utilities" Match="NavLinkMatch.Prefix">Utilities</MudNavLink>
+    <MudNavLink Href="/" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Home">Start</MudNavLink>
+    <MudNavLink Href="/CreateLevel" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AddCircle">Create Level Wizard</MudNavLink>
+    <MudNavLink Href="/GenerateTerrain" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Terrain">Generate Terrain</MudNavLink>
+    <MudNavLink Href="/MapShrink" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Compress">Map Shrinker</MudNavLink>
+    <MudNavLink Href="/RenameMap" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.DriveFileRenameOutline">Rename Map</MudNavLink>
+    <MudNavLink Href="/CopyAssets" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ContentCopy">Copy Assets</MudNavLink>
+    <MudNavLink Href="/CopyTerrains" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Layers">Copy Terrain Materials</MudNavLink>
+    <MudNavLink Href="/CopyForestBrushes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Forest">Copy Forest Brushes</MudNavLink>
+    <MudNavLink Href="/ConvertToForest" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Transform">Convert Assets to Forestitems</MudNavLink>
+    <MudNavLink Href="/Utilities" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Build">Utilities</MudNavLink>
 </MudNavMenu>

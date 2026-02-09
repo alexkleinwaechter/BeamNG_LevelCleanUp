@@ -55,8 +55,6 @@ public class MaterialCopier
     {
         if (item.TargetPath == null) return true;
 
-        Directory.CreateDirectory(item.TargetPath);
-
         foreach (var material in item.Materials)
             if (!CopyMaterial(material, item.TargetPath, newMaterialName))
                 return false;
@@ -118,7 +116,12 @@ public class MaterialCopier
             }
 
             var toText = materialNode.ToJsonString();
-            var targetJsonPath = Path.Join(targetPath, Path.GetFileName(material.MatJsonFileLocation));
+            // Compute target JSON path from the source location using PathConverter
+            // so the materials.json ends up in the same directory tree as its textures
+            var targetJsonPath = _pathConverter.GetTargetFileName(material.MatJsonFileLocation);
+            var targetJsonDir = Path.GetDirectoryName(targetJsonPath);
+            if (!string.IsNullOrEmpty(targetJsonDir))
+                Directory.CreateDirectory(targetJsonDir);
             var targetJsonFile = new FileInfo(targetJsonPath);
 
             // Copy material files and update paths
@@ -141,6 +144,10 @@ public class MaterialCopier
     {
         foreach (var matFile in material.MaterialFiles)
         {
+            // Skip core game assets (/assets/ paths) — the game resolves these
+            // from its own content archives; they must not be copied or path-rewritten.
+            if (matFile.IsGameAsset) continue;
+
             var targetFullName = _pathConverter.GetTargetFileName(matFile.File.FullName);
             if (string.IsNullOrEmpty(targetFullName)) continue;
 

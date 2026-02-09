@@ -1,0 +1,184 @@
+@using BeamNgTerrainPoc.Terrain.Osm.Services
+@using System.Diagnostics
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<MudExpansionPanels Class="@Class">
+    <MudExpansionPanel Text="@GetTitle()" Dense="true">
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.body2">
+                OSM data from the Overpass API is cached locally to avoid repeated downloads.
+                This includes both road data and junction detection data.
+                Cache expires after 7 days.
+            </MudText>
+            
+            <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Road Cache</MudText>
+                    <MudText Typo="Typo.body1"><strong>@_stats.RoadCacheDiskCount</strong> files (@FormatBytes(_stats.RoadCacheDiskSizeBytes))</MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Junction Cache</MudText>
+                    <MudText Typo="Typo.body1"><strong>@_stats.JunctionCacheDiskCount</strong> files (@FormatBytes(_stats.JunctionCacheDiskSizeBytes))</MudText>
+                </div>
+                <div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Memory Cache</MudText>
+                    <MudText Typo="Typo.body1"><strong>@_stats.TotalMemoryCount</strong> entries</MudText>
+                </div>
+            </MudStack>
+            
+            <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="RefreshStats">
+                    Refresh Stats
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Warning"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.CleaningServices"
+                           OnClick="CleanupExpired">
+                    Cleanup Expired
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Error"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.DeleteForever"
+                           OnClick="ClearAll">
+                    Clear All Cache
+                </MudButton>
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Default"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.FolderOpen"
+                           OnClick="OpenFolder">
+                    Open Folder
+                </MudButton>
+            </MudStack>
+            
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Cache location: @_cacheDirectory
+            </MudText>
+        </MudStack>
+    </MudExpansionPanel>
+</MudExpansionPanels>
+
+@code {
+    [Parameter]
+    public string? Class { get; set; }
+
+    private OsmCacheStatistics _stats = new();
+    private string _cacheDirectory = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe to cache change notifications
+        OsmQueryCache.CacheChanged += OnCacheChanged;
+        RefreshStats();
+    }
+    
+    private void OnCacheChanged()
+    {
+        // Use InvokeAsync to ensure we're on the UI thread
+        InvokeAsync(() =>
+        {
+            RefreshStats();
+            StateHasChanged();
+        });
+    }
+    
+    public void Dispose()
+    {
+        // Unsubscribe to prevent memory leaks
+        OsmQueryCache.CacheChanged -= OnCacheChanged;
+    }
+
+    private string GetTitle()
+    {
+        if (_stats.TotalDiskCount == 0)
+            return "OSM Cache (empty)";
+        return $"OSM Cache ({_stats.TotalDiskCount} files, {_stats.TotalDiskSizeFormatted})";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024)
+            return $"{bytes} B";
+        if (bytes < 1024 * 1024)
+            return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024)
+            return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    private void RefreshStats()
+    {
+        try
+        {
+            var cacheManager = new BeamNgTerrainPoc.Terrain.Osm.Services.OsmCacheManager();
+            _stats = cacheManager.GetStats();
+            _cacheDirectory = cacheManager.CacheDirectory;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error reading cache stats: {ex.Message}", Severity.Warning);
+        }
+        
+        StateHasChanged();
+    }
+
+    private void CleanupExpired()
+    {
+        try
+        {
+            var cacheManager = new BeamNgTerrainPoc.Terrain.Osm.Services.OsmCacheManager();
+            var deletedCount = cacheManager.CleanupAllExpired();
+            
+            if (deletedCount > 0)
+            {
+                Snackbar.Add($"Cleaned up {deletedCount} expired cache file(s)", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("No expired cache files found", Severity.Info);
+            }
+            
+            RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error cleaning cache: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void ClearAll()
+    {
+        try
+        {
+            var cacheManager = new BeamNgTerrainPoc.Terrain.Osm.Services.OsmCacheManager();
+            var diskCount = _stats.TotalDiskCount;
+            cacheManager.ClearAll();
+            
+            Snackbar.Add($"Cleared {diskCount} cached OSM file(s)", Severity.Success);
+            RefreshStats();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error clearing cache: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OpenFolder()
+    {
+        if (!string.IsNullOrEmpty(_cacheDirectory) && Directory.Exists(_cacheDirectory))
+        {
+            Process.Start("explorer.exe", _cacheDirectory);
+        }
+        else
+        {
+            Snackbar.Add("Cache directory does not exist yet", Severity.Warning);
+        }
+    }
+}

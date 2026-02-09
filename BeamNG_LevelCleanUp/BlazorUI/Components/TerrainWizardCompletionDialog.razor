@@ -1,0 +1,76 @@
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="4">
+            <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Icon="@Icons.Material.Filled.CheckCircle">
+                <MudText Typo="Typo.h6">Terrain Generated Successfully!</MudText>
+            </MudAlert>
+
+            <MudText Typo="Typo.body1">
+                Your terrain file has been created. Follow these steps to complete your level setup:
+            </MudText>
+
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudStack Spacing="3">
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudAvatar Color="Color.Primary" Size="Size.Small">1</MudAvatar>
+                        <MudText Typo="Typo.body1">
+                            <strong>Save Your Preset</strong> - At the top of the Generate Terrain page, save your current
+                            settings as a preset so you can reload them later for refinements.
+                        </MudText>
+                    </MudStack>
+
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudAvatar Color="Color.Primary" Size="Size.Small">2</MudAvatar>
+                        <MudText Typo="Typo.body1">
+                            <strong>Finish the Wizard</strong> - Click the "Finish Wizard" button below to return to
+                            the Create Level page and copy your level to the BeamNG levels folder.
+                        </MudText>
+                    </MudStack>
+
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudAvatar Color="Color.Primary" Size="Size.Small">3</MudAvatar>
+                        <MudText Typo="Typo.body1">
+                            <strong>Test & Refine</strong> - Launch BeamNG to test your terrain. Come back to this page
+                            anytime to load your level and preset to regenerate the terrain with adjustments.
+                        </MudText>
+                    </MudStack>
+                </MudStack>
+            </MudPaper>
+
+            @if (!string.IsNullOrEmpty(TerrainFilePath))
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Icon="@Icons.Material.Filled.FolderOpen">
+                    <MudText Typo="Typo.caption">
+                        <strong>Terrain file:</strong> @TerrainFilePath
+                    </MudText>
+                </MudAlert>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" 
+                   Variant="Variant.Filled" 
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Check">
+            Got It - Show Finish Button
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; }
+
+    /// <summary>
+    /// Path to the generated terrain file (optional, for display)
+    /// </summary>
+    [Parameter]
+    public string TerrainFilePath { get; set; }
+
+    private void Close()
+    {
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+}

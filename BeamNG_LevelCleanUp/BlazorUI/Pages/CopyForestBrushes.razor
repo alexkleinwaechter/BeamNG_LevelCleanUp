@@ -1,0 +1,383 @@
+﻿@page "/CopyForestBrushes"
+@using System.Diagnostics.CodeAnalysis
+@using System.IO.Compression
+@using System.Reflection
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.LogicCopyAssets
+@using BeamNG_LevelCleanUp.LogicCopyForest
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+
+<ErrorBoundary>
+<ChildContent>
+    <div class="content @(WizardMode ? "wizard-content" : "")">
+        <h3>Copy Forest Brushes</h3>
+        
+        @if (WizardMode && WizardState != null)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Assistant">
+                <MudText Typo="Typo.h6">Create Level Wizard - Select Forest Brushes</MudText>
+                <MudText Typo="Typo.body2">
+                    Source: <b>@(GetCurrentSourceName())</b> → Target: <b>@WizardState.LevelName</b>
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mt-2">o
+                    @if (_copyCompleted)
+                    {
+                        <text>Forest brushes copied! You can select another source map or continue to assets.</text>
+                    }
+                    else
+                    {
+                        <text>Select the forest brushes (painting templates) you want to copy to your new level.</text>
+                    }
+                </MudText>
+            </MudAlert>
+            
+            @if (_copyCompleted)
+            {
+                <MudAlert Severity="Severity.Success" Class="mb-4" Icon="@Icons.Material.Filled.CheckCircle" ShowCloseIcon="true" CloseIconClicked="@(() => _copyCompleted = false)">
+                    <MudText Typo="Typo.h6">Copy Completed Successfully!</MudText>
+                    <MudText Typo="Typo.body2">
+                        Copied <b>@_copiedBrushesCount</b> forest brush(es) from <b>@_lastCopiedSourceName</b> to <b>@WizardState.LevelName</b>.
+                    </MudText>
+                    <MudText Typo="Typo.body2">
+                        Total brushes copied in this session: <b>@_totalCopiedBrushesCount</b>
+                    </MudText>
+                </MudAlert>
+            }
+            
+            @* Source selection UI for wizard mode *@
+            @if (_showWizardSourceSelection)
+            {
+                <MudPaper Class="pa-4 mb-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">
+                        <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Class="mr-2" />
+                        Select Source Level
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mb-3" Color="Color.Secondary">
+                        Choose a source level to copy forest brushes from. Target: <b>@WizardState?.LevelName</b>
+                    </MudText>
+                    
+                    <FileSelectComponent OnFileSelected="OnWizardSourceFileSelected"
+                                         Description="Select a zipped source map (.zip)"
+                                         Disabled="@_isLoadingMap">
+                    </FileSelectComponent>
+                    
+                    @if (_vanillaLevels.Any())
+                    {
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                   ValueChanged="OnWizardVanillaSourceSelected"
+                                   Value="@_vanillaLevelSourceSelected"
+                                   Label="Or select a vanilla level" 
+                                   AnchorOrigin="Origin.BottomCenter" 
+                                   Variant="Variant.Outlined" 
+                                   Clearable
+                                   Disabled="@_isLoadingMap"
+                                   Class="mt-3">
+                            @foreach (var item in _vanillaLevels)
+                            {
+                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                    
+                    @if (_isLoadingMap)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-3" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">Loading source level...</MudText>
+                    }
+                </MudPaper>
+            }
+        }
+        
+        @if (!WizardMode)
+        {
+            <MudExpansionPanels @ref="FileSelect">
+                <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
+                    <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
+                                         Description="The game install directory. If empty some features are missing.">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
+                <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" Expanded="true">
+                    <FileSelectComponent OnFileSelected="FileSelectedCopyFrom"
+                                         Description="Your forest brush source map"
+                                         Disabled="@GetFileSelectDisabled()">
+                    </FileSelectComponent>
+                    @if (_vanillaLevels.Any())
+                    {
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                   ValueChanged="OnVanillaSourceSelected"
+                                   Value="@_vanillaLevelSourceSelected"
+                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable
+                                   Disabled="@GetFileSelectDisabled()">
+                            @foreach (var item in _vanillaLevels)
+                            {
+                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudExpansionPanel>
+                <MudExpansionPanel Text="@GetFileSelectTitle()" Expanded="false">
+                    <FileSelectComponent OnFileSelected="@(x => FileSelected(x, false))"
+                                         Description="Your zipped target map"
+                                         Disabled="@GetFileSelectDisabled()">
+                    </FileSelectComponent>
+                    <FileSelectComponent OnFileSelected="@(x => FileSelected(x, true))" SelectFolder="true"
+                                         Description="or your unzipped map directory"
+                                         Disabled="@GetFileSelectDisabled()">
+                    </FileSelectComponent>
+
+                    @if (_vanillaLevels.Any())
+                    {
+                        <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                   Disabled="@GetFileSelectDisabled()"
+                                   ValueChanged="OnVanillaTargetSelected"
+                                   Value="@_vanillaLevelTargetSelected"
+                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                            @foreach (var item in _vanillaLevels)
+                            {
+                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+
+        @if (!WizardMode && !string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
+        {
+            <MudButton @onclick="ResetPage" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Refresh" Style="margin-top: 16px;">
+                Reset and Select Different Maps
+            </MudButton>
+        }
+        
+        @if (_copyCompleted && !WizardMode)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4 mb-4" Icon="@Icons.Material.Filled.CheckCircle" ShowCloseIcon="true" CloseIconClicked="@(() => _copyCompleted = false)">
+                <MudText Typo="Typo.h6">Copy Completed Successfully!</MudText>
+                <MudText Typo="Typo.body2">
+                    Copied <b>@_copiedBrushesCount</b> forest brush(es) from <b>@_lastCopiedSourceName</b> to <b>@_levelName</b>.
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mt-2">
+                    You can now select another source map to copy additional brushes, or build the zip file.
+                </MudText>
+                <MudButton @onclick="ResetSourceMap" 
+                          Color="Color.Primary" 
+                          Variant="Variant.Filled"
+                          StartIcon="@Icons.Material.Filled.AddCircle" 
+                          Class="mt-3">
+                    Select Another Source Map
+                </MudButton>
+            </MudAlert>
+        }
+
+        @if (BindingListCopy.Any())
+        {
+            <MudTable @ref="table" T="GridFileListItem" Hover="true" ServerData="LoadServerData"
+                      MultiSelection="true" @bind-SelectedItems="_selectedItems">
+                <ToolBarContent>
+                    <MudText Typo="Typo.h6">Found Forest Brushes in @_levelNameCopyFrom</MudText>
+                    <MudSpacer/>
+                    <MudTextField DebounceInterval="300" Clearable T="string" ValueChanged="@(s => OnSearch(s))" Immediate="true" Placeholder="Search" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>
+                        <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.FullName)">Brush Name</MudTableSortLabel>
+                    </MudTh>
+                    <MudTh>
+                        <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => GetElementCount(x))">Elements</MudTableSortLabel>
+                    </MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>
+                        <MudTableSortLabel SortBy="new Func<GridFileListItem, object>(x => x.SizeMb)">Size Mb</MudTableSortLabel>
+                    </MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Brush Name">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <MudIcon Icon="@Icons.Material.Filled.Forest" Size="Size.Small" Color="Color.Success" />
+                            @context.FullName
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Elements">
+                        @{
+                            var elementCount = GetElementCount(context);
+                            var itemNames = GetItemDataNames(context);
+                        }
+                        <MudTooltip Text="@itemNames" Arrow="true" Placement="Placement.Top">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">@elementCount items</MudChip>
+                        </MudTooltip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        @if (context.Duplicate)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">
+                                <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" Class="mr-1" />
+                                Exists in Target
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">New</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Size">@context.SizeMb</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any() && !_isLoadingMap)
+        {
+            <MudText Color="Color.Warning">No forest brushes found in source level.</MudText>
+        }
+
+        <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+            <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                @{
+                    var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
+                    @foreach (var item in list)
+                    {
+                        <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudText Typo="Typo.h6">@item</MudText>
+                        </MudListItem>
+                    }
+                }
+            </MudList>
+        </MudDrawer>
+    </div>
+    
+    @* Unified Footer Component *@
+    <WizardFooter WizardMode="@WizardMode"
+                  WizardState="@WizardState"
+                  BackButtonText="@GetBackButtonText()"
+                  NextButtonText="@GetNextButtonText()"
+                  CanProceed="@GetCanProceed()"
+                  ShowNextButton="@GetShowNextButton()"
+                  ShowFinishButton="false"
+                  ShowSkipButton="false"
+                  OnBackClick="@OnBackClicked"
+                  OnNextClick="@OnNextClicked">
+        <SelectionInfo>
+            @if (_selectedItems.Any())
+            {
+                <MudText Typo="Typo.caption">
+                    Forest Brushes: @BindingListCopy?.Count | Selected: @_selectedItems.Count() | Size: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2) MB
+                </MudText>
+            }
+        </SelectionInfo>
+        <ActionButtons>
+            @if (WizardMode)
+            {
+                @if (_selectedItems.Any())
+                {
+                    <MudButton @onclick="CopyDialogWizardMode" 
+                              Color="Color.Primary"
+                              Variant="Variant.Filled"
+                              StartIcon="@Icons.Material.Filled.ContentCopy"
+                              Size="Size.Small">
+                        Copy Selected (@_selectedItems.Count)
+                    </MudButton>
+                }
+                else
+                {
+                    <MudButton OnClick="@ResetSourceMapWizardMode" 
+                              Color="Color.Primary"
+                              Variant="Variant.Outlined"
+                              StartIcon="@Icons.Material.Filled.AddCircle"
+                              Size="Size.Small">
+                        Select Another Source
+                    </MudButton>
+                }
+            }
+            else
+            {
+                @if (_selectedItems.Any())
+                {
+                    <MudButton @onclick="CopyDialog" Color="Color.Primary" Size="Size.Small">Copy Forest Brushes</MudButton>
+                }
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))" Size="Size.Small">Errors</MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))" Size="Size.Small">Warnings</MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))" Size="Size.Small">Messages</MudButton>
+                }
+                @if (_showDeployButton)
+                {
+                    <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
+                               @bind-Value="_compressionLevel" Style="max-width: 150px;">
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
+                    </MudSelect>
+                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary" Size="Size.Small">Build Zipfile</MudButton>
+                }
+            }
+        </ActionButtons>
+        <FooterLinks>
+            @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+            {
+                <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Working Directory</MudButton>
+                <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Logfiles</MudButton>
+            }
+        </FooterLinks>
+    </WizardFooter>
+</ChildContent>
+<ErrorContent>
+    <CustomErrorContent/>
+</ErrorContent>
+</ErrorBoundary>
+
+@code {
+    // Note: CascadingParameter doesn't work across page navigation
+    // We'll get the wizard state from CreateLevel's static field instead
+    
+    private string GetCurrentSourceName()
+    {
+        // Priority: 1. Currently loaded source, 2. Last copied source, 3. Wizard state source, 4. Prompt to select
+        if (!string.IsNullOrEmpty(_levelNameCopyFrom))
+            return _levelNameCopyFrom;
+        if (_copyCompleted && !string.IsNullOrEmpty(_lastCopiedSourceName))
+            return _lastCopiedSourceName;
+        if (!string.IsNullOrEmpty(WizardState?.SourceLevelName))
+            return WizardState.SourceLevelName;
+        return "(Select a source)";
+    }
+    
+    private string GetBackButtonText() => WizardMode ? "Back to Terrains" : "";
+    
+    private string GetNextButtonText()
+    {
+        if (!WizardMode) return "";
+        return _copyCompleted ? "Continue to Assets" : "Select Assets";
+    }
+    
+    private bool GetCanProceed() => WizardMode && (_copyCompleted || WizardState?.Step4_ForestBrushesSelected == true);
+    
+    private bool GetShowNextButton() => WizardMode;
+    
+    private void OnBackClicked()
+    {
+        if (WizardMode)
+        {
+            CancelWizard();
+        }
+    }
+    
+    private void OnNextClicked()
+    {
+        if (WizardMode)
+        {
+            FinishWizard();
+        }
+    }
+}

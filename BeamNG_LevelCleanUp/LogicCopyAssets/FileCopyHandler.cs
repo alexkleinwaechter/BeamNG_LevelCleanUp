@@ -28,8 +28,54 @@ public class FileCopyHandler
 
     private void TryExtractFromZip(string sourceFile, string targetFile)
     {
+        // First, try extracting from game content ZIPs (assets.zip, etc.)
+        if (TryExtractFromContentZip(sourceFile, targetFile))
+            return;
+
+        // Fall back to level-specific ZIP extraction
+        TryExtractFromLevelZip(sourceFile, targetFile);
+    }
+
+    /// <summary>
+    /// Tries to extract a file from BeamNG's content ZIP archives (assets.zip, etc.)
+    /// Handles paths like: .../levels/assets/materials/tileable/stone/...
+    /// </summary>
+    private bool TryExtractFromContentZip(string sourceFile, string targetFile)
+    {
+        // Check if the path contains "assets" after "levels" - this indicates a content asset
+        var levelsIndex = sourceFile.IndexOf(@"\levels\", StringComparison.OrdinalIgnoreCase);
+        if (levelsIndex < 0)
+            return false;
+
+        var afterLevels = sourceFile.Substring(levelsIndex + 8); // Skip "\levels\"
+
+        // Check if this looks like a content asset path (starts with "assets\")
+        if (!afterLevels.StartsWith("assets", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Try to extract using ZipAssetExtractor
+        using var stream = ZipAssetExtractor.ExtractAsset(afterLevels);
+        if (stream == null)
+            return false;
+
+        // Ensure target directory exists
+        var targetDir = Path.GetDirectoryName(targetFile);
+        if (!string.IsNullOrEmpty(targetDir))
+            Directory.CreateDirectory(targetDir);
+
+        using var fileStream = File.Create(targetFile);
+        stream.CopyTo(fileStream);
+        return true;
+    }
+
+    /// <summary>
+    /// Tries to extract a file from level-specific ZIP archives.
+    /// </summary>
+    private void TryExtractFromLevelZip(string sourceFile, string targetFile)
+    {
         var fileParts = sourceFile.Split(@"\levels\");
-        if (fileParts.Count() != 2) throw new FileNotFoundException($"Could not copy file: {sourceFile}");
+        if (fileParts.Length != 2)
+            throw new FileNotFoundException($"Could not copy file: {sourceFile}");
 
         var thisLevelName = fileParts[1].Split(@"\").FirstOrDefault() ?? string.Empty;
         var beamDir = Path.Join(Steam.GetBeamInstallDir(), Constants.BeamMapPath, thisLevelName);
@@ -62,7 +108,18 @@ public class FileCopyHandler
 
         if (destinationFilePath2 != null)
         {
-            targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath2));
+            if (FileUtils.IsLinkFile(destinationFilePath2))
+            {
+                // For .link files, append .link to preserve the full extension chain
+                // e.g., target.png → target.png.link (not target.link)
+                if (!FileUtils.IsLinkFile(targetFile))
+                    targetFile += FileUtils.LinkExtension;
+            }
+            else
+            {
+                targetFile = Path.ChangeExtension(targetFile, Path.GetExtension(destinationFilePath2));
+            }
+
             File.Copy(destinationFilePath2, targetFile, true);
         }
         else
@@ -71,7 +128,7 @@ public class FileCopyHandler
         }
     }
 
-    private string TryExtractImageWithExtensions(string beamZip, string extractPath, string filePathEnd)
+    private string? TryExtractImageWithExtensions(string beamZip, string extractPath, string filePathEnd)
     {
         var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", ".link" };
 

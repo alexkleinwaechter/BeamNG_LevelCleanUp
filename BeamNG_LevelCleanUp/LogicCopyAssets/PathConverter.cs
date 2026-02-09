@@ -1,5 +1,6 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
 
@@ -35,8 +36,39 @@ public class PathConverter
             }
         }
 
-        return Path.Join(_namePath, targetParts.Last(), $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}",
-            fileName);
+        // Insert MT_ prefix right after the "art" directory to avoid duplicate materials
+        // e.g., art/shapes/building/texture.png -> art/MT_source/shapes/building/texture.png
+        var relativePath = targetParts.Last();
+        var mtPrefix = $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}";
+        relativePath = InsertMtPrefixAfterArt(relativePath, mtPrefix);
+
+        return Path.Join(_namePath, relativePath, fileName);
+    }
+
+    /// <summary>
+    ///     Inserts the MT_ prefix directory right after the "art" segment in a relative path.
+    ///     If the path starts with "art\something", it becomes "art\MT_source\something".
+    ///     If no "art" segment is found, the MT_ prefix is prepended to the path.
+    /// </summary>
+    private static string InsertMtPrefixAfterArt(string relativePath, string mtPrefix)
+    {
+        if (string.IsNullOrEmpty(relativePath))
+            return mtPrefix;
+
+        // Normalize to backslashes for splitting
+        var normalized = relativePath.Replace("/", "\\");
+        var segments = normalized.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+
+        if (segments.Length > 0 && segments[0].Equals("art", StringComparison.OrdinalIgnoreCase))
+        {
+            // Insert MT_ right after "art": art\MT_source\rest\of\path
+            var result = new List<string> { segments[0], mtPrefix };
+            result.AddRange(segments.Skip(1));
+            return Path.Join(result.ToArray());
+        }
+
+        // No "art" prefix found - put MT_ at the beginning
+        return Path.Join(mtPrefix, normalized);
     }
 
     public string GetTerrainTargetFileName(string sourceName)
@@ -46,8 +78,16 @@ public class PathConverter
         return Path.Join(_namePath, Constants.Terrains, fileName);
     }
 
+    /// <summary>
+    ///     Converts a Windows file path to a BeamNG JSON path format.
+    ///     Strips .link extension since materials.json should reference actual texture paths without .link.
+    /// </summary>
     public string GetBeamNgJsonPathOrFileName(string windowsFileName, bool removeExtension = true)
     {
+        // Strip .link extension - BeamNG uses these as virtual redirects
+        // but materials.json should reference the actual texture path without .link
+        windowsFileName = FileUtils.StripLinkExtension(windowsFileName);
+        
         // Normalize path separators to forward slashes for comparison
         var normalizedPath = windowsFileName.Replace(@"\", "/").ToLowerInvariant();
 

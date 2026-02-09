@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 
@@ -52,8 +53,14 @@ public class TerrainMaterialCopier
 
         Directory.CreateDirectory(item.TargetPath);
 
-        // Load terrain size with fallback logic
-        if (!_baseTextureSize.HasValue) _baseTextureSize = TerrainTextureHelper.LoadBaseTextureSize(_targetLevelPath);
+        // Load terrain size with fallback logic:
+        // 1. Try wizard terrain size (from CreateLevel wizard)
+        // 2. Fall back to LoadBaseTextureSize (reads from JSON or uses 2048 default)
+        if (!_baseTextureSize.HasValue)
+        {
+            _baseTextureSize = PathResolver.WizardTerrainSize 
+                ?? TerrainTextureHelper.LoadBaseTextureSize(_targetLevelPath);
+        }
 
         // Target is always art/terrains/main.materials.json
         var targetJsonPath = Path.Join(item.TargetPath, "main.materials.json");

@@ -3,10 +3,19 @@
     max-height: 100vh;
 }
 
-.main footer {
-    height: 7rem;
-    max-height: 7rem;
-    background-color:dimgray;
+.main footer,
+.main .standalone-footer,
+.main .wizard-footer {
+    min-height: 7rem;
+    background-color: dimgray;
+    padding: 12px 16px;
+}
+
+/* Wizard footer needs more height for progress chips + buttons */
+.main .wizard-footer {
+    min-height: 10rem;
+    background: var(--mud-palette-surface);
+    border-top: 2px solid var(--mud-palette-primary);
 }
 
 .main .content {
@@ -15,6 +24,11 @@
     overflow-y: auto;
 }
 
+/* When wizard footer is active, content needs more space at bottom */
+.main .content.wizard-content {
+    height: calc(100vh - 15rem);
+    max-height: calc(100vh - 15rem);
+}
 
 @media (min-width: 641px) {
     .sidebar {

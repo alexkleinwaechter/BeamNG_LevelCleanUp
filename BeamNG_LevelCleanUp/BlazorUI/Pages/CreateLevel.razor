@@ -1,0 +1,653 @@
+@page "/CreateLevel"
+@using System.IO.Compression
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.LogicCopyAssets
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+
+<ErrorBoundary>
+    <ChildContent>
+        <div class="content @(_wizardState.IsActive ? "wizard-content" : "")">
+            <h3>Create New BeamNG Level</h3>
+
+            @if (!_wizardState.Step1_SetupComplete)
+            {
+                <MudText Typo="Typo.body1" Class="mb-4 mt-2">
+                    Configure your new level below. Fill in the level details, select a source map to copy base settings
+                    from (sky, sun, clouds, time-of-day, water), choose a terrain size, then click
+                    <b>Initialize New Level</b>. The source map will be extracted and analyzed during initialization. 
+                    Then we start the wizard for copying terrains, forest brushes, and assets, followed by terrain generation. 
+                    You can skip copying terrain materials, forest brushes, or assets if you want to set those up manually later in the editor. 
+                    If you skip copying assets, the level will still be initialized with sky, sun, clouds, time-of-day, water settings, 
+                    and terrain config from the source map (if provided).
+                </MudText>
+
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">Level Details</MudText>
+
+                    <LevelInfoForm Model="@_levelInfo"
+                                  ModelChanged="@(_ => StateHasChanged())"/>
+                </MudPaper>
+
+                <MudExpansionPanels @ref="FileSelect" Class="mt-4">
+                    <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
+                        <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
+                                            Description="The game install directory. If empty some features are missing.">
+                        </FileSelectComponent>
+                    </MudExpansionPanel>
+
+                    <MudExpansionPanel Text="@GetSourceMapTitle()" Expanded="false">
+                        <FileSelectComponent OnFileSelected="OnSourceMapSelected"
+                                            Description="Select a source map to copy base level data from">
+                        </FileSelectComponent>
+
+                        @if (_vanillaLevels.Any())
+                        {
+                            <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                      ValueChanged="OnVanillaSourceSelected"
+                                      Value="@_vanillaLevelSourceSelected"
+                                      Label="Or select a vanilla level"
+                                      AnchorOrigin="Origin.BottomCenter"
+                                      Variant="Variant.Outlined"
+                                      Clearable>
+                                @foreach (var item in _vanillaLevels)
+                                {
+                                    <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+
+                        <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
+                            <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;"/>
+                            Copies: Sky, sun, clouds, time-of-day, terrain config, and water settings from selected level.
+                        </MudText>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudSelect T="int"
+                              @bind-Value="_wizardState.TerrainSize"
+                              Label="Terrain Size"
+                              HelperText="Size of the terrain in meters (power of 2)"
+                              Variant="Variant.Outlined"
+                              Class="mb-4">
+                        <MudSelectItem Value="256">256 x 256</MudSelectItem>
+                        <MudSelectItem Value="512">512 x 512</MudSelectItem>
+                        <MudSelectItem Value="1024">1024 x 1024</MudSelectItem>
+                        <MudSelectItem Value="2048">2048 x 2048 (Default)</MudSelectItem>
+                        <MudSelectItem Value="4096">4096 x 4096</MudSelectItem>
+                        <MudSelectItem Value="8192">8192 x 8192</MudSelectItem>
+                        <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
+                    </MudSelect>
+
+                    <MudButton OnClick="@InitializeNewLevel"
+                              Color="Color.Primary"
+                              Variant="Variant.Filled"
+                              Disabled="@(!CanInitialize() || _isInitializing)"
+                              StartIcon="@(_isInitializing ? null : Icons.Material.Filled.Create)">
+                        @if (_isInitializing)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>Initializing...</span>
+                        }
+                        else
+                        {
+                            <span>Initialize New Level</span>
+                        }
+                    </MudButton>
+                </MudPaper>
+            }
+
+            @if (_wizardState.Step2_MissionGroupsCopied)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-2"/>
+                        Level Initialized Successfully
+                    </MudText>
+                    
+                    <MudText Typo="Typo.body1" Class="mb-4">
+                        Your new level "@_wizardState.LevelName" has been created at: <b>@_wizardState.TargetLevelPath</b>
+                    </MudText>
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudText Typo="Typo.h6" Class="mb-2">Copied Base Level Objects:</MudText>
+                    <MudList T="string" Dense="true">
+                        @foreach(var assetGroup in _wizardState.CopiedMissionGroupAssets.GroupBy(a => a.Class))
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Layers">
+                                <b>@assetGroup.Key</b>: @assetGroup.Count() object(s)
+                            </MudListItem>
+                        }
+                    </MudList>
+                    
+                    @if (_wizardState.CopiedFiles.Any())
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2">
+                            <MudIcon Icon="@Icons.Material.Filled.FileCopy" Size="Size.Small" Class="mr-1"/>
+                            @_wizardState.CopiedFiles.Count file(s) copied
+                        </MudText>
+                    }
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudAlert Severity="Severity.Info" Class="mb-4">
+                        <b>Next Step:</b> Select terrain materials for your level. Click "Select Terrain Materials" below.
+                    </MudAlert>
+                </MudPaper>
+            }
+
+            @if (_wizardState.Step3_TerrainMaterialsSelected && !_wizardState.Step4_ForestBrushesSelected)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Color="Color.Success" Class="mr-2"/>
+                        Terrain Materials Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var material in _wizardState.CopiedTerrainMaterials)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Landscape">
+                                @material.Name
+                            </MudListItem>
+                        }
+                    </MudList>
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudAlert Severity="Severity.Info" Class="mb-4">
+                        <b>Next Step:</b> Select forest brushes for your level. Click "Select Forest Brushes" below.
+                    </MudAlert>
+                </MudPaper>
+            }
+
+            @if (_wizardState.Step4_ForestBrushesSelected && !_wizardState.Step5_AssetsSelected)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Color="Color.Success" Class="mr-2"/>
+                        Terrain Materials Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var material in _wizardState.CopiedTerrainMaterials)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Landscape">
+                                @material.Name
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudPaper>
+                
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Forest" Color="Color.Success" Class="mr-2"/>
+                        Forest Brushes Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var brush in _wizardState.CopiedForestBrushes)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Grass">
+                                @brush
+                            </MudListItem>
+                        }
+                    </MudList>
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudAlert Severity="Severity.Info" Class="mb-4">
+                        <b>Next Step:</b> Select additional assets for your level (optional). Click "Select Assets" below.
+                    </MudAlert>
+                </MudPaper>
+            }
+
+            @if (_wizardState.Step5_AssetsSelected && !_wizardState.Step6_TerrainGenerated)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Color="Color.Success" Class="mr-2"/>
+                        Terrain Materials Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var material in _wizardState.CopiedTerrainMaterials)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Landscape">
+                                @material.Name
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudPaper>
+                
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Forest" Color="Color.Success" Class="mr-2"/>
+                        Forest Brushes Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var brush in _wizardState.CopiedForestBrushes)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Grass">
+                                @brush
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudPaper>
+                
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.ContentCopy" Color="Color.Success" Class="mr-2"/>
+                        Assets Copied
+                    </MudText>
+                    
+                    @if (_wizardState.CopiedAssets.Any())
+                    {
+                        <MudList T="string" Dense="true">
+                            @foreach(var asset in _wizardState.CopiedAssets.Take(10))
+                            {
+                                <MudListItem T="string" Icon="@Icons.Material.Filled.InsertDriveFile">
+                                    @asset
+                                </MudListItem>
+                            }
+                            @if (_wizardState.CopiedAssets.Count > 10)
+                            {
+                                <MudListItem T="string" Icon="@Icons.Material.Filled.MoreHoriz">
+                                    ... and @(_wizardState.CopiedAssets.Count - 10) more asset(s)
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Default">
+                            No additional assets copied (step was skipped)
+                        </MudText>
+                    }
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudAlert Severity="Severity.Info" Class="mb-4">
+                        <b>Next Step:</b> Generate terrain for your level. Click "Generate Terrain" in the wizard below.
+                    </MudAlert>
+                </MudPaper>
+            }
+
+            @if (_wizardState.Step6_TerrainGenerated)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Color="Color.Success" Class="mr-2"/>
+                        Terrain Materials Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var material in _wizardState.CopiedTerrainMaterials)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Landscape">
+                                @material.Name
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudPaper>
+                
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Forest" Color="Color.Success" Class="mr-2"/>
+                        Forest Brushes Copied
+                    </MudText>
+                    
+                    <MudList T="string" Dense="true">
+                        @foreach(var brush in _wizardState.CopiedForestBrushes)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.Grass">
+                                @brush
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudPaper>
+                
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.ContentCopy" Color="Color.Success" Class="mr-2"/>
+                        Assets Copied
+                    </MudText>
+                    
+                    @if (_wizardState.CopiedAssets.Any())
+                    {
+                        <MudList T="string" Dense="true">
+                            @foreach(var asset in _wizardState.CopiedAssets.Take(10))
+                            {
+                                <MudListItem T="string" Icon="@Icons.Material.Filled.InsertDriveFile">
+                                    @asset
+                                </MudListItem>
+                            }
+                            @if (_wizardState.CopiedAssets.Count > 10)
+                            {
+                                <MudListItem T="string" Icon="@Icons.Material.Filled.MoreHoriz">
+                                    ... and @(_wizardState.CopiedAssets.Count - 10) more asset(s)
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Default">
+                            No additional assets copied (step was skipped)
+                        </MudText>
+                    }
+                </MudPaper>
+                
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Landscape" Color="Color.Success" Class="mr-2"/>
+                        Terrain Generated
+                    </MudText>
+                    
+                    @if (!string.IsNullOrEmpty(_wizardState.GeneratedTerrainPath))
+                    {
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            <strong>Terrain file:</strong> @_wizardState.GeneratedTerrainPath
+                        </MudText>
+                    }
+                    
+                    <MudDivider Class="my-4"/>
+                    
+                    <MudAlert Severity="Severity.Success" Class="mb-4">
+                        <b>Level Creation Complete!</b> Your level is ready with terrain materials, forest brushes, 
+                        assets, and generated terrain.
+                    </MudAlert>
+                    
+                    <MudStack Row="true" Class="mt-4" Spacing="2">
+                        <MudButton OnClick="@ZipAndDeploy" 
+                                  Color="Color.Primary" 
+                                  Variant="Variant.Filled"
+                                  StartIcon="@Icons.Material.Filled.Archive">
+                            Build Deployment ZIP
+                        </MudButton>
+                        
+                        <MudButton OnClick="@CopyToLevelsFolder" 
+                                  Color="Color.Success" 
+                                  Variant="Variant.Filled"
+                                  StartIcon="@Icons.Material.Filled.Folder">
+                            Copy to BeamNG Levels Folder
+                        </MudButton>
+                        
+                        <MudButton OnClick="@(() => Navigation.NavigateTo("/GenerateTerrain"))" 
+                                  Color="Color.Secondary" 
+                                  Variant="Variant.Outlined"
+                                  StartIcon="@Icons.Material.Filled.Terrain">
+                            Refine Terrain
+                        </MudButton>
+                        
+                        <MudButton OnClick="@ResetWizard" 
+                                  Color="Color.Default" 
+                                  Variant="Variant.Outlined"
+                                  StartIcon="@Icons.Material.Filled.Refresh">
+                            Create Another Level
+                        </MudButton>
+                    </MudStack>
+                </MudPaper>
+            }
+
+            <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                    @{
+                        var list = _showErrorLog ? _errors : _showWarningLog ? _warnings : _messages;
+                        @foreach (var item in list)
+                        {
+                            <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                                <MudText Typo="Typo.h6">@item</MudText>
+                            </MudListItem>
+                        }
+                    }
+                </MudList>
+            </MudDrawer>
+        </div>
+        
+        @* Unified Footer with Wizard Progress *@
+        <WizardFooter WizardMode="@_wizardState.IsActive"
+                      WizardState="@_wizardState"
+                      BackButtonText="@GetBackButtonText()"
+                      NextButtonText="@GetNextButtonText()"
+                      CanProceed="@CanProceedToNextStep()"
+                      ShowNextButton="@ShowNextButton()"
+                      ShowFinishButton="@ShowFinishButton()"
+                      ShowSkipButton="false"
+                      OnBackClick="@OnBackClicked"
+                      OnNextClick="@OnNextClicked"
+                      OnFinishClick="@OnFinishClicked">
+            <SelectionInfo>
+                @if (_wizardState.IsActive)
+                {
+                    <MudText Typo="Typo.caption">
+                        @GetCurrentStepInfo()
+                    </MudText>
+                }
+            </SelectionInfo>
+            <ActionButtons>
+                @if (_wizardState.Step6_TerrainGenerated)
+                {
+                    <MudButton OnClick="@ZipAndDeploy" 
+                              Color="Color.Primary" 
+                              Variant="Variant.Filled"
+                              StartIcon="@Icons.Material.Filled.Archive"
+                              Size="Size.Small">
+                        Build ZIP
+                    </MudButton>
+                    
+                    <MudButton OnClick="@CopyToLevelsFolder" 
+                              Color="Color.Success" 
+                              Variant="Variant.Filled"
+                              StartIcon="@Icons.Material.Filled.Folder"
+                              Size="Size.Small">
+                        Copy to Levels
+                    </MudButton>
+                    
+                    <MudButton OnClick="@ResetWizard" 
+                              Color="Color.Default" 
+                              Variant="Variant.Outlined"
+                              StartIcon="@Icons.Material.Filled.Refresh"
+                              Size="Size.Small">
+                        New Level
+                    </MudButton>
+                }
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))" Size="Size.Small">
+                        Errors (@_errors.Count)
+                    </MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))" Size="Size.Small">
+                        Warnings (@_warnings.Count)
+                    </MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))" Size="Size.Small">
+                        Messages (@_messages.Count)
+                    </MudButton>
+                }
+            </ActionButtons>
+            <FooterLinks>
+                @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
+                {
+                    <MudButton @onclick="ZipFileHandler.OpenExplorer" 
+                              StartIcon="@Icons.Material.Filled.FolderOpen" 
+                              Variant="Variant.Text" 
+                              Color="Color.Primary"
+                              Size="Size.Small">
+                        Working Directory
+                    </MudButton>
+                }
+            </FooterLinks>
+        </WizardFooter>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent/>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    private string GetBackButtonText()
+    {
+        if (!_wizardState.IsActive) return "";
+        
+        return _wizardState.CurrentStep switch
+        {
+            0 => _wizardState.Step1_SetupComplete ? "Reset Wizard" : "",
+            1 => "Back to Setup",
+            2 => "Back to Review",
+            3 => "Back to Terrains",
+            4 => "Back to Forest",
+            5 => "Back to Assets",
+            _ => "Back"
+        };
+    }
+    
+    private string GetNextButtonText()
+    {
+        if (!_wizardState.IsActive) return "";
+        
+        return _wizardState.CurrentStep switch
+        {
+            0 => "Initialize Level",
+            1 => "Select Terrain Materials",
+            2 => "Select Forest Brushes",
+            3 => "Select Assets",
+            4 => "Generate Terrain",
+            5 => "Complete",
+            _ => "Next"
+        };
+    }
+    
+    private string GetCurrentStepInfo()
+    {
+        return _wizardState.CurrentStep switch
+        {
+            0 => _wizardState.Step1_SetupComplete ? $"Level: {_wizardState.LevelName} | Source: {_wizardState.SourceLevelName}" : "Configure your new level",
+            1 => $"{_wizardState.CopiedMissionGroupAssets.Count} objects copied",
+            2 => _wizardState.Step3_TerrainMaterialsSelected ? $"{_wizardState.CopiedTerrainMaterials.Count} materials copied" : "Ready to select terrain materials",
+            3 => _wizardState.Step4_ForestBrushesSelected ? $"{_wizardState.CopiedForestBrushes.Count} brushes copied" : "Ready to select forest brushes",
+            4 => _wizardState.Step5_AssetsSelected ? $"{_wizardState.CopiedAssets.Count} assets copied" : "Ready to select assets",
+            5 => _wizardState.Step6_TerrainGenerated ? "Terrain generated" : "Ready to generate terrain",
+            _ => ""
+        };
+    }
+    
+    private bool CanProceedToNextStep()
+    {
+        return _wizardState.CurrentStep switch
+        {
+            0 => _wizardState.Step1_SetupComplete,
+            1 => _wizardState.Step2_MissionGroupsCopied,
+            2 => _wizardState.Step3_TerrainMaterialsSelected,
+            3 => _wizardState.Step4_ForestBrushesSelected,
+            4 => _wizardState.Step5_AssetsSelected,
+            5 => _wizardState.Step6_TerrainGenerated,
+            _ => false
+        };
+    }
+    
+    private bool ShowNextButton()
+    {
+        if (!_wizardState.IsActive) return false;
+        // Don't show next button on step 0 before setup is complete
+        if (_wizardState.CurrentStep == 0 && !_wizardState.Step1_SetupComplete) return false;
+        // Don't show next after step 6 is complete
+        if (_wizardState.Step6_TerrainGenerated) return false;
+        return true;
+    }
+    
+    /// <summary>
+    /// Show Cancel button when wizard is active and on step 0 (setup) to allow users to cancel/reset
+    /// </summary>
+    private bool ShowCancelButton()
+    {
+        return _wizardState.IsActive && _wizardState.CurrentStep == 0;
+    }
+    
+    private bool ShowFinishButton()
+    {
+        return _wizardState.IsActive && _wizardState.Step6_TerrainGenerated;
+    }
+    
+    private void OnBackClicked()
+    {
+        if (_wizardState.CurrentStep == 0)
+        {
+            // Reset wizard when on step 0 (the "Reset Wizard" button)
+            ResetWizard();
+            return;
+        }
+        else if (_wizardState.CurrentStep == 1)
+        {
+            // Going back from review to setup - stay on page but go to step 0
+            _wizardState.CurrentStep = 0;
+        }
+        else if (_wizardState.CurrentStep == 2)
+        {
+            // Go back to review (current page, step 1)
+            _wizardState.CurrentStep = 1;
+        }
+        else if (_wizardState.CurrentStep == 3)
+        {
+            Navigation.NavigateTo("/CopyTerrains?wizardMode=true");
+        }
+        else if (_wizardState.CurrentStep == 4)
+        {
+            Navigation.NavigateTo("/CopyForestBrushes?wizardMode=true");
+        }
+        else if (_wizardState.CurrentStep == 5)
+        {
+            Navigation.NavigateTo("/CopyAssets?wizardMode=true");
+        }
+        StateHasChanged();
+    }
+    
+    private void OnNextClicked()
+    {
+        if (_wizardState.CurrentStep == 0 && _wizardState.Step1_SetupComplete)
+        {
+            // Move from setup (step 0) to review (step 1)
+            _wizardState.CurrentStep = 1;
+        }
+        else if (_wizardState.CurrentStep == 1 && _wizardState.Step2_MissionGroupsCopied)
+        {
+            Navigation.NavigateTo("/CopyTerrains?wizardMode=true");
+            _wizardState.CurrentStep = 2;
+        }
+        else if (_wizardState.CurrentStep == 2 && _wizardState.Step3_TerrainMaterialsSelected)
+        {
+            Navigation.NavigateTo("/CopyForestBrushes?wizardMode=true");
+            _wizardState.CurrentStep = 3;
+        }
+        else if (_wizardState.CurrentStep == 3 && _wizardState.Step4_ForestBrushesSelected)
+        {
+            Navigation.NavigateTo("/CopyAssets?wizardMode=true");
+            _wizardState.CurrentStep = 4;
+        }
+        else if (_wizardState.CurrentStep == 4 && _wizardState.Step5_AssetsSelected)
+        {
+            Navigation.NavigateTo("/GenerateTerrain?wizardMode=true");
+            _wizardState.CurrentStep = 5;
+        }
+        StateHasChanged();
+    }
+    
+    private void OnFinishClicked()
+    {
+        _wizardState.IsActive = false;
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,915 @@
+using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Algorithms;
+using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
+using BeamNgTerrainPoc.Terrain.Osm.Processing;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+
+namespace BeamNgTerrainPoc.Terrain.Services;
+
+/// <summary>
+/// Builds a unified road network from multiple material definitions.
+/// Extracts splines from each material (either from OSM or PNG layer maps),
+/// assigns parameters and priorities, and creates a single unified network
+/// for material-agnostic processing.
+/// </summary>
+public class UnifiedRoadNetworkBuilder
+{
+    private readonly SkeletonizationRoadExtractor _skeletonExtractor;
+    private readonly OsmGeometryProcessor _osmProcessor;
+
+    /// <summary>
+    /// Minimum cross-sections required per path to be included in the network.
+    /// Paths with fewer cross-sections are considered noise/fragments and skipped.
+    /// </summary>
+    private const int MinCrossSectionsPerPath = 10;
+
+    public UnifiedRoadNetworkBuilder()
+    {
+        _skeletonExtractor = new SkeletonizationRoadExtractor();
+        _osmProcessor = new OsmGeometryProcessor();
+    }
+
+    /// <summary>
+    /// Builds a unified road network from all materials that have road parameters.
+    /// </summary>
+    /// <param name="materials">List of material definitions (only those with RoadParameters are processed).</param>
+    /// <param name="heightMap">The terrain heightmap for elevation sampling.</param>
+    /// <param name="metersPerPixel">Scale factor for converting between pixels and meters.</param>
+    /// <param name="terrainSize">Terrain size in pixels.</param>
+    /// <param name="flipMaterialProcessingOrder">When true, reverses material order so index 0 gets highest priority.</param>
+    /// <returns>A unified road network containing all splines from all materials.</returns>
+    public UnifiedRoadNetwork BuildNetwork(
+        List<MaterialDefinition> materials,
+        float[,] heightMap,
+        float metersPerPixel,
+        int terrainSize,
+        bool flipMaterialProcessingOrder = true)
+    {
+        var perfLog = TerrainCreationLogger.Current;
+        var network = new UnifiedRoadNetwork();
+        var splineIdCounter = 0;
+
+        // Filter to materials with road parameters
+        var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
+
+        if (roadMaterials.Count == 0)
+        {
+            TerrainLogger.Info("UnifiedRoadNetworkBuilder: No road materials to process");
+            return network;
+        }
+
+        // Material order handling for priority calculation:
+        // - Materials are listed in UI with index 0 at top
+        // - For TEXTURE PAINTING: the LAST material (highest index) wins overlaps
+        // - For JUNCTION HARMONIZATION: we want configurable priority
+        //
+        // When flipMaterialProcessingOrder is TRUE (default):
+        //   - Reverse the list so index 0 becomes last processed with highest materialOrderIndex
+        //   - This gives the FIRST material (top of UI list) HIGHEST priority for road smoothing
+        //
+        // When flipMaterialProcessingOrder is FALSE:
+        //   - Process in original order, so LAST material (bottom of UI list) gets highest priority
+        //   - This matches the texture painting behavior
+        if (flipMaterialProcessingOrder)
+        {
+            roadMaterials.Reverse();
+            TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order FLIPPED - top material (index 0) gets highest priority");
+        }
+        else
+        {
+            TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order NORMAL - bottom material gets highest priority");
+        }
+
+        TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network from {roadMaterials.Count} road material(s)");
+        perfLog?.LogSection("UnifiedRoadNetworkBuilder");
+
+        // Process each material
+        for (var materialIndex = 0; materialIndex < roadMaterials.Count; materialIndex++)
+        {
+            var material = roadMaterials[materialIndex];
+            var parameters = material.RoadParameters!;
+
+            TerrainLogger.Info($"  Processing material: {material.MaterialName}");
+
+            try
+            {
+                // Get splines from this material (either pre-built or extracted from layer)
+                var splines = ExtractSplinesFromMaterial(material, parameters, metersPerPixel, terrainSize);
+
+                if (splines.Count == 0)
+                {
+                    TerrainLogger.Warning($"    No splines extracted for material: {material.MaterialName}");
+                    continue;
+                }
+
+                TerrainLogger.Info($"    Extracted {splines.Count} spline(s)");
+
+                // Convert to ParameterizedRoadSpline and add to network
+                foreach (var spline in splines)
+                {
+                    // Determine OSM road type if available
+                    string? osmRoadType = null;
+                    string? displayName = null;
+
+                    // For OSM-based materials, we could extract road type from the spline
+                    // This would require additional metadata to be passed through
+                    // For now, we use width-based priority as fallback
+
+                    var paramSpline = new ParameterizedRoadSpline
+                    {
+                        Spline = spline,
+                        Parameters = parameters,
+                        MaterialName = material.MaterialName,
+                        SplineId = splineIdCounter,
+                        OsmRoadType = osmRoadType,
+                        DisplayName = displayName,
+
+                        // Copy structure flags from RoadSpline (which got them from OsmFeature)
+                        IsBridge = spline.IsBridge,
+                        IsTunnel = spline.IsTunnel,
+                        StructureType = spline.StructureType,
+                        Layer = spline.Layer,
+                        BridgeStructureType = spline.BridgeStructureType
+                    };
+
+                    // Calculate priority using the cascade:
+                    // 1. OSM road type (if available)
+                    // 2. Road width
+                    // 3. Material order (earlier = higher priority)
+                    paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
+
+                    network.AddSpline(paramSpline);
+                    splineIdCounter++;
+                }
+
+                TerrainLogger.Info($"    Added {splines.Count} spline(s) with priority range " +
+                                  $"[{network.Splines.Where(s => s.MaterialName == material.MaterialName).Min(s => s.Priority)}-" +
+                                  $"{network.Splines.Where(s => s.MaterialName == material.MaterialName).Max(s => s.Priority)}]");
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Error($"    Error processing material '{material.MaterialName}': {ex.Message}");
+            }
+        }
+
+        // Generate cross-sections for all splines
+        if (network.Splines.Count > 0)
+        {
+            GenerateCrossSections(network, metersPerPixel);
+        }
+
+        // Log network statistics
+        var stats = network.GetStatistics();
+        TerrainLogger.Info(stats.ToString());
+
+        // Log structure statistics
+        var bridgeCount = network.Splines.Count(s => s.IsBridge);
+        var tunnelCount = network.Splines.Count(s => s.IsTunnel);
+
+        if (bridgeCount > 0 || tunnelCount > 0)
+        {
+            TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
+        }
+
+        return network;
+    }
+
+    /// <summary>
+    /// Builds a unified road network with OSM road type information preserved.
+    /// Use this overload when you have OSM feature metadata to preserve road classifications.
+    /// </summary>
+    /// <param name="materials">List of material definitions.</param>
+    /// <param name="osmRoadTypes">Dictionary mapping material name to list of OSM road types for each spline.</param>
+    /// <param name="heightMap">The terrain heightmap.</param>
+    /// <param name="metersPerPixel">Scale factor.</param>
+    /// <param name="terrainSize">Terrain size in pixels.</param>
+    /// <returns>A unified road network with OSM road type priorities.</returns>
+    public UnifiedRoadNetwork BuildNetworkWithOsmMetadata(
+        List<MaterialDefinition> materials,
+        Dictionary<string, List<string?>> osmRoadTypes,
+        float[,] heightMap,
+        float metersPerPixel,
+        int terrainSize)
+    {
+        var network = new UnifiedRoadNetwork();
+        var splineIdCounter = 0;
+
+        var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
+
+        if (roadMaterials.Count == 0)
+        {
+            return network;
+        }
+
+        TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network with OSM metadata from {roadMaterials.Count} material(s)");
+
+        for (var materialIndex = 0; materialIndex < roadMaterials.Count; materialIndex++)
+        {
+            var material = roadMaterials[materialIndex];
+            var parameters = material.RoadParameters!;
+
+            try
+            {
+                var splines = ExtractSplinesFromMaterial(material, parameters, metersPerPixel, terrainSize);
+
+                // Get OSM road types for this material if available
+                var roadTypesForMaterial = osmRoadTypes.GetValueOrDefault(material.MaterialName);
+
+                for (var splineIndex = 0; splineIndex < splines.Count; splineIndex++)
+                {
+                    var spline = splines[splineIndex];
+
+                    // Get OSM road type if available
+                    string? osmRoadType = null;
+                    if (roadTypesForMaterial != null && splineIndex < roadTypesForMaterial.Count)
+                    {
+                        osmRoadType = roadTypesForMaterial[splineIndex];
+                    }
+
+                    var paramSpline = new ParameterizedRoadSpline
+                    {
+                        Spline = spline,
+                        Parameters = parameters,
+                        MaterialName = material.MaterialName,
+                        SplineId = splineIdCounter,
+                        OsmRoadType = osmRoadType,
+
+                        // Copy structure flags from RoadSpline (which got them from OsmFeature)
+                        IsBridge = spline.IsBridge,
+                        IsTunnel = spline.IsTunnel,
+                        StructureType = spline.StructureType,
+                        Layer = spline.Layer,
+                        BridgeStructureType = spline.BridgeStructureType
+                    };
+
+                    paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
+
+                    network.AddSpline(paramSpline);
+                    splineIdCounter++;
+                }
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Error($"Error processing material '{material.MaterialName}': {ex.Message}");
+            }
+        }
+
+        if (network.Splines.Count > 0)
+        {
+            GenerateCrossSections(network, metersPerPixel);
+        }
+
+        // Log structure statistics
+        var bridgeCount = network.Splines.Count(s => s.IsBridge);
+        var tunnelCount = network.Splines.Count(s => s.IsTunnel);
+
+        if (bridgeCount > 0 || tunnelCount > 0)
+        {
+            TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
+        }
+
+        return network;
+    }
+
+    /// <summary>
+    /// Extracts road splines from a material definition.
+    /// Uses pre-built splines if available (OSM), otherwise extracts from layer image (PNG).
+    /// </summary>
+    private List<RoadSpline> ExtractSplinesFromMaterial(
+        MaterialDefinition material,
+        RoadSmoothingParameters parameters,
+        float metersPerPixel,
+        int terrainSize)
+    {
+        // Check for pre-built splines first (from OSM)
+        if (parameters.UsePreBuiltSplines)
+        {
+            TerrainLogger.Info($"    Using {parameters.PreBuiltSplines!.Count} pre-built splines from OSM");
+            return FilterShortSplines(parameters.PreBuiltSplines!, parameters.CrossSectionIntervalMeters);
+        }
+
+        // Fall back to extracting from layer image
+        if (string.IsNullOrEmpty(material.LayerImagePath))
+        {
+            TerrainLogger.Warning($"    Material '{material.MaterialName}' has no layer image path");
+            return [];
+        }
+
+        // Load and process layer image
+        var roadLayer = LoadLayerImage(material.LayerImagePath, terrainSize);
+
+        return ExtractSplinesFromLayerImage(roadLayer, parameters, metersPerPixel);
+    }
+
+    /// <summary>
+    /// Extracts road splines from a binary layer image using skeleton extraction.
+    /// </summary>
+    private List<RoadSpline> ExtractSplinesFromLayerImage(
+        byte[,] roadLayer,
+        RoadSmoothingParameters parameters,
+        float metersPerPixel)
+    {
+        var splines = new List<RoadSpline>();
+
+        // Get spline parameters
+        var splineParams = parameters.GetSplineParameters();
+        var interpolationType = splineParams.SplineInterpolationType;
+
+        // Extract centerline paths using skeletonization
+        var centerlinePathsPixels = _skeletonExtractor.ExtractCenterlinePaths(roadLayer, parameters);
+
+        if (centerlinePathsPixels.Count == 0)
+        {
+            return splines;
+        }
+
+        TerrainLogger.Info($"    Extracted {centerlinePathsPixels.Count} skeleton path(s)");
+
+        // Merge broken curves
+        var mergedPathPixels = MergeBrokenCurves(centerlinePathsPixels, roadLayer, parameters);
+
+        TerrainLogger.Info($"    After merging: {mergedPathPixels.Count} path(s)");
+
+        // Track simplification statistics for aggregated logging
+        var totalWorldPoints = 0;
+        var totalSimplifiedPoints = 0;
+        var simplifiedPathCount = 0;
+
+        // Convert to splines
+        foreach (var pathPixels in mergedPathPixels)
+        {
+            if (pathPixels.Count < 2)
+                continue;
+
+            // Convert to world coordinates (meters)
+            var worldPoints = pathPixels
+                .Select(p => new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel))
+                .ToList();
+
+            // CRITICAL: Simplify the dense skeleton path to sparse control points like OSM has.
+            // The skeleton produces pixel-by-pixel points that create jagged splines.
+            // By simplifying first, we get clean waypoints that spline interpolation can smooth.
+            var simplifiedPoints = SimplifyPathForSpline(worldPoints, splineParams, metersPerPixel);
+
+            if (simplifiedPoints.Count < 2)
+                continue;
+
+            // Track simplification stats
+            if (simplifiedPoints.Count < worldPoints.Count)
+            {
+                totalWorldPoints += worldPoints.Count;
+                totalSimplifiedPoints += simplifiedPoints.Count;
+                simplifiedPathCount++;
+            }
+
+            try
+            {
+                var spline = new RoadSpline(simplifiedPoints, interpolationType);
+
+                // Filter short paths
+                var estimatedCrossSections = (int)(spline.TotalLength / parameters.CrossSectionIntervalMeters);
+                if (estimatedCrossSections >= MinCrossSectionsPerPath)
+                {
+                    splines.Add(spline);
+                }
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"    Failed to create spline: {ex.Message}");
+            }
+        }
+
+        // Log aggregated simplification summary
+        if (simplifiedPathCount > 0)
+        {
+            TerrainLogger.Info($"    Path simplification: {simplifiedPathCount} path(s), {totalWorldPoints} -> {totalSimplifiedPoints} total control points");
+        }
+
+        return splines;
+    }
+
+    /// <summary>
+    /// Simplifies a dense skeleton path to sparse control points suitable for spline creation.
+    /// This is the key to getting smooth results from PNG sources - similar to how OSM provides
+    /// clean waypoints rather than dense pixel data.
+    /// 
+    /// The process:
+    /// 1. Apply Ramer-Douglas-Peucker simplification to reduce points while preserving shape
+    /// 2. Enforce minimum spacing between control points
+    /// 3. Optionally apply Chaikin smoothing to reduce jaggedness in the control points
+    /// </summary>
+    private static List<Vector2> SimplifyPathForSpline(
+        List<Vector2> densePoints,
+        SplineRoadParameters splineParams,
+        float metersPerPixel)
+    {
+        if (densePoints.Count < 3)
+            return densePoints;
+
+        // Step 1: Ramer-Douglas-Peucker simplification
+        // Convert tolerance from pixels to meters
+        var rdpTolerance = splineParams.SimplifyTolerancePixels * metersPerPixel;
+
+        // Use a minimum tolerance to avoid excessive control points (at least 0.5 pixels worth)
+        var effectiveTolerance = Math.Max(rdpTolerance, metersPerPixel * 0.5f);
+
+        var simplified = RamerDouglasPeucker(densePoints, effectiveTolerance);
+
+        // Step 2: If still very dense, enforce minimum spacing
+        // Target roughly 1 control point per 5-10 meters of road for good spline quality
+        var targetSpacing = 5.0f * metersPerPixel; // Minimum 5 pixels worth of spacing
+        if (simplified.Count > 100)
+        {
+            simplified = EnforceMinimumSpacing(simplified, targetSpacing);
+        }
+
+        // Step 3: Apply Chaikin corner-cutting smoothing to the control points themselves
+        // This pre-smooths the waypoints before spline interpolation
+        // Only apply when using smooth interpolation mode (not linear)
+        if (simplified.Count >= 4 && splineParams.SplineInterpolationType == SplineInterpolationType.SmoothInterpolated)
+        {
+            // One iteration of Chaikin smoothing on the control points
+            simplified = ChaikinSmooth(simplified, 1);
+        }
+
+        return simplified;
+    }
+
+    /// <summary>
+    /// Ramer-Douglas-Peucker line simplification algorithm (iterative, in-place).
+    /// Reduces the number of points in a path while preserving overall shape.
+    /// Uses a stack-based approach with index ranges to avoid allocating sublists
+    /// at every recursion level.
+    /// </summary>
+    private static List<Vector2> RamerDouglasPeucker(List<Vector2> points, float epsilon)
+    {
+        if (points.Count < 3)
+            return new List<Vector2>(points);
+
+        var pointCount = points.Count;
+
+        // Boolean array marking which points to keep. First and last are always kept.
+        var keep = new bool[pointCount];
+        keep[0] = true;
+        keep[pointCount - 1] = true;
+
+        // Stack of (startIndex, endIndex) ranges to process
+        var stack = new Stack<(int Start, int End)>();
+        stack.Push((0, pointCount - 1));
+
+        while (stack.Count > 0)
+        {
+            var (start, end) = stack.Pop();
+
+            if (end - start < 2)
+                continue;
+
+            // Find the point with maximum distance from the line between start and end
+            float maxDistance = 0;
+            var maxIndex = start;
+
+            var lineStart = points[start];
+            var lineEnd = points[end];
+
+            for (var i = start + 1; i < end; i++)
+            {
+                var distance = PerpendicularDistance(points[i], lineStart, lineEnd);
+                if (distance > maxDistance)
+                {
+                    maxDistance = distance;
+                    maxIndex = i;
+                }
+            }
+
+            // If max distance exceeds epsilon, keep this point and subdivide
+            if (maxDistance > epsilon)
+            {
+                keep[maxIndex] = true;
+                stack.Push((start, maxIndex));
+                stack.Push((maxIndex, end));
+            }
+            // Otherwise all intermediate points between start and end are discarded
+        }
+
+        // Build result from kept points (preserves original order)
+        var result = new List<Vector2>();
+        for (var i = 0; i < pointCount; i++)
+        {
+            if (keep[i])
+                result.Add(points[i]);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Calculates perpendicular distance from a point to a line segment.
+    /// </summary>
+    private static float PerpendicularDistance(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
+    {
+        var dx = lineEnd.X - lineStart.X;
+        var dy = lineEnd.Y - lineStart.Y;
+
+        var lineLengthSquared = dx * dx + dy * dy;
+
+        if (lineLengthSquared < 0.0001f)
+        {
+            // Line segment is essentially a point
+            return Vector2.Distance(point, lineStart);
+        }
+
+        // Project point onto line and find perpendicular distance
+        var t = ((point.X - lineStart.X) * dx + (point.Y - lineStart.Y) * dy) / lineLengthSquared;
+        t = Math.Clamp(t, 0, 1);
+
+        var projectionX = lineStart.X + t * dx;
+        var projectionY = lineStart.Y + t * dy;
+
+        return Vector2.Distance(point, new Vector2(projectionX, projectionY));
+    }
+
+    /// <summary>
+    /// Enforces minimum spacing between consecutive points by removing points that are too close.
+    /// </summary>
+    private static List<Vector2> EnforceMinimumSpacing(List<Vector2> points, float minSpacing)
+    {
+        if (points.Count < 3)
+            return points;
+
+        var result = new List<Vector2> { points[0] };
+        var minSpacingSquared = minSpacing * minSpacing;
+
+        for (int i = 1; i < points.Count - 1; i++)
+        {
+            var distSquared = Vector2.DistanceSquared(result[^1], points[i]);
+            if (distSquared >= minSpacingSquared)
+            {
+                result.Add(points[i]);
+            }
+        }
+
+        // Always include the last point
+        result.Add(points[^1]);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Chaikin corner-cutting smoothing algorithm.
+    /// Creates smoother control points by iteratively cutting corners.
+    /// </summary>
+    private static List<Vector2> ChaikinSmooth(List<Vector2> points, int iterations)
+    {
+        if (points.Count < 3 || iterations <= 0)
+            return points;
+
+        var result = new List<Vector2>(points);
+
+        for (int iter = 0; iter < iterations; iter++)
+        {
+            var smoothed = new List<Vector2>();
+
+            // Keep the first point
+            smoothed.Add(result[0]);
+
+            // Apply corner cutting to intermediate segments
+            for (int i = 0; i < result.Count - 1; i++)
+            {
+                var p0 = result[i];
+                var p1 = result[i + 1];
+
+                // Create two new points at 1/4 and 3/4 along the segment
+                var q = new Vector2(
+                    0.75f * p0.X + 0.25f * p1.X,
+                    0.75f * p0.Y + 0.25f * p1.Y);
+                var r = new Vector2(
+                    0.25f * p0.X + 0.75f * p1.X,
+                    0.25f * p0.Y + 0.75f * p1.Y);
+
+                // Don't duplicate start/end points
+                if (i > 0)
+                    smoothed.Add(q);
+                if (i < result.Count - 2)
+                    smoothed.Add(r);
+            }
+
+            // Keep the last point
+            smoothed.Add(result[^1]);
+
+            result = smoothed;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Filters out splines that are too short to generate meaningful cross-sections.
+    /// </summary>
+    private List<RoadSpline> FilterShortSplines(List<RoadSpline> splines, float crossSectionInterval)
+    {
+        return splines
+            .Where(s =>
+            {
+                var estimatedCrossSections = (int)(s.TotalLength / crossSectionInterval);
+                return estimatedCrossSections >= MinCrossSectionsPerPath;
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Generates cross-sections for all splines in the network.
+    /// Cross-sections are sampled along each spline at the interval specified in its parameters.
+    /// For PNG-extracted splines, the normals are smoothed to reduce jaggedness from skeleton extraction.
+    /// </summary>
+    private void GenerateCrossSections(UnifiedRoadNetwork network, float metersPerPixel)
+    {
+        var globalIndex = 0;
+
+        // Sort splines by priority (highest first) to ensure deterministic ordering
+        var orderedSplines = network.Splines.OrderByDescending(s => s.Priority).ToList();
+
+        foreach (var paramSpline in orderedSplines)
+        {
+            var parameters = paramSpline.Parameters;
+            var spline = paramSpline.Spline;
+
+            // Sample the spline at regular intervals
+            var samples = spline.SampleByDistance(parameters.CrossSectionIntervalMeters);
+
+            var crossSections = new List<UnifiedCrossSection>();
+
+            for (var localIndex = 0; localIndex < samples.Count; localIndex++)
+            {
+                var sample = samples[localIndex];
+
+                var crossSection = UnifiedCrossSection.FromSplineSample(
+                    sample,
+                    paramSpline,
+                    globalIndex,
+                    localIndex);
+
+                // Mark start/end cross-sections
+                crossSection.IsSplineStart = localIndex == 0;
+                crossSection.IsSplineEnd = localIndex == samples.Count - 1;
+
+                crossSections.Add(crossSection);
+                globalIndex++;
+            }
+
+            // Smooth cross-section normals to reduce bumpiness in road edges and elevation transitions.
+            // Apply to ALL splines (both OSM and PNG) for consistent junction harmonization behavior.
+            // Originally this was only for PNG splines, but OSM splines also benefit from smoothing.
+            if (crossSections.Count >= 5)
+            {
+                SmoothCrossSectionNormals(crossSections);
+            }
+
+            // Add all cross-sections to the network
+            foreach (var cs in crossSections)
+            {
+                network.AddCrossSection(cs);
+            }
+        }
+
+        TerrainLogger.Info($"    Generated {network.CrossSections.Count} cross-sections from {network.Splines.Count} splines");
+    }
+
+    /// <summary>
+    /// Smooths the normal vectors of cross-sections using a moving average filter.
+    /// This reduces the jaggedness that comes from skeleton-extracted PNG paths,
+    /// resulting in smoother road edges and elevation transitions.
+    /// 
+    /// Uses a 5-point moving average (2 before, current, 2 after) which provides
+    /// good smoothing while preserving overall road direction.
+    /// </summary>
+    private static void SmoothCrossSectionNormals(List<UnifiedCrossSection> crossSections)
+    {
+        if (crossSections.Count < 5)
+            return;
+
+        const int windowHalfSize = 2; // 5-point moving average (2 + 1 + 2)
+
+        // Store original normals
+        var originalNormals = crossSections.Select(cs => cs.NormalDirection).ToList();
+        var originalTangents = crossSections.Select(cs => cs.TangentDirection).ToList();
+
+        // Apply moving average to normals
+        for (var i = 0; i < crossSections.Count; i++)
+        {
+            var sumNormal = Vector2.Zero;
+            var sumTangent = Vector2.Zero;
+            var count = 0;
+
+            for (var j = i - windowHalfSize; j <= i + windowHalfSize; j++)
+            {
+                if (j < 0 || j >= crossSections.Count)
+                    continue;
+
+                sumNormal += originalNormals[j];
+                sumTangent += originalTangents[j];
+                count++;
+            }
+
+            if (count > 0)
+            {
+                // Normalize the averaged vectors
+                var avgNormal = sumNormal / count;
+                var avgTangent = sumTangent / count;
+
+                var normalLength = avgNormal.Length();
+                var tangentLength = avgTangent.Length();
+
+                if (normalLength > 0.001f)
+                    crossSections[i].NormalDirection = avgNormal / normalLength;
+
+                if (tangentLength > 0.001f)
+                    crossSections[i].TangentDirection = avgTangent / tangentLength;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Loads a layer image from disk.
+    /// </summary>
+    private byte[,] LoadLayerImage(string layerPath, int expectedSize)
+    {
+        using var image = Image.Load<L8>(layerPath);
+
+        if (image.Width != expectedSize || image.Height != expectedSize)
+        {
+            throw new InvalidOperationException(
+                $"Layer image size ({image.Width}x{image.Height}) does not match terrain size ({expectedSize}x{expectedSize})");
+        }
+
+        var layer = new byte[expectedSize, expectedSize];
+
+        for (var y = 0; y < expectedSize; y++)
+        {
+            for (var x = 0; x < expectedSize; x++)
+            {
+                // Flip Y axis (image Y=0 at top, terrain Y=0 at bottom)
+                var flippedY = expectedSize - 1 - y;
+                layer[flippedY, x] = image[x, y].PackedValue;
+            }
+        }
+
+        return layer;
+    }
+
+    /// <summary>
+    /// Merges broken curves that should be continuous.
+    /// Reuses the algorithm from MedialAxisRoadExtractor.
+    /// </summary>
+    private List<List<Vector2>> MergeBrokenCurves(
+        List<List<Vector2>> rawPaths,
+        byte[,] roadMask,
+        RoadSmoothingParameters parameters)
+    {
+        if (rawPaths.Count <= 1)
+            return rawPaths;
+
+        var sp = parameters.GetSplineParameters();
+        var maxGap = (int)Math.Max(2, Math.Round(sp.BridgeEndpointMaxDistancePixels));
+        var maxAngleDeg = Math.Max(10f, sp.JunctionAngleThreshold);
+
+        // Main merge loop
+        var paths = rawPaths.Select(p => p.ToList()).ToList();
+        bool merged;
+        var pass = 0;
+
+        do
+        {
+            pass++;
+            merged = false;
+
+            for (var i = 0; i < paths.Count && !merged; i++)
+            {
+                for (var j = i + 1; j < paths.Count && !merged; j++)
+                {
+                    var a = paths[i];
+                    var b = paths[j];
+
+                    if (TryMerge(a, b, maxGap, maxAngleDeg, roadMask, out var mergedPath) ||
+                        TryMerge(a, Reverse(b), maxGap, maxAngleDeg, roadMask, out mergedPath) ||
+                        TryMerge(Reverse(a), b, maxGap, maxAngleDeg, roadMask, out mergedPath) ||
+                        TryMerge(Reverse(a), Reverse(b), maxGap, maxAngleDeg, roadMask, out mergedPath))
+                    {
+                        paths[i] = mergedPath;
+                        paths.RemoveAt(j);
+                        merged = true;
+                    }
+                }
+            }
+        } while (merged && paths.Count > 1);
+
+        if (pass > 1)
+        {
+            TerrainLogger.Info($"    Path merging: {pass - 1} merge(s), remaining {paths.Count} paths");
+        }
+
+        return paths;
+    }
+
+    private static List<Vector2> Reverse(List<Vector2> p)
+    {
+        var r = new List<Vector2>(p);
+        r.Reverse();
+        return r;
+    }
+
+    private bool TryMerge(
+        List<Vector2> a,
+        List<Vector2> b,
+        int maxGap,
+        float maxAngleDeg,
+        byte[,] roadMask,
+        out List<Vector2> merged)
+    {
+        merged = null!;
+        if (a.Count == 0 || b.Count == 0) return false;
+
+        var aEnd = a[^1];
+        var bStart = b[0];
+
+        // Proximity check
+        var dist = Vector2.Distance(aEnd, bStart);
+        if (dist > maxGap) return false;
+
+        // Direction continuity check
+        var aDir = TangentAtEnd(a, true);
+        var bDir = TangentAtEnd(b, false);
+        if (aDir.Length() < 1e-3f || bDir.Length() < 1e-3f) return false;
+
+        var ang = AngleBetween(aDir, bDir);
+        if (ang > maxAngleDeg) return false;
+
+        // Connectivity check through road mask
+        if (!IsBridgeInsideRoadMask(aEnd, bStart, roadMask)) return false;
+
+        // Merge paths
+        merged = new List<Vector2>(a.Count + b.Count - 1);
+        merged.AddRange(a);
+        if (b.Count > 0)
+            merged.AddRange(b.Skip(1));
+        return true;
+    }
+
+    private static Vector2 TangentAtEnd(List<Vector2> p, bool atEnd)
+    {
+        if (p.Count < 2) return Vector2.Zero;
+
+        if (atEnd)
+        {
+            var a = p[Math.Max(0, p.Count - 3)];
+            var b = p[^1];
+            return new Vector2(b.X - a.X, b.Y - a.Y);
+        }
+        else
+        {
+            var a = p[0];
+            var b = p[Math.Min(p.Count - 1, 2)];
+            return new Vector2(b.X - a.X, b.Y - a.Y);
+        }
+    }
+
+    private static float AngleBetween(Vector2 v1, Vector2 v2)
+    {
+        v1 = Vector2.Normalize(v1);
+        v2 = Vector2.Normalize(v2);
+        var dot = Math.Clamp(Vector2.Dot(v1, v2), -1f, 1f);
+        return MathF.Acos(dot) * 180f / MathF.PI;
+    }
+
+    private static bool IsBridgeInsideRoadMask(Vector2 a, Vector2 b, byte[,] mask)
+    {
+        var w = mask.GetLength(1);
+        var h = mask.GetLength(0);
+        int x0 = (int)a.X, y0 = (int)a.Y, x1 = (int)b.X, y1 = (int)b.Y;
+
+        int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        var err = dx + dy;
+
+        int total = 0, inside = 0;
+        while (true)
+        {
+            if (x0 >= 0 && x0 < w && y0 >= 0 && y0 < h)
+            {
+                total++;
+                if (mask[y0, x0] > 0) inside++;
+            }
+
+            if (x0 == x1 && y0 == y1) break;
+            var e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+
+        return total == 0 ? false : inside / (float)total >= 0.6f;
+    }
+}

@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MaxRev GDAL packages for WiX installer compatibility -->
+    <PackageReference Include="MaxRev.Gdal.Core" Version="3.10.0.300" />
+    <PackageReference Include="MaxRev.Gdal.WindowsRuntime.Minimal" Version="3.10.0.300" />
+    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+      <ProjectReference Include="..\Grille.BeamNG.Lib\Grille.BeamNG.Lib.csproj" />
+      <ProjectReference Include="..\BeamNG.Procedural3D\BeamNG.Procedural3D.csproj" />
+    </ItemGroup>
+
+  </Project>

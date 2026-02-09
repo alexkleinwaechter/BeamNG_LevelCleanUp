@@ -1,0 +1,518 @@
+using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+
+namespace BeamNgTerrainPoc.Terrain.Algorithms;
+
+/// <summary>
+///     Optimized elevation smoothing with support for Box filter (prefix sums) and Butterworth low-pass filter.
+///     Box Filter: O(N) using prefix sums - fast, suitable for flat terrain.
+///     Butterworth Filter: O(N x order) - maximally flat passband, ideal for hilly terrain.
+///     PERFORMANCE: ~100x faster than naive moving average for large windows.
+/// </summary>
+public class OptimizedElevationSmoother : IHeightCalculator
+{
+    /// <summary>
+    ///     Legacy overload: wraps RoadGeometry cross-sections into UnifiedCrossSections
+    ///     and delegates to the primary implementation.
+    /// </summary>
+    public void CalculateTargetElevations(RoadGeometry geometry, float[,] heightMap, float metersPerPixel)
+    {
+        var crossSections = geometry.CrossSections;
+        var parameters = geometry.Parameters;
+
+        // Convert CrossSections → UnifiedCrossSections for the primary implementation
+        var unified = new List<UnifiedCrossSection>(crossSections.Count);
+        foreach (var cs in crossSections)
+            unified.Add(UnifiedCrossSection.FromCrossSection(cs, cs.PathId, 0, 0));
+
+        CalculateTargetElevations(unified, parameters, heightMap, metersPerPixel);
+
+        // Copy results back to the original CrossSection objects
+        for (var i = 0; i < crossSections.Count; i++)
+            crossSections[i].TargetElevation = unified[i].TargetElevation;
+    }
+
+    /// <summary>
+    ///     Primary implementation: calculates target elevations for UnifiedCrossSections directly.
+    ///     Avoids the RoadGeometry/CrossSection conversion roundtrip.
+    ///     Processing pipeline:
+    ///     1. Sample terrain elevations at cross-section centers
+    ///     2. Apply longitudinal smoothing (Box or Butterworth filter)
+    ///     3. Apply GlobalLevelingStrength (blend toward network average elevation)
+    ///     4. Enforce RoadMaxSlopeDegrees constraint (limit maximum grade)
+    /// </summary>
+    public void CalculateTargetElevations(
+        List<UnifiedCrossSection> crossSections,
+        RoadSmoothingParameters parameters,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        // Get smoothing parameters from SplineParameters
+        var splineParams = parameters?.GetSplineParameters();
+        var windowSize = splineParams?.SmoothingWindowSize ?? 101;
+        var useButterworthFilter = splineParams?.UseButterworthFilter ?? false;
+        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 3;
+        var crossSectionSpacing = parameters?.CrossSectionIntervalMeters ?? 0.5f;
+        var smoothingRadiusMeters = windowSize / 2.0f * crossSectionSpacing;
+
+        // Get global leveling and slope constraint parameters
+        var globalLevelingStrength = splineParams?.GlobalLevelingStrength ?? 0.0f;
+        var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
+        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 4.0f;
+
+        var filterType = useButterworthFilter
+            ? $"Butterworth (order {butterworthOrder})"
+            : "Box (prefix-sum)";
+
+        TerrainCreationLogger.Current?.Detail($"Calculating target elevations using {filterType} filter...");
+        TerrainCreationLogger.Current?.Detail($"Smoothing window: {windowSize} cross-sections (~{smoothingRadiusMeters:F1}m radius)");
+
+        if (globalLevelingStrength > 0.001f)
+            TerrainCreationLogger.Current?.Detail($"Global leveling strength: {globalLevelingStrength:P0}");
+
+        if (enableMaxSlopeConstraint)
+            TerrainCreationLogger.Current?.Detail($"Max road slope constraint: {roadMaxSlopeDegrees:F1}\u00b0 (ENABLED)");
+
+        // Group by OwnerSplineId for per-spline processing
+        var splineGroups = crossSections
+            .Where(cs => !cs.IsExcluded)
+            .GroupBy(cs => cs.OwnerSplineId)
+            .ToList();
+
+        var totalSections = 0;
+
+        // Collect all smoothed elevations for global average calculation
+        var allSmoothedElevations = new List<float>();
+        var splineSmoothedArrays = new Dictionary<int, (List<UnifiedCrossSection> sections, float[] smoothed)>();
+
+        // First pass: Apply longitudinal smoothing to each spline
+        var invalidSamplesTotal = 0;
+
+        foreach (var splineGroup in splineGroups)
+        {
+            var sections = splineGroup.OrderBy(cs => cs.LocalIndex).ToList();
+
+            if (sections.Count == 0) continue;
+
+            // Step 1: Sample terrain elevations at cross-section centers
+            var rawElevations = new float[sections.Count];
+            var invalidSamplesInPath = 0;
+
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var cs = sections[i];
+                var px = (int)(cs.CenterPoint.X / metersPerPixel);
+                var py = (int)(cs.CenterPoint.Y / metersPerPixel);
+
+                px = Math.Clamp(px, 0, heightMap.GetLength(1) - 1);
+                py = Math.Clamp(py, 0, heightMap.GetLength(0) - 1);
+
+                var sampledElevation = heightMap[py, px];
+
+                // CRITICAL FIX: Detect and handle invalid elevation samples
+                // Invalid samples (NaN, Infinity, extremely negative) cause terrain spikes
+                // Note: We do NOT reject 0.0f because valid terrain can be at sea level
+                if (float.IsNaN(sampledElevation) || float.IsInfinity(sampledElevation) ||
+                    sampledElevation < -1000.0f)
+                {
+                    invalidSamplesInPath++;
+                    // Use interpolation from neighbors if available, otherwise sample nearby
+                    if (i > 0 && !float.IsNaN(rawElevations[i - 1]))
+                        sampledElevation = rawElevations[i - 1]; // Use previous valid value
+                    else
+                        // Sample from nearby valid pixels instead
+                        sampledElevation = SampleValidNeighborElevation(heightMap, px, py);
+                }
+
+                rawElevations[i] = sampledElevation;
+            }
+
+            if (invalidSamplesInPath > 0) invalidSamplesTotal += invalidSamplesInPath;
+
+            // Step 2: Apply smoothing filter based on configuration
+            var smoothed = useButterworthFilter
+                ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
+                : BoxFilterPrefixSum(rawElevations, windowSize);
+
+            splineSmoothedArrays[splineGroup.Key] = (sections, smoothed);
+            allSmoothedElevations.AddRange(smoothed);
+            totalSections += sections.Count;
+        }
+
+        // Step 3: Apply GlobalLevelingStrength (blend toward network average)
+        if (globalLevelingStrength > 0.001f && allSmoothedElevations.Count > 0)
+        {
+            var globalAverage = allSmoothedElevations.Average();
+            TerrainCreationLogger.Current?.Detail($"Network average elevation: {globalAverage:F2}m");
+
+            foreach (var kvp in splineSmoothedArrays)
+            {
+                var smoothed = kvp.Value.smoothed;
+                for (var i = 0; i < smoothed.Length; i++)
+                    // Blend local elevation toward global average
+                    smoothed[i] = smoothed[i] * (1.0f - globalLevelingStrength)
+                                  + globalAverage * globalLevelingStrength;
+            }
+
+            TerrainCreationLogger.Current?.Detail($"Applied global leveling: {globalLevelingStrength:P0} toward {globalAverage:F1}m");
+        }
+
+        // Step 4: Enforce RoadMaxSlopeDegrees constraint (only if enabled)
+        if (enableMaxSlopeConstraint)
+        {
+            var constrainedSections = 0;
+
+            foreach (var kvp in splineSmoothedArrays)
+            {
+                var smoothed = kvp.Value.smoothed;
+                var modified = EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
+                constrainedSections += modified;
+            }
+
+            if (constrainedSections > 0)
+                TerrainCreationLogger.Current?.Detail($"Slope constraint modified {constrainedSections:N0} cross-sections");
+        }
+
+        // Step 5: Assign final elevations directly to UnifiedCrossSections
+        foreach (var kvp in splineSmoothedArrays)
+        {
+            var (sections, smoothed) = kvp.Value;
+            for (var i = 0; i < sections.Count; i++) sections[i].TargetElevation = smoothed[i];
+        }
+
+        TerrainCreationLogger.Current?.Detail(
+            $"Smoothed elevations for {totalSections:N0} cross-sections across {splineGroups.Count} spline(s)");
+
+        if (invalidSamplesTotal > 0)
+            TerrainLogger.Warning(
+                $"  WARNING: Found {invalidSamplesTotal} invalid elevation samples (zero/NaN) - interpolated from neighbors");
+    }
+
+    /// <summary>
+    ///     Samples a valid elevation from neighboring pixels when the center pixel has invalid data.
+    ///     Searches in expanding rings until a valid value is found.
+    /// </summary>
+    private float SampleValidNeighborElevation(float[,] heightMap, int centerX, int centerY)
+    {
+        var mapHeight = heightMap.GetLength(0);
+        var mapWidth = heightMap.GetLength(1);
+
+        // Search in expanding rings (1, 2, 3, 5, 10 pixels)
+        int[] searchRadii = { 1, 2, 3, 5, 10 };
+
+        foreach (var radius in searchRadii)
+        {
+            float sum = 0;
+            var count = 0;
+
+            for (var dy = -radius; dy <= radius; dy++)
+            for (var dx = -radius; dx <= radius; dx++)
+            {
+                // Only check edge of ring (not interior)
+                if (Math.Abs(dx) != radius && Math.Abs(dy) != radius) continue;
+
+                var nx = centerX + dx;
+                var ny = centerY + dy;
+
+                if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight)
+                {
+                    var val = heightMap[ny, nx];
+                    // Check if this is a valid value (NaN, Infinity, or extremely negative are invalid)
+                    // Note: 0.0f IS valid - terrain can be at sea level
+                    if (!float.IsNaN(val) && !float.IsInfinity(val) && val >= -1000.0f)
+                    {
+                        sum += val;
+                        count++;
+                    }
+                }
+            }
+
+            if (count > 0) return sum / count;
+        }
+
+        // Fallback: no valid neighbors found - use a reasonable default
+        // This shouldn't happen in practice, but prevents crashes
+        TerrainCreationLogger.Current?.Detail($"No valid neighbor elevation found at ({centerX}, {centerY}) - using fallback");
+        return 100.0f; // Reasonable default elevation
+    }
+
+    /// <summary>
+    ///     Enforces maximum road slope constraint using iterative forward-backward passes.
+    ///     This ensures no segment exceeds the specified maximum grade.
+    ///     Algorithm:
+    ///     1. Calculate max rise per cross-section from slope angle
+    ///     2. Forward pass: limit uphill slope (each point can't be too high relative to previous)
+    ///     3. Backward pass: limit downhill slope (each point can't be too high relative to next)
+    ///     4. Repeat until no changes needed (converges quickly, usually 2-3 iterations)
+    /// </summary>
+    /// <param name="elevations">Array of elevations to modify in-place</param>
+    /// <param name="crossSectionSpacing">Distance between cross-sections in meters</param>
+    /// <param name="maxSlopeDegrees">Maximum allowed slope in degrees</param>
+    /// <returns>Number of elevations that were modified</returns>
+    private int EnforceMaxSlopeConstraint(float[] elevations, float crossSectionSpacing, float maxSlopeDegrees)
+    {
+        var n = elevations.Length;
+        if (n < 2) return 0;
+
+        // Convert slope angle to max rise per cross-section
+        var maxSlopeRatio = MathF.Tan(maxSlopeDegrees * MathF.PI / 180.0f);
+        var maxRise = maxSlopeRatio * crossSectionSpacing;
+
+        var totalModified = 0;
+        var changed = true;
+        var iterations = 0;
+        const int maxIterations = 10; // Safety limit
+
+        while (changed && iterations < maxIterations)
+        {
+            changed = false;
+            iterations++;
+
+            // Forward pass: limit uphill slope
+            for (var i = 1; i < n; i++)
+            {
+                var maxAllowed = elevations[i - 1] + maxRise;
+                if (elevations[i] > maxAllowed)
+                {
+                    elevations[i] = maxAllowed;
+                    changed = true;
+                    totalModified++;
+                }
+            }
+
+            // Backward pass: limit downhill slope (from the other direction)
+            for (var i = n - 2; i >= 0; i--)
+            {
+                var maxAllowed = elevations[i + 1] + maxRise;
+                if (elevations[i] > maxAllowed)
+                {
+                    elevations[i] = maxAllowed;
+                    changed = true;
+                    totalModified++;
+                }
+            }
+        }
+
+        return totalModified;
+    }
+
+    /// <summary>
+    ///     O(N) box filter using prefix sums.
+    ///     Equivalent to moving average but 100x faster for large windows.
+    ///     Algorithm:
+    ///     1. Build cumulative sum array: prefixSum[i] = sum(input[0..i-1])
+    ///     2. For each position i: avg = (prefixSum[right+1] - prefixSum[left]) / count
+    /// </summary>
+    private float[] BoxFilterPrefixSum(float[] input, int windowSize)
+    {
+        var n = input.Length;
+        var result = new float[n];
+
+        // Edge case
+        if (n == 0) return result;
+        if (windowSize <= 1)
+        {
+            Array.Copy(input, result, n);
+            return result;
+        }
+
+        // Build prefix sum array: O(N)
+        var prefixSum = new float[n + 1];
+        prefixSum[0] = 0;
+
+        for (var i = 0; i < n; i++) prefixSum[i + 1] = prefixSum[i] + input[i];
+
+        // Apply box filter: O(N) - each lookup is O(1)
+        var halfWindow = windowSize / 2;
+
+        for (var i = 0; i < n; i++)
+        {
+            var left = Math.Max(0, i - halfWindow);
+            var right = Math.Min(n - 1, i + halfWindow);
+
+            // Range sum in O(1) using prefix sums
+            var sum = prefixSum[right + 1] - prefixSum[left];
+            var count = right - left + 1;
+
+            result[i] = sum / count;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Butterworth low-pass filter for maximally flat passband.
+    ///     Uses zero-phase forward-backward filtering (filtfilt) to avoid phase shift.
+    ///     The cutoff frequency is derived from the window size:
+    ///     - Larger window = lower cutoff = more smoothing
+    ///     - Smaller window = higher cutoff = less smoothing
+    ///     Algorithm:
+    ///     1. Convert window size to normalized cutoff frequency
+    ///     2. Pre-warp for bilinear transform (analog to digital)
+    ///     3. Apply cascaded biquad sections (2nd-order each)
+    ///     4. Forward-backward filtering for zero phase shift
+    /// </summary>
+    /// <param name="input">Raw elevation samples</param>
+    /// <param name="windowSize">Equivalent window size (for cutoff calculation)</param>
+    /// <param name="order">Filter order (1-8, higher = sharper cutoff)</param>
+    /// <returns>Smoothed elevation samples</returns>
+    private float[] ButterworthLowPassFilter(float[] input, int windowSize, int order)
+    {
+        var n = input.Length;
+        if (n < 3) return (float[])input.Clone();
+
+        // Clamp order to valid range
+        order = Math.Clamp(order, 1, 8);
+
+        // Convert window size to normalized cutoff frequency (0.0 to 1.0, relative to Nyquist)
+        // A window of W samples corresponds to keeping frequencies with period > W samples
+        // Normalized frequency = 2.0 / windowSize (where 1.0 = Nyquist = Fs/2)
+        var cutoffNormalized = 2.0f / windowSize;
+        cutoffNormalized = Math.Clamp(cutoffNormalized, 0.001f, 0.99f);
+
+        // Pre-warp the cutoff frequency for bilinear transform
+        // This compensates for frequency warping in the analog-to-digital conversion
+        var wc = MathF.Tan(MathF.PI * cutoffNormalized / 2.0f);
+
+        // Start with input signal
+        var result = (float[])input.Clone();
+
+        // Apply cascaded biquad sections (each section is 2nd order)
+        // For odd orders, we need (order+1)/2 sections (last one is 1st order, but we approximate with 2nd)
+        var numSections = (order + 1) / 2;
+
+        for (var section = 0; section < numSections; section++)
+        {
+            // Calculate pole angle for this section
+            // Butterworth poles are evenly distributed on left half of unit circle
+            var theta = MathF.PI * (2 * section + 1) / (2 * order);
+            var alpha = -MathF.Sin(theta); // Real part of pole (negative for stability)
+
+            // For odd order and last section, use first-order approximation
+            var isFirstOrderSection = order % 2 == 1 && section == numSections - 1;
+
+            if (isFirstOrderSection)
+            {
+                // First-order lowpass section
+                // H(s) = wc / (s + wc)
+                // Bilinear transform gives:
+                var k = wc + 1.0f;
+                var b0 = wc / k;
+                var b1 = b0;
+                var a1 = (wc - 1.0f) / k;
+
+                result = ApplyFirstOrderSection(result, b0, b1, a1);
+            }
+            else
+            {
+                // Second-order (biquad) section
+                // Calculate bilinear transform coefficients
+                var wc2 = wc * wc;
+                var k1 = -2.0f * wc * alpha; // Note: alpha is already negative
+                var k2 = wc2 + k1 + 1.0f;
+
+                // Numerator coefficients (lowpass: all zeros at z = -1)
+                var b0 = wc2 / k2;
+                var b1 = 2.0f * b0;
+                var b2 = b0;
+
+                // Denominator coefficients
+                var a1 = 2.0f * (wc2 - 1.0f) / k2;
+                var a2 = (wc2 - k1 + 1.0f) / k2;
+
+                result = ApplyBiquadSectionZeroPhase(result, b0, b1, b2, a1, a2);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Apply a first-order IIR section with zero-phase (forward-backward) filtering.
+    /// </summary>
+    private float[] ApplyFirstOrderSection(float[] input, float b0, float b1, float a1)
+    {
+        var n = input.Length;
+        var forward = new float[n];
+        var result = new float[n];
+
+        // Forward pass
+        var x1 = input[0];
+        var y1 = input[0];
+
+        for (var i = 0; i < n; i++)
+        {
+            var x0 = input[i];
+            var y0 = b0 * x0 + b1 * x1 - a1 * y1;
+            forward[i] = y0;
+            x1 = x0;
+            y1 = y0;
+        }
+
+        // Backward pass (zero-phase filtering)
+        x1 = forward[n - 1];
+        y1 = forward[n - 1];
+
+        for (var i = n - 1; i >= 0; i--)
+        {
+            var x0 = forward[i];
+            var y0 = b0 * x0 + b1 * x1 - a1 * y1;
+            result[i] = y0;
+            x1 = x0;
+            y1 = y0;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Apply a biquad (second-order IIR) section with zero-phase (forward-backward) filtering.
+    ///     This eliminates phase distortion that would otherwise shift features along the road.
+    /// </summary>
+    private float[] ApplyBiquadSectionZeroPhase(float[] input, float b0, float b1, float b2, float a1, float a2)
+    {
+        var n = input.Length;
+        var forward = new float[n];
+        var result = new float[n];
+
+        // Initialize state variables with signal start value to minimize transients
+        float x1 = input[0], x2 = input[0];
+        float y1 = input[0], y2 = input[0];
+
+        // Forward pass
+        for (var i = 0; i < n; i++)
+        {
+            var x0 = input[i];
+            var y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            forward[i] = y0;
+
+            // Shift state
+            x2 = x1;
+            x1 = x0;
+            y2 = y1;
+            y1 = y0;
+        }
+
+        // Backward pass (zero-phase filtering - eliminates phase shift)
+        x1 = forward[n - 1];
+        x2 = forward[n - 1];
+        y1 = forward[n - 1];
+        y2 = forward[n - 1];
+
+        for (var i = n - 1; i >= 0; i--)
+        {
+            var x0 = forward[i];
+            var y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            result[i] = y0;
+
+            // Shift state
+            x2 = x1;
+            x1 = x0;
+            y2 = y1;
+            y1 = y0;
+        }
+
+        return result;
+    }
+}

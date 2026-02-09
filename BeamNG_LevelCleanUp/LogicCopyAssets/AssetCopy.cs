@@ -1,5 +1,6 @@
 ﻿using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
+using BeamNG_LevelCleanUp.LogicCopyForest;
 using BeamNG_LevelCleanUp.Objects;
 
 namespace BeamNG_LevelCleanUp.LogicCopyAssets;
@@ -116,7 +117,10 @@ public class AssetCopy
     {
         // Collect all terrain materials first for batch processing
         var terrainMaterials = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.Terrain).ToList();
-        var otherAssets = _assetsToCopy.Where(x => x.CopyAssetType != CopyAssetType.Terrain).ToList();
+        var forestBrushes = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.ForestBrush).ToList();
+        var otherAssets = _assetsToCopy.Where(x => 
+            x.CopyAssetType != CopyAssetType.Terrain && 
+            x.CopyAssetType != CopyAssetType.ForestBrush).ToList();
 
         // Group other assets by type for potential batch processing
         var roads = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Road).ToList();
@@ -166,6 +170,14 @@ public class AssetCopy
         // Now process all terrain materials in batch (with groundcover collection)
         if (terrainMaterials.Any()) stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials);
 
+        if (stopFaultyFile) return;
+
+        // Process forest brushes
+        if (forestBrushes.Any())
+        {
+            stopFaultyFile = !CopyForestBrushes(forestBrushes);
+        }
+
         if (!stopFaultyFile)
             PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Assets copied. Build your deployment file now.");
 
@@ -193,17 +205,43 @@ public class AssetCopy
     }
 
     /// <summary>
+    ///     Copies forest brushes to target level
+    /// </summary>
+    private bool CopyForestBrushes(List<CopyAsset> forestBrushes)
+    {
+        PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            $"Copying {forestBrushes.Count} forest brushes...");
+
+        var forestCopier = new ForestBrushCopier(
+            PathResolver.LevelPathCopyFrom,
+            PathResolver.LevelNamePath,
+            _pathConverter,
+            _fileCopyHandler,
+            _materialCopier,
+            _daeCopier);
+
+        return forestCopier.CopyBrushes(forestBrushes);
+    }
+
+    /// <summary>
     ///     Processes terrain materials - routes to copier or replacer based on ReplaceTargetMaterialNames
     /// </summary>
     private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
     {
-        // Check if user wants to upgrade to PBR and add TerrainMaterialTextureSet if needed
-        if (BeamFileReader.UpgradeTerrainMaterialsToPbr && terrainMaterials.Any())
-        {
-            // Get the target materials.json file path from the first terrain material
-            // All terrain materials should have the same target path
-            var targetMaterialsPath = Path.Join(terrainMaterials.First().TargetPath, "main.materials.json");
+        // Get the target materials.json file path from the first terrain material
+        // All terrain materials should have the same target path
+        var targetMaterialsPath = Path.Join(terrainMaterials.First().TargetPath, "main.materials.json");
+        var targetMaterialsFile = new FileInfo(targetMaterialsPath);
+        
+        // Check if target JSON is empty or doesn't exist
+        bool isTargetJsonEmpty = !targetMaterialsFile.Exists || 
+                                  targetMaterialsFile.Length == 0 ||
+                                  IsJsonEmptyOrOnlyWhitespace(targetMaterialsFile.FullName);
 
+        // If target JSON is empty, we need to add TerrainMaterialTextureSet regardless of user preference
+        // to ensure proper terrain material setup
+        if (isTargetJsonEmpty || (BeamFileReader.UpgradeTerrainMaterialsToPbr && terrainMaterials.Any()))
+        {
             var pbrUpgradeHandler = new PbrUpgradeHandler(
                 targetMaterialsPath,
                 PathResolver.LevelName,
@@ -211,12 +249,15 @@ public class AssetCopy
 
             // Get texture sizes from SOURCE level's TerrainMaterialTextureSet
             var sourceSizes = TerrainTextureHelper.GetAllTextureSizes(PathResolver.LevelNamePathCopyFrom);
-            var terrainSize = TerrainTextureHelper.GetTerrainSizeFromJson(PathResolver.LevelNamePath) ?? 1024;
+            
+            // Get terrain size - use wizard size if available, otherwise read from JSON
+            var terrainSize = PathResolver.WizardTerrainSize 
+                ?? TerrainTextureHelper.GetTerrainSizeFromJson(PathResolver.LevelNamePath) 
+                ?? 1024;
+            
             if (sourceSizes != null)
             {
                 // Use source sizes
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Using texture sizes from source level: base={sourceSizes.BaseTexSize}, detail={sourceSizes.DetailTexSize}, macro={sourceSizes.MacroTexSize}");
                 pbrUpgradeHandler.AddTerrainMaterialTextureSet(
                     terrainSize,
                     sourceSizes.DetailTexSize,
@@ -224,10 +265,6 @@ public class AssetCopy
             }
             else
             {
-
-
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"No TerrainMaterialTextureSet found in source level. Using fallback size: {terrainSize}");
                 pbrUpgradeHandler.AddTerrainMaterialTextureSet(terrainSize, terrainSize, terrainSize);
             }
         }
@@ -274,5 +311,31 @@ public class AssetCopy
         if (materialsToAdd.Any()) _groundCoverCopier.WriteAllGroundCovers();
 
         return true;
+    }
+
+    /// <summary>
+    ///     Checks if a JSON file is empty, contains only whitespace, or contains only an empty object
+    /// </summary>
+    private bool IsJsonEmptyOrOnlyWhitespace(string filePath)
+    {
+        try
+        {
+            var content = File.ReadAllText(filePath).Trim();
+            
+            // Empty or only whitespace
+            if (string.IsNullOrWhiteSpace(content))
+                return true;
+            
+            // Only contains empty object
+            if (content == "{}" || content == "{ }")
+                return true;
+            
+            return false;
+        }
+        catch
+        {
+            // If we can't read the file, treat it as empty
+            return true;
+        }
     }
 }

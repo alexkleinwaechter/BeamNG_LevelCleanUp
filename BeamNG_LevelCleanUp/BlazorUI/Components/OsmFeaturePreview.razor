@@ -1,0 +1,140 @@
+@using System.Globalization
+@using System.Numerics
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@using BeamNgTerrainPoc.Terrain.Osm.Models
+
+<div class="osm-preview-container" style="width: 100%; height: 100%; position: relative; display: flex; flex-direction: column;">
+@if (BoundingBox != null)
+{
+    @* Main preview area - uses all available space *@
+    <div class="osm-preview-wrapper" style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 0;">
+        @* Square container sized by parent - fills as much space as possible *@
+        <div class="osm-preview-square" @ref="_previewSquare" style="position: relative; width: @(EffectivePreviewPixelSize)px; height: @(EffectivePreviewPixelSize)px;">
+            @* OSM Map Tile Background - exact same pixel size, with zoom support *@
+            <OsmMapTileBackground BoundingBox="@BoundingBox"
+                                  DisplayWidth="@EffectivePreviewPixelSize"
+                                  DisplayHeight="@EffectivePreviewPixelSize"
+                                  IsVisible="@ShowMapBackground"
+                                  Opacity="@_mapOpacity"
+                                  ShowAttribution="false"
+                                  EnableScrollZoom="true"
+                                  ZoomLevel="@_zoomLevel"
+                                  ZoomLevelChanged="@OnZoomLevelChanged"
+                                  ViewCenter="@_viewCenter"
+                                  ViewCenterChanged="@OnViewCenterChanged"
+                                  EffectiveBoundingBoxChanged="@OnEffectiveBoundingBoxChanged"
+                                  MinZoom="1.0f"
+                                  MaxZoom="10.0f"
+                                  ZIndex="0" />
+                
+            @* SVG overlay for features - exact same pixel size, uses EffectiveBoundingBox for coordinate transformation *@
+            <svg width="@EffectivePreviewPixelSize" height="@EffectivePreviewPixelSize" 
+                 viewBox="0 0 @EffectivePreviewPixelSize @EffectivePreviewPixelSize"
+                 style="position: absolute; top: 0; left: 0; background: @(ShowMapBackground ? "transparent" : "#2d2d3a"); border-radius: 4px; z-index: 1; pointer-events: none;">
+                    
+                @* Grid lines (only show when map is off) *@
+                @if (!ShowMapBackground)
+                {
+                    @for (var i = 0; i <= EffectivePreviewPixelSize; i += EffectivePreviewPixelSize / 8)
+                    {
+                        <line x1="@i" y1="0" x2="@i" y2="@EffectivePreviewPixelSize" 
+                              stroke="#444" stroke-width="1" />
+                        <line x1="0" y1="@i" x2="@EffectivePreviewPixelSize" y2="@i" 
+                              stroke="#444" stroke-width="1" />
+                    }
+                }
+                    
+                @* Features (if any selected) - use effective bounds for zoomed transformation *@
+                @if (Features != null)
+                {
+                    @foreach (var feature in Features)
+                    {
+                        var pixelCoords = TransformToPixelWithZoom(feature.Coordinates);
+                        var pointsString = GetPointsString(pixelCoords);
+                            
+                        @if (feature.GeometryType == OsmGeometryType.Polygon && !string.IsNullOrEmpty(pointsString))
+                        {
+                            <polygon points="@pointsString" 
+                                     fill="@GetFillColor(feature)" 
+                                     stroke="@GetStrokeColor(feature)"
+                                     stroke-width="@GetStrokeWidth(feature)"
+                                     opacity="@(ShowMapBackground ? "0.8" : "0.6")" />
+                        }
+                        else if (feature.GeometryType == OsmGeometryType.LineString && !string.IsNullOrEmpty(pointsString))
+                        {
+                            <polyline points="@pointsString"
+                                      fill="none"
+                                      stroke="@GetStrokeColor(feature)"
+                                      stroke-width="@GetLineStrokeWidth(feature)"
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round" />
+                        }
+                    }
+                }
+                    
+            @* Border *@
+                <rect x="0" y="0" width="@EffectivePreviewPixelSize" height="@EffectivePreviewPixelSize"
+                      fill="none" stroke="@(ShowMapBackground ? "#fff" : "#666")" stroke-width="2" />
+            </svg>
+                
+            @* Note: Zoom indicator is provided by OsmMapTileBackground component *@
+        </div>
+    </div>
+        
+        @* Footer with toggle, opacity slider, zoom controls, and legend - fixed height *@
+        <div class="d-flex align-center justify-space-between" style="height: 28px; padding: 0 4px; flex-shrink: 0;">
+            <div class="d-flex align-center gap-1" style="flex: 1;">
+                <MudSwitch T="bool" @bind-Value="ShowMapBackground" 
+                           Color="Color.Primary" 
+                           Size="Size.Small"
+                           Style="margin: 0;" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="width: 28px;">Map</MudText>
+                @if (ShowMapBackground)
+                {
+                    <MudSlider T="float" @bind-Value="_mapOpacity"
+                               Size="Size.Small"
+                               Min="0.1f" Max="1.0f" Step="0.1f"
+                               Style="width: 80px; margin: 0;"
+                               Immediate="true" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Style="width: 32px;">@(_mapOpacity.ToString("P0"))</MudText>
+                }
+                @if (_zoomLevel > 1.01f)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               Color="Color.Warning"
+                               OnClick="ResetZoom"
+                               Style="padding: 0 4px; min-width: auto; margin-left: 8px;">
+                        <MudIcon Icon="@Icons.Material.Filled.ZoomOutMap" Size="Size.Small" />
+                        <MudText Typo="Typo.caption" Style="margin-left: 2px;">Reset</MudText>
+                    </MudButton>
+                }
+            </div>
+            <MudText Typo="Typo.caption" Style="color: #aaa;">
+                @(Features?.Count() ?? 0) features
+            </MudText>
+        </div>
+        
+        @if (ShowMapBackground)
+        {
+            <div style="position: absolute; bottom: 30px; right: 4px; font-size: 9px; color: #888; background: rgba(0,0,0,0.5); padding: 1px 4px; border-radius: 2px; z-index: 10;">
+                © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color: #aaa;">OpenStreetMap</a>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="d-flex align-center justify-center" style="height: 100%; color: #666;">
+            <MudText Typo="Typo.body2">No bounding box available</MudText>
+        </div>
+    }
+</div>
+
+@code {
+
+    // Zoom state
+
+    // Track previous bounding box to reset zoom when it changes
+
+}
+

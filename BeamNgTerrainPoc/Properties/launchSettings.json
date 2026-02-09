@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "BeamNgTerrainPoc": {
+      "commandName": "Project",
+      "commandLineArgs": "complex"
+    }
+  }
+}

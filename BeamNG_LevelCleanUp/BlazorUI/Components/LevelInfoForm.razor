@@ -1,0 +1,115 @@
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+
+<MudTextField @bind-Value="Model.LevelPath"
+              @bind-Value:after="NotifyChanged"
+              Label="Level Path (folder name)"
+              HelperText="e.g., my_custom_map (lowercase, no spaces)"
+              Variant="Variant.Outlined"
+              Required="true"
+              Immediate="true"
+              Disabled="@Disabled"
+              OnBlur="@SanitizeLevelPath"
+              Class="mb-4"/>
+
+<MudTextField @bind-Value="Model.DisplayName"
+              @bind-Value:after="NotifyChanged"
+              Label="Level Display Name"
+              HelperText="e.g., My Custom Map"
+              Variant="Variant.Outlined"
+              Required="true"
+              Immediate="true"
+              Disabled="@Disabled"
+              Class="mb-4"/>
+
+<MudTextField @bind-Value="Model.Description"
+              @bind-Value:after="NotifyChanged"
+              Label="Description"
+              HelperText="A brief description of your level"
+              Variant="Variant.Outlined"
+              Lines="2"
+              Disabled="@Disabled"
+              Class="mb-4"/>
+
+<MudGrid>
+    <MudItem xs="12" sm="6">
+        <MudTextField @bind-Value="Model.Country"
+                      @bind-Value:after="NotifyChanged"
+                      Label="Country"
+                      HelperText="e.g., USA, Germany, Japan"
+                      Variant="Variant.Outlined"
+                      Disabled="@Disabled"
+                      Class="mb-4"/>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudTextField @bind-Value="Model.Region"
+                      @bind-Value:after="NotifyChanged"
+                      Label="Region"
+                      HelperText="e.g., California, Bavaria"
+                      Variant="Variant.Outlined"
+                      Disabled="@Disabled"
+                      Class="mb-4"/>
+    </MudItem>
+</MudGrid>
+
+<MudGrid>
+    <MudItem xs="12" sm="6">
+        <MudTextField @bind-Value="Model.Biome"
+                      @bind-Value:after="NotifyChanged"
+                      Label="Biome"
+                      HelperText="e.g., Desert, Forest, Urban"
+                      Variant="Variant.Outlined"
+                      Disabled="@Disabled"
+                      Class="mb-4"/>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudTextField @bind-Value="Model.Roads"
+                      @bind-Value:after="NotifyChanged"
+                      Label="Roads"
+                      HelperText="e.g., Paved, Dirt, Mixed"
+                      Variant="Variant.Outlined"
+                      Disabled="@Disabled"
+                      Class="mb-4"/>
+    </MudItem>
+</MudGrid>
+
+<MudTextField @bind-Value="Model.SuitableFor"
+              @bind-Value:after="NotifyChanged"
+              Label="Suitable For"
+              HelperText="e.g., Racing, Off-road, Cruising"
+              Variant="Variant.Outlined"
+              Disabled="@Disabled"
+              Class="mb-4"/>
+
+<MudTextField @bind-Value="Model.Features"
+              @bind-Value:after="NotifyChanged"
+              Label="Features"
+              HelperText="e.g., Traffic, AI paths, Scenarios"
+              Variant="Variant.Outlined"
+              Disabled="@Disabled"
+              Class="mb-4"/>
+
+<MudTextField @bind-Value="Model.Authors"
+              @bind-Value:after="NotifyChanged"
+              Label="Authors"
+              HelperText="Your name or team name"
+              Variant="Variant.Outlined"
+              Disabled="@Disabled"
+              Class="mb-4"/>
+
+@code {
+    [Parameter] public LevelInfoModel Model { get; set; }
+    [Parameter] public EventCallback<LevelInfoModel> ModelChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private async Task SanitizeLevelPath()
+    {
+        Model.LevelPath = StringUtils.SanitizeFileName(Model.LevelPath);
+        await NotifyChanged();
+    }
+
+    private async Task NotifyChanged()
+    {
+        await ModelChanged.InvokeAsync(Model);
+    }
+}

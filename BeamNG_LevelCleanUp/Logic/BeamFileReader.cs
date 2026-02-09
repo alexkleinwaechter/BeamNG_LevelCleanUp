@@ -2,6 +2,7 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.LogicConvertForest;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
+using BeamNG_LevelCleanUp.LogicCopyForest;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 
@@ -166,7 +167,114 @@ internal class BeamFileReader
         CopyDae();
         CopyTerrainMaterials();
         CopyGroundCovers();
+        CopyForestBrushes();
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
+    }
+
+    /// <summary>
+    ///     Scans roads, decals, and DAE files from the source level for copying.
+    ///     Used by CopyAssets.razor page.
+    ///     Does not include terrain materials, groundcovers, or forest brushes.
+    /// </summary>
+    internal void ReadAssetsForCopy()
+    {
+        Reset();
+        ReadMaterialsJson();
+        RemoveDuplicateMaterials(false);
+        CopyAssetRoad();
+        CopyAssetDecal();
+        CopyDae();
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Assets finished");
+    }
+
+    /// <summary>
+    ///     Scans terrain materials and groundcovers from the source level for copying.
+    ///     Used by CopyTerrains.razor page.
+    ///     Does not include roads, decals, DAE files, or forest brushes.
+    /// </summary>
+    internal void ReadTerrainMaterialsForCopy()
+    {
+        Reset();
+        ReadMaterialsJson();
+        RemoveDuplicateMaterials(false);
+        ReadSourceMaterialsJson(); // Needed for groundcover material lookup
+        CopyTerrainMaterials();
+        CopyGroundCovers();
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Terrain Materials finished");
+    }
+
+    /// <summary>
+    ///     Scans only forest brushes from the source level for copying.
+    ///     This is a lightweight scan that doesn't include terrain materials, groundcovers,
+    ///     roads, decals, or DAE files - only forest brush definitions.
+    /// </summary>
+    internal void ReadForestBrushesForCopy()
+    {
+        Reset();
+        ReadSourceMaterialsJson(); // Needed for material lookup when copying shape files
+        CopyForestBrushes();
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Fetching Forest Brushes finished");
+    }
+
+    /// <summary>
+    ///     Scans materials.json files from the source level (levelPathCopyFrom) and populates MaterialsJsonCopy.
+    ///     This is needed by groundcover copier to find material definitions for dependencies.
+    /// </summary>
+    internal void ReadSourceMaterialsJson()
+    {
+        if (string.IsNullOrEmpty(_levelPathCopyFrom))
+            return;
+
+        var dirInfo = new DirectoryInfo(_levelPathCopyFrom);
+        if (dirInfo != null)
+        {
+            WalkDirectoryTree(dirInfo, "*.materials.json", ReadTypeEnum.CopySourceMaterials);
+            WalkDirectoryTree(dirInfo, "materials.json", ReadTypeEnum.CopySourceMaterials);
+            Console.WriteLine("Files with restricted access:");
+            foreach (var s in log) Console.WriteLine(s);
+        }
+    }
+
+    /// <summary>
+    ///     Reads MissionGroup data specifically for Create Level wizard.
+    ///     Focuses on essential level setup classes and their file references.
+    /// </summary>
+    internal void ReadMissionGroupsForCreateLevel()
+    {
+        Reset();
+        
+        var allowedClasses = new List<string>
+        {
+            "LevelInfo",
+            "TerrainBlock",
+            "TimeOfDay",
+            "CloudLayer",
+            "ScatterSky",
+            "ForestWindEmitter",
+            "Forest"
+        };
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Reading MissionGroup data for new level creation...");
+        
+        // Read all mission group files
+        ReadMissionGroup();
+        
+        // Filter to only include allowed classes
+        var filteredAssets = Assets
+            .Where(asset => allowedClasses.Contains(asset.Class))
+            .ToList();
+        
+        Assets = filteredAssets;
+        
+        PubSubChannel.SendMessage(PubSubMessageType.Info, 
+            $"Found {Assets.Count} essential level objects to copy");
+        
+        // Log what was found
+        foreach (var assetClass in Assets.GroupBy(a => a.Class))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info, 
+                $"  - {assetClass.Key}: {assetClass.Count()} object(s)", true);
+        }
     }
 
     private void RemoveDuplicateMaterials(bool fromJsonFile)
@@ -299,7 +407,7 @@ internal class BeamFileReader
 
         if (lines.Count > 0)
         {
-            var path = Path.Join(_levelPath, "DuplicateMaterials.txt");
+            var path = Path.Join(_levelNamePath, "DuplicateMaterials.txt");
             File.WriteAllLines(path, lines);
             return path;
         }
@@ -311,9 +419,40 @@ internal class BeamFileReader
     {
         if (lines.Count > 0)
         {
-            var path = Path.Join(_levelPath, $"{logFileName}.txt");
+            var path = Path.Join(_levelNamePath, $"{logFileName}.txt");
             File.WriteAllLines(path, lines);
         }
+    }
+
+    /// <summary>
+    ///     Writes operation logs to files in the level name path (the actual level folder).
+    ///     Creates up to three log files: main log, warnings, and errors.
+    ///     Files are only created if they have content.
+    /// </summary>
+    /// <param name="messages">Info messages list (main operation log)</param>
+    /// <param name="warnings">Warning messages list</param>
+    /// <param name="errors">Error messages list</param>
+    /// <param name="featureName">Feature name for log file prefix (e.g., "AssetCopy" creates Log_AssetCopy.txt)</param>
+    internal void WriteOperationLogs(List<string> messages, List<string> warnings, List<string> errors, string featureName)
+    {
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+        if (messages.Count > 0)
+        {
+            var messagesWithHeader = new List<string>
+            {
+                $"# {featureName} Log - {timestamp}",
+                ""
+            };
+            messagesWithHeader.AddRange(messages);
+            WriteLogFile(messagesWithHeader, $"Log_{featureName}");
+        }
+
+        if (warnings.Count > 0)
+            WriteLogFile(warnings, $"Log_{featureName}_Warnings");
+
+        if (errors.Count > 0)
+            WriteLogFile(errors, $"Log_{featureName}_Errors");
     }
 
     internal void ReadTerrainJson()
@@ -454,21 +593,21 @@ internal class BeamFileReader
             var logReader = new BeamLogReader(_beamLogPath, _levelPath);
             var missingFiles = logReader.ScanForMissingFiles();
             if (missingFiles.Any())
-                File.WriteAllLines(Path.Join(_levelPath, "MissingFilesFromBeamNgLog.txt"), missingFiles);
+                File.WriteAllLines(Path.Join(_levelNamePath, "MissingFilesFromBeamNgLog.txt"), missingFiles);
             return missingFiles;
         }
 
         return new List<string>();
     }
 
-    internal void RenameLevel(string newNameForPath, string newNameForTitle)
+    internal void RenameLevel(string newNameForPath, string newNameForTitle, LevelInfoModel levelInfo = null)
     {
         _newName = newNameForPath;
         _levelRenamer = new LevelRenamer();
         var dirInfo = new DirectoryInfo(_levelPath);
         if (dirInfo != null)
         {
-            _levelRenamer.EditInfoJson(_levelNamePath, newNameForTitle);
+            _levelRenamer.EditInfoJson(_levelNamePath, newNameForTitle, levelInfo);
             WalkDirectoryTree(dirInfo, "*.json", ReadTypeEnum.LevelRename);
             WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.LevelRename);
             WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.LevelRename);
@@ -480,6 +619,10 @@ internal class BeamFileReader
         var dirInfoOld = new DirectoryInfo(_levelNamePath);
         var targetDir = Path.Join(dirInfoOld.Parent.FullName, newNameForPath);
         Directory.Move(dirInfoOld.FullName, targetDir);
+
+        // Update internal paths to reflect the new directory location
+        _levelNamePath = targetDir;
+        _levelPath = dirInfoOld.Parent.FullName;
 
         // checking directory has
         // been renamed or not
@@ -520,14 +663,18 @@ internal class BeamFileReader
                 .Where(m => daeMaterials.Select(x => x.MaterialName.ToUpper()).Contains(m.Name.ToUpper()))
                 .Distinct()
                 .ToList();
+            
+            // Enhance materials that have empty stages (physics-only materials) by searching for textures by convention
+            EnhanceMaterialsWithConventionTextures(materialsJson, item.DirectoryName);
+            
             var asset = new CopyAsset
             {
                 CopyAssetType = CopyAssetType.Dae,
                 Name = item.Name,
                 Materials = materialsJson != null ? materialsJson : new List<MaterialJson>(),
                 MaterialsDae = daeMaterials,
-                TargetPath = Path.Join(_levelNamePath, Constants.Dae,
-                    $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}"),
+                TargetPath = Path.Join(_levelNamePath, "art",
+                    $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "shapes"),
                 DaeFilePath = item.FullName
             };
             var fileInfo = new FileInfo(item.FullName);
@@ -540,6 +687,149 @@ internal class BeamFileReader
             //asset.DuplicateFrom = asset.Materials.FirstOrDefault() != null ? string.Join(", ", asset.Materials.FirstOrDefault().DuplicateFoundLocation) : string.Empty;
             CopyAssets.Add(asset);
         }
+    }
+
+    /// <summary>
+    ///     Enhances materials that have empty stages (physics-only materials) by searching for textures
+    ///     by naming convention in the specified directory. BeamNG often uses materials like "leaves_strong"
+    ///     which are physics-only but the DAE expects visual textures. This method searches for texture files
+    ///     that match patterns like: materialname_b.png, materialname_nm.png, t_materialname_b.color.png, etc.
+    /// </summary>
+    /// <param name="materials">List of materials to enhance</param>
+    /// <param name="searchDirectory">Directory to search for texture files (typically the DAE's directory)</param>
+    private static void EnhanceMaterialsWithConventionTextures(List<MaterialJson> materials, string searchDirectory)
+    {
+        if (materials == null || string.IsNullOrEmpty(searchDirectory) || !Directory.Exists(searchDirectory))
+            return;
+
+        // Common texture suffixes used in BeamNG
+        var textureSuffixes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "_b", "BaseColorMap" },
+            { "_b.color", "BaseColorMap" },
+            { "_d", "ColorMap" },
+            { "_nm", "NormalMap" },
+            { "_nm.normal", "NormalMap" },
+            { "_n", "NormalMap" },
+            { "_r", "RoughnessMap" },
+            { "_r.data", "RoughnessMap" },
+            { "_ao", "AmbientOcclusionMap" },
+            { "_ao.data", "AmbientOcclusionMap" },
+            { "_o", "OpacityMap" },
+            { "_o.data", "OpacityMap" },
+            { "_s", "SpecularMap" },
+            { "_m", "MetallicMap" },
+            { "_e", "EmissiveMap" }
+        };
+
+        var imageExtensions = new[] { ".png", ".dds", ".jpg", ".jpeg", ".tga" };
+
+        foreach (var material in materials)
+        {
+            // Skip materials that already have texture files
+            if (material.MaterialFiles != null && material.MaterialFiles.Any(f => f.File?.Exists == true))
+                continue;
+
+            // Check if material has empty stages
+            var hasEmptyStages = material.Stages == null || 
+                                  !material.Stages.Any() ||
+                                  material.Stages.All(s => IsStageEmpty(s));
+
+            if (!hasEmptyStages)
+                continue;
+
+            // Initialize MaterialFiles if null
+            material.MaterialFiles ??= new List<MaterialFile>();
+
+            var materialName = material.Name?.ToLowerInvariant() ?? "";
+            if (string.IsNullOrEmpty(materialName))
+                continue;
+
+            // Search for texture files matching naming conventions
+            try
+            {
+                var allFiles = Directory.GetFiles(searchDirectory);
+                
+                foreach (var filePath in allFiles)
+                {
+                    var fileName = Path.GetFileName(filePath);
+                    var fileNameLower = fileName.ToLowerInvariant();
+                    var fileNameWithoutExt = Path.GetFileNameWithoutExtension(filePath).ToLowerInvariant();
+                    var extension = Path.GetExtension(filePath).ToLowerInvariant();
+
+                    // Skip non-image files
+                    if (!imageExtensions.Contains(extension))
+                        continue;
+
+                    // Check various naming patterns
+                    foreach (var suffix in textureSuffixes)
+                    {
+                        // Pattern 1: materialname_suffix.ext (e.g., leaves_strong_b.png)
+                        // Pattern 2: t_materialname_suffix.ext (e.g., t_leaves_strong_b.color.png)
+                        var pattern1 = $"{materialName}{suffix.Key}";
+                        var pattern2 = $"t_{materialName}{suffix.Key}";
+
+                        // Handle double extension like .color.png or .data.png
+                        var fileNameForComparison = fileNameWithoutExt;
+                        if (fileNameWithoutExt.EndsWith(".color") || fileNameWithoutExt.EndsWith(".data") || fileNameWithoutExt.EndsWith(".normal"))
+                        {
+                            fileNameForComparison = Path.GetFileNameWithoutExtension(fileNameWithoutExt);
+                        }
+
+                        if (fileNameForComparison.Equals(pattern1, StringComparison.OrdinalIgnoreCase) ||
+                            fileNameForComparison.Equals(pattern2, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var fileInfo = new FileInfo(filePath);
+                            if (fileInfo.Exists && !material.MaterialFiles.Any(f => f.File?.FullName == fileInfo.FullName))
+                            {
+                                material.MaterialFiles.Add(new MaterialFile
+                                {
+                                    MaterialName = material.Name,
+                                    File = fileInfo,
+                                    MapType = suffix.Value,
+                                    Missing = false,
+                                    OriginalJsonPath = filePath
+                                });
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log but don't fail - this is an enhancement, not critical
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, 
+                    $"Could not search for convention textures for material {material.Name}: {ex.Message}", true);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Checks if a MaterialStage has no texture map properties set (is empty/physics-only).
+    /// </summary>
+    private static bool IsStageEmpty(MaterialStage stage)
+    {
+        if (stage == null)
+            return true;
+
+        // Check all string properties that represent texture maps
+        foreach (var prop in stage.GetType().GetProperties())
+        {
+            if (prop.PropertyType != typeof(string))
+                continue;
+
+            // Skip non-map properties
+            var propName = prop.Name.ToLowerInvariant();
+            if (!propName.Contains("map") && !propName.Contains("tex"))
+                continue;
+
+            var value = prop.GetValue(stage, null) as string;
+            if (!string.IsNullOrEmpty(value))
+                return false;
+        }
+
+        return true;
     }
 
     internal void CopyAssetDecal()
@@ -572,9 +862,6 @@ internal class BeamFileReader
 
                 foreach (var terrainMaterialFile in _terrainMaterialFiles)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Scanning terrain materials from {terrainMaterialFile.Name}");
-
                     var terrainScanner = new TerrainCopyScanner(
                         terrainMaterialFile.FullName,
                         _levelPathCopyFrom,
@@ -582,6 +869,15 @@ internal class BeamFileReader
                         MaterialsJsonCopy,
                         CopyAssets);
                     terrainScanner.ScanTerrainMaterials();
+                }
+                
+                // After scanning all terrain materials, extract colors and roughness from the .ter file
+                // This updates the BaseColorHex and RoughnessValue properties of each CopyAsset
+                if (CopyAssets.Any(a => a.CopyAssetType == CopyAssetType.Terrain))
+                {
+                    TerrainCopyScanner.ExtractTerrainMaterialColors(_levelNamePathCopyFrom, CopyAssets);
+                    
+                    TerrainCopyScanner.ExtractTerrainMaterialRoughness(_levelNamePathCopyFrom, CopyAssets);
                 }
             }
             else
@@ -611,9 +907,6 @@ internal class BeamFileReader
 
                 foreach (var groundCoverFile in _groundCoverFiles)
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Scanning groundcovers from {groundCoverFile.Name} at {groundCoverFile.DirectoryName}");
-
                     var groundCoverScanner = new GroundCoverCopyScanner(_levelPathCopyFrom);
                     groundCoverScanner.ScanGroundCovers(groundCoverFile);
 
@@ -630,6 +923,30 @@ internal class BeamFileReader
         }
     }
 
+    /// <summary>
+    ///     Scans and adds forest brushes from the source level to the copy list.
+    ///     Forest brushes are painting templates used in BeamNG's World Editor Forest tool.
+    /// </summary>
+    internal void CopyForestBrushes()
+    {
+        if (string.IsNullOrEmpty(_levelPathCopyFrom))
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                "No source level path set for forest brush copy");
+            return;
+        }
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Scanning forest brushes from {_levelNameCopyFrom}...");
+
+        var forestBrushScanner = new ForestBrushCopyScanner(
+            _levelNamePathCopyFrom,
+            _levelNamePath,
+            CopyAssets);
+
+        forestBrushScanner.ScanForestBrushes();
+    }
+
     internal void ConvertToForest(List<Asset> assets)
     {
         var forestScanner = ReadForest();
@@ -641,7 +958,7 @@ internal class BeamFileReader
 
     internal void DeleteFromMissiongroups(List<Asset> assets)
     {
-        //Group assets by MissionGroupPath and return Missiongrouplines as List
+        //Group assetsby MissionGroup and return Missiongrouplines as List
         var assetsByMissionGroupPath = assets
             .Where(a => a.MissionGroupPath != null && a.MissionGroupLine != null)
             .GroupBy(a => a.MissionGroupPath)
@@ -766,8 +1083,8 @@ internal class BeamFileReader
                                     Name = item.Name,
                                     Materials = new List<MaterialJson> { item },
                                     SourceMaterialJsonPath = fi.FullName,
-                                    TargetPath = Path.Join(_levelNamePath, Constants.RouteRoad,
-                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}")
+                                    TargetPath = Path.Join(_levelNamePath, "art",
+                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "road")
                                 };
                                 asset.SizeMb =
                                     Math.Round(
@@ -798,8 +1115,8 @@ internal class BeamFileReader
                                 {
                                     asset.Materials.Add(material);
                                     asset.SourceMaterialJsonPath = fi.FullName;
-                                    asset.TargetPath = Path.Join(_levelNamePath, Constants.Decals,
-                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}");
+                                    asset.TargetPath = Path.Join(_levelNamePath, "art",
+                                        $"{Constants.MappingToolsPrefix}{_levelNameCopyFrom}", "decals");
                                 }
 
                             asset.SizeMb =
@@ -853,6 +1170,13 @@ internal class BeamFileReader
                         }
 
                         break;
+                    case ReadTypeEnum.CopySourceMaterials:
+                        // Scan materials.json files from SOURCE level and populate MaterialsJsonCopy
+                        // This is needed for groundcover material lookup
+                        var sourceMaterialScanner = new MaterialScanner(fi.FullName, _levelPathCopyFrom, _levelNamePath,
+                            MaterialsJsonCopy, new List<Asset>(), new List<string>());
+                        sourceMaterialScanner.ScanMaterialsJsonFile();
+                        break;
                 }
             }
 
@@ -890,6 +1214,66 @@ internal class BeamFileReader
         ChangeHeightDecals = 20,
         CopyTerrainMaterials = 21,
         FindTerrainMaterialFiles = 22,
-        FindGroundCoverFiles = 23
+        FindGroundCoverFiles = 23,
+        CopySourceMaterials = 24
+    }
+
+    /// <summary>
+    ///     Extracts all file references from MissionGroup assets for Create Level wizard
+    /// </summary>
+    internal List<string> GetFileReferencesFromMissionGroupAssets()
+    {
+        var fileReferences = new List<string>();
+
+        foreach (var asset in Assets)
+        {
+            // TerrainBlock files
+            if (!string.IsNullOrEmpty(asset.TerrainFile))
+            {
+                fileReferences.Add(asset.TerrainFile);
+                
+                // Also add corresponding .terrain.json file
+                var terrainJsonPath = asset.TerrainFile.Replace(".ter", ".terrain.json");
+                fileReferences.Add(terrainJsonPath);
+            }
+
+            // ScatterSky gradient files
+            if (!string.IsNullOrEmpty(asset.AmbientScaleGradientFile))
+                fileReferences.Add(asset.AmbientScaleGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.ColorizeGradientFile))
+                fileReferences.Add(asset.ColorizeGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.FogScaleGradientFile))
+                fileReferences.Add(asset.FogScaleGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.NightFogGradientFile))
+                fileReferences.Add(asset.NightFogGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.NightGradientFile))
+                fileReferences.Add(asset.NightGradientFile);
+            
+            if (!string.IsNullOrEmpty(asset.SunScaleGradientFile))
+                fileReferences.Add(asset.SunScaleGradientFile);
+
+            // CloudLayer textures
+            if (!string.IsNullOrEmpty(asset.Texture))
+                fileReferences.Add(asset.Texture);
+
+            // Material references (these will be handled by MaterialCopier)
+            if (!string.IsNullOrEmpty(asset.FlareType))
+                fileReferences.Add(asset.FlareType); // This is actually a material reference
+            
+            if (!string.IsNullOrEmpty(asset.NightCubemap))
+                fileReferences.Add(asset.NightCubemap); // Material reference
+            
+            if (!string.IsNullOrEmpty(asset.GlobalEnviromentMap))
+                fileReferences.Add(asset.GlobalEnviromentMap); // Material reference
+            
+            if (!string.IsNullOrEmpty(asset.MoonMat))
+                fileReferences.Add(asset.MoonMat); // Material reference
+        }
+
+        return fileReferences.Distinct().ToList();
     }
 }

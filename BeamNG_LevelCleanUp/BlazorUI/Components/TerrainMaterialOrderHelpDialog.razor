@@ -1,0 +1,303 @@
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Help" Class="mr-2" />
+            Material Order & Priority Guide
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <div style="max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 8px;">
+            
+            @* Introduction *@
+            <MudText Typo="Typo.body1" Class="mb-4">
+                Understanding how material order affects terrain generation is essential for achieving
+                the desired results. Both <strong>Texture Painting</strong> and <strong>Road Elevation Smoothing</strong>
+                follow the same rule: <strong>higher index materials win</strong>.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 1: Texture Painting *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Palette" Size="Size.Small" Class="mr-1" />
+                1. Texture Painting (Material Index)
+            </MudText>
+            
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                <strong>Rule:</strong> Higher index materials paint OVER lower index materials.
+            </MudAlert>
+            
+            <MudText Typo="Typo.body2" Class="mb-2">
+                When the terrain file (.ter) is generated, each pixel is assigned a material index
+                based on layer maps:
+            </MudText>
+            
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Material Index</th>
+                        <th>Behavior</th>
+                        <th>Use Case</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Default">Index 0</MudChip></td>
+                        <td>Default/Fallback material</td>
+                        <td>Grass, base terrain (no layer map needed)</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Primary">Index 1+</MudChip></td>
+                        <td>Paints over lower indices where layer map is white</td>
+                        <td>Roads, paths, special surfaces</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Secondary">Highest Index</MudChip></td>
+                        <td>Always wins when multiple layers overlap</td>
+                        <td>Top priority roads (e.g., highways)</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+            
+            <MudExpansionPanels Dense="true" Class="mb-4">
+                <MudExpansionPanel Text="Example: Road Intersection Textures" Dense="true">
+                    <MudText Typo="Typo.body2">
+                        If you have:<br/>
+                        • Index 0: Grass (no layer map)<br/>
+                        • Index 1: Dirt road (layer map)<br/>
+                        • Index 2: Asphalt road (layer map)<br/><br/>
+                        At an intersection where both layer maps are white, <strong>Asphalt (Index 2)</strong>
+                        will be painted because it has the higher index.
+                    </MudText>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 2: Road Elevation Smoothing *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Terrain" Size="Size.Small" Class="mr-1" />
+                2. Road Elevation Smoothing Priority
+            </MudText>
+            
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                <strong>Rule:</strong> Higher index materials have higher elevation priority as a tiebreaker.
+            </MudAlert>
+            
+            <MudText Typo="Typo.body2" Class="mb-2">
+                When roads from different materials meet at a junction, the system must decide
+                which road's elevation "wins". Priority is determined by a <strong>cascade system</strong>:
+            </MudText>
+            
+            <MudTimeline TimelinePosition="TimelinePosition.Start" Class="mb-3">
+                <MudTimelineItem Color="Color.Success" Size="Size.Small">
+                    <ItemContent>
+                        <MudText Typo="Typo.subtitle2">1. OSM Road Classification (Highest Priority)</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            If using OSM data, road type determines priority automatically.
+                        </MudText>
+                    </ItemContent>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Info" Size="Size.Small">
+                    <ItemContent>
+                        <MudText Typo="Typo.subtitle2">2. Road Width</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Wider roads get higher priority (width × 5).
+                        </MudText>
+                    </ItemContent>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Default" Size="Size.Small">
+                    <ItemContent>
+                        <MudText Typo="Typo.subtitle2">3. Material Order (Tiebreaker)</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            <strong>Higher index = Higher priority</strong><br/>
+                            Same as texture painting.
+                        </MudText>
+                    </ItemContent>
+                </MudTimelineItem>
+            </MudTimeline>
+            
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>OSM Road Type</th>
+                        <th>Base Priority</th>
+                        <th>Typical Use</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>motorway</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Success">100</MudChip></td>
+                        <td>Highways, freeways</td>
+                    </tr>
+                    <tr>
+                        <td>primary</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Info">80</MudChip></td>
+                        <td>Major roads</td>
+                    </tr>
+                    <tr>
+                        <td>secondary</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Info">75</MudChip></td>
+                        <td>Regional roads</td>
+                    </tr>
+                    <tr>
+                        <td>residential</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Default">55</MudChip></td>
+                        <td>Local streets</td>
+                    </tr>
+                    <tr>
+                        <td>track</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Warning">30</MudChip></td>
+                        <td>Farm/forest tracks</td>
+                    </tr>
+                    <tr>
+                        <td>path</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Warning">25</MudChip></td>
+                        <td>Walking paths</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 3: Junction Handling *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.CallSplit" Size="Size.Small" Class="mr-1" />
+                3. Junction Harmonization
+            </MudText>
+            
+            <MudText Typo="Typo.body2" Class="mb-3">
+                When roads meet, the junction type determines how elevations are blended:
+            </MudText>
+            
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Junction Type</th>
+                        <th>Elevation Resolution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Info">T-Junction</MudChip></td>
+                        <td>Continuous road's elevation wins; terminating road adapts with gradient ramp</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Success">Y-Junction</MudChip></td>
+                        <td>Priority-weighted average of all contributing roads</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Warning">Crossroads (X)</MudChip></td>
+                        <td>Priority-weighted average; higher-priority road has more influence</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Secondary">Mid-Spline</MudChip></td>
+                        <td>Priority²-weighted average (main road dominates)</td>
+                    </tr>
+                    <tr>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Default">Endpoint</MudChip></td>
+                        <td>Gradually blends toward terrain elevation (dead end)</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+            
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">
+                <strong>Tip:</strong> Enable "Cross-Material Harmonization" to smooth transitions where
+                roads from different materials meet (e.g., highway off-ramp to local road).
+            </MudAlert>
+
+            <MudDivider Class="my-4" />
+
+            @* Section 4: Practical Tips *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" Class="mr-1" />
+                4. Practical Recommendations
+            </MudText>
+            
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2">
+                        <strong>Base material at index 0:</strong> Use grass or default terrain without a layer map.
+                    </MudText>
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2">
+                        <strong>Order road materials by importance:</strong> Place main highways at higher indices
+                        if you want them to have both texture and elevation priority.
+                    </MudText>
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2">
+                        <strong>Simple rule:</strong> Higher index wins for both texture and elevation priority.
+                    </MudText>
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
+                    <MudText Typo="Typo.body2">
+                        <strong>Use OSM features when possible:</strong> OSM road classifications provide
+                        automatic, sensible priority ordering that overrides material order.
+                    </MudText>
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">
+                    <MudText Typo="Typo.body2">
+                        <strong>Materials without layer maps:</strong> Only index 0 works as fallback.
+                        Other materials without maps won't claim any pixels.
+                    </MudText>
+                </MudListItem>
+            </MudList>
+
+            <MudDivider Class="my-4" />
+
+            @* Quick Reference *@
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Bookmark" Size="Size.Small" Class="mr-1" />
+                Quick Reference
+            </MudText>
+            
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Aspect</th>
+                        <th>Lower Index (Top of List)</th>
+                        <th>Higher Index (Bottom of List)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Texture Painting</strong></td>
+                        <td>Gets painted over</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Success">Wins (paints on top)</MudChip></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Elevation Priority</strong></td>
+                        <td>Lower priority (tiebreaker)</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Success">Wins (tiebreaker)</MudChip></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Default Material</strong></td>
+                        <td><MudChip T="string" Size="Size.Small" Color="Color.Info">Index 0 only</MudChip></td>
+                        <td>N/A</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+            
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Primary" Variant="Variant.Filled">
+            Got it!
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] 
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private void Close()
+    {
+        MudDialog.Close();
+    }
+}

@@ -116,8 +116,6 @@ public class PbrUpgradeHandler
                 return;
             }
 
-            var updatedCount = 0;
-
             foreach (var levelJsonFile in levelJsonFiles)
             {
                 // Check if this file contains TerrainBlock entries
@@ -130,16 +128,9 @@ public class PbrUpgradeHandler
                     continue;
 
                 // Process the file
-                if (UpdateTerrainBlockInFile(levelJsonFile.FullName, textureSetName))
-                    updatedCount++;
+                UpdateTerrainBlockInFile(levelJsonFile.FullName, textureSetName);
             }
 
-            if (updatedCount > 0)
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Updated materialTextureSet to '{textureSetName}' in {updatedCount} file(s)");
-            else
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    "No TerrainBlock objects found to update.");
         }
         catch (Exception ex)
         {
@@ -216,9 +207,6 @@ public class PbrUpgradeHandler
                         };
                         lines[i] = jsonNode.ToJsonString(jsonOptions);
                         updated = true;
-
-                        PubSubChannel.SendMessage(PubSubMessageType.Info,
-                            $"Updated TerrainBlock in {Path.GetFileName(filePath)}: materialTextureSet = '{textureSetName}'");
                     }
                 }
                 catch (JsonException)
@@ -270,6 +258,90 @@ public class PbrUpgradeHandler
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Error checking for TerrainMaterialTextureSet: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    ///     Updates the baseTexSize in an existing TerrainMaterialTextureSet to match the target terrain size.
+    ///     The baseTexSize must match the terrain size for proper rendering.
+    /// </summary>
+    /// <param name="terrainSize">The target terrain size (power of 2, e.g., 1024, 2048, 4096)</param>
+    /// <returns>True if the update was successful, false otherwise</returns>
+    public bool UpdateTerrainMaterialTextureSetSize(int terrainSize)
+    {
+        try
+        {
+            var targetFile = new FileInfo(_targetMaterialsJsonPath);
+
+            if (!targetFile.Exists)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Target materials file not found: {targetFile.FullName}. Cannot update TerrainMaterialTextureSet.");
+                return false;
+            }
+
+            // Load the existing JSON
+            var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(targetFile.FullName);
+            var updated = false;
+
+            // Find and update all TerrainMaterialTextureSet objects
+            foreach (var prop in jsonNode.AsObject().ToList())
+            {
+                if (prop.Value?["class"]?.ToString() != "TerrainMaterialTextureSet")
+                    continue;
+
+                var textureSetNode = prop.Value;
+
+                // Get current baseTexSize for comparison
+                var currentBaseTexSize = 0;
+                if (textureSetNode["baseTexSize"] is JsonArray currentArray && currentArray.Count > 0)
+                {
+                    currentBaseTexSize = currentArray[0]?.GetValue<int>() ?? 0;
+                }
+
+                // Only update if the size is different
+                if (currentBaseTexSize == terrainSize)
+                    continue;
+
+                // Update baseTexSize to match terrain size
+                textureSetNode["baseTexSize"] = new JsonArray(terrainSize, terrainSize);
+
+                updated = true;
+            }
+
+            if (updated)
+            {
+                // Write the updated JSON back to the file
+                File.WriteAllText(targetFile.FullName,
+                    jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
+            }
+
+            return updated;
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
+                $"Failed to update TerrainMaterialTextureSet size: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    ///     Adds or updates the TerrainMaterialTextureSet to ensure baseTexSize matches the terrain size.
+    ///     If no TerrainMaterialTextureSet exists, creates one. If it exists, updates the baseTexSize.
+    /// </summary>
+    /// <param name="terrainSize">The target terrain size (power of 2)</param>
+    public void EnsureTerrainMaterialTextureSetSize(int terrainSize)
+    {
+        if (HasTerrainMaterialTextureSet())
+        {
+            // Update existing
+            UpdateTerrainMaterialTextureSetSize(terrainSize);
+        }
+        else
+        {
+            // Create new with correct size
+            AddTerrainMaterialTextureSet(terrainSize, terrainSize, terrainSize);
         }
     }
 }

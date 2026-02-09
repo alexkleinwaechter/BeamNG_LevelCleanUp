@@ -42,26 +42,37 @@ else
     [Parameter] public EventCallback<string> OnFileSelected { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public bool SelectFolder { get; set; }
-    private OpenFileDialog OpenFileDialog { get; } = new();
-    private FolderBrowserDialog FolderBrowserDialog { get; } = new();
     private string _selectedFile { get; set; } = string.Empty;
 
     private async Task OpenFile()
     {
-        OpenFileDialog.Filter = "Zipfiles (*.zip)|*.zip";
-        OpenFileDialog.FileName = string.Empty;
         try
         {
-            var result = OpenFileDialog.ShowDialog();
-            if (result == DialogResult.OK)
+            // Run dialog on STA thread to avoid SEHException
+            string? selectedPath = null;
+            var staThread = new Thread(() =>
             {
-                _selectedFile = OpenFileDialog.FileName;
+                using var dialog = new OpenFileDialog();
+                dialog.Filter = "Zipfiles (*.zip)|*.zip";
+                dialog.FileName = string.Empty;
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    selectedPath = dialog.FileName;
+                }
+            });
+            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.Start();
+            staThread.Join();
+
+            if (!string.IsNullOrEmpty(selectedPath))
+            {
+                _selectedFile = selectedPath;
                 await OnFileSelected.InvokeAsync(_selectedFile);
             }
         }
         catch (Exception ex)
         {
-            throw ex;
+            throw;
         }
     }
 
@@ -69,16 +80,29 @@ else
     {
         try
         {
-            var result = FolderBrowserDialog.ShowDialog();
-            if (result == DialogResult.OK)
+            // Run dialog on STA thread to avoid SEHException
+            string? selectedPath = null;
+            var staThread = new Thread(() =>
             {
-                _selectedFile = FolderBrowserDialog.SelectedPath;
+                using var dialog = new FolderBrowserDialog();
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    selectedPath = dialog.SelectedPath;
+                }
+            });
+            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.Start();
+            staThread.Join();
+
+            if (!string.IsNullOrEmpty(selectedPath))
+            {
+                _selectedFile = selectedPath;
                 await OnFileSelected.InvokeAsync(_selectedFile);
             }
         }
         catch (Exception ex)
         {
-            throw ex;
+            throw;
         }
     }
 

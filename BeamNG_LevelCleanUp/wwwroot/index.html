@@ -28,6 +28,78 @@
 <!-- For MudBlazor below -->
 <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 <script src="_framework/blazor.webview.js"></script>
+
+<!-- Helper functions for responsive dialog sizing -->
+<script>
+    // Get element size for responsive dialogs
+    window.getElementSize = (element) => {
+        if (!element) return { width: 0, height: 0 };
+        const rect = element.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+    };
+
+    // ResizeObserver management for crop dialog
+    window.cropDialogResizeObservers = new Map();
+
+    window.setupCropDialogResizeObserver = (element, dotNetRef) => {
+        if (!element) return;
+        
+        // Remove any existing observer for this element
+        window.removeCropDialogResizeObserver(element);
+        
+        const observer = new ResizeObserver(entries => {
+            // Debounce to avoid excessive calls
+            if (observer._timeout) clearTimeout(observer._timeout);
+            observer._timeout = setTimeout(() => {
+                dotNetRef.invokeMethodAsync('OnContainerResized');
+            }, 100);
+        });
+        
+        observer.observe(element);
+        window.cropDialogResizeObservers.set(element, observer);
+    };
+
+    window.removeCropDialogResizeObserver = (element) => {
+        if (!element) return;
+        const observer = window.cropDialogResizeObservers.get(element);
+        if (observer) {
+            if (observer._timeout) clearTimeout(observer._timeout);
+            observer.disconnect();
+            window.cropDialogResizeObservers.delete(element);
+        }
+    };
+
+    // ResizeObserver management for feature selector dialog
+    window.featureSelectorResizeObservers = new Map();
+
+    window.setupFeatureSelectorResizeObserver = (element, dotNetRef) => {
+        if (!element) return;
+        
+        // Remove any existing observer for this element
+        window.removeFeatureSelectorResizeObserver(element);
+        
+        const observer = new ResizeObserver(entries => {
+            // Debounce to avoid excessive calls
+            if (observer._timeout) clearTimeout(observer._timeout);
+            observer._timeout = setTimeout(() => {
+                dotNetRef.invokeMethodAsync('OnPreviewContainerResized');
+            }, 100);
+        });
+        
+        observer.observe(element);
+        window.featureSelectorResizeObservers.set(element, observer);
+    };
+
+    window.removeFeatureSelectorResizeObserver = (element) => {
+        if (!element) return;
+        const observer = window.featureSelectorResizeObservers.get(element);
+        if (observer) {
+            if (observer._timeout) clearTimeout(observer._timeout);
+            observer.disconnect();
+            window.featureSelectorResizeObservers.delete(element);
+        }
+    };
+</script>
 </body>
 
 </html>

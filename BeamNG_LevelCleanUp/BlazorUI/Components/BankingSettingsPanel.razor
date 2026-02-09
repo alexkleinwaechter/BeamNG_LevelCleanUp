@@ -1,0 +1,274 @@
+@using BeamNgTerrainPoc.Terrain.Models
+
+<MudExpansionPanel Text="@GetPanelTitle()" Dense="true" Class="mt-2">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Small" Color="@(EnableBanking ? Color.Success : Color.Default)" />
+            <MudText Typo="Typo.body2">
+                @GetPanelTitle()
+            </MudText>
+            @if (EnableBanking)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                    Enabled
+                </MudChip>
+            }
+        </div>
+    </TitleContent>
+    <ChildContent>
+        <MudStack Spacing="2" Class="pa-2">
+            <MudSwitch @bind-Value="EnableBanking"
+                       @bind-Value:after="NotifyChanged"
+                       Label="Enable Auto-Banking (Superelevation)"
+                       Color="Color.Primary"
+                       T="bool" />
+
+            @if (EnableBanking)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                    <MudText Typo="Typo.body2">
+                        Banking tilts the road surface on curves for realistic driving.
+                        Higher-priority roads maintain banking at junctions.
+                    </MudText>
+                </MudAlert>
+
+                <MudGrid Spacing="2">
+                    <!-- Banking Strength Slider -->
+                    <MudItem xs="12" sm="6">
+                        @* Wrap slider in a div that stops mouse/pointer propagation to prevent parent drag *@
+                        <div @onmousedown:stopPropagation @onpointerdown:stopPropagation>
+                            <MudSlider @bind-Value="BankStrength"
+                                       @bind-Value:after="NotifyChanged"
+                                       Min="0f" Max="1f" Step="0.05f"
+                                       Color="Color.Primary"
+                                       T="float">
+                                <MudText Typo="Typo.caption">
+                                    Banking Strength: @(BankStrength.ToString("P0"))
+                                </MudText>
+                            </MudSlider>
+                        </div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            0 = no banking, 1 = full banking based on curvature
+                        </MudText>
+                    </MudItem>
+
+                    <!-- Max Bank Angle -->
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="MaxBankAngle"
+                                         @bind-Value:after="NotifyChanged"
+                                         Label="Max Bank Angle (°)"
+                                         Variant="Variant.Outlined"
+                                         Min="0f" Max="20f" Step="0.5f"
+                                         HelperText="Highways: 4-8°, Race tracks: up to 15°"
+                                         T="float" />
+                    </MudItem>
+
+                    <!-- Bank Falloff Slider -->
+                    <MudItem xs="12" sm="6">
+                        @* Wrap slider in a div that stops mouse/pointer propagation to prevent parent drag *@
+                        <div @onmousedown:stopPropagation @onpointerdown:stopPropagation>
+                            <MudSlider @bind-Value="BankFalloff"
+                                       @bind-Value:after="NotifyChanged"
+                                       Min="0.3f" Max="2.0f" Step="0.1f"
+                                       Color="Color.Secondary"
+                                       T="float">
+                                <MudText Typo="Typo.caption">
+                                    Transition Falloff: @BankFalloff.ToString("F1")
+                                </MudText>
+                            </MudSlider>
+                        </div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Higher = sharper banking falloff at curve boundaries
+                        </MudText>
+                    </MudItem>
+
+                    <!-- Transition Length -->
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="TransitionLength"
+                                         @bind-Value:after="NotifyChanged"
+                                         Label="Transition Length (m)"
+                                         Variant="Variant.Outlined"
+                                         Min="5f" Max="100f" Step="5f"
+                                         HelperText="Distance for banking fade in/out"
+                                         T="float" />
+                    </MudItem>
+
+                    <!-- Curvature Scale (Advanced) -->
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="CurvatureToBankScale"
+                                         @bind-Value:after="NotifyChanged"
+                                         Label="Curvature Scale"
+                                         Variant="Variant.Outlined"
+                                         Min="100f" Max="1500f" Step="50f"
+                                         HelperText="Higher = more banking on gentle curves"
+                                         T="float" />
+                    </MudItem>
+
+                    <!-- Min Curve Radius -->
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="MinCurveRadiusForMaxBank"
+                                         @bind-Value:after="NotifyChanged"
+                                         Label="Min Curve Radius (m)"
+                                         Variant="Variant.Outlined"
+                                         Min="10f" Max="200f" Step="10f"
+                                         HelperText="Curves tighter than this get full banking"
+                                         T="float" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-2" />
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
+                    <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Small" Class="mr-1" />
+                    Quick Presets:
+                </MudText>
+                <MudButtonGroup OverrideStyles="false" Size="Size.Small">
+                    <MudButton OnClick="ApplyHighwayPreset" Variant="Variant.Outlined">Highway</MudButton>
+                    <MudButton OnClick="ApplyRuralPreset" Variant="Variant.Outlined">Rural Road</MudButton>
+                    <MudButton OnClick="ApplyRaceTrackPreset" Variant="Variant.Outlined">Race Track</MudButton>
+                </MudButtonGroup>
+
+                @if (ValidationErrors.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                        @foreach (var error in ValidationErrors)
+                        {
+                            <MudText Typo="Typo.caption">• @error</MudText>
+                        }
+                    </MudAlert>
+                }
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Enable auto-banking to tilt road surfaces on curves. This improves driving realism
+                    by counteracting centrifugal forces and exports banked normals to BeamNG master splines.
+                </MudText>
+            }
+        </MudStack>
+    </ChildContent>
+</MudExpansionPanel>
+
+@code {
+    [Parameter] public BankingParameters? Parameters { get; set; }
+    [Parameter] public EventCallback<BankingParameters> ParametersChanged { get; set; }
+
+    private bool EnableBanking
+    {
+        get => Parameters?.EnableAutoBanking ?? false;
+        set
+        {
+            EnsureParameters();
+            Parameters!.EnableAutoBanking = value;
+        }
+    }
+
+    private float BankStrength
+    {
+        get => Parameters?.BankStrength ?? 0.5f;
+        set
+        {
+            EnsureParameters();
+            Parameters!.BankStrength = value;
+        }
+    }
+
+    private float MaxBankAngle
+    {
+        get => Parameters?.MaxBankAngleDegrees ?? 8.0f;
+        set
+        {
+            EnsureParameters();
+            Parameters!.MaxBankAngleDegrees = value;
+        }
+    }
+
+    private float BankFalloff
+    {
+        get => Parameters?.AutoBankFalloff ?? 0.6f;
+        set
+        {
+            EnsureParameters();
+            Parameters!.AutoBankFalloff = value;
+        }
+    }
+
+    private float TransitionLength
+    {
+        get => Parameters?.BankTransitionLengthMeters ?? 30.0f;
+        set
+        {
+            EnsureParameters();
+            Parameters!.BankTransitionLengthMeters = value;
+        }
+    }
+
+    private float CurvatureToBankScale
+    {
+        get => Parameters?.CurvatureToBankScale ?? 500.0f;
+        set
+        {
+            EnsureParameters();
+            Parameters!.CurvatureToBankScale = value;
+        }
+    }
+
+    private float MinCurveRadiusForMaxBank
+    {
+        get => Parameters?.MinCurveRadiusForMaxBank ?? 50.0f;
+        set
+        {
+            EnsureParameters();
+            Parameters!.MinCurveRadiusForMaxBank = value;
+        }
+    }
+
+    private List<string> ValidationErrors => Parameters?.Validate() ?? new List<string>();
+
+    private void EnsureParameters()
+    {
+        Parameters ??= new BankingParameters();
+    }
+
+    private string GetPanelTitle() => EnableBanking
+        ? $"Road Banking (Max {MaxBankAngle:F0}°, Strength {BankStrength:P0})"
+        : "Road Banking (Disabled)";
+
+    private async Task NotifyChanged()
+    {
+        await ParametersChanged.InvokeAsync(Parameters);
+    }
+
+    private async Task ApplyHighwayPreset()
+    {
+        var preset = BankingParameters.Highway;
+        ApplyPreset(preset);
+        await NotifyChanged();
+    }
+
+    private async Task ApplyRuralPreset()
+    {
+        var preset = BankingParameters.RuralRoad;
+        ApplyPreset(preset);
+        await NotifyChanged();
+    }
+
+    private async Task ApplyRaceTrackPreset()
+    {
+        var preset = BankingParameters.RaceTrack;
+        ApplyPreset(preset);
+        await NotifyChanged();
+    }
+
+    private void ApplyPreset(BankingParameters preset)
+    {
+        EnsureParameters();
+        Parameters!.EnableAutoBanking = preset.EnableAutoBanking;
+        Parameters.BankStrength = preset.BankStrength;
+        Parameters.MaxBankAngleDegrees = preset.MaxBankAngleDegrees;
+        Parameters.AutoBankFalloff = preset.AutoBankFalloff;
+        Parameters.BankTransitionLengthMeters = preset.BankTransitionLengthMeters;
+        Parameters.CurvatureToBankScale = preset.CurvatureToBankScale;
+        Parameters.MinCurveRadiusForMaxBank = preset.MinCurveRadiusForMaxBank;
+    }
+}

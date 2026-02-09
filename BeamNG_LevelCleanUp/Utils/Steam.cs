@@ -8,6 +8,9 @@ public static class Steam
     public static List<string> SteamGameDirs = new();
     public static string BeamInstallDir = string.Empty;
 
+    /// <summary>
+    /// Gets the BeamNG install directory, using cached value if available.
+    /// </summary>
     public static string GetBeamInstallDir()
     {
         if (BeamInstallDir != string.Empty) return BeamInstallDir;
@@ -30,6 +33,15 @@ public static class Steam
         {
             return string.Empty;
         }
+    }
+
+    /// <summary>
+    /// Forces fresh detection of BeamNG install directory (clears cache first).
+    /// </summary>
+    public static string DetectBeamInstallDir()
+    {
+        BeamInstallDir = string.Empty;
+        return GetBeamInstallDir();
     }
 
     public static void SearchSteamPaths()

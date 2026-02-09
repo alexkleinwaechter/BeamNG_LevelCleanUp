@@ -8,32 +8,114 @@ public static class StringUtils
     public static string SanitizeFileName(string input)
     {
         if (string.IsNullOrEmpty(input)) return input;
+        
         var output = new StringBuilder(input.Length);
         var state = ParserState.PossibleDriveLetter;
+        
         foreach (var current in input)
-            if ((current >= 'a' && current <= 'z') || (current >= 'A' && current <= 'Z'))
+        {
+            // Convert umlauts to their ASCII equivalents
+            var converted = ConvertUmlaut(current);
+            
+            // If conversion resulted in multiple characters (e.g., ä -> ae)
+            if (converted.Length > 1)
             {
-                output.Append(current);
+                foreach (var c in converted)
+                {
+                    output.Append(char.ToLowerInvariant(c));
+                }
+                state = ParserState.Path;
+                continue;
+            }
+            
+            var charToProcess = converted[0];
+            
+            if ((charToProcess >= 'a' && charToProcess <= 'z') || (charToProcess >= 'A' && charToProcess <= 'Z'))
+            {
+                output.Append(char.ToLowerInvariant(charToProcess));
                 if (state == ParserState.PossibleDriveLetter)
                     state = ParserState.PossibleDriveLetterSeparator;
                 else
                     state = ParserState.Path;
             }
-            else if (current == Path.DirectorySeparatorChar ||
-                     current == Path.AltDirectorySeparatorChar ||
-                     (current == ':' && state == ParserState.PossibleDriveLetterSeparator) ||
-                     !Path.GetInvalidFileNameChars().Contains(current))
+            else if (charToProcess >= '0' && charToProcess <= '9')
             {
-                output.Append(current);
+                // Allow numbers
+                output.Append(charToProcess);
                 state = ParserState.Path;
             }
-            else
+            else if (charToProcess == Path.DirectorySeparatorChar ||
+                     charToProcess == Path.AltDirectorySeparatorChar ||
+                     (charToProcess == ':' && state == ParserState.PossibleDriveLetterSeparator))
             {
-                output.Append('_');
+                // Allow path separators and drive letter separator
+                output.Append(charToProcess);
                 state = ParserState.Path;
             }
+            else if (charToProcess == '_' || charToProcess == '-')
+            {
+                // Allow underscore and hyphen
+                output.Append(charToProcess);
+                state = ParserState.Path;
+            }
+            else if (!Path.GetInvalidFileNameChars().Contains(charToProcess) && charToProcess != ' ')
+            {
+                // Skip spaces and other special characters (don't replace with underscore)
+                // This removes special characters instead of replacing them
+                state = ParserState.Path;
+            }
+            // Else: skip the character (removes special chars)
+        }
 
-        return output.ToString().Replace(" ", "");
+        return output.ToString();
+    }
+
+    /// <summary>
+    /// Converts German umlauts and other special characters to their ASCII equivalents
+    /// </summary>
+    private static string ConvertUmlaut(char c)
+    {
+        return c switch
+        {
+            // German umlauts
+            'ä' or 'Ä' => "ae",
+            'ö' or 'Ö' => "oe",
+            'ü' or 'Ü' => "ue",
+            'ß' => "ss",
+            
+            // French accents
+            'à' or 'À' => "a",
+            'â' or 'Â' => "a",
+            'é' or 'É' => "e",
+            'è' or 'È' => "e",
+            'ê' or 'Ê' => "e",
+            'ë' or 'Ë' => "e",
+            'î' or 'Î' => "i",
+            'ï' or 'Ï' => "i",
+            'ô' or 'Ô' => "o",
+            'ù' or 'Ù' => "u",
+            'û' or 'Û' => "u",
+            'ÿ' or 'Ÿ' => "y",
+            'ç' or 'Ç' => "c",
+            
+            // Spanish
+            'á' or 'Á' => "a",
+            'í' or 'Í' => "i",
+            'ó' or 'Ó' => "o",
+            'ú' or 'Ú' => "u",
+            'ñ' or 'Ñ' => "n",
+            
+            // Scandinavian
+            'å' or 'Å' => "aa",
+            'æ' or 'Æ' => "ae",
+            'ø' or 'Ø' => "oe",
+            
+            // Other common characters
+            'œ' or 'Œ' => "oe",
+            
+            // Default: return as single-character string
+            _ => c.ToString()
+        };
     }
 
     public static string JBeamToJSON(string jbeamtext)

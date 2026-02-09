@@ -1,0 +1,1017 @@
+@using System.Text.RegularExpressions
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@using BeamNgTerrainPoc.Terrain.Models
+@using BeamNgTerrainPoc.Terrain.Osm.Models
+@using SplineInterpolationType = BeamNgTerrainPoc.Terrain.Models.SplineInterpolationType
+@using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
+@inject ISnackbar Snackbar
+
+<MudPaper Class="@CssClass" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+        <div>
+            <MudText Typo="Typo.h6" Class="mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.FileUpload" Class="mr-2" />
+                Import BeamNG Terrain Preset
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Load settings from a BeamNG terrain preset file (*_terrainPreset.json).
+                This will set heightmap, terrain size, and layer map assignments.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.Upload"
+                   OnClick="SelectAndImportPreset">
+            Import Preset
+        </MudButton>
+    </MudStack>
+    @if (!string.IsNullOrEmpty(PresetFilePath))
+    {
+        <MudAlert Severity="Severity.Success" Class="mt-3" Dense="true">
+            <strong>Preset loaded:</strong> @Path.GetFileName(PresetFilePath)
+        </MudAlert>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+            Layer maps assigned: @Materials.Count(m => m.HasLayerMap) / @Materials.Count materials
+            @if (!string.IsNullOrEmpty(HoleMapPath))
+            {
+                <text> | Hole map: ?</text>
+            }
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+/// <summary>
+/// Additional CSS classes to apply to the component.
+/// </summary>
+[Parameter]
+public string? Class { get; set; }
+
+private string CssClass => string.IsNullOrEmpty(Class) ? "pa-4" : $"pa-4 {Class}";
+
+/// <summary>
+/// The list of terrain materials to assign layer maps to.
+/// </summary>
+[Parameter]
+public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
+
+    /// <summary>
+    /// The working directory of the level (used for path resolution fallback).
+    /// </summary>
+    [Parameter]
+    public string WorkingDirectory { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Callback when preset import is complete with the imported settings.
+    /// </summary>
+    [Parameter]
+    public EventCallback<TerrainPresetResult> OnPresetImported { get; set; }
+
+    /// <summary>
+    /// The path to the loaded preset file (for display).
+    /// </summary>
+    public string? PresetFilePath { get; private set; }
+
+    /// <summary>
+    /// The resolved hole map path (if found).
+    /// </summary>
+    public string? HoleMapPath { get; private set; }
+
+    private string? _presetDirectory;
+
+    private async Task SelectAndImportPreset()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new OpenFileDialog();
+            dialog.Filter = "Terrain Preset (*_terrainPreset.json)|*_terrainPreset.json|All JSON Files (*.json)|*.json";
+            dialog.Title = "Select BeamNG Terrain Preset";
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK) 
+                selectedPath = dialog.FileName;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (!string.IsNullOrEmpty(selectedPath))
+        {
+            await ImportTerrainPreset(selectedPath);
+        }
+    }
+
+    private async Task ImportTerrainPreset(string presetPath)
+    {
+        try
+        {
+            PresetFilePath = presetPath;
+            _presetDirectory = Path.GetDirectoryName(presetPath);
+
+            var jsonContent = await File.ReadAllTextAsync(presetPath);
+            var jsonNode = JsonUtils.GetValidJsonNodeFromString(jsonContent, presetPath);
+
+            if (jsonNode == null)
+            {
+                Snackbar.Add("Failed to parse terrain preset JSON.", Severity.Error);
+                return;
+            }
+
+            var result = new TerrainPresetResult();
+
+            // Extract terrain name
+            var terrainName = jsonNode["name"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(terrainName))
+            {
+                result.TerrainName = terrainName;
+            }
+
+            // Extract heightScale (maps to maxHeight)
+            if (jsonNode["heightScale"] != null)
+            {
+                result.MaxHeight = jsonNode["heightScale"]!.GetValue<float>();
+            }
+
+            // Extract squareSize (maps to metersPerPixel)
+            if (jsonNode["squareSize"] != null)
+            {
+                result.MetersPerPixel = jsonNode["squareSize"]!.GetValue<float>();
+            }
+
+            // Extract base height from pos.z
+            if (jsonNode["pos"]?["z"] != null)
+            {
+                result.TerrainBaseHeight = jsonNode["pos"]!["z"]!.GetValue<float>();
+            }
+
+            // Resolve heightmap path
+            var heightMapPath = jsonNode["heightMapPath"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(heightMapPath))
+            {
+                var resolvedHeightmap = ResolvePresetFilePath(heightMapPath);
+                if (File.Exists(resolvedHeightmap))
+                {
+                    result.HeightmapPath = resolvedHeightmap;
+                    // Heightmap found - detail logged to file only
+                }
+                else
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Heightmap not found at: {resolvedHeightmap}");
+                }
+            }
+
+            // Resolve holemap path
+            var holeMapPath = jsonNode["holeMapPath"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(holeMapPath))
+            {
+                var resolvedHolemap = ResolvePresetFilePath(holeMapPath);
+                if (File.Exists(resolvedHolemap))
+                {
+                    HoleMapPath = resolvedHolemap;
+                    result.HoleMapPath = resolvedHolemap;
+                    // Holemap found - detail logged to file only
+                }
+            }
+
+            // Process opacity maps (layer maps)
+            var opacityMaps = jsonNode["opacityMaps"]?.AsArray();
+            if (opacityMaps != null)
+            {
+                var assignedCount = 0;
+                var notFoundCount = 0;
+                var orderUpdatedCount = 0;
+
+                foreach (var mapPath in opacityMaps)
+                {
+                    var mapPathStr = mapPath?.GetValue<string>();
+                    if (string.IsNullOrEmpty(mapPathStr)) continue;
+
+                    var resolvedPath = ResolvePresetFilePath(mapPathStr);
+                    var (order, materialName) = ParseLayerMapFileName(Path.GetFileName(mapPathStr));
+
+                    if (order.HasValue && !string.IsNullOrEmpty(materialName))
+                    {
+                        // Try to match with existing terrain materials
+                        var matchedMaterial = FindMatchingMaterial(materialName, order.Value);
+
+                        if (matchedMaterial != null)
+                        {
+                            if (File.Exists(resolvedPath))
+                            {
+                                matchedMaterial.LayerMapPath = resolvedPath;
+                                // CRITICAL: Set the LayerSourceType to PngFile so HasLayerMap returns true
+                                matchedMaterial.LayerSourceType = LayerSourceType.PngFile;
+                                
+                                // CRITICAL: Update the material order to match the preset order
+                                // The order in the preset filename is the index used in the binary .ter file
+                                if (matchedMaterial.Order != order.Value)
+                                {
+                                    // Order update logged silently - summary shown at end
+                                    matchedMaterial.Order = order.Value;
+                                    orderUpdatedCount++;
+                                }
+                                
+                                assignedCount++;
+                            }
+                            else
+                            {
+                                notFoundCount++;
+                                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                    $"Layer map file not found: {resolvedPath}");
+                            }
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"No matching material found for: {materialName} (order {order})");
+                        }
+                    }
+                }
+
+                // After processing all opacity maps, re-sort materials by their new order
+                if (orderUpdatedCount > 0)
+                {
+                    // Sort the Materials list by Order to reflect preset order
+                    var sorted = Materials.OrderBy(m => m.Order).ToList();
+                    Materials.Clear();
+                    Materials.AddRange(sorted);
+                    // Reorder complete - included in final summary
+                }
+
+                result.AssignedLayerMapsCount = assignedCount;
+                // Summary is shown via Snackbar at end of import - no need for PubSub message here
+            }
+
+            // Import road smoothing settings from _appSettings.materialSettings (new unified format)
+            // This replaces the old separate *_roadSmoothing_*.json files
+
+            // ========== NEW: Import app-specific settings (_appSettings section) ==========
+            var appSettings = jsonNode["_appSettings"];
+            if (appSettings != null)
+            {
+                await ImportAppSettings(appSettings, result);
+            }
+            // Legacy preset format without _appSettings is handled silently
+
+            await OnPresetImported.InvokeAsync(result);
+            Snackbar.Add($"Terrain preset imported: {result.TerrainName}", Severity.Success);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
+            Snackbar.Add($"Error importing preset: {message}", Severity.Error);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, $"Preset import error: {message}");
+        }
+    }
+
+    /// <summary>
+    /// Resolves a BeamNG relative path (like "/levels/kattenes/import/...") to an absolute file path.
+    /// First tries the preset directory, then uses working directory as fallback.
+    /// </summary>
+    private string ResolvePresetFilePath(string beamngPath)
+    {
+        // Extract just the filename
+        var fileName = Path.GetFileName(beamngPath);
+
+        // First, try the preset directory (where the *_terrainPreset.json was loaded from)
+        if (!string.IsNullOrEmpty(_presetDirectory))
+        {
+            var presetDirPath = Path.Combine(_presetDirectory, fileName);
+            if (File.Exists(presetDirPath))
+            {
+                return presetDirPath;
+            }
+        }
+
+        // Try to resolve from working directory using the full relative path
+        if (!string.IsNullOrEmpty(WorkingDirectory))
+        {
+            // Try multiple patterns:
+            // 1. Direct path in working directory
+            var directPath = Path.Combine(WorkingDirectory, fileName);
+            if (File.Exists(directPath))
+            {
+                return directPath;
+            }
+
+            // 2. If path contains /import/, look in import subfolder
+            if (beamngPath.Contains("/import/"))
+            {
+                var importPath = Path.Combine(WorkingDirectory, "import", fileName);
+                if (File.Exists(importPath))
+                {
+                    return importPath;
+                }
+            }
+
+            // 3. Try to reconstruct relative path from levels/levelname/...
+            var match = Regex.Match(beamngPath, @"/levels/[^/]+/(.+)");
+            if (match.Success)
+            {
+                var relativePath = match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar);
+                var reconstructedPath = Path.Combine(WorkingDirectory, relativePath);
+                if (File.Exists(reconstructedPath))
+                {
+                    return reconstructedPath;
+                }
+            }
+        }
+
+        // Return best guess path (preset directory + filename)
+        if (!string.IsNullOrEmpty(_presetDirectory))
+        {
+            return Path.Combine(_presetDirectory, fileName);
+        }
+
+        return beamngPath;
+    }
+
+    /// <summary>
+    /// Parses a layer map filename like "theTerrain_layerMap_12_BeamNG_DriverTrainingETK_Asphalt.png"
+    /// Returns the order index and material name.
+    /// </summary>
+    private (int? order, string? materialName) ParseLayerMapFileName(string fileName)
+    {
+        // Pattern: {terrainName}_layerMap_{order}_{materialName}.png
+        var match = Regex.Match(fileName, @"^.+_layerMap_(\d+)_(.+)\.png$", RegexOptions.IgnoreCase);
+
+        if (match.Success && int.TryParse(match.Groups[1].Value, out var order))
+        {
+            return (order, match.Groups[2].Value);
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Finds a matching terrain material by name, with fuzzy matching for level name prefixes/suffixes.
+    /// </summary>
+    private TerrainMaterialItemExtended? FindMatchingMaterial(string layerMaterialName, int presetOrder)
+    {
+        // Normalize the layer material name
+        var normalizedLayerName = NormalizeMaterialName(layerMaterialName);
+
+        // Try exact match first (case-insensitive)
+        var exactMatch = Materials.FirstOrDefault(m =>
+            string.Equals(m.InternalName, layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(m.MaterialName, layerMaterialName, StringComparison.OrdinalIgnoreCase));
+
+        if (exactMatch != null)
+        {
+            return exactMatch;
+        }
+
+        // Try normalized match (strips level name prefixes like "BeamNG_DriverTrainingETK_")
+        var normalizedMatch = Materials.FirstOrDefault(m =>
+        {
+            var normalizedInternalName = NormalizeMaterialName(m.InternalName);
+            var normalizedMaterialName = NormalizeMaterialName(m.MaterialName);
+
+            return string.Equals(normalizedInternalName, normalizedLayerName, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalizedMaterialName, normalizedLayerName, StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (normalizedMatch != null)
+        {
+            return normalizedMatch;
+        }
+
+        // Try suffix match (e.g., "_Asphalt" in "BeamNG_DriverTrainingETK_Asphalt")
+        var suffixMatch = Materials.FirstOrDefault(m =>
+        {
+            // Check if either ends with the layer name (ignoring case)
+            return m.InternalName.EndsWith(layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
+                   m.MaterialName.EndsWith(layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
+                   layerMaterialName.EndsWith(m.InternalName, StringComparison.OrdinalIgnoreCase) ||
+                   layerMaterialName.EndsWith(m.MaterialName, StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (suffixMatch != null)
+        {
+            return suffixMatch;
+        }
+
+        // Try contains match as last resort
+        var containsMatch = Materials.FirstOrDefault(m =>
+        {
+            return m.InternalName.Contains(normalizedLayerName, StringComparison.OrdinalIgnoreCase) ||
+                   normalizedLayerName.Contains(NormalizeMaterialName(m.InternalName), StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (containsMatch != null)
+        {
+            return containsMatch;
+        }
+
+        // Try matching by order if it's within bounds
+        if (presetOrder >= 0 && presetOrder < Materials.Count)
+        {
+            var orderMatch = Materials.FirstOrDefault(m => m.Order == presetOrder);
+            if (orderMatch != null)
+            {
+                // Matched by order - detail not needed in UI
+                return orderMatch;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Normalizes a material name by removing common prefixes like level names.
+    /// Examples:
+    ///   "BeamNG_DriverTrainingETK_Asphalt" -> "Asphalt"
+    ///   "Grass_driver_training" -> "Grass"
+    /// </summary>
+    private string NormalizeMaterialName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+
+        // Remove common BeamNG prefixes
+        var patterns = new[]
+        {
+            @"^BeamNG_[^_]+_",      // BeamNG_LevelName_
+            @"^[^_]+_[^_]+_",       // Generic_Prefix_
+            @"_[^_]+$"              // _suffix (like _driver_training)
+        };
+
+        var result = name;
+        foreach (var pattern in patterns)
+        {
+            var normalized = Regex.Replace(result, pattern, "", RegexOptions.IgnoreCase);
+            if (!string.IsNullOrEmpty(normalized) && normalized.Length >= 3)
+            {
+                result = normalized;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resets the component state.
+    /// </summary>
+    public void Reset()
+    {
+        PresetFilePath = null;
+        HoleMapPath = null;
+        _presetDirectory = null;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Imports app-specific settings from the _appSettings section of the preset.
+    /// </summary>
+    private async Task ImportAppSettings(System.Text.Json.Nodes.JsonNode appSettings, TerrainPresetResult result)
+    {
+        try
+        {
+            var version = appSettings["version"]?.GetValue<string>() ?? "1.0";
+            // App settings version noted internally - detail not needed in UI
+
+            // Import heightmap source configuration
+            var heightmapSource = appSettings["heightmapSource"];
+            if (heightmapSource != null)
+            {
+                var typeStr = heightmapSource["type"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(typeStr) && Enum.TryParse<HeightmapSourceType>(typeStr, out var sourceType))
+                {
+                    result.HeightmapSourceType = sourceType;
+                }
+
+                // PORTABLE PRESET: First try to load the exported GeoTIFF from the preset folder
+                // The exporter saves the GeoTIFF file to the preset folder for portability
+                var exportedGeoTiffFileName = heightmapSource["exportedGeoTiffFileName"]?.GetValue<string>();
+                
+                if (!string.IsNullOrEmpty(exportedGeoTiffFileName) && !string.IsNullOrEmpty(_presetDirectory))
+                {
+                    if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile)
+                    {
+                        // Single GeoTIFF file - look in preset folder
+                        var presetFolderGeoTiff = Path.Combine(_presetDirectory, exportedGeoTiffFileName);
+                        if (File.Exists(presetFolderGeoTiff))
+                        {
+                            result.GeoTiffPath = presetFolderGeoTiff;
+                            // GeoTIFF found in preset folder - detail not needed in UI
+                        }
+                    }
+                    else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
+                    {
+                        // Combined GeoTIFF or tiles folder
+                        if (exportedGeoTiffFileName == "geotiff_tiles")
+                        {
+                            // Tiles were exported to a subfolder
+                            var tilesFolder = Path.Combine(_presetDirectory, "geotiff_tiles");
+                            if (Directory.Exists(tilesFolder))
+                            {
+                                result.GeoTiffDirectory = tilesFolder;
+                                // GeoTIFF tiles folder found - detail not needed in UI
+                            }
+                        }
+                        else
+                        {
+                            // Combined GeoTIFF file - treat as single file mode for loading
+                            var presetFolderGeoTiff = Path.Combine(_presetDirectory, exportedGeoTiffFileName);
+                            if (File.Exists(presetFolderGeoTiff))
+                            {
+                                // Switch to GeoTiffFile mode since we have the combined file
+                                result.HeightmapSourceType = HeightmapSourceType.GeoTiffFile;
+                                result.GeoTiffPath = presetFolderGeoTiff;
+                                result.GeoTiffDirectory = null;
+                                // Combined GeoTIFF found - detail not needed in UI
+                            }
+                        }
+                    }
+                }
+                
+                // FALLBACK: If not found in preset folder, try original paths
+                // (These may not exist on a different computer)
+                if (string.IsNullOrEmpty(result.GeoTiffPath) && string.IsNullOrEmpty(result.GeoTiffDirectory))
+                {
+                    var originalGeoTiffPath = heightmapSource["originalGeoTiffPath"]?.GetValue<string>();
+                    var originalGeoTiffDirectory = heightmapSource["originalGeoTiffDirectory"]?.GetValue<string>();
+                    
+                    if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile &&
+                        !string.IsNullOrEmpty(originalGeoTiffPath))
+                    {
+                        if (File.Exists(originalGeoTiffPath))
+                        {
+                            result.GeoTiffPath = originalGeoTiffPath;
+                            // Using original GeoTIFF path - detail not needed in UI
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"GeoTIFF not found. Please browse to select the file.");
+                        }
+                    }
+                    else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
+                             !string.IsNullOrEmpty(originalGeoTiffDirectory))
+                    {
+                        if (Directory.Exists(originalGeoTiffDirectory))
+                        {
+                            result.GeoTiffDirectory = originalGeoTiffDirectory;
+                            // Using original GeoTIFF directory - detail not needed in UI
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"GeoTIFF directory not found. Please browse to select the folder.");
+                        }
+                    }
+                }
+            }
+
+            // Import terrain generation options
+            var terrainOptions = appSettings["terrainOptions"];
+            if (terrainOptions != null)
+            {
+                if (terrainOptions["terrainSize"] != null)
+                    result.TerrainSize = terrainOptions["terrainSize"]!.GetValue<int>();
+                if (terrainOptions["updateTerrainBlock"] != null)
+                    result.UpdateTerrainBlock = terrainOptions["updateTerrainBlock"]!.GetValue<bool>();
+                if (terrainOptions["enableCrossMaterialHarmonization"] != null)
+                    result.EnableCrossMaterialHarmonization = terrainOptions["enableCrossMaterialHarmonization"]!.GetValue<bool>();
+                if (terrainOptions["enableCrossroadToTJunctionConversion"] != null)
+                    result.EnableCrossroadToTJunctionConversion = terrainOptions["enableCrossroadToTJunctionConversion"]!.GetValue<bool>();
+                if (terrainOptions["enableExtendedOsmJunctionDetection"] != null)
+                    result.EnableExtendedOsmJunctionDetection = terrainOptions["enableExtendedOsmJunctionDetection"]!.GetValue<bool>();
+                if (terrainOptions["globalJunctionDetectionRadiusMeters"] != null)
+                    result.GlobalJunctionDetectionRadiusMeters = terrainOptions["globalJunctionDetectionRadiusMeters"]!.GetValue<float>();
+                if (terrainOptions["globalJunctionBlendDistanceMeters"] != null)
+                    result.GlobalJunctionBlendDistanceMeters = terrainOptions["globalJunctionBlendDistanceMeters"]!.GetValue<float>();
+                if (terrainOptions["excludeBridgesFromTerrain"] != null)
+                    result.ExcludeBridgesFromTerrain = terrainOptions["excludeBridgesFromTerrain"]!.GetValue<bool>();
+                if (terrainOptions["excludeTunnelsFromTerrain"] != null)
+                    result.ExcludeTunnelsFromTerrain = terrainOptions["excludeTunnelsFromTerrain"]!.GetValue<bool>();
+            }
+
+            // Import crop/selection settings
+            var cropSettings = appSettings["cropSettings"];
+            if (cropSettings != null)
+            {
+                if (cropSettings["offsetX"] != null)
+                    result.CropOffsetX = cropSettings["offsetX"]!.GetValue<int>();
+                if (cropSettings["offsetY"] != null)
+                    result.CropOffsetY = cropSettings["offsetY"]!.GetValue<int>();
+                if (cropSettings["width"] != null)
+                    result.CropWidth = cropSettings["width"]!.GetValue<int>();
+                if (cropSettings["height"] != null)
+                    result.CropHeight = cropSettings["height"]!.GetValue<int>();
+            }
+
+            // Import GeoTIFF metadata
+            var geoTiffMetadata = appSettings["geoTiffMetadata"];
+            if (geoTiffMetadata != null)
+            {
+                if (geoTiffMetadata["originalWidth"] != null)
+                    result.GeoTiffOriginalWidth = geoTiffMetadata["originalWidth"]!.GetValue<int>();
+                if (geoTiffMetadata["originalHeight"] != null)
+                    result.GeoTiffOriginalHeight = geoTiffMetadata["originalHeight"]!.GetValue<int>();
+                result.GeoTiffProjectionName = geoTiffMetadata["projectionName"]?.GetValue<string>();
+                if (geoTiffMetadata["nativePixelSizeMeters"] != null)
+                    result.NativePixelSizeMeters = geoTiffMetadata["nativePixelSizeMeters"]!.GetValue<float>();
+            }
+
+            // Import per-material layer source settings including road smoothing
+            var materialSettings = appSettings["materialSettings"]?.AsObject();
+            if (materialSettings != null)
+            {
+                result.MaterialLayerSettings = new Dictionary<string, MaterialLayerSettings>();
+                var roadSmoothingImportedCount = 0;
+
+                foreach (var matKvp in materialSettings)
+                {
+                    var matName = matKvp.Key;
+                    var matSettings = matKvp.Value;
+                    if (matSettings == null) continue;
+
+                    var layerSettings = new MaterialLayerSettings();
+
+                    // Parse order
+                    if (matSettings["order"] != null)
+                        layerSettings.Order = matSettings["order"]!.GetValue<int>();
+
+                    // Parse layer map path
+                    layerSettings.LayerMapPath = matSettings["layerMapPath"]?.GetValue<string>();
+
+                    // Parse layer source type
+                    var layerSourceTypeStr = matSettings["layerSourceType"]?.GetValue<string>();
+                    if (!string.IsNullOrEmpty(layerSourceTypeStr) && 
+                        Enum.TryParse<LayerSourceType>(layerSourceTypeStr, out var layerSourceType))
+                    {
+                        layerSettings.LayerSourceType = layerSourceType;
+                    }
+
+                    // Parse isRoadMaterial flag
+                    if (matSettings["isRoadMaterial"] != null)
+                        layerSettings.IsRoadMaterial = matSettings["isRoadMaterial"]!.GetValue<bool>();
+
+                    // Parse OSM feature selections
+                    var osmFeatures = matSettings["osmFeatureSelections"]?.AsArray();
+                    if (osmFeatures != null && osmFeatures.Count > 0)
+                    {
+                        layerSettings.OsmFeatureSelections = new List<OsmFeatureReference>();
+
+                        foreach (var featureNode in osmFeatures)
+                        {
+                            if (featureNode == null) continue;
+
+                            var featureRef = new OsmFeatureReference
+                            {
+                                FeatureId = featureNode["featureId"]?.GetValue<long>() ?? 0,
+                                DisplayName = featureNode["displayName"]?.GetValue<string>() ?? string.Empty,
+                                Category = featureNode["category"]?.GetValue<string>() ?? string.Empty,
+                                SubCategory = featureNode["subCategory"]?.GetValue<string>() ?? string.Empty
+                            };
+
+                            var geometryTypeStr = featureNode["geometryType"]?.GetValue<string>();
+                            if (!string.IsNullOrEmpty(geometryTypeStr) &&
+                                Enum.TryParse<OsmGeometryType>(geometryTypeStr, out var geometryType))
+                            {
+                                featureRef.GeometryType = geometryType;
+                            }
+
+                            layerSettings.OsmFeatureSelections.Add(featureRef);
+                        }
+                    }
+
+                    // Parse road smoothing settings (new unified format)
+                    var roadSmoothing = matSettings["roadSmoothing"];
+                    if (roadSmoothing != null && layerSettings.IsRoadMaterial)
+                    {
+                        layerSettings.RoadSmoothing = ImportRoadSmoothingFromJson(roadSmoothing);
+                        roadSmoothingImportedCount++;
+                    }
+
+                    result.MaterialLayerSettings[matName] = layerSettings;
+
+                    // Apply layer source settings to matching material
+                    var matchingMaterial = Materials.FirstOrDefault(m =>
+                        string.Equals(m.InternalName, matName, StringComparison.OrdinalIgnoreCase));
+
+                    if (matchingMaterial != null)
+                    {
+                        matchingMaterial.LayerSourceType = layerSettings.LayerSourceType;
+
+                        // Apply order if present
+                        if (layerSettings.Order.HasValue)
+                            matchingMaterial.Order = layerSettings.Order.Value;
+
+                        // Convert OSM feature references back to selections
+                        if (layerSettings.OsmFeatureSelections?.Any() == true)
+                        {
+                            matchingMaterial.SelectedOsmFeatures = layerSettings.OsmFeatureSelections
+                                .Select(r => r.ToSelection())
+                                .ToList();
+                            // OSM features restored - detail not needed in UI
+                        }
+
+                        // Apply road smoothing settings
+                        if (layerSettings.IsRoadMaterial && layerSettings.RoadSmoothing != null)
+                        {
+                            ApplyRoadSmoothingToMaterial(matchingMaterial, layerSettings.RoadSmoothing);
+                            // Road smoothing settings applied - included in final count
+                        }
+                    }
+                }
+                // Road smoothing import count included in Snackbar summary
+            }
+            // App settings import complete - Snackbar shows final summary
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Error importing app settings: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+        /// Sanitizes a filename by removing invalid characters (same as exporter).
+        /// </summary>
+        private string SanitizeFileName(string fileName)
+        {
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var result = fileName;
+        
+            foreach (var c in invalidChars)
+            {
+                result = result.Replace(c, '_');
+            }
+        
+            result = result.Replace(' ', '_');
+            result = result.Replace('-', '_');
+        
+            return result;
+        }
+
+        /// <summary>
+        /// Imports road smoothing settings from JSON node into a RoadSmoothingSettings object.
+        /// </summary>
+        private RoadSmoothingSettings ImportRoadSmoothingFromJson(System.Text.Json.Nodes.JsonNode roadSmoothing)
+        {
+            var settings = new RoadSmoothingSettings();
+
+            // Preset selection
+            settings.SelectedPreset = roadSmoothing["selectedPreset"]?.GetValue<string>();
+
+            // Primary parameters
+            if (roadSmoothing["roadWidthMeters"] != null)
+                settings.RoadWidthMeters = roadSmoothing["roadWidthMeters"]!.GetValue<float>();
+            if (roadSmoothing["roadSurfaceWidthMeters"] != null)
+                settings.RoadSurfaceWidthMeters = roadSmoothing["roadSurfaceWidthMeters"]!.GetValue<float>();
+            if (roadSmoothing["terrainAffectedRangeMeters"] != null)
+                settings.TerrainAffectedRangeMeters = roadSmoothing["terrainAffectedRangeMeters"]!.GetValue<float>();
+            if (roadSmoothing["roadEdgeProtectionBufferMeters"] != null)
+                settings.RoadEdgeProtectionBufferMeters = roadSmoothing["roadEdgeProtectionBufferMeters"]!.GetValue<float>();
+            if (roadSmoothing["enableMaxSlopeConstraint"] != null)
+                settings.EnableMaxSlopeConstraint = roadSmoothing["enableMaxSlopeConstraint"]!.GetValue<bool>();
+            if (roadSmoothing["roadMaxSlopeDegrees"] != null)
+                settings.RoadMaxSlopeDegrees = roadSmoothing["roadMaxSlopeDegrees"]!.GetValue<float>();
+            if (roadSmoothing["sideMaxSlopeDegrees"] != null)
+                settings.SideMaxSlopeDegrees = roadSmoothing["sideMaxSlopeDegrees"]!.GetValue<float>();
+
+            // Algorithm settings (ignore legacy 'approach' field - spline is now only option)
+            if (roadSmoothing["blendFunctionType"] != null)
+                settings.BlendFunctionType = roadSmoothing["blendFunctionType"]!.GetValue<string>();
+            if (roadSmoothing["crossSectionIntervalMeters"] != null)
+                settings.CrossSectionIntervalMeters = roadSmoothing["crossSectionIntervalMeters"]!.GetValue<float>();
+            if (roadSmoothing["enableTerrainBlending"] != null)
+                settings.EnableTerrainBlending = roadSmoothing["enableTerrainBlending"]!.GetValue<bool>();
+
+            // Spline parameters
+            var splineParams = roadSmoothing["splineParameters"];
+            if (splineParams != null)
+            {
+                settings.SplineParameters = new SplineParametersSettings();
+                if (splineParams["splineInterpolationType"] != null)
+                    settings.SplineParameters.SplineInterpolationType = splineParams["splineInterpolationType"]!.GetValue<string>();
+                if (splineParams["tension"] != null)
+                    settings.SplineParameters.Tension = splineParams["tension"]!.GetValue<float>();
+                if (splineParams["continuity"] != null)
+                    settings.SplineParameters.Continuity = splineParams["continuity"]!.GetValue<float>();
+                if (splineParams["bias"] != null)
+                    settings.SplineParameters.Bias = splineParams["bias"]!.GetValue<float>();
+                if (splineParams["useGraphOrdering"] != null)
+                    settings.SplineParameters.UseGraphOrdering = splineParams["useGraphOrdering"]!.GetValue<bool>();
+                if (splineParams["preferStraightThroughJunctions"] != null)
+                    settings.SplineParameters.PreferStraightThroughJunctions = splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
+                if (splineParams["densifyMaxSpacingPixels"] != null)
+                    settings.SplineParameters.DensifyMaxSpacingPixels = splineParams["densifyMaxSpacingPixels"]!.GetValue<float>();
+                if (splineParams["simplifyTolerancePixels"] != null)
+                    settings.SplineParameters.SimplifyTolerancePixels = splineParams["simplifyTolerancePixels"]!.GetValue<float>();
+                if (splineParams["bridgeEndpointMaxDistancePixels"] != null)
+                    settings.SplineParameters.BridgeEndpointMaxDistancePixels = splineParams["bridgeEndpointMaxDistancePixels"]!.GetValue<float>();
+                if (splineParams["minPathLengthPixels"] != null)
+                    settings.SplineParameters.MinPathLengthPixels = splineParams["minPathLengthPixels"]!.GetValue<float>();
+                if (splineParams["junctionAngleThreshold"] != null)
+                    settings.SplineParameters.JunctionAngleThreshold = splineParams["junctionAngleThreshold"]!.GetValue<float>();
+                if (splineParams["orderingNeighborRadiusPixels"] != null)
+                    settings.SplineParameters.OrderingNeighborRadiusPixels = splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
+                if (splineParams["skeletonDilationRadius"] != null)
+                    settings.SplineParameters.SkeletonDilationRadius = splineParams["skeletonDilationRadius"]!.GetValue<int>();
+                if (splineParams["smoothingWindowSize"] != null)
+                    settings.SplineParameters.SmoothingWindowSize = splineParams["smoothingWindowSize"]!.GetValue<int>();
+                if (splineParams["useButterworthFilter"] != null)
+                    settings.SplineParameters.UseButterworthFilter = splineParams["useButterworthFilter"]!.GetValue<bool>();
+                if (splineParams["butterworthFilterOrder"] != null)
+                    settings.SplineParameters.ButterworthFilterOrder = splineParams["butterworthFilterOrder"]!.GetValue<int>();
+                if (splineParams["globalLevelingStrength"] != null)
+                    settings.SplineParameters.GlobalLevelingStrength = splineParams["globalLevelingStrength"]!.GetValue<float>();
+                
+                // Banking (superelevation) parameters
+                var bankingParams = splineParams["banking"];
+                if (bankingParams != null)
+                {
+                    settings.SplineParameters.Banking = new BankingSettingsPreset();
+                    if (bankingParams["enableAutoBanking"] != null)
+                        settings.SplineParameters.Banking.EnableAutoBanking = bankingParams["enableAutoBanking"]!.GetValue<bool>();
+                    if (bankingParams["maxBankAngleDegrees"] != null)
+                        settings.SplineParameters.Banking.MaxBankAngleDegrees = bankingParams["maxBankAngleDegrees"]!.GetValue<float>();
+                    if (bankingParams["bankStrength"] != null)
+                        settings.SplineParameters.Banking.BankStrength = bankingParams["bankStrength"]!.GetValue<float>();
+                    if (bankingParams["autoBankFalloff"] != null)
+                        settings.SplineParameters.Banking.AutoBankFalloff = bankingParams["autoBankFalloff"]!.GetValue<float>();
+                    if (bankingParams["curvatureToBankScale"] != null)
+                        settings.SplineParameters.Banking.CurvatureToBankScale = bankingParams["curvatureToBankScale"]!.GetValue<float>();
+                    if (bankingParams["minCurveRadiusForMaxBank"] != null)
+                        settings.SplineParameters.Banking.MinCurveRadiusForMaxBank = bankingParams["minCurveRadiusForMaxBank"]!.GetValue<float>();
+                    if (bankingParams["bankTransitionLengthMeters"] != null)
+                        settings.SplineParameters.Banking.BankTransitionLengthMeters = bankingParams["bankTransitionLengthMeters"]!.GetValue<float>();
+                }
+            }
+
+            // DirectMask parameters - ignore (legacy, spline is now only approach)
+            // var directMaskParams = roadSmoothing["directMaskParameters"];
+            // DirectMask is no longer supported - skip this section
+
+            // Post-processing settings
+            var postProcessing = roadSmoothing["postProcessing"];
+            if (postProcessing != null)
+            {
+                settings.PostProcessing = new PostProcessingSettings();
+                if (postProcessing["enabled"] != null)
+                    settings.PostProcessing.Enabled = postProcessing["enabled"]!.GetValue<bool>();
+                if (postProcessing["smoothingType"] != null)
+                    settings.PostProcessing.SmoothingType = postProcessing["smoothingType"]!.GetValue<string>();
+                if (postProcessing["kernelSize"] != null)
+                    settings.PostProcessing.KernelSize = postProcessing["kernelSize"]!.GetValue<int>();
+                if (postProcessing["sigma"] != null)
+                    settings.PostProcessing.Sigma = postProcessing["sigma"]!.GetValue<float>();
+                if (postProcessing["iterations"] != null)
+                    settings.PostProcessing.Iterations = postProcessing["iterations"]!.GetValue<int>();
+                if (postProcessing["maskExtensionMeters"] != null)
+                    settings.PostProcessing.MaskExtensionMeters = postProcessing["maskExtensionMeters"]!.GetValue<float>();
+            }
+
+            // Debug settings from presets are ignored - debug exports are always enabled
+
+            // Junction harmonization settings
+            var junctionHarmonization = roadSmoothing["junctionHarmonization"];
+            if (junctionHarmonization != null)
+            {
+                settings.JunctionHarmonization = new JunctionHarmonizationSettings();
+                if (junctionHarmonization["useGlobalSettings"] != null)
+                    settings.JunctionHarmonization.UseGlobalSettings = junctionHarmonization["useGlobalSettings"]!.GetValue<bool>();
+                if (junctionHarmonization["enableJunctionHarmonization"] != null)
+                    settings.JunctionHarmonization.EnableJunctionHarmonization = junctionHarmonization["enableJunctionHarmonization"]!.GetValue<bool>();
+                if (junctionHarmonization["junctionDetectionRadiusMeters"] != null)
+                    settings.JunctionHarmonization.JunctionDetectionRadiusMeters = junctionHarmonization["junctionDetectionRadiusMeters"]!.GetValue<float>();
+                if (junctionHarmonization["junctionBlendDistanceMeters"] != null)
+                    settings.JunctionHarmonization.JunctionBlendDistanceMeters = junctionHarmonization["junctionBlendDistanceMeters"]!.GetValue<float>();
+                if (junctionHarmonization["blendFunctionType"] != null)
+                    settings.JunctionHarmonization.BlendFunctionType = junctionHarmonization["blendFunctionType"]!.GetValue<string>();
+                if (junctionHarmonization["enableEndpointTaper"] != null)
+                    settings.JunctionHarmonization.EnableEndpointTaper = junctionHarmonization["enableEndpointTaper"]!.GetValue<bool>();
+                if (junctionHarmonization["endpointTaperDistanceMeters"] != null)
+                    settings.JunctionHarmonization.EndpointTaperDistanceMeters = junctionHarmonization["endpointTaperDistanceMeters"]!.GetValue<float>();
+                if (junctionHarmonization["endpointTerrainBlendStrength"] != null)
+                    settings.JunctionHarmonization.EndpointTerrainBlendStrength = junctionHarmonization["endpointTerrainBlendStrength"]!.GetValue<float>();
+                // Roundabout settings
+                if (junctionHarmonization["enableRoundaboutDetection"] != null)
+                    settings.JunctionHarmonization.EnableRoundaboutDetection = junctionHarmonization["enableRoundaboutDetection"]!.GetValue<bool>();
+                if (junctionHarmonization["enableRoundaboutRoadTrimming"] != null)
+                    settings.JunctionHarmonization.EnableRoundaboutRoadTrimming = junctionHarmonization["enableRoundaboutRoadTrimming"]!.GetValue<bool>();
+                if (junctionHarmonization["roundaboutConnectionRadiusMeters"] != null)
+                    settings.JunctionHarmonization.RoundaboutConnectionRadiusMeters = junctionHarmonization["roundaboutConnectionRadiusMeters"]!.GetValue<float>();
+                if (junctionHarmonization["roundaboutOverlapToleranceMeters"] != null)
+                    settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters = junctionHarmonization["roundaboutOverlapToleranceMeters"]!.GetValue<float>();
+                if (junctionHarmonization["forceUniformRoundaboutElevation"] != null)
+                    settings.JunctionHarmonization.ForceUniformRoundaboutElevation = junctionHarmonization["forceUniformRoundaboutElevation"]!.GetValue<bool>();
+                if (junctionHarmonization["roundaboutBlendDistanceMeters"] != null)
+                    settings.JunctionHarmonization.RoundaboutBlendDistanceMeters = junctionHarmonization["roundaboutBlendDistanceMeters"]!.GetValue<float?>();
+            }
+
+            return settings;
+        }
+
+        /// <summary>
+        /// Applies road smoothing settings from preset to a material.
+        /// </summary>
+        private void ApplyRoadSmoothingToMaterial(TerrainMaterialItemExtended material, RoadSmoothingSettings settings)
+        {
+            // Enable road smoothing
+            material.IsRoadMaterial = true;
+
+            // Set preset type
+            if (!string.IsNullOrEmpty(settings.SelectedPreset) && 
+                Enum.TryParse<RoadPresetType>(settings.SelectedPreset, out var presetType))
+            {
+                material.SelectedPreset = presetType;
+            }
+            else
+            {
+                material.SelectedPreset = RoadPresetType.Custom;
+            }
+
+            // Primary parameters
+            material.RoadWidthMeters = settings.RoadWidthMeters;
+            material.RoadSurfaceWidthMeters = settings.RoadSurfaceWidthMeters;
+            material.TerrainAffectedRangeMeters = settings.TerrainAffectedRangeMeters;
+            material.RoadEdgeProtectionBufferMeters = settings.RoadEdgeProtectionBufferMeters;
+            material.EnableMaxSlopeConstraint = settings.EnableMaxSlopeConstraint;
+            material.RoadMaxSlopeDegrees = settings.RoadMaxSlopeDegrees;
+            material.SideMaxSlopeDegrees = settings.SideMaxSlopeDegrees;
+
+            // Algorithm settings (ignore legacy Approach field - spline is now only option)
+            if (Enum.TryParse<BlendFunctionType>(settings.BlendFunctionType, out var blendType))
+                material.BlendFunctionType = blendType;
+            material.CrossSectionIntervalMeters = settings.CrossSectionIntervalMeters;
+            material.EnableTerrainBlending = settings.EnableTerrainBlending;
+
+            // Spline parameters
+            if (settings.SplineParameters != null)
+            {
+                if (Enum.TryParse<SplineInterpolationType>(settings.SplineParameters.SplineInterpolationType, out var interpType))
+                    material.SplineInterpolationType = interpType;
+                material.SplineTension = settings.SplineParameters.Tension;
+                material.SplineContinuity = settings.SplineParameters.Continuity;
+                material.SplineBias = settings.SplineParameters.Bias;
+                material.UseGraphOrdering = settings.SplineParameters.UseGraphOrdering;
+                material.PreferStraightThroughJunctions = settings.SplineParameters.PreferStraightThroughJunctions;
+                material.DensifyMaxSpacingPixels = settings.SplineParameters.DensifyMaxSpacingPixels;
+                material.SimplifyTolerancePixels = settings.SplineParameters.SimplifyTolerancePixels;
+                material.BridgeEndpointMaxDistancePixels = settings.SplineParameters.BridgeEndpointMaxDistancePixels;
+                material.MinPathLengthPixels = settings.SplineParameters.MinPathLengthPixels;
+                material.JunctionAngleThreshold = settings.SplineParameters.JunctionAngleThreshold;
+                material.OrderingNeighborRadiusPixels = settings.SplineParameters.OrderingNeighborRadiusPixels;
+                material.SkeletonDilationRadius = settings.SplineParameters.SkeletonDilationRadius;
+                material.SplineSmoothingWindowSize = settings.SplineParameters.SmoothingWindowSize;
+                material.SplineUseButterworthFilter = settings.SplineParameters.UseButterworthFilter;
+                material.SplineButterworthFilterOrder = settings.SplineParameters.ButterworthFilterOrder;
+                material.GlobalLevelingStrength = settings.SplineParameters.GlobalLevelingStrength;
+                
+                // Banking (superelevation) parameters
+                if (settings.SplineParameters.Banking != null)
+                {
+                    material.EnableAutoBanking = settings.SplineParameters.Banking.EnableAutoBanking;
+                    material.MaxBankAngleDegrees = settings.SplineParameters.Banking.MaxBankAngleDegrees;
+                    material.BankStrength = settings.SplineParameters.Banking.BankStrength;
+                    material.AutoBankFalloff = settings.SplineParameters.Banking.AutoBankFalloff;
+                    material.CurvatureToBankScale = settings.SplineParameters.Banking.CurvatureToBankScale;
+                    material.MinCurveRadiusForMaxBank = settings.SplineParameters.Banking.MinCurveRadiusForMaxBank;
+                    material.BankTransitionLengthMeters = settings.SplineParameters.Banking.BankTransitionLengthMeters;
+                }
+            }
+
+            // DirectMask parameters - ignore (legacy, spline is now only approach)
+            // if (settings.DirectMaskParameters != null) { ... }
+
+            // Post-processing settings
+            if (settings.PostProcessing != null)
+            {
+                material.EnablePostProcessingSmoothing = settings.PostProcessing.Enabled;
+                if (Enum.TryParse<PostProcessingSmoothingType>(settings.PostProcessing.SmoothingType, out var smoothingType))
+                    material.SmoothingType = smoothingType;
+                material.SmoothingKernelSize = settings.PostProcessing.KernelSize;
+                material.SmoothingSigma = settings.PostProcessing.Sigma;
+                material.SmoothingIterations = settings.PostProcessing.Iterations;
+                material.SmoothingMaskExtensionMeters = settings.PostProcessing.MaskExtensionMeters;
+            }
+
+            // Debug settings are always enabled - no need to apply from preset
+
+            // Junction harmonization settings
+            if (settings.JunctionHarmonization != null)
+            {
+                material.UseGlobalJunctionSettings = settings.JunctionHarmonization.UseGlobalSettings;
+                material.EnableJunctionHarmonization = settings.JunctionHarmonization.EnableJunctionHarmonization;
+                material.JunctionDetectionRadiusMeters = settings.JunctionHarmonization.JunctionDetectionRadiusMeters;
+                material.JunctionBlendDistanceMeters = settings.JunctionHarmonization.JunctionBlendDistanceMeters;
+                if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
+                    material.JunctionBlendFunction = junctionBlendType;
+                material.EnableEndpointTaper = settings.JunctionHarmonization.EnableEndpointTaper;
+                material.EndpointTaperDistanceMeters = settings.JunctionHarmonization.EndpointTaperDistanceMeters;
+                material.EndpointTerrainBlendStrength = settings.JunctionHarmonization.EndpointTerrainBlendStrength;
+                // Roundabout settings
+                material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
+                material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;
+                material.RoundaboutConnectionRadiusMeters = settings.JunctionHarmonization.RoundaboutConnectionRadiusMeters;
+                material.RoundaboutOverlapToleranceMeters = settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters;
+                material.ForceUniformRoundaboutElevation = settings.JunctionHarmonization.ForceUniformRoundaboutElevation;
+                material.RoundaboutBlendDistanceMeters = settings.JunctionHarmonization.RoundaboutBlendDistanceMeters;
+            }
+        }
+    }

@@ -7,8 +7,8 @@ public enum CopyAssetType
     Road = 0,
     Decal = 1,
     Dae = 2,
-
-    Terrain = 3
+    Terrain = 3,
+    ForestBrush = 4
     // GroundCover removed - now copied automatically with Terrain
 }
 
@@ -26,7 +26,8 @@ public enum TerrainRoughnessPreset
     Mud = 6, // High roughness
     Forest = 7, // High roughness
     WetSurface = 8, // Low roughness (shiny when wet)
-    Rock = 9 // Medium-low roughness
+    Rock = 9, // Medium-low roughness
+    Calculated = 10 // Auto-extracted from source terrain roughnessBaseTex
 }
 
 public class CopyAsset
@@ -48,6 +49,11 @@ public class CopyAsset
     public GroundCover GroundCoverData { get; set; }
 
     /// <summary>
+    ///     Forest brush information for CopyAssetType.ForestBrush assets
+    /// </summary>
+    public ForestBrushInfo ForestBrushInfo { get; set; }
+
+    /// <summary>
     ///     Base color for terrain texture generation in hex format (e.g., #808080)
     /// </summary>
     public string BaseColorHex { get; set; } = "#808080";
@@ -61,6 +67,19 @@ public class CopyAsset
     ///     Custom roughness value (0-255, where 0 is shiny/black and 255 is rough/white)
     /// </summary>
     public int RoughnessValue { get; set; } = 128;
+
+    /// <summary>
+    ///     Calculated roughness value extracted from the source terrain's roughnessBaseTex texture.
+    ///     This value is preserved so the user can always return to the calculated value after changing presets.
+    ///     Value of -1 indicates no calculated value is available.
+    /// </summary>
+    public int CalculatedRoughnessValue { get; set; } = -1;
+
+    /// <summary>
+    ///     Returns true if a calculated roughness value was successfully extracted from the source terrain.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasCalculatedRoughness => CalculatedRoughnessValue >= 0;
 
     /// <summary>
     ///     Target terrain material names to replace (empty/null means "Add" new material)
@@ -94,15 +113,16 @@ public class CopyAsset
         return RoughnessPreset switch
         {
             TerrainRoughnessPreset.WetAsphalt => 20,
-            TerrainRoughnessPreset.Asphalt => 120,
+            TerrainRoughnessPreset.Asphalt => 140,
             TerrainRoughnessPreset.WetSurface => 40,
-            TerrainRoughnessPreset.Concrete => 130,
+            TerrainRoughnessPreset.Concrete => 170,
             TerrainRoughnessPreset.Rock => 140,
-            TerrainRoughnessPreset.DirtRoad => 170,
-            TerrainRoughnessPreset.Grass => 180,
-            TerrainRoughnessPreset.Mud => 60,
-            TerrainRoughnessPreset.Forest => 190,
+            TerrainRoughnessPreset.DirtRoad => 200,
+            TerrainRoughnessPreset.Grass => 220,
+            TerrainRoughnessPreset.Mud => 100,
+            TerrainRoughnessPreset.Forest => 230,
             TerrainRoughnessPreset.Custom => RoughnessValue,
+            TerrainRoughnessPreset.Calculated => CalculatedRoughnessValue >= 0 ? CalculatedRoughnessValue : 128,
             _ => 128 // Default medium roughness
         };
     }
@@ -128,7 +148,8 @@ public class CopyAsset
         if (normalized.Contains("asphalt") || normalized.Contains("tarmac"))
             return TerrainRoughnessPreset.Asphalt;
 
-        if (normalized.Contains("wet") || normalized.Contains("rain") || normalized.Contains("water") || normalized.Contains("ive") || normalized.Contains("snow"))
+        if (normalized.Contains("wet") || normalized.Contains("rain") || normalized.Contains("water") ||
+            normalized.Contains("ive") || normalized.Contains("snow"))
             return TerrainRoughnessPreset.WetSurface;
 
         if (normalized.Contains("concrete") || normalized.Contains("cement") || normalized.Contains("pavement"))

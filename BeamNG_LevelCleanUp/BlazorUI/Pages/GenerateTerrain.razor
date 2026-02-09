@@ -1,0 +1,814 @@
+@using DialogResult = System.Windows.Forms.DialogResult
+@page "/GenerateTerrain"
+@implements IDisposable
+@using System.Diagnostics.CodeAnalysis
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.Logic
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Utils
+@using BeamNgTerrainPoc.Terrain
+@using BeamNgTerrainPoc.Terrain.Models
+@using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+
+<ErrorBoundary>
+    <ChildContent>
+        <div class="content @(WizardMode ? "wizard-content" : "")">
+            <h3>Generate Terrain</h3>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                Generate a BeamNG terrain (.ter) file from terrain materials and a heightmap.
+            </MudText>
+
+            @if (WizardMode && WizardState != null)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Assistant">
+                    <MudText Typo="Typo.h6">Create Level Wizard - Generate Terrain</MudText>
+                    <MudText Typo="Typo.body2">
+                        Target Level: <b>@WizardState.LevelName</b>
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2">
+                        @if (_terrainGeneratedInWizard)
+                        {
+                            <text>Terrain generated! Save your preset above, then finish the wizard.</text>
+                        }
+                        else
+                        {
+                            <text>Configure terrain settings and click "Generate Terrain" to create the terrain file for your new level.</text>
+                        }
+                    </MudText>
+                </MudAlert>
+
+                @if (_terrainGeneratedInWizard)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-4" Icon="@Icons.Material.Filled.CheckCircle">
+                        <MudText Typo="Typo.h6">Terrain Generated Successfully!</MudText>
+                        <MudText Typo="Typo.body2">
+                            Your terrain has been created. Remember to save your preset above before finishing.
+                        </MudText>
+                    </MudAlert>
+                }
+            }
+
+            @if (!WizardMode)
+            {
+                <!-- Folder Selection -->
+                <MudExpansionPanels @ref="FileSelect">
+                    <MudExpansionPanel Text="@GetWorkingDirectoryTitle()" Expanded="@(!_hasWorkingDirectory)">
+                        <FileSelectComponent OnFileSelected="OnWorkingDirectorySelected"
+                                             SelectFolder="true"
+                                             Description="Select the unpacked level folder (contains info.json and art/terrains)">
+                        </FileSelectComponent>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
+
+            @if (_hasWorkingDirectory && !string.IsNullOrEmpty(_levelName))
+            {
+                @if (!WizardMode)
+                {
+                    <MudStack Row="true" Spacing="2" Class="mt-4">
+                        <MudButton @onclick="ResetPage"
+                                   Color="Color.Warning"
+                                   StartIcon="@Icons.Material.Filled.Refresh">
+                            Reset and Select Different Folder
+                        </MudButton>
+                    </MudStack>
+                }
+
+                <!-- Import Preset Section -->
+                <TerrainPresetImporter @ref="_presetImporter"
+                                       Materials="_terrainMaterials"
+                                       WorkingDirectory="@_workingDirectory"
+                                       OnPresetImported="OnPresetImported"
+                                       Class="mt-4" />
+
+                <!-- Export Preset Section -->
+                <TerrainPresetExporter @ref="_presetExporter"
+                                       Materials="_terrainMaterials"
+                                       WorkingDirectory="@_workingDirectory"
+                                       TerrainName="@_terrainName"
+                                       TerrainSize="@_terrainSize"
+                                       MaxHeight="@_maxHeight"
+                                       MetersPerPixel="@_metersPerPixel"
+                                       TerrainBaseHeight="@_terrainBaseHeight"
+                                       HeightmapPath="@_heightmapPath"
+                                       HeightmapSourceType="@_heightmapSourceType"
+                                       GeoTiffPath="@_geoTiffPath"
+                                       GeoTiffDirectory="@_geoTiffDirectory"
+                                       UpdateTerrainBlock="@_updateTerrainBlock"
+                                       EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
+                                       EnableCrossroadToTJunctionConversion="@_enableCrossroadToTJunctionConversion"
+                                       EnableExtendedOsmJunctionDetection="@_enableExtendedOsmJunctionDetection"
+                                       GlobalJunctionDetectionRadiusMeters="@_globalJunctionDetectionRadiusMeters"
+                                       GlobalJunctionBlendDistanceMeters="@_globalJunctionBlendDistanceMeters"
+                                       ExcludeBridgesFromTerrain="@_excludeBridgesFromTerrain"
+                                       ExcludeTunnelsFromTerrain="@_excludeTunnelsFromTerrain"
+                                       CropOffsetX="@(_cropResult?.OffsetX ?? 0)"
+                                       CropOffsetY="@(_cropResult?.OffsetY ?? 0)"
+                                       CropWidth="@(_cropResult?.CropWidth ?? 0)"
+                                       CropHeight="@(_cropResult?.CropHeight ?? 0)"
+                                       GeoTiffOriginalWidth="@_geoTiffOriginalWidth"
+                                       GeoTiffOriginalHeight="@_geoTiffOriginalHeight"
+                                       GeoTiffProjectionName="@_geoTiffProjectionName"
+                                       NativePixelSizeMeters="@GetNativePixelSizeAverage()"
+                                       OnRequestMaterialReorder="HandleMaterialReorderRequest"
+                                       Class="mt-4" />
+
+                <!-- Terrain Parameters Section -->
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2" />
+                        Terrain Parameters
+                    </MudText>
+
+                    <MudGrid Spacing="3">
+                        <!-- Heightmap Source Type Selection -->
+                        <MudItem xs="12">
+                            <div class="d-flex align-center gap-2 mb-2">
+                                <MudText Typo="Typo.subtitle2">Heightmap Source (Required)</MudText>
+                                <MudTooltip Text="Learn about GeoTIFF sources and where to get elevation data">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Help"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   OnClick="OpenHeightmapSourceHelpDialog" />
+                                </MudTooltip>
+                            </div>
+                            <MudButtonGroup OverrideStyles="false" Class="mb-3">
+                                <MudButton Variant="@(_heightmapSourceType == HeightmapSourceType.Png ? Variant.Filled : Variant.Outlined)"
+                                           Color="Color.Primary"
+                                           OnClick="@(() => OnHeightmapSourceTypeChanged(HeightmapSourceType.Png))"
+                                           StartIcon="@Icons.Material.Filled.Image">
+                                    PNG Heightmap
+                                </MudButton>
+                                <MudButton Variant="@(_heightmapSourceType == HeightmapSourceType.GeoTiffFile ? Variant.Filled : Variant.Outlined)"
+                                           Color="Color.Primary"
+                                           OnClick="@(() => OnHeightmapSourceTypeChanged(HeightmapSourceType.GeoTiffFile))"
+                                           StartIcon="@Icons.Material.Filled.Terrain">
+                                    GeoTIFF File
+                                </MudButton>
+                                <MudButton Variant="@(_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory ? Variant.Filled : Variant.Outlined)"
+                                           Color="Color.Primary"
+                                           OnClick="@(() => OnHeightmapSourceTypeChanged(HeightmapSourceType.GeoTiffDirectory))"
+                                           StartIcon="@Icons.Material.Filled.Folder">
+                                    GeoTIFF Tiles
+                                </MudButton>
+                            </MudButtonGroup>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                @GetHeightmapSourceDescription()
+                            </MudText>
+
+                            @* PNG Heightmap Selection *@
+                            @if (_heightmapSourceType == HeightmapSourceType.Png)
+                            {
+                                <div class="d-flex align-center gap-2">
+                                    <MudTextField @bind-Value="_heightmapPath"
+                                                  Label="Heightmap Path"
+                                                  Variant="Variant.Outlined"
+                                                  ReadOnly="true"
+                                                  Placeholder="Select a 16-bit grayscale PNG..."
+                                                  Class="flex-grow-1"
+                                                  Error="@(string.IsNullOrEmpty(_heightmapPath))"
+                                                  ErrorText="Heightmap is required" />
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Image"
+                                               OnClick="SelectHeightmap">
+                                        Browse
+                                    </MudButton>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                    16-bit grayscale PNG. Image dimensions should match terrain size.
+                                </MudText>
+                            }
+
+                            @* GeoTIFF File Selection *@
+                            @if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
+                            {
+                                <div class="d-flex align-center gap-2">
+                                    <MudTextField @bind-Value="_geoTiffPath"
+                                                  Label="GeoTIFF File Path"
+                                                  Variant="Variant.Outlined"
+                                                  ReadOnly="true"
+                                                  Placeholder="Select a GeoTIFF elevation file..."
+                                                  Class="flex-grow-1"
+                                                  Error="@(string.IsNullOrEmpty(_geoTiffPath))"
+                                                  ErrorText="GeoTIFF file is required" />
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Terrain"
+                                               OnClick="SelectGeoTiffFile">
+                                        Browse
+                                    </MudButton>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                    GeoTIFF with elevation data. Geographic coordinates will be extracted for OSM queries.
+                                </MudText>
+                            }
+
+                            @* GeoTIFF Directory Selection *@
+                            @if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
+                            {
+                                <div class="d-flex align-center gap-2">
+                                    <MudTextField @bind-Value="_geoTiffDirectory"
+                                                  Label="GeoTIFF Tiles Directory"
+                                                  Variant="Variant.Outlined"
+                                                  ReadOnly="true"
+                                                  Placeholder="Select folder with GeoTIFF tiles..."
+                                                  Class="flex-grow-1"
+                                                  Error="@(string.IsNullOrEmpty(_geoTiffDirectory))"
+                                                  ErrorText="GeoTIFF directory is required" />
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Folder"
+                                               OnClick="SelectGeoTiffDirectory">
+                                        Browse
+                                    </MudButton>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                    Folder containing multiple GeoTIFF tiles (.tif, .tiff, .geotiff). Tiles will be combined.
+                                </MudText>
+                            }
+                        </MudItem>
+
+                        @* GeoTIFF Bounding Box Display *@
+                        @if (_geoBoundingBox != null)
+                        {
+                            <MudItem xs="12">
+                                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                                    <MudText Typo="Typo.subtitle2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Map" Size="Size.Small" Class="mr-1" />
+                                        Geographic Bounding Box @(_cropResult is { NeedsCropping: true, CroppedBoundingBox: not null } ? "(Full GeoTIFF)" : "")
+                                    </MudText>
+                                    @if (!string.IsNullOrEmpty(_geoTiffProjectionName))
+                                    {
+                                        <MudText Typo="Typo.body2">
+                                            <strong>Projection:</strong> @_geoTiffProjectionName
+                                        </MudText>
+                                    }
+                                    <MudText Typo="Typo.body2">
+                                        <strong>SW:</strong> @_geoBoundingBox.MinLatitude.ToString("F6")°, @_geoBoundingBox.MinLongitude.ToString("F6")° |
+                                        <strong>NE:</strong> @_geoBoundingBox.MaxLatitude.ToString("F6")°, @_geoBoundingBox.MaxLongitude.ToString("F6")°
+                                    </MudText>
+                                    @if (_geoTiffMinElevation.HasValue && _geoTiffMaxElevation.HasValue)
+                                    {
+                                        <MudText Typo="Typo.body2">
+                                            <strong>Elevation:</strong> @_geoTiffMinElevation.Value.ToString("F1")m - @_geoTiffMaxElevation.Value.ToString("F1")m
+                                            (range: @((_geoTiffMaxElevation.Value - _geoTiffMinElevation.Value).ToString("F1"))m)
+                                        </MudText>
+                                    }
+                                    @if (_geoTiffGeoTransform != null && _geoTiffOriginalWidth > 0)
+                                    {
+                                        <MudText Typo="Typo.body2">
+                                            <strong>DEM Resolution:</strong> @GetNativePixelSizeDescription()
+                                        </MudText>
+                                        <MudText Typo="Typo.body2">
+                                            <strong>Source Size:</strong> @_geoTiffOriginalWidth &times; @_geoTiffOriginalHeight px
+                                            (@GetRealWorldWidthKm().ToString("F1")km &times; @GetRealWorldHeightKm().ToString("F1")km)
+                                        </MudText>
+                                    }
+                                    <MudText Typo="Typo.caption" Class="mt-1">
+                                        <strong>Overpass API (full):</strong> <code>@_geoBoundingBox.ToOverpassBBox()</code>
+                                    </MudText>
+                                </MudAlert>
+
+                                @* Show cropped bounding box when cropping is active *@
+                                @if (_cropResult is { NeedsCropping: true, CroppedBoundingBox: not null })
+                                {
+                                    <MudAlert Severity="Severity.Success" Dense="true" Class="mt-2">
+                                        <MudText Typo="Typo.subtitle2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Crop" Size="Size.Small" Class="mr-1" />
+                                            Cropped Region (Used for OSM)
+                                        </MudText>
+                                        <MudText Typo="Typo.body2">
+                                            <strong>SW:</strong> @_cropResult.CroppedBoundingBox.MinLatitude.ToString("F6")°, @_cropResult.CroppedBoundingBox.MinLongitude.ToString("F6")° |
+                                            <strong>NE:</strong> @_cropResult.CroppedBoundingBox.MaxLatitude.ToString("F6")°, @_cropResult.CroppedBoundingBox.MaxLongitude.ToString("F6")°
+                                        </MudText>
+                                        @if (_cropResult.CroppedMinElevation.HasValue && _cropResult.CroppedMaxElevation.HasValue)
+                                        {
+                                            <MudText Typo="Typo.body2">
+                                                <strong>Cropped Elevation:</strong> @_cropResult.CroppedMinElevation.Value.ToString("F1")m - @_cropResult.CroppedMaxElevation.Value.ToString("F1")m
+                                                (range: @((_cropResult.CroppedMaxElevation.Value - _cropResult.CroppedMinElevation.Value).ToString("F1"))m)
+                                            </MudText>
+                                        }
+                                        <MudText Typo="Typo.caption" Class="mt-1">
+                                            <strong>Overpass API (cropped):</strong> <code>@_cropResult.CroppedBoundingBox.ToOverpassBBox()</code>
+                                        </MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Success">
+                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                                            OSM features will be fetched only for the cropped region
+                                        </MudText>
+                                    </MudAlert>
+                                }
+                            </MudItem>
+                        }
+
+                        @* OSM Data Availability Warning *@
+                        @if (!_canFetchOsmData && !string.IsNullOrEmpty(_osmBlockedReason) &&
+                                            (_heightmapSourceType == HeightmapSourceType.GeoTiffFile || _heightmapSourceType == HeightmapSourceType.GeoTiffDirectory))
+                        {
+                            <MudItem xs="12">
+                                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" Icon="@Icons.Material.Filled.Warning">
+                                    <MudText Typo="Typo.subtitle2">
+                                        <MudIcon Icon="@Icons.Material.Filled.LocationOff" Size="Size.Small" Class="mr-1" />
+                                        OSM Road Data Not Available
+                                    </MudText>
+                                    <MudText Typo="Typo.body2">
+                                        @_osmBlockedReason
+                                    </MudText>
+                                    <MudText Typo="Typo.body2" Class="mt-1">
+                                        <strong>Possible causes:</strong>
+                                    </MudText>
+                                    <MudList T="string" Dense="true">
+                                        <MudListItem T="string" Dense="true" Icon="@Icons.Material.Filled.ChevronRight">
+                                            GeoTIFF has incorrect or missing projection metadata
+                                        </MudListItem>
+                                        <MudListItem T="string" Dense="true" Icon="@Icons.Material.Filled.ChevronRight">
+                                            Coordinate transformation from projected CRS (e.g., UTM) to WGS84 failed
+                                        </MudListItem>
+                                        <MudListItem T="string" Dense="true" Icon="@Icons.Material.Filled.ChevronRight">
+                                            Native coordinates are in meters but metadata claims degrees (lat/lon)
+                                        </MudListItem>
+                                    </MudList>
+                                    <MudText Typo="Typo.caption" Class="mt-1" Color="Color.Secondary">
+                                        You can still generate terrain, but "OSM Features" layer source will not work.
+                                        Use PNG layer maps instead for road materials.
+                                    </MudText>
+                                    @if (_geoTiffValidationResult?.DiagnosticInfo?.Any() == true)
+                                    {
+                                        <MudExpansionPanels Class="mt-2" Dense="true">
+                                            <MudExpansionPanel Text="Show Diagnostic Details" Dense="true">
+                                                <MudList T="string" Dense="true">
+                                                    @foreach (var diag in _geoTiffValidationResult.DiagnosticInfo)
+                                                    {
+                                                        <MudListItem T="string" Dense="true">
+                                                            <MudText Typo="Typo.caption" Style="font-family: monospace;">@diag</MudText>
+                                                        </MudListItem>
+                                                    }
+                                                </MudList>
+                                            </MudExpansionPanel>
+                                        </MudExpansionPanels>
+                                    }
+                                </MudAlert>
+                            </MudItem>
+                        }
+
+                        @* GeoTIFF Crop Settings (when image is larger than terrain) *@
+                        @if (_geoTiffOriginalWidth > 0 && _geoTiffOriginalHeight > 0 &&
+                                            (_heightmapSourceType == HeightmapSourceType.GeoTiffFile || _heightmapSourceType == HeightmapSourceType.GeoTiffDirectory))
+                        {
+                            <MudItem xs="12">
+                                <CropAnchorSelector @ref="_cropAnchorSelector"
+                                                    Title="GeoTIFF Selection Region"
+                                                    OriginalWidth="@_geoTiffOriginalWidth"
+                                                    OriginalHeight="@_geoTiffOriginalHeight"
+                                                    TargetSize="@_terrainSize"
+                                                    TargetSizeChanged="OnCropTargetSizeChanged"
+                                                    MetersPerPixel="@_metersPerPixel"
+                                                    NativePixelSizeMeters="@GetNativePixelSizeAverage()"
+                                                    SelectedAnchor="@_cropAnchor"
+                                                    SelectedAnchorChanged="OnCropAnchorChanged"
+                                                    OriginalBoundingBox="@_geoBoundingBox"
+                                                    CropResultChanged="OnCropResultChanged" />
+                            </MudItem>
+                        }
+
+                        <!-- Terrain Size -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudSelect T="int"
+                                       @bind-Value="_terrainSize"
+                                       Label="Terrain Size"
+                                       Variant="Variant.Outlined"
+                                       HelperText="Size in pixels (power of 2)">
+                                <MudSelectItem Value="256">256 x 256</MudSelectItem>
+                                <MudSelectItem Value="512">512 x 512</MudSelectItem>
+                                <MudSelectItem Value="1024">1024 x 1024</MudSelectItem>
+                                <MudSelectItem Value="2048">2048 x 2048</MudSelectItem>
+                                <MudSelectItem Value="4096">4096 x 4096</MudSelectItem>
+                                <MudSelectItem Value="8192">8192 x 8192</MudSelectItem>
+                                <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+
+                        <!-- Max Height -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField @bind-Value="_maxHeight"
+                                             Label="Max Height (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="0.0f" Max="10000.0f" Step="10.0f"
+                                             HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Set to 0 to auto-calculate from GeoTIFF" : "Maximum terrain elevation")" />
+                        </MudItem>
+
+                        <!-- Meters Per Pixel -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField @bind-Value="_metersPerPixel"
+                                             Label="Meters Per Pixel"
+                                             Variant="Variant.Outlined"
+                                             Min="0.1f" Max="100.0f" Step="0.1f"
+                                             HelperText="@GetMetersPerPixelHelperText()" />
+                        </MudItem>
+
+                        <!-- Terrain Name -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudTextField @bind-Value="_terrainName"
+                                          Label="Terrain Name"
+                                          Variant="Variant.Outlined"
+                                          HelperText="Output filename (without .ter)" />
+                        </MudItem>
+
+                        <!-- Terrain Base Height -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudNumericField @bind-Value="_terrainBaseHeight"
+                                             Label="Base Height (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="-10000.0f" Max="10000.0f" Step="1.0f"
+                                             HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Auto-calculated from GeoTIFF min elevation" : "Z position offset for terrain")" />
+                        </MudItem>
+
+                        <!-- Update TerrainBlock Checkbox -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudCheckBox @bind-Value="_updateTerrainBlock"
+                                         Label="Update TerrainBlock"
+                                         Color="Color.Primary" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Update MissionGroup items.level.json
+                            </MudText>
+                        </MudItem>
+
+                        <!-- Flip Material Processing Order -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_flipMaterialProcessingOrder"
+                                             Label="Flip Processing Order"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When enabled (default), materials at the top of the list get higher priority for road smoothing at junctions. When disabled, materials at the bottom get higher priority (matches texture painting order). Could be better when banking enabled.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Top material = highest road priority
+                            </MudText>
+                        </MudItem>
+
+                        <!-- Cross-Material Harmonization -->
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_enableCrossMaterialHarmonization"
+                                             Label="Cross-Material Harmonization"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When multiple materials have road smoothing enabled, harmonize elevations where roads from different materials meet (e.g., highway meets local road). Requires at least one material to have Junction Harmonization enabled.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Smooth transitions between road types
+                            </MudText>
+                        </MudItem>
+
+                        @* Global Junction Settings - only visible when cross-material harmonization is enabled *@
+                        @if (_enableCrossMaterialHarmonization)
+                        {
+                            <MudItem xs="12">
+                                <MudDivider Class="my-2" />
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.CallSplit" Size="Size.Small" Class="mr-1" />
+                                    Global Junction Settings
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                    Default values for cross-material junction handling. Individual materials can override these.
+                                </MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField @bind-Value="_globalJunctionDetectionRadiusMeters"
+                                                 Label="Global Junction Detection Radius (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1.0f" Max="50.0f" Step="1.0f"
+                                                 HelperText="Distance to detect road intersections" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField @bind-Value="_globalJunctionBlendDistanceMeters"
+                                                 Label="Global Junction Blend Distance (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="5.0f" Max="100.0f" Step="5.0f"
+                                                 HelperText="Distance to blend elevations at junctions" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudCheckBox @bind-Value="_enableCrossroadToTJunctionConversion"
+                                                 Label="Crossroad to T-Junction"
+                                                 Color="Color.Primary" />
+                                    <MudTooltip Text="When enabled, mid-spline crossings (where two roads cross without either terminating) are converted to T-junctions by splitting the secondary road. This enables proper elevation harmonization at crossings. Disable for overpasses/underpasses where roads should maintain independent elevations.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Split crossing roads for proper blending
+                                </MudText>
+                            </MudItem>
+
+                            @* Todo: Not sure if we need that anymore or if it makes more problems because of unprecise data *@
+                            @*                             <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudCheckBox @bind-Value="_enableExtendedOsmJunctionDetection"
+                                                 Label="Extended OSM Junction Detection"
+                                                 Color="Color.Primary" />
+                                    <MudTooltip Text="When enabled and using GeoTIFF/OSM source, queries OpenStreetMap for explicit junction tags (motorway exits, traffic signals, stop signs) to improve junction detection accuracy. Only applies when geographic coordinates are available.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Use OSM junction hints (if applicable)
+                                </MudText>
+                            </MudItem> *@
+                        }
+
+                        @* Bridge/Tunnel Structure Handling *@
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Architecture" Size="Size.Small" Class="mr-1" />
+                                Bridge/Tunnel Structure Handling
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                Configure how bridge and tunnel structures are processed during terrain generation.
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_excludeBridgesFromTerrain"
+                                             Label="Exclude Bridges"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When enabled, roads tagged as bridges in OSM are excluded from terrain smoothing and material painting. This prevents bridge structures from modifying the terrain beneath them, as bridges should be elevated above the terrain on support structures.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Don't modify terrain under bridges
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_excludeTunnelsFromTerrain"
+                                             Label="Exclude Tunnels"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When enabled, roads tagged as tunnels in OSM are excluded from terrain smoothing and material painting. This prevents tunnel structures from modifying the terrain surface, as tunnels should pass through the terrain without surface modification.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Don't modify terrain over tunnels
+                            </MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+            }
+
+            @if (_terrainMaterials.Any())
+            {
+                <!-- Materials Section with Drag-Drop -->
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center justify-space-between mb-2">
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2" />
+                            Terrain Materials (@_terrainMaterials.Count)
+                        </MudText>
+                        <MudTooltip Text="Learn about material order and priority">
+                            <MudIconButton Icon="@Icons.Material.Filled.Help"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           OnClick="OpenMaterialOrderHelpDialog" />
+                        </MudTooltip>
+                    </div>
+                    <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
+                        Drag and drop to change the order. Material at index 0 is the default/fallback material.
+                        Expand each material to configure layer maps and road smoothing.
+                    </MudText>
+
+                    <MudDropContainer T="TerrainMaterialItemExtended"
+                                      @ref="_dropContainer"
+                                      Items="@_terrainMaterials"
+                                      ItemsSelector="@((item, dropzone) => item.Selector == dropzone)"
+                                      ItemDropped="OnMaterialDropped"
+                                      Class="d-flex flex-column">
+                        <ChildContent>
+                            <MudDropZone T="TerrainMaterialItemExtended"
+                                         Identifier="materials"
+                                         Class="mud-height-full"
+                                         AllowReorder="true">
+                            </MudDropZone>
+                        </ChildContent>
+                        <ItemRenderer>
+                            <MudPaper Class="pa-1 mb-1" Elevation="0" Outlined="true">
+                                <div class="d-flex align-center">
+                                    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                                             Class="mr-1"
+                                             Style="cursor: move;"
+                                             Color="Color.Default" />
+                                    <div class="flex-grow-1">
+                                        <TerrainMaterialSettings Material="@context"
+                                                                 OnMaterialChanged="OnMaterialSettingsChanged"
+                                                                 GeoBoundingBox="@EffectiveBoundingBox"
+                                                                 TerrainSize="@_terrainSize" />
+                                    </div>
+                                    <MudMenu Icon="@Icons.Material.Filled.MoreVert"
+                                             Size="Size.Small"
+                                             AnchorOrigin="Origin.BottomRight"
+                                             TransformOrigin="Origin.TopRight">
+                                        <MudMenuItem OnClick="@(() => ToggleRoadSmoothing(context))"
+                                                     Icon="@(context.IsRoadMaterial ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)">
+                                            @(context.IsRoadMaterial ? "Disable Road Smoothing" : "Enable Road Smoothing")
+                                        </MudMenuItem>
+                                        <MudDivider />
+                                        <MudMenuItem OnClick="@(() => MoveToTop(context))"
+                                                     Icon="@Icons.Material.Filled.VerticalAlignTop">
+                                            Move to Top
+                                        </MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => MoveToBottom(context))"
+                                                     Icon="@Icons.Material.Filled.VerticalAlignBottom">
+                                            Move to Bottom
+                                        </MudMenuItem>
+                                    </MudMenu>
+                                </div>
+                            </MudPaper>
+                        </ItemRenderer>
+                    </MudDropContainer>
+                </MudPaper>
+
+                <!-- Generate Button -->
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                        <div>
+                            <MudText Typo="Typo.body1">
+                                <strong>Output:</strong> @GetOutputPath()
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Debug files will be saved to: @GetDebugPath()
+                            </MudText>
+                            @if (_analysisState.HasAnalysis)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Success">
+                                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                                    Analysis cached: @_analysisState.GetSummary()
+                                </MudText>
+                            }
+                        </div>
+                        <MudStack Row="true" Spacing="2">
+                            @* Analyze Settings Button *@
+                            @*                             <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Size="Size.Large"
+                                       StartIcon="@Icons.Material.Filled.Analytics"
+                                       OnClick="ExecuteAnalysis"
+                                       Disabled="@(!CanAnalyze() || _isGenerating || _isAnalyzing)">
+                                @if (_isAnalyzing)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    <span>Analyzing...</span>
+                                }
+                                else
+                                {
+                                    <span>Analyze Settings</span>
+                                }
+                            </MudButton> *@
+
+                            @* Generate Button *@
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       Size="Size.Large"
+                                       StartIcon="@Icons.Material.Filled.Build"
+                                       OnClick="ExecuteTerrainGeneration"
+                                       Disabled="@(!CanGenerate() || _isGenerating || _isAnalyzing)">
+                                @if (_isGenerating)
+                                {
+                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    <span>Generating...</span>
+                                }
+                                else
+                                {
+                                    <span>Generate Terrain</span>
+                                }
+                            </MudButton>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+            }
+            else if (_hasWorkingDirectory && !_isLoading && !_errors.Any())
+            {
+                <MudAlert Severity="Severity.Warning" Class="mt-4">
+                    No terrain materials found in the selected folder.
+                    Make sure the folder contains <code>art/terrains/main.materials.json</code>.
+                </MudAlert>
+            }
+
+            @if (_isLoading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+                <MudText Typo="Typo.body2" Class="mt-2">Loading terrain materials...</MudText>
+            }
+
+            <!-- OSM Cache Management -->
+            <OsmCacheManager Class="mt-4" />
+
+            <MudDrawer @bind-Open="@_openDrawer"
+                       Width="@_drawerWidth"
+                       Height="@_drawerHeight"
+                       Anchor="@_anchor"
+                       Elevation="1"
+                       Variant="@DrawerVariant.Temporary">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                    @{
+                        var list = (_showErrorLog ? _errors : _showWarningLog ? _warnings : _messages).ToList();
+                        @foreach (var item in list)
+                        {
+                            <MudListItem T="string" @key="@item.GetHashCode()" Style="border-bottom:1px solid grey">
+                                <MudText Typo="Typo.h6">@item</MudText>
+                            </MudListItem>
+                        }
+                    }
+                </MudList>
+            </MudDrawer>
+        </div>
+
+        @* Unified Footer Component *@
+        <WizardFooter WizardMode="@WizardMode"
+                      WizardState="@WizardState"
+                      BackButtonText="@GetBackButtonText()"
+                      NextButtonText="@GetNextButtonText()"
+                      CanProceed="@GetCanProceed()"
+                      ShowNextButton="@false"
+                      ShowFinishButton="@GetShowFinishButton()"
+                      ShowSkipButton="@GetShowSkipButton()"
+                      OnBackClick="@OnBackClicked"
+                      OnSkipClick="@SkipStep"
+                      OnFinishClick="@FinishWizard">
+            <SelectionInfo>
+                @if (_hasWorkingDirectory)
+                {
+                    <MudText Typo="Typo.caption">
+                        Level: @_levelName | Materials: @_terrainMaterials.Count | Size: @_terrainSize px
+                    </MudText>
+                }
+            </SelectionInfo>
+            <ActionButtons>
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" Size="Size.Small"
+                               OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">
+                        Errors (@_errors.Count)
+                    </MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" Size="Size.Small"
+                               OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">
+                        Warnings (@_warnings.Count)
+                    </MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" Size="Size.Small"
+                               OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">
+                        Messages (@_messages.Count)
+                    </MudButton>
+                }
+            </ActionButtons>
+            <FooterLinks>
+                @if (!string.IsNullOrEmpty(_workingDirectory))
+                {
+                    <MudButton @onclick="OpenWorkingDirectory"
+                               StartIcon="@Icons.Material.Filled.FolderOpen"
+                               Variant="Variant.Text"
+                               Color="Color.Primary"
+                               Size="Size.Small">
+                        Working Directory
+                    </MudButton>
+                }
+            </FooterLinks>
+        </WizardFooter>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent />
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    // State variables
+
+    // Terrain parameters
+
+    // Terrain materials list
+
+    // UI references
+
+    // Message lists
+
+    // Drawer state
+
+}

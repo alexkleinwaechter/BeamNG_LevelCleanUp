@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Form1));
             folderBrowserDialogLevel = new FolderBrowserDialog();
             openFileDialogLog = new OpenFileDialog();
             openFileDialogZip = new OpenFileDialog();
@@ -38,20 +39,19 @@
             // blazorWebView1
             // 
             blazorWebView1.Dock = DockStyle.Fill;
-            blazorWebView1.Location = new System.Drawing.Point(0, 0);
-            blazorWebView1.Margin = new Padding(4);
+            blazorWebView1.Location = new Point(0, 0);
             blazorWebView1.Name = "blazorWebView1";
-            blazorWebView1.Size = new System.Drawing.Size(2523, 1430);
+            blazorWebView1.Size = new Size(1682, 953);
             blazorWebView1.TabIndex = 1;
             blazorWebView1.Text = "blazorWebView1";
             // 
             // Form1
             // 
-            AutoScaleDimensions = new System.Drawing.SizeF(12F, 30F);
+            AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(2523, 1430);
+            ClientSize = new Size(1682, 953);
             Controls.Add(blazorWebView1);
-            Margin = new Padding(4);
+            Icon = (Icon)resources.GetObject("$this.Icon");
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
             FormClosing += Form1_FormClosing;

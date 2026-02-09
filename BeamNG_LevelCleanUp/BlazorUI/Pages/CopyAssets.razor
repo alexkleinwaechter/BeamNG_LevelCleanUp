@@ -9,67 +9,168 @@
 @using BeamNG_LevelCleanUp.Utils
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject NavigationManager Navigation
 
 <ErrorBoundary>
     <ChildContent>
-        <div class="content">
+        <div class="content @(WizardMode ? "wizard-content" : "")">
             <h3>Copy Assets</h3>
-            <MudExpansionPanels @ref="FileSelect">
-                <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
-                    <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
-                                         Description="The game install directory. If empty some features are missing.">
-                    </FileSelectComponent>
-                </MudExpansionPanel>
-                <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" Expanded="true">
-                    <FileSelectComponent OnFileSelected="FileSelectedCopyFrom"
-                                         Description="Your asset source map"
-                                         Disabled="@GetFileSelectDisabled()">
-                    </FileSelectComponent>
-                    @if (_vanillaLevels.Any())
-                    {
-                        <MudSelect T="FileInfo" ToStringFunc="@converter"
-                                   ValueChanged="OnVanillaSourceSelected"
-                                   Value="@_vanillaLevelSourceSelected"
-                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable
-                                   Disabled="@GetFileSelectDisabled()">
-                            @foreach (var item in _vanillaLevels)
-                            {
-                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
-                            }
-                        </MudSelect>
-                    }
-                </MudExpansionPanel>
-                <MudExpansionPanel Text="@GetFileSelectTitle()" Expanded="false">
-                    <FileSelectComponent OnFileSelected="@(x => FileSelected(x, false))"
-                                         Description="Your zipped target map"
-                                         Disabled="@GetFileSelectDisabled()">
-                    </FileSelectComponent>
-                    <FileSelectComponent OnFileSelected="@(x => FileSelected(x, true))" SelectFolder="true"
-                                         Description="or your unzipped map directory"
-                                         Disabled="@GetFileSelectDisabled()">
-                    </FileSelectComponent>
+            
+            @if (WizardMode && WizardState != null)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.Assistant">
+                    <MudText Typo="Typo.h6">Create Level Wizard - Select Assets</MudText>
+                    <MudText Typo="Typo.body2">
+                        Source: <b>@(GetCurrentSourceName())</b> → Target: <b>@WizardState.LevelName</b>
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2">
+                        @if (_copyCompleted)
+                        {
+                            <text>Assets copied! You can select another source map or finish the wizard.</text>
+                        }
+                        else
+                        {
+                            <text>Select the assets (decalroads, decals, 3D models) you want to copy to your new level.</text>
+                        }
+                    </MudText>
+                </MudAlert>
+                
+                @if (_copyCompleted)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-4" Icon="@Icons.Material.Filled.CheckCircle" ShowCloseIcon="true" CloseIconClicked="@(() => _copyCompleted = false)">
+                        <MudText Typo="Typo.h6">Copy Completed Successfully!</MudText>
+                        <MudText Typo="Typo.body2">
+                            Copied <b>@_copiedAssetsCount</b> asset(s) from <b>@_lastCopiedSourceName</b> to <b>@WizardState.LevelName</b>.
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            Total assets copied in this session: <b>@_totalCopiedAssetsCount</b>
+                        </MudText>
+                    </MudAlert>
+                }
+                
+                @* Source selection UI for wizard mode *@
+                @if (_showWizardSourceSelection)
+                {
+                    <MudPaper Class="pa-4 mb-4" Elevation="2">
+                        <MudText Typo="Typo.h6" Class="mb-3">
+                            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Class="mr-2" />
+                            Select Source Level
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mb-3" Color="Color.Secondary">
+                            Choose a source level to copy assets from. Target: <b>@WizardState?.LevelName</b>
+                        </MudText>
+                        
+                        <FileSelectComponent OnFileSelected="OnWizardSourceFileSelected"
+                                             Description="Select a zipped source map (.zip)"
+                                             Disabled="@_isLoadingMap">
+                        </FileSelectComponent>
+                        
+                        @if (_vanillaLevels.Any())
+                        {
+                            <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                       ValueChanged="OnWizardVanillaSourceSelected"
+                                       Value="@_vanillaLevelSourceSelected"
+                                       Label="Or select a vanilla level" 
+                                       AnchorOrigin="Origin.BottomCenter" 
+                                       Variant="Variant.Outlined" 
+                                       Clearable
+                                       Disabled="@_isLoadingMap"
+                                       Class="mt-3">
+                                @foreach (var item in _vanillaLevels)
+                                {
+                                    <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        
+                        @if (_isLoadingMap)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-3" />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">Loading source level...</MudText>
+                        }
+                    </MudPaper>
+                }
+            }
+            
+            @if (!WizardMode)
+            {
+                <MudExpansionPanels @ref="FileSelect">
+                    <MudExpansionPanel Text="@GetBeamInstallDir()" Expanded="false">
+                        <FileSelectComponent OnFileSelected="SetBeamInstallDir" SelectFolder="true"
+                                             Description="The game install directory. If empty some features are missing.">
+                        </FileSelectComponent>
+                    </MudExpansionPanel>
+                    <MudExpansionPanel Text="@GetFileSelectTitleCopyFrom()" Expanded="true">
+                        <FileSelectComponent OnFileSelected="FileSelectedCopyFrom"
+                                             Description="Your asset source map"
+                                             Disabled="@GetFileSelectDisabled()">
+                        </FileSelectComponent>
+                        @if (_vanillaLevels.Any())
+                        {
+                            <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                       ValueChanged="OnVanillaSourceSelected"
+                                       Value="@_vanillaLevelSourceSelected"
+                                       Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable
+                                       Disabled="@GetFileSelectDisabled()">
+                                @foreach (var item in _vanillaLevels)
+                                {
+                                    <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                    </MudExpansionPanel>
+                    <MudExpansionPanel Text="@GetFileSelectTitle()" Expanded="false">
+                        <FileSelectComponent OnFileSelected="@(x => FileSelected(x, false))"
+                                             Description="Your zipped target map"
+                                             Disabled="@GetFileSelectDisabled()">
+                        </FileSelectComponent>
+                        <FileSelectComponent OnFileSelected="@(x => FileSelected(x, true))" SelectFolder="true"
+                                             Description="or your unzipped map directory"
+                                             Disabled="@GetFileSelectDisabled()">
+                        </FileSelectComponent>
 
-                    @if (_vanillaLevels.Any())
-                    {
-                        <MudSelect T="FileInfo" ToStringFunc="@converter"
-                                   Disabled="@GetFileSelectDisabled()"
-                                   ValueChanged="OnVanillaTargetSelected"
-                                   Value="@_vanillaLevelTargetSelected"
-                                   Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
-                            @foreach (var item in _vanillaLevels)
-                            {
-                                <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
-                            }
-                        </MudSelect>
-                    }
-                </MudExpansionPanel>
-            </MudExpansionPanels>
+                        @if (_vanillaLevels.Any())
+                        {
+                            <MudSelect T="FileInfo" ToStringFunc="@converter"
+                                       Disabled="@GetFileSelectDisabled()"
+                                       ValueChanged="OnVanillaTargetSelected"
+                                       Value="@_vanillaLevelTargetSelected"
+                                       Label="Or select a vanilla level" AnchorOrigin="Origin.BottomCenter" Variant="Variant.Outlined" Clearable>
+                                @foreach (var item in _vanillaLevels)
+                                {
+                                    <MudSelectItem Value="@(item)">@item.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
 
-            @if (!string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
+            @if (!WizardMode && !string.IsNullOrEmpty(_levelName) && !string.IsNullOrEmpty(_levelNameCopyFrom))
             {
                 <MudButton @onclick="ResetPage" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Refresh" Style="margin-top: 16px;">
                     Reset and Select Different Maps
                 </MudButton>
+            }
+            
+            @if (_copyCompleted && !WizardMode)
+            {
+                <MudAlert Severity="Severity.Success" Class="mt-4 mb-4" Icon="@Icons.Material.Filled.CheckCircle" ShowCloseIcon="true" CloseIconClicked="@(() => _copyCompleted = false)">
+                    <MudText Typo="Typo.h6">Copy Completed Successfully!</MudText>
+                    <MudText Typo="Typo.body2">
+                        Copied <b>@_copiedAssetsCount</b> asset(s) from <b>@_lastCopiedSourceName</b> to <b>@_levelName</b>.
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2">
+                        You can now select another source map to copy additional assets, or build the zip file.
+                    </MudText>
+                    <MudButton @onclick="ResetSourceMap" 
+                              Color="Color.Primary" 
+                              Variant="Variant.Filled"
+                              StartIcon="@Icons.Material.Filled.AddCircle" 
+                              Class="mt-3">
+                        Select Another Source Map
+                    </MudButton>
+                </MudAlert>
             }
 
             @if (BindingListCopy.Any())
@@ -111,9 +212,9 @@
                     </RowTemplate>
                 </MudTable>
             }
-            else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any())
+            else if (!string.IsNullOrEmpty(_levelPath) && !_errors.Any() && !_isLoadingMap)
             {
-                <MudText Color="Color.Warning">No assets found.</MudText>
+                <MudText Color="Color.Warning">No assets found in source level.</MudText>
             }
 
             <MudDrawer @bind-Open="@_openDrawer" Width="@width" Height="@height" Anchor="@_anchor" Elevation="1" Variant="@DrawerVariant.Temporary">
@@ -130,46 +231,91 @@
                 </MudList>
             </MudDrawer>
         </div>
-        <footer>
-            @if (_selectedItems.Any())
-            {
-                <MudText>Files: @BindingListCopy?.Count, Selected: @_selectedItems.Count(), Sum Size MB: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2)</MudText>
-            }
-            <MudStack Row="true" Justify="Justify.SpaceBetween">
+        
+        @* Unified Footer Component *@
+        <WizardFooter WizardMode="@WizardMode"
+                      WizardState="@WizardState"
+                      BackButtonText="@GetBackButtonText()"
+                      NextButtonText="@GetNextButtonText()"
+                      CanProceed="@GetCanProceed()"
+                      ShowNextButton="@(WizardMode && (_copyCompleted || WizardState?.Step5_AssetsSelected == true))"
+                      ShowFinishButton="@false"
+                      ShowSkipButton="@GetShowSkipButton()"
+                      OnBackClick="@OnBackClicked"
+                      OnNextClick="@OnNextClicked"
+                      OnSkipClick="@SkipStep"
+                      OnFinishClick="@FinishWizard">
+            <SelectionInfo>
                 @if (_selectedItems.Any())
                 {
-                    <MudButton @onclick="CopyDialog" Color="Color.Primary">Copy Assets</MudButton>
+                    <MudText Typo="Typo.caption">
+                        Assets: @BindingListCopy?.Count | Selected: @_selectedItems.Count() | Size: @Math.Round(_selectedItems.Sum(x => x.SizeMb), 2) MB
+                    </MudText>
                 }
-                @if (_errors.Any())
+            </SelectionInfo>
+            <ActionButtons>
+                @if (WizardMode)
                 {
-                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))">Errors</MudButton>
+                    @if (_selectedItems.Any())
+                    {
+                        <MudButton @onclick="CopyDialogWizardMode" 
+                                  Color="Color.Primary"
+                                  Variant="Variant.Filled"
+                                  StartIcon="@Icons.Material.Filled.ContentCopy"
+                                  Size="Size.Small">
+                            Copy Selected (@_selectedItems.Count)
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton OnClick="@ResetSourceMapWizardMode" 
+                                  Color="Color.Primary"
+                                  Variant="Variant.Outlined"
+                                  StartIcon="@Icons.Material.Filled.AddCircle"
+                                  Size="Size.Small">
+                            Select Another Source
+                        </MudButton>
+                    }
                 }
-                @if (_warnings.Any())
+                else
                 {
-                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))">Warnings</MudButton>
+                    @if (_selectedItems.Any())
+                    {
+                        <MudButton @onclick="CopyDialog" Color="Color.Primary" Size="Size.Small">Copy Assets</MudButton>
+                    }
+                    @if (_errors.Any())
+                    {
+                        <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))" Size="Size.Small">Errors</MudButton>
+                    }
+                    @if (_warnings.Any())
+                    {
+                        <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))" Size="Size.Small">Warnings</MudButton>
+                    }
+                    @if (_messages.Any())
+                    {
+                        <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))" Size="Size.Small">Messages</MudButton>
+                    }
+                    @if (_showDeployButton)
+                    {
+                        <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
+                                   @bind-Value="_compressionLevel" Style="max-width: 150px;">
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
+                            <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
+                        </MudSelect>
+                        <MudButton @onclick="ZipAndDeploy" Color="Color.Primary" Size="Size.Small">Build Zipfile</MudButton>
+                    }
                 }
-                @if (_messages.Any())
+            </ActionButtons>
+            <FooterLinks>
+                @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
                 {
-                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))">Messages</MudButton>
+                    <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Working Directory</MudButton>
+                    <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">Logfiles</MudButton>
                 }
-                @if (_showDeployButton)
-                {
-                    <MudSelect Dense T="CompressionLevel" Label="Compression Level" AnchorOrigin="Origin.TopCenter"
-                               @bind-Value="_compressionLevel">
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Fastest"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.NoCompression"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
-                        <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
-                    </MudSelect>
-                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
-                }
-            </MudStack>
-            @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
-            {
-                <MudButton @onclick="ZipFileHandler.OpenExplorer" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Working Directory: @ZipFileHandler.WorkingDirectory</MudButton>
-                <MudButton @onclick="ZipFileHandler.OpenExplorerLogs" StartIcon="@Icons.Material.Filled.FolderOpen" Variant="Variant.Text" Color="Color.Primary">Logfiles</MudButton>
-            }
-        </footer>
+            </FooterLinks>
+        </WizardFooter>
     </ChildContent>
     <ErrorContent>
         <CustomErrorContent/>
@@ -177,525 +323,48 @@
 </ErrorBoundary>
 
 @code {
-    private string _levelName { get; set; }
-    private string _levelPath { get; set; }
-    private string _levelNameCopyFrom { get; set; }
-    private string _levelPathCopyFrom { get; set; }
-    private string _beamLogFilePath { get; set; } = string.Empty;
-    private List<string> _missingFiles { get; set; } = new();
-    private List<string> _errors { get; set; } = new();
-    private List<string> _messages { get; set; } = new();
-    private List<string> _warnings { get; set; } = new();
-    private Snackbar _staticSnackbar;
-    private Snackbar _unzipSnackbarCopyFrom;
-    private BeamFileReader Reader { get; set; }
-    private readonly string _fileSelectTitleCopyFrom = "Select the zipped source level you want to copy from";
-    private readonly string _fileSelectTitle = "Select the target level you want to copy to";
-    private bool _fileSelectDisabled { get; set; }
-    private bool _isLoadingMap { get; set; }
-    private bool _fileSelectExpanded { get; set; }
-    private bool _openDrawer;
-    private Anchor _anchor;
-    private string width, height;
-    private List<GridFileListItem> BindingListCopy { get; set; } = new();
-    private HashSet<GridFileListItem> _selectedItems = new();
-    private bool _fixed_Header = true;
-    [AllowNull] private MudExpansionPanels FileSelect { get; set; }
-    private string _searchString = string.Empty;
-    private string _labelFileSummaryShrink { get; set; } = string.Empty;
-    private bool _showDeployButton { get; set; }
-    private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
-    bool _showErrorLog { get; set; }
-    bool _showWarningLog { get; set; }
-    private List<FileInfo> _vanillaLevels { get; set; } = new();
-    private FileInfo _vanillaLevelSourceSelected { get; set; }
-    private FileInfo _vanillaLevelTargetSelected { get; set; }
-    private string _beamInstallDir { get; set; }
-    private MudTable<GridFileListItem> table;
-
-    /// <summary>
-    ///     Determines if file selection should be disabled
-    /// </summary>
-    private bool GetFileSelectDisabled()
+    // Note: CascadingParameter doesn't work across page navigation
+    // We'll get the wizard state from CreateLevel's static field instead
+    
+    private string GetCurrentSourceName()
     {
-        // Disable if currently loading a map
-        if (_isLoadingMap)
-            return true;
-
-        // Disable if both source and target are already selected
-        if (!string.IsNullOrEmpty(_levelNameCopyFrom) && !string.IsNullOrEmpty(_levelName))
-            return true;
-
-        return _fileSelectDisabled;
-    }
-
-    protected void InitializeVariables()
-    {
-        FileSelect.CollapseAllAsync();
-        _labelFileSummaryShrink = string.Empty;
-        _fileSelectDisabled = false;
-        _isLoadingMap = false;
-        _levelName = null;
-        _levelNameCopyFrom = null;
-        _levelPath = null;
-        _levelPathCopyFrom = null;
-        _beamLogFilePath = null;
-        _errors = new List<string>();
-        _warnings = new List<string>();
-        _messages = new List<string>();
-        _openDrawer = false;
-        BindingListCopy = new List<GridFileListItem>();
-        _selectedItems = new HashSet<GridFileListItem>();
-        _showDeployButton = false;
-        _vanillaLevelSourceSelected = null;
-        _vanillaLevelTargetSelected = null;
-        ZipFileHandler.WorkingDirectory = null;
-        Reader = null;
-    }
-
-    /// <summary>
-    ///     Resets the entire page state and allows selecting different maps
-    /// </summary>
-    protected async Task ResetPage()
-    {
-        // Call Reader.Reset() if it exists
-        if (Reader != null)
-        {
-            Reader.Reset();
-        }
-
-        // Reset all page variables
-        InitializeVariables();
-
-        // Collapse all panels first
-        await FileSelect.CollapseAllAsync();
-
-        // Wait a moment for the collapse to complete
-        await Task.Delay(100);
-
-        // Expand only the source panel (index 1) using ExpandAsync
-        if (FileSelect.Panels.Count > 1)
-        {
-            await FileSelect.Panels[1].ExpandAsync();
-        }
-
-        // Force UI refresh
-        StateHasChanged();
-
-        // Show success message
-        Snackbar.Add("Page reset successfully. You can now select different maps.", Severity.Success);
-    }
-
-    protected async Task FileSelectedCopyFrom(string file)
-    {
-        InitializeVariables();
-        _isLoadingMap = true;
-        ZipFileHandler.WorkingDirectory = Path.GetDirectoryName(file);
-        await Task.Run(() =>
-        {
-            try
-            {
-                _unzipSnackbarCopyFrom = Snackbar.Add("Unzipping source level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_copyFrom", true);
-                Reader = new BeamFileReader(_levelPathCopyFrom, null);
-                _levelNameCopyFrom = Reader.GetLevelName();
-                Snackbar.Add("Unzipping source level finished", Severity.Success);
-                Snackbar.Remove(_unzipSnackbarCopyFrom);
-            }
-            catch (Exception ex)
-            {
-                ShowException(ex);
-            }
-            finally
-            {
-                _isLoadingMap = false;
-                _fileSelectDisabled = false;
-            }
-        });
-    }
-
-    protected async Task OnVanillaSourceSelected(FileInfo file)
-    {
-        if (file == null)
-        {
-            // Clear selection
-            _vanillaLevelSourceSelected = null;
-            return;
-        }
-
-        InitializeVariables();
-        _isLoadingMap = true;
-        SetDefaultWorkingDirectory();
-        _vanillaLevelSourceSelected = file;
-        var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelSourceSelected.Name);
-        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelSourceSelected.Name} to {target}");
-        File.Copy(_vanillaLevelSourceSelected.FullName, target, true);
-        await FileSelectedCopyFrom(target);
-    }
-
-    protected async Task OnVanillaTargetSelected(FileInfo file)
-    {
-        if (file == null)
-        {
-            // Clear selection
-            _vanillaLevelTargetSelected = null;
-            return;
-        }
-
-        _isLoadingMap = true;
-        SetDefaultWorkingDirectory();
-        _vanillaLevelTargetSelected = file;
-        var target = Path.Join(ZipFileHandler.WorkingDirectory, _vanillaLevelTargetSelected.Name);
-        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy {_vanillaLevelTargetSelected.Name} to {target}");
-        File.Copy(_vanillaLevelTargetSelected.FullName, target, true);
-        await FileSelected(target, false);
-    }
-
-    protected async Task FileSelected(string file, bool isFolder)
-    {
-        _isLoadingMap = true;
-
-        if (_vanillaLevelTargetSelected == null)
-        {
-            ZipFileHandler.WorkingDirectory = isFolder ? file : Path.GetDirectoryName(file);
-        }
-        else if (!isFolder && ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(file))
-        {
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Copy target level to {ZipFileHandler.WorkingDirectory} ...");
-            try
-            {
-                File.Copy(file, Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), true);
-                PubSubChannel.SendMessage(PubSubMessageType.Info, "Copy target level finished");
-            }
-            catch (Exception ex)
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Error, $"Error copy target level to working directory: {ex.Message}");
-            }
-        }
-
-        await Task.Run(() =>
-        {
-            try
-            {
-                _staticSnackbar = Snackbar.Add("Unzipping target level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-                if (!isFolder)
-                {
-                    _levelPath = ZipFileHandler.ExtractToDirectory(Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
-                }
-                else
-                {
-                    _levelPath = ZipFileHandler.GetNamePath(file);
-                }
-
-                Reader = new BeamFileReader(_levelPath, null);
-                _levelName = Reader.GetLevelName();
-                Snackbar.Add("Unzipping target level finished", Severity.Success);
-                Snackbar.Remove(_staticSnackbar);
-            }
-            catch (Exception ex)
-            {
-                ShowException(ex);
-            }
-            finally
-            {
-                _isLoadingMap = false;
-                _fileSelectDisabled = false;
-            }
-        });
-
-        await ScanAssets();
-
-        // Collapse the target panel (index 2) after successful selection
-        if (FileSelect.Panels.Count > 2)
-        {
-            await FileSelect.Panels[2].CollapseAsync();
-        }
-    }
-
-    protected void SetBeamInstallDir(string file)
-    {
-        if (file != Steam.BeamInstallDir)
-        {
-            Steam.BeamInstallDir = file;
-            GetVanillaLevels();
-        }
-    }
-
-    protected string GetBeamInstallDir()
-    {
-        if (Steam.BeamInstallDir != _beamInstallDir)
-        {
-            _beamInstallDir = Steam.GetBeamInstallDir();
-            GetVanillaLevels();
-        }
-
-        return "BeamNG install directory: " + _beamInstallDir;
-    }
-
-    protected async Task ScanAssets()
-    {
-        _fileSelectDisabled = true;
-        await Task.Run(() =>
-        {
-            try
-            {
-                Reader = new BeamFileReader(_levelPath, null, _levelPathCopyFrom);
-                Reader.ReadAllForCopy();
-            }
-            catch (Exception ex)
-            {
-                ShowException(ex);
-            }
-            finally
-            {
-                _fileSelectDisabled = false;
-            }
-        });
-        FillCopyList();
-        PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Scanning Assets finished. Please select assets to copy.");
-    }
-
-    protected override void OnInitialized()
-    {
-        _fileSelectExpanded = true;
-        var consumer = Task.Run(async () =>
-        {
-            while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
-            {
-                var msg = await PubSubChannel.ch.Reader.ReadAsync();
-                if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
-                {
-                    switch (msg.MessageType)
-                    {
-                        case PubSubMessageType.Info:
-                            _messages.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Info);
-                            break;
-                        case PubSubMessageType.Warning:
-                            _warnings.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Warning);
-                            break;
-
-                        case PubSubMessageType.Error:
-                            _errors.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Error);
-                            break;
-                    }
-                }
-            }
-        });
-    }
-
-    void OpenDrawer(Anchor anchor, PubSubMessageType msgType)
-    {
-        _showErrorLog = msgType == PubSubMessageType.Error;
-        _showWarningLog = msgType == PubSubMessageType.Warning;
-        _openDrawer = true;
-        _anchor = anchor;
-
-        switch (anchor)
-        {
-            case Anchor.Start:
-                width = "300px";
-                height = "100%";
-                break;
-            case Anchor.End:
-                width = "400px";
-                height = "100%";
-                break;
-            case Anchor.Bottom:
-                width = "100%";
-                height = "200px";
-                break;
-            case Anchor.Top:
-                width = "100%";
-                height = "350px";
-                break;
-        }
-    }
-
-    private void ShowException(Exception ex)
-    {
-        var message = ex.InnerException != null ? ex.Message + $" {ex.InnerException}" : ex.Message;
-        Snackbar.Add(message, Severity.Error);
-        _errors.Add(message);
-    }
-
-    private void FillCopyList()
-    {
-        foreach (var asset in Reader.GetCopyList())
-        {
-            var item = new GridFileListItem
-            {
-                Identifier = asset.Identifier,
-                AssetType = asset.CopyAssetType.ToString(),
-                FullName = asset.Name,
-                SizeMb = asset.SizeMb,
-                Duplicate = asset.Duplicate,
-                DuplicateFrom = asset.DuplicateFrom,
-                CopyAsset = asset
-            };
-            BindingListCopy.Add(item);
-        }
-    }
-
-    private string GetFileSelectTitle()
-    {
-        if (!string.IsNullOrEmpty(_levelName))
-        {
-            return $"{_fileSelectTitle} > {_levelName}";
-        }
-
-        return $"{_fileSelectTitle}";
-    }
-
-    private string GetFileSelectTitleCopyFrom()
-    {
+        // Priority: 1. Currently loaded source, 2. Last copied source, 3. Wizard state source, 4. Prompt to select
         if (!string.IsNullOrEmpty(_levelNameCopyFrom))
+            return _levelNameCopyFrom;
+        if (_copyCompleted && !string.IsNullOrEmpty(_lastCopiedSourceName))
+            return _lastCopiedSourceName;
+        if (!string.IsNullOrEmpty(WizardState?.SourceLevelName))
+            return WizardState.SourceLevelName;
+        return "(Select a source)";
+    }
+    
+    private string GetBackButtonText() => WizardMode ? "Back to Forest Brushes" : "";
+    
+    private string GetNextButtonText()
+    {
+        if (!WizardMode) return "";
+        return _copyCompleted ? "Continue to Terrain Generation" : "Generate Terrain";
+    }
+    
+    private bool GetCanProceed() => WizardMode && (_copyCompleted || WizardState?.Step5_AssetsSelected == true);
+    
+    private bool GetShowFinishButton() => false; // Finish is now on GenerateTerrain page
+    
+    private bool GetShowSkipButton() => WizardMode && !_copyCompleted && !_selectedItems.Any();
+    
+    private void OnBackClicked()
+    {
+        if (WizardMode)
         {
-            return $"{_fileSelectTitleCopyFrom} > {_levelNameCopyFrom}";
-        }
-
-        return $"{_fileSelectTitleCopyFrom}";
-    }
-
-    private bool FilterFunc1(GridFileListItem element)
-    {
-        return FilterFunc(element, _searchString);
-    }
-
-    private bool FilterFunc(GridFileListItem element, string searchString)
-    {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-        if (element.FullName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.AssetType.Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        if (element.SizeMb.ToString().Contains(searchString, StringComparison.OrdinalIgnoreCase))
-            return true;
-        return false;
-    }
-
-    private async Task<TableData<GridFileListItem>> LoadServerData(TableState state, CancellationToken token)
-    {
-        var items = BindingListCopy.Where(element =>
-        {
-            if (string.IsNullOrWhiteSpace(_searchString))
-                return true;
-            if (element.FullName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
-                return true;
-            if (element.AssetType.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
-                return true;
-            if (element.SizeMb.ToString().Contains(_searchString, StringComparison.OrdinalIgnoreCase))
-                return true;
-            return false;
-        });
-
-        return new TableData<GridFileListItem>
-        {
-            Items = items,
-            TotalItems = items.Count()
-        };
-    }
-
-    private void OnSearch(string text)
-    {
-        _searchString = text ?? string.Empty;
-        table.ReloadServerData();
-    }
-
-    private async Task CopyDialog()
-    {
-        var options = new DialogOptions { CloseOnEscapeKey = true };
-        var parameters = new DialogParameters();
-        parameters.Add("ContentText", "Do you really want to copy these assets? This process cannot be undone. Please always use a copy of your project with this tool!");
-        parameters.Add("ButtonText", "Copy");
-        parameters.Add("Color", Color.Error);
-        var dialog = await DialogService.ShowAsync<SimpleDialog>("Copy Assets", parameters, options);
-        var result = await dialog.Result;
-        if (!result.Canceled)
-        {
-            _staticSnackbar = Snackbar.Add("Assets copy in process. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-            await Task.Run(() =>
-            {
-                var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                Reader.DoCopyAssets(selected);
-                _showDeployButton = true;
-            });
-            Snackbar.Remove(_staticSnackbar);
-
-            var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
-            if (!string.IsNullOrEmpty(duplicateMaterialsPath))
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning, $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
-            }
-
-            Reader.WriteLogFile(_warnings, "Log_AssetCopy_Warnings");
-            Reader.WriteLogFile(_errors, "Log_AssetCopy_Errors");
+            CancelWizard();
         }
     }
-
-    private async Task ZipAndDeploy()
+    
+    private void OnNextClicked()
     {
-        var path = string.Empty;
-        if (!string.IsNullOrEmpty(_levelPath))
+        if (WizardMode)
         {
-            try
-            {
-                path = ZipFileHandler.GetLastUnpackedPath();
-                _staticSnackbar = Snackbar.Add("Zipping the deployment file. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-                await Task.Run(() => { ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel); });
-                Snackbar.Remove(_staticSnackbar);
-            }
-            catch (Exception ex)
-            {
-                ShowException(ex);
-            }
+            FinishWizard();
         }
     }
-
-    private void OpenAssetViewer(GridFileListItem context)
-    {
-        var dialogOptions = new DialogOptions { FullScreen = true, CloseButton = true };
-        var parameters = new DialogParameters();
-        parameters.Add("CopyAsset", context.CopyAsset);
-        var dialog = DialogService.Show<AssetViewer>($"Asset Preview: {context.FullName}", parameters, dialogOptions);
-    }
-
-    private void GetVanillaLevels()
-    {
-        if (!string.IsNullOrEmpty(_beamInstallDir))
-        {
-            var dir = Path.Join(Steam.BeamInstallDir, Constants.BeamMapPath);
-            try
-            {
-                _vanillaLevels = Directory.GetFiles(dir)
-                    .Where(x => x.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                    .Select(x => new FileInfo(x)).ToList();
-                StateHasChanged();
-            }
-            catch (Exception ex)
-            {
-            }
-        }
-    }
-
-    readonly Func<FileInfo, string> converter = p => p?.Name;
-
-    public static DirectoryInfo GetExecutingDirectory()
-    {
-        var location = new Uri(Assembly.GetEntryAssembly().GetName().CodeBase);
-        return new FileInfo(location.AbsolutePath).Directory;
-    }
-
-    public void SetDefaultWorkingDirectory()
-    {
-        if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory) || (_vanillaLevelSourceSelected != null && _vanillaLevelTargetSelected != null))
-        {
-            ZipFileHandler.WorkingDirectory = Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "BeamNgMT");
-            Directory.CreateDirectory(ZipFileHandler.WorkingDirectory);
-        }
-    }
-
 }

@@ -1,0 +1,240 @@
+@using Microsoft.JSInterop
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@using System.Globalization
+
+<MudPaper Class="pa-4" Elevation="2">
+<MudText Typo="Typo.subtitle1" Class="mb-3">@Title</MudText>
+    
+@if (OriginalWidth > 0 && OriginalHeight > 0)
+    {
+        <MudGrid Spacing="2">
+            <!-- Left column: Info and coordinates -->
+            <MudItem xs="12" md="5">
+                <!-- Source Info -->
+                <div class="d-flex align-center gap-2 mb-2">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        <strong>Source:</strong> @OriginalWidth × @OriginalHeight px
+                        (@GetSourceRealWorldSize())
+                    </MudText>
+                </div>
+
+                <!-- Selection Info -->
+                <div class="d-flex align-center gap-2 mb-2">
+                    <MudText Typo="Typo.body2">
+                        <strong>Selection:</strong> @SelectionWidthPixels × @SelectionHeightPixels px
+                        (@GetSelectionRealWorldSize())
+                    </MudText>
+                    @if (NeedsSelection)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.Crop" Class="ma-0">
+                            Subset
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Check" Class="ma-0">
+                            Full Image
+                        </MudChip>
+                    }
+                </div>
+
+                <!-- Pixel Offset -->
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                    Pixel offset: (@CropOffsetX, @CropOffsetY)
+                </MudText>
+
+                <!-- Selection Bounding Box with Copy -->
+                @if (_selectionBoundingBox != null)
+                {
+                    <MudPaper Class="pa-2 mb-2" Elevation="0" Outlined="true">
+                        <div class="d-flex align-center justify-space-between mb-1">
+                            <MudText Typo="Typo.caption"><strong>Selection Coordinates (WGS84)</strong></MudText>
+                            <MudTooltip Text="Copy coordinates for Google Maps">
+                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                               Size="Size.Small"
+                                               OnClick="CopyCoordinatesToClipboard" />
+                            </MudTooltip>
+                        </div>
+                        <MudText Typo="Typo.caption" Style="font-family: monospace;">
+                            SW: @_selectionBoundingBox.MinLatitude.ToString("F6")°, @_selectionBoundingBox.MinLongitude.ToString("F6")°
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="font-family: monospace;">
+                            NE: @_selectionBoundingBox.MaxLatitude.ToString("F6")°, @_selectionBoundingBox.MaxLongitude.ToString("F6")°
+                        </MudText>
+                        <MudText Typo="Typo.caption" Style="font-family: monospace;" Color="Color.Secondary">
+                            Center: @_selectionBoundingBox.Center.Latitude.ToString("F6")°, @_selectionBoundingBox.Center.Longitude.ToString("F6")°
+                        </MudText>
+                    </MudPaper>
+                }
+
+                <!-- Google Maps Link -->
+                @if (_selectionBoundingBox != null)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Map"
+                               OnClick="OpenInGoogleMaps">
+                        View in Google Maps
+                    </MudButton>
+                }
+                
+                <!-- OSM Map Toggle -->
+                @if (OriginalBoundingBox != null)
+                {
+                    <div class="d-flex align-center gap-2 mt-2">
+                        <MudSwitch T="bool" @bind-Value="_showOsmBackground" 
+                                   Color="Color.Primary" 
+                                   Size="Size.Small"
+                                   Label="Show OSM Map" />
+                    </div>
+                }
+            </MudItem>
+
+            <!-- Right column: Interactive Minimap -->
+            <MudItem xs="12" md="7">
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.body2">
+                        <MudIcon Icon="@Icons.Material.Filled.PanTool" Size="Size.Small" Class="mr-1" />
+                        Drag to position selection
+                    </MudText>
+                    @if (OriginalBoundingBox != null)
+                    {
+                        <MudButton Variant="Variant.Text"
+                                   Size="Size.Small"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Fullscreen"
+                                   OnClick="OpenFullScreenDialog">
+                            Open Full Screen
+                        </MudButton>
+                    }
+                </div>
+                <div class="minimap-container" style="@GetMinimapContainerStyle()">
+                    <div class="minimap-source" 
+                         style="@GetMinimapSourceStyle()"
+                         @ref="_minimapElement"
+                         @onmousedown="OnMinimapMouseDown"
+                         @onmousemove="OnMinimapMouseMove"
+                         @onmouseup="OnMinimapMouseUp"
+                         @onmouseleave="OnMinimapMouseLeave">
+                        
+                        @* OSM tile background using shared component - zoom disabled on minimap to prevent page scroll *@
+                        @if (OriginalBoundingBox != null)
+                        {
+                            <OsmMapTileBackground BoundingBox="@OriginalBoundingBox"
+                                                  DisplayWidth="@GetMinimapDisplayWidth()"
+                                                  DisplayHeight="@GetMinimapDisplayHeight()"
+                                                  IsVisible="@_showOsmBackground"
+                                                  Opacity="@_mapOpacity"
+                                                  ShowAttribution="false"
+                                                  EnableScrollZoom="false"
+                                                  ZoomLevel="1.0f"
+                                                  MinZoom="1.0f"
+                                                  MaxZoom="1.0f"
+                                                  ZIndex="1" />
+                        }
+                        
+                        <!-- Selection rectangle -->
+                        <div class="minimap-selection @(_isDragging ? "dragging" : "")"
+                             style="@GetSelectionStyle()">
+                            <MudIcon Icon="@Icons.Material.Filled.OpenWith" 
+                                     Size="Size.Small" 
+                                     Style="color: white; opacity: 0.8;" />
+                        </div>
+                        <!-- Grid overlay for reference -->
+                        <div class="minimap-grid"></div>
+                    </div>
+                </div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1 text-center">
+                    @if (NeedsSelection)
+                    {
+                        <span>Extracting @GetSelectionRealWorldSize() from @GetSourceRealWorldSize() source</span>
+                    }
+                    else
+                    {
+                        <span>Using full source image</span>
+                    }
+                </MudText>
+                @if (_showOsmBackground)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="text-center">
+                        Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors
+                    </MudText>
+                }
+            </MudItem>
+        </MudGrid>
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Select a GeoTIFF file to configure extraction region.
+        </MudText>
+    }
+</MudPaper>
+
+<style>
+    .minimap-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.1);
+        border-radius: 4px;
+        min-height: 200px;
+    }
+    
+    .minimap-source {
+        position: relative;
+        background: linear-gradient(135deg, rgba(100, 100, 100, 0.3) 0%, rgba(60, 60, 60, 0.4) 100%);
+        border: 2px solid rgba(100, 100, 100, 0.5);
+        border-radius: 2px;
+        cursor: crosshair;
+        overflow: hidden;
+    }
+    
+    .minimap-selection {
+        position: absolute;
+        background: var(--mud-palette-primary);
+        opacity: 0.5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid white;
+        border-radius: 2px;
+        box-shadow: 0 0 8px rgba(0,0,0,0.5);
+        cursor: move;
+        transition: opacity 0.1s, box-shadow 0.1s;
+        z-index: 10;
+        pointer-events: auto;
+    }
+    
+    .minimap-selection:hover,
+    .minimap-selection.hover {
+        opacity: 0.65;
+        box-shadow: 0 0 12px rgba(0,0,0,0.6);
+    }
+    
+    .minimap-selection.dragging {
+        opacity: 0.75;
+        box-shadow: 0 0 16px rgba(var(--mud-palette-primary-rgb), 0.8);
+    }
+    
+    .minimap-grid {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-image: 
+            linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+        background-size: 25% 25%;
+        pointer-events: none;
+        z-index: 5;
+    }
+    
+    .text-center {
+        text-align: center;
+    }
+    
+</style>

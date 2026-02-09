@@ -1,0 +1,128 @@
+@using System.Globalization
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@using Microsoft.AspNetCore.Components.Web
+
+@* 
+    Reusable OSM map tile background component.
+    Renders OpenStreetMap tiles as a background layer for geographic visualizations.
+    Can be used in CropAnchorSelector, OsmFeaturePreview, or any component that needs a map background.
+    
+    Supports scroll wheel zoom when EnableScrollZoom is true:
+    - ZoomLevel 1.0 = fit entire bounding box (no zoom)
+    - ZoomLevel 2.0 = 2x zoom (half the area visible)
+    - ViewCenter controls pan position (0.5, 0.5 = center of bounding box)
+*@
+
+@if (IsVisible && BoundingBox != null && DisplayWidth > 0 && DisplayHeight > 0)
+{
+    <div class="osm-tile-container @(EnableScrollZoom ? "osm-tile-container-interactive" : "")" 
+         style="@GetContainerStyle()"
+         @onwheel="HandleWheel"
+         @onwheel:preventDefault="@EnableScrollZoom"
+         @onwheel:stopPropagation="@EnableScrollZoom"
+         @onmousedown="HandleMouseDown"
+         @onmousemove="HandleMouseMove"
+         @onmouseup="HandleMouseUp"
+         @onmouseleave="HandleMouseLeave">
+        @foreach (var tile in GetVisibleTiles())
+        {
+            <img src="@tile.Url" 
+                 alt="OSM Tile"
+                 class="osm-tile"
+                 style="@tile.Style"
+                 loading="lazy"
+                 draggable="false"
+                 @onerror="@(() => { /* Tile failed to load, ignore */ })" />
+        }
+        
+        @if (EnableScrollZoom && ZoomLevel > 1.01f)
+        {
+            <div class="osm-zoom-indicator">
+                @ZoomLevel.ToString("F1")x
+            </div>
+        }
+    </div>
+    
+    @if (ShowAttribution)
+    {
+        <div class="osm-attribution" style="@GetAttributionStyle()">
+            © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>
+        </div>
+    }
+}
+
+<style>
+    .osm-tile-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        overflow: hidden;
+        pointer-events: none;
+    }
+    
+    .osm-tile-container-interactive {
+        pointer-events: auto;
+        cursor: grab;
+    }
+    
+    .osm-tile-container-interactive:active {
+        cursor: grabbing;
+    }
+    
+    .osm-tile {
+        position: absolute;
+        pointer-events: none;
+        user-select: none;
+    }
+    
+    .osm-zoom-indicator {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: bold;
+        pointer-events: none;
+        z-index: 100;
+    }
+    
+    .osm-attribution {
+        position: absolute;
+        font-size: 9px;
+        color: #666;
+        background: rgba(255, 255, 255, 0.7);
+        padding: 1px 4px;
+        border-radius: 2px;
+        pointer-events: auto;
+    }
+    
+    .osm-attribution a {
+        color: #0078a8;
+        text-decoration: none;
+    }
+    
+    .osm-attribution a:hover {
+        text-decoration: underline;
+    }
+</style>
+
+@code {
+
+    // Pan state
+
+    // ========================================
+    // ZOOM PARAMETERS
+    // ========================================
+
+    // ========================================
+    // ZOOM/PAN EVENT HANDLERS
+    // ========================================
+
+    // ========================================
+    // ZOOM/PAN HELPERS
+    // ========================================
+
+}
