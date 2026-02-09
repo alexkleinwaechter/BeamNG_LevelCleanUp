@@ -203,60 +203,7 @@ var jsonContent = JsonUtils.ReadJsonFromFile(filePath);
 
 ## File Format Reference
 
-### Level Directory Structure
-```
-levels/{levelname}/
-├── info.json                      # Level metadata (title, description, spawn points)
-├── main.materials.json            # General materials (non-terrain)
-├── main.decals.json               # Decal instance data
-├── main.forestbrushes4.json       # Forest brush definitions (NDJSON format)
-├── mainLevel.lua                  # Level initialization script
-├── theTerrain.ter                 # Binary terrain heightmap data
-├── theTerrain.terrain.json        # Terrain configuration
-├── {levelname}_preview.jpg        # Level preview images
-├── {levelname}_minimap.png        # Minimap image
-├── art/                           # Art assets
-│   ├── terrains/                  # Terrain textures and materials
-│   │   ├── main.materials.json    # Terrain materials (TerrainMaterial class)
-│   │   └── *.png                  # Texture files (_b, _nm, _r, _h, _ao suffixes)
-│   ├── shapes/                    # 3D models (.dae, .cdae)
-│   ├── decals/                    # Decal textures
-│   ├── road/                      # Road materials
-│   ├── forest/                    # Forest item definitions
-│   ├── prefabs/                   # Prefab files (.prefab)
-│   ├── skies/                     # Skybox textures
-│   ├── cubemaps/                  # Environment cubemaps
-│   └── water/                     # Water materials
-├── forest/                        # Forest item instance data
-│   └── *.forest4.json             # Forest placement data (NDJSON format)
-├── main/                          # Scene hierarchy
-│   └── MissionGroup/              # Root scene group
-│       ├── items.level.json       # Group objects (NDJSON format)
-│       └── {subgroup}/            # Nested groups (DecalRoads, StaticObjects, etc.)
-│           └── items.level.json   # Subgroup objects
-└── quickrace/                     # Quick race track definitions (optional)
-```
-
-### Level Info File (`info.json`)
-```json
-{
-  "title": "levels.levelname.info.title",
-  "description": "levels.levelname.info.description",
-  "previews": ["levelname_preview.jpg"],
-  "size": [1024, 1024],
-  "defaultSpawnPointName": "spawn_default",
-  "spawnPoints": [
-    {
-      "translationId": "levels.levelname.spawnpoints.spawn_name",
-      "objectname": "spawn_name",
-      "preview": "spawn_preview.jpg"
-    }
-  ]
-}
-```
-
 ### Materials File (`.materials.json`)
-Standard JSON format with material definitions keyed by name:
 ```json
 {
   "MaterialName": {
@@ -339,6 +286,27 @@ Forest brush element definitions:
 - **TerrainBlock** - Terrain reference
 - **ForestBrushElement** - Forest brush configuration
 - **SpawnSphere** - Player spawn point
+
+    "class": "TerrainMaterial",
+    "persistentId": "guid-here",
+    "baseColorTex": "/levels/levelname/art/terrains/texture.png"
+  }
+}
+```
+
+### Level File (`.level.json`)
+```json
+{
+  "objects": [
+    {
+      "name": "ObjectName",
+      "class": "TSStatic",
+      "position": [0, 0, 0],
+      "shapeName": "/levels/levelname/art/shapes/mesh.dae"
+    }
+  ]
+}
+```
 
 ## Dependencies
 
