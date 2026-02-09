@@ -38,6 +38,9 @@ public partial class CreateLevel
     private string height;
     private string width;
 
+    // Flag to suppress snackbar creation during long operation completion
+    private volatile bool _suppressSnackbars;
+
     /// <summary>
     ///     Exposes the wizard state for other pages (e.g., CopyTerrains in wizard mode)
     /// </summary>
@@ -59,20 +62,38 @@ public partial class CreateLevel
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
                 if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
                 {
+                    // ALWAYS add to lists (for drawer/logs) regardless of suppression
                     switch (msg.MessageType)
                     {
                         case PubSubMessageType.Info:
                             _messages.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Info);
                             break;
                         case PubSubMessageType.Warning:
                             _warnings.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Warning);
                             break;
                         case PubSubMessageType.Error:
                             _errors.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Error);
                             break;
+                    }
+
+                    // Only show snackbar if not suppressed
+                    if (!_suppressSnackbars)
+                    {
+                        await InvokeAsync(() =>
+                        {
+                            switch (msg.MessageType)
+                            {
+                                case PubSubMessageType.Info:
+                                    Snackbar.Add(msg.Message, Severity.Info);
+                                    break;
+                                case PubSubMessageType.Warning:
+                                    Snackbar.Add(msg.Message, Severity.Warning);
+                                    break;
+                                case PubSubMessageType.Error:
+                                    Snackbar.Add(msg.Message, Severity.Error);
+                                    break;
+                            }
+                        });
                     }
 
                     await InvokeAsync(StateHasChanged);
@@ -113,6 +134,8 @@ public partial class CreateLevel
 
         _isInitializing = true;
         StateHasChanged();
+
+        var initSucceeded = false;
 
         try
         {
@@ -226,7 +249,7 @@ public partial class CreateLevel
             WriteCreateLevelLogs();
 
             Snackbar.Remove(_staticSnackbar);
-            Snackbar.Add("Level initialization complete!", Severity.Success);
+            initSucceeded = true;
         }
         catch (Exception ex)
         {
@@ -237,12 +260,28 @@ public partial class CreateLevel
         finally
         {
             _isInitializing = false;
-            StateHasChanged();
+
+            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+            _suppressSnackbars = true;
+            await InvokeAsync(() =>
+            {
+                Snackbar.Clear();
+
+                if (initSucceeded)
+                {
+                    Snackbar.Add("Level initialization complete!", Severity.Success);
+                }
+            });
+            _suppressSnackbars = false;
+
+            await InvokeAsync(StateHasChanged);
         }
     }
 
     private async Task ZipAndDeploy()
     {
+        var deploySucceeded = false;
+
         try
         {
             var path = Path.Join(ZipFileHandler.WorkingDirectory, "_unpacked");
@@ -255,10 +294,7 @@ public partial class CreateLevel
             });
 
             Snackbar.Remove(_staticSnackbar);
-            Snackbar.Add($"Deployment file created for {_wizardState.LevelName}", Severity.Success);
-
-            // Optionally reset wizard after successful deployment
-            // (User can click "Create Another Level" button instead)
+            deploySucceeded = true;
         }
         catch (Exception ex)
         {
@@ -266,10 +302,29 @@ public partial class CreateLevel
                 Snackbar.Remove(_staticSnackbar);
             ShowException(ex);
         }
+        finally
+        {
+            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+            _suppressSnackbars = true;
+            await InvokeAsync(() =>
+            {
+                Snackbar.Clear();
+
+                if (deploySucceeded)
+                {
+                    Snackbar.Add($"Deployment file created for {_wizardState.LevelName}", Severity.Success);
+                }
+            });
+            _suppressSnackbars = false;
+
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task CopyToLevelsFolder()
     {
+        var copySucceeded = false;
+
         try
         {
             var path = Path.Join(ZipFileHandler.WorkingDirectory, "_unpacked", "levels");
@@ -304,14 +359,31 @@ public partial class CreateLevel
             });
 
             Snackbar.Remove(_staticSnackbar);
-            Snackbar.Add($"Level '{_wizardState.LevelName}' successfully copied to BeamNG levels folder.",
-                Severity.Success);
+            copySucceeded = true;
         }
         catch (Exception ex)
         {
             if (_staticSnackbar != null)
                 Snackbar.Remove(_staticSnackbar);
             ShowException(ex);
+        }
+        finally
+        {
+            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+            _suppressSnackbars = true;
+            await InvokeAsync(() =>
+            {
+                Snackbar.Clear();
+
+                if (copySucceeded)
+                {
+                    Snackbar.Add($"Level '{_wizardState.LevelName}' successfully copied to BeamNG levels folder.",
+                        Severity.Success);
+                }
+            });
+            _suppressSnackbars = false;
+
+            await InvokeAsync(StateHasChanged);
         }
     }
 

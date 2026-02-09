@@ -65,6 +65,10 @@ public partial class GenerateTerrain
     private bool _showWarningLog;
 
     private Snackbar? _terrainGenerationSnackbar;
+
+    // Flag to suppress snackbar creation during generation completion
+    private volatile bool _suppressSnackbars;
+
     // ========================================
     // WIZARD MODE PROPERTIES
     // ========================================
@@ -577,22 +581,25 @@ public partial class GenerateTerrain
                             break;
                     }
 
-                    // Show snackbar and update UI on the main thread
-                    await InvokeAsync(() =>
+                    // Show snackbar and update UI on the main thread (unless suppressed)
+                    if (!_suppressSnackbars)
                     {
-                        switch (msg.MessageType)
+                        await InvokeAsync(() =>
                         {
-                            case PubSubMessageType.Info:
-                                Snackbar.Add(msg.Message, Severity.Info);
-                                break;
-                            case PubSubMessageType.Warning:
-                                Snackbar.Add(msg.Message, Severity.Warning);
-                                break;
-                            case PubSubMessageType.Error:
-                                Snackbar.Add(msg.Message, Severity.Error);
-                                break;
-                        }
-                    });
+                            switch (msg.MessageType)
+                            {
+                                case PubSubMessageType.Info:
+                                    Snackbar.Add(msg.Message, Severity.Info);
+                                    break;
+                                case PubSubMessageType.Warning:
+                                    Snackbar.Add(msg.Message, Severity.Warning);
+                                    break;
+                                case PubSubMessageType.Error:
+                                    Snackbar.Add(msg.Message, Severity.Error);
+                                    break;
+                            }
+                        });
+                    }
                 }
             }
         });
@@ -715,12 +722,18 @@ public partial class GenerateTerrain
         _osmBlockedReason = null;
         _geoTiffValidationResult = null;
 
-        // Show persistent loading snackbar
+        // Suppress intermediate snackbars during GeoTIFF loading
+        _suppressSnackbars = true;
+
+        // Show persistent loading snackbar (bypasses suppression since we add it directly)
         await InvokeAsync(() =>
         {
             _geoTiffLoadingSnackbar = Snackbar.Add("Reading GeoTIFF metadata...", Severity.Normal,
                 config => { config.VisibleStateDuration = int.MaxValue; });
         });
+
+        string? finalMessage = null;
+        Severity finalSeverity = Severity.Success;
 
         try
         {
@@ -767,23 +780,30 @@ public partial class GenerateTerrain
 
             // Log scale information
             LogScaleInformation(result);
+
+            finalMessage = $"GeoTIFF loaded: {result.OriginalWidth}×{result.OriginalHeight}px, " +
+                           $"elevation {_geoTiffMinElevation:F0}m – {_geoTiffMaxElevation:F0}m";
+            finalSeverity = Severity.Success;
         }
         catch (Exception ex)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Could not read GeoTIFF metadata: {ex.Message}. OSM features will not be available until terrain generation.");
+            finalMessage = $"Could not read GeoTIFF metadata: {ex.Message}";
+            finalSeverity = Severity.Warning;
         }
         finally
         {
-            // Remove the loading snackbar
+            // Clear all intermediate snackbars and show final message
             await InvokeAsync(() =>
             {
-                if (_geoTiffLoadingSnackbar != null)
-                {
-                    Snackbar.Remove(_geoTiffLoadingSnackbar);
-                    _geoTiffLoadingSnackbar = null;
-                }
+                Snackbar.Clear();
+                _geoTiffLoadingSnackbar = null;
+
+                if (finalMessage != null)
+                    Snackbar.Add(finalMessage, finalSeverity);
             });
+            _suppressSnackbars = false;
         }
     }
 
@@ -892,6 +912,9 @@ public partial class GenerateTerrain
             _heightmapSourceType != HeightmapSourceType.GeoTiffDirectory)
             return;
 
+        // Suppress intermediate snackbars during crop elevation recalculation
+        _suppressSnackbars = true;
+
         try
         {
             string? geoTiffPathToRead = null;
@@ -948,6 +971,12 @@ public partial class GenerateTerrain
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Could not recalculate cropped elevation: {ex.Message}. Using full image values.");
         }
+        finally
+        {
+            // Clear any intermediate snackbars that accumulated during crop recalculation
+            await InvokeAsync(() => { Snackbar.Clear(); });
+            _suppressSnackbars = false;
+        }
     }
 
     private string GetHeightmapSourceDescription()
@@ -997,144 +1026,162 @@ public partial class GenerateTerrain
 
     private async void OnPresetImported(TerrainPresetResult result)
     {
-        // Apply imported settings to the page
-        if (!string.IsNullOrEmpty(result.TerrainName))
-            _terrainName = result.TerrainName;
+        // Suppress intermediate snackbars during preset import
+        _suppressSnackbars = true;
 
-        if (result.MaxHeight.HasValue)
-            _maxHeight = result.MaxHeight.Value;
-
-        if (result.MetersPerPixel.HasValue)
-            _metersPerPixel = result.MetersPerPixel.Value;
-
-        if (result.TerrainBaseHeight.HasValue)
-            _terrainBaseHeight = result.TerrainBaseHeight.Value;
-
-        if (!string.IsNullOrEmpty(result.HeightmapPath))
-            _heightmapPath = result.HeightmapPath;
-
-        // ========== Apply enhanced preset settings ==========
-
-        // Apply heightmap source type
-        if (result.HeightmapSourceType.HasValue)
-            _heightmapSourceType = result.HeightmapSourceType.Value;
-
-        // Apply terrain size BEFORE reading GeoTIFF (needed for crop calculations)
-        if (result.TerrainSize.HasValue)
-            _terrainSize = result.TerrainSize.Value;
-
-        // Store pending crop offsets (will be applied after GeoTIFF metadata is loaded)
-        // CRITICAL: We need to store these BEFORE calling ReadGeoTiffMetadata because
-        // the CropAnchorSelector component will recenter when it receives new GeoTIFF dimensions
-        if (result.CropOffsetX.HasValue && result.CropOffsetY.HasValue &&
-            result.CropWidth.HasValue && result.CropHeight.HasValue &&
-            result.CropWidth.Value > 0 && result.CropHeight.Value > 0)
+        try
         {
-            _pendingCropOffsets = (result.CropOffsetX.Value, result.CropOffsetY.Value);
+            // Apply imported settings to the page
+            if (!string.IsNullOrEmpty(result.TerrainName))
+                _terrainName = result.TerrainName;
 
-            // Log to file only - technical preset import detail
-            Console.WriteLine(
-                $"Preset contains crop settings: offset ({result.CropOffsetX}, {result.CropOffsetY}), " +
-                $"size {result.CropWidth}x{result.CropHeight} - will apply after GeoTIFF loads");
-        }
-        else
-        {
-            _pendingCropOffsets = null;
-        }
+            if (result.MaxHeight.HasValue)
+                _maxHeight = result.MaxHeight.Value;
 
-        // Apply GeoTIFF paths and trigger metadata read
-        // The GeoTIFF must be re-loaded to populate dimensions and bounding box
-        var geoTiffLoaded = false;
+            if (result.MetersPerPixel.HasValue)
+                _metersPerPixel = result.MetersPerPixel.Value;
 
-        if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile &&
-            !string.IsNullOrEmpty(result.GeoTiffPath))
-        {
-            _geoTiffPath = result.GeoTiffPath;
-            _geoTiffDirectory = null; // Clear the other source
+            if (result.TerrainBaseHeight.HasValue)
+                _terrainBaseHeight = result.TerrainBaseHeight.Value;
 
-            if (File.Exists(result.GeoTiffPath))
+            if (!string.IsNullOrEmpty(result.HeightmapPath))
+                _heightmapPath = result.HeightmapPath;
+
+            // ========== Apply enhanced preset settings ==========
+
+            // Apply heightmap source type
+            if (result.HeightmapSourceType.HasValue)
+                _heightmapSourceType = result.HeightmapSourceType.Value;
+
+            // Apply terrain size BEFORE reading GeoTIFF (needed for crop calculations)
+            if (result.TerrainSize.HasValue)
+                _terrainSize = result.TerrainSize.Value;
+
+            // Store pending crop offsets (will be applied after GeoTIFF metadata is loaded)
+            // CRITICAL: We need to store these BEFORE calling ReadGeoTiffMetadata because
+            // the CropAnchorSelector component will recenter when it receives new GeoTIFF dimensions
+            if (result.CropOffsetX.HasValue && result.CropOffsetY.HasValue &&
+                result.CropWidth.HasValue && result.CropHeight.HasValue &&
+                result.CropWidth.Value > 0 && result.CropHeight.Value > 0)
             {
-                // Read GeoTIFF metadata to restore bounding box and geo info
-                await ReadGeoTiffMetadata();
-                geoTiffLoaded = true;
+                _pendingCropOffsets = (result.CropOffsetX.Value, result.CropOffsetY.Value);
+
+                // Log to file only - technical preset import detail
+                Console.WriteLine(
+                    $"Preset contains crop settings: offset ({result.CropOffsetX}, {result.CropOffsetY}), " +
+                    $"size {result.CropWidth}x{result.CropHeight} - will apply after GeoTIFF loads");
             }
             else
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"GeoTIFF file not found: {result.GeoTiffPath}. Please browse to select the file.");
+                _pendingCropOffsets = null;
             }
-        }
-        else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
-                 !string.IsNullOrEmpty(result.GeoTiffDirectory))
-        {
-            _geoTiffDirectory = result.GeoTiffDirectory;
-            _geoTiffPath = null; // Clear the other source
 
-            if (Directory.Exists(result.GeoTiffDirectory))
+            // Apply GeoTIFF paths and trigger metadata read
+            // The GeoTIFF must be re-loaded to populate dimensions and bounding box
+            var geoTiffLoaded = false;
+
+            if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffFile &&
+                !string.IsNullOrEmpty(result.GeoTiffPath))
             {
-                await ReadGeoTiffMetadata();
-                geoTiffLoaded = true;
+                _geoTiffPath = result.GeoTiffPath;
+                _geoTiffDirectory = null; // Clear the other source
+
+                if (File.Exists(result.GeoTiffPath))
+                {
+                    // Read GeoTIFF metadata to restore bounding box and geo info
+                    // Note: ReadGeoTiffMetadata manages its own suppression internally,
+                    // but we keep our outer suppression active throughout the preset import
+                    await ReadGeoTiffMetadata();
+                    geoTiffLoaded = true;
+                }
+                else
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"GeoTIFF file not found: {result.GeoTiffPath}. Please browse to select the file.");
+                }
             }
-            else
+            else if (result.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
+                     !string.IsNullOrEmpty(result.GeoTiffDirectory))
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"GeoTIFF directory not found: {result.GeoTiffDirectory}. Please browse to select the folder.");
+                _geoTiffDirectory = result.GeoTiffDirectory;
+                _geoTiffPath = null; // Clear the other source
+
+                if (Directory.Exists(result.GeoTiffDirectory))
+                {
+                    await ReadGeoTiffMetadata();
+                    geoTiffLoaded = true;
+                }
+                else
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"GeoTIFF directory not found: {result.GeoTiffDirectory}. Please browse to select the folder.");
+                }
+            }
+
+            // Apply terrain generation options
+            if (result.UpdateTerrainBlock.HasValue)
+                _updateTerrainBlock = result.UpdateTerrainBlock.Value;
+
+            if (result.EnableCrossMaterialHarmonization.HasValue)
+                _enableCrossMaterialHarmonization = result.EnableCrossMaterialHarmonization.Value;
+
+            if (result.EnableCrossroadToTJunctionConversion.HasValue)
+                _enableCrossroadToTJunctionConversion = result.EnableCrossroadToTJunctionConversion.Value;
+
+            if (result.EnableExtendedOsmJunctionDetection.HasValue)
+                _enableExtendedOsmJunctionDetection = result.EnableExtendedOsmJunctionDetection.Value;
+
+            if (result.GlobalJunctionDetectionRadiusMeters.HasValue)
+                _globalJunctionDetectionRadiusMeters = result.GlobalJunctionDetectionRadiusMeters.Value;
+
+            if (result.GlobalJunctionBlendDistanceMeters.HasValue)
+                _globalJunctionBlendDistanceMeters = result.GlobalJunctionBlendDistanceMeters.Value;
+
+            if (result.ExcludeBridgesFromTerrain.HasValue)
+                _excludeBridgesFromTerrain = result.ExcludeBridgesFromTerrain.Value;
+
+            if (result.ExcludeTunnelsFromTerrain.HasValue)
+                _excludeTunnelsFromTerrain = result.ExcludeTunnelsFromTerrain.Value;
+
+            // Apply GeoTIFF metadata from preset (as fallback if GeoTIFF couldn't be loaded)
+            if (!geoTiffLoaded)
+            {
+                if (result.GeoTiffOriginalWidth.HasValue)
+                    _geoTiffOriginalWidth = result.GeoTiffOriginalWidth.Value;
+                if (result.GeoTiffOriginalHeight.HasValue)
+                    _geoTiffOriginalHeight = result.GeoTiffOriginalHeight.Value;
+                if (!string.IsNullOrEmpty(result.GeoTiffProjectionName))
+                    _geoTiffProjectionName = result.GeoTiffProjectionName;
+            }
+
+            // CRITICAL: Renormalize order values to be contiguous (0, 1, 2, 3...)
+            // The preset import may have set non-contiguous order values
+            RenormalizeMaterialOrder();
+
+            // Refresh the drop container to reflect the new order in the UI
+            _dropContainer?.Refresh();
+
+            // Trigger UI refresh
+            await InvokeAsync(StateHasChanged);
+
+            // If GeoTIFF was loaded and we have pending crop offsets, apply them now
+            // We need to wait for the UI to render the CropAnchorSelector first
+            if (geoTiffLoaded && _pendingCropOffsets.HasValue)
+            {
+                // Use a small delay to ensure the CropAnchorSelector component is rendered
+                await Task.Delay(100);
+                await ApplyPendingCropOffsets();
             }
         }
-
-        // Apply terrain generation options
-        if (result.UpdateTerrainBlock.HasValue)
-            _updateTerrainBlock = result.UpdateTerrainBlock.Value;
-
-        if (result.EnableCrossMaterialHarmonization.HasValue)
-            _enableCrossMaterialHarmonization = result.EnableCrossMaterialHarmonization.Value;
-
-        if (result.EnableCrossroadToTJunctionConversion.HasValue)
-            _enableCrossroadToTJunctionConversion = result.EnableCrossroadToTJunctionConversion.Value;
-
-        if (result.EnableExtendedOsmJunctionDetection.HasValue)
-            _enableExtendedOsmJunctionDetection = result.EnableExtendedOsmJunctionDetection.Value;
-
-        if (result.GlobalJunctionDetectionRadiusMeters.HasValue)
-            _globalJunctionDetectionRadiusMeters = result.GlobalJunctionDetectionRadiusMeters.Value;
-
-        if (result.GlobalJunctionBlendDistanceMeters.HasValue)
-            _globalJunctionBlendDistanceMeters = result.GlobalJunctionBlendDistanceMeters.Value;
-
-        if (result.ExcludeBridgesFromTerrain.HasValue)
-            _excludeBridgesFromTerrain = result.ExcludeBridgesFromTerrain.Value;
-
-        if (result.ExcludeTunnelsFromTerrain.HasValue)
-            _excludeTunnelsFromTerrain = result.ExcludeTunnelsFromTerrain.Value;
-
-        // Apply GeoTIFF metadata from preset (as fallback if GeoTIFF couldn't be loaded)
-        if (!geoTiffLoaded)
+        finally
         {
-            if (result.GeoTiffOriginalWidth.HasValue)
-                _geoTiffOriginalWidth = result.GeoTiffOriginalWidth.Value;
-            if (result.GeoTiffOriginalHeight.HasValue)
-                _geoTiffOriginalHeight = result.GeoTiffOriginalHeight.Value;
-            if (!string.IsNullOrEmpty(result.GeoTiffProjectionName))
-                _geoTiffProjectionName = result.GeoTiffProjectionName;
-        }
-
-        // CRITICAL: Renormalize order values to be contiguous (0, 1, 2, 3...)
-        // The preset import may have set non-contiguous order values
-        RenormalizeMaterialOrder();
-
-        // Refresh the drop container to reflect the new order in the UI
-        _dropContainer?.Refresh();
-
-        // Trigger UI refresh
-        await InvokeAsync(StateHasChanged);
-
-        // If GeoTIFF was loaded and we have pending crop offsets, apply them now
-        // We need to wait for the UI to render the CropAnchorSelector first
-        if (geoTiffLoaded && _pendingCropOffsets.HasValue)
-        {
-            // Use a small delay to ensure the CropAnchorSelector component is rendered
-            await Task.Delay(100);
-            await ApplyPendingCropOffsets();
+            // Clear all intermediate snackbars and show final preset import message
+            await InvokeAsync(() =>
+            {
+                Snackbar.Clear();
+                Snackbar.Add("Preset imported successfully", Severity.Success);
+            });
+            _suppressSnackbars = false;
         }
     }
 
@@ -1311,6 +1358,9 @@ public partial class GenerateTerrain
                 config => { config.VisibleStateDuration = int.MaxValue; });
         });
 
+        var generationSucceeded = false;
+        string? finalSuccessMessage = null;
+
         try
         {
             // Execute terrain generation via orchestrator (runs on background thread)
@@ -1318,20 +1368,18 @@ public partial class GenerateTerrain
 
             if (result.Success)
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
-                });
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Terrain file saved to: {GetOutputPath()}");
 
                 // Run post-generation tasks
                 await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters)
                     .ConfigureAwait(false);
-                await InvokeAsync(() => { Snackbar.Add("Post-processing complete!", Severity.Success); });
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
+
+                generationSucceeded = true;
+                finalSuccessMessage = $"Terrain generated successfully: {GetOutputPath()}";
 
                 // WIZARD MODE: Update state and show completion dialog
                 if (WizardMode && WizardState != null)
@@ -1357,17 +1405,22 @@ public partial class GenerateTerrain
         }
         finally
         {
-            // Remove the terrain generation snackbar
+            _isGenerating = false;
+
+            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+            _suppressSnackbars = true;
             await InvokeAsync(() =>
             {
-                if (_terrainGenerationSnackbar != null)
+                Snackbar.Clear();
+
+                if (generationSucceeded && finalSuccessMessage != null)
                 {
-                    Snackbar.Remove(_terrainGenerationSnackbar);
-                    _terrainGenerationSnackbar = null;
+                    Snackbar.Add(finalSuccessMessage, Severity.Success);
                 }
             });
+            _suppressSnackbars = false;
 
-            _isGenerating = false;
+            _terrainGenerationSnackbar = null;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -1479,10 +1532,22 @@ public partial class GenerateTerrain
         if (!CanAnalyze()) return;
 
         _isAnalyzing = true;
+        _suppressSnackbars = true;
         await InvokeAsync(StateHasChanged);
 
         // Yield to allow UI to render the loading state before starting heavy work
         await Task.Yield();
+
+        // Show persistent snackbar for analysis (bypasses suppression since we add it directly)
+        Snackbar? analysisSnackbar = null;
+        await InvokeAsync(() =>
+        {
+            analysisSnackbar = Snackbar.Add("Analyzing terrain... This may take a moment.", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+        });
+
+        string? finalMessage = null;
+        Severity finalSeverity = Severity.Success;
 
         try
         {
@@ -1497,12 +1562,9 @@ public partial class GenerateTerrain
 
             if (result.Success && result.AnalyzerResult != null)
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add(
-                        $"Analysis complete: {_analysisState.SplineCount} splines, {_analysisState.TotalJunctionCount} junctions",
-                        Severity.Success);
-                });
+                finalMessage =
+                    $"Analysis complete: {_analysisState.SplineCount} splines, {_analysisState.TotalJunctionCount} junctions";
+                finalSeverity = Severity.Success;
 
                 // Save debug image to disk
                 if (_analysisState.DebugImageData != null)
@@ -1517,17 +1579,30 @@ public partial class GenerateTerrain
             }
             else
             {
-                await InvokeAsync(() => { Snackbar.Add(result.ErrorMessage ?? "Analysis failed", Severity.Error); });
+                finalMessage = result.ErrorMessage ?? "Analysis failed";
+                finalSeverity = Severity.Error;
             }
         }
         catch (Exception ex)
         {
             ShowException(ex);
-            await InvokeAsync(() => { Snackbar.Add($"Error during analysis: {ex.Message}", Severity.Error); });
+            finalMessage = $"Error during analysis: {ex.Message}";
+            finalSeverity = Severity.Error;
         }
         finally
         {
             _isAnalyzing = false;
+
+            // Clear all intermediate snackbars and show final message
+            await InvokeAsync(() =>
+            {
+                Snackbar.Clear();
+
+                if (finalMessage != null)
+                    Snackbar.Add(finalMessage, finalSeverity);
+            });
+            _suppressSnackbars = false;
+
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -1597,6 +1672,9 @@ public partial class GenerateTerrain
                 config => { config.VisibleStateDuration = int.MaxValue; });
         });
 
+        var generationSucceeded = false;
+        string? finalSuccessMessage = null;
+
         try
         {
             // Execute terrain generation with pre-analyzed network (runs on background thread)
@@ -1605,23 +1683,21 @@ public partial class GenerateTerrain
 
             if (result.Success)
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add($"Terrain generated successfully: {GetOutputPath()}", Severity.Success);
-                });
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Terrain file saved to: {GetOutputPath()}");
 
                 // Run post-generation tasks
                 await _generationOrchestrator.RunPostGenerationTasksAsync(_state, result.Parameters)
                     .ConfigureAwait(false);
-                await InvokeAsync(() => { Snackbar.Add("Post-processing complete!", Severity.Success); });
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
 
                 // Clear analysis state after successful generation
                 _analysisState.Reset();
+
+                generationSucceeded = true;
+                finalSuccessMessage = $"Terrain generated successfully: {GetOutputPath()}";
             }
             else
             {
@@ -1640,17 +1716,22 @@ public partial class GenerateTerrain
         }
         finally
         {
-            // Remove the terrain generation snackbar
+            _isGenerating = false;
+
+            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+            _suppressSnackbars = true;
             await InvokeAsync(() =>
             {
-                if (_terrainGenerationSnackbar != null)
+                Snackbar.Clear();
+
+                if (generationSucceeded && finalSuccessMessage != null)
                 {
-                    Snackbar.Remove(_terrainGenerationSnackbar);
-                    _terrainGenerationSnackbar = null;
+                    Snackbar.Add(finalSuccessMessage, Severity.Success);
                 }
             });
+            _suppressSnackbars = false;
 
-            _isGenerating = false;
+            _terrainGenerationSnackbar = null;
             await InvokeAsync(StateHasChanged);
         }
     }

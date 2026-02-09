@@ -74,6 +74,7 @@ public partial class CopyAssets
     private string _lastCopiedSourceName { get; set; }
     private string _initialWorkingDirectory { get; set; }
     private bool _isSelectingAnotherSource { get; set; }
+    private volatile bool _suppressSnackbars;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -222,32 +223,55 @@ public partial class CopyAssets
             var copyCount = _selectedItems.Count;
             var sourceName = _levelNameCopyFrom;
 
-            await Task.Run(() =>
+            try
             {
-                var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                Reader.DoCopyAssets(selected);
-            });
+                await Task.Run(() =>
+                {
+                    var selected = _selectedItems.Select(y => y.Identifier).ToList();
+                    Reader.DoCopyAssets(selected);
+                });
 
-            Snackbar.Remove(_staticSnackbar);
+                Snackbar.Remove(_staticSnackbar);
 
-            // Handle duplicate materials warning
-            var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
-            if (!string.IsNullOrEmpty(duplicateMaterialsPath))
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"Duplicate Materials found. See logfile {duplicateMaterialsPath}");
+                // Handle duplicate materials warning
+                var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
+                if (!string.IsNullOrEmpty(duplicateMaterialsPath))
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Duplicate Materials found. See logfile {duplicateMaterialsPath}");
 
-            // Write all operation logs (info, warnings, errors) - also in wizard mode
-            Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
+                // Write all operation logs (info, warnings, errors) - also in wizard mode
+                Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
 
-            // UPDATE WIZARD STATE
-            UpdateWizardStateAfterCopy();
+                // UPDATE WIZARD STATE
+                UpdateWizardStateAfterCopy();
 
-            _copyCompleted = true;
-            _copiedAssetsCount = copyCount;
-            _totalCopiedAssetsCount += copyCount;
-            _lastCopiedSourceName = sourceName;
+                _copyCompleted = true;
+                _copiedAssetsCount = copyCount;
+                _totalCopiedAssetsCount += copyCount;
+                _lastCopiedSourceName = sourceName;
+            }
+            finally
+            {
+                // 1. Suppress new snackbars from PubSub consumer
+                _suppressSnackbars = true;
 
-            StateHasChanged();
+                // 2. Clear all existing/queued snackbars and show final message
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Clear();
+
+                    if (_copyCompleted)
+                    {
+                        Snackbar.Add($"Copied {copyCount} asset(s) from {sourceName} to {WizardState.LevelName} successfully!", Severity.Success);
+                    }
+                });
+
+                // 3. Re-enable snackbars for future interactions
+                _suppressSnackbars = false;
+
+                _staticSnackbar = null;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -860,22 +884,41 @@ public partial class CopyAssets
             {
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
                 if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
+                {
+                    // ALWAYS add to lists (for drawer/logs) regardless of suppression
                     switch (msg.MessageType)
                     {
                         case PubSubMessageType.Info:
                             _messages.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Info);
                             break;
                         case PubSubMessageType.Warning:
                             _warnings.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Warning);
                             break;
-
                         case PubSubMessageType.Error:
                             _errors.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Error);
                             break;
                     }
+
+                    // Only show snackbar if not suppressed
+                    if (!_suppressSnackbars)
+                    {
+                        await InvokeAsync(() =>
+                        {
+                            switch (msg.MessageType)
+                            {
+                                case PubSubMessageType.Info:
+                                    Snackbar.Add(msg.Message, Severity.Info);
+                                    break;
+                                case PubSubMessageType.Warning:
+                                    Snackbar.Add(msg.Message, Severity.Warning);
+                                    break;
+                                case PubSubMessageType.Error:
+                                    Snackbar.Add(msg.Message, Severity.Error);
+                                    break;
+                            }
+                        });
+                    }
+                }
             }
         });
     }
@@ -1011,28 +1054,51 @@ public partial class CopyAssets
             var copyCount = _selectedItems.Count;
             var sourceName = _levelNameCopyFrom;
 
-            await Task.Run(() =>
+            try
             {
-                var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                Reader.DoCopyAssets(selected);
-                _showDeployButton = true;
-            });
-            Snackbar.Remove(_staticSnackbar);
+                await Task.Run(() =>
+                {
+                    var selected = _selectedItems.Select(y => y.Identifier).ToList();
+                    Reader.DoCopyAssets(selected);
+                    _showDeployButton = true;
+                });
+                Snackbar.Remove(_staticSnackbar);
 
-            var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
-            if (!string.IsNullOrEmpty(duplicateMaterialsPath))
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
+                var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
+                if (!string.IsNullOrEmpty(duplicateMaterialsPath))
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Duplicate Materials found. You should resolve this if there are broken textures after shrinking. See logfile {duplicateMaterialsPath}");
 
-            // Write all operation logs (info, warnings, errors)
-            Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
+                // Write all operation logs (info, warnings, errors)
+                Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
 
-            // Set copy completed state
-            _copyCompleted = true;
-            _copiedAssetsCount = copyCount;
-            _lastCopiedSourceName = sourceName;
+                // Set copy completed state
+                _copyCompleted = true;
+                _copiedAssetsCount = copyCount;
+                _lastCopiedSourceName = sourceName;
+            }
+            finally
+            {
+                // 1. Suppress new snackbars from PubSub consumer
+                _suppressSnackbars = true;
 
-            StateHasChanged();
+                // 2. Clear all existing/queued snackbars and show final message
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Clear();
+
+                    if (_copyCompleted)
+                    {
+                        Snackbar.Add($"Copied {copyCount} asset(s) from {sourceName} successfully!", Severity.Success);
+                    }
+                });
+
+                // 3. Re-enable snackbars for future interactions
+                _suppressSnackbars = false;
+
+                _staticSnackbar = null;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 

@@ -26,6 +26,7 @@ public partial class CopyTerrains
     private HashSet<GridFileListItem> _selectedItems = new();
     private Snackbar _staticSnackbar;
     private Snackbar _unzipSnackbarCopyFrom;
+    private volatile bool _suppressSnackbars;
     private string height;
     private MudTable<GridFileListItem> table;
     private string width;
@@ -479,22 +480,38 @@ public partial class CopyTerrains
             {
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
                 if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
+                {
+                    // ALWAYS add to lists (for drawer/logs) regardless of suppression
                     switch (msg.MessageType)
                     {
                         case PubSubMessageType.Info:
                             _messages.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Info);
                             break;
                         case PubSubMessageType.Warning:
                             _warnings.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Warning);
                             break;
-
                         case PubSubMessageType.Error:
                             _errors.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Error);
                             break;
                     }
+
+                    // Only show snackbar if not suppressed
+                    if (!_suppressSnackbars)
+                    {
+                        switch (msg.MessageType)
+                        {
+                            case PubSubMessageType.Info:
+                                Snackbar.Add(msg.Message, Severity.Info);
+                                break;
+                            case PubSubMessageType.Warning:
+                                Snackbar.Add(msg.Message, Severity.Warning);
+                                break;
+                            case PubSubMessageType.Error:
+                                Snackbar.Add(msg.Message, Severity.Error);
+                                break;
+                        }
+                    }
+                }
             }
         });
     }
@@ -643,8 +660,19 @@ public partial class CopyTerrains
             // Clear wizard terrain size after copying
             PathResolver.WizardTerrainSize = null;
 
+            // Suppress new snackbars from PubSub consumer
+            _suppressSnackbars = true;
+
+            // Clear all existing/queued snackbars and show final message
             Snackbar.Remove(_staticSnackbar);
-            Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
+            await InvokeAsync(() =>
+            {
+                Snackbar.Clear();
+                Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
+            });
+
+            // Re-enable snackbars for future interactions
+            _suppressSnackbars = false;
 
             // Write operation logs (info, warnings, errors)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");
@@ -1057,8 +1085,20 @@ public partial class CopyTerrains
                 Reader.DoCopyAssets(selected);
                 _showDeployButton = true;
             });
+
+            // Suppress new snackbars from PubSub consumer
+            _suppressSnackbars = true;
+
+            // Clear all existing/queued snackbars and show final message
             Snackbar.Remove(_staticSnackbar);
-            Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
+            await InvokeAsync(() =>
+            {
+                Snackbar.Clear();
+                Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
+            });
+
+            // Re-enable snackbars for future interactions
+            _suppressSnackbars = false;
 
             // Write operation logs (info, warnings, errors)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");

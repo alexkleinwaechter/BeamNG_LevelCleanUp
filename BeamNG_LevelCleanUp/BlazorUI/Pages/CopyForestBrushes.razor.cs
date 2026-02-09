@@ -29,6 +29,7 @@ public partial class CopyForestBrushes
     private string height;
     private MudTable<GridFileListItem> table;
     private string width;
+    private volatile bool _suppressSnackbars;
 
     [Parameter]
     [SupplyParameterFromQuery(Name = "wizardMode")]
@@ -444,11 +445,29 @@ public partial class CopyForestBrushes
                 _fileSelectDisabled = false;
             }
         });
-        Snackbar.Remove(_staticSnackbar);
+
+        // 1. Suppress new snackbars from PubSub consumer
+        _suppressSnackbars = true;
+
+        // 2. Clear all existing/queued snackbars and show final message
+        await InvokeAsync(() =>
+        {
+            Snackbar.Remove(_staticSnackbar);
+            Snackbar.Clear();
+        });
+
         FillCopyList();
-        Snackbar.Add(
-            $"Scanning finished. Found {BindingListCopy.Count} forest brush(es). Please select brushes to copy.",
-            Severity.Success);
+
+        await InvokeAsync(() =>
+        {
+            Snackbar.Add(
+                $"Scanning finished. Found {BindingListCopy.Count} forest brush(es). Please select brushes to copy.",
+                Severity.Success);
+        });
+
+        // 3. Re-enable snackbars for future interactions
+        _suppressSnackbars = false;
+        _staticSnackbar = null;
 
         await InvokeAsync(StateHasChanged);
     }
@@ -464,21 +483,41 @@ public partial class CopyForestBrushes
             {
                 var msg = await PubSubChannel.ch.Reader.ReadAsync();
                 if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
+                {
+                    // ALWAYS add to lists (for drawer/logs) regardless of suppression
                     switch (msg.MessageType)
                     {
                         case PubSubMessageType.Info:
                             _messages.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Info);
                             break;
                         case PubSubMessageType.Warning:
                             _warnings.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Warning);
                             break;
                         case PubSubMessageType.Error:
                             _errors.Add(msg.Message);
-                            Snackbar.Add(msg.Message, Severity.Error);
                             break;
                     }
+
+                    // Only show snackbar if not suppressed
+                    if (!_suppressSnackbars)
+                    {
+                        await InvokeAsync(() =>
+                        {
+                            switch (msg.MessageType)
+                            {
+                                case PubSubMessageType.Info:
+                                    Snackbar.Add(msg.Message, Severity.Info);
+                                    break;
+                                case PubSubMessageType.Warning:
+                                    Snackbar.Add(msg.Message, Severity.Warning);
+                                    break;
+                                case PubSubMessageType.Error:
+                                    Snackbar.Add(msg.Message, Severity.Error);
+                                    break;
+                            }
+                        });
+                    }
+                }
             }
         });
     }
@@ -596,7 +635,20 @@ public partial class CopyForestBrushes
                 Reader.DoCopyAssets(selected);
             });
 
-            Snackbar.Remove(_staticSnackbar);
+            // 1. Suppress new snackbars from PubSub consumer
+            _suppressSnackbars = true;
+
+            // 2. Clear all existing/queued snackbars and show final message
+            await InvokeAsync(() =>
+            {
+                Snackbar.Remove(_staticSnackbar);
+                Snackbar.Clear();
+                Snackbar.Add($"Successfully copied {copyCount} forest brush(es) from {sourceName}.", Severity.Success);
+            });
+
+            // 3. Re-enable snackbars for future interactions
+            _suppressSnackbars = false;
+            _staticSnackbar = null;
 
             // Write operation logs (even in wizard mode)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "ForestBrushCopy");
@@ -799,14 +851,29 @@ public partial class CopyForestBrushes
             }
         });
 
-        Snackbar.Remove(_staticSnackbar);
+        // 1. Suppress new snackbars from PubSub consumer
+        _suppressSnackbars = true;
+
+        // 2. Clear all existing/queued snackbars and show final message
+        await InvokeAsync(() =>
+        {
+            Snackbar.Remove(_staticSnackbar);
+            Snackbar.Clear();
+        });
 
         BindingListCopy = new List<GridFileListItem>();
         FillCopyList();
 
-        Snackbar.Add(
-            $"Found {BindingListCopy.Count} forest brushes in {_levelNameCopyFrom}. Select brushes to copy.",
-            Severity.Success);
+        await InvokeAsync(() =>
+        {
+            Snackbar.Add(
+                $"Found {BindingListCopy.Count} forest brushes in {_levelNameCopyFrom}. Select brushes to copy.",
+                Severity.Success);
+        });
+
+        // 3. Re-enable snackbars for future interactions
+        _suppressSnackbars = false;
+        _staticSnackbar = null;
 
         await InvokeAsync(StateHasChanged);
     }
@@ -954,7 +1021,21 @@ public partial class CopyForestBrushes
                 Reader.DoCopyAssets(selected);
                 _showDeployButton = true;
             });
-            Snackbar.Remove(_staticSnackbar);
+
+            // 1. Suppress new snackbars from PubSub consumer
+            _suppressSnackbars = true;
+
+            // 2. Clear all existing/queued snackbars and show final message
+            await InvokeAsync(() =>
+            {
+                Snackbar.Remove(_staticSnackbar);
+                Snackbar.Clear();
+                Snackbar.Add($"Successfully copied {copyCount} forest brush(es) from {sourceName}.", Severity.Success);
+            });
+
+            // 3. Re-enable snackbars for future interactions
+            _suppressSnackbars = false;
+            _staticSnackbar = null;
 
             // Write all logs (info, warnings, errors) using consistent naming
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "ForestBrushCopy");
