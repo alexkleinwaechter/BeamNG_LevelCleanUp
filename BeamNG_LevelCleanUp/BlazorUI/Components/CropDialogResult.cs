@@ -19,6 +19,11 @@ public class CropDialogResult
     public int OffsetY { get; init; }
 
     /// <summary>
+    /// The target terrain size in pixels. May differ from the original if the user changed it in the dialog.
+    /// </summary>
+    public int TargetSize { get; init; }
+
+    /// <summary>
     /// The geographic bounding box for the selected region.
     /// This is recalculated based on the selection position within the original image.
     /// </summary>

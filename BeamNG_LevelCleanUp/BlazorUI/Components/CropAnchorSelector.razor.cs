@@ -641,7 +641,21 @@ public partial class CropAnchorSelector
 
         if (result is { Canceled: false, Data: CropDialogResult cropResult })
         {
-            // Apply the result from the dialog
+            // Propagate terrain size change to parent if it was modified in the dialog
+            if (cropResult.TargetSize > 0 && cropResult.TargetSize != TargetSize)
+            {
+                TargetSize = cropResult.TargetSize;
+
+                // CRITICAL: Sync _previousTargetSize so that the upcoming OnParametersSet
+                // (triggered by the parent re-render after TargetSizeChanged) does NOT
+                // detect a TargetSize change and overwrite our dialog offsets with its
+                // own center-preserving recalculation.
+                _previousTargetSize = TargetSize;
+
+                await TargetSizeChanged.InvokeAsync(TargetSize);
+            }
+
+            // Apply the exact offsets from the dialog
             CropOffsetX = cropResult.OffsetX;
             CropOffsetY = cropResult.OffsetY;
             ClampOffsets();

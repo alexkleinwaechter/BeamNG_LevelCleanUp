@@ -430,12 +430,35 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
         await JS.InvokeVoidAsync("window.open", url, "_blank");
     }
 
+    private void OnTargetSizeChanged(int newSize)
+    {
+        if (newSize == TargetSize) return;
+
+        // Calculate the center of the current selection in source pixels
+        var oldSelectionSize = CalculateSelectionSizePixels();
+        var centerX = CropOffsetX + oldSelectionSize / 2.0;
+        var centerY = CropOffsetY + oldSelectionSize / 2.0;
+
+        // Update terrain size
+        TargetSize = newSize;
+
+        // Recalculate offset to keep the same geographic center
+        var newSelectionSize = CalculateSelectionSizePixels();
+        CropOffsetX = (int)Math.Round(centerX - newSelectionSize / 2.0);
+        CropOffsetY = (int)Math.Round(centerY - newSelectionSize / 2.0);
+
+        ClampOffsets();
+        RecalculateSelectionBoundingBox();
+        StateHasChanged();
+    }
+
     private void Confirm()
     {
         var result = new CropDialogResult
         {
             OffsetX = CropOffsetX,
             OffsetY = CropOffsetY,
+            TargetSize = TargetSize,
             SelectionBoundingBox = _selectionBoundingBox
         };
         MudDialog.Close(DialogResult.Ok(result));
