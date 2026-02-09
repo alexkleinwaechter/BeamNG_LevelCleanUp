@@ -80,8 +80,8 @@ public class TerrainGenerationOrchestrator
                 // Determine effective bounding box (cropped or full)
                 var effectiveBoundingBox = GetEffectiveBoundingBox(state);
 
-                // Create coordinate transformer
-                var coordinateTransformer = CreateCoordinateTransformer(state, effectiveBoundingBox);
+                // Create coordinate transformer (IDisposable - wraps GDAL resources)
+                using var coordinateTransformer = CreateCoordinateTransformer(state, effectiveBoundingBox);
                 
                 // Create factory for thread-safe parallel OSM layer export
                 var transformerFactory = CreateCoordinateTransformerFactory(state, effectiveBoundingBox);

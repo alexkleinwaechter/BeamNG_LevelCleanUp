@@ -120,13 +120,15 @@ public class UnifiedTerrainBlender
         perfLog?.Timing($"  ComputeDistanceField: {sw.ElapsedMilliseconds}ms");
 
         // Step 4: Build elevation map with per-pixel source spline tracking (respecting core ownership)
+        // Pass the distance field for early rejection of pixels far from any road
         TerrainCreationLogger.Current?.InfoFileOnly("Step 4: Building elevation map with ownership...");
         sw.Restart();
         var elevationResult = _elevationMapBuilder.BuildElevationMapWithOwnership(
             network, width, height, metersPerPixel,
             protectionResult.ProtectionMask,
             protectionResult.OwnershipMap,
-            protectionResult.ElevationMap);
+            protectionResult.ElevationMap,
+            distanceField);
         perfLog?.Timing($"  BuildElevationMapWithOwnership: {sw.ElapsedMilliseconds}ms");
 
         // Step 5: Apply protected blending
@@ -167,5 +169,14 @@ public class UnifiedTerrainBlender
 
         _postProcessingSmoother.ApplyPostProcessingSmoothing(
             heightMap, _lastDistanceField, network, metersPerPixel);
+    }
+
+    /// <summary>
+    /// Clears cached data (distance field) to release memory after terrain generation is complete.
+    /// Call this after all post-processing is done and the distance field is no longer needed.
+    /// </summary>
+    public void ClearCachedData()
+    {
+        _lastDistanceField = null;
     }
 }

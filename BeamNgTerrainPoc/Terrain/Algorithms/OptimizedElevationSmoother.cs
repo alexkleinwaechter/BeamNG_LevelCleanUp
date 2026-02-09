@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
@@ -12,28 +13,53 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms;
 public class OptimizedElevationSmoother : IHeightCalculator
 {
     /// <summary>
-    ///     Calculates target elevations for road cross-sections using optimized smoothing.
-    ///     Supports both Box filter (prefix-sum) and Butterworth low-pass filter based on parameters.
+    ///     Legacy overload: wraps RoadGeometry cross-sections into UnifiedCrossSections
+    ///     and delegates to the primary implementation.
+    /// </summary>
+    public void CalculateTargetElevations(RoadGeometry geometry, float[,] heightMap, float metersPerPixel)
+    {
+        var crossSections = geometry.CrossSections;
+        var parameters = geometry.Parameters;
+
+        // Convert CrossSections â†’ UnifiedCrossSections for the primary implementation
+        var unified = new List<UnifiedCrossSection>(crossSections.Count);
+        foreach (var cs in crossSections)
+            unified.Add(UnifiedCrossSection.FromCrossSection(cs, cs.PathId, 0, 0));
+
+        CalculateTargetElevations(unified, parameters, heightMap, metersPerPixel);
+
+        // Copy results back to the original CrossSection objects
+        for (var i = 0; i < crossSections.Count; i++)
+            crossSections[i].TargetElevation = unified[i].TargetElevation;
+    }
+
+    /// <summary>
+    ///     Primary implementation: calculates target elevations for UnifiedCrossSections directly.
+    ///     Avoids the RoadGeometry/CrossSection conversion roundtrip.
     ///     Processing pipeline:
     ///     1. Sample terrain elevations at cross-section centers
     ///     2. Apply longitudinal smoothing (Box or Butterworth filter)
     ///     3. Apply GlobalLevelingStrength (blend toward network average elevation)
     ///     4. Enforce RoadMaxSlopeDegrees constraint (limit maximum grade)
     /// </summary>
-    public void CalculateTargetElevations(RoadGeometry geometry, float[,] heightMap, float metersPerPixel)
+    public void CalculateTargetElevations(
+        List<UnifiedCrossSection> crossSections,
+        RoadSmoothingParameters parameters,
+        float[,] heightMap,
+        float metersPerPixel)
     {
         // Get smoothing parameters from SplineParameters
-        var splineParams = geometry.Parameters?.GetSplineParameters();
+        var splineParams = parameters?.GetSplineParameters();
         var windowSize = splineParams?.SmoothingWindowSize ?? 101;
         var useButterworthFilter = splineParams?.UseButterworthFilter ?? false;
         var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 3;
-        var crossSectionSpacing = geometry.Parameters?.CrossSectionIntervalMeters ?? 0.5f;
+        var crossSectionSpacing = parameters?.CrossSectionIntervalMeters ?? 0.5f;
         var smoothingRadiusMeters = windowSize / 2.0f * crossSectionSpacing;
 
         // Get global leveling and slope constraint parameters
         var globalLevelingStrength = splineParams?.GlobalLevelingStrength ?? 0.0f;
-        var enableMaxSlopeConstraint = geometry.Parameters?.EnableMaxSlopeConstraint ?? false;
-        var roadMaxSlopeDegrees = geometry.Parameters?.RoadMaxSlopeDegrees ?? 4.0f;
+        var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
+        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 4.0f;
 
         var filterType = useButterworthFilter
             ? $"Butterworth (order {butterworthOrder})"
@@ -46,26 +72,26 @@ public class OptimizedElevationSmoother : IHeightCalculator
             TerrainCreationLogger.Current?.Detail($"Global leveling strength: {globalLevelingStrength:P0}");
 
         if (enableMaxSlopeConstraint)
-            TerrainCreationLogger.Current?.Detail($"Max road slope constraint: {roadMaxSlopeDegrees:F1}° (ENABLED)");
+            TerrainCreationLogger.Current?.Detail($"Max road slope constraint: {roadMaxSlopeDegrees:F1}\u00b0 (ENABLED)");
 
-        // Group by PathId for per-path processing
-        var pathGroups = geometry.CrossSections
+        // Group by OwnerSplineId for per-spline processing
+        var splineGroups = crossSections
             .Where(cs => !cs.IsExcluded)
-            .GroupBy(cs => cs.PathId)
+            .GroupBy(cs => cs.OwnerSplineId)
             .ToList();
 
         var totalSections = 0;
 
         // Collect all smoothed elevations for global average calculation
         var allSmoothedElevations = new List<float>();
-        var pathSmoothedArrays = new Dictionary<int, (List<CrossSection> sections, float[] smoothed)>();
+        var splineSmoothedArrays = new Dictionary<int, (List<UnifiedCrossSection> sections, float[] smoothed)>();
 
-        // First pass: Apply longitudinal smoothing to each path
+        // First pass: Apply longitudinal smoothing to each spline
         var invalidSamplesTotal = 0;
 
-        foreach (var pathGroup in pathGroups)
+        foreach (var splineGroup in splineGroups)
         {
-            var sections = pathGroup.OrderBy(cs => cs.LocalIndex).ToList();
+            var sections = splineGroup.OrderBy(cs => cs.LocalIndex).ToList();
 
             if (sections.Count == 0) continue;
 
@@ -109,7 +135,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
                 ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
                 : BoxFilterPrefixSum(rawElevations, windowSize);
 
-            pathSmoothedArrays[pathGroup.Key] = (sections, smoothed);
+            splineSmoothedArrays[splineGroup.Key] = (sections, smoothed);
             allSmoothedElevations.AddRange(smoothed);
             totalSections += sections.Count;
         }
@@ -120,7 +146,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
             var globalAverage = allSmoothedElevations.Average();
             TerrainCreationLogger.Current?.Detail($"Network average elevation: {globalAverage:F2}m");
 
-            foreach (var kvp in pathSmoothedArrays)
+            foreach (var kvp in splineSmoothedArrays)
             {
                 var smoothed = kvp.Value.smoothed;
                 for (var i = 0; i < smoothed.Length; i++)
@@ -137,7 +163,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
         {
             var constrainedSections = 0;
 
-            foreach (var kvp in pathSmoothedArrays)
+            foreach (var kvp in splineSmoothedArrays)
             {
                 var smoothed = kvp.Value.smoothed;
                 var modified = EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
@@ -148,15 +174,15 @@ public class OptimizedElevationSmoother : IHeightCalculator
                 TerrainCreationLogger.Current?.Detail($"Slope constraint modified {constrainedSections:N0} cross-sections");
         }
 
-        // Step 5: Assign final elevations to cross-sections
-        foreach (var kvp in pathSmoothedArrays)
+        // Step 5: Assign final elevations directly to UnifiedCrossSections
+        foreach (var kvp in splineSmoothedArrays)
         {
             var (sections, smoothed) = kvp.Value;
             for (var i = 0; i < sections.Count; i++) sections[i].TargetElevation = smoothed[i];
         }
 
         TerrainCreationLogger.Current?.Detail(
-            $"Smoothed elevations for {totalSections:N0} cross-sections across {pathGroups.Count} path(s)");
+            $"Smoothed elevations for {totalSections:N0} cross-sections across {splineGroups.Count} spline(s)");
 
         if (invalidSamplesTotal > 0)
             TerrainLogger.Warning(

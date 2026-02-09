@@ -439,6 +439,9 @@ public class TerrainCreator
                 perfLog.Timing($"SaveModifiedHeightmap: {sw.ElapsedMilliseconds}ms");
             }
 
+            // Release cached data from smoothing components to free memory
+            _unifiedRoadSmoother.ClearCachedData();
+
             totalSw.Stop();
             perfLog.LogMemoryUsage("End");
             perfLog.Timing($"=== TERRAIN CREATION TOTAL: {totalSw.Elapsed.TotalSeconds:F2}s ===");

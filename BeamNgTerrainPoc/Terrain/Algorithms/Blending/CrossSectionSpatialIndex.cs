@@ -106,6 +106,8 @@ public class CrossSectionSpatialIndex
 
     /// <summary>
     /// Finds all cross-sections within a search radius of a world position.
+    /// NOTE: This allocating overload is kept for non-hot-path usage.
+    /// For hot loops (millions of calls), use the buffer-based overload instead.
     /// </summary>
     /// <param name="worldPos">World position in meters</param>
     /// <param name="searchRadius">Search radius in meters</param>
@@ -134,6 +136,46 @@ public class CrossSectionSpatialIndex
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Finds all cross-sections within a search radius, writing results into a pre-allocated buffer.
+    /// This avoids IEnumerable state machine allocations and is suitable for hot loops
+    /// (called millions of times during elevation map building).
+    /// </summary>
+    /// <param name="worldPos">World position in meters</param>
+    /// <param name="searchRadius">Search radius in meters</param>
+    /// <param name="buffer">Pre-allocated buffer to write results into</param>
+    /// <returns>Number of results written to the buffer</returns>
+    public int FindWithinRadius(Vector2 worldPos, float searchRadius, Span<(UnifiedCrossSection cs, float distance)> buffer)
+    {
+        var (gridX, gridY) = GetGridKey(worldPos);
+        var count = 0;
+        var bufferLength = buffer.Length;
+
+        var gridSearchRange = (int)MathF.Ceiling(searchRadius / _metersPerPixel / _cellSize) + 1;
+        gridSearchRange = Math.Max(1, Math.Min(gridSearchRange, 3));
+
+        for (var dy = -gridSearchRange; dy <= gridSearchRange; dy++)
+        for (var dx = -gridSearchRange; dx <= gridSearchRange; dx++)
+        {
+            var key = (gridX + dx, gridY + dy);
+            if (!_index.TryGetValue(key, out var sections))
+                continue;
+
+            foreach (var cs in sections)
+            {
+                var dist = Vector2.Distance(worldPos, cs.CenterPoint);
+                if (dist <= searchRadius)
+                {
+                    if (count < bufferLength)
+                        buffer[count] = (cs, dist);
+                    count++;
+                }
+            }
+        }
+
+        return count;
     }
 
     /// <summary>

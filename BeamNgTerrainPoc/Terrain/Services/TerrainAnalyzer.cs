@@ -332,16 +332,6 @@ public class TerrainAnalyzer
 
             var parameters = spline.Parameters;
 
-            // Create a temporary RoadGeometry for compatibility with existing elevation calculator
-            var tempGeometry = new RoadGeometry(new byte[1, 1], parameters);
-            tempGeometry.CrossSections.Clear();
-
-            // Convert UnifiedCrossSections to standard CrossSections
-            foreach (var ucs in crossSections)
-            {
-                tempGeometry.CrossSections.Add(ucs.ToCrossSection());
-            }
-
             // Sample raw terrain elevations BEFORE smoothing for OriginalTerrainElevation
             int mapHeight = heightMap.GetLength(0);
             int mapWidth = heightMap.GetLength(1);
@@ -354,15 +344,9 @@ public class TerrainAnalyzer
                 crossSections[i].OriginalTerrainElevation = heightMap[py, px];
             }
 
-            // Calculate elevations using existing calculator
-            _elevationCalculator.CalculateTargetElevations(tempGeometry, heightMap, metersPerPixel);
-
-            // Copy calculated (smoothed) elevations back to UnifiedCrossSections
-            for (int i = 0; i < crossSections.Count && i < tempGeometry.CrossSections.Count; i++)
-            {
-                crossSections[i].TargetElevation = tempGeometry.CrossSections[i].TargetElevation;
-                totalCalculated++;
-            }
+            // Calculate elevations directly on UnifiedCrossSections (no conversion roundtrip)
+            _elevationCalculator.CalculateTargetElevations(crossSections, parameters, heightMap, metersPerPixel);
+            totalCalculated += crossSections.Count;
         }
 
         TerrainCreationLogger.Current?.Detail($"Calculated elevations for {totalCalculated} cross-sections");

@@ -716,57 +716,119 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
-    ///     Clusters nearby endpoints into junctions using transitive closure.
+    ///     Clusters nearby endpoints into junctions using Union-Find (disjoint set) with
+    ///     a spatial grid index for efficient neighbor lookups.
+    ///     Complexity: O(E × ?(E)) where E = number of endpoints and ? is the inverse
+    ///     Ackermann function (effectively constant). This replaces the previous O(E² × C)
+    ///     transitive closure algorithm.
+    ///     Algorithm:
+    ///     1. Pre-compute per-endpoint detection radii
+    ///     2. Build a spatial grid index of endpoints for fast neighbor queries
+    ///     3. For each endpoint, find neighbors within detection radius and union them
+    ///     4. Group endpoints by their root representative to form clusters
+    ///     5. Build NetworkJunction from each cluster
     /// </summary>
     private List<NetworkJunction> ClusterEndpointsIntoJunctions(
         List<UnifiedCrossSection> endpoints,
         UnifiedRoadNetwork network,
         float globalDetectionRadius)
     {
-        var junctions = new List<NetworkJunction>();
-        var assigned = new HashSet<int>(); // Track which endpoints are assigned (by their Index)
+        if (endpoints.Count == 0)
+            return [];
+
+        // Step 1: Pre-compute effective detection radius for each endpoint
+        var detectionRadii = new float[endpoints.Count];
+        var maxDetectionRadius = globalDetectionRadius;
+        for (var i = 0; i < endpoints.Count; i++)
+        {
+            var radius = globalDetectionRadius;
+            var splineParams = network.GetParametersForSpline(endpoints[i].OwnerSplineId);
+            if (splineParams?.JunctionHarmonizationParameters != null)
+                radius = splineParams.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
+            detectionRadii[i] = radius;
+            if (radius > maxDetectionRadius)
+                maxDetectionRadius = radius;
+        }
+
+        // Step 2: Build spatial grid index of endpoints
+        // Cell size should be at least maxDetectionRadius so that neighbors are in adjacent cells
+        var cellSize = MathF.Max(maxDetectionRadius, SpatialIndexCellSize);
+        var endpointGrid = new Dictionary<(int, int), List<int>>();
 
         for (var i = 0; i < endpoints.Count; i++)
         {
-            if (assigned.Contains(endpoints[i].Index))
-                continue;
+            var cellX = (int)(endpoints[i].CenterPoint.X / cellSize);
+            var cellY = (int)(endpoints[i].CenterPoint.Y / cellSize);
+            var key = (cellX, cellY);
 
-            var junction = new NetworkJunction();
-            var cluster = new List<int> { i };
-            assigned.Add(endpoints[i].Index);
-
-            // Expand cluster using transitive closure
-            bool expanded;
-            do
+            if (!endpointGrid.TryGetValue(key, out var list))
             {
-                expanded = false;
-                for (var j = 0; j < endpoints.Count; j++)
+                list = [];
+                endpointGrid[key] = list;
+            }
+
+            list.Add(i);
+        }
+
+        // Step 3: Union-Find with path compression and union by rank
+        var parent = new int[endpoints.Count];
+        var rank = new int[endpoints.Count];
+        for (var i = 0; i < endpoints.Count; i++)
+            parent[i] = i;
+
+        // For each endpoint, query nearby cells and union with neighbors within detection radius
+        for (var i = 0; i < endpoints.Count; i++)
+        {
+            var pos = endpoints[i].CenterPoint;
+            var radius = detectionRadii[i];
+            var minCellX = (int)((pos.X - maxDetectionRadius) / cellSize);
+            var maxCellX = (int)((pos.X + maxDetectionRadius) / cellSize);
+            var minCellY = (int)((pos.Y - maxDetectionRadius) / cellSize);
+            var maxCellY = (int)((pos.Y + maxDetectionRadius) / cellSize);
+
+            for (var cx = minCellX; cx <= maxCellX; cx++)
+            for (var cy = minCellY; cy <= maxCellY; cy++)
+            {
+                if (!endpointGrid.TryGetValue((cx, cy), out var cell))
+                    continue;
+
+                foreach (var j in cell)
                 {
-                    if (assigned.Contains(endpoints[j].Index))
+                    if (j <= i) // Avoid duplicate checks (symmetric)
                         continue;
 
-                    // Get effective detection radius (use per-spline if available, else global)
-                    var detectionRadius = globalDetectionRadius;
-                    var splineParams = network.GetParametersForSpline(endpoints[j].OwnerSplineId);
-                    if (splineParams?.JunctionHarmonizationParameters != null)
-                        detectionRadius = splineParams.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
+                    // Use the maximum of both endpoints' detection radii for the merge check
+                    // This preserves the transitive closure semantics: if either endpoint considers
+                    // the other "close enough", they should be in the same cluster
+                    var effectiveRadius = MathF.Max(radius, detectionRadii[j]);
+                    var dist = Vector2.Distance(pos, endpoints[j].CenterPoint);
 
-                    // Check distance to any endpoint in current cluster
-                    foreach (var idx in cluster)
-                    {
-                        var dist = Vector2.Distance(endpoints[idx].CenterPoint, endpoints[j].CenterPoint);
-                        if (dist <= detectionRadius)
-                        {
-                            cluster.Add(j);
-                            assigned.Add(endpoints[j].Index);
-                            expanded = true;
-                            break;
-                        }
-                    }
+                    if (dist <= effectiveRadius)
+                        Union(parent, rank, i, j);
                 }
-            } while (expanded);
+            }
+        }
 
-            // Build junction from cluster
+        // Step 4: Group endpoints by their root representative
+        var clusters = new Dictionary<int, List<int>>();
+        for (var i = 0; i < endpoints.Count; i++)
+        {
+            var root = Find(parent, i);
+            if (!clusters.TryGetValue(root, out var cluster))
+            {
+                cluster = [];
+                clusters[root] = cluster;
+            }
+
+            cluster.Add(i);
+        }
+
+        // Step 5: Build junctions from clusters
+        var junctions = new List<NetworkJunction>(clusters.Count);
+        foreach (var cluster in clusters.Values)
+        {
+            var junction = new NetworkJunction();
+
             foreach (var idx in cluster)
             {
                 var ep = endpoints[idx];
@@ -786,6 +848,42 @@ public class NetworkJunctionDetector
         }
 
         return junctions;
+    }
+
+    /// <summary>
+    ///     Union-Find: Finds the root representative of element x with path compression.
+    /// </summary>
+    private static int Find(int[] parent, int x)
+    {
+        while (parent[x] != x)
+        {
+            parent[x] = parent[parent[x]]; // Path halving (simpler than full compression, same amortized cost)
+            x = parent[x];
+        }
+
+        return x;
+    }
+
+    /// <summary>
+    ///     Union-Find: Merges the sets containing elements a and b using union by rank.
+    /// </summary>
+    private static void Union(int[] parent, int[] rank, int a, int b)
+    {
+        var rootA = Find(parent, a);
+        var rootB = Find(parent, b);
+        if (rootA == rootB)
+            return;
+
+        // Union by rank: attach smaller tree under larger tree
+        if (rank[rootA] < rank[rootB])
+            parent[rootA] = rootB;
+        else if (rank[rootA] > rank[rootB])
+            parent[rootB] = rootA;
+        else
+        {
+            parent[rootB] = rootA;
+            rank[rootA]++;
+        }
     }
 
     /// <summary>

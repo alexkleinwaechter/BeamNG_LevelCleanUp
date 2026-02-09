@@ -441,47 +441,70 @@ public class UnifiedRoadNetworkBuilder
     }
 
     /// <summary>
-    /// Ramer-Douglas-Peucker line simplification algorithm.
+    /// Ramer-Douglas-Peucker line simplification algorithm (iterative, in-place).
     /// Reduces the number of points in a path while preserving overall shape.
+    /// Uses a stack-based approach with index ranges to avoid allocating sublists
+    /// at every recursion level.
     /// </summary>
     private static List<Vector2> RamerDouglasPeucker(List<Vector2> points, float epsilon)
     {
         if (points.Count < 3)
             return new List<Vector2>(points);
 
-        // Find the point with maximum distance from the line between first and last
-        float maxDistance = 0;
-        int maxIndex = 0;
+        var pointCount = points.Count;
 
-        var lineStart = points[0];
-        var lineEnd = points[^1];
+        // Boolean array marking which points to keep. First and last are always kept.
+        var keep = new bool[pointCount];
+        keep[0] = true;
+        keep[pointCount - 1] = true;
 
-        for (int i = 1; i < points.Count - 1; i++)
+        // Stack of (startIndex, endIndex) ranges to process
+        var stack = new Stack<(int Start, int End)>();
+        stack.Push((0, pointCount - 1));
+
+        while (stack.Count > 0)
         {
-            var distance = PerpendicularDistance(points[i], lineStart, lineEnd);
-            if (distance > maxDistance)
+            var (start, end) = stack.Pop();
+
+            if (end - start < 2)
+                continue;
+
+            // Find the point with maximum distance from the line between start and end
+            float maxDistance = 0;
+            var maxIndex = start;
+
+            var lineStart = points[start];
+            var lineEnd = points[end];
+
+            for (var i = start + 1; i < end; i++)
             {
-                maxDistance = distance;
-                maxIndex = i;
+                var distance = PerpendicularDistance(points[i], lineStart, lineEnd);
+                if (distance > maxDistance)
+                {
+                    maxDistance = distance;
+                    maxIndex = i;
+                }
             }
+
+            // If max distance exceeds epsilon, keep this point and subdivide
+            if (maxDistance > epsilon)
+            {
+                keep[maxIndex] = true;
+                stack.Push((start, maxIndex));
+                stack.Push((maxIndex, end));
+            }
+            // Otherwise all intermediate points between start and end are discarded
         }
 
-        // If max distance is greater than epsilon, recursively simplify
-        if (maxDistance > epsilon)
+        // Build result from kept points (preserves original order)
+        var result = new List<Vector2>();
+        for (var i = 0; i < pointCount; i++)
         {
-            var left = RamerDouglasPeucker(points.Take(maxIndex + 1).ToList(), epsilon);
-            var right = RamerDouglasPeucker(points.Skip(maxIndex).ToList(), epsilon);
+            if (keep[i])
+                result.Add(points[i]);
+        }
 
-            // Combine results (avoiding duplicate point at maxIndex)
-            var result = new List<Vector2>(left);
-            result.AddRange(right.Skip(1));
-            return result;
-        }
-        else
-        {
-            // All intermediate points can be removed
-            return new List<Vector2> { lineStart, lineEnd };
-        }
+        return result;
     }
 
     /// <summary>

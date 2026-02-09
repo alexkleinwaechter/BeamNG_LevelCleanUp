@@ -63,6 +63,17 @@ public class ProtectedBlendingProcessor
         // Build spatial index for cross-sections grouped by spline ID
         var crossSectionsBySpline = new SplineGroupedSpatialIndex(network.CrossSections, metersPerPixel);
 
+        // Pre-build priority-aware spatial index for fast higher-priority lookups.
+        // This eliminates the O(all_splines) loop per blend-zone pixel by pre-computing
+        // which splines' protection zones cover each grid cell.
+        var priorityProtectionParams = network.Splines.ToDictionary(
+            s => s.SplineId,
+            s => (HalfWidth: s.Parameters.RoadWidthMeters / 2.0f,
+                  ProtectionBuffer: s.Parameters.RoadEdgeProtectionBufferMeters,
+                  Priority: s.Priority));
+        var priorityIndex = new PriorityProtectionIndex(
+            network, priorityProtectionParams, metersPerPixel);
+
         // Thread-safe counters
         var modifiedPixels = 0;
         var roadCorePixels = 0;
@@ -138,9 +149,10 @@ public class ProtectedBlendingProcessor
 
                     // Check if we're in the blend zone of a lower-priority road but within
                     // the protection buffer of a higher-priority road.
+                    // Uses pre-built PriorityProtectionIndex for O(nearby_splines) instead of O(all_splines).
                     var higherPriorityElevation = FindHigherPriorityProtectedElevation(
-                        worldPos, ownerId, ownerPriority, network.Splines, splineParams, 
-                        crossSectionsBySpline, metersPerPixel);
+                        worldPos, x, y, ownerId, ownerPriority,
+                        priorityIndex, crossSectionsBySpline);
 
                     if (higherPriorityElevation.HasValue)
                     {
@@ -244,50 +256,56 @@ public class ProtectedBlendingProcessor
     /// <summary>
     /// Checks if a pixel is within a higher-priority road's protection buffer zone.
     /// Returns the banking/constraint-aware elevation at that position.
+    /// 
+    /// Uses PriorityProtectionIndex for spatial pre-filtering: instead of iterating
+    /// over ALL splines (O(S)), we only check splines whose protection zones are
+    /// known to cover this grid cell (typically 0-3 splines).
     /// </summary>
     private static float? FindHigherPriorityProtectedElevation(
         Vector2 worldPos,
+        int pixelX,
+        int pixelY,
         int currentOwnerId,
         int currentPriority,
-        List<ParameterizedRoadSpline> splines,
-        Dictionary<int, SplineBlendParams> splineParams,
-        SplineGroupedSpatialIndex crossSectionsBySpline,
-        float metersPerPixel)
+        PriorityProtectionIndex priorityIndex,
+        SplineGroupedSpatialIndex crossSectionsBySpline)
     {
+        // Get candidate splines from the spatial index for this pixel's grid cell.
+        // This is O(1) lookup + O(nearby_splines) iteration instead of O(all_splines).
+        var candidates = priorityIndex.GetCandidates(pixelX, pixelY);
+        if (candidates.Length == 0)
+            return null;
+
         float? bestElevation = null;
         var bestPriority = currentPriority;
         var bestDistance = float.MaxValue;
 
-        foreach (var spline in splines)
+        foreach (ref readonly var candidate in candidates.AsSpan())
         {
-            if (spline.SplineId == currentOwnerId)
+            // Skip self and lower/equal priority
+            if (candidate.SplineId == currentOwnerId)
                 continue;
 
-            if (!splineParams.TryGetValue(spline.SplineId, out var params_))
+            if (candidate.Priority <= currentPriority)
                 continue;
-
-            if (params_.Priority <= currentPriority)
-                continue;
-
-            var protectionRadius = params_.HalfWidth + params_.ProtectionBuffer;
 
             var nearestCs = crossSectionsBySpline.FindNearestForSpline(
-                worldPos, spline.SplineId, protectionRadius);
-            
+                worldPos, candidate.SplineId, candidate.ProtectionRadius);
+
             if (nearestCs == null)
                 continue;
 
             var distToSpline = Vector2.Distance(worldPos, nearestCs.CenterPoint);
 
-            if (distToSpline <= protectionRadius)
+            if (distToSpline <= candidate.ProtectionRadius)
             {
-                if (params_.Priority > bestPriority ||
-                    (params_.Priority == bestPriority && distToSpline < bestDistance))
+                if (candidate.Priority > bestPriority ||
+                    (candidate.Priority == bestPriority && distToSpline < bestDistance))
                 {
                     // Use banking/junction-constraint-aware elevation calculation
                     // This properly accounts for road tilt and junction surface constraints
                     bestElevation = BankedTerrainHelper.GetBankedElevation(nearestCs, worldPos);
-                    bestPriority = params_.Priority;
+                    bestPriority = candidate.Priority;
                     bestDistance = distToSpline;
                 }
             }

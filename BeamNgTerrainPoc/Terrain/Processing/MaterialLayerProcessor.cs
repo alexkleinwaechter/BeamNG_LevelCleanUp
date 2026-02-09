@@ -82,16 +82,24 @@ public static class MaterialLayerProcessor
                 return materialIndices;
             }
 
-            // Pre-extract pixel data from images for thread-safe parallel access
-            // ImageSharp's pixel access is not thread-safe, so we need to extract to arrays first
+            // Extract pixel data from images using fast row-span access.
+            // ImageSharp's pixel access is not thread-safe for parallel processing,
+            // so we extract to byte[] arrays first — but use ProcessPixelRows with
+            // row spans instead of per-pixel image[x,y] for much faster extraction.
             var layerData = new List<(int MaterialIndex, byte[] Pixels)>();
             foreach (var (materialIndex, image) in loadedImages)
             {
                 var pixels = new byte[size * size];
-                for (var y = 0; y < size; y++)
-                for (var x = 0; x < size; x++)
-                    pixels[y * size + x] = image[x, y].PackedValue;
-
+                image.ProcessPixelRows(accessor =>
+                {
+                    for (var y = 0; y < size; y++)
+                    {
+                        var row = accessor.GetRowSpan(y);
+                        var rowOffset = y * size;
+                        for (var x = 0; x < size; x++)
+                            pixels[rowOffset + x] = row[x].PackedValue;
+                    }
+                });
                 layerData.Add((materialIndex, pixels));
             }
 
@@ -122,25 +130,25 @@ public static class MaterialLayerProcessor
     private static void ProcessRow(int y, int size, List<(int MaterialIndex, byte[] Pixels)> layerData,
         byte[] materialIndices)
     {
+        // BeamNG array index (bottom-left origin)
+        var flippedY = size - 1 - y;
+        var rowOffset = flippedY * size;
+        var pixelRowOffset = y * size;
+
         for (var x = 0; x < size; x++)
         {
-            // BeamNG array index (bottom-left origin)
-            var flippedY = size - 1 - y;
-            var arrayIndex = flippedY * size + x;
-            var pixelIndex = y * size + x;
-
             // Find which material should be at this pixel
             // IMPORTANT: Process layers in REVERSE order of material index
             // Highest material index with white pixel wins (highest priority)
             for (var i = layerData.Count - 1; i >= 0; i--)
             {
                 var (materialIndex, pixels) = layerData[i];
-                var pixel = pixels[pixelIndex];
+                var pixel = pixels[pixelRowOffset + x];
 
                 // White pixel (>127) means material is present at this location
                 if (pixel > 127)
                 {
-                    materialIndices[arrayIndex] = (byte)materialIndex;
+                    materialIndices[rowOffset + x] = (byte)materialIndex;
                     break; // Found highest priority material for this pixel
                 }
             }
@@ -159,9 +167,14 @@ public static class MaterialLayerProcessor
         var image = new Image<L8>(size, size);
         var white = new L8(255);
 
-        for (var y = 0; y < size; y++)
-        for (var x = 0; x < size; x++)
-            image[x, y] = white;
+        image.ProcessPixelRows(accessor =>
+        {
+            for (var y = 0; y < size; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                row.Fill(white);
+            }
+        });
 
         return image;
     }

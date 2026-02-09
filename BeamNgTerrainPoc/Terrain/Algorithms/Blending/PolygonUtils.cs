@@ -41,7 +41,7 @@ public static class PolygonUtils
     }
 
     /// <summary>
-    /// Fills a convex polygon (quad) using scanline algorithm.
+    /// Fills a convex polygon (quad) using scanline rasterization.
     /// Returns the number of pixels filled.
     /// </summary>
     /// <param name="mask">The mask to fill</param>
@@ -52,6 +52,9 @@ public static class PolygonUtils
     public static int FillConvexPolygon(bool[,] mask, Vector2[] corners, int width, int height)
     {
         var filledCount = 0;
+
+        if (corners.Length < 3)
+            return 0;
 
         // Find bounding box
         var minY = (int)MathF.Floor(corners.Min(c => c.Y));
@@ -65,14 +68,56 @@ public static class PolygonUtils
         minX = Math.Max(0, minX);
         maxX = Math.Min(width - 1, maxX);
 
-        // Scanline fill using point-in-polygon test
+        var cornerCount = corners.Length;
+
+        // Scanline fill using edge intersection
         for (var y = minY; y <= maxY; y++)
-        for (var x = minX; x <= maxX; x++)
-            if (!mask[y, x] && IsPointInConvexPolygon(new Vector2(x, y), corners))
+        {
+            var scanY = y + 0.5f;
+
+            // Find intersection points with polygon edges
+            Span<float> intersections = stackalloc float[cornerCount];
+            var intersectionCount = 0;
+
+            for (var i = 0; i < cornerCount; i++)
             {
-                mask[y, x] = true;
-                filledCount++;
+                var v1 = corners[i];
+                var v2 = corners[(i + 1) % cornerCount];
+
+                if ((v1.Y <= scanY && v2.Y > scanY) || (v2.Y <= scanY && v1.Y > scanY))
+                {
+                    var t = (scanY - v1.Y) / (v2.Y - v1.Y);
+                    intersections[intersectionCount++] = v1.X + t * (v2.X - v1.X);
+                }
             }
+
+            // Sort intersections (simple insertion sort for small count)
+            for (var i = 1; i < intersectionCount; i++)
+            {
+                var key = intersections[i];
+                var j = i - 1;
+                while (j >= 0 && intersections[j] > key)
+                {
+                    intersections[j + 1] = intersections[j];
+                    j--;
+                }
+                intersections[j + 1] = key;
+            }
+
+            // Fill between pairs of intersections
+            for (var i = 0; i + 1 < intersectionCount; i += 2)
+            {
+                var xStart = Math.Max(minX, (int)MathF.Floor(intersections[i]));
+                var xEnd = Math.Min(maxX, (int)MathF.Ceiling(intersections[i + 1]));
+
+                for (var x = xStart; x <= xEnd; x++)
+                    if (!mask[y, x])
+                    {
+                        mask[y, x] = true;
+                        filledCount++;
+                    }
+            }
+        }
 
         return filledCount;
     }

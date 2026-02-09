@@ -503,6 +503,10 @@ public class PostProcessingSmoother
     /// <summary>
     /// Applies Gaussian blur with the specified kernel size and sigma.
     /// Only smooths pixels within the mask.
+    /// 
+    /// Uses a separable two-pass approach (horizontal then vertical) which reduces
+    /// the per-pixel work from O(K²) to O(2K). For kernel size 7 this is 3.5× fewer
+    /// operations; for kernel size 15 it is 7.5× fewer.
     /// </summary>
     private static void ApplyGaussianSmoothing(float[,] heightMap, bool[,] mask, int kernelSize, float sigma)
     {
@@ -510,10 +514,11 @@ public class PostProcessingSmoother
         var width = heightMap.GetLength(1);
         var radius = kernelSize / 2;
 
-        var kernel = BuildGaussianKernel(kernelSize, sigma);
+        var kernel1D = Build1DGaussianKernel(kernelSize, sigma);
         var tempMap = new float[height, width];
         var smoothedPixels = 0;
 
+        // --- Pass 1: Horizontal (read from heightMap, write to tempMap) ---
         for (var y = 0; y < height; y++)
         for (var x = 0; x < width; x++)
         {
@@ -526,51 +531,71 @@ public class PostProcessingSmoother
             var sum = 0f;
             var weightSum = 0f;
 
-            for (var ky = -radius; ky <= radius; ky++)
-            for (var kx = -radius; kx <= radius; kx++)
+            for (var k = -radius; k <= radius; k++)
             {
-                var ny = y + ky;
-                var nx = x + kx;
-
-                if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                var nx = x + k;
+                if (nx >= 0 && nx < width)
                 {
-                    var weight = kernel[ky + radius, kx + radius];
-                    sum += heightMap[ny, nx] * weight;
+                    var weight = kernel1D[k + radius];
+                    sum += heightMap[y, nx] * weight;
                     weightSum += weight;
                 }
             }
 
             tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
+        }
+
+        // --- Pass 2: Vertical (read from tempMap, write back to heightMap) ---
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            if (!mask[y, x])
+            {
+                // heightMap[y, x] already has the original value; no action needed
+                continue;
+            }
+
+            var sum = 0f;
+            var weightSum = 0f;
+
+            for (var k = -radius; k <= radius; k++)
+            {
+                var ny = y + k;
+                if (ny >= 0 && ny < height)
+                {
+                    var weight = kernel1D[k + radius];
+                    sum += tempMap[ny, x] * weight;
+                    weightSum += weight;
+                }
+            }
+
+            heightMap[y, x] = weightSum > 0 ? sum / weightSum : tempMap[y, x];
             smoothedPixels++;
         }
 
-        Array.Copy(tempMap, heightMap, height * width);
-        TerrainCreationLogger.Current?.Detail($"Gaussian smoothed {smoothedPixels:N0} pixels");
+        TerrainCreationLogger.Current?.Detail($"Gaussian smoothed {smoothedPixels:N0} pixels (separable 2-pass)");
     }
 
     /// <summary>
-    /// Builds a 2D Gaussian kernel.
+    /// Builds a normalized 1D Gaussian kernel for use in separable convolution passes.
     /// </summary>
-    private static float[,] BuildGaussianKernel(int size, float sigma)
+    private static float[] Build1DGaussianKernel(int size, float sigma)
     {
-        var kernel = new float[size, size];
+        var kernel = new float[size];
         var radius = size / 2;
         var sum = 0f;
         var twoSigmaSquared = 2f * sigma * sigma;
 
-        for (var y = -radius; y <= radius; y++)
-        for (var x = -radius; x <= radius; x++)
+        for (var i = -radius; i <= radius; i++)
         {
-            float distance = x * x + y * y;
-            var value = MathF.Exp(-distance / twoSigmaSquared);
-            kernel[y + radius, x + radius] = value;
+            var value = MathF.Exp(-(i * i) / twoSigmaSquared);
+            kernel[i + radius] = value;
             sum += value;
         }
 
         // Normalize
-        for (var y = 0; y < size; y++)
-        for (var x = 0; x < size; x++)
-            kernel[y, x] /= sum;
+        for (var i = 0; i < size; i++)
+            kernel[i] /= sum;
 
         return kernel;
     }
@@ -591,10 +616,7 @@ public class PostProcessingSmoother
         for (var x = 0; x < width; x++)
         {
             if (!mask[y, x])
-            {
-                tempMap[y, x] = heightMap[y, x];
                 continue;
-            }
 
             var sum = 0f;
             var count = 0;
@@ -616,7 +638,14 @@ public class PostProcessingSmoother
             smoothedPixels++;
         }
 
-        Array.Copy(tempMap, heightMap, height * width);
+        // Write back only the smoothed pixels, avoiding a full-array copy
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            if (mask[y, x])
+                heightMap[y, x] = tempMap[y, x];
+        }
+
         TerrainCreationLogger.Current?.Detail($"Box smoothed {smoothedPixels:N0} pixels");
     }
 
@@ -638,10 +667,7 @@ public class PostProcessingSmoother
         for (var x = 0; x < width; x++)
         {
             if (!mask[y, x])
-            {
-                tempMap[y, x] = heightMap[y, x];
                 continue;
-            }
 
             var centerValue = heightMap[y, x];
             var sum = 0f;
@@ -673,7 +699,14 @@ public class PostProcessingSmoother
             smoothedPixels++;
         }
 
-        Array.Copy(tempMap, heightMap, height * width);
+        // Write back only the smoothed pixels, avoiding a full-array copy
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            if (mask[y, x])
+                heightMap[y, x] = tempMap[y, x];
+        }
+
         TerrainCreationLogger.Current?.Detail($"Bilateral smoothed {smoothedPixels:N0} pixels");
     }
 }

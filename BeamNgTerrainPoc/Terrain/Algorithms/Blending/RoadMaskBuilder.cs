@@ -178,6 +178,7 @@ public class RoadMaskBuilder
     /// Higher priority splines overwrite lower priority ones.
     /// For banked roads, elevation is calculated per-pixel based on lateral offset.
     /// Returns (newPixelsFilled, pixelsOverwrittenByPriority).
+    /// Uses scanline rasterization for efficient fill (no per-pixel point-in-polygon test).
     /// </summary>
     private static (int filled, int overwritten) FillConvexPolygonWithOwnershipAndBanking(
         bool[,] protectionMask,
@@ -214,45 +215,80 @@ public class RoadMaskBuilder
             ? 0f  // Will calculate per-pixel
             : BankedTerrainHelper.GetSegmentAverageElevation(cs1, cs2);
 
-        // Scanline fill using point-in-polygon test
+        var cornerCount = corners.Length;
+
+        // Scanline fill using edge intersection
         for (var y = minY; y <= maxY; y++)
-        for (var x = minX; x <= maxX; x++)
         {
-            if (!PolygonUtils.IsPointInConvexPolygon(new Vector2(x, y), corners))
-                continue;
+            var scanY = y + 0.5f;
 
-            // Calculate elevation for this pixel
-            float pixelElevation;
-            if (hasBanking)
+            // Find intersection points with polygon edges
+            Span<float> intersections = stackalloc float[cornerCount];
+            var intersectionCount = 0;
+
+            for (var i = 0; i < cornerCount; i++)
             {
-                // Convert pixel to world coordinates and calculate banked elevation
-                var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
-                pixelElevation = BankedTerrainHelper.GetBankedElevationForPixel(cs1, cs2, worldPos);
-            }
-            else
-            {
-                pixelElevation = averageElevation;
+                var v1 = corners[i];
+                var v2 = corners[(i + 1) % cornerCount];
+
+                if ((v1.Y <= scanY && v2.Y > scanY) || (v2.Y <= scanY && v1.Y > scanY))
+                {
+                    var t = (scanY - v1.Y) / (v2.Y - v1.Y);
+                    intersections[intersectionCount++] = v1.X + t * (v2.X - v1.X);
+                }
             }
 
-            // Check if we should claim this pixel
-            if (!protectionMask[y, x])
+            // Sort intersections (simple insertion sort for small count)
+            for (var i = 1; i < intersectionCount; i++)
             {
-                // New pixel - claim it
-                protectionMask[y, x] = true;
-                ownershipMap[y, x] = splineId;
-                elevationMap[y, x] = pixelElevation;
-                priorityMap[y, x] = priority;
-                filledCount++;
+                var key = intersections[i];
+                var j = i - 1;
+                while (j >= 0 && intersections[j] > key)
+                {
+                    intersections[j + 1] = intersections[j];
+                    j--;
+                }
+                intersections[j + 1] = key;
             }
-            else if (priority > priorityMap[y, x])
+
+            // Fill between pairs of intersections
+            for (var i = 0; i + 1 < intersectionCount; i += 2)
             {
-                // Pixel already claimed, but we have higher priority - overwrite
-                ownershipMap[y, x] = splineId;
-                elevationMap[y, x] = pixelElevation;
-                priorityMap[y, x] = priority;
-                overwrittenCount++;
+                var xStart = Math.Max(minX, (int)MathF.Floor(intersections[i]));
+                var xEnd = Math.Min(maxX, (int)MathF.Ceiling(intersections[i + 1]));
+
+                for (var x = xStart; x <= xEnd; x++)
+                {
+                    // Calculate elevation for this pixel
+                    float pixelElevation;
+                    if (hasBanking)
+                    {
+                        var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
+                        pixelElevation = BankedTerrainHelper.GetBankedElevationForPixel(cs1, cs2, worldPos);
+                    }
+                    else
+                    {
+                        pixelElevation = averageElevation;
+                    }
+
+                    // Check if we should claim this pixel
+                    if (!protectionMask[y, x])
+                    {
+                        protectionMask[y, x] = true;
+                        ownershipMap[y, x] = splineId;
+                        elevationMap[y, x] = pixelElevation;
+                        priorityMap[y, x] = priority;
+                        filledCount++;
+                    }
+                    else if (priority > priorityMap[y, x])
+                    {
+                        ownershipMap[y, x] = splineId;
+                        elevationMap[y, x] = pixelElevation;
+                        priorityMap[y, x] = priority;
+                        overwrittenCount++;
+                    }
+                }
             }
-            // else: pixel claimed by equal or higher priority road - leave it
         }
 
         return (filledCount, overwrittenCount);
@@ -262,6 +298,7 @@ public class RoadMaskBuilder
     /// Fills a convex polygon with ownership tracking.
     /// Higher priority splines overwrite lower priority ones.
     /// Returns (newPixelsFilled, pixelsOverwrittenByPriority).
+    /// Uses scanline rasterization for efficient fill (no per-pixel point-in-polygon test).
     /// </summary>
     private static (int filled, int overwritten) FillConvexPolygonWithOwnership(
         bool[,] protectionMask,
@@ -290,32 +327,67 @@ public class RoadMaskBuilder
         minX = Math.Max(0, minX);
         maxX = Math.Min(width - 1, maxX);
 
-        // Scanline fill using point-in-polygon test
-        for (var y = minY; y <= maxY; y++)
-        for (var x = minX; x <= maxX; x++)
-        {
-            if (!PolygonUtils.IsPointInConvexPolygon(new Vector2(x, y), corners))
-                continue;
+        var cornerCount = corners.Length;
 
-            // Check if we should claim this pixel
-            if (!protectionMask[y, x])
+        // Scanline fill using edge intersection
+        for (var y = minY; y <= maxY; y++)
+        {
+            var scanY = y + 0.5f;
+
+            // Find intersection points with polygon edges
+            Span<float> intersections = stackalloc float[cornerCount];
+            var intersectionCount = 0;
+
+            for (var i = 0; i < cornerCount; i++)
             {
-                // New pixel - claim it
-                protectionMask[y, x] = true;
-                ownershipMap[y, x] = splineId;
-                elevationMap[y, x] = elevation;
-                priorityMap[y, x] = priority;
-                filledCount++;
+                var v1 = corners[i];
+                var v2 = corners[(i + 1) % cornerCount];
+
+                if ((v1.Y <= scanY && v2.Y > scanY) || (v2.Y <= scanY && v1.Y > scanY))
+                {
+                    var t = (scanY - v1.Y) / (v2.Y - v1.Y);
+                    intersections[intersectionCount++] = v1.X + t * (v2.X - v1.X);
+                }
             }
-            else if (priority > priorityMap[y, x])
+
+            // Sort intersections (simple insertion sort for small count)
+            for (var i = 1; i < intersectionCount; i++)
             {
-                // Pixel already claimed, but we have higher priority - overwrite
-                ownershipMap[y, x] = splineId;
-                elevationMap[y, x] = elevation;
-                priorityMap[y, x] = priority;
-                overwrittenCount++;
+                var key = intersections[i];
+                var j = i - 1;
+                while (j >= 0 && intersections[j] > key)
+                {
+                    intersections[j + 1] = intersections[j];
+                    j--;
+                }
+                intersections[j + 1] = key;
             }
-            // else: pixel claimed by equal or higher priority road - leave it
+
+            // Fill between pairs of intersections
+            for (var i = 0; i + 1 < intersectionCount; i += 2)
+            {
+                var xStart = Math.Max(minX, (int)MathF.Floor(intersections[i]));
+                var xEnd = Math.Min(maxX, (int)MathF.Ceiling(intersections[i + 1]));
+
+                for (var x = xStart; x <= xEnd; x++)
+                {
+                    if (!protectionMask[y, x])
+                    {
+                        protectionMask[y, x] = true;
+                        ownershipMap[y, x] = splineId;
+                        elevationMap[y, x] = elevation;
+                        priorityMap[y, x] = priority;
+                        filledCount++;
+                    }
+                    else if (priority > priorityMap[y, x])
+                    {
+                        ownershipMap[y, x] = splineId;
+                        elevationMap[y, x] = elevation;
+                        priorityMap[y, x] = priority;
+                        overwrittenCount++;
+                    }
+                }
+            }
         }
 
         return (filledCount, overwrittenCount);

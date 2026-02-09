@@ -14,7 +14,7 @@ using DialogResult = System.Windows.Forms.DialogResult;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Pages;
 
-public partial class GenerateTerrain
+public partial class GenerateTerrain : IDisposable
 {
     // Analysis dialog options for fullscreen display
     private static readonly DialogOptions AnalysisDialogOptions = new()
@@ -27,6 +27,9 @@ public partial class GenerateTerrain
 
     private readonly TerrainAnalysisOrchestrator _analysisOrchestrator = new();
     private readonly TerrainAnalysisState _analysisState = new();
+
+    // Cancellation token for the PubSub consumer task
+    private readonly CancellationTokenSource _disposalCts = new();
     private readonly TerrainGenerationOrchestrator _generationOrchestrator = new();
 
     // ========================================
@@ -64,10 +67,10 @@ public partial class GenerateTerrain
 
     private bool _showWarningLog;
 
-    private Snackbar? _terrainGenerationSnackbar;
-
     // Flag to suppress snackbar creation during generation completion
     private volatile bool _suppressSnackbars;
+
+    private Snackbar? _terrainGenerationSnackbar;
 
     // ========================================
     // WIZARD MODE PROPERTIES
@@ -335,6 +338,31 @@ public partial class GenerateTerrain
     [AllowNull] private MudExpansionPanels FileSelect { get; set; }
 
     // ========================================
+    // DISPOSAL
+    // ========================================
+
+    /// <summary>
+    ///     Releases resources when the component is disposed (e.g., navigating away).
+    ///     Clears large terrain data structures and cancels the PubSub consumer task.
+    /// </summary>
+    public void Dispose()
+    {
+        // Cancel the PubSub consumer task
+        _disposalCts.Cancel();
+        _disposalCts.Dispose();
+
+        // Clear all terrain-related state to release large arrays
+        _state.Reset();
+        _analysisState.Reset();
+
+        // Remove the static TerrainLogger handler to avoid holding references
+        TerrainLogger.SetLogHandler(null);
+
+        // Request garbage collection for the large terrain arrays
+        GC.Collect(2, GCCollectionMode.Optimized, false);
+    }
+
+    // ========================================
     // WIZARD MODE LIFECYCLE METHODS
     // ========================================
 
@@ -563,44 +591,51 @@ public partial class GenerateTerrain
         // Subscribe to PubSub messages
         var consumer = Task.Run(async () =>
         {
-            while (!StaticVariables.ApplicationExitRequest && await PubSubChannel.ch.Reader.WaitToReadAsync())
+            try
             {
-                var msg = await PubSubChannel.ch.Reader.ReadAsync();
-                if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
+                while (!_disposalCts.Token.IsCancellationRequested &&
+                       !StaticVariables.ApplicationExitRequest &&
+                       await PubSubChannel.ch.Reader.WaitToReadAsync(_disposalCts.Token))
                 {
-                    switch (msg.MessageType)
+                    var msg = await PubSubChannel.ch.Reader.ReadAsync();
+                    if (!_messages.Contains(msg.Message) && !_errors.Contains(msg.Message))
                     {
-                        case PubSubMessageType.Info:
-                            _messages.Add(msg.Message);
-                            break;
-                        case PubSubMessageType.Warning:
-                            _warnings.Add(msg.Message);
-                            break;
-                        case PubSubMessageType.Error:
-                            _errors.Add(msg.Message);
-                            break;
-                    }
-
-                    // Show snackbar and update UI on the main thread (unless suppressed)
-                    if (!_suppressSnackbars)
-                    {
-                        await InvokeAsync(() =>
+                        switch (msg.MessageType)
                         {
-                            switch (msg.MessageType)
+                            case PubSubMessageType.Info:
+                                _messages.Add(msg.Message);
+                                break;
+                            case PubSubMessageType.Warning:
+                                _warnings.Add(msg.Message);
+                                break;
+                            case PubSubMessageType.Error:
+                                _errors.Add(msg.Message);
+                                break;
+                        }
+
+                        // Show snackbar and update UI on the main thread (unless suppressed)
+                        if (!_suppressSnackbars)
+                            await InvokeAsync(() =>
                             {
-                                case PubSubMessageType.Info:
-                                    Snackbar.Add(msg.Message, Severity.Info);
-                                    break;
-                                case PubSubMessageType.Warning:
-                                    Snackbar.Add(msg.Message, Severity.Warning);
-                                    break;
-                                case PubSubMessageType.Error:
-                                    Snackbar.Add(msg.Message, Severity.Error);
-                                    break;
-                            }
-                        });
+                                switch (msg.MessageType)
+                                {
+                                    case PubSubMessageType.Info:
+                                        Snackbar.Add(msg.Message, Severity.Info);
+                                        break;
+                                    case PubSubMessageType.Warning:
+                                        Snackbar.Add(msg.Message, Severity.Warning);
+                                        break;
+                                    case PubSubMessageType.Error:
+                                        Snackbar.Add(msg.Message, Severity.Error);
+                                        break;
+                                }
+                            });
                     }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when component is disposed
             }
         });
     }
@@ -733,7 +768,7 @@ public partial class GenerateTerrain
         });
 
         string? finalMessage = null;
-        Severity finalSeverity = Severity.Success;
+        var finalSeverity = Severity.Success;
 
         try
         {
@@ -1414,9 +1449,7 @@ public partial class GenerateTerrain
                 Snackbar.Clear();
 
                 if (generationSucceeded && finalSuccessMessage != null)
-                {
                     Snackbar.Add(finalSuccessMessage, Severity.Success);
-                }
             });
             _suppressSnackbars = false;
 
@@ -1428,8 +1461,13 @@ public partial class GenerateTerrain
     private async Task ResetPage()
     {
         _state.Reset();
+        _analysisState.Reset();
         _presetImporter?.Reset();
         _presetExporter?.Reset();
+
+        // Request garbage collection to release large terrain arrays
+        // (heightmaps, distance fields, road networks, etc.)
+        GC.Collect(2, GCCollectionMode.Optimized, false);
 
         if (FileSelect?.Panels.Count > 0) await FileSelect.Panels[0].ExpandAsync();
 
@@ -1547,7 +1585,7 @@ public partial class GenerateTerrain
         });
 
         string? finalMessage = null;
-        Severity finalSeverity = Severity.Success;
+        var finalSeverity = Severity.Success;
 
         try
         {
@@ -1725,9 +1763,7 @@ public partial class GenerateTerrain
                 Snackbar.Clear();
 
                 if (generationSucceeded && finalSuccessMessage != null)
-                {
                     Snackbar.Add(finalSuccessMessage, Severity.Success);
-                }
             });
             _suppressSnackbars = false;
 

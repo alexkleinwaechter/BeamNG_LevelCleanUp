@@ -59,6 +59,15 @@ public class UnifiedRoadSmoother
     }
 
     /// <summary>
+    /// Clears all cached data from internal components to release memory.
+    /// Call this after terrain generation is complete and intermediate data is no longer needed.
+    /// </summary>
+    public void ClearCachedData()
+    {
+        _terrainBlender.ClearCachedData();
+    }
+
+    /// <summary>
     ///     Configures the structure elevation integrator with parameters from TerrainCreationParameters.
     ///     Should be called before SmoothAllRoads if custom structure elevation parameters are needed.
     /// </summary>
@@ -683,13 +692,6 @@ public class UnifiedRoadSmoother
                 continue;
             }
 
-            // Create a temporary RoadGeometry for compatibility with existing elevation calculator
-            var tempGeometry = new RoadGeometry(new byte[1, 1], parameters);
-            tempGeometry.CrossSections.Clear();
-
-            // Convert UnifiedCrossSections to standard CrossSections
-            foreach (var ucs in crossSections) tempGeometry.CrossSections.Add(ucs.ToCrossSection());
-
             // Sample raw terrain elevations BEFORE smoothing for OriginalTerrainElevation
             var mapHeight = heightMap.GetLength(0);
             var mapWidth = heightMap.GetLength(1);
@@ -702,15 +704,9 @@ public class UnifiedRoadSmoother
                 crossSections[i].OriginalTerrainElevation = heightMap[py, px];
             }
 
-            // Calculate elevations using existing calculator
-            _elevationCalculator.CalculateTargetElevations(tempGeometry, heightMap, metersPerPixel);
-
-            // Copy calculated (smoothed) elevations back to UnifiedCrossSections
-            for (var i = 0; i < crossSections.Count && i < tempGeometry.CrossSections.Count; i++)
-            {
-                crossSections[i].TargetElevation = tempGeometry.CrossSections[i].TargetElevation;
-                totalCalculated++;
-            }
+            // Calculate elevations directly on UnifiedCrossSections (no conversion roundtrip)
+            _elevationCalculator.CalculateTargetElevations(crossSections, parameters, heightMap, metersPerPixel);
+            totalCalculated += crossSections.Count;
         }
 
         TerrainCreationLogger.Current?.Detail($"Calculated elevations for {totalCalculated} cross-sections");
