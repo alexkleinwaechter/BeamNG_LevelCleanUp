@@ -8,6 +8,23 @@
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                 <MudIcon Icon="@Icons.Material.Filled.Crop" />
                 <MudText Typo="Typo.h6">GeoTIFF Selection - @Title</MudText>
+                <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+                <MudSelect T="int"
+                           Value="TargetSize"
+                           ValueChanged="OnTargetSizeChanged"
+                           Label="Terrain Size"
+                           Variant="Variant.Outlined"
+                           Dense="true"
+                           Margin="Margin.Dense"
+                           Style="width: 170px; font-size: 0.85rem;">
+                    <MudSelectItem Value="256">256 x 256</MudSelectItem>
+                    <MudSelectItem Value="512">512 x 512</MudSelectItem>
+                    <MudSelectItem Value="1024">1024 x 1024</MudSelectItem>
+                    <MudSelectItem Value="2048">2048 x 2048</MudSelectItem>
+                    <MudSelectItem Value="4096">4096 x 4096</MudSelectItem>
+                    <MudSelectItem Value="8192">8192 x 8192</MudSelectItem>
+                    <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
+                </MudSelect>
             </MudStack>
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                 @if (_selectionBoundingBox != null)
