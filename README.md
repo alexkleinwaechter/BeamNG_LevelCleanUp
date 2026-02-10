@@ -2,6 +2,7 @@
 Clean your map level from unused files before deployment
 
 Watch the tutorial videos:
+
 [![Watch the video](https://img.youtube.com/vi/tX4AfwVJY7s/0.jpg)](https://youtu.be/tX4AfwVJY7s) 
 [![Watch the video](https://img.youtube.com/vi/-M06aIGzuKk/0.jpg)](https://youtu.be/-M06aIGzuKk) 
 [![Watch the video](https://img.youtube.com/vi/OE02UEP8ups/0.jpg)](https://youtu.be/OE02UEP8ups) 
