@@ -2,12 +2,19 @@
 Clean your map level from unused files before deployment
 
 Watch the tutorial videos:
-
+[![Watch the video](https://img.youtube.com/vi/tX4AfwVJY7s/0.jpg)](https://youtu.be/tX4AfwVJY7s) 
 [![Watch the video](https://img.youtube.com/vi/-M06aIGzuKk/0.jpg)](https://youtu.be/-M06aIGzuKk) 
 [![Watch the video](https://img.youtube.com/vi/OE02UEP8ups/0.jpg)](https://youtu.be/OE02UEP8ups) 
 [![Watch the video](https://img.youtube.com/vi/a4nC3N8aasI/0.jpg)](https://youtu.be/a4nC3N8aasI) 
 
 ## Features
+
+### Create level wizard
+This feature guides you through the whole process to get your first map up and running
+
+### Generate Terrain
+Generate your real life terrain from geotiff elevation data together with smooth roads using data from Open Street Map.
+
 ### Map Shrinker
 You can load a zipped map and let the tool search for orphaned files and assets which are not needed in the map. This can save a lot of space. All files and configurations will be checked against your scene tree with all of its dependencies and a proposal for file deletion is shown. Please check the list. It is always possible that the tool deletes too much. So always use a copy of your project! This tool is made for deleting things :) The good thing: You still have all your crap in the project and can use it for further ideas while having a lean deployment file.
 
