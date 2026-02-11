@@ -444,7 +444,11 @@ public partial class GenerateTerrain : IDisposable
                 if (!string.IsNullOrEmpty(result.TerrainName))
                     _terrainName = result.TerrainName;
                 if (result.MetersPerPixel.HasValue)
+                {
                     _metersPerPixel = result.MetersPerPixel.Value;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Loaded Meters Per Pixel: {result.MetersPerPixel.Value} from level");
+                }
             });
 
             await InvokeAsync(StateHasChanged);
@@ -750,7 +754,12 @@ public partial class GenerateTerrain : IDisposable
     ///     This enables OSM feature selection before terrain generation.
     ///     Also validates the GeoTIFF and sets OSM availability flags.
     /// </summary>
-    private async Task ReadGeoTiffMetadata()
+    /// <param name="syncMetersPerPixel">
+    ///     When true, automatically syncs the Meters Per Pixel field to match the GeoTIFF's
+    ///     native DEM resolution (e.g. 0.5m/px DEM → MetersPerPixel = 0.5).
+    ///     Set to false when importing presets that already specify a MetersPerPixel value.
+    /// </param>
+    private async Task ReadGeoTiffMetadata(bool syncMetersPerPixel = true)
     {
         // Reset OSM availability
         _canFetchOsmData = false;
@@ -769,6 +778,7 @@ public partial class GenerateTerrain : IDisposable
 
         string? finalMessage = null;
         var finalSeverity = Severity.Success;
+        string? mppSyncMessage = null;
 
         try
         {
@@ -813,6 +823,10 @@ public partial class GenerateTerrain : IDisposable
                     $"Auto-calculated: Max Height = {_maxHeight:F1}m, Base Height = {_terrainBaseHeight:F1}m");
             }
 
+            // Auto-sync meters per pixel from GeoTIFF native resolution
+            if (syncMetersPerPixel)
+                mppSyncMessage = SyncMetersPerPixelFromGeoTiff(result);
+
             // Log scale information
             LogScaleInformation(result);
 
@@ -837,9 +851,51 @@ public partial class GenerateTerrain : IDisposable
 
                 if (finalMessage != null)
                     Snackbar.Add(finalMessage, finalSeverity);
+
+                if (mppSyncMessage != null)
+                    Snackbar.Add(mppSyncMessage, Severity.Info);
             });
             _suppressSnackbars = false;
         }
+    }
+
+    /// <summary>
+    ///     Syncs the Meters Per Pixel field to match the GeoTIFF's native DEM resolution.
+    ///     The native pixel size (e.g. 0.5m for a 0.5m×0.5m DEM) directly becomes the
+    ///     meters per pixel value, because the terrain generator resamples the heightmap
+    ///     to the target terrain size internally.
+    /// </summary>
+    /// <returns>A message describing the change, or null if no change was needed.</returns>
+    private string? SyncMetersPerPixelFromGeoTiff(GeoTiffMetadataService.GeoTiffMetadataResult result)
+    {
+        if (_geoTiffGeoTransform == null)
+            return null;
+
+        var nativePixelSizeAvg = _geoTiffService.GetNativePixelSizeAverage(_geoTiffGeoTransform, _geoBoundingBox);
+        if (nativePixelSizeAvg <= 0)
+            return null;
+
+        // The native DEM resolution directly maps to meters per pixel.
+        // Round to one decimal for a clean UI value.
+        var suggestedMpp = (float)Math.Round(nativePixelSizeAvg, 1);
+
+        // Ensure minimum value
+        if (suggestedMpp < 0.1f)
+            suggestedMpp = 0.1f;
+
+        var previousMpp = _metersPerPixel;
+
+        // Only update if the value actually changed (with small tolerance)
+        if (Math.Abs(previousMpp - suggestedMpp) < 0.05f)
+            return null;
+
+        _metersPerPixel = suggestedMpp;
+
+        var message = $"Meters Per Pixel synced to {suggestedMpp:F1} " +
+                      $"(from DEM resolution: {nativePixelSizeAvg:F2}m/px)";
+
+        Console.WriteLine(message);
+        return message;
     }
 
     private void LogScaleInformation(GeoTiffMetadataService.GeoTiffMetadataResult result)
@@ -847,28 +903,11 @@ public partial class GenerateTerrain : IDisposable
         if (_geoBoundingBox == null || !result.SuggestedTerrainSize.HasValue || _geoTiffGeoTransform == null)
             return;
 
-        var nativePixelSizeX = Math.Abs(_geoTiffGeoTransform[1]);
-        var nativePixelSizeY = Math.Abs(_geoTiffGeoTransform[5]);
-        var avgNativePixelSize = (nativePixelSizeX + nativePixelSizeY) / 2.0;
+        var nativePixelSizeAvg = _geoTiffService.GetNativePixelSizeAverage(_geoTiffGeoTransform, _geoBoundingBox);
 
-        var originalSize = Math.Max(_geoTiffOriginalWidth, _geoTiffOriginalHeight);
-        var scaleFactor = (double)originalSize / result.SuggestedTerrainSize.Value;
-        var suggestedMpp = (float)(avgNativePixelSize * scaleFactor);
-
-        if (Math.Abs(_metersPerPixel - 1.0f) < 0.01f && suggestedMpp > 1.5f)
-        {
-            // Log scale mismatch to file only - technical detail that users rarely act on
-            Console.WriteLine("⚠️ Geographic scale mismatch detected!");
-            Console.WriteLine(
-                $"   Source DEM covers ~{suggestedMpp * result.SuggestedTerrainSize.Value / 1000:F1}km but terrain is {result.SuggestedTerrainSize.Value}px");
-            Console.WriteLine($"   Suggested: Set 'Meters per Pixel' to {suggestedMpp:F1} for real-world scale");
-        }
-        else
-        {
-            var totalSizeKm = _metersPerPixel * result.SuggestedTerrainSize.Value / 1000f;
-            Console.WriteLine(
-                $"Terrain scale: {_metersPerPixel:F1}m/px = {totalSizeKm:F1}km × {totalSizeKm:F1}km in-game");
-        }
+        var totalSizeKm = _metersPerPixel * result.SuggestedTerrainSize.Value / 1000f;
+        Console.WriteLine(
+            $"Terrain scale: {_metersPerPixel:F1}m/px (DEM: {nativePixelSizeAvg:F2}m/px) = {totalSizeKm:F1}km × {totalSizeKm:F1}km in-game");
     }
 
     private void ClearGeoMetadata()
@@ -1123,10 +1162,9 @@ public partial class GenerateTerrain : IDisposable
 
                 if (File.Exists(result.GeoTiffPath))
                 {
-                    // Read GeoTIFF metadata to restore bounding box and geo info
-                    // Note: ReadGeoTiffMetadata manages its own suppression internally,
-                    // but we keep our outer suppression active throughout the preset import
-                    await ReadGeoTiffMetadata();
+                    // Read GeoTIFF metadata to restore bounding box and geo info.
+                    // Don't sync meters per pixel - the preset already specifies it.
+                    await ReadGeoTiffMetadata(syncMetersPerPixel: false);
                     geoTiffLoaded = true;
                 }
                 else
@@ -1143,7 +1181,8 @@ public partial class GenerateTerrain : IDisposable
 
                 if (Directory.Exists(result.GeoTiffDirectory))
                 {
-                    await ReadGeoTiffMetadata();
+                    // Don't sync meters per pixel - the preset already specifies it.
+                    await ReadGeoTiffMetadata(syncMetersPerPixel: false);
                     geoTiffLoaded = true;
                 }
                 else
@@ -1284,7 +1323,11 @@ public partial class GenerateTerrain : IDisposable
             if (!string.IsNullOrEmpty(result.TerrainName))
                 _terrainName = result.TerrainName;
             if (result.MetersPerPixel.HasValue)
+            {
                 _metersPerPixel = result.MetersPerPixel.Value;
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Loaded Meters Per Pixel: {result.MetersPerPixel.Value} from level");
+            }
         });
 
         _isLoading = false;

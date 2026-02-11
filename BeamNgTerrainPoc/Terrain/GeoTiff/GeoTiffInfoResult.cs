@@ -79,78 +79,65 @@ public class GeoTiffInfoResult
     public string? EpsgCode => ParseEpsgCode(Projection);
 
     /// <summary>
-    /// Calculates the approximate meters per pixel for the GeoTIFF at a given target terrain size.
-    /// Uses the WGS84 bounding box to calculate geographic extent, then divides by target pixel count.
-    /// For projected CRS (UTM, etc.), uses the native pixel size directly.
+    /// Returns the native DEM resolution in meters per pixel.
+    /// For projected CRS (UTM, etc.), uses the native pixel size directly from the GeoTransform.
+    /// For geographic CRS (lat/lon in degrees), calculates meters from the WGS84 bounding box.
+    /// The terrain size parameter is unused but kept for API compatibility.
     /// </summary>
-    /// <param name="targetTerrainSize">The target terrain size in pixels (e.g., 4096)</param>
+    /// <param name="targetTerrainSize">Unused. The native DEM resolution is independent of terrain size.</param>
     /// <returns>Meters per pixel, or null if calculation is not possible</returns>
-    public float? CalculateMetersPerPixel(int targetTerrainSize)
+    public float? CalculateMetersPerPixel(int targetTerrainSize = 0)
     {
-        if (targetTerrainSize <= 0)
-            return null;
-
         // For projected CRS (UTM, etc.), the GeoTransform pixel size is already in meters
         if (GeoTransform != null && !IsGeographic)
         {
-            // GeoTransform[1] = pixel width in native units (meters for UTM)
-            // We need to account for the resize from original to target size
             var nativePixelSizeX = Math.Abs(GeoTransform[1]);
             var nativePixelSizeY = Math.Abs(GeoTransform[5]);
-            var avgNativePixelSize = (nativePixelSizeX + nativePixelSizeY) / 2.0;
-            
-            // Scale by the ratio of original size to target size
-            var originalSize = Math.Max(Width, Height);
-            var scaleFactor = (double)originalSize / targetTerrainSize;
-            
-            return (float)(avgNativePixelSize * scaleFactor);
+            return (float)((nativePixelSizeX + nativePixelSizeY) / 2.0);
         }
 
-        // For geographic CRS, calculate from WGS84 bounding box
-        if (Wgs84BoundingBox == null || !Wgs84BoundingBox.IsValidWgs84)
+        // For geographic CRS, calculate from WGS84 bounding box and pixel dimensions
+        if (Wgs84BoundingBox == null || !Wgs84BoundingBox.IsValidWgs84 || Width <= 0 || Height <= 0)
             return null;
 
         // Calculate approximate dimensions in meters
-        // Using Haversine-like approximation
         var centerLat = (Wgs84BoundingBox.MinLatitude + Wgs84BoundingBox.MaxLatitude) / 2.0;
         var centerLatRad = centerLat * Math.PI / 180.0;
-        
-        // Meters per degree of latitude (roughly constant ~111km)
+
         const double MetersPerDegreeLatitude = 111320.0;
-        
-        // Meters per degree of longitude (varies with latitude)
         var metersPerDegreeLongitude = MetersPerDegreeLatitude * Math.Cos(centerLatRad);
-        
-        // Calculate terrain extent in meters
+
         var latExtent = Wgs84BoundingBox.MaxLatitude - Wgs84BoundingBox.MinLatitude;
         var lonExtent = Wgs84BoundingBox.MaxLongitude - Wgs84BoundingBox.MinLongitude;
-        
+
         var heightMeters = latExtent * MetersPerDegreeLatitude;
         var widthMeters = lonExtent * metersPerDegreeLongitude;
-        
-        // Use the average of width and height (terrain is square after resize)
-        var avgExtentMeters = (widthMeters + heightMeters) / 2.0;
-        
-        return (float)(avgExtentMeters / targetTerrainSize);
+
+        // Native resolution: total real-world extent divided by source pixel count
+        var mppX = (float)(widthMeters / Width);
+        var mppY = (float)(heightMeters / Height);
+
+        return (mppX + mppY) / 2.0f;
     }
 
     /// <summary>
-    /// Gets a description of the terrain's real-world size.
+    /// Gets a description of the GeoTIFF's real-world size based on its native DEM resolution.
     /// </summary>
-    /// <param name="targetTerrainSize">The target terrain size in pixels</param>
-    /// <returns>Human-readable size description (e.g., "111.3 km × 91.2 km")</returns>
-    public string? GetRealWorldSizeDescription(int targetTerrainSize)
+    /// <param name="targetTerrainSize">Unused. Kept for API compatibility.</param>
+    /// <returns>Human-readable size description (e.g., "2.0 km × 2.0 km")</returns>
+    public string? GetRealWorldSizeDescription(int targetTerrainSize = 0)
     {
-        var mpp = CalculateMetersPerPixel(targetTerrainSize);
+        var mpp = CalculateMetersPerPixel();
         if (mpp == null)
             return null;
 
-        var totalMeters = mpp.Value * targetTerrainSize;
-        
-        if (totalMeters >= 1000)
-            return $"{totalMeters / 1000:F1} km × {totalMeters / 1000:F1} km";
+        var totalWidthMeters = mpp.Value * Width;
+        var totalHeightMeters = mpp.Value * Height;
+
+        if (totalWidthMeters >= 1000 || totalHeightMeters >= 1000)
+            return $"{totalWidthMeters / 1000:F1} km × {totalHeightMeters / 1000:F1} km";
         else
-            return $"{totalMeters:F0} m × {totalMeters:F0} m";
+            return $"{totalWidthMeters:F0} m × {totalHeightMeters:F0} m";
     }
 
     /// <summary>
