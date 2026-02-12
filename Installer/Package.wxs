@@ -22,9 +22,10 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
     <SummaryInformation Description="BeamNG.drive Map Building Tools with GeoTIFF Support" 
                         Manufacturer="Alex Kleinwaechter" />
     
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." 
-                  Schedule="afterInstallValidate" 
-                  AllowSameVersionUpgrades="yes" />
+    <!-- Always remove any previously installed version, regardless of version number -->
+    <Upgrade Id="E9D4C8B2-1A5F-4C7E-B8D9-3E6F2A8C5D1B">
+      <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Maximum="65535.65535.65535" IncludeMaximum="yes" Property="PREVIOUSFOUND" />
+    </Upgrade>
     
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     
@@ -67,6 +68,7 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
                   Return="ignore" />
     
     <InstallExecuteSequence>
+      <RemoveExistingProducts After="InstallInitialize" />
       <Custom Action="RemoveAppDataFolders" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
     

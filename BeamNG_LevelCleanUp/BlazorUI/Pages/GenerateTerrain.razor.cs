@@ -932,6 +932,12 @@ public partial class GenerateTerrain : IDisposable
         await InvokeAsync(StateHasChanged);
     }
 
+    private async Task OnCropMetersPerPixelChanged(float newMpp)
+    {
+        _metersPerPixel = newMpp;
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task OnCropAnchorChanged(CropAnchor newAnchor)
     {
         _cropAnchor = newAnchor;

@@ -25,6 +25,50 @@
                     <MudSelectItem Value="8192">8192 x 8192</MudSelectItem>
                     <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
                 </MudSelect>
+                @if (OriginalBoundingBox != null)
+                {
+                    <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+                    <MudTextField T="string"
+                                  Value="_bboxSouthStr"
+                                  ValueChanged="OnBboxSouthChanged"
+                                  Label="S (Lat)"
+                                  Variant="Variant.Outlined"
+                                  Dense="true"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="51.2867602" />
+                    <MudTextField T="string"
+                                  Value="_bboxWestStr"
+                                  ValueChanged="OnBboxWestChanged"
+                                  Label="W (Lon)"
+                                  Variant="Variant.Outlined"
+                                  Dense="true"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="-0.5103751" />
+                    <MudTextField T="string"
+                                  Value="_bboxNorthStr"
+                                  ValueChanged="OnBboxNorthChanged"
+                                  Label="N (Lat)"
+                                  Variant="Variant.Outlined"
+                                  Dense="true"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="51.6918741" />
+                    <MudTextField T="string"
+                                  Value="_bboxEastStr"
+                                  ValueChanged="OnBboxEastChanged"
+                                  Label="E (Lon)"
+                                  Variant="Variant.Outlined"
+                                  Dense="true"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="0.3340155" />
+                }
             </MudStack>
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                 @if (_selectionBoundingBox != null)
