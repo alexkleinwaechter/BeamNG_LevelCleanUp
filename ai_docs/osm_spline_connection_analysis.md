@@ -1,4 +1,4 @@
-# OSM Spline Connection Analysis & Implementation Plan
+﻿# OSM Spline Connection Analysis & Implementation Plan
 
 ## Document Purpose
 
@@ -14,20 +14,20 @@ This document analyzes how OSM way features are currently connected into longer 
 
 ```
 Overpass API Query
-    ??> OsmGeoJsonParser.Parse()             [Parse JSON ? OsmFeature objects]
-        ??> OsmFeatureSelection                [User selects features per material]
-            ??> OsmGeometryProcessor
-                ??> ConvertLinesToSplines()                     [Simple path]
-                ??> ConvertLinesToSplinesWithRoundabouts()      [Roundabout-aware path]
-                    ??> RoundaboutDetector.DetectRoundabouts()
-                    ??> ConnectingRoadTrimmer.TrimConnectingRoads()
-                    ??> RoundaboutMerger.ProcessRoundabouts()
-                    ??> ConvertLinesToSplines()  [for regular roads]
-                        ??> ConnectAdjacentPaths()             [*** THE KEY METHOD ***]
-                            ??> RoadSpline objects (pre-built splines)
-                                ??> RoadSmoothingParameters.PreBuiltSplines
-                                    ??> UnifiedRoadNetworkBuilder.BuildNetwork()
-                                        ??> ParameterizedRoadSpline objects in UnifiedRoadNetwork
+    └─> OsmGeoJsonParser.Parse()             [Parse JSON → OsmFeature objects]
+        └─> OsmFeatureSelection                [User selects features per material]
+            └─> OsmGeometryProcessor
+                ├─> ConvertLinesToSplines()                     [Simple path]
+                └─> ConvertLinesToSplinesWithRoundabouts()      [Roundabout-aware path]
+                    ├─> RoundaboutDetector.DetectRoundabouts()
+                    ├─> ConnectingRoadTrimmer.TrimConnectingRoads()
+                    ├─> RoundaboutMerger.ProcessRoundabouts()
+                    └─> ConvertLinesToSplines()  [for regular roads]
+                        └─> ConnectAdjacentPaths()             [*** THE KEY METHOD ***]
+                            └─> RoadSpline objects (pre-built splines)
+                                └─> RoadSmoothingParameters.PreBuiltSplines
+                                    └─> UnifiedRoadNetworkBuilder.BuildNetwork()
+                                        └─> ParameterizedRoadSpline objects in UnifiedRoadNetwork
 ```
 
 ### 1.2 Overpass API Query
@@ -35,18 +35,18 @@ Overpass API Query
 **File**: `OverpassApiService.BuildAllFeaturesQuery()` (line ~296)
 
 The query fetches:
-- `way["highway"]` � all road ways
-- `relation["type"="route"]["route"="road"]` � route relations (e.g., named highways like "A1")
+- `way["highway"]` — all road ways
+- `relation["type"="route"]["route"="road"]` — route relations (e.g., named highways like "A1")
 
-Output format: `out geom;` � returns geometry inline (lat/lon per point) instead of requiring node resolution.
+Output format: `out geom;` — returns geometry inline (lat/lon per point) instead of requiring node resolution.
 
 **What the response contains per way**:
 ```json
 {
   "type": "way",
   "id": 123456789,
-  "nodes": [111, 222, 333, 444],       // ? Node IDs (CURRENTLY IGNORED)
-  "geometry": [                          // ? Only this is parsed
+  "nodes": [111, 222, 333, 444],       // ← Node IDs (CURRENTLY IGNORED)
+  "geometry": [                          // ← Only this is parsed
     {"lat": 51.123, "lon": 7.456},
     {"lat": 51.124, "lon": 7.457},
     ...
@@ -60,19 +60,19 @@ Output format: `out geom;` � returns geometry inline (lat/lon per point) instead
 **File**: `OsmGeoJsonParser.ParseElement()` (line ~69)
 
 **What is parsed:**
-- Way ID (`id`) ? stored as `OsmFeature.Id`
-- Tags ? stored as `OsmFeature.Tags` dictionary (includes `name`, `ref`, `highway`, etc.)
-- Geometry (`geometry` array) ? stored as `OsmFeature.Coordinates` (list of `GeoCoordinate`)
+- Way ID (`id`) → stored as `OsmFeature.Id`
+- Tags → stored as `OsmFeature.Tags` dictionary (includes `name`, `ref`, `highway`, etc.)
+- Geometry (`geometry` array) → stored as `OsmFeature.Coordinates` (list of `GeoCoordinate`)
 
 **What is NOT parsed:**
-- **Node IDs** (`nodes` array) � completely ignored
-- Node-level metadata � not available via `out geom` anyway
+- **Node IDs** (`nodes` array) — completely ignored
+- Node-level metadata — not available via `out geom` anyway
 
 **For relations** (`ParseRelationMembers`, line ~158):
 - Extracts member way geometries
 - Groups by role (`outer`/`inner`)
 - Assembles into rings using endpoint coordinate matching
-- **Route relations** (`type=route, route=road`) are processed but the member roles (`forward`, `backward`, empty) are all treated as `outer` � semantically incorrect for linear route assembly
+- **Route relations** (`type=route, route=road`) are processed but the member roles (`forward`, `backward`, empty) are all treated as `outer` — semantically incorrect for linear route assembly
 
 ### 1.4 Feature Selection & Material Assignment
 
@@ -88,13 +88,13 @@ Users select OSM features per material via `OsmFeatureSelection`. The orchestrat
 **File**: `OsmGeometryProcessor.ConvertLinesToSplines()` (line ~711)
 
 Each OSM way feature goes through:
-1. **Transform** to terrain-space coordinates (WGS84 ? pixel ? meters)
+1. **Transform** to terrain-space coordinates (WGS84 → pixel → meters)
 2. **Crop** to terrain bounds via `CropLineToTerrain()`
 3. **Convert** from pixel to meter coordinates
 4. **Remove duplicate** consecutive points (tolerance: 0.01m = 1cm)
 5. **Separate** into structure paths (bridges/tunnels) and regular paths
 
-### 1.6 Path Connection � The Core Logic ??
+### 1.6 Path Connection — The Core Logic ⚠️
 
 **File**: `OsmGeometryProcessor.ConnectAdjacentPaths()` (line ~913)
 
@@ -106,13 +106,13 @@ private List<List<Vector2>> ConnectAdjacentPaths(List<List<Vector2>> paths, floa
 
 **Current algorithm:**
 1. Copy all paths into a working list
-2. Iteratively scan all path pairs (O(n�) per iteration)
+2. Iteratively scan all path pairs (O(n²) per iteration)
 3. For each pair, check **4 endpoint combinations**:
-   - path1.End ? path2.Start
-   - path1.End ? path2.End
-   - path1.Start ? path2.End
-   - path1.Start ? path2.Start
-4. If `Vector2.DistanceSquared(endpoint1, endpoint2) <= tolerance�`, merge the paths
+   - path1.End ↔ path2.Start
+   - path1.End ↔ path2.End
+   - path1.Start ↔ path2.End
+   - path1.Start ↔ path2.Start
+4. If `Vector2.DistanceSquared(endpoint1, endpoint2) <= tolerance²`, merge the paths
 5. Repeat until no more merges possible (safety limit: 1000 iterations)
 
 **Default tolerance**: `endpointJoinToleranceMeters = 1.0f` (configurable, set in orchestrator)
@@ -121,14 +121,14 @@ private List<List<Vector2>> ConnectAdjacentPaths(List<List<Vector2>> paths, floa
 
 | Rule | Implemented | Details |
 |------|:-----------:|---------|
-| Endpoint proximity (?1m) | ? | The only rule. Distance-based in meter-space after coordinate transformation. |
-| Shared OSM node IDs | ? | Node IDs not parsed from Overpass response. |
-| Same road name (`name=*`) | ? | Tags are parsed but not used in connection logic. |
-| Same road reference (`ref=*`) | ? | Available in tags but not considered. |
-| Same highway type | ? | `highway=*` tag not used for connection decisions. |
-| Route relation membership | ? | `route=road` relations queried but not used for way ordering/connection. |
-| Direction awareness | ? | Paths can be reversed freely (all 4 endpoint combos tried). |
-| Topology (shared nodes) | ? | Purely geometric, not topological. |
+| Endpoint proximity (≤1m) | ✅ | The only rule. Distance-based in meter-space after coordinate transformation. |
+| Shared OSM node IDs | ❌ | Node IDs not parsed from Overpass response. |
+| Same road name (`name=*`) | ❌ | Tags are parsed but not used in connection logic. |
+| Same road reference (`ref=*`) | ❌ | Available in tags but not considered. |
+| Same highway type | ❌ | `highway=*` tag not used for connection decisions. |
+| Route relation membership | ❌ | `route=road` relations queried but not used for way ordering/connection. |
+| Direction awareness | ❌ | Paths can be reversed freely (all 4 endpoint combos tried). |
+| Topology (shared nodes) | ❌ | Purely geometric, not topological. |
 
 ### 1.8 Where Merging Does NOT Apply
 
@@ -146,8 +146,8 @@ The following cases bypass `ConnectAdjacentPaths`:
 - All ways of the same road type are assigned to the same material
 
 **Breaks or produces suboptimal results when:**
-- Two ways of different road types share a node (e.g., `primary` and `residential`) � these get incorrectly merged into one long spline
-- A T-junction has three ways meeting at a shared node � only two will merge, creating inconsistent results depending on iteration order
+- Two ways of different road types share a node (e.g., `primary` and `residential`) — these get incorrectly merged into one long spline
+- A T-junction has three ways meeting at a shared node — only two will merge, creating inconsistent results depending on iteration order
 - Coordinate transformation introduces drift >1m (rare but possible with GDAL reprojection)
 - Ways that are part of the same named road but are split at a feature boundary (bridge segment, admin boundary) may not reconnect if their transformed endpoints drift
 
@@ -157,17 +157,17 @@ The following cases bypass `ConnectAdjacentPaths`:
 
 ### 2.1 Shared Nodes (Topology)
 
-OSM's primary connectivity mechanism. Two ways are connected if they share a common **node** (point with a unique ID). This is binary � either they share a node or they don't.
+OSM's primary connectivity mechanism. Two ways are connected if they share a common **node** (point with a unique ID). This is binary — either they share a node or they don't.
 
-- **Intersection**: Two roads cross ? they share a node at the crossing point
-- **Continuation**: One road is split into segments ? adjacent segments share their boundary node
-- **No connection**: Roads cross but don't intersect (overpass/bridge) ? no shared node
+- **Intersection**: Two roads cross → they share a node at the crossing point
+- **Continuation**: One road is split into segments → adjacent segments share their boundary node
+- **No connection**: Roads cross but don't intersect (overpass/bridge) → no shared node
 
 ### 2.2 Tags for Logical Grouping
 
-- `name=*` � Human-readable road name (e.g., "Berliner Stra�e")
-- `ref=*` � Route reference number (e.g., "B51", "A1")
-- `highway=*` � Road classification (motorway, primary, secondary, residential, etc.)
+- `name=*` — Human-readable road name (e.g., "Berliner Straße")
+- `ref=*` — Route reference number (e.g., "B51", "A1")
+- `highway=*` — Road classification (motorway, primary, secondary, residential, etc.)
 
 ### 2.3 Route Relations
 
@@ -196,15 +196,15 @@ OSM connects ways based on **shared node IDs**, NOT based on geometric proximity
 ### 3.1 Impact Assessment
 
 **High Impact Gaps:**
-1. **Missing node IDs** ? The biggest gap. Without node IDs, we cannot do true topological connectivity. The 1m proximity tolerance is a fuzzy approximation.
-2. **No highway type filtering** ? Can cause incorrect merges at junctions where different road types meet.
+1. **Missing node IDs** → The biggest gap. Without node IDs, we cannot do true topological connectivity. The 1m proximity tolerance is a fuzzy approximation.
+2. **No highway type filtering** → Can cause incorrect merges at junctions where different road types meet.
 
 **Medium Impact Gaps:**
-3. **Route relations unused** ? Named highways that span many segments could benefit from explicit ordering from route relations, but this is an optimization rather than a correctness issue.
-4. **No name-based grouping** ? Could improve spline continuity for roads that share a name but are split at OSM editing boundaries.
+3. **Route relations unused** → Named highways that span many segments could benefit from explicit ordering from route relations, but this is an optimization rather than a correctness issue.
+4. **No name-based grouping** → Could improve spline continuity for roads that share a name but are split at OSM editing boundaries.
 
 **Low Impact Gaps:**
-5. **Direction awareness** ? Currently all 4 endpoint combos are tried and paths can be reversed. This works correctly for our use case (we only care about geometry, not traffic direction).
+5. **Direction awareness** → Currently all 4 endpoint combos are tried and paths can be reversed. This works correctly for our use case (we only care about geometry, not traffic direction).
 
 ---
 
@@ -218,33 +218,30 @@ OSM connects ways based on **shared node IDs**, NOT based on geometric proximity
 
 The Overpass `out geom` format does NOT include node IDs in the `geometry` array. However, the `nodes` array is present alongside `geometry` in each way element. Both arrays are ordered and have the same length, so we can zip them together.
 
-**Option A � Extend `GeoCoordinate`** (minimal change):
+**Option A — Extend `GeoCoordinate`** (minimal change):
 ```csharp
 // Add optional NodeId to GeoCoordinate
 public long? NodeId { get; init; }
 ```
 
-**Option B � Add `NodeIds` list to `OsmFeature`** (cleaner separation):
+**Option B — Add `NodeIds` list to `OsmFeature`** (cleaner separation):
 ```csharp
 // In OsmFeature:
-public List<long>? NodeIds { get; set; }  // Parallel to Coordinates list
+public List<long> NodeIds { get; set; }  // Parallel to Coordinates list, always present for ways
 ```
 
-**Recommended**: Option B � keeps `GeoCoordinate` simple (it's used in non-OSM contexts too) and provides node IDs as an explicit parallel list on `OsmFeature`.
+**Recommended**: Option B — keeps `GeoCoordinate` simple (it's used in non-OSM contexts too) and provides node IDs as an explicit parallel list on `OsmFeature`. The list is non-nullable because every OSM way always has node IDs.
 
 #### 4.1.2 Update `OsmGeoJsonParser.ParseElement()`
 
 Parse the `nodes` array from way elements:
 ```csharp
-// After parsing geometry, parse node IDs if available
-List<long>? nodeIds = null;
-if (element.TryGetProperty("nodes", out var nodesEl))
+// Parse node IDs — always present for OSM ways
+var nodesEl = element.GetProperty("nodes");
+var nodeIds = new List<long>();
+foreach (var nodeEl in nodesEl.EnumerateArray())
 {
-    nodeIds = new List<long>();
-    foreach (var nodeEl in nodesEl.EnumerateArray())
-    {
-        nodeIds.Add(nodeEl.GetInt64());
-    }
+    nodeIds.Add(nodeEl.GetInt64());
 }
 // Store on OsmFeature
 feature.NodeIds = nodeIds;
@@ -252,12 +249,12 @@ feature.NodeIds = nodeIds;
 
 #### 4.1.3 Validation
 
-- Verify `nodes` array length matches `geometry` array length
-- Log warning if mismatch (gracefully degrade to current behavior)
+- Assert that `nodes` array length matches `geometry` array length (these are always equal for OSM ways)
+- If a mismatch is ever encountered, throw an exception — this would indicate a bug in parsing, not a data issue
 
 ### Phase 2: Node-Based Connectivity in `ConnectAdjacentPaths`
 
-**Goal**: Use shared node IDs as the primary connection criterion, falling back to geometric proximity.
+**Goal**: Use shared node IDs as the primary connection criterion. Geometric proximity is only used as a secondary signal for cropped paths where node IDs were removed at terrain boundaries.
 
 #### 4.2.1 Propagate Node IDs Through the Pipeline
 
@@ -267,8 +264,8 @@ Currently, `ConvertLinesToSplines()` transforms coordinates and discards feature
 ```csharp
 private record PathWithMetadata(
     List<Vector2> Points,
-    long? StartNodeId,    // First node ID (null if unavailable or cropped)
-    long? EndNodeId,      // Last node ID (null if unavailable or cropped)
+    long? StartNodeId,    // First node ID (null only if path was cropped at terrain start boundary)
+    long? EndNodeId,      // Last node ID (null only if path was cropped at terrain end boundary)
     long OsmWayId,        // For debugging/logging
     Dictionary<string, string> Tags  // For name/type matching
 );
@@ -280,30 +277,31 @@ When cropping to terrain bounds modifies the start or end point, the correspondi
 
 Replace `ConnectAdjacentPaths()` with a three-tier connection strategy:
 
-**Tier 1 � Shared Node ID** (highest confidence):
+**Tier 1 — Shared Node ID** (highest confidence):
 ```
 If path1.EndNodeId == path2.StartNodeId (or any endpoint combo), merge them.
-No distance check needed � OSM topology guarantees connectivity.
+No distance check needed — OSM topology guarantees connectivity.
 ```
 
-**Tier 2 � Same Name/Ref + Proximity** (medium confidence):
+**Tier 2 — Same Name/Ref + Proximity** (medium confidence):
 ```
 If path1 and path2 share the same non-empty `name` or `ref` tag,
 AND their endpoints are within the existing tolerance (1m),
 merge them.
 ```
 
-**Tier 3 � Proximity Only** (fallback, current behavior):
+**Tier 3 — Proximity Only** (for cropped paths that lost their node IDs at terrain boundaries):
 ```
 If path1 and path2 endpoints are within tolerance AND they share
 the same `highway` type, merge them.
+This only applies when one or both endpoints have null node IDs due to terrain cropping.
 ```
 
 #### 4.2.3 Anti-Merge Rules
 
 Prevent merging when:
 - Paths have different `highway=*` values (e.g., don't merge `motorway` with `residential`)
-- A node ID is shared by 3+ paths (it's a junction, not a continuation) � this requires counting node ID occurrences across all paths first
+- A node ID is shared by 3+ paths (it's a junction, not a continuation) — this requires counting node ID occurrences across all paths first
 - Paths have conflicting `name=*` tags (both non-empty but different)
 
 The 3-way shared node rule is critical: at a T-junction, three ways share one node. Currently, two of them get arbitrarily merged. With node ID counting, we can detect this is a junction (3+ ways sharing a node) and avoid merging any of them at that point.
@@ -319,7 +317,7 @@ When the Overpass response includes route relations, their `members` array lists
 {
   "type": "relation",
   "id": 987654,
-  "tags": {"type": "route", "route": "road", "ref": "B51", "name": "Bundesstra�e 51"},
+  "tags": {"type": "route", "route": "road", "ref": "B51", "name": "Bundesstraße 51"},
   "members": [
     {"type": "way", "ref": 111, "role": "forward"},
     {"type": "way", "ref": 222, "role": "forward"},
@@ -331,7 +329,7 @@ When the Overpass response includes route relations, their `members` array lists
 #### 4.3.2 Pre-Group Ways by Route Relation
 
 Before running the general connection algorithm:
-1. Parse route relations and build a mapping: `wayId ? routeRelationId`
+1. Parse route relations and build a mapping: `wayId → routeRelationId`
 2. Group ways that belong to the same route relation
 3. Order them according to the relation's member sequence
 4. Assemble each group into a pre-connected path
@@ -354,22 +352,22 @@ Route relations may include ways outside the terrain bounding box. The assembly 
 
 Before merging, build a node valence map:
 ```csharp
-Dictionary<long, int> nodeValence;  // nodeId ? number of ways sharing this node
+Dictionary<long, int> nodeValence;  // nodeId → number of ways sharing this node
 ```
 
-Nodes with valence ? 3 are junctions. Ways should NOT be merged through junction nodes � they should terminate there, allowing the junction harmonizer to handle the intersection properly.
+Nodes with valence ≥ 3 are junctions. Ways should NOT be merged through junction nodes — they should terminate there, allowing the junction harmonizer to handle the intersection properly.
 
 #### 4.4.2 Highway Type Compatibility
 
 Define which highway types can be merged together:
 ```
-motorway ? motorway_link       (on-ramp continuation)
-trunk ? trunk_link
-primary ? primary_link
-secondary ? secondary_link
-tertiary ? tertiary_link
-residential ? residential
-unclassified ? unclassified
+motorway ↔ motorway_link       (on-ramp continuation)
+trunk ↔ trunk_link
+primary ↔ primary_link
+secondary ↔ secondary_link
+tertiary ↔ tertiary_link
+residential ↔ residential
+unclassified ↔ unclassified
 ```
 
 All other cross-type combinations should NOT merge, even if they share an endpoint node.
@@ -380,14 +378,14 @@ All other cross-type combinations should NOT merge, even if they share an endpoi
 
 | File | Change | Phase |
 |------|--------|:-----:|
-| `OsmFeature.cs` | Add `List<long>? NodeIds` property | 1 |
+| `OsmFeature.cs` | Add `List<long> NodeIds` property (non-nullable) | 1 |
 | `OsmGeoJsonParser.cs` | Parse `nodes` array from way elements | 1 |
 | `OsmGeometryProcessor.cs` | Propagate node IDs through `ConvertLinesToSplines`; new `ConnectAdjacentPaths` with 3-tier strategy; add anti-merge rules (node valence, highway type) | 2, 4 |
 | `OverpassApiService.cs` | Possibly adjust query to ensure node IDs and route relations are included | 3 |
 | `OsmGeoJsonParser.cs` | Parse route relation member ordering | 3 |
-| `ConnectingRoadTrimmer.cs` | No changes needed (operates on geo-coordinates before this stage) | � |
-| `RoundaboutDetector.cs` | No changes needed (uses its own coordinate-based grouping) | � |
-| `UnifiedRoadNetworkBuilder.cs` | No changes to PNG path (MergeBrokenCurves stays as-is) | � |
+| `ConnectingRoadTrimmer.cs` | No changes needed (operates on geo-coordinates before this stage) | — |
+| `RoundaboutDetector.cs` | No changes needed (uses its own coordinate-based grouping) | — |
+| `UnifiedRoadNetworkBuilder.cs` | No changes to PNG path (MergeBrokenCurves stays as-is) | — |
 
 ---
 
@@ -395,21 +393,24 @@ All other cross-type combinations should NOT merge, even if they share an endpoi
 
 | Risk | Mitigation |
 |------|-----------|
-| Overpass `out geom` may not include `nodes` array in all responses | Check for its presence; gracefully fall back to current proximity-based logic |
+| PNG spline connecting logic may be destroyed during implementation | No changes to PNG path merging; only OSM paths affected |
 | Route relations may reference ways outside our bbox | Handle partial coverage; skip missing members |
 | Node valence counting requires pre-scanning all ways | Single O(n) pass; negligible performance cost |
-| Changing merge behavior may break existing terrain generation for users | Feature-flag the new logic; allow fallback to legacy proximity-only merging |
-| Some OSM areas have poor data quality (missing nodes, misaligned ways) | Keep the proximity fallback as Tier 3; log when it's used |
+| Changing merge behavior may break existing terrain generation for users | Accepted — no fallback to old behavior; new node-based logic replaces proximity-based merging entirely |
+
+**Non-risks (clarifications):**
+- ~~Overpass `out geom` may not include `nodes` array~~ — Not a risk. Every OSM way always has nodes and node IDs. The `nodes` array is guaranteed in `out geom` responses for ways.
+- ~~Poor OSM data quality with missing nodes~~ — Not a risk. As long as a way exists in OSM, it has nodes. Node IDs are a fundamental part of the OSM data model.
 
 ---
 
 ## 7. Testing Strategy
 
-1. **Regression test**: Generate terrain for existing test areas and verify identical output when new logic is disabled
+1. **Regression test**: Generate terrain for existing test areas and compare output quality with the previous proximity-based approach
 2. **Junction accuracy**: Compare junction detection results with and without node-based connectivity
 3. **Named highways**: Verify that B-roads and named streets produce longer, more continuous splines
 4. **Cross-type junctions**: Verify that motorway/residential junctions are NOT merged
-5. **Edge cases**: Ways cropped at terrain boundary, ways with missing node IDs, ways in route relations with gaps
+5. **Edge cases**: Ways cropped at terrain boundary (node IDs nulled at crop points), ways in route relations with gaps
 
 ---
 
@@ -430,7 +431,7 @@ Example way element with both `nodes` and `geometry`:
   ],
   "tags": {
     "highway": "primary",
-    "name": "Berliner Stra�e",
+    "name": "Berliner Straße",
     "ref": "B51",
     "lanes": "2",
     "surface": "asphalt"
@@ -454,4 +455,4 @@ Key: `nodes[i]` corresponds to `geometry[i]`. If way 4579143 ends with node 2694
 | Roundabout detection | `RoundaboutDetector.cs` | `DetectRoundabouts()` (line ~36) |
 | Road trimming | `ConnectingRoadTrimmer.cs` | `TrimConnectingRoads()` |
 | Network building | `UnifiedRoadNetworkBuilder.cs` | `BuildNetwork()` (line ~46) |
-| PNG path merging | `UnifiedRoadNetworkBuilder.cs` | `MergeBrokenCurves()` (line ~768) � NOT affected |
+| PNG path merging | `UnifiedRoadNetworkBuilder.cs` | `MergeBrokenCurves()` (line ~768) — NOT affected |
