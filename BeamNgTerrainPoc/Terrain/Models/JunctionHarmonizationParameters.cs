@@ -74,37 +74,6 @@ public class JunctionHarmonizationParameters
     public JunctionBlendFunctionType BlendFunctionType { get; set; } = JunctionBlendFunctionType.Cosine;
 
     // ========================================
-    // ENDPOINT TAPERING
-    // ========================================
-
-    /// <summary>
-    ///     Enable tapering at isolated endpoints (roads that end without connecting to another road).
-    ///     When enabled, road elevation gradually transitions back toward terrain at dead ends.
-    ///     Default: true
-    /// </summary>
-    public bool EnableEndpointTaper { get; set; } = true;
-
-    /// <summary>
-    ///     Distance (in meters) over which to taper endpoint elevation back toward terrain.
-    ///     Only applies to truly isolated endpoints (not T-junctions).
-    ///     Typical values:
-    ///     - 10-20m: Short taper (abrupt ending)
-    ///     - 20-30m: Standard taper (DEFAULT)
-    ///     - 30-50m: Long taper (gradual ending)
-    ///     Default: 25.0
-    /// </summary>
-    public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
-
-    /// <summary>
-    ///     How much to blend endpoint elevation toward terrain (0-1).
-    ///     0 = no blending (road keeps its elevation at endpoint)
-    ///     0.5 = blend halfway to terrain
-    ///     1.0 = fully blend to terrain elevation
-    ///     Default: 0.3 (subtle blend - road mostly keeps its elevation)
-    /// </summary>
-    public float EndpointTerrainBlendStrength { get; set; } = 1f;
-
-    // ========================================
     // ROUNDABOUT SETTINGS
     // ========================================
 
@@ -171,13 +140,14 @@ public class JunctionHarmonizationParameters
     ///     Distance (in meters) over which to blend connecting road elevation toward the roundabout ring.
     ///     This controls how smoothly roads transition to match the roundabout's uniform elevation.
     ///     If not set (null), uses JunctionBlendDistanceMeters as the default.
+    ///     Capped at 75% of road length to avoid affecting the far end of the road.
     ///     Typical values:
-    ///     - 15-25m: Tight transition (urban roundabouts)
-    ///     - 25-40m: Standard transition (DEFAULT - same as JunctionBlendDistanceMeters)
-    ///     - 40-60m: Smooth transition (highway roundabouts)
-    ///     Default: null (uses JunctionBlendDistanceMeters)
+    ///     - 25-35m: Tight transition (urban roundabouts)
+    ///     - 40-60m: Standard transition (DEFAULT)
+    ///     - 60-100m: Smooth transition (highway roundabouts, sloped terrain)
+    ///     Default: 50.0
     /// </summary>
-    public float? RoundaboutBlendDistanceMeters { get; set; } = 20.0f;
+    public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
 
     /// <summary>
     ///     Gets the effective roundabout blend distance.
@@ -249,12 +219,6 @@ public class JunctionHarmonizationParameters
 
         if (JunctionBlendDistanceMeters <= 0)
             errors.Add("JunctionBlendDistanceMeters must be greater than 0");
-
-        if (EndpointTaperDistanceMeters <= 0)
-            errors.Add("EndpointTaperDistanceMeters must be greater than 0");
-
-        if (EndpointTerrainBlendStrength < 0 || EndpointTerrainBlendStrength > 1)
-            errors.Add("EndpointTerrainBlendStrength must be between 0 and 1");
 
         if (RoundaboutConnectionRadiusMeters <= 0)
             errors.Add("RoundaboutConnectionRadiusMeters must be greater than 0");

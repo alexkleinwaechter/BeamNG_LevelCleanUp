@@ -707,6 +707,7 @@ public class OsmGeometryProcessor
     /// <param name="endpointJoinToleranceMeters">Tolerance for joining endpoints of adjacent ways (default 1m).</param>
     /// <param name="excludeBridges">When true, bridge splines are kept separate from merging. When false, bridges are merged like normal roads (backward compatible).</param>
     /// <param name="excludeTunnels">When true, tunnel splines are kept separate from merging. When false, tunnels are merged like normal roads (backward compatible).</param>
+    /// <param name="routeRelations">Optional route relations (type=route, route=road) for pre-assembling ways by route membership before general node-based connectivity.</param>
     /// <returns>List of road splines in meter coordinates.</returns>
     public List<RoadSpline> ConvertLinesToSplines(
         List<OsmFeature> lineFeatures,
@@ -718,21 +719,26 @@ public class OsmGeometryProcessor
         float duplicatePointToleranceMeters = 0.01f,
         float endpointJoinToleranceMeters = 1.0f,
         bool excludeBridges = false,
-        bool excludeTunnels = false)
+        bool excludeTunnels = false,
+        IReadOnlyList<RouteRelation>? routeRelations = null)
     {
         var splines = new List<RoadSpline>();
         int skippedZeroLength = 0;
         int skippedTooFewPoints = 0;
 
-        // Step 1: Transform all features to meter coordinates first
-        // Track structure metadata (IsBridge/IsTunnel) for each path
-        var allPaths = new List<List<Vector2>>();
-        var pathMetadata = new List<(bool IsBridge, bool IsTunnel, StructureType StructureType, int Layer, string? BridgeStructureType)>();
+        // Step 1: Transform all features to meter coordinates first.
+        // Build PathWithMetadata objects that carry OSM node IDs and tags for node-based connectivity.
+        var allPathsMeta = new List<PathWithMetadata>();
 
         foreach (var feature in lineFeatures.Where(f => f.GeometryType == OsmGeometryType.LineString))
         {
             // Transform to terrain-space coordinates (bottom-left origin for heightmap)
             var terrainCoords = TransformToTerrainCoordinates(feature.Coordinates, bbox, terrainSize);
+
+            // Save original endpoints for node ID tracking — after cropping, if the
+            // first/last point changed, the OSM node ID at that endpoint is lost.
+            var originalFirst = terrainCoords[0];
+            var originalLast = terrainCoords[^1];
 
             // Crop to terrain bounds
             var croppedCoords = CropLineToTerrain(terrainCoords, terrainSize);
@@ -742,6 +748,10 @@ public class OsmGeometryProcessor
                 skippedTooFewPoints++;
                 continue;
             }
+
+            // Determine if endpoints were cropped (losing their OSM node identity)
+            bool startCropped = croppedCoords[0] != originalFirst;
+            bool endCropped = croppedCoords[^1] != originalLast;
 
             // Convert from pixel coordinates to meter coordinates
             var meterCoords = croppedCoords
@@ -753,9 +763,18 @@ public class OsmGeometryProcessor
 
             if (uniqueCoords.Count >= 2)
             {
-                allPaths.Add(uniqueCoords);
-                // Store structure metadata from OsmFeature
-                pathMetadata.Add((
+                // Resolve start/end node IDs (null if cropped at terrain boundary or no node data)
+                long? startNodeId = (!startCropped && feature.NodeIds.Count > 0)
+                    ? feature.NodeIds[0] : null;
+                long? endNodeId = (!endCropped && feature.NodeIds.Count > 0)
+                    ? feature.NodeIds[^1] : null;
+
+                allPathsMeta.Add(new PathWithMetadata(
+                    uniqueCoords,
+                    startNodeId,
+                    endNodeId,
+                    feature.Id,
+                    new Dictionary<string, string>(feature.Tags),
                     feature.IsBridge,
                     feature.IsTunnel,
                     feature.GetStructureType(),
@@ -769,53 +788,59 @@ public class OsmGeometryProcessor
             }
         }
         
-        Console.WriteLine($"Prepared {allPaths.Count} paths from {lineFeatures.Count} OSM line features");
+        Console.WriteLine($"Prepared {allPathsMeta.Count} paths from {lineFeatures.Count} OSM line features");
 
         // Step 2: Separate structure paths from regular paths for selective merging
         // BACKWARD COMPATIBILITY: Only keep structures separate when their exclusion is enabled
         // When both excludeBridges and excludeTunnels are false, all paths are merged together
-        var structurePaths = new List<(List<Vector2> Path, int Index)>();
-        var regularPaths = new List<List<Vector2>>();
-        var regularPathIndices = new List<int>();
+        var structurePathsMeta = new List<PathWithMetadata>();
+        var regularPathsMeta = new List<PathWithMetadata>();
 
-        for (int i = 0; i < allPaths.Count; i++)
+        for (int i = 0; i < allPathsMeta.Count; i++)
         {
+            var pm = allPathsMeta[i];
             // A path is "protected" (kept separate) only if:
             // - It's a bridge AND excludeBridges is true, OR
             // - It's a tunnel AND excludeTunnels is true
             bool isProtectedStructure = 
-                (pathMetadata[i].IsBridge && excludeBridges) ||
-                (pathMetadata[i].IsTunnel && excludeTunnels);
+                (pm.IsBridge && excludeBridges) ||
+                (pm.IsTunnel && excludeTunnels);
 
             if (isProtectedStructure)
-            {
-                structurePaths.Add((allPaths[i], i));
-            }
+                structurePathsMeta.Add(pm);
             else
-            {
-                regularPaths.Add(allPaths[i]);
-                regularPathIndices.Add(i);
-            }
+                regularPathsMeta.Add(pm);
         }
 
-        Console.WriteLine($"Separated paths: {structurePaths.Count} protected structure paths (kept separate), {regularPaths.Count} regular paths (will merge)");
+        Console.WriteLine($"Separated paths: {structurePathsMeta.Count} protected structure paths (kept separate), {regularPathsMeta.Count} regular paths (will merge)");
         if (!excludeBridges && !excludeTunnels)
             Console.WriteLine("  (Backward compatible mode: all structures treated as normal roads)");
 
-        // Step 3: Connect only regular (non-structure) paths
-        var connectedPaths = regularPaths.Count > 0
-            ? ConnectAdjacentPaths(regularPaths, endpointJoinToleranceMeters)
+        // Step 3: Pre-assemble regular paths by route relation membership (Tier 0).
+        // Route relations provide explicit ordering of ways along named roads (e.g., "B51").
+        // This merges consecutive relation members that share node IDs, producing longer
+        // pre-assembled paths before the general node-based connector runs.
+        if (routeRelations != null && routeRelations.Count > 0)
+        {
+            regularPathsMeta = RouteRelationAssembler.PreAssembleByRouteRelation(
+                regularPathsMeta, routeRelations);
+        }
+
+        // Step 4: Connect only regular (non-structure) paths using node-based connectivity.
+        // Uses 3-tier strategy: shared node ID → same name/ref + proximity → proximity for cropped paths.
+        var connectedPaths = regularPathsMeta.Count > 0
+            ? NodeBasedPathConnector.Connect(regularPathsMeta, endpointJoinToleranceMeters)
             : new List<List<Vector2>>();
 
-        Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPaths.Count})");
+        Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPathsMeta.Count})");
 
-        // Step 4: Create splines from structure paths (preserve metadata)
+        // Step 5: Create splines from structure paths (preserve metadata from PathWithMetadata)
         int bridgeCount = 0;
         int tunnelCount = 0;
 
-        foreach (var (path, index) in structurePaths)
+        foreach (var pm in structurePathsMeta)
         {
-            var cleanPath = RemoveDuplicateConsecutivePoints(path, duplicatePointToleranceMeters);
+            var cleanPath = RemoveDuplicateConsecutivePoints(pm.Points, duplicatePointToleranceMeters);
 
             if (cleanPath.Count < 2)
             {
@@ -834,12 +859,12 @@ public class OsmGeometryProcessor
             {
                 var spline = new RoadSpline(cleanPath, interpolationType)
                 {
-                    // Copy structure metadata from OsmFeature
-                    IsBridge = pathMetadata[index].IsBridge,
-                    IsTunnel = pathMetadata[index].IsTunnel,
-                    StructureType = pathMetadata[index].StructureType,
-                    Layer = pathMetadata[index].Layer,
-                    BridgeStructureType = pathMetadata[index].BridgeStructureType
+                    // Copy structure metadata from PathWithMetadata
+                    IsBridge = pm.IsBridge,
+                    IsTunnel = pm.IsTunnel,
+                    StructureType = pm.StructureType,
+                    Layer = pm.Layer,
+                    BridgeStructureType = pm.BridgeStructureType
                 };
                 splines.Add(spline);
 
@@ -852,7 +877,7 @@ public class OsmGeometryProcessor
             }
         }
 
-        // Step 5: Create splines from regular (merged) paths
+        // Step 6: Create splines from regular (merged) paths
         foreach (var path in connectedPaths)
         {
             // Remove any duplicate points that might have been introduced by joining
@@ -891,7 +916,7 @@ public class OsmGeometryProcessor
             }
         }
 
-        Console.WriteLine($"Created {splines.Count} splines total ({structurePaths.Count} structures + {connectedPaths.Count} regular roads)");
+        Console.WriteLine($"Created {splines.Count} splines total ({structurePathsMeta.Count} structures + {connectedPaths.Count} regular roads)");
         if (bridgeCount > 0 || tunnelCount > 0)
             Console.WriteLine($"  Structure metadata: {bridgeCount} bridge(s), {tunnelCount} tunnel(s)");
         if (skippedTooFewPoints > 0)
@@ -902,106 +927,6 @@ public class OsmGeometryProcessor
         return splines;
     }
 
-    /// <summary>
-    /// Connects paths that share endpoints to form longer continuous paths.
-    /// This is critical for OSM data where roads are split at intersections.
-    /// Uses an iterative approach similar to the skeleton-based path joining.
-    /// </summary>
-    /// <param name="paths">List of individual paths to connect.</param>
-    /// <param name="tolerance">Maximum distance between endpoints to consider them connected.</param>
-    /// <returns>List of connected paths.</returns>
-    private List<List<Vector2>> ConnectAdjacentPaths(List<List<Vector2>> paths, float tolerance)
-    {
-        if (paths.Count <= 1)
-            return paths;
-        
-        var result = paths.Select(p => new List<Vector2>(p)).ToList();
-        var toleranceSquared = tolerance * tolerance;
-        bool didMerge;
-        int iterations = 0;
-        int totalMerges = 0;
-        
-        do
-        {
-            didMerge = false;
-            iterations++;
-            
-            for (int i = 0; i < result.Count && !didMerge; i++)
-            {
-                var path1 = result[i];
-                if (path1.Count < 2) continue;
-                
-                for (int j = i + 1; j < result.Count; j++)
-                {
-                    var path2 = result[j];
-                    if (path2.Count < 2) continue;
-                    
-                    var p1Start = path1[0];
-                    var p1End = path1[^1];
-                    var p2Start = path2[0];
-                    var p2End = path2[^1];
-                    
-                    // Check all 4 endpoint combinations
-                    var dEndToStart = Vector2.DistanceSquared(p1End, p2Start);
-                    var dEndToEnd = Vector2.DistanceSquared(p1End, p2End);
-                    var dStartToEnd = Vector2.DistanceSquared(p1Start, p2End);
-                    var dStartToStart = Vector2.DistanceSquared(p1Start, p2Start);
-                    
-                    if (dEndToStart <= toleranceSquared)
-                    {
-                        // path1.end connects to path2.start -> append path2 to path1
-                        path1.AddRange(path2.Skip(1));
-                        result.RemoveAt(j);
-                        didMerge = true;
-                        totalMerges++;
-                        break;
-                    }
-                    
-                    if (dEndToEnd <= toleranceSquared)
-                    {
-                        // path1.end connects to path2.end -> append reversed path2 to path1
-                        for (int k = path2.Count - 2; k >= 0; k--)
-                            path1.Add(path2[k]);
-                        result.RemoveAt(j);
-                        didMerge = true;
-                        totalMerges++;
-                        break;
-                    }
-                    
-                    if (dStartToEnd <= toleranceSquared)
-                    {
-                        // path1.start connects to path2.end -> prepend path2 to path1
-                        var merged = new List<Vector2>(path2);
-                        merged.AddRange(path1.Skip(1));
-                        result[i] = merged;
-                        result.RemoveAt(j);
-                        didMerge = true;
-                        totalMerges++;
-                        break;
-                    }
-                    
-                    if (dStartToStart <= toleranceSquared)
-                    {
-                        // path1.start connects to path2.start -> prepend reversed path2 to path1
-                        var merged = new List<Vector2>();
-                        for (int k = path2.Count - 1; k >= 0; k--)
-                            merged.Add(path2[k]);
-                        merged.AddRange(path1.Skip(1));
-                        result[i] = merged;
-                        result.RemoveAt(j);
-                        didMerge = true;
-                        totalMerges++;
-                        break;
-                    }
-                }
-            }
-        } while (didMerge && iterations < 1000); // Safety limit
-        
-        Console.WriteLine($"  Path joining: {totalMerges} merges in {iterations} iterations, tolerance={tolerance:F2}m");
-        
-        return result;
-    }
-    
     /// <summary>
     /// Removes consecutive duplicate points from a path.
     /// </summary>
@@ -1167,14 +1092,18 @@ public class OsmGeometryProcessor
         var detector = new RoundaboutDetector();
         var allDetectedRoundabouts = detector.DetectRoundabouts(fullQueryResult);
         
-        // Step 2: Filter to only roundabouts whose ways overlap with THIS material's features
-        // This prevents creating duplicate roundabout splines when multiple materials are processed
+        // Step 2: Filter to only roundabouts that have connecting roads in THIS material's features.
+        // A roundabout belongs to a material if any of its CONNECTING ROADS are in the material,
+        // not if the roundabout ring ways themselves are (ring ways may have different highway tags
+        // and may not appear in the material's SelectedOsmFeatures).
+        // This prevents creating duplicate roundabout splines when multiple materials are processed.
         detectedRoundabouts = allDetectedRoundabouts
-            .Where(r => r.WayIds.Any(wayId => materialFeatureIds.Contains(wayId)))
+            .Where(r => r.WayIds.Any(wayId => materialFeatureIds.Contains(wayId)) ||
+                        r.Connections.Any(c => materialFeatureIds.Contains(c.ConnectingWayId)))
             .ToList();
-        
+
         var skippedRoundabouts = allDetectedRoundabouts.Count - detectedRoundabouts.Count;
-        
+
         // Collect way IDs only from roundabouts that belong to this material
         var wayIdSet = new HashSet<long>();
         foreach (var roundabout in detectedRoundabouts)
@@ -1185,29 +1114,57 @@ public class OsmGeometryProcessor
             }
         }
         roundaboutWayIds = wayIdSet;
-        
+
+        // Log diagnostic info for roundabouts that were detected but not matched to this material
+        if (skippedRoundabouts > 0)
+        {
+            var matchedIds = new HashSet<long>(detectedRoundabouts.Select(x => x.Id));
+            foreach (var r in allDetectedRoundabouts.Where(r => !matchedIds.Contains(r.Id)))
+            {
+                TerrainLogger.Detail($"  Roundabout {r.Id} skipped: ring WayIds=[{string.Join(",", r.WayIds)}], " +
+                    $"connecting WayIds=[{string.Join(",", r.Connections.Select(c => c.ConnectingWayId))}], " +
+                    $"none matched materialFeatureIds ({materialFeatureIds.Count} features)");
+            }
+        }
+
         Console.WriteLine($"ConvertLinesToSplinesWithRoundabouts: Detected {allDetectedRoundabouts.Count} roundabout(s) total, " +
             $"{detectedRoundabouts.Count} belong to this material ({wayIdSet.Count} way segments)" +
             (skippedRoundabouts > 0 ? $", skipped {skippedRoundabouts} roundabout(s) belonging to other materials" : ""));
         
+        // Step 1.5: Resolve cycleway/footway stubs at roundabout entries/exits
+        // These short stubs bridge the gap between main roads and the roundabout ring.
+        // We extend the parent road to the ring and remove the stubs so the smoothing
+        // pipeline sees a single connected road instead of disconnected fragments.
+        // Use ALL features (cross-material) so we can find cycleway stubs even when
+        // they're assigned to a different material than the parent road.
+        var allHighwayFeatures = fullQueryResult.Features
+            .Where(f => f.Category == "highway" && f.GeometryType == OsmGeometryType.LineString)
+            .ToList();
+        var stubResolver = new RoundaboutCyclewayStubResolver();
+        var stubResult = stubResolver.ResolveStubs(allDetectedRoundabouts, allHighwayFeatures);
+        var deletedFeatureIds = stubResult.StubFeatureIdsToRemove;
+
         // Capture pre-trim snapshot for debug visualization (if debug output requested)
         RoundaboutDebugImageExporter.PreTrimSnapshot? preTrimSnapshot = null;
         if (!string.IsNullOrEmpty(debugOutputPath) && detectedRoundabouts.Count > 0)
         {
             preTrimSnapshot = RoundaboutDebugImageExporter.CapturePreTrimSnapshot(lineFeatures, wayIdSet);
         }
-        
+
         // Step 2: CRITICAL - Trim connecting roads that overlap with roundabouts
         // This removes the quirky high-angle segments that follow the roundabout ring
-        var deletedFeatureIds = new HashSet<long>();
         if (enableRoadTrimming && detectedRoundabouts.Count > 0)
         {
             var trimmer = new ConnectingRoadTrimmer
             {
                 OverlapToleranceMeters = overlapToleranceMeters
             };
-            deletedFeatureIds = trimmer.TrimConnectingRoads(detectedRoundabouts, lineFeatures);
-            
+            var trimDeletedIds = trimmer.TrimConnectingRoads(detectedRoundabouts, lineFeatures);
+            foreach (var id in trimDeletedIds)
+            {
+                deletedFeatureIds.Add(id);
+            }
+
             // Update pre-trim snapshot with deleted feature IDs
             if (preTrimSnapshot != null)
             {
@@ -1248,7 +1205,8 @@ public class OsmGeometryProcessor
             duplicatePointToleranceMeters,
             endpointJoinToleranceMeters,
             excludeBridges,
-            excludeTunnels);
+            excludeTunnels,
+            routeRelations: fullQueryResult.RouteRelations);
         
         // Step 6: Combine results
         var allSplines = new List<RoadSpline>();

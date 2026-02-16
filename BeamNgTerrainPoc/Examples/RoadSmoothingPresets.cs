@@ -81,7 +81,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0, // Clean skeleton for PNG
             DensifyMaxSpacingPixels = 1.5f, // Better path following for PNG
             SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 40.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -106,10 +106,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 50.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 40.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Cosine
         }
     };
 
@@ -155,7 +152,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
             SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 40.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -180,10 +177,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 40.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 30.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Cosine
         }
     };
 
@@ -230,7 +224,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
             SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 30.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -255,10 +249,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 30.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 20.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Quintic
         }
     };
 
@@ -304,7 +295,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
             SimplifyTolerancePixels = 0.75f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 25.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -329,10 +320,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 20.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 15.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Cosine
         }
     };
 
@@ -380,7 +368,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 1.5f,
             SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 50.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -405,10 +393,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 60.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 50.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Quintic
         }
     };
 
@@ -458,7 +443,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 50.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -483,10 +468,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 60.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 50.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Quintic
         }
     };
 
@@ -530,7 +512,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 40.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -555,10 +537,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 40.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 30.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Cosine
         }
     };
 
@@ -602,7 +581,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 30.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -627,10 +606,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 30.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 20.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Quintic
         }
     };
 
@@ -674,7 +650,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 1.0f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 20.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -699,10 +675,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 15.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 10.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Cosine
         }
     };
 
@@ -748,7 +721,7 @@ public static class RoadSmoothingPresets
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
             SimplifyTolerancePixels = 0.3f,
-            MinPathLengthPixels = 40.0f,
+            MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 50.0f,
             UseGraphOrdering = true,
             OrderingNeighborRadiusPixels = 2.5f,
@@ -773,10 +746,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 60.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic,
-            EnableEndpointTaper = true,
-            EndpointTaperDistanceMeters = 50.0f,
-            EndpointTerrainBlendStrength = 1f
+            BlendFunctionType = JunctionBlendFunctionType.Quintic
         }
     };
 

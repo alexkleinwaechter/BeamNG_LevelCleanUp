@@ -16,6 +16,13 @@ public class OsmQueryResult
     /// List of processed features with resolved geometries.
     /// </summary>
     public List<OsmFeature> Features { get; set; } = new();
+
+    /// <summary>
+    /// Route relations (type=route, route=road) parsed from the Overpass response.
+    /// Each relation groups an ordered sequence of way IDs forming a named road route.
+    /// Used for pre-assembling ways into longer splines based on OSM's own road ordering.
+    /// </summary>
+    public List<RouteRelation> RouteRelations { get; set; } = new();
     
     /// <summary>
     /// When the query was executed.
@@ -121,10 +128,23 @@ public class OsmQueryResult
             }
         }
 
+        // Merge route relations, deduplicating by relation ID
+        var seenRelations = new HashSet<long>();
+        var mergedRouteRelations = new List<RouteRelation>();
+        foreach (var chunk in chunkResults)
+        {
+            foreach (var rel in chunk.RouteRelations)
+            {
+                if (seenRelations.Add(rel.RelationId))
+                    mergedRouteRelations.Add(rel);
+            }
+        }
+
         return new OsmQueryResult
         {
             BoundingBox = fullBbox,
             Features = mergedFeatures,
+            RouteRelations = mergedRouteRelations,
             QueryTime = DateTime.UtcNow,
             IsFromCache = false,
             NodeCount = totalNodes,
@@ -137,6 +157,7 @@ public class OsmQueryResult
     {
         var roundaboutCount = RoundaboutFeatures.Count();
         var roundaboutInfo = roundaboutCount > 0 ? $", {roundaboutCount} roundabout segments" : "";
-        return $"OsmQueryResult: {Features.Count} features ({Lines.Count()} lines, {Polygons.Count()} polygons, {Points.Count()} points{roundaboutInfo})";
+        var routeRelInfo = RouteRelations.Count > 0 ? $", {RouteRelations.Count} route relations" : "";
+        return $"OsmQueryResult: {Features.Count} features ({Lines.Count()} lines, {Polygons.Count()} polygons, {Points.Count()} points{roundaboutInfo}{routeRelInfo})";
     }
 }

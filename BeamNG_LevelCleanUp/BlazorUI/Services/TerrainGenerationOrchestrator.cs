@@ -599,7 +599,8 @@ public class TerrainGenerationOrchestrator
                     interpolationType,
                     minPathLengthMeters,
                     excludeBridges: state.ExcludeBridgesFromTerrain,
-                    excludeTunnels: state.ExcludeTunnelsFromTerrain);
+                    excludeTunnels: state.ExcludeTunnelsFromTerrain,
+                    routeRelations: osmQueryResult.RouteRelations);
             }
 
             // Log to file only - per-material detail

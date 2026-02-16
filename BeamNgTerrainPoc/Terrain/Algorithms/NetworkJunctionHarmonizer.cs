@@ -290,7 +290,13 @@ public class NetworkJunctionHarmonizer
                 case JunctionType.YJunction:
                 case JunctionType.CrossRoads:
                 case JunctionType.Complex:
-                    ComputeMultiWayJunctionElevation(junction);
+                    // Cross-material junctions where both roads terminate:
+                    // Treat like endpoints — use terrain elevation, both roads taper down.
+                    // This prevents bumps where neither road's smoothed profile matches terrain.
+                    if (junction.IsCrossMaterial && junction.HasMixedPriorities)
+                        ComputeEndpointElevation(junction, heightMap, metersPerPixel, mapWidth, mapHeight);
+                    else
+                        ComputeMultiWayJunctionElevation(junction);
                     break;
             }
         }
@@ -310,22 +316,14 @@ public class NetworkJunctionHarmonizer
         if (junction.Contributors.Count == 0)
             return;
 
-        var contributor = junction.Contributors[0];
-        var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters
-                             ?? new JunctionHarmonizationParameters();
-
         // Get terrain elevation at endpoint
         var px = (int)(junction.Position.X / metersPerPixel);
         var py = (int)(junction.Position.Y / metersPerPixel);
         px = Math.Clamp(px, 0, mapWidth - 1);
         py = Math.Clamp(py, 0, mapHeight - 1);
-        var terrainElevation = heightMap[py, px];
 
-        var roadElevation = contributor.CrossSection.TargetElevation;
-
-        // Blend: mostly road elevation with slight pull toward terrain
-        junction.HarmonizedElevation = roadElevation * (1.0f - junctionParams.EndpointTerrainBlendStrength)
-                                       + terrainElevation * junctionParams.EndpointTerrainBlendStrength;
+        // Isolated endpoints always blend fully to terrain
+        junction.HarmonizedElevation = heightMap[py, px];
     }
 
     /// <summary>
@@ -848,6 +846,7 @@ public class NetworkJunctionHarmonizer
         foreach (var junction in junctions.Where(j => j.Type != JunctionType.Endpoint && !j.IsExcluded))
         {
             // For T-junctions, only propagate along terminating roads
+            // For cross-material junctions with mixed priorities, only propagate along lower-priority roads
             // For mid-spline crossings and other types, propagate along all roads
             IEnumerable<JunctionContributor> contributorsToPropagate;
 
@@ -934,6 +933,12 @@ public class NetworkJunctionHarmonizer
 
             var cs = network.CrossSections.FirstOrDefault(c => c.Index == csIndex);
             if (cs == null)
+                continue;
+
+            // Skip cross-sections already blended by roundabout harmonizer (Phase 2.6).
+            // The roundabout blend creates a smooth transition to the ring elevation;
+            // general junction propagation would overwrite it and create bumps.
+            if (cs.IsRoundaboutBlended)
                 continue;
 
             // Calculate weighted average of all junction influences
@@ -1226,6 +1231,8 @@ public class NetworkJunctionHarmonizer
     /// <summary>
     ///     Applies endpoint tapering for isolated endpoints (dead ends).
     ///     Gradually transitions the road elevation back toward terrain.
+    ///     Taper distance is auto-computed from road width: clamp(width * 4, 10, 50) meters.
+    ///     Always fully blends to terrain elevation at the endpoint.
     /// </summary>
     /// <returns>Number of cross-sections modified.</returns>
     private int ApplyEndpointTapering(
@@ -1246,16 +1253,12 @@ public class NetworkJunctionHarmonizer
         foreach (var junction in junctions.Where(j => j.Type == JunctionType.Endpoint && !j.IsExcluded))
         foreach (var contributor in junction.Contributors)
         {
-            var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters
-                                 ?? new JunctionHarmonizationParameters();
-
-            if (!junctionParams.EnableEndpointTaper)
-                continue;
-
             if (!crossSectionsBySpline.TryGetValue(contributor.Spline.SplineId, out var splineSections))
                 continue;
 
-            var taperDistance = junctionParams.EndpointTaperDistanceMeters;
+            // Auto-compute taper distance from road width
+            var roadWidth = contributor.Spline.Parameters.RoadWidthMeters;
+            var taperDistance = Math.Clamp(roadWidth * 4.0f, 10.0f, 50.0f);
 
             // Get terrain elevation at endpoint
             var px = (int)(junction.Position.X / metersPerPixel);
@@ -1274,17 +1277,19 @@ public class NetworkJunctionHarmonizer
                 if (dist >= taperDistance) continue;
 
                 var cs = splineSections[i];
+
+                // Skip cross-sections already blended by roundabout harmonizer.
+                if (cs.IsRoundaboutBlended)
+                    continue;
+
                 var originalElevation = cs.TargetElevation;
 
                 // Use quintic smoothstep for very smooth taper
                 var t = dist / taperDistance;
                 var blend = t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
 
-                // Calculate target at endpoint (blend toward terrain)
-                var targetAtEndpoint = originalElevation * (1.0f - junctionParams.EndpointTerrainBlendStrength)
-                                       + terrainElevation * junctionParams.EndpointTerrainBlendStrength;
-
-                cs.TargetElevation = targetAtEndpoint * (1.0f - blend) + originalElevation * blend;
+                // Blend toward terrain at endpoint, back to road elevation at taper distance
+                cs.TargetElevation = terrainElevation * (1.0f - blend) + originalElevation * blend;
 
                 if (MathF.Abs(cs.TargetElevation - originalElevation) > 0.001f)
                     taperedCount++;
@@ -1431,11 +1436,22 @@ public class NetworkJunctionHarmonizer
                 continue;
             }
 
-            // Compute plateau elevation as priority-weighted average of ORIGINAL reference elevations
-            var totalPriority = referenceElevations.Sum(r => r.priority);
-            var plateauElevation = totalPriority > 0
-                ? referenceElevations.Sum(r => r.elevation * r.priority) / totalPriority
-                : referenceElevations.Average(r => r.elevation);
+            // Compute plateau elevation
+            float plateauElevation;
+
+            if (junction.IsCrossMaterial && junction.HasMixedPriorities)
+            {
+                // Cross-material: both roads taper to terrain, use the harmonized (terrain) elevation
+                plateauElevation = junction.HarmonizedElevation;
+            }
+            else
+            {
+                // Standard: priority-weighted average of ORIGINAL reference elevations
+                var totalPriority = referenceElevations.Sum(r => r.priority);
+                plateauElevation = totalPriority > 0
+                    ? referenceElevations.Sum(r => r.elevation * r.priority) / totalPriority
+                    : referenceElevations.Average(r => r.elevation);
+            }
 
             // Log elevation range for debugging
             var minElev = referenceElevations.Min(r => r.elevation);

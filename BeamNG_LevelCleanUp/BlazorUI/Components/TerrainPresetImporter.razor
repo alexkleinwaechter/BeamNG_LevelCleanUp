@@ -1002,9 +1002,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.JunctionBlendDistanceMeters = settings.JunctionHarmonization.JunctionBlendDistanceMeters;
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
-                material.EnableEndpointTaper = settings.JunctionHarmonization.EnableEndpointTaper;
-                material.EndpointTaperDistanceMeters = settings.JunctionHarmonization.EndpointTaperDistanceMeters;
-                material.EndpointTerrainBlendStrength = settings.JunctionHarmonization.EndpointTerrainBlendStrength;
+                // Endpoint tapering is auto-computed from road width - old preset values silently ignored
                 // Roundabout settings
                 material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
                 material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;

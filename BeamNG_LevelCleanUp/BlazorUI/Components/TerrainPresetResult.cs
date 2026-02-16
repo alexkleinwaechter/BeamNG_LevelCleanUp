@@ -225,12 +225,12 @@ public class RoadSmoothingSettings
     public float RoadWidthMeters { get; set; } = 8.0f;
     public float? RoadSurfaceWidthMeters { get; set; }
     public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
-    
+
     /// <summary>
-    /// Buffer distance beyond road edge protected from other roads' blend zones.
+    ///     Buffer distance beyond road edge protected from other roads' blend zones.
     /// </summary>
     public float RoadEdgeProtectionBufferMeters { get; set; } = 2.0f;
-    
+
     public bool EnableMaxSlopeConstraint { get; set; }
     public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;
@@ -264,7 +264,7 @@ public class SplineParametersSettings
     public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
     public float SimplifyTolerancePixels { get; set; } = 0.5f;
     public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
-    public float MinPathLengthPixels { get; set; } = 100.0f;
+    public float MinPathLengthPixels { get; set; } = 0f;
     public float JunctionAngleThreshold { get; set; } = 90.0f;
     public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
     public int SkeletonDilationRadius { get; set; }
@@ -272,9 +272,9 @@ public class SplineParametersSettings
     public bool UseButterworthFilter { get; set; } = true;
     public int ButterworthFilterOrder { get; set; } = 4;
     public float GlobalLevelingStrength { get; set; }
-    
+
     /// <summary>
-    /// Banking (superelevation) settings for curved roads.
+    ///     Banking (superelevation) settings for curved roads.
     /// </summary>
     public BankingSettingsPreset? Banking { get; set; }
 }
@@ -330,7 +330,7 @@ public class JunctionHarmonizationSettings
     public float RoundaboutConnectionRadiusMeters { get; set; } = 10.0f;
     public float RoundaboutOverlapToleranceMeters { get; set; } = 2.0f;
     public bool ForceUniformRoundaboutElevation { get; set; } = true;
-    public float? RoundaboutBlendDistanceMeters { get; set; } = 20.0f;
+    public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
 }
 
 /// <summary>

@@ -65,7 +65,7 @@ public class SkeletonizationRoadExtractor
 
         // PRUNE SHORT SPURS: Remove dead-end branches shorter than threshold
         // Use more aggressive pruning for hairpins: MinPathLength instead of /4
-        var pruneLength = parameters?.SplineParameters?.MinPathLengthPixels ?? 20.0f;
+        var pruneLength = parameters?.SplineParameters?.MinPathLengthPixels ?? 0f;
         sw.Restart();
         skeleton = PruneShortSpurs(skeleton, (int)pruneLength); // Full MinPathLength for aggressive pruning
         var pruneTime = sw.Elapsed;
@@ -105,7 +105,7 @@ public class SkeletonizationRoadExtractor
 
         // Filter short paths (use parameter or default to 20 pixels)
         sw.Restart();
-        var minLength = parameters?.SplineParameters?.MinPathLengthPixels ?? 20.0f;
+        var minLength = parameters?.SplineParameters?.MinPathLengthPixels ?? 0f;
         rawPaths = FilterShortPaths(rawPaths, minLength);
         perfLog?.Timing(
             $"FilterShortPaths (minLength={minLength}): {sw.ElapsedMilliseconds}ms, {rawPaths.Count} paths");

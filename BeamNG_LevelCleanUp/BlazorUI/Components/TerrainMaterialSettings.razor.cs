@@ -23,12 +23,14 @@ public partial class TerrainMaterialSettings
     public enum RoadPresetType
     {
         Custom,
+
         // PNG presets (skeleton extraction from layer masks)
         PngHighway,
         PngRuralRoad,
         PngMountainRoad,
         PngDirtRoad,
         PngRacingCircuit,
+
         // OSM presets (pre-built splines from vector data)
         OsmHighway,
         OsmRuralRoad,
@@ -100,7 +102,8 @@ public partial class TerrainMaterialSettings
             return $"Narrow spline ({Material.MasterSplineWidthMeters}m) within surface ({effectiveSurfaceWidth}m)";
 
         if (Material.MasterSplineWidthMeters > effectiveSurfaceWidth)
-            return $"Wide spline ({Material.MasterSplineWidthMeters}m) extends beyond surface ({effectiveSurfaceWidth}m)";
+            return
+                $"Wide spline ({Material.MasterSplineWidthMeters}m) extends beyond surface ({effectiveSurfaceWidth}m)";
 
         return "BeamNG spline width (same as Road Surface Width)";
     }
@@ -461,10 +464,7 @@ public partial class TerrainMaterialSettings
                     ["enableJunctionHarmonization"] = Material.EnableJunctionHarmonization,
                     ["junctionDetectionRadiusMeters"] = Material.JunctionDetectionRadiusMeters,
                     ["junctionBlendDistanceMeters"] = Material.JunctionBlendDistanceMeters,
-                    ["blendFunctionType"] = Material.JunctionBlendFunction.ToString(),
-                    ["enableEndpointTaper"] = Material.EnableEndpointTaper,
-                    ["endpointTaperDistanceMeters"] = Material.EndpointTaperDistanceMeters,
-                    ["endpointTerrainBlendStrength"] = Material.EndpointTerrainBlendStrength
+                    ["blendFunctionType"] = Material.JunctionBlendFunction.ToString()
                 }
             };
 
@@ -633,14 +633,8 @@ public partial class TerrainMaterialSettings
                     Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(),
                         out var junctionBlendType))
                     Material.JunctionBlendFunction = junctionBlendType;
-                if (junctionParams["enableEndpointTaper"] != null)
-                    Material.EnableEndpointTaper = junctionParams["enableEndpointTaper"]!.GetValue<bool>();
-                if (junctionParams["endpointTaperDistanceMeters"] != null)
-                    Material.EndpointTaperDistanceMeters =
-                        junctionParams["endpointTaperDistanceMeters"]!.GetValue<float>();
-                if (junctionParams["endpointTerrainBlendStrength"] != null)
-                    Material.EndpointTerrainBlendStrength =
-                        junctionParams["endpointTerrainBlendStrength"]!.GetValue<float>();
+                // Note: enableEndpointTaper, endpointTaperDistanceMeters, endpointTerrainBlendStrength
+                // are no longer configurable (auto-computed from road width). Old configs silently ignored.
             }
 
             // Set preset to Custom since we imported custom values
@@ -768,7 +762,7 @@ public partial class TerrainMaterialSettings
         public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
         public float SimplifyTolerancePixels { get; set; } = 0.5f;
         public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
-        public float MinPathLengthPixels { get; set; } = 100.0f;
+        public float MinPathLengthPixels { get; set; }
         public float JunctionAngleThreshold { get; set; } = 90.0f;
         public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
         public int SkeletonDilationRadius { get; set; }
@@ -812,9 +806,6 @@ public partial class TerrainMaterialSettings
         public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
         public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
         public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.Cosine;
-        public bool EnableEndpointTaper { get; set; } = true;
-        public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
-        public float EndpointTerrainBlendStrength { get; set; } = 1f;
 
         // ========================================
         // ROUNDABOUT SETTINGS
@@ -849,7 +840,7 @@ public partial class TerrainMaterialSettings
         ///     Distance over which to blend connecting road elevation toward the roundabout ring.
         ///     If null, uses JunctionBlendDistanceMeters.
         /// </summary>
-        public float? RoundaboutBlendDistanceMeters { get; set; } = 20.0f;
+        public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
 
         // ========================================
         // ROAD BANKING (SUPERELEVATION)
@@ -998,15 +989,15 @@ public partial class TerrainMaterialSettings
                 JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
                 JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
                 JunctionBlendFunction = preset.JunctionHarmonizationParameters.BlendFunctionType;
-                EnableEndpointTaper = preset.JunctionHarmonizationParameters.EnableEndpointTaper;
-                EndpointTaperDistanceMeters = preset.JunctionHarmonizationParameters.EndpointTaperDistanceMeters;
-                EndpointTerrainBlendStrength = preset.JunctionHarmonizationParameters.EndpointTerrainBlendStrength;
                 // Roundabout settings
                 EnableRoundaboutDetection = preset.JunctionHarmonizationParameters.EnableRoundaboutDetection;
                 EnableRoundaboutRoadTrimming = preset.JunctionHarmonizationParameters.EnableRoundaboutRoadTrimming;
-                RoundaboutConnectionRadiusMeters = preset.JunctionHarmonizationParameters.RoundaboutConnectionRadiusMeters;
-                RoundaboutOverlapToleranceMeters = preset.JunctionHarmonizationParameters.RoundaboutOverlapToleranceMeters;
-                ForceUniformRoundaboutElevation = preset.JunctionHarmonizationParameters.ForceUniformRoundaboutElevation;
+                RoundaboutConnectionRadiusMeters =
+                    preset.JunctionHarmonizationParameters.RoundaboutConnectionRadiusMeters;
+                RoundaboutOverlapToleranceMeters =
+                    preset.JunctionHarmonizationParameters.RoundaboutOverlapToleranceMeters;
+                ForceUniformRoundaboutElevation =
+                    preset.JunctionHarmonizationParameters.ForceUniformRoundaboutElevation;
                 RoundaboutBlendDistanceMeters = preset.JunctionHarmonizationParameters.RoundaboutBlendDistanceMeters;
                 // Debug properties are always enabled - no need to copy from preset
             }
@@ -1107,9 +1098,6 @@ public partial class TerrainMaterialSettings
                 JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
                 JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,
                 BlendFunctionType = JunctionBlendFunction,
-                EnableEndpointTaper = EnableEndpointTaper,
-                EndpointTaperDistanceMeters = EndpointTaperDistanceMeters,
-                EndpointTerrainBlendStrength = EndpointTerrainBlendStrength,
                 // Roundabout settings
                 EnableRoundaboutDetection = EnableRoundaboutDetection,
                 EnableRoundaboutRoadTrimming = EnableRoundaboutRoadTrimming,

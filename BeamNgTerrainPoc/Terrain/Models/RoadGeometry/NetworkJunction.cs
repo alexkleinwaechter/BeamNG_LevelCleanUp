@@ -201,6 +201,23 @@ public class NetworkJunction
     }
 
     /// <summary>
+    ///     Whether contributors have differing priorities.
+    ///     True when at least two distinct priority values exist among contributors.
+    /// </summary>
+    public bool HasMixedPriorities =>
+        Contributors.Select(c => c.Spline.Priority).Distinct().Count() > 1;
+
+    /// <summary>
+    ///     Gets all contributors with priority lower than the highest.
+    ///     Used for cross-material Y-junctions where lower-priority roads must adapt.
+    /// </summary>
+    public IEnumerable<JunctionContributor> GetLowerPriorityContributors()
+    {
+        var maxPriority = MaxPriority;
+        return Contributors.Where(c => c.Spline.Priority < maxPriority);
+    }
+
+    /// <summary>
     ///     Calculates the centroid of all contributor positions.
     /// </summary>
     public void CalculateCentroid()

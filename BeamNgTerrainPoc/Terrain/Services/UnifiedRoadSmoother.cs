@@ -300,22 +300,39 @@ public class UnifiedRoadSmoother
                 TerrainCreationLogger.Current?.InfoFileOnly("  Extended OSM junction detection disabled, using geometric detection only");
             }
 
+            // IMPORTANT: Save roundabout junctions BEFORE Phase 3 detection.
+            // DetectJunctions() calls network.Junctions.Clear() which would wipe out
+            // the roundabout junctions created in Phase 2.6. Without this, connecting
+            // road endpoints near roundabouts lose their IsExcluded flag and get
+            // processed as regular endpoints, overwriting the smooth roundabout blend.
+            var savedRoundaboutJunctions = network.Junctions
+                .Where(j => j.Type == JunctionType.Roundabout)
+                .ToList();
+
             // Detect junctions (with OSM hints if available)
             if (osmJunctions != null && osmJunctions.Junctions.Count > 0)
             {
                 TerrainCreationLogger.Current?.InfoFileOnly($"  Using OSM junction hints: {osmJunctions.Junctions.Count} junctions " +
                                   $"({osmJunctions.ExplicitJunctionCount} explicit, {osmJunctions.GeometricJunctionCount} geometric)");
-                
+
                 // Get included OSM junction types from the first material that has junction harmonization enabled
                 var includedOsmTypes = roadMaterials
                     .FirstOrDefault(m => m.RoadParameters?.JunctionHarmonizationParameters?.EnableJunctionHarmonization == true)
                     ?.RoadParameters?.JunctionHarmonizationParameters?.IncludedOsmJunctionTypes;
-                
+
                 _junctionDetector.DetectJunctionsWithOsm(network, osmJunctions, globalJunctionDetectionRadius, includedOsmTypes);
             }
             else
             {
                 _junctionDetector.DetectJunctions(network, globalJunctionDetectionRadius);
+            }
+
+            // Restore roundabout junctions that were cleared by DetectJunctions/DetectJunctionsWithOsm.
+            // Remove any regular junctions that overlap with roundabout junction positions to avoid
+            // duplicate processing, then add the roundabout junctions back with their IsExcluded flag.
+            if (savedRoundaboutJunctions.Count > 0)
+            {
+                RestoreRoundaboutJunctions(network, savedRoundaboutJunctions);
             }
 
             // Use global params, but harmonizer will respect per-material UseGlobalSettings
@@ -653,6 +670,47 @@ public class UnifiedRoadSmoother
         }
 
         return maxRadius;
+    }
+
+    /// <summary>
+    ///     Restores roundabout junctions that were cleared by Phase 3 junction detection.
+    ///     Removes any regular junctions that overlap with roundabout junction positions
+    ///     to prevent double-processing, then adds the roundabout junctions back.
+    /// </summary>
+    private static void RestoreRoundaboutJunctions(
+        UnifiedRoadNetwork network,
+        List<NetworkJunction> roundaboutJunctions)
+    {
+        // Use the roundabout connection radius as overlap threshold.
+        // Regular Endpoint junctions at connecting road tips will be within this
+        // distance of the corresponding roundabout junction position.
+        const float overlapRadius = 15.0f;
+
+        var roundaboutPositions = roundaboutJunctions
+            .Select(j => j.Position)
+            .ToList();
+
+        // Remove regular junctions that overlap with roundabout junctions
+        var regularToKeep = network.Junctions
+            .Where(j => j.Type != JunctionType.Roundabout)
+            .Where(j => !roundaboutPositions.Any(rp =>
+                Vector2.Distance(j.Position, rp) < overlapRadius))
+            .ToList();
+
+        var removedCount = network.Junctions.Count - regularToKeep.Count;
+
+        network.Junctions.Clear();
+        network.Junctions.AddRange(regularToKeep);
+        network.Junctions.AddRange(roundaboutJunctions);
+
+        // Re-assign sequential junction IDs
+        for (var i = 0; i < network.Junctions.Count; i++)
+            network.Junctions[i].JunctionId = i;
+
+        if (removedCount > 0 || roundaboutJunctions.Count > 0)
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"  Restored {roundaboutJunctions.Count} roundabout junction(s), " +
+                $"removed {removedCount} overlapping regular junction(s)");
     }
 
     /// <summary>
