@@ -67,6 +67,10 @@
     [Parameter] public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
     [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
     [Parameter] public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+    [Parameter] public bool EnableBuildings { get; set; }
+    [Parameter] public bool EnableBuildingClustering { get; set; }
+    [Parameter] public float BuildingClusterCellSize { get; set; } = 150f;
+    [Parameter] public List<OsmFeatureSelection>? SelectedBuildingFeatures { get; set; }
     [Parameter] public int CropOffsetX { get; set; }
     [Parameter] public int CropOffsetY { get; set; }
     [Parameter] public int CropWidth { get; set; }
@@ -405,6 +409,7 @@
                 ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
                 ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain
             },
+            ["buildingOptions"] = BuildBuildingOptions(),
             ["cropSettings"] = new JsonObject
             {
                 ["offsetX"] = CropOffsetX,
@@ -441,7 +446,7 @@
             ["layerMapPath"] = mat.LayerMapPath,
             ["isRoadMaterial"] = mat.IsRoadMaterial
         };
-        
+
         // OSM feature selections
         if (mat.LayerSourceType == LayerSourceType.OsmFeatures && mat.SelectedOsmFeatures?.Any() == true)
         {
@@ -459,13 +464,13 @@
             }
             matSettings["osmFeatureSelections"] = osmFeatures;
         }
-        
+
         // Road smoothing settings (only if road material)
         if (mat.IsRoadMaterial)
         {
             matSettings["roadSmoothing"] = BuildRoadSmoothingSettings(mat);
         }
-        
+
         return matSettings;
     }
 
@@ -541,6 +546,35 @@
                 ["roundaboutBlendDistanceMeters"] = mat.RoundaboutBlendDistanceMeters
             }
         };
+    }
+
+    private JsonObject BuildBuildingOptions()
+    {
+        var options = new JsonObject
+        {
+            ["enableBuildings"] = EnableBuildings,
+            ["enableBuildingClustering"] = EnableBuildingClustering,
+            ["buildingClusterCellSize"] = BuildingClusterCellSize
+        };
+
+        if (EnableBuildings && SelectedBuildingFeatures?.Any() == true)
+        {
+            var features = new JsonArray();
+            foreach (var feature in SelectedBuildingFeatures)
+            {
+                features.Add(new JsonObject
+                {
+                    ["featureId"] = feature.FeatureId,
+                    ["displayName"] = feature.DisplayName,
+                    ["category"] = feature.Category,
+                    ["subCategory"] = feature.SubCategory,
+                    ["geometryType"] = feature.GeometryType.ToString()
+                });
+            }
+            options["selectedBuildingFeatures"] = features;
+        }
+
+        return options;
     }
 
     private string GetLevelName()

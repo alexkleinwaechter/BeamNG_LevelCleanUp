@@ -20,4 +20,10 @@
       <ProjectReference Include="..\BeamNG.Procedural3D\BeamNG.Procedural3D.csproj" />
     </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Resources\BuildingTextures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   </Project>

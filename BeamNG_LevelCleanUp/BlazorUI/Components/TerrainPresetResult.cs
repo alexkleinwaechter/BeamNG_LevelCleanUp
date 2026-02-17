@@ -120,6 +120,26 @@ public class TerrainPresetResult
     public bool? ExcludeTunnelsFromTerrain { get; set; }
 
     /// <summary>
+    ///     Whether to enable building generation.
+    /// </summary>
+    public bool? EnableBuildings { get; set; }
+
+    /// <summary>
+    ///     Whether to enable building clustering (merging nearby buildings into combined DAE files).
+    /// </summary>
+    public bool? EnableBuildingClustering { get; set; }
+
+    /// <summary>
+    ///     Grid cell size in meters for building clustering.
+    /// </summary>
+    public float? BuildingClusterCellSize { get; set; }
+
+    /// <summary>
+    ///     Selected building features at global level.
+    /// </summary>
+    public List<OsmFeatureReference>? SelectedBuildingFeatures { get; set; }
+
+    /// <summary>
     ///     Terrain size in pixels (e.g., 1024, 2048, 4096).
     /// </summary>
     public int? TerrainSize { get; set; }

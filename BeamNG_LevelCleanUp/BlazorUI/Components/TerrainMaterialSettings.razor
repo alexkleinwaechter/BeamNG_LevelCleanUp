@@ -170,11 +170,12 @@ Class="my-0">
             
             <!-- Road Material Toggle -->
             <MudItem xs="12" sm="6">
-                <MudSwitch @bind-Value="Material.IsRoadMaterial" 
+                <MudSwitch @bind-Value="Material.IsRoadMaterial"
                           Color="Color.Primary"
                           Label="Enable Road Smoothing"/>
             </MudItem>
-            
+
+
             @if (Material.IsRoadMaterial)
             {
                 <!-- Road Parameters -->

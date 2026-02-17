@@ -10,6 +10,7 @@ using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
+using BeamNgTerrainPoc.Terrain.Building;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
 using SixLabors.ImageSharp;
@@ -131,7 +132,17 @@ public class TerrainGenerationOrchestrator
 
                 var generationSuccess = await creator.CreateTerrainFileAsync(outputPath, parameters);
 
-                return (Success: generationSuccess, Parameters: parameters);
+                // Building generation (after terrain is written so heightmap is available)
+                BuildingGenerationResult? buildingResult = null;
+                if (generationSuccess && state.EnableBuildings && state.SelectedBuildingFeatures.Any() &&
+                    osmQueryResult != null && effectiveBoundingBox != null)
+                {
+                    buildingResult = RunBuildingGeneration(
+                        osmQueryResult, effectiveBoundingBox, coordinateTransformer,
+                        state, parameters);
+                }
+
+                return (Success: generationSuccess, Parameters: parameters, BuildingResult: buildingResult);
             }).ConfigureAwait(false);
 
             success = result.Success;
@@ -274,6 +285,68 @@ public class TerrainGenerationOrchestrator
     }
 
     #region Private Helpers
+
+    /// <summary>
+    ///     Runs building generation after terrain creation.
+    ///     Parses OSM buildings, exports DAE meshes, deploys textures, and writes scene files.
+    /// </summary>
+    private static BuildingGenerationResult RunBuildingGeneration(
+        OsmQueryResult osmQueryResult,
+        GeoBoundingBox effectiveBoundingBox,
+        GeoCoordinateTransformer? coordinateTransformer,
+        TerrainGenerationState state,
+        TerrainCreationParameters parameters)
+    {
+        var selectedIds = state.GetSelectedBuildingFeatureIds();
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Generating buildings from OSM data ({selectedIds.Count} features selected)...");
+
+        var processor = new OsmGeometryProcessor();
+        if (coordinateTransformer != null)
+            processor.SetCoordinateTransformer(coordinateTransformer);
+
+        var buildingOrchestrator = new BuildingGenerationOrchestrator();
+        var terrainFilePath = state.GetOutputPath();
+
+        var clusterCellSize = state.EnableBuildingClustering ? state.BuildingClusterCellSize : 0f;
+
+        var result = buildingOrchestrator.GenerateBuildings(
+            osmQueryResult,
+            effectiveBoundingBox,
+            processor,
+            state.TerrainSize,
+            state.MetersPerPixel,
+            parameters.MaxHeight,
+            parameters.TerrainBaseHeight,
+            terrainFilePath,
+            state.WorkingDirectory,
+            state.LevelName,
+            selectedIds,
+            clusterCellSize);
+
+        if (result.Success)
+        {
+            var clusterInfo = result.ClustersCreated > 0
+                ? $" in {result.ClustersCreated} clusters"
+                : "";
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Buildings generated: {result.BuildingsExported} buildings{clusterInfo} " +
+                $"({result.TotalVertices:N0} verts, {result.TotalTriangles:N0} tris), " +
+                $"{result.TexturesDeployed} textures, {result.MaterialsWritten} materials");
+        }
+        else if (result.BuildingsParsed == 0)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "No buildings found in OSM data for this area");
+        }
+        else
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Building generation failed: {result.ErrorMessage}");
+        }
+
+        return result;
+    }
 
     /// <summary>
     ///     Clears all files and subdirectories in the debug folder before starting a new generation.

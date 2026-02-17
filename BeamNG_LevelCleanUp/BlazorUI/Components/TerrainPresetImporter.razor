@@ -588,6 +588,48 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.ExcludeTunnelsFromTerrain = terrainOptions["excludeTunnelsFromTerrain"]!.GetValue<bool>();
             }
 
+            // Import building options (global)
+            var buildingOptions = appSettings["buildingOptions"];
+            if (buildingOptions != null)
+            {
+                if (buildingOptions["enableBuildings"] != null)
+                    result.EnableBuildings = buildingOptions["enableBuildings"]!.GetValue<bool>();
+
+                if (buildingOptions["enableBuildingClustering"] != null)
+                    result.EnableBuildingClustering = buildingOptions["enableBuildingClustering"]!.GetValue<bool>();
+
+                if (buildingOptions["buildingClusterCellSize"] != null)
+                    result.BuildingClusterCellSize = buildingOptions["buildingClusterCellSize"]!.GetValue<float>();
+
+                var buildingFeatures = buildingOptions["selectedBuildingFeatures"]?.AsArray();
+                if (buildingFeatures != null && buildingFeatures.Count > 0)
+                {
+                    result.SelectedBuildingFeatures = new List<OsmFeatureReference>();
+
+                    foreach (var featureNode in buildingFeatures)
+                    {
+                        if (featureNode == null) continue;
+
+                        var featureRef = new OsmFeatureReference
+                        {
+                            FeatureId = featureNode["featureId"]?.GetValue<long>() ?? 0,
+                            DisplayName = featureNode["displayName"]?.GetValue<string>() ?? string.Empty,
+                            Category = featureNode["category"]?.GetValue<string>() ?? string.Empty,
+                            SubCategory = featureNode["subCategory"]?.GetValue<string>() ?? string.Empty
+                        };
+
+                        var geometryTypeStr = featureNode["geometryType"]?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(geometryTypeStr) &&
+                            Enum.TryParse<OsmGeometryType>(geometryTypeStr, out var bldGeometryType))
+                        {
+                            featureRef.GeometryType = bldGeometryType;
+                        }
+
+                        result.SelectedBuildingFeatures.Add(featureRef);
+                    }
+                }
+            }
+
             // Import crop/selection settings
             var cropSettings = appSettings["cropSettings"];
             if (cropSettings != null)

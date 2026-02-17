@@ -7,6 +7,7 @@ using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using MudBlazor.Utilities;
@@ -136,6 +137,24 @@ public partial class GenerateTerrain : IDisposable
     {
         get => _state.ExcludeTunnelsFromTerrain;
         set => _state.ExcludeTunnelsFromTerrain = value;
+    }
+
+    private bool _enableBuildings
+    {
+        get => _state.EnableBuildings;
+        set => _state.EnableBuildings = value;
+    }
+
+    private bool _enableBuildingClustering
+    {
+        get => _state.EnableBuildingClustering;
+        set => _state.EnableBuildingClustering = value;
+    }
+
+    private float _buildingClusterCellSize
+    {
+        get => _state.BuildingClusterCellSize;
+        set => _state.BuildingClusterCellSize = value;
     }
 
     private GeoBoundingBox? _geoBoundingBox
@@ -1223,6 +1242,16 @@ public partial class GenerateTerrain : IDisposable
             if (result.ExcludeTunnelsFromTerrain.HasValue)
                 _excludeTunnelsFromTerrain = result.ExcludeTunnelsFromTerrain.Value;
 
+            if (result.EnableBuildings.HasValue)
+                _enableBuildings = result.EnableBuildings.Value;
+            if (result.EnableBuildingClustering.HasValue)
+                _enableBuildingClustering = result.EnableBuildingClustering.Value;
+            if (result.BuildingClusterCellSize.HasValue)
+                _buildingClusterCellSize = result.BuildingClusterCellSize.Value;
+            if (result.SelectedBuildingFeatures?.Any() == true)
+                _state.SelectedBuildingFeatures = result.SelectedBuildingFeatures
+                    .Select(r => r.ToSelection()).ToList();
+
             // Apply GeoTIFF metadata from preset (as fallback if GeoTIFF couldn't be loaded)
             if (!geoTiffLoaded)
             {
@@ -1409,6 +1438,79 @@ public partial class GenerateTerrain : IDisposable
     private void OnMaterialSettingsChanged(TerrainMaterialSettings.TerrainMaterialItemExtended material)
     {
         StateHasChanged();
+    }
+
+    private async Task OpenBuildingFeatureSelector()
+    {
+        if (EffectiveBoundingBox == null) return;
+
+        var parameters = new DialogParameters<OsmFeatureSelectorDialog>
+        {
+            { x => x.MaterialName, "Building Generation" },
+            { x => x.BoundingBox, EffectiveBoundingBox },
+            { x => x.TerrainSize, _terrainSize },
+            { x => x.IsRoadMaterial, false },
+            { x => x.IsBuildingMaterial, true },
+            { x => x.ExistingSelections, _state.SelectedBuildingFeatures }
+        };
+
+        var options = new DialogOptions { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<OsmFeatureSelectorDialog>(
+            "Select Building Features", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is List<OsmFeatureSelection> selections)
+        {
+            _state.SelectedBuildingFeatures = selections;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RemoveBuildingFeature(OsmFeatureSelection feature)
+    {
+        _state.SelectedBuildingFeatures.Remove(feature);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearBuildingFeatures()
+    {
+        _state.SelectedBuildingFeatures.Clear();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnBuildingClusterCellSizeChanged(float value)
+    {
+        _buildingClusterCellSize = value;
+        _enableBuildingClustering = value > 0;
+    }
+
+    private List<(float Value, string Label)> GetClusterCellSizeOptions()
+    {
+        float terrainMeters = _terrainSize * _metersPerPixel;
+        float quarter = terrainMeters / 4f;
+
+        var options = new List<(float Value, string Label)>();
+
+        // Generate power-of-2 cell sizes from 16m up to quarter of terrain
+        float size = 16f;
+        while (size <= quarter && options.Count < 10)
+        {
+            int gridCount = (int)MathF.Ceiling(terrainMeters / size);
+            options.Add((size, $"{size:F0}m ({gridCount}\u00d7{gridCount} grid)"));
+            size *= 2;
+        }
+
+        return options;
+    }
+
+    private string GetClusterCellSizeHelperText()
+    {
+        if (_buildingClusterCellSize <= 0)
+            return "Each building is a separate 3D object (more draw calls)";
+
+        float terrainMeters = _terrainSize * _metersPerPixel;
+        int gridCount = (int)MathF.Ceiling(terrainMeters / _buildingClusterCellSize);
+        return $"Max {gridCount * gridCount} clusters \u2014 fewer draw calls, good for LOD";
     }
 
     private async Task ExecuteTerrainGeneration()

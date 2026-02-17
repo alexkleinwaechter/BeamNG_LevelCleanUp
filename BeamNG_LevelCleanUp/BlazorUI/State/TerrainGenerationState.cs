@@ -1,5 +1,6 @@
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.State;
@@ -85,6 +86,28 @@ public class TerrainGenerationState
     ///     Default: true (tunnels are excluded)
     /// </summary>
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+
+    // ========================================
+    // BUILDING GENERATION
+    // ========================================
+    public bool EnableBuildings { get; set; }
+    public List<OsmFeatureSelection> SelectedBuildingFeatures { get; set; } = new();
+
+    /// <summary>
+    ///     When true, nearby buildings are merged into combined DAE files to reduce draw calls.
+    /// </summary>
+    public bool EnableBuildingClustering { get; set; }
+
+    /// <summary>
+    ///     Grid cell size in meters for building clustering.
+    ///     All buildings whose centroid falls within the same grid cell are merged into one DAE.
+    ///     Larger values = fewer draw calls but coarser LOD grouping.
+    ///     Recommended: 100-200m.
+    /// </summary>
+    public float BuildingClusterCellSize { get; set; } = 128f;
+
+    public HashSet<long> GetSelectedBuildingFeatureIds() =>
+        SelectedBuildingFeatures.Select(f => f.FeatureId).ToHashSet();
 
     // ========================================
     // HEIGHTMAP SOURCE
@@ -315,6 +338,10 @@ public class TerrainGenerationState
         GlobalJunctionDetectionRadiusMeters = 5.0f;
         GlobalJunctionBlendDistanceMeters = 30.0f;
         FlipMaterialProcessingOrder = false;
+        EnableBuildings = false;
+        EnableBuildingClustering = false;
+        BuildingClusterCellSize = 128f;
+        SelectedBuildingFeatures = new List<OsmFeatureSelection>();
 
         HeightmapSourceType = HeightmapSourceType.Png;
         GeoTiffPath = null;
