@@ -1,9 +1,11 @@
+using System.Drawing;
 using System.Numerics;
 using System.Text.Json;
 using BeamNG.Procedural3D.Building;
 using Grille.BeamNG.IO.Text;
 using Grille.BeamNG.SceneTree;
 using Grille.BeamNG.SceneTree.Main;
+using Bldg = BeamNG.Procedural3D.Building.Building;
 
 namespace BeamNgTerrainPoc.Terrain.Building;
 
@@ -178,11 +180,43 @@ public class BuildingSceneWriter
     }
 
     /// <summary>
+    /// Writes scene items for multi-part Building objects (Phase 2).
+    /// One TSStatic entry per Building.
+    /// </summary>
+    public int WriteSceneItems(
+        IReadOnlyList<Bldg> buildings,
+        string outputPath,
+        string shapePath)
+    {
+        if (buildings.Count == 0)
+            return 0;
+
+        if (!shapePath.EndsWith('/'))
+            shapePath += "/";
+
+        var dir = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        var items = new List<JsonDict>();
+        foreach (var building in buildings)
+        {
+            items.Add(CreateTSStaticEntry(building, shapePath));
+        }
+
+        SimItemsJsonSerializer.Save(outputPath, items);
+
+        Console.WriteLine($"BuildingSceneWriter: Wrote {buildings.Count} TSStatic entries to {outputPath}");
+        return buildings.Count;
+    }
+
+    /// <summary>
     /// Writes the clustered items.level.json file (NDJSON format).
     /// One TSStatic entry per cluster instead of per building.
+    /// Works with any cluster type via the IClusterInfo interface.
     /// </summary>
-    public int WriteClusteredSceneItems(
-        IReadOnlyList<BuildingCluster> clusters,
+    public int WriteClusteredSceneItems<T>(
+        IReadOnlyList<BuildingCluster<T>> clusters,
         string outputPath,
         string shapePath)
     {
@@ -213,7 +247,7 @@ public class BuildingSceneWriter
     /// <summary>
     /// Creates a JsonDict representing a TSStatic scene entry for a building cluster.
     /// </summary>
-    private JsonDict CreateClusterTSStaticEntry(BuildingCluster cluster, string shapePath)
+    private JsonDict CreateClusterTSStaticEntry(IClusterInfo cluster, string shapePath)
     {
         var dict = new JsonDict();
 
@@ -237,7 +271,34 @@ public class BuildingSceneWriter
     }
 
     /// <summary>
-    /// Creates a JsonDict representing a TSStatic scene entry for a building.
+    /// Creates a JsonDict representing a TSStatic scene entry for a multi-part Building.
+    /// </summary>
+    private JsonDict CreateTSStaticEntry(Bldg building, string shapePath)
+    {
+        var dict = new JsonDict();
+
+        dict["class"] = "TSStatic";
+        dict["name"] = building.SceneName;
+        dict["__parent"] = GroupName;
+        dict["position"] = new float[] { building.WorldPosition.X, building.WorldPosition.Y, building.WorldPosition.Z };
+        dict["isRenderEnabled"] = false;
+        dict["rotationMatrix"] = new float[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+        dict["shapeName"] = shapePath + building.DaeFileName;
+        dict["useInstanceRenderData"] = true;
+
+        // Per-instance wall color tinting from OSM building:colour tag.
+        // Only applied for non-clustered export; clustered export uses per-color material variants.
+        if (building.PrimaryWallColor.HasValue)
+        {
+            var c = building.PrimaryWallColor.Value;
+            dict["instanceColor"] = new float[] { c.R / 255f, c.G / 255f, c.B / 255f, 1f };
+        }
+
+        return dict;
+    }
+
+    /// <summary>
+    /// Creates a JsonDict representing a TSStatic scene entry for a flat BuildingData.
     /// </summary>
     private JsonDict CreateTSStaticEntry(BuildingData building, string shapePath)
     {
@@ -265,6 +326,13 @@ public class BuildingSceneWriter
 
         dict["useInstanceRenderData"] = true;
 
+        // Per-instance wall color tinting from OSM building:colour tag.
+        if (building.WallColor.HasValue)
+        {
+            var c = building.WallColor.Value;
+            dict["instanceColor"] = new float[] { c.R / 255f, c.G / 255f, c.B / 255f, 1f };
+        }
+
         return dict;
     }
 
@@ -283,6 +351,21 @@ public class BuildingSceneWriter
         dict["persistentId"] = Guid.NewGuid().ToString();
         dict["version"] = 1.5f;
 
+        // Translucent materials (glass): enable alpha blending in BeamNG
+        // Port of OSM2World's Transparency.TRUE → BeamNG translucent material
+        if (matDef.Opacity < 1.0f)
+        {
+            dict["translucent"] = true;
+            dict["translucentBlendOp"] = "LerpAlpha";
+        }
+
+        // Double-sided materials (glass): render both front and back faces
+        // Port of OSM2World's Material.doubleSided property
+        if (matDef.DoubleSided)
+        {
+            dict["doubleSided"] = true;
+        }
+
         // Stage 0: base textures
         var stage0 = new JsonDict();
         stage0["baseColorMap"] = texturePath + matDef.ColorMapFile;
@@ -295,6 +378,24 @@ public class BuildingSceneWriter
             // ORM maps: BeamNG uses compositeMap or roughnessMap depending on version.
             // roughnessMap is the safer choice for DAE-based objects.
             stage0["roughnessMap"] = texturePath + matDef.OrmMapFile;
+        }
+
+        // baseColorFactor tints the texture — without it textures appear washed out / white.
+        // DefaultColor is 0-255 RGB, BeamNG expects 0.0-1.0 RGBA.
+        // Alpha channel carries opacity for translucent materials.
+        stage0["baseColorFactor"] = new float[]
+        {
+            matDef.DefaultColor.X / 255f,
+            matDef.DefaultColor.Y / 255f,
+            matDef.DefaultColor.Z / 255f,
+            matDef.Opacity
+        };
+
+        // Per-instance color tinting: allows each TSStatic to specify its own instanceColor.
+        // Used for non-clustered building export where one material serves all buildings.
+        if (matDef.InstanceDiffuse)
+        {
+            stage0["instanceDiffuse"] = true;
         }
 
         // Stages 1-3: empty (serialize as {} in JSON)

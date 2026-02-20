@@ -1,5 +1,6 @@
 namespace BeamNG.Procedural3D.Building;
 
+using System.Drawing;
 using System.Numerics;
 
 /// <summary>
@@ -20,6 +21,13 @@ public class BuildingMaterialDefinition
     /// This becomes the material name in materials.json and DAE files.
     /// </summary>
     public required string MaterialName { get; init; }
+
+    /// <summary>
+    /// Name of the texture folder in the OSM2World-default-style/textures/cc0textures/ directory
+    /// (e.g., "Bricks029"). Used to locate textures from the OSM2World asset library.
+    /// When null, falls back to direct file name lookup.
+    /// </summary>
+    public string? TextureFolder { get; init; }
 
     /// <summary>
     /// Filename of the color/albedo texture (e.g., "Bricks029_Color.jpg").
@@ -62,6 +70,27 @@ public class BuildingMaterialDefinition
     public Vector3 DefaultColor { get; init; } = new(180, 180, 180);
 
     /// <summary>
+    /// Material opacity (0 = fully transparent, 1 = fully opaque).
+    /// Used for glass materials. Port of OSM2World's Transparency enum.
+    /// </summary>
+    public float Opacity { get; init; } = 1.0f;
+
+    /// <summary>
+    /// Whether the material should be rendered double-sided.
+    /// Port of OSM2World's Material.doubleSided property — used for glass
+    /// so both sides are visible.
+    /// </summary>
+    public bool DoubleSided { get; init; }
+
+    /// <summary>
+    /// Whether this material supports per-instance color tinting via BeamNG's instanceDiffuse system.
+    /// When true, the material's Stage[0] will include "instanceDiffuse": true, and each TSStatic
+    /// can specify its own "instanceColor": [R, G, B, 1] to tint the texture.
+    /// Used for non-clustered building export where each building has its own TSStatic.
+    /// </summary>
+    public bool InstanceDiffuse { get; init; }
+
+    /// <summary>
     /// Creates a Procedural3D Material for use with ColladaExporter.
     /// Texture paths are set relative to the DAE file location.
     /// </summary>
@@ -73,6 +102,7 @@ public class BuildingMaterialDefinition
         {
             Name = MaterialName,
             DiffuseColor = new Vector3(DefaultColor.X / 255f, DefaultColor.Y / 255f, DefaultColor.Z / 255f),
+            Opacity = Opacity,
             DiffuseTexturePath = path + ColorMapFile,
             NormalTexturePath = NormalMapFile != null ? path + NormalMapFile : null,
             SpecularTexturePath = OrmMapFile != null ? path + OrmMapFile : null
@@ -87,5 +117,33 @@ public class BuildingMaterialDefinition
         yield return ColorMapFile;
         if (NormalMapFile != null) yield return NormalMapFile;
         if (OrmMapFile != null) yield return OrmMapFile;
+    }
+
+    /// <summary>
+    /// Creates a color variant of this material for clustered building export.
+    /// The variant shares all texture files but has a unique MaterialKey/MaterialName
+    /// and bakes the color into DefaultColor (used as baseColorFactor in materials.json).
+    /// InstanceDiffuse is false because the color is baked into the material.
+    /// </summary>
+    /// <param name="color">The building wall color from OSM building:colour tag.</param>
+    /// <param name="hexSuffix">Lowercase hex color suffix (e.g., "aabbcc").</param>
+    public BuildingMaterialDefinition CreateColorVariant(Color color, string hexSuffix)
+    {
+        return new BuildingMaterialDefinition
+        {
+            MaterialKey = $"{MaterialKey}_{hexSuffix}",
+            MaterialName = $"{MaterialName}_{hexSuffix}",
+            TextureFolder = TextureFolder,
+            ColorMapFile = ColorMapFile,
+            NormalMapFile = NormalMapFile,
+            OrmMapFile = OrmMapFile,
+            TextureScaleU = TextureScaleU,
+            TextureScaleV = TextureScaleV,
+            IsRoofMaterial = IsRoofMaterial,
+            DefaultColor = new Vector3(color.R, color.G, color.B),
+            Opacity = Opacity,
+            DoubleSided = DoubleSided,
+            InstanceDiffuse = false
+        };
     }
 }

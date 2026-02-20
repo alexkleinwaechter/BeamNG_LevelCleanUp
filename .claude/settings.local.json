@@ -21,7 +21,8 @@
       "Bash(findstr:*)",
       "Read(//d/**)",
       "Bash(ls:*)",
-      "Bash(dotnet run:*)"
+      "Bash(dotnet run:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

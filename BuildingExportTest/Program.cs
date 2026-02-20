@@ -60,7 +60,7 @@ var shed = new BuildingData
     Height = 3.0f,
     Levels = 1,
     WallMaterial = "WOOD_WALL",
-    RoofMaterial = "WOOD",
+    RoofMaterial = "WOOD_ROOF",
     FootprintOuter =
     [
         new Vector2(-2, -1.5f),

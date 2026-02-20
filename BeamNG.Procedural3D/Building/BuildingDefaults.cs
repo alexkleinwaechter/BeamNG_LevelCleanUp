@@ -51,12 +51,14 @@ public static class BuildingDefaults
             case "hut":
             case "shed":
                 levels = 1;
+                roofShape = "gabled";
                 break;
 
             case "cabin":
                 levels = 1;
                 wallMaterial = "WOOD_WALL";
-                roofMaterial = "WOOD";
+                roofMaterial = "WOOD_ROOF";
+                roofShape = "gabled";
                 break;
 
             case "roof":
@@ -66,6 +68,10 @@ public static class BuildingDefaults
                 break;
 
             case "church":
+                hasWindows = false;
+                roofShape = "gabled";
+                break;
+
             case "hangar":
             case "industrial":
                 hasWindows = false;
@@ -77,6 +83,7 @@ public static class BuildingDefaults
             case "semidetached_house":
             case "terrace":
                 levels = 2;
+                roofShape = "gabled";
                 break;
 
             case "apartments":
@@ -101,12 +108,28 @@ public static class BuildingDefaults
                 levels = 1;
                 wallMaterial = "WOOD_WALL";
                 hasWindows = false;
+                roofShape = "gabled";
                 break;
 
             case "school":
             case "university":
             case "hospital":
                 levels = 3;
+                roofShape = "hipped";
+                break;
+
+            case "parking":
+                levels = 5;
+                hasWindows = false;
+                break;
+
+            case "chimney":
+                levels = 1;
+                heightPerLevel = 10.0f;
+                wallMaterial = "BRICK";
+                roofMaterial = "BRICK";
+                hasWindows = false;
+                roofShape = "flat";
                 break;
         }
 
@@ -114,12 +137,6 @@ public static class BuildingDefaults
         if (!string.IsNullOrEmpty(roofShapeTag))
         {
             roofShape = roofShapeTag;
-        }
-
-        // Flat roofs use concrete by default
-        if (roofShape == "flat" && roofMaterial == "ROOF_DEFAULT")
-        {
-            roofMaterial = "CONCRETE";
         }
 
         return new BuildingDefaultValues(

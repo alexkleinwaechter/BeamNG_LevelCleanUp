@@ -106,6 +106,29 @@ public class TerrainGenerationState
     /// </summary>
     public float BuildingClusterCellSize { get; set; } = 128f;
 
+    /// <summary>
+    ///     Maximum LOD level to include in exported building DAE files.
+    ///     0 = LOD0 only (walls + roof, no windows — fastest, lowest quality)
+    ///     1 = LOD0 + LOD1 (adds textured window quads)
+    ///     2 = LOD0 + LOD1 + LOD2 (adds full 3D windows, doors, frames — highest quality)
+    /// </summary>
+    public int MaxBuildingLodLevel { get; set; } = 2;
+
+    /// <summary>
+    ///     LOD bias multiplier for building exports. Default 1.0.
+    ///     Controls when LOD transitions occur relative to camera distance.
+    ///     Values &gt; 1 = detail drops sooner (better performance).
+    ///     Values &lt; 1 = detail retained longer (better visuals at distance).
+    /// </summary>
+    public float BuildingLodBias { get; set; } = 1.0f;
+
+    /// <summary>
+    ///     Pixel-size cull threshold for the nulldetail node in building DAE files.
+    ///     When the object is smaller than this many pixels on screen, it is not rendered.
+    ///     0 = no nulldetail node (object always rendered). Default 0.
+    /// </summary>
+    public int NullDetailPixelSize { get; set; }
+
     public HashSet<long> GetSelectedBuildingFeatureIds() =>
         SelectedBuildingFeatures.Select(f => f.FeatureId).ToHashSet();
 
@@ -341,6 +364,8 @@ public class TerrainGenerationState
         EnableBuildings = false;
         EnableBuildingClustering = false;
         BuildingClusterCellSize = 128f;
+        MaxBuildingLodLevel = 2;
+        BuildingLodBias = 1.0f;
         SelectedBuildingFeatures = new List<OsmFeatureSelection>();
 
         HeightmapSourceType = HeightmapSourceType.Png;

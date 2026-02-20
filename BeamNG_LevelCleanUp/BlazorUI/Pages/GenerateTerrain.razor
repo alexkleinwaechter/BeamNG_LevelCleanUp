@@ -110,6 +110,9 @@
                                        EnableBuildings="@_enableBuildings"
                                        EnableBuildingClustering="@_enableBuildingClustering"
                                        BuildingClusterCellSize="@_buildingClusterCellSize"
+                                       MaxBuildingLodLevel="@_maxBuildingLodLevel"
+                                       BuildingLodBias="@_buildingLodBias"
+                                       NullDetailPixelSize="@_nullDetailPixelSize"
                                        SelectedBuildingFeatures="@_state.SelectedBuildingFeatures"
                                        CropOffsetX="@(_cropResult?.OffsetX ?? 0)"
                                        CropOffsetY="@(_cropResult?.OffsetY ?? 0)"
@@ -663,6 +666,54 @@
                                         <MudSelectItem T="float" Value="@opt.Value">@opt.Label</MudSelectItem>
                                     }
                                 </MudSelect>
+                            </MudItem>
+
+                            @* Building LOD Settings *@
+                            <MudItem xs="12" sm="6" md="4">
+                                <div class="d-flex align-center gap-1 mb-1">
+                                    <MudText Typo="Typo.subtitle2">Max LOD Level</MudText>
+                                    <MudTooltip Text="Controls how many detail levels are included in each building DAE file. LOD0 = walls and roof only (fastest, smallest files). LOD1 adds textured window quads. LOD2 adds full 3D windows, doors, and frames (highest quality, largest files). Lower values reduce file size and improve performance at the cost of visual detail.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudSelect T="int"
+                                           @bind-Value="_maxBuildingLodLevel"
+                                           Label="Max Detail Level"
+                                           Variant="Variant.Outlined"
+                                           HelperText="@GetMaxLodHelperText()">
+                                    <MudSelectItem T="int" Value="0">LOD0 — Walls + Roof only</MudSelectItem>
+                                    <MudSelectItem T="int" Value="1">LOD1 — + Textured Windows</MudSelectItem>
+                                    <MudSelectItem T="int" Value="2">LOD2 — + 3D Windows &amp; Doors</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="4">
+                                <div class="d-flex align-center gap-1 mb-1">
+                                    <MudText Typo="Typo.subtitle2">LOD Distance Bias</MudText>
+                                    <MudTooltip Text="Adjusts when LOD transitions occur relative to camera distance. At 1.0 (default), a typical 15m building switches detail levels at standard distances. Values above 1.0 make detail drop off sooner (better performance). Values below 1.0 retain detail longer at distance (better visuals). The actual pixel thresholds scale automatically with building size.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudSlider T="float"
+                                           @bind-Value="_buildingLodBias"
+                                           Min="0.25f" Max="4.0f" Step="0.25f"
+                                           Color="Color.Warning"
+                                           TickMarks="true"
+                                           TickMarkLabels="@(new[] { "0.25", "", "", "1.0", "", "", "", "2.0", "", "", "", "3.0", "", "", "", "4.0" })"
+                                           ValueLabel="true">
+                                    LOD Bias: @_buildingLodBias.ToString("F2")x
+                                </MudSlider>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="4">
+                                <MudNumericField T="int"
+                                                 @bind-Value="_nullDetailPixelSize"
+                                                 Label="Null-Detail Pixel Size"
+                                                 Variant="Variant.Outlined"
+                                                 Min="0"
+                                                 HelperText="@(_nullDetailPixelSize > 0 ? $"Objects smaller than {_nullDetailPixelSize}px on screen won't render" : "Disabled — objects always render")"
+                                                 Adornment="Adornment.End"
+                                                 AdornmentText="px" />
                             </MudItem>
                         }
 

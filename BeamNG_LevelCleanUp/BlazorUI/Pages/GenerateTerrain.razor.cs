@@ -157,6 +157,24 @@ public partial class GenerateTerrain : IDisposable
         set => _state.BuildingClusterCellSize = value;
     }
 
+    private int _maxBuildingLodLevel
+    {
+        get => _state.MaxBuildingLodLevel;
+        set => _state.MaxBuildingLodLevel = value;
+    }
+
+    private float _buildingLodBias
+    {
+        get => _state.BuildingLodBias;
+        set => _state.BuildingLodBias = value;
+    }
+
+    private int _nullDetailPixelSize
+    {
+        get => _state.NullDetailPixelSize;
+        set => _state.NullDetailPixelSize = value;
+    }
+
     private GeoBoundingBox? _geoBoundingBox
     {
         get => _state.GeoBoundingBox;
@@ -1248,6 +1266,12 @@ public partial class GenerateTerrain : IDisposable
                 _enableBuildingClustering = result.EnableBuildingClustering.Value;
             if (result.BuildingClusterCellSize.HasValue)
                 _buildingClusterCellSize = result.BuildingClusterCellSize.Value;
+            if (result.MaxBuildingLodLevel.HasValue)
+                _maxBuildingLodLevel = result.MaxBuildingLodLevel.Value;
+            if (result.BuildingLodBias.HasValue)
+                _buildingLodBias = result.BuildingLodBias.Value;
+            if (result.NullDetailPixelSize.HasValue)
+                _nullDetailPixelSize = result.NullDetailPixelSize.Value;
             if (result.SelectedBuildingFeatures?.Any() == true)
                 _state.SelectedBuildingFeatures = result.SelectedBuildingFeatures
                     .Select(r => r.ToSelection()).ToList();
@@ -1511,6 +1535,16 @@ public partial class GenerateTerrain : IDisposable
         float terrainMeters = _terrainSize * _metersPerPixel;
         int gridCount = (int)MathF.Ceiling(terrainMeters / _buildingClusterCellSize);
         return $"Max {gridCount * gridCount} clusters \u2014 fewer draw calls, good for LOD";
+    }
+
+    private string GetMaxLodHelperText()
+    {
+        return _maxBuildingLodLevel switch
+        {
+            0 => "Fastest export, smallest files \u2014 no window detail",
+            1 => "Balanced \u2014 flat textured windows on walls",
+            _ => "Full detail \u2014 3D window frames, glass, doors"
+        };
     }
 
     private async Task ExecuteTerrainGeneration()

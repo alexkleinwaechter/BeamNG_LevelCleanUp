@@ -601,6 +601,15 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 if (buildingOptions["buildingClusterCellSize"] != null)
                     result.BuildingClusterCellSize = buildingOptions["buildingClusterCellSize"]!.GetValue<float>();
 
+                if (buildingOptions["maxBuildingLodLevel"] != null)
+                    result.MaxBuildingLodLevel = buildingOptions["maxBuildingLodLevel"]!.GetValue<int>();
+
+                if (buildingOptions["buildingLodBias"] != null)
+                    result.BuildingLodBias = buildingOptions["buildingLodBias"]!.GetValue<float>();
+
+                if (buildingOptions["nullDetailPixelSize"] != null)
+                    result.NullDetailPixelSize = buildingOptions["nullDetailPixelSize"]!.GetValue<int>();
+
                 var buildingFeatures = buildingOptions["selectedBuildingFeatures"]?.AsArray();
                 if (buildingFeatures != null && buildingFeatures.Count > 0)
                 {

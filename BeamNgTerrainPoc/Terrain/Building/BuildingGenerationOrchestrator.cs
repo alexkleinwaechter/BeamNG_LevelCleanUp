@@ -3,6 +3,7 @@ using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using Grille.BeamNG;
+using Bldg = BeamNG.Procedural3D.Building.Building;
 
 namespace BeamNgTerrainPoc.Terrain.Building;
 
@@ -36,6 +37,9 @@ public class BuildingGenerationOrchestrator
     /// <param name="clusterCellSizeMeters">Grid cell size for building clustering (meters).
     /// When > 0, nearby buildings are merged into combined DAE files to reduce draw calls.
     /// When 0, each building gets its own DAE file (original behavior).</param>
+    /// <param name="maxLodLevel">Maximum LOD level to include in DAE files (0, 1, or 2).</param>
+    /// <param name="lodBias">LOD bias multiplier for pixel size thresholds (default 1.0).</param>
+    /// <param name="nullDetailPixelSize">Pixel-size cull threshold for nulldetail node. 0 = no nulldetail node.</param>
     /// <returns>Result summary with counts and any errors.</returns>
     public BuildingGenerationResult GenerateBuildings(
         OsmQueryResult osmQueryResult,
@@ -49,7 +53,10 @@ public class BuildingGenerationOrchestrator
         string workingDirectory,
         string levelName,
         HashSet<long>? selectedFeatureIds = null,
-        float clusterCellSizeMeters = 0f)
+        float clusterCellSizeMeters = 0f,
+        int maxLodLevel = 2,
+        float lodBias = 1.0f,
+        int nullDetailPixelSize = 0)
     {
         var result = new BuildingGenerationResult();
 
@@ -67,11 +74,20 @@ public class BuildingGenerationOrchestrator
                 Console.WriteLine("BuildingGenerationOrchestrator: No terrain file available, buildings will use elevation 0");
             }
 
-            // 2. Parse buildings from OSM data (filtered by user selection if provided)
+            // 2. Parse buildings from OSM data (multi-part aware)
+            // ParseBuildingsWithParts discovers building:part features and groups them
+            // under their parent building. Each Building contains one or more BuildingData parts.
             var parser = new OsmBuildingParser(geometryProcessor);
-            var buildings = (selectedFeatureIds != null && selectedFeatureIds.Count > 0)
-                ? ParseFilteredBuildings(parser, osmQueryResult, selectedFeatureIds, bbox, terrainSize, metersPerPixel, heightSampler)
-                : parser.ParseBuildings(osmQueryResult, bbox, terrainSize, metersPerPixel, heightSampler);
+            var buildings = parser.ParseBuildingsWithParts(
+                osmQueryResult, bbox, terrainSize, metersPerPixel, heightSampler);
+
+            // Apply user selection filter if provided
+            if (selectedFeatureIds != null && selectedFeatureIds.Count > 0)
+            {
+                buildings = buildings.Where(b => selectedFeatureIds.Contains(b.OsmId)).ToList();
+                Console.WriteLine($"BuildingGenerationOrchestrator: Filtered to {buildings.Count} " +
+                    $"of {selectedFeatureIds.Count} user-selected buildings");
+            }
 
             if (buildings.Count == 0)
             {
@@ -94,24 +110,33 @@ public class BuildingGenerationOrchestrator
             }
 
             // 3.5. Optional clustering (after elevation is set, before DAE export)
-            List<BuildingCluster>? clusters = null;
+            List<BuildingCluster<Bldg>>? clusters = null;
             bool useClustering = clusterCellSizeMeters > 0;
             if (useClustering)
             {
                 var clusterer = new BuildingClusterer();
-                clusters = clusterer.ClusterBuildings(buildings, clusterCellSizeMeters);
+                clusters = clusterer.ClusterMultiPartBuildings(buildings, clusterCellSizeMeters);
                 result.ClustersCreated = clusters.Count;
             }
 
-            // 4. Export DAE files
-            var materialLibrary = new BuildingMaterialLibrary();
-            var daeExporter = new BuildingDaeExporter(materialLibrary);
+            // 4. Clean previous building output so we start fresh
             var shapesDir = Path.Combine(workingDirectory, "art", "shapes", "MT_buildings");
+            var sceneDir = Path.Combine(workingDirectory, "main", "MissionGroup", "MT_buildings");
+            CleanBuildingOutputDirectories(shapesDir, sceneDir);
+
+            // 5. Export DAE files
+            var materialLibrary = new BuildingMaterialLibrary();
+            var daeExporter = new BuildingDaeExporter(materialLibrary)
+            {
+                MaxLodLevel = maxLodLevel,
+                LodBias = lodBias,
+                NullDetailPixelSize = nullDetailPixelSize
+            };
 
             BuildingDaeExportResult exportResult;
             if (useClustering && clusters != null)
             {
-                exportResult = daeExporter.ExportAllClustered(clusters, shapesDir, (i, total) =>
+                exportResult = daeExporter.ExportAllBuildingClusters(clusters, shapesDir, (i, total) =>
                 {
                     if (i % 50 == 0 || i == total)
                         Console.WriteLine($"BuildingGenerationOrchestrator: Exported {i}/{total} clusters");
@@ -119,7 +144,7 @@ public class BuildingGenerationOrchestrator
             }
             else
             {
-                exportResult = daeExporter.ExportAll(buildings, shapesDir, (i, total) =>
+                exportResult = daeExporter.ExportAllBuildings(buildings, shapesDir, (i, total) =>
                 {
                     if (i % 50 == 0 || i == total)
                         Console.WriteLine($"BuildingGenerationOrchestrator: Exported {i}/{total} buildings");
@@ -137,20 +162,19 @@ public class BuildingGenerationOrchestrator
                 return result;
             }
 
-            // 5. Deploy textures
+            // 6. Deploy textures
             var usedMaterials = materialLibrary.GetUsedMaterials(buildings);
             var textureDir = Path.Combine(shapesDir, "textures");
             result.TexturesDeployed = materialLibrary.DeployTextures(usedMaterials, textureDir);
 
-            // 6. Write scene files
+            // 7. Write scene files
             var sceneWriter = new BuildingSceneWriter();
 
             // Ensure the "Buildings" SimGroup is registered in the parent items.level.json (add if not exists)
             var parentItemsPath = Path.Combine(workingDirectory, "main", "MissionGroup", "items.level.json");
             sceneWriter.EnsureSimGroupInParent(parentItemsPath, "MissionGroup");
 
-            // Scene items (NDJSON) go into the MissionGroup/Buildings/ subfolder
-            var sceneDir = Path.Combine(workingDirectory, "main", "MissionGroup", "MT_buildings");
+            // Scene items (NDJSON) go into the MissionGroup/MT_buildings/ subfolder
             var itemsPath = Path.Combine(sceneDir, "items.level.json");
             var shapePath = $"/levels/{levelName}/art/shapes/MT_buildings/";
 
@@ -180,22 +204,19 @@ public class BuildingGenerationOrchestrator
         return result;
     }
 
-    private static List<BeamNG.Procedural3D.Building.BuildingData> ParseFilteredBuildings(
-        OsmBuildingParser parser,
-        OsmQueryResult osmQueryResult,
-        HashSet<long> selectedFeatureIds,
-        GeoBoundingBox bbox,
-        int terrainSize,
-        float metersPerPixel,
-        Func<float, float, float>? heightSampler)
+    /// <summary>
+    /// Deletes previous building output directories so generation starts fresh.
+    /// </summary>
+    private static void CleanBuildingOutputDirectories(string shapesDir, string sceneDir)
     {
-        var filteredFeatures = osmQueryResult.GetFeaturesByCategory("building")
-            .Where(f => f.GeometryType == OsmGeometryType.Polygon &&
-                        selectedFeatureIds.Contains(f.Id))
-            .ToList();
-        Console.WriteLine($"BuildingGenerationOrchestrator: Filtered to {filteredFeatures.Count} " +
-            $"of {selectedFeatureIds.Count} user-selected building features");
-        return parser.ParseBuildingFeatures(filteredFeatures, bbox, terrainSize, metersPerPixel, heightSampler);
+        foreach (var dir in new[] { shapesDir, sceneDir })
+        {
+            if (Directory.Exists(dir))
+            {
+                Console.WriteLine($"BuildingGenerationOrchestrator: Cleaning previous output: {dir}");
+                Directory.Delete(dir, recursive: true);
+            }
+        }
     }
 
     /// <summary>

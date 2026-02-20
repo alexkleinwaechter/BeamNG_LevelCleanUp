@@ -2,6 +2,7 @@ namespace BeamNG.Procedural3D.Building;
 
 using System.Numerics;
 using BeamNG.Procedural3D.Builders;
+using BeamNG.Procedural3D.Building.Roof;
 using BeamNG.Procedural3D.Core;
 
 /// <summary>
@@ -9,31 +10,90 @@ using BeamNG.Procedural3D.Core;
 /// Produces separate meshes per material (wall material, roof material).
 /// All coordinates are in local space relative to the building's ground center (centroid at floor level).
 /// In local space: X/Y are horizontal, Z is up (BeamNG convention).
+///
+/// UV coordinates are divided by the material's texture scale so textures tile at the
+/// correct real-world size (e.g., a 1.4m brick texture repeats every 1.4m along the wall).
+///
+/// Port of OSM2World's BuildingPart rendering flow:
+/// 1. Create shared roof instance (all roof shapes go through HeightfieldRoof)
+/// 2. Generate walls via ExteriorBuildingWall.SplitIntoWalls() — per-vertex roof height
+/// 3. Generate roof mesh via HeightfieldRoof.GenerateMesh()
+/// 4. Generate floor if elevated (building:part with min_height)
 /// </summary>
 public class BuildingMeshGenerator
 {
     /// <summary>
-    /// Generates all meshes for a single building.
-    /// Returns meshes grouped by material name.
+    /// Generates all meshes for a building with multiple parts.
+    /// Each part gets its own roof and walls; meshes are merged by material key across all parts.
     /// </summary>
-    public Dictionary<string, Mesh> GenerateMeshes(BuildingData building)
+    /// <param name="building">The building with one or more parts.</param>
+    /// <param name="getTextureScale">Lookup: material key → (scaleU, scaleV) in meters per texture repeat.
+    /// If null, raw meter UVs are used (1 UV unit = 1 meter).</param>
+    public Dictionary<string, Mesh> GenerateMeshes(
+        Building building,
+        Func<string, Vector2>? getTextureScale = null)
     {
         var meshes = new Dictionary<string, Mesh>();
 
-        // Generate walls
-        if (building.HasWalls && building.FootprintOuter.Count >= 3)
+        foreach (var part in building.Parts)
         {
-            var wallMesh = GenerateWalls(building);
+            var partMeshes = GenerateMeshes(part, getTextureScale);
+            foreach (var (materialKey, mesh) in partMeshes)
+            {
+                AddOrMergeMesh(meshes, materialKey, mesh);
+            }
+        }
+
+        return meshes;
+    }
+
+    /// <summary>
+    /// Generates all meshes for a single building part (or simple building without parts).
+    /// Returns meshes grouped by material key.
+    /// </summary>
+    /// <param name="building">The building data (single part).</param>
+    /// <param name="getTextureScale">Lookup: material key → (scaleU, scaleV) in meters per texture repeat.
+    /// If null, raw meter UVs are used (1 UV unit = 1 meter).</param>
+    public Dictionary<string, Mesh> GenerateMeshes(
+        BuildingData building,
+        Func<string, Vector2>? getTextureScale = null)
+    {
+        var meshes = new Dictionary<string, Mesh>();
+
+        if (building.FootprintOuter.Count < 3)
+            return meshes;
+
+        // Ensure non-flat roofs have a roof height allocated
+        EnsureRoofHeight(building);
+
+        // Prepare polygon: remove closing vertex, ensure CCW winding
+        // This prepared polygon is shared between roof and wall generation (critical for coordinate consistency)
+        var polygon = RoofWithRidge.PreparePolygon(building.FootprintOuter);
+        if (polygon == null || polygon.Count < 3)
+            return meshes;
+
+        // Create shared roof instance — ALL roof shapes (including flat) go through HeightfieldRoof
+        // Port of: roof = Roof.createRoofForShape(...) in BuildingPart.java
+        var roof = CreateRoof(building, polygon);
+
+        // Generate walls using ExteriorBuildingWall (roof-aware top boundaries)
+        // Port of: walls = splitIntoWalls(area, this) + wall.renderTo() in BuildingPart.java
+        // Note: walls are ALWAYS generated, even when HasWalls=false (roof, carport).
+        // HasWalls=false only suppresses windows/doors — wall surfaces still provide slab thickness.
+        // Port of OSM2World: BuildingPart.java always calls splitIntoWalls() regardless of hasWalls.
+        {
+            var wallScale = getTextureScale?.Invoke(building.WallMaterial) ?? Vector2.One;
+            var wallMesh = GenerateWalls(building, roof, polygon, wallScale);
             if (wallMesh.HasGeometry)
             {
                 AddOrMergeMesh(meshes, building.WallMaterial, wallMesh);
             }
         }
 
-        // Generate flat roof (Phase 1 — only flat roofs)
-        if (building.FootprintOuter.Count >= 3)
+        // Generate roof mesh using the same shared roof instance
         {
-            var roofMesh = GenerateFlatRoof(building);
+            var roofScale = getTextureScale?.Invoke(building.RoofMaterial) ?? Vector2.One;
+            var roofMesh = GenerateRoofMesh(building, roof, roofScale);
             if (roofMesh.HasGeometry)
             {
                 AddOrMergeMesh(meshes, building.RoofMaterial, roofMesh);
@@ -41,9 +101,10 @@ public class BuildingMeshGenerator
         }
 
         // Generate floor (only for elevated building parts)
-        if (building.MinHeight > 0 && building.FootprintOuter.Count >= 3)
+        if (building.MinHeight > 0)
         {
-            var floorMesh = GenerateFloor(building);
+            var floorScale = getTextureScale?.Invoke(building.WallMaterial) ?? Vector2.One;
+            var floorMesh = GenerateFloor(building, floorScale);
             if (floorMesh != null && floorMesh.HasGeometry)
             {
                 AddOrMergeMesh(meshes, building.WallMaterial, floorMesh);
@@ -54,111 +115,401 @@ public class BuildingMeshGenerator
     }
 
     /// <summary>
-    /// Generates wall quads for the building footprint.
-    /// Each wall segment is a quad from MinHeight to WallHeight + MinHeight.
-    /// UV: U = cumulative distance along wall (for texture tiling), V = height.
-    /// Flat normals (each wall face has its own outward-facing normal).
+    /// Generates meshes for up to 3 LOD levels of a single building part.
+    /// Returns a dictionary: LOD index (0..maxLodLevel) → material key → Mesh.
+    /// LOD0: solid walls + roof (no windows)
+    /// LOD1: walls with textured window quads + roof
+    /// LOD2: walls with 3D window geometry + doors + roof
     /// </summary>
-    private Mesh GenerateWalls(BuildingData building)
+    /// <param name="maxLodLevel">Maximum LOD level to generate (0, 1, or 2). Default 2 = all levels.</param>
+    public Dictionary<int, Dictionary<string, Mesh>> GenerateMultiLodMeshes(
+        BuildingData building,
+        Func<string, Vector2>? getTextureScale = null,
+        int maxLodLevel = 2)
+    {
+        var result = new Dictionary<int, Dictionary<string, Mesh>>
+        {
+            [0] = GenerateMeshes(building, getTextureScale)
+        };
+        if (maxLodLevel >= 1)
+            result[1] = GenerateLod1Meshes(building, getTextureScale);
+        if (maxLodLevel >= 2)
+            result[2] = GenerateLod2Meshes(building, getTextureScale);
+        return result;
+    }
+
+    /// <summary>
+    /// Generates meshes for up to 3 LOD levels of a multi-part building.
+    /// Returns a dictionary: LOD index (0..maxLodLevel) → material key → Mesh.
+    /// </summary>
+    /// <param name="maxLodLevel">Maximum LOD level to generate (0, 1, or 2). Default 2 = all levels.</param>
+    public Dictionary<int, Dictionary<string, Mesh>> GenerateMultiLodMeshes(
+        Building building,
+        Func<string, Vector2>? getTextureScale = null,
+        int maxLodLevel = 2)
+    {
+        var result = new Dictionary<int, Dictionary<string, Mesh>> { [0] = new() };
+        if (maxLodLevel >= 1) result[1] = new();
+        if (maxLodLevel >= 2) result[2] = new();
+
+        foreach (var part in building.Parts)
+        {
+            var partLodMeshes = GenerateMultiLodMeshes(part, getTextureScale, maxLodLevel);
+            foreach (var (lod, meshes) in partLodMeshes)
+            {
+                foreach (var (matKey, mesh) in meshes)
+                {
+                    AddOrMergeMesh(result[lod], matKey, mesh);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// LOD1: walls with textured window quads + roof.
+    /// Windows are placed as flat textured quads (TexturedWindow) cut into the wall surface.
+    /// </summary>
+    private Dictionary<string, Mesh> GenerateLod1Meshes(
+        BuildingData building,
+        Func<string, Vector2>? getTextureScale = null)
+    {
+        var meshes = new Dictionary<string, Mesh>();
+
+        if (building.FootprintOuter.Count < 3)
+            return meshes;
+
+        EnsureRoofHeight(building);
+
+        var polygon = RoofWithRidge.PreparePolygon(building.FootprintOuter);
+        if (polygon == null || polygon.Count < 3)
+            return meshes;
+
+        var roof = CreateRoof(building, polygon);
+
+        // Generate walls with textured windows (walls always generated, HasWalls only affects windows/doors)
+        {
+            var wallScale = getTextureScale?.Invoke(building.WallMaterial) ?? Vector2.One;
+
+            var wallBuilder = new MeshBuilder()
+                .WithName($"walls_{building.OsmId}")
+                .WithMaterial(building.WallMaterial);
+            var windowBuilder = new MeshBuilder()
+                .WithName($"windows_{building.OsmId}")
+                .WithMaterial("WINDOW_SINGLE");
+
+            float floorEle = building.MinHeight;
+            float heightWithoutRoof = building.WallHeight;
+
+            var walls = ExteriorBuildingWall.SplitIntoWalls(roof, polygon, floorEle, heightWithoutRoof);
+
+            // Place passages before windows (passages take priority)
+            if (building.Passages.Count > 0)
+            {
+                float wallHeight = heightWithoutRoof - floorEle;
+                foreach (var wall in walls)
+                    wall.PlacePassages(building.Passages, wallHeight);
+            }
+
+            foreach (var wall in walls)
+            {
+                wall.RenderLod1(wallBuilder, windowBuilder, wallScale, building);
+            }
+
+            // Hole walls (same as LOD0 — no windows on courtyards)
+            if (building.FootprintHoles != null)
+            {
+                GenerateHoleWalls(wallBuilder, building, wallScale);
+            }
+
+            var wallMesh = wallBuilder.Build();
+            if (wallMesh.HasGeometry)
+                AddOrMergeMesh(meshes, building.WallMaterial, wallMesh);
+
+            var windowMesh = windowBuilder.Build();
+            if (windowMesh.HasGeometry)
+                AddOrMergeMesh(meshes, "WINDOW_SINGLE", windowMesh);
+        }
+
+        // Roof is the same as LOD0
+        {
+            var roofScale = getTextureScale?.Invoke(building.RoofMaterial) ?? Vector2.One;
+            var roofMesh = GenerateRoofMesh(building, roof, roofScale);
+            if (roofMesh.HasGeometry)
+                AddOrMergeMesh(meshes, building.RoofMaterial, roofMesh);
+        }
+
+        // Floor (same as LOD0)
+        if (building.MinHeight > 0)
+        {
+            var floorScale = getTextureScale?.Invoke(building.WallMaterial) ?? Vector2.One;
+            var floorMesh = GenerateFloor(building, floorScale);
+            if (floorMesh != null && floorMesh.HasGeometry)
+                AddOrMergeMesh(meshes, building.WallMaterial, floorMesh);
+        }
+
+        return meshes;
+    }
+
+    /// <summary>
+    /// LOD2: walls with 3D geometry windows + doors + roof.
+    /// Windows are full 3D with frames, glass panes, and inner dividers (GeometryWindow).
+    /// The longest wall gets a door.
+    /// </summary>
+    private Dictionary<string, Mesh> GenerateLod2Meshes(
+        BuildingData building,
+        Func<string, Vector2>? getTextureScale = null)
+    {
+        var meshes = new Dictionary<string, Mesh>();
+
+        if (building.FootprintOuter.Count < 3)
+            return meshes;
+
+        EnsureRoofHeight(building);
+
+        var polygon = RoofWithRidge.PreparePolygon(building.FootprintOuter);
+        if (polygon == null || polygon.Count < 3)
+            return meshes;
+
+        var roof = CreateRoof(building, polygon);
+
+        // Generate walls with 3D windows and doors (walls always generated, HasWalls only affects windows/doors)
+        {
+            var wallScale = getTextureScale?.Invoke(building.WallMaterial) ?? Vector2.One;
+
+            var wallBuilder = new MeshBuilder()
+                .WithName($"walls_{building.OsmId}")
+                .WithMaterial(building.WallMaterial);
+            var elementBuilder = new MeshBuilder()
+                .WithName($"facade_{building.OsmId}")
+                .WithMaterial("WINDOW_FRAME");
+            var glassBuilder = new MeshBuilder()
+                .WithName($"glass_{building.OsmId}")
+                .WithMaterial("WINDOW_GLASS");
+
+            float floorEle = building.MinHeight;
+            float heightWithoutRoof = building.WallHeight;
+
+            var walls = ExteriorBuildingWall.SplitIntoWalls(roof, polygon, floorEle, heightWithoutRoof);
+
+            // Place passages before windows/doors (passages take priority)
+            if (building.Passages.Count > 0)
+            {
+                float wallHeight = heightWithoutRoof - floorEle;
+                foreach (var wall in walls)
+                    wall.PlacePassages(building.Passages, wallHeight);
+            }
+
+            // Find the longest wall for door placement
+            int longestWallIdx = -1;
+            float longestWallLength = 0;
+            for (int i = 0; i < walls.Count; i++)
+            {
+                if (walls[i].Surface.Length > longestWallLength)
+                {
+                    longestWallLength = walls[i].Surface.Length;
+                    longestWallIdx = i;
+                }
+            }
+
+            for (int i = 0; i < walls.Count; i++)
+            {
+                bool placeDoor = (i == longestWallIdx);
+                walls[i].RenderLod2(wallBuilder, elementBuilder, glassBuilder, wallScale, building, placeDoor);
+            }
+
+            // Hole walls
+            if (building.FootprintHoles != null)
+            {
+                GenerateHoleWalls(wallBuilder, building, wallScale);
+            }
+
+            var wallMesh = wallBuilder.Build();
+            if (wallMesh.HasGeometry)
+                AddOrMergeMesh(meshes, building.WallMaterial, wallMesh);
+
+            var elementMesh = elementBuilder.Build();
+            if (elementMesh.HasGeometry)
+                AddOrMergeMesh(meshes, "WINDOW_FRAME", elementMesh);
+
+            var glassMesh = glassBuilder.Build();
+            if (glassMesh.HasGeometry)
+                AddOrMergeMesh(meshes, "WINDOW_GLASS", glassMesh);
+        }
+
+        // Roof (same as LOD0)
+        {
+            var roofScale = getTextureScale?.Invoke(building.RoofMaterial) ?? Vector2.One;
+            var roofMesh = GenerateRoofMesh(building, roof, roofScale);
+            if (roofMesh.HasGeometry)
+                AddOrMergeMesh(meshes, building.RoofMaterial, roofMesh);
+        }
+
+        // Floor (same as LOD0)
+        if (building.MinHeight > 0)
+        {
+            var floorScale = getTextureScale?.Invoke(building.WallMaterial) ?? Vector2.One;
+            var floorMesh = GenerateFloor(building, floorScale);
+            if (floorMesh != null && floorMesh.HasGeometry)
+                AddOrMergeMesh(meshes, building.WallMaterial, floorMesh);
+        }
+
+        return meshes;
+    }
+
+    /// <summary>
+    /// Creates a HeightfieldRoof instance for the building's roof shape.
+    /// Port of Roof.createRoofForShape() in Java's Roof.java.
+    /// All roof shapes (including flat) go through HeightfieldRoof so that
+    /// ExteriorBuildingWall can uniformly query GetRoofHeightAt().
+    /// </summary>
+    private static HeightfieldRoof CreateRoof(BuildingData building, List<Vector2> polygon)
+    {
+        return building.RoofShape switch
+        {
+            "gabled" or "pitched" => new GabledRoof(building, polygon),
+            "hipped" or "side_hipped" => new HippedRoof(building, polygon),
+            "half-hipped" => new HalfHippedRoof(building, polygon),
+            "pyramidal" => new PyramidalRoof(building, polygon),
+            "skillion" or "lean_to" => new SkillionRoof(building, polygon),
+            "gambrel" => new GambrelRoof(building, polygon),
+            "mansard" => new MansardRoof(building, polygon),
+            "round" => new RoundRoof(building, polygon),
+            "cone" => new ConeRoof(building, polygon),
+            "dome" => new DomeRoof(building, polygon),
+            _ => new FlatRoof(building, polygon)
+        };
+    }
+
+    /// <summary>
+    /// Generates walls using ExteriorBuildingWall with roof-aware top boundaries.
+    /// Port of: walls = splitIntoWalls(area, this) + forEach wall.renderTo() in BuildingPart.java.
+    ///
+    /// Key difference from previous implementation:
+    /// - OLD: all wall vertices at constant Z = building.RoofBaseHeight (flat tops)
+    /// - NEW: each wall vertex extends up to meet the roof at that position
+    ///        (Z = baseEle + heightWithoutRoof + roof.GetRoofHeightAt(vertex))
+    ///
+    /// For gabled roofs, this means the wall top boundary includes the ridge endpoint,
+    /// creating the triangular gable wall automatically — no separate GenerateAdditionalGeometry() needed.
+    /// </summary>
+    private Mesh GenerateWalls(BuildingData building, HeightfieldRoof roof,
+        List<Vector2> polygon, Vector2 textureScale)
     {
         var builder = new MeshBuilder()
             .WithName($"walls_{building.OsmId}")
             .WithMaterial(building.WallMaterial);
 
-        var footprint = building.FootprintOuter;
-        float bottom = building.MinHeight;
-        float top = building.RoofBaseHeight;
+        float floorEle = building.MinHeight;
+        float heightWithoutRoof = building.WallHeight;
 
-        // Walk footprint edges — create a wall quad for each edge
-        float cumulativeDistance = 0;
+        // Outer walls: roof-aware via ExteriorBuildingWall
+        // floorEle = MinHeight (wall bottom), heightWithoutRoof = Height - RoofHeight (eave from ground)
+        var walls = ExteriorBuildingWall.SplitIntoWalls(roof, polygon, floorEle, heightWithoutRoof);
 
-        for (int i = 0; i < footprint.Count; i++)
+        // Place building passages BEFORE rendering (structural openings at all LOD levels)
+        // Port of OSM2World BuildingPart.java lines 152-267
+        if (building.Passages.Count > 0)
         {
-            int next = (i + 1) % footprint.Count;
-
-            Vector2 p0 = footprint[i];
-            Vector2 p1 = footprint[next];
-
-            float segmentLength = Vector2.Distance(p0, p1);
-            if (segmentLength < 0.01f) continue; // Skip degenerate edges
-
-            // Calculate outward-facing normal for this wall segment
-            // For CCW polygon: outward normal is to the right of the edge direction
-            Vector2 edge = p1 - p0;
-            Vector3 wallNormal = Vector3.Normalize(new Vector3(edge.Y, -edge.X, 0));
-
-            // Wall UV: U = distance along wall, V = height
-            // This tiles the texture naturally along walls
-            float u0 = cumulativeDistance;
-            float u1 = cumulativeDistance + segmentLength;
-
-            // Four corners of the wall quad (in local space, Z-up)
-            // Bottom-left, bottom-right, top-right, top-left
-            var bl = builder.AddVertex(
-                new Vector3(p0.X, p0.Y, bottom),
-                wallNormal,
-                new Vector2(u0, 0));
-            var br = builder.AddVertex(
-                new Vector3(p1.X, p1.Y, bottom),
-                wallNormal,
-                new Vector2(u1, 0));
-            var tr = builder.AddVertex(
-                new Vector3(p1.X, p1.Y, top),
-                wallNormal,
-                new Vector2(u1, top - bottom));
-            var tl = builder.AddVertex(
-                new Vector3(p0.X, p0.Y, top),
-                wallNormal,
-                new Vector2(u0, top - bottom));
-
-            // Add quad (CCW winding when viewed from outside)
-            builder.AddQuad(bl, br, tr, tl);
-
-            cumulativeDistance += segmentLength;
+            float wallHeight = heightWithoutRoof - floorEle;
+            foreach (var wall in walls)
+                wall.PlacePassages(building.Passages, wallHeight);
         }
 
-        // Also generate walls for holes (inner rings face inward)
+        foreach (var wall in walls)
+        {
+            if (wall.Surface.Elements.Count > 0)
+            {
+                // Wall has passages — render with holes via RenderWithElements
+                wall.Surface.RenderWithElements(builder, builder, null, textureScale);
+            }
+            else
+            {
+                wall.Render(builder, building.WallMaterial, textureScale);
+            }
+        }
+
+        // Hole walls: simple flat-topped quads (roof doesn't apply to inner rings)
         if (building.FootprintHoles != null)
         {
-            foreach (var hole in building.FootprintHoles)
-            {
-                cumulativeDistance = 0;
-                for (int i = 0; i < hole.Count; i++)
-                {
-                    int next = (i + 1) % hole.Count;
-                    Vector2 p0 = hole[i];
-                    Vector2 p1 = hole[next];
-
-                    float segmentLength = Vector2.Distance(p0, p1);
-                    if (segmentLength < 0.01f) continue;
-
-                    // For holes (CW winding), the inward-facing normal is the "outside"
-                    Vector2 edge = p1 - p0;
-                    Vector3 wallNormal = Vector3.Normalize(new Vector3(-edge.Y, edge.X, 0));
-
-                    float u0 = cumulativeDistance;
-                    float u1 = cumulativeDistance + segmentLength;
-
-                    var bl = builder.AddVertex(new Vector3(p0.X, p0.Y, bottom), wallNormal, new Vector2(u0, 0));
-                    var br = builder.AddVertex(new Vector3(p1.X, p1.Y, bottom), wallNormal, new Vector2(u1, 0));
-                    var tr = builder.AddVertex(new Vector3(p1.X, p1.Y, top), wallNormal, new Vector2(u1, top - bottom));
-                    var tl = builder.AddVertex(new Vector3(p0.X, p0.Y, top), wallNormal, new Vector2(u0, top - bottom));
-
-                    builder.AddQuad(bl, br, tr, tl);
-
-                    cumulativeDistance += segmentLength;
-                }
-            }
+            GenerateHoleWalls(builder, building, textureScale);
         }
 
         return builder.Build();
     }
 
     /// <summary>
+    /// Generates flat-topped walls for hole (courtyard) inner rings.
+    /// Holes always have constant-height walls since roofs don't extend over courtyards.
+    /// Preserved from original GenerateWalls() — not ported from OSM2World.
+    /// </summary>
+    private static void GenerateHoleWalls(MeshBuilder builder, BuildingData building, Vector2 textureScale)
+    {
+        if (building.FootprintHoles == null) return;
+
+        float bottom = building.MinHeight;
+        float top = building.RoofBaseHeight;
+        float wallHeight = top - bottom;
+        float scaleU = textureScale.X;
+        float scaleV = textureScale.Y;
+
+        foreach (var hole in building.FootprintHoles)
+        {
+            float cumulativeDistance = 0;
+            for (int i = 0; i < hole.Count; i++)
+            {
+                int next = (i + 1) % hole.Count;
+                Vector2 p0 = hole[i];
+                Vector2 p1 = hole[next];
+
+                float segmentLength = Vector2.Distance(p0, p1);
+                if (segmentLength < 0.01f) continue;
+
+                // For holes (CW winding), the inward-facing normal is the "outside"
+                Vector2 edge = p1 - p0;
+                Vector3 wallNormal = Vector3.Normalize(new Vector3(-edge.Y, edge.X, 0));
+
+                float u0 = cumulativeDistance / scaleU;
+                float u1 = (cumulativeDistance + segmentLength) / scaleU;
+
+                var bl = builder.AddVertex(new Vector3(p0.X, p0.Y, bottom), wallNormal, new Vector2(u0, 0));
+                var br = builder.AddVertex(new Vector3(p1.X, p1.Y, bottom), wallNormal, new Vector2(u1, 0));
+                var tr = builder.AddVertex(new Vector3(p1.X, p1.Y, top), wallNormal, new Vector2(u1, wallHeight / scaleV));
+                var tl = builder.AddVertex(new Vector3(p0.X, p0.Y, top), wallNormal, new Vector2(u0, wallHeight / scaleV));
+
+                builder.AddQuad(bl, br, tr, tl);
+
+                cumulativeDistance += segmentLength;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generates the roof mesh using the shared HeightfieldRoof instance.
+    /// For non-flat roofs: uses HeightfieldRoof.GenerateMesh() (face decomposition + triangulation).
+    /// For flat roofs: uses direct polygon triangulation with holes support.
+    /// </summary>
+    private Mesh GenerateRoofMesh(BuildingData building, HeightfieldRoof roof, Vector2 textureScale)
+    {
+        // Non-flat roofs: use HeightfieldRoof.GenerateMesh() which handles face decomposition,
+        // height assignment, and per-triangle normals.
+        // DomeRoof, ConeRoof, RoundRoof override GenerateMesh() for custom rendering.
+        if (roof is not FlatRoof)
+        {
+            return roof.GenerateMesh(textureScale);
+        }
+
+        // Flat roof: use direct polygon triangulation (supports holes/courtyards)
+        return GenerateFlatRoof(building, textureScale);
+    }
+
+    /// <summary>
     /// Generates the flat roof surface using polygon triangulation.
     /// Placed at the top of the building (Height above ground).
+    /// Supports buildings with holes/courtyards.
     /// </summary>
-    private Mesh GenerateFlatRoof(BuildingData building)
+    private Mesh GenerateFlatRoof(BuildingData building, Vector2 textureScale)
     {
         var builder = new MeshBuilder()
             .WithName($"roof_{building.OsmId}")
@@ -167,14 +518,14 @@ public class BuildingMeshGenerator
         float roofZ = building.Height;
         Vector3 upNormal = Vector3.UnitZ;
 
-        return GenerateHorizontalSurface(builder, building, roofZ, upNormal, false);
+        return GenerateHorizontalSurface(builder, building, roofZ, upNormal, false, textureScale);
     }
 
     /// <summary>
     /// Generates the floor/bottom polygon for elevated building parts.
     /// Placed at MinHeight, facing downward.
     /// </summary>
-    private Mesh? GenerateFloor(BuildingData building)
+    private Mesh? GenerateFloor(BuildingData building, Vector2 textureScale)
     {
         if (building.MinHeight <= 0)
             return null;
@@ -186,18 +537,20 @@ public class BuildingMeshGenerator
         float floorZ = building.MinHeight;
         Vector3 downNormal = -Vector3.UnitZ;
 
-        return GenerateHorizontalSurface(builder, building, floorZ, downNormal, true);
+        return GenerateHorizontalSurface(builder, building, floorZ, downNormal, true, textureScale);
     }
 
     /// <summary>
     /// Generates a horizontal surface (roof or floor) by triangulating the building footprint.
+    /// UV coordinates are divided by textureScale for correct tiling.
     /// </summary>
     private Mesh GenerateHorizontalSurface(
         MeshBuilder builder,
         BuildingData building,
         float z,
         Vector3 normal,
-        bool reverseWinding)
+        bool reverseWinding,
+        Vector2 textureScale)
     {
         var outerRing = building.FootprintOuter;
 
@@ -226,13 +579,12 @@ public class BuildingMeshGenerator
             }
         }
 
-        // Add vertices to mesh with planar UV mapping
+        // Add vertices to mesh with planar UV mapping scaled by texture dimensions
         int baseIndex = builder.VertexCount;
         foreach (var v2d in allVertices)
         {
             var position = new Vector3(v2d.X, v2d.Y, z);
-            // Planar XY UV mapping for top-down texturing (in local space)
-            var uv = new Vector2(v2d.X, v2d.Y);
+            var uv = new Vector2(v2d.X / textureScale.X, v2d.Y / textureScale.Y);
             builder.AddVertex(position, normal, uv);
         }
 
@@ -250,6 +602,26 @@ public class BuildingMeshGenerator
         }
 
         return builder.Build();
+    }
+
+    /// <summary>
+    /// For non-flat roof shapes, ensures RoofHeight is set so walls don't extend to full height.
+    /// If RoofHeight is 0, allocates a proportional amount from the total height.
+    /// </summary>
+    private static void EnsureRoofHeight(BuildingData building)
+    {
+        if (building.RoofShape is "flat" or "")
+            return;
+
+        if (building.RoofHeight > 0)
+            return;
+
+        // Allocate roof height: use roof:angle if available, else ~30% of total height
+        // (clamped so walls are at least 1 level high)
+        float defaultRoofHeight = building.Height * 0.3f;
+        float minWallHeight = building.HeightPerLevel;
+        float maxRoofHeight = MathF.Max(0, building.Height - minWallHeight);
+        building.RoofHeight = MathF.Min(defaultRoofHeight, maxRoofHeight);
     }
 
     /// <summary>

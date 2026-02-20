@@ -135,6 +135,21 @@ public class TerrainPresetResult
     public float? BuildingClusterCellSize { get; set; }
 
     /// <summary>
+    ///     Maximum LOD level to include in building DAE files (0, 1, or 2).
+    /// </summary>
+    public int? MaxBuildingLodLevel { get; set; }
+
+    /// <summary>
+    ///     LOD bias multiplier for building exports.
+    /// </summary>
+    public float? BuildingLodBias { get; set; }
+
+    /// <summary>
+    ///     Pixel-size cull threshold for the nulldetail node in building DAE files.
+    /// </summary>
+    public int? NullDetailPixelSize { get; set; }
+
+    /// <summary>
     ///     Selected building features at global level.
     /// </summary>
     public List<OsmFeatureReference>? SelectedBuildingFeatures { get; set; }

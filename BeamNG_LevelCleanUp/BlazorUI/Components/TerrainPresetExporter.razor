@@ -70,6 +70,9 @@
     [Parameter] public bool EnableBuildings { get; set; }
     [Parameter] public bool EnableBuildingClustering { get; set; }
     [Parameter] public float BuildingClusterCellSize { get; set; } = 150f;
+    [Parameter] public int MaxBuildingLodLevel { get; set; } = 2;
+    [Parameter] public float BuildingLodBias { get; set; } = 1.0f;
+    [Parameter] public int NullDetailPixelSize { get; set; }
     [Parameter] public List<OsmFeatureSelection>? SelectedBuildingFeatures { get; set; }
     [Parameter] public int CropOffsetX { get; set; }
     [Parameter] public int CropOffsetY { get; set; }
@@ -554,7 +557,10 @@
         {
             ["enableBuildings"] = EnableBuildings,
             ["enableBuildingClustering"] = EnableBuildingClustering,
-            ["buildingClusterCellSize"] = BuildingClusterCellSize
+            ["buildingClusterCellSize"] = BuildingClusterCellSize,
+            ["maxBuildingLodLevel"] = MaxBuildingLodLevel,
+            ["buildingLodBias"] = BuildingLodBias,
+            ["nullDetailPixelSize"] = NullDetailPixelSize
         };
 
         if (EnableBuildings && SelectedBuildingFeatures?.Any() == true)

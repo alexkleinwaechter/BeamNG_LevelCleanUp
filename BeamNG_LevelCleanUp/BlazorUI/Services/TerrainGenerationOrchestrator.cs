@@ -322,7 +322,10 @@ public class TerrainGenerationOrchestrator
             state.WorkingDirectory,
             state.LevelName,
             selectedIds,
-            clusterCellSize);
+            clusterCellSize,
+            state.MaxBuildingLodLevel,
+            state.BuildingLodBias,
+            state.NullDetailPixelSize);
 
         if (result.Success)
         {
