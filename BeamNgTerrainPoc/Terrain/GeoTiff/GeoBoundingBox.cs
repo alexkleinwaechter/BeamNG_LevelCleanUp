@@ -148,7 +148,7 @@ public class GeoBoundingBox
     /// </summary>
     public override string ToString()
     {
-        return $"BBox[SW: ({MinLatitude:F4}�, {MinLongitude:F4}�), NE: ({MaxLatitude:F4}�, {MaxLongitude:F4}�)]";
+        return $"BBox[SW: ({MinLatitude:F4}°, {MinLongitude:F4}°), NE: ({MaxLatitude:F4}°, {MaxLongitude:F4}°)]";
     }
 
     /// <summary>

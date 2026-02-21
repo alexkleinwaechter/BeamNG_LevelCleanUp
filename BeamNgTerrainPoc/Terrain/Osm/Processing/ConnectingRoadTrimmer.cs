@@ -58,6 +58,18 @@ public class ConnectingRoadTrimmer
         /// Whether the road was entirely inside the roundabout and should be deleted.
         /// </summary>
         public bool ShouldDeleteEntireRoad => TrimmedCoordinates == null || TrimmedCoordinates.Count < 2;
+
+        /// <summary>
+        /// Start index in the original Coordinates array where the kept segment begins.
+        /// Used to synchronize NodeIds trimming with Coordinates trimming.
+        /// </summary>
+        public int KeptStartIndex { get; set; }
+
+        /// <summary>
+        /// Number of coordinates kept from the original array starting at KeptStartIndex.
+        /// Used to synchronize NodeIds trimming with Coordinates trimming.
+        /// </summary>
+        public int KeptCount { get; set; }
     }
     
     /// <summary>
@@ -178,6 +190,16 @@ public class ConnectingRoadTrimmer
                 {
                     // Update the feature's coordinates with the trimmed version
                     feature.Coordinates = result.TrimmedCoordinates!;
+
+                    // Synchronize NodeIds to stay parallel with Coordinates
+                    if (feature.NodeIds.Count > 0 && result.KeptCount > 0)
+                    {
+                        feature.NodeIds = feature.NodeIds
+                            .Skip(result.KeptStartIndex)
+                            .Take(result.KeptCount)
+                            .ToList();
+                    }
+
                     statistics.RoadsTrimmed++;
                     statistics.TotalCoordinatesRemoved += result.CoordinatesRemoved;
                     
@@ -248,7 +270,7 @@ public class ConnectingRoadTrimmer
         
         // No overlap with this roundabout
         if (onRingCount == 0)
-            return new TrimResult { TrimmedCoordinates = coords.ToList() };
+            return new TrimResult { TrimmedCoordinates = coords.ToList(), KeptStartIndex = 0, KeptCount = coords.Count };
         
         // Entire road is on the roundabout (should be deleted)
         if (onRingCount == coords.Count)
@@ -301,10 +323,12 @@ public class ConnectingRoadTrimmer
             {
                 TrimmedCoordinates = trimmed.Count >= 2 ? trimmed : null,
                 CutPoint = cutPoint,
-                CoordinatesRemoved = coords.Count - entryIndex - 1
+                CoordinatesRemoved = coords.Count - entryIndex - 1,
+                KeptStartIndex = 0,
+                KeptCount = entryIndex + 1
             };
         }
-        
+
         // Road starts on ring and exits (keep from exit to end)
         if (transitions.Count == 1 && !transitions[0].enteringRing)
         {
@@ -316,10 +340,12 @@ public class ConnectingRoadTrimmer
             {
                 TrimmedCoordinates = trimmed.Count >= 2 ? trimmed : null,
                 CutPoint = cutPoint,
-                CoordinatesRemoved = exitIndex
+                CoordinatesRemoved = exitIndex,
+                KeptStartIndex = exitIndex,
+                KeptCount = coords.Count - exitIndex
             };
         }
-        
+
         // Road starts on ring with no transitions (all on ring but not all marked)
         if (startsOnRing && transitions.Count == 0)
         {
@@ -338,11 +364,13 @@ public class ConnectingRoadTrimmer
                 {
                     TrimmedCoordinates = trimmed.Count >= 2 ? trimmed : null,
                     CutPoint = coords[lastOnRingIndex],
-                    CoordinatesRemoved = lastOnRingIndex
+                    CoordinatesRemoved = lastOnRingIndex,
+                    KeptStartIndex = lastOnRingIndex,
+                    KeptCount = coords.Count - lastOnRingIndex
                 };
             }
         }
-        
+
         // Road ends on ring with no transitions
         if (endsOnRing && transitions.Count == 0)
         {
@@ -361,11 +389,13 @@ public class ConnectingRoadTrimmer
                 {
                     TrimmedCoordinates = trimmed.Count >= 2 ? trimmed : null,
                     CutPoint = coords[firstOnRingIndex],
-                    CoordinatesRemoved = coords.Count - firstOnRingIndex - 1
+                    CoordinatesRemoved = coords.Count - firstOnRingIndex - 1,
+                    KeptStartIndex = 0,
+                    KeptCount = firstOnRingIndex + 1
                 };
             }
         }
-        
+
         // Road passes through (enters and exits)
         // This creates TWO separate road segments - we'll keep the longer one
         if (transitions.Count >= 2)
@@ -394,7 +424,9 @@ public class ConnectingRoadTrimmer
                 {
                     TrimmedCoordinates = trimmed,
                     CutPoint = coords[firstEntry.index],
-                    CoordinatesRemoved = coords.Count - firstEntry.index - 1
+                    CoordinatesRemoved = coords.Count - firstEntry.index - 1,
+                    KeptStartIndex = 0,
+                    KeptCount = firstEntry.index + 1
                 };
             }
             else if (postRingLength >= 2)
@@ -404,7 +436,9 @@ public class ConnectingRoadTrimmer
                 {
                     TrimmedCoordinates = trimmed,
                     CutPoint = coords[lastExit.index],
-                    CoordinatesRemoved = lastExit.index
+                    CoordinatesRemoved = lastExit.index,
+                    KeptStartIndex = lastExit.index,
+                    KeptCount = coords.Count - lastExit.index
                 };
             }
         }
@@ -478,7 +512,9 @@ public class ConnectingRoadTrimmer
         {
             TrimmedCoordinates = trimmed,
             CutPoint = cutPoint,
-            CoordinatesRemoved = coords.Count - bestLength
+            CoordinatesRemoved = coords.Count - bestLength,
+            KeptStartIndex = bestStart,
+            KeptCount = bestLength
         };
     }
     

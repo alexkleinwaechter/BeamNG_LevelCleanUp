@@ -31,16 +31,18 @@ public static class TerrainValidator
             result.IsValid = false;
         }
         
-        // 3. Heightmap must be provided (either image, path, or GeoTIFF)
-        bool hasHeightmapSource = 
-            parameters.HeightmapImage != null || 
+        // 3. Heightmap must be provided (either image, path, GeoTIFF, or XYZ)
+        bool hasHeightmapSource =
+            parameters.HeightmapImage != null ||
             !string.IsNullOrWhiteSpace(parameters.HeightmapPath) ||
             !string.IsNullOrWhiteSpace(parameters.GeoTiffPath) ||
-            !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory);
-            
+            !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory) ||
+            !string.IsNullOrWhiteSpace(parameters.XyzPath) ||
+            (parameters.XyzFilePaths != null && parameters.XyzFilePaths.Length > 0);
+
         if (!hasHeightmapSource)
         {
-            result.Errors.Add("Heightmap is required (provide HeightmapImage, HeightmapPath, GeoTiffPath, or GeoTiffDirectory)");
+            result.Errors.Add("Heightmap is required (provide HeightmapImage, HeightmapPath, GeoTiffPath, GeoTiffDirectory, or XYZ files)");
             result.IsValid = false;
         }
         
@@ -64,7 +66,27 @@ public static class TerrainValidator
             result.Errors.Add($"GeoTIFF directory not found: {parameters.GeoTiffDirectory}");
             result.IsValid = false;
         }
-        
+
+        // Validate XYZ path exists if provided
+        if (!string.IsNullOrWhiteSpace(parameters.XyzPath) && !File.Exists(parameters.XyzPath))
+        {
+            result.Errors.Add($"XYZ file not found: {parameters.XyzPath}");
+            result.IsValid = false;
+        }
+
+        // Validate XYZ file paths exist if provided
+        if (parameters.XyzFilePaths != null)
+        {
+            foreach (var xyzFile in parameters.XyzFilePaths)
+            {
+                if (!string.IsNullOrWhiteSpace(xyzFile) && !File.Exists(xyzFile))
+                {
+                    result.Errors.Add($"XYZ file not found: {xyzFile}");
+                    result.IsValid = false;
+                }
+            }
+        }
+
         // Heightmap dimensions must match size (only if image is provided directly)
         if (parameters.HeightmapImage != null)
         {
@@ -111,19 +133,21 @@ public static class TerrainValidator
             }
         }
         
-        // 7. Max height must be positive (unless using GeoTIFF which auto-calculates)
-        bool isUsingGeoTiff = !string.IsNullOrWhiteSpace(parameters.GeoTiffPath) || 
-                              !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory);
-        if (parameters.MaxHeight <= 0 && !isUsingGeoTiff)
+        // 7. Max height must be positive (unless using GeoTIFF/XYZ which auto-calculates)
+        bool isUsingGeoSource = !string.IsNullOrWhiteSpace(parameters.GeoTiffPath) ||
+                                !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory) ||
+                                !string.IsNullOrWhiteSpace(parameters.XyzPath) ||
+                                (parameters.XyzFilePaths != null && parameters.XyzFilePaths.Length > 0);
+        if (parameters.MaxHeight <= 0 && !isUsingGeoSource)
         {
-            result.Errors.Add("MaxHeight must be positive (or use GeoTIFF import which auto-calculates height)");
+            result.Errors.Add("MaxHeight must be positive (or use GeoTIFF/XYZ import which auto-calculates height)");
             result.IsValid = false;
         }
-        
-        // Warning if using GeoTIFF without explicit MaxHeight
-        if (parameters.MaxHeight <= 0 && isUsingGeoTiff)
+
+        // Warning if using geo source without explicit MaxHeight
+        if (parameters.MaxHeight <= 0 && isUsingGeoSource)
         {
-            result.Warnings.Add("MaxHeight not specified - will use elevation range from GeoTIFF data");
+            result.Warnings.Add("MaxHeight not specified - will use elevation range from elevation data");
         }
         
         // Warnings

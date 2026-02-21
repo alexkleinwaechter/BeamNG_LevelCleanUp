@@ -63,8 +63,9 @@ public class TerrainMaterialService
             var materials = ScanTerrainMaterials(levelPath);
 
             // Load existing terrain settings
-            var (terrainSize, terrainName) = LoadTerrainSettings(levelPath);
-            var metersPerPixel = LoadMetersPerPixelFromTerrainBlock(levelPath);
+            var (terrainSize, terrainName, terrainJsonSquareSize) = LoadTerrainSettings(levelPath);
+            // Try TerrainBlock in items.level.json first, then fall back to terrain.json squareSize
+            var metersPerPixel = LoadMetersPerPixelFromTerrainBlock(levelPath) ?? terrainJsonSquareSize;
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Loaded {materials.Count} terrain materials from {levelName}");
@@ -258,7 +259,7 @@ public class TerrainMaterialService
     // PRIVATE HELPERS
     // ========================================
     
-    private (int? TerrainSize, string? TerrainName) LoadTerrainSettings(string levelPath)
+    private (int? TerrainSize, string? TerrainName, float? SquareSize) LoadTerrainSettings(string levelPath)
     {
         try
         {
@@ -279,10 +280,18 @@ public class TerrainMaterialService
                             $"Loaded terrain size {terrainSize} from existing terrain.json");
                     }
 
+                    float? squareSize = null;
+                    if (jsonNode["squareSize"] != null)
+                    {
+                        squareSize = jsonNode["squareSize"]!.GetValue<float>();
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Loaded squareSize {squareSize} from existing terrain.json");
+                    }
+
                     var terrainName = Path.GetFileNameWithoutExtension(terrainJsonPath)
                         .Replace(".terrain", "");
                     
-                    return (terrainSize, terrainName);
+                    return (terrainSize, terrainName, squareSize);
                 }
             }
         }
@@ -291,7 +300,7 @@ public class TerrainMaterialService
             // Ignore errors, use defaults
         }
 
-        return (null, null);
+        return (null, null, null);
     }
     
     private float? LoadMetersPerPixelFromTerrainBlock(string levelPath)

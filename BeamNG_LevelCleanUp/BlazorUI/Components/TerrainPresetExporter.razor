@@ -3,6 +3,7 @@
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
+@using BeamNgTerrainPoc.Terrain.GeoTiff
 @using BeamNgTerrainPoc.Terrain.Models
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
@@ -59,6 +60,10 @@
     [Parameter] public HeightmapSourceType HeightmapSourceType { get; set; } = HeightmapSourceType.Png;
     [Parameter] public string? GeoTiffPath { get; set; }
     [Parameter] public string? GeoTiffDirectory { get; set; }
+    [Parameter] public string? XyzPath { get; set; }
+    [Parameter] public string[]? XyzFilePaths { get; set; }
+    [Parameter] public int XyzEpsgCode { get; set; }
+    [Parameter] public string? CachedCombinedGeoTiffPath { get; set; }
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
     [Parameter] public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
@@ -67,6 +72,13 @@
     [Parameter] public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
     [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
     [Parameter] public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+    [Parameter] public bool EnableBuildings { get; set; }
+    [Parameter] public bool EnableBuildingClustering { get; set; }
+    [Parameter] public float BuildingClusterCellSize { get; set; } = 150f;
+    [Parameter] public int MaxBuildingLodLevel { get; set; } = 2;
+    [Parameter] public float BuildingLodBias { get; set; } = 1.0f;
+    [Parameter] public int NullDetailPixelSize { get; set; }
+    [Parameter] public List<OsmFeatureSelection>? SelectedBuildingFeatures { get; set; }
     [Parameter] public int CropOffsetX { get; set; }
     [Parameter] public int CropOffsetY { get; set; }
     [Parameter] public int CropWidth { get; set; }
@@ -111,6 +123,7 @@
 
     private async Task ExportPreset(string exportFolder)
     {
+        Snackbar? exportSnackbar = null;
         try
         {
             if (OnRequestMaterialReorder != null)
@@ -120,16 +133,24 @@
                 {
                     var movedCount = Materials.Skip(1).Count(m => !m.HasLayerMap);
                     Snackbar.Add($"Reordered {movedCount} material(s) without layer maps to end of list.", Severity.Info);
-                    // Reorder details not needed in PubSub - Snackbar is sufficient
                 }
+            }
+
+            // Show persistent progress snackbar for XYZ exports (conversion can be slow on fallback)
+            if (HeightmapSourceType == HeightmapSourceType.XyzFile)
+            {
+                var hasCache = !string.IsNullOrEmpty(CachedCombinedGeoTiffPath) && File.Exists(CachedCombinedGeoTiffPath);
+                exportSnackbar = Snackbar.Add(
+                    hasCache ? "Exporting preset..." : "Exporting preset (converting XYZ to GeoTIFF)...",
+                    Severity.Normal,
+                    config => { config.VisibleStateDuration = int.MaxValue; });
             }
 
             _roadMaterialsExported = Materials.Count(m => m.IsRoadMaterial);
             await ExportTerrainPresetFile(exportFolder);
-            
+
             LastExportPath = exportFolder;
             Snackbar.Add($"Terrain preset exported to {exportFolder}", Severity.Success);
-            // Snackbar provides export confirmation - no need for duplicate PubSub message
             StateHasChanged();
         }
         catch (Exception ex)
@@ -137,6 +158,11 @@
             var message = ex.InnerException != null ? $"{ex.Message} {ex.InnerException}" : ex.Message;
             Snackbar.Add($"Error exporting preset: {message}", Severity.Error);
             PubSubChannel.SendMessage(PubSubMessageType.Error, $"Export error: {message}");
+        }
+        finally
+        {
+            if (exportSnackbar != null)
+                Snackbar.Remove(exportSnackbar);
         }
     }
 
@@ -264,6 +290,46 @@
         }
         
         // ========================================
+        // 3b. XYZ SOURCE → CONVERT TO GEOTIFF for portability
+        // ========================================
+        if (HeightmapSourceType == HeightmapSourceType.XyzFile)
+        {
+            var convertedFileName = $"{TerrainName}_xyz_converted.tif";
+            var targetConvertedPath = Path.Combine(exportFolder, convertedFileName);
+
+            // Reuse the cached combined GeoTIFF if available (already created during crop/preview)
+            if (!string.IsNullOrEmpty(CachedCombinedGeoTiffPath) && File.Exists(CachedCombinedGeoTiffPath))
+            {
+                File.Copy(CachedCombinedGeoTiffPath, targetConvertedPath, overwrite: true);
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    "Copied cached GeoTIFF to preset (no re-conversion needed)");
+            }
+            else
+            {
+                // Fallback: convert XYZ → GeoTIFF from scratch
+                var xyzInputFiles = XyzFilePaths is { Length: > 0 }
+                    ? XyzFilePaths
+                    : !string.IsNullOrEmpty(XyzPath) && File.Exists(XyzPath)
+                        ? new[] { XyzPath }
+                        : null;
+
+                if (xyzInputFiles is { Length: > 0 } && XyzEpsgCode > 0)
+                {
+                    // Build projection WKT from EPSG code
+                    var srs = new OSGeo.OSR.SpatialReference(null);
+                    if (srs.ImportFromEPSG(XyzEpsgCode) != 0)
+                        throw new ArgumentException($"Invalid EPSG code for XYZ conversion: {XyzEpsgCode}");
+                    srs.ExportToWkt(out var projectionWkt, null);
+
+                    var combiner = new GeoTiffCombiner();
+                    await combiner.CombineFilesAsync(xyzInputFiles, targetConvertedPath, projectionWkt);
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Converted {xyzInputFiles.Length} XYZ file(s) to GeoTIFF for preset portability");
+                }
+            }
+        }
+
+        // ========================================
         // 4. LAYER MAPS (opacity maps) - ALL materials
         // ========================================
         // Layer maps come from different sources:
@@ -377,19 +443,21 @@
                 exportedGeoTiffFileName = "geotiff_tiles"; // Directory name
             }
         }
-        
+        else if (HeightmapSourceType == HeightmapSourceType.XyzFile)
+        {
+            // XYZ files were converted to GeoTIFF during export (section 3b)
+            var convertedFileName = $"{TerrainName}_xyz_converted.tif";
+            var convertedPath = Path.Combine(exportFolder, convertedFileName);
+            if (File.Exists(convertedPath))
+            {
+                exportedGeoTiffFileName = convertedFileName;
+            }
+        }
+
         var appSettings = new JsonObject
         {
             ["version"] = "2.0",
-            ["heightmapSource"] = new JsonObject
-            {
-                ["type"] = HeightmapSourceType.ToString(),
-                // Store the exported filename for portable preset loading
-                ["exportedGeoTiffFileName"] = exportedGeoTiffFileName,
-                // Store original paths for reference (may not exist on another computer)
-                ["originalGeoTiffPath"] = GeoTiffPath,
-                ["originalGeoTiffDirectory"] = GeoTiffDirectory
-            },
+            ["heightmapSource"] = BuildHeightmapSourceSettings(exportedGeoTiffFileName),
             ["terrainOptions"] = new JsonObject
             {
                 ["terrainSize"] = TerrainSize,
@@ -405,6 +473,7 @@
                 ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
                 ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain
             },
+            ["buildingOptions"] = BuildBuildingOptions(),
             ["cropSettings"] = new JsonObject
             {
                 ["offsetX"] = CropOffsetX,
@@ -425,23 +494,63 @@
         var materialSettings = new JsonObject();
         foreach (var mat in orderedMaterials)
         {
-            materialSettings[mat.InternalName] = BuildMaterialSettings(mat);
+            materialSettings[mat.InternalName] = BuildMaterialSettings(mat, exportFolder);
         }
         appSettings["materialSettings"] = materialSettings;
         
         return appSettings;
     }
 
-    private JsonObject BuildMaterialSettings(TerrainMaterialItemExtended mat)
+    private JsonObject BuildHeightmapSourceSettings(string? exportedGeoTiffFileName)
     {
+        var source = new JsonObject
+        {
+            ["type"] = HeightmapSourceType.ToString(),
+            // Store the exported filename for portable preset loading
+            ["exportedGeoTiffFileName"] = exportedGeoTiffFileName,
+            // Store original paths for reference (may not exist on another computer)
+            ["originalGeoTiffPath"] = GeoTiffPath,
+            ["originalGeoTiffDirectory"] = GeoTiffDirectory
+        };
+
+        // Store XYZ-specific metadata for reference and fallback
+        if (HeightmapSourceType == HeightmapSourceType.XyzFile)
+        {
+            source["originalXyzPath"] = XyzPath;
+            source["xyzEpsgCode"] = XyzEpsgCode;
+            if (XyzFilePaths is { Length: > 0 })
+            {
+                var pathsArray = new JsonArray();
+                foreach (var p in XyzFilePaths)
+                    pathsArray.Add(p);
+                source["originalXyzFilePaths"] = pathsArray;
+            }
+        }
+
+        return source;
+    }
+
+    private JsonObject BuildMaterialSettings(TerrainMaterialItemExtended mat, string exportFolder)
+    {
+        // Save layer map path as filename-only when the file is in the export folder (portable).
+        // Fall back to absolute path for backward compatibility and files outside the preset folder.
+        string? portableLayerMapPath = mat.LayerMapPath;
+        if (!string.IsNullOrEmpty(mat.LayerMapPath))
+        {
+            var layerMapFullPath = Path.GetFullPath(mat.LayerMapPath);
+            var exportFullPath = Path.GetFullPath(exportFolder);
+            if (layerMapFullPath.StartsWith(exportFullPath, StringComparison.OrdinalIgnoreCase))
+                portableLayerMapPath = Path.GetFileName(mat.LayerMapPath);
+        }
+
         var matSettings = new JsonObject
         {
             ["order"] = mat.Order,
             ["layerSourceType"] = mat.LayerSourceType.ToString(),
-            ["layerMapPath"] = mat.LayerMapPath,
+            ["layerMapPath"] = portableLayerMapPath,
             ["isRoadMaterial"] = mat.IsRoadMaterial
         };
-        
+
         // OSM feature selections
         if (mat.LayerSourceType == LayerSourceType.OsmFeatures && mat.SelectedOsmFeatures?.Any() == true)
         {
@@ -459,13 +568,13 @@
             }
             matSettings["osmFeatureSelections"] = osmFeatures;
         }
-        
+
         // Road smoothing settings (only if road material)
         if (mat.IsRoadMaterial)
         {
             matSettings["roadSmoothing"] = BuildRoadSmoothingSettings(mat);
         }
-        
+
         return matSettings;
     }
 
@@ -532,9 +641,6 @@
                 ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
                 ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,
                 ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
-                ["enableEndpointTaper"] = mat.EnableEndpointTaper,
-                ["endpointTaperDistanceMeters"] = mat.EndpointTaperDistanceMeters,
-                ["endpointTerrainBlendStrength"] = mat.EndpointTerrainBlendStrength,
                 // Roundabout settings
                 ["enableRoundaboutDetection"] = mat.EnableRoundaboutDetection,
                 ["enableRoundaboutRoadTrimming"] = mat.EnableRoundaboutRoadTrimming,
@@ -544,6 +650,38 @@
                 ["roundaboutBlendDistanceMeters"] = mat.RoundaboutBlendDistanceMeters
             }
         };
+    }
+
+    private JsonObject BuildBuildingOptions()
+    {
+        var options = new JsonObject
+        {
+            ["enableBuildings"] = EnableBuildings,
+            ["enableBuildingClustering"] = EnableBuildingClustering,
+            ["buildingClusterCellSize"] = BuildingClusterCellSize,
+            ["maxBuildingLodLevel"] = MaxBuildingLodLevel,
+            ["buildingLodBias"] = BuildingLodBias,
+            ["nullDetailPixelSize"] = NullDetailPixelSize
+        };
+
+        if (EnableBuildings && SelectedBuildingFeatures?.Any() == true)
+        {
+            var features = new JsonArray();
+            foreach (var feature in SelectedBuildingFeatures)
+            {
+                features.Add(new JsonObject
+                {
+                    ["featureId"] = feature.FeatureId,
+                    ["displayName"] = feature.DisplayName,
+                    ["category"] = feature.Category,
+                    ["subCategory"] = feature.SubCategory,
+                    ["geometryType"] = feature.GeometryType.ToString()
+                });
+            }
+            options["selectedBuildingFeatures"] = features;
+        }
+
+        return options;
     }
 
     private string GetLevelName()

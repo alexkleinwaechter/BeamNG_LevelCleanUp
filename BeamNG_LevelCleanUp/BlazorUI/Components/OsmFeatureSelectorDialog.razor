@@ -120,7 +120,7 @@
                             </MudButton>
                         </MudStack>
                         <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            @FilteredGroups.Count() types � @_selectedGroups.Sum(g => g.FeatureCount) features selected
+                            @FilteredGroups.Count() types × @_selectedGroups.Sum(g => g.FeatureCount) features selected
                         </MudText>
                     </div>
                 </div>
@@ -220,6 +220,7 @@
     [Parameter] public GeoBoundingBox? BoundingBox { get; set; }
     [Parameter] public int TerrainSize { get; set; } = 2048;
     [Parameter] public bool IsRoadMaterial { get; set; }
+    [Parameter] public bool IsBuildingMaterial { get; set; }
     [Parameter] public List<OsmFeatureSelection>? ExistingSelections { get; set; }
     
     private OsmQueryResult? _queryResult;
@@ -405,7 +406,13 @@
             InvalidateFilterCache();
             
             // Pre-filter based on material type
-            if (IsRoadMaterial)
+            if (IsBuildingMaterial)
+            {
+                _showLines = false;
+                _showPolygons = true;
+                _selectedCategories = new List<string> { "building" };
+            }
+            else if (IsRoadMaterial)
             {
                 _showLines = true;
                 _showPolygons = false;

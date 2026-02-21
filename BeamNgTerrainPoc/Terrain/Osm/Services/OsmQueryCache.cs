@@ -109,6 +109,8 @@ public class OsmQueryCache
     /// <returns>Cached result if found and valid, null otherwise.</returns>
     public async Task<OsmQueryResult?> GetAsync(GeoBoundingBox bbox)
     {
+        var cacheKey = GetCacheKey(bbox);
+
         // 1. Try exact match first (fastest path)
         var exactResult = await GetExactMatchAsync(bbox);
         if (exactResult != null)
@@ -120,6 +122,7 @@ public class OsmQueryCache
         if (containingResult != null)
             return containingResult;
 
+        TerrainLogger.Info($"OSM cache miss: no exact or containing match for {cacheKey}");
         return null;
     }
 
@@ -563,6 +566,13 @@ public class OsmQueryCache
     /// Parses a bounding box from a cache filename.
     /// Expected format: osm_v3_{minLat:F4}_{minLon:F4}_{maxLat:F4}_{maxLon:F4}.json.gz
     /// </summary>
+    /// <remarks>
+    /// The filename stores coordinates at F4 precision (4 decimal places). Standard rounding
+    /// can make the parsed bbox slightly smaller than the actual cached bbox (min rounds up,
+    /// max rounds down). To prevent false negatives in the containing-bbox index pre-filter,
+    /// we expand by half the F4 step (0.00005° ≈ 5.5m). False positives are harmless because
+    /// the full-precision Contains() check after file deserialization is the definitive gate.
+    /// </remarks>
     private static GeoBoundingBox? ParseBboxFromFileName(string filePath)
     {
         var name = Path.GetFileName(filePath);
@@ -583,7 +593,10 @@ public class OsmQueryCache
             double.TryParse(parts[^2], CultureInfo.InvariantCulture, out var maxLat) &&
             double.TryParse(parts[^1], CultureInfo.InvariantCulture, out var maxLon))
         {
-            return new GeoBoundingBox(minLon, minLat, maxLon, maxLat);
+            // Expand by half the F4 precision step to compensate for rounding.
+            // This ensures the index bbox is always >= the actual cached bbox.
+            const double halfStep = 0.00005;
+            return new GeoBoundingBox(minLon - halfStep, minLat - halfStep, maxLon + halfStep, maxLat + halfStep);
         }
 
         return null;

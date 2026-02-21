@@ -24,6 +24,13 @@ public class CropDialogResult
     public int TargetSize { get; init; }
 
     /// <summary>
+    /// The meters per pixel value. May differ from the original if the user entered a bounding box
+    /// that required adjusting the scale to match the geographic extent.
+    /// Null means no change from the original value.
+    /// </summary>
+    public float? MetersPerPixel { get; init; }
+
+    /// <summary>
     /// The geographic bounding box for the selected region.
     /// This is recalculated based on the selection position within the original image.
     /// </summary>

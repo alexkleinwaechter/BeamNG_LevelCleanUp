@@ -10,6 +10,14 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Components;
 
 public partial class CropAnchorSelectorDialog : IAsyncDisposable
 {
+    private string _bboxEastStr = "";
+    private string _bboxNorthStr = "";
+
+    // Bounding box manual input fields (Overpass order: south, west, north, east)
+    private string _bboxSouthStr = "";
+
+    private string _bboxWestStr = "";
+
     // Display dimensions - calculated dynamically based on container size
     private int _displayHeight;
     private int _displayWidth;
@@ -19,19 +27,20 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
     private double _dragStartY;
     private GeoBoundingBox? _effectiveBoundingBox;
     private bool _isDragging;
+    private bool _isInitialized;
     private bool _isMouseOverSelection;
+    private bool _isSyncingFromSelector;
+    private DotNetObjectReference<CropAnchorSelectorDialog>? _jsRef;
+
+    // Element reference for measuring container size
+    private ElementReference _mapAreaRef;
     private float _mapOpacity = 0.85f;
     private GeoBoundingBox? _selectionBoundingBox;
     private (float X, float Y) _viewCenter = (0.5f, 0.5f);
     private float _zoomLevel = 1.0f;
     private int CropOffsetX;
     private int CropOffsetY;
-    
-    // Element reference for measuring container size
-    private ElementReference _mapAreaRef;
-    private DotNetObjectReference<CropAnchorSelectorDialog>? _jsRef;
-    private bool _isInitialized;
-    
+
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
     [Parameter] public string Title { get; set; } = "Selection";
     [Parameter] public int OriginalWidth { get; set; }
@@ -45,12 +54,30 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
     public int SelectionWidthPixels => CalculateSelectionSizePixels();
     public int SelectionHeightPixels => CalculateSelectionSizePixels();
 
+    public async ValueTask DisposeAsync()
+    {
+        if (_jsRef != null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("removeCropDialogResizeObserver", _mapAreaRef);
+            }
+            catch
+            {
+                // Ignore errors during disposal
+            }
+
+            _jsRef.Dispose();
+        }
+    }
+
     protected override void OnInitialized()
     {
         CropOffsetX = InitialOffsetX;
         CropOffsetY = InitialOffsetY;
         ClampOffsets();
         RecalculateSelectionBoundingBox();
+        UpdateBboxInputsFromSelection();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -59,10 +86,10 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
         {
             // Wait a bit for the dialog to fully render
             await Task.Delay(50);
-            
+
             // Calculate initial dimensions
             await CalculateDisplayDimensionsAsync();
-            
+
             // Set up resize observer for responsive resizing
             _jsRef = DotNetObjectReference.Create(this);
             try
@@ -73,7 +100,7 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
             {
                 // Resize observer setup failed - dimensions already calculated, continue without it
             }
-            
+
             _isInitialized = true;
         }
     }
@@ -83,7 +110,7 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
         try
         {
             var size = await JS.InvokeAsync<ElementSize>("getElementSize", _mapAreaRef);
-            
+
             if (size.Width > 0 && size.Height > 0)
             {
                 CalculateMapDimensionsFromContainer(size.Width, size.Height);
@@ -105,14 +132,14 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
         const int padding = 32;
         var availableWidth = containerWidth - padding;
         var availableHeight = containerHeight - padding;
-        
+
         if (availableWidth <= 0 || availableHeight <= 0)
         {
             _displayWidth = 800;
             _displayHeight = 600;
             return;
         }
-        
+
         if (OriginalWidth <= 0 || OriginalHeight <= 0)
         {
             // No source dimensions - use container size directly
@@ -120,11 +147,11 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
             _displayHeight = (int)availableHeight;
             return;
         }
-        
+
         // Maintain source aspect ratio
         var sourceAspect = (double)OriginalWidth / OriginalHeight;
         var containerAspect = availableWidth / availableHeight;
-        
+
         if (sourceAspect > containerAspect)
         {
             // Width-limited: source is wider than container
@@ -137,7 +164,7 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
             _displayHeight = (int)availableHeight;
             _displayWidth = (int)(availableHeight * sourceAspect);
         }
-        
+
         // Ensure minimum size
         _displayWidth = Math.Max(_displayWidth, 400);
         _displayHeight = Math.Max(_displayHeight, 300);
@@ -148,22 +175,6 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
     {
         if (!_isInitialized) return;
         await CalculateDisplayDimensionsAsync();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_jsRef != null)
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("removeCropDialogResizeObserver", _mapAreaRef);
-            }
-            catch
-            {
-                // Ignore errors during disposal
-            }
-            _jsRef.Dispose();
-        }
     }
 
     private string GetMapWrapperStyle()
@@ -194,16 +205,16 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
         // not less. Zooming in makes the selection bigger on screen.
         const int DesiredSelectionDisplaySize = 200;
         const float AbsoluteMaxZoom = 50.0f;
-        
+
         var scale = GetScale();
         var selectionDisplaySize = (int)(Math.Min(SelectionWidthPixels, SelectionHeightPixels) * scale);
-        
+
         if (selectionDisplaySize <= 0) return 1.0f;
-        
+
         // If the selection is already large enough at zoom=1, allow moderate zoom
         if (selectionDisplaySize >= DesiredSelectionDisplaySize)
             return Math.Min((float)selectionDisplaySize / DesiredSelectionDisplaySize * 4.0f, AbsoluteMaxZoom);
-        
+
         // Selection is small at zoom=1 (large source image): allow enough zoom
         // to make the selection comfortably visible and positionable
         var neededZoom = (float)DesiredSelectionDisplaySize / selectionDisplaySize;
@@ -351,6 +362,7 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
 
             ClampOffsets();
             RecalculateSelectionBoundingBox();
+            UpdateBboxInputsFromSelection();
             StateHasChanged();
         }
         else if (wasOver != _isMouseOverSelection)
@@ -449,7 +461,148 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
 
         ClampOffsets();
         RecalculateSelectionBoundingBox();
+        UpdateBboxInputsFromSelection();
         StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Updates the bounding box text fields from the current graphical selection.
+    ///     Called whenever the selection rectangle moves or the terrain size changes.
+    /// </summary>
+    private void UpdateBboxInputsFromSelection()
+    {
+        if (_selectionBoundingBox == null) return;
+
+        _isSyncingFromSelector = true;
+        _bboxSouthStr = _selectionBoundingBox.MinLatitude.ToString("F7", CultureInfo.InvariantCulture);
+        _bboxWestStr = _selectionBoundingBox.MinLongitude.ToString("F7", CultureInfo.InvariantCulture);
+        _bboxNorthStr = _selectionBoundingBox.MaxLatitude.ToString("F7", CultureInfo.InvariantCulture);
+        _bboxEastStr = _selectionBoundingBox.MaxLongitude.ToString("F7", CultureInfo.InvariantCulture);
+        _isSyncingFromSelector = false;
+    }
+
+    /// <summary>
+    ///     Allowed terrain sizes for the TargetSize selector, in ascending order.
+    /// </summary>
+    private static readonly int[] AllowedTerrainSizes = [256, 512, 1024, 2048, 4096, 8192, 16384];
+
+    /// <summary>
+    ///     Attempts to apply manually entered bounding box coordinates to the graphical selector.
+    ///     Calculates the real-world extent of the entered bbox, finds the best matching TargetSize
+    ///     that covers that extent, then positions the selection centered on the entered bbox center.
+    /// </summary>
+    private void TryApplyBboxInputsToSelector()
+    {
+        if (_isSyncingFromSelector) return;
+        if (OriginalBoundingBox == null || OriginalWidth <= 0 || OriginalHeight <= 0) return;
+
+        if (!double.TryParse(_bboxSouthStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var south) ||
+            !double.TryParse(_bboxWestStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var west) ||
+            !double.TryParse(_bboxNorthStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var north) ||
+            !double.TryParse(_bboxEastStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var east))
+            return;
+
+        // Validate ordering
+        if (south >= north || west >= east) return;
+
+        // Calculate the center of the entered bbox
+        var centerLat = (south + north) / 2.0;
+        var centerLon = (west + east) / 2.0;
+
+        // Validate that the center is within the original bounding box
+        var bbox = OriginalBoundingBox;
+        if (centerLat < bbox.MinLatitude || centerLat > bbox.MaxLatitude ||
+            centerLon < bbox.MinLongitude || centerLon > bbox.MaxLongitude)
+            return;
+
+        // Calculate real-world extent of the entered bbox in meters
+        var centerLatRad = centerLat * Math.PI / 180.0;
+        const double MetersPerDegreeLat = 111_320.0;
+        var metersPerDegreeLon = MetersPerDegreeLat * Math.Cos(centerLatRad);
+
+        var enteredHeightMeters = (north - south) * MetersPerDegreeLat;
+        var enteredWidthMeters = (east - west) * metersPerDegreeLon;
+
+        // Use the larger dimension so the selection fully covers the entered bbox
+        var requiredExtentMeters = Math.Max(enteredWidthMeters, enteredHeightMeters);
+
+        // Calculate the ideal MetersPerPixel so that TargetSize * MetersPerPixel
+        // exactly matches the entered bbox extent. Then find the best TargetSize.
+        // Strategy: keep the current TargetSize if possible, adjust MetersPerPixel to fit.
+        // If that would produce an unreasonable MetersPerPixel (<0.1 or >100), pick a different TargetSize.
+        var bestMpp = (float)(requiredExtentMeters / TargetSize);
+        var bestSize = TargetSize;
+
+        if (bestMpp < 0.1f || bestMpp > 100.0f)
+        {
+            // Current TargetSize can't produce a reasonable MetersPerPixel, find a better one
+            bestSize = AllowedTerrainSizes[^1];
+            foreach (var candidate in AllowedTerrainSizes)
+            {
+                var candidateMpp = (float)(requiredExtentMeters / candidate);
+                if (candidateMpp >= 0.1f && candidateMpp <= 100.0f)
+                {
+                    bestSize = candidate;
+                    bestMpp = candidateMpp;
+                    break;
+                }
+            }
+
+            bestMpp = (float)(requiredExtentMeters / bestSize);
+        }
+
+        // Round to one decimal for a clean UI value
+        bestMpp = (float)Math.Round(bestMpp, 1);
+        bestMpp = Math.Max(0.1f, bestMpp);
+
+        if (bestSize != TargetSize)
+            TargetSize = bestSize;
+
+        if (Math.Abs(MetersPerPixel - bestMpp) > 0.05f)
+            MetersPerPixel = bestMpp;
+
+        // Convert the center geo coordinate to source pixel position
+        var lonFraction = (centerLon - bbox.MinLongitude) / bbox.Width;
+        var latFraction = (centerLat - bbox.MinLatitude) / bbox.Height;
+
+        // In pixel space, Y=0 is top (north), so invert latitude fraction
+        var centerPixelX = lonFraction * OriginalWidth;
+        var centerPixelY = (1.0 - latFraction) * OriginalHeight;
+
+        // Position the selection rectangle centered on this pixel
+        var selSize = CalculateSelectionSizePixels();
+        CropOffsetX = (int)Math.Round(centerPixelX - selSize / 2.0);
+        CropOffsetY = (int)Math.Round(centerPixelY - selSize / 2.0);
+
+        ClampOffsets();
+        RecalculateSelectionBoundingBox();
+        // Re-sync the text fields to reflect the clamped/final position
+        UpdateBboxInputsFromSelection();
+        StateHasChanged();
+    }
+
+    private void OnBboxSouthChanged(string value)
+    {
+        _bboxSouthStr = value;
+        TryApplyBboxInputsToSelector();
+    }
+
+    private void OnBboxWestChanged(string value)
+    {
+        _bboxWestStr = value;
+        TryApplyBboxInputsToSelector();
+    }
+
+    private void OnBboxNorthChanged(string value)
+    {
+        _bboxNorthStr = value;
+        TryApplyBboxInputsToSelector();
+    }
+
+    private void OnBboxEastChanged(string value)
+    {
+        _bboxEastStr = value;
+        TryApplyBboxInputsToSelector();
     }
 
     private void Confirm()
@@ -459,6 +612,7 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
             OffsetX = CropOffsetX,
             OffsetY = CropOffsetY,
             TargetSize = TargetSize,
+            MetersPerPixel = MetersPerPixel,
             SelectionBoundingBox = _selectionBoundingBox
         };
         MudDialog.Close(DialogResult.Ok(result));
@@ -471,6 +625,6 @@ public partial class CropAnchorSelectorDialog : IAsyncDisposable
 }
 
 /// <summary>
-/// Record for receiving element size from JavaScript.
+///     Record for receiving element size from JavaScript.
 /// </summary>
 public record ElementSize(double Width, double Height);

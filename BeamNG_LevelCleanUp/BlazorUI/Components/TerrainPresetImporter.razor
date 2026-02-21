@@ -347,76 +347,148 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
 
     /// <summary>
     /// Finds a matching terrain material by name, with fuzzy matching for level name prefixes/suffixes.
+    /// Prefers the longest (most specific) match at each tier to avoid "dirt" matching "dirt_loose".
+    /// Handles preset keys with level-name suffixes like "Oatfield_ellern_map" matching material "Oatfield".
     /// </summary>
     private TerrainMaterialItemExtended? FindMatchingMaterial(string layerMaterialName, int presetOrder)
     {
-        // Normalize the layer material name
-        var normalizedLayerName = NormalizeMaterialName(layerMaterialName);
-
-        // Try exact match first (case-insensitive)
+        // Tier 1: Exact match on InternalName or MaterialName (case-insensitive)
         var exactMatch = Materials.FirstOrDefault(m =>
             string.Equals(m.InternalName, layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(m.MaterialName, layerMaterialName, StringComparison.OrdinalIgnoreCase));
 
         if (exactMatch != null)
-        {
             return exactMatch;
-        }
 
-        // Try normalized match (strips level name prefixes like "BeamNG_DriverTrainingETK_")
-        var normalizedMatch = Materials.FirstOrDefault(m =>
-        {
-            var normalizedInternalName = NormalizeMaterialName(m.InternalName);
-            var normalizedMaterialName = NormalizeMaterialName(m.MaterialName);
+        // Tier 2: Starts-with match — handles level-name suffixes on preset keys.
+        // e.g., preset key "Oatfield_ellern_map" starts with material name "Oatfield"
+        // or material "BeamNG_DriverTrainingETK_Asphalt" starts with preset key "BeamNG_DriverTrainingETK_Asphalt"
+        // Prefer the longest matching material name (most specific).
+        var startsWithCandidates = Materials
+            .Select(m => new
+            {
+                Material = m,
+                OverlapLength = GetStartsWithOverlapLength(layerMaterialName, m.InternalName, m.MaterialName)
+            })
+            .Where(x => x.OverlapLength > 0)
+            .OrderByDescending(x => x.OverlapLength)
+            .ToList();
 
-            return string.Equals(normalizedInternalName, normalizedLayerName, StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(normalizedMaterialName, normalizedLayerName, StringComparison.OrdinalIgnoreCase);
-        });
+        if (startsWithCandidates.Count > 0)
+            return startsWithCandidates[0].Material;
 
-        if (normalizedMatch != null)
-        {
-            return normalizedMatch;
-        }
+        // Tier 3: Suffix match — one name ends with the other.
+        // Prefer the longest match to avoid "dirt" matching "dirt_loose".
+        var suffixCandidates = Materials
+            .Select(m => new
+            {
+                Material = m,
+                OverlapLength = GetSuffixOverlapLength(layerMaterialName, m.InternalName, m.MaterialName)
+            })
+            .Where(x => x.OverlapLength > 0)
+            .OrderByDescending(x => x.OverlapLength)
+            .ToList();
 
-        // Try suffix match (e.g., "_Asphalt" in "BeamNG_DriverTrainingETK_Asphalt")
-        var suffixMatch = Materials.FirstOrDefault(m =>
-        {
-            // Check if either ends with the layer name (ignoring case)
-            return m.InternalName.EndsWith(layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
-                   m.MaterialName.EndsWith(layerMaterialName, StringComparison.OrdinalIgnoreCase) ||
-                   layerMaterialName.EndsWith(m.InternalName, StringComparison.OrdinalIgnoreCase) ||
-                   layerMaterialName.EndsWith(m.MaterialName, StringComparison.OrdinalIgnoreCase);
-        });
+        if (suffixCandidates.Count > 0)
+            return suffixCandidates[0].Material;
 
-        if (suffixMatch != null)
-        {
-            return suffixMatch;
-        }
+        // Tier 4: Contains match — substring in either direction.
+        // Prefer the longest matching material name.
+        var containsCandidates = Materials
+            .Select(m => new
+            {
+                Material = m,
+                OverlapLength = GetContainsOverlapLength(layerMaterialName, m.InternalName, m.MaterialName)
+            })
+            .Where(x => x.OverlapLength > 0)
+            .OrderByDescending(x => x.OverlapLength)
+            .ToList();
 
-        // Try contains match as last resort
-        var containsMatch = Materials.FirstOrDefault(m =>
-        {
-            return m.InternalName.Contains(normalizedLayerName, StringComparison.OrdinalIgnoreCase) ||
-                   normalizedLayerName.Contains(NormalizeMaterialName(m.InternalName), StringComparison.OrdinalIgnoreCase);
-        });
+        if (containsCandidates.Count > 0)
+            return containsCandidates[0].Material;
 
-        if (containsMatch != null)
-        {
-            return containsMatch;
-        }
-
-        // Try matching by order if it's within bounds
+        // Tier 5: Match by order if within bounds (last resort)
         if (presetOrder >= 0 && presetOrder < Materials.Count)
         {
             var orderMatch = Materials.FirstOrDefault(m => m.Order == presetOrder);
             if (orderMatch != null)
-            {
-                // Matched by order - detail not needed in UI
                 return orderMatch;
-            }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns the overlap length if one name starts with the other (at an underscore boundary),
+    /// or 0 if no starts-with match. Checks both directions.
+    /// </summary>
+    private static int GetStartsWithOverlapLength(string presetName, string internalName, string materialName)
+    {
+        var best = 0;
+
+        foreach (var matName in new[] { internalName, materialName })
+        {
+            if (string.IsNullOrEmpty(matName)) continue;
+
+            // preset key starts with material name (e.g., "Oatfield_ellern_map" starts with "Oatfield")
+            if (presetName.StartsWith(matName, StringComparison.OrdinalIgnoreCase))
+            {
+                // Must be at underscore boundary or exact length to avoid partial word matches
+                if (presetName.Length == matName.Length || presetName[matName.Length] == '_')
+                    best = Math.Max(best, matName.Length);
+            }
+
+            // material name starts with preset key (e.g., "BeamNG_DriverTrainingETK_Asphalt" starts with "Asphalt")
+            if (matName.StartsWith(presetName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (matName.Length == presetName.Length || matName[presetName.Length] == '_')
+                    best = Math.Max(best, presetName.Length);
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// Returns the overlap length for suffix matching, or 0 if no match.
+    /// </summary>
+    private static int GetSuffixOverlapLength(string presetName, string internalName, string materialName)
+    {
+        var best = 0;
+
+        foreach (var matName in new[] { internalName, materialName })
+        {
+            if (string.IsNullOrEmpty(matName)) continue;
+
+            if (matName.EndsWith(presetName, StringComparison.OrdinalIgnoreCase))
+                best = Math.Max(best, presetName.Length);
+
+            if (presetName.EndsWith(matName, StringComparison.OrdinalIgnoreCase))
+                best = Math.Max(best, matName.Length);
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// Returns the overlap length for contains matching, or 0 if no match.
+    /// </summary>
+    private static int GetContainsOverlapLength(string presetName, string internalName, string materialName)
+    {
+        var best = 0;
+
+        foreach (var matName in new[] { internalName, materialName })
+        {
+            if (string.IsNullOrEmpty(matName) || matName.Length < 3) continue;
+
+            if (presetName.Contains(matName, StringComparison.OrdinalIgnoreCase))
+                best = Math.Max(best, matName.Length);
+
+            if (matName.Contains(presetName, StringComparison.OrdinalIgnoreCase))
+                best = Math.Max(best, presetName.Length);
+        }
+
+        return best;
     }
 
     /// <summary>
@@ -526,6 +598,19 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     }
                 }
                 
+                // XYZ presets: the exporter converts XYZ→GeoTIFF for portability
+                if (result.HeightmapSourceType == HeightmapSourceType.XyzFile &&
+                    !string.IsNullOrEmpty(exportedGeoTiffFileName) && !string.IsNullOrEmpty(_presetDirectory))
+                {
+                    var presetFolderGeoTiff = Path.Combine(_presetDirectory, exportedGeoTiffFileName);
+                    if (File.Exists(presetFolderGeoTiff))
+                    {
+                        // Converted GeoTIFF found — load as GeoTiffFile (equivalent data)
+                        result.HeightmapSourceType = HeightmapSourceType.GeoTiffFile;
+                        result.GeoTiffPath = presetFolderGeoTiff;
+                    }
+                }
+
                 // FALLBACK: If not found in preset folder, try original paths
                 // (These may not exist on a different computer)
                 if (string.IsNullOrEmpty(result.GeoTiffPath) && string.IsNullOrEmpty(result.GeoTiffDirectory))
@@ -561,6 +646,25 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                                 $"GeoTIFF directory not found. Please browse to select the folder.");
                         }
                     }
+                    else if (result.HeightmapSourceType == HeightmapSourceType.XyzFile)
+                    {
+                        // XYZ fallback: try original XYZ paths
+                        var originalXyzPath = heightmapSource["originalXyzPath"]?.GetValue<string>();
+                        var xyzEpsgCode = heightmapSource["xyzEpsgCode"]?.GetValue<int>();
+
+                        if (!string.IsNullOrEmpty(originalXyzPath) && File.Exists(originalXyzPath))
+                        {
+                            result.XyzPath = originalXyzPath;
+                            if (xyzEpsgCode.HasValue)
+                                result.XyzEpsgCode = xyzEpsgCode.Value;
+                        }
+                        else
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                "XYZ elevation data not found in preset folder or original location. " +
+                                "Please re-import elevation data.");
+                        }
+                    }
                 }
             }
 
@@ -586,6 +690,57 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.ExcludeBridgesFromTerrain = terrainOptions["excludeBridgesFromTerrain"]!.GetValue<bool>();
                 if (terrainOptions["excludeTunnelsFromTerrain"] != null)
                     result.ExcludeTunnelsFromTerrain = terrainOptions["excludeTunnelsFromTerrain"]!.GetValue<bool>();
+            }
+
+            // Import building options (global)
+            var buildingOptions = appSettings["buildingOptions"];
+            if (buildingOptions != null)
+            {
+                if (buildingOptions["enableBuildings"] != null)
+                    result.EnableBuildings = buildingOptions["enableBuildings"]!.GetValue<bool>();
+
+                if (buildingOptions["enableBuildingClustering"] != null)
+                    result.EnableBuildingClustering = buildingOptions["enableBuildingClustering"]!.GetValue<bool>();
+
+                if (buildingOptions["buildingClusterCellSize"] != null)
+                    result.BuildingClusterCellSize = buildingOptions["buildingClusterCellSize"]!.GetValue<float>();
+
+                if (buildingOptions["maxBuildingLodLevel"] != null)
+                    result.MaxBuildingLodLevel = buildingOptions["maxBuildingLodLevel"]!.GetValue<int>();
+
+                if (buildingOptions["buildingLodBias"] != null)
+                    result.BuildingLodBias = buildingOptions["buildingLodBias"]!.GetValue<float>();
+
+                if (buildingOptions["nullDetailPixelSize"] != null)
+                    result.NullDetailPixelSize = buildingOptions["nullDetailPixelSize"]!.GetValue<int>();
+
+                var buildingFeatures = buildingOptions["selectedBuildingFeatures"]?.AsArray();
+                if (buildingFeatures != null && buildingFeatures.Count > 0)
+                {
+                    result.SelectedBuildingFeatures = new List<OsmFeatureReference>();
+
+                    foreach (var featureNode in buildingFeatures)
+                    {
+                        if (featureNode == null) continue;
+
+                        var featureRef = new OsmFeatureReference
+                        {
+                            FeatureId = featureNode["featureId"]?.GetValue<long>() ?? 0,
+                            DisplayName = featureNode["displayName"]?.GetValue<string>() ?? string.Empty,
+                            Category = featureNode["category"]?.GetValue<string>() ?? string.Empty,
+                            SubCategory = featureNode["subCategory"]?.GetValue<string>() ?? string.Empty
+                        };
+
+                        var geometryTypeStr = featureNode["geometryType"]?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(geometryTypeStr) &&
+                            Enum.TryParse<OsmGeometryType>(geometryTypeStr, out var bldGeometryType))
+                        {
+                            featureRef.GeometryType = bldGeometryType;
+                        }
+
+                        result.SelectedBuildingFeatures.Add(featureRef);
+                    }
+                }
             }
 
             // Import crop/selection settings
@@ -689,12 +844,22 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.MaterialLayerSettings[matName] = layerSettings;
 
                     // Apply layer source settings to matching material
-                    var matchingMaterial = Materials.FirstOrDefault(m =>
-                        string.Equals(m.InternalName, matName, StringComparison.OrdinalIgnoreCase));
+                    // Use fuzzy matching (same as layer map filename matching) for robustness
+                    var matchingMaterial = FindMatchingMaterial(matName, layerSettings.Order ?? -1);
 
                     if (matchingMaterial != null)
                     {
                         matchingMaterial.LayerSourceType = layerSettings.LayerSourceType;
+
+                        // Apply layer map path if present and file exists
+                        if (!string.IsNullOrEmpty(layerSettings.LayerMapPath))
+                        {
+                            var resolvedLayerPath = ResolvePresetFilePath(layerSettings.LayerMapPath);
+                            if (File.Exists(resolvedLayerPath))
+                                matchingMaterial.LayerMapPath = resolvedLayerPath;
+                            else if (File.Exists(layerSettings.LayerMapPath))
+                                matchingMaterial.LayerMapPath = layerSettings.LayerMapPath;
+                        }
 
                         // Apply order if present
                         if (layerSettings.Order.HasValue)
@@ -706,15 +871,17 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                             matchingMaterial.SelectedOsmFeatures = layerSettings.OsmFeatureSelections
                                 .Select(r => r.ToSelection())
                                 .ToList();
-                            // OSM features restored - detail not needed in UI
                         }
 
                         // Apply road smoothing settings
                         if (layerSettings.IsRoadMaterial && layerSettings.RoadSmoothing != null)
                         {
                             ApplyRoadSmoothingToMaterial(matchingMaterial, layerSettings.RoadSmoothing);
-                            // Road smoothing settings applied - included in final count
                         }
+
+                        // Apply road material flag
+                        if (layerSettings.IsRoadMaterial)
+                            matchingMaterial.IsRoadMaterial = true;
                     }
                 }
                 // Road smoothing import count included in Snackbar summary
@@ -1002,9 +1169,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.JunctionBlendDistanceMeters = settings.JunctionHarmonization.JunctionBlendDistanceMeters;
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
-                material.EnableEndpointTaper = settings.JunctionHarmonization.EnableEndpointTaper;
-                material.EndpointTaperDistanceMeters = settings.JunctionHarmonization.EndpointTaperDistanceMeters;
-                material.EndpointTerrainBlendStrength = settings.JunctionHarmonization.EndpointTerrainBlendStrength;
+                // Endpoint tapering is auto-computed from road width - old preset values silently ignored
                 // Roundabout settings
                 material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
                 material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;

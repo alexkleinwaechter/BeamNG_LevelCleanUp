@@ -448,12 +448,12 @@ public class RoundaboutElevationHarmonizer
             // Get the road length (max distance from the roundabout end)
             var roadLength = distances.Length > 0 ? distances.Max() : 0f;
 
-            // IMPORTANT: Limit blend distance to at most half the road length
-            // This prevents the roundabout blending from affecting the other end of the road,
-            // which may have its own junction that needs separate handling.
-            // Without this limit, short roads (shorter than 2x blend distance) would have
-            // their entire length modified, causing dents at the other junction.
-            var effectiveBlendDistance = MathF.Min(blendDistance, roadLength * 0.5f);
+            // IMPORTANT: Limit blend distance to at most 75% of the road length.
+            // This prevents the roundabout blending from completely dominating the road,
+            // while still allowing a generous blend zone. The previous 50% cap was too
+            // restrictive and caused visible bumps on shorter connecting roads.
+            // The remaining 25% at the far end is available for the other junction's blending.
+            var effectiveBlendDistance = MathF.Min(blendDistance, roadLength * 0.75f);
 
             // If the road is very short, skip blending entirely to avoid issues
             if (effectiveBlendDistance < 5.0f)
@@ -503,6 +503,7 @@ public class RoundaboutElevationHarmonizer
                 {
                     maxElevationChange = MathF.Max(maxElevationChange, elevationChange);
                     cs.TargetElevation = newElevation;
+                    cs.IsRoundaboutBlended = true;
                     blendedCount++;
                     splineBlendedCount++;
 

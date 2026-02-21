@@ -108,7 +108,13 @@ public class GeoTiffReader
     /// <summary>
     ///     Reads heightmap data from an already opened GDAL dataset.
     /// </summary>
-    private GeoTiffImportResult ReadFromDataset(Dataset dataset, string? sourcePath = null, int? targetSize = null)
+    /// <param name="dataset">An opened GDAL dataset</param>
+    /// <param name="sourcePath">Source file path for logging/metadata</param>
+    /// <param name="targetSize">Optional target size to resize the heightmap to</param>
+    /// <param name="overrideProjection">Optional projection WKT to use instead of the dataset's embedded projection.
+    /// Used for formats like XYZ that lack embedded CRS information.</param>
+    private GeoTiffImportResult ReadFromDataset(Dataset dataset, string? sourcePath = null, int? targetSize = null,
+        string? overrideProjection = null)
     {
         // Get raster dimensions
         var width = dataset.RasterXSize;
@@ -158,8 +164,8 @@ public class GeoTiffReader
         var boundingBox = new GeoBoundingBox(minX, minY, maxX, maxY);
         TerrainLogger.Detail($"Bounding box: {boundingBox}");
 
-        // Get projection
-        var projection = dataset.GetProjection();
+        // Get projection (use override if provided, e.g. for XYZ files that lack embedded CRS)
+        var projection = overrideProjection ?? dataset.GetProjection();
 
         // Check if coordinates need transformation to WGS84
         GeoBoundingBox? wgs84BoundingBox = null;
@@ -167,12 +173,12 @@ public class GeoTiffReader
         {
             if (GeoBoundingBox.IsWgs84Projection(projection))
             {
-                TerrainLogger.Detail("GeoTIFF is in WGS84 (geographic) coordinates");
+                TerrainLogger.Detail("Data is in WGS84 (geographic) coordinates");
                 wgs84BoundingBox = boundingBox;
             }
             else
             {
-                TerrainLogger.Detail("GeoTIFF is in a projected coordinate system, transforming to WGS84...");
+                TerrainLogger.Detail("Data is in a projected coordinate system, transforming to WGS84...");
                 wgs84BoundingBox = GeoBoundingBox.TransformToWgs84(boundingBox, projection);
 
                 if (wgs84BoundingBox != null)
@@ -184,7 +190,7 @@ public class GeoTiffReader
         }
         else
         {
-            TerrainLogger.DetailWarning("GeoTIFF has no projection information. Assuming WGS84 coordinates.");
+            TerrainLogger.DetailWarning("No projection information available. Assuming WGS84 coordinates.");
             wgs84BoundingBox = boundingBox.IsValidWgs84 ? boundingBox : null;
         }
 
@@ -265,7 +271,8 @@ public class GeoTiffReader
         int cropOffsetX,
         int cropOffsetY,
         int cropWidth,
-        int cropHeight)
+        int cropHeight,
+        string? overrideProjection = null)
     {
         // Get full raster dimensions
         var fullWidth = dataset.RasterXSize;
@@ -299,8 +306,8 @@ public class GeoTiffReader
         var boundingBox = new GeoBoundingBox(croppedMinX, croppedMinY, croppedMaxX, croppedMaxY);
         TerrainLogger.Detail($"Cropped bounding box: {boundingBox}");
 
-        // Get projection
-        var projection = dataset.GetProjection();
+        // Get projection (use override if provided)
+        var projection = overrideProjection ?? dataset.GetProjection();
 
         // Check if coordinates need transformation to WGS84
         GeoBoundingBox? wgs84BoundingBox = null;
@@ -308,12 +315,12 @@ public class GeoTiffReader
         {
             if (GeoBoundingBox.IsWgs84Projection(projection))
             {
-                TerrainLogger.Detail("GeoTIFF is in WGS84 (geographic) coordinates");
+                TerrainLogger.Detail("Data is in WGS84 (geographic) coordinates");
                 wgs84BoundingBox = boundingBox;
             }
             else
             {
-                TerrainLogger.Detail("GeoTIFF is in a projected coordinate system, transforming to WGS84...");
+                TerrainLogger.Detail("Data is in a projected coordinate system, transforming to WGS84...");
                 wgs84BoundingBox = GeoBoundingBox.TransformToWgs84(boundingBox, projection);
 
                 if (wgs84BoundingBox != null)
@@ -325,7 +332,7 @@ public class GeoTiffReader
         }
         else
         {
-            TerrainLogger.DetailWarning("GeoTIFF has no projection information. Assuming WGS84 coordinates.");
+            TerrainLogger.DetailWarning("No projection information available. Assuming WGS84 coordinates.");
             wgs84BoundingBox = boundingBox.IsValidWgs84 ? boundingBox : null;
         }
 
@@ -690,8 +697,9 @@ public class GeoTiffReader
     ///     Calculates the combined dimensions, bounding box, and GeoTransform for all tiles.
     /// </summary>
     /// <param name="directoryPath">Directory containing GeoTIFF tiles</param>
+    /// <param name="progress">Optional progress reporter for UI feedback (e.g., "Reading tile 10 / 50")</param>
     /// <returns>Combined info with total dimensions, bounding box, validation result, etc.</returns>
-    public GeoTiffDirectoryInfoResult GetGeoTiffDirectoryInfoExtended(string directoryPath)
+    public GeoTiffDirectoryInfoResult GetGeoTiffDirectoryInfoExtended(string directoryPath, IProgress<string>? progress = null)
     {
         if (!Directory.Exists(directoryPath))
             throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
@@ -711,27 +719,9 @@ public class GeoTiffReader
                 $"No GeoTIFF files found in '{directoryPath}'. " +
                 "Supported extensions: .tif, .tiff, .geotiff");
 
-        TerrainLogger.Info($"Analyzing {tiffFiles.Count} GeoTIFF tile(s) in directory...");
+        TerrainLogger.Info($"Analyzing {tiffFiles.Count} GeoTIFF tile(s) in directory using parallel processing...");
 
-        var tiles = new List<GeoTiffTileInfo>();
         var warnings = new List<string>();
-
-        // Track combined bounds and metadata
-        double nativeMinX = double.MaxValue, nativeMinY = double.MaxValue;
-        double nativeMaxX = double.MinValue, nativeMaxY = double.MinValue;
-        double wgs84MinLon = double.MaxValue, wgs84MinLat = double.MaxValue;
-        double wgs84MaxLon = double.MinValue, wgs84MaxLat = double.MinValue;
-        var hasValidWgs84 = false;
-
-        double? globalMinElevation = null;
-        double? globalMaxElevation = null;
-
-        // Reference values from first tile for consistency checking
-        string? firstProjection = null;
-        string? firstProjectionName = null;
-        double firstPixelSizeX = 0;
-        double firstPixelSizeY = 0;
-        GeoTiffValidationResult? validationResult = null;
 
         // Enable suppressed logging for bulk operations (>10 tiles)
         var previousSuppressState = TerrainLogger.SuppressDetailedLogging;
@@ -739,89 +729,116 @@ public class GeoTiffReader
 
         try
         {
+            // Read all tiles in parallel — each GDAL dataset is independent
+            var tileResults = new (string path, GeoTiffInfoResult? info, string? error)[tiffFiles.Count];
             var processedCount = 0;
 
-            foreach (var tiffFile in tiffFiles)
+            Parallel.For(0, tiffFiles.Count, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount)
+            }, i =>
+            {
                 try
                 {
-                    var tileInfo = GetGeoTiffInfoExtendedQuiet(tiffFile);
-
-                    // Validate first tile and capture reference values
-                    if (firstProjection == null)
-                    {
-                        validationResult = ValidateGeoTiff(tiffFile);
-                        firstProjection = tileInfo.Projection;
-                        firstProjectionName = tileInfo.ProjectionName;
-
-                        if (tileInfo.GeoTransform != null)
-                        {
-                            firstPixelSizeX = Math.Abs(tileInfo.GeoTransform[1]);
-                            firstPixelSizeY = Math.Abs(tileInfo.GeoTransform[5]);
-                        }
-                    }
-                    else
-                    {
-                        // Check for consistency with first tile
-                        if (tileInfo.GeoTransform != null)
-                        {
-                            var pixelSizeX = Math.Abs(tileInfo.GeoTransform[1]);
-                            var pixelSizeY = Math.Abs(tileInfo.GeoTransform[5]);
-
-                            // Allow small tolerance for floating point differences
-                            if (Math.Abs(pixelSizeX - firstPixelSizeX) > 0.001 ||
-                                Math.Abs(pixelSizeY - firstPixelSizeY) > 0.001)
-                                warnings.Add($"Tile '{Path.GetFileName(tiffFile)}' has different pixel size " +
-                                             $"({pixelSizeX:F4}x{pixelSizeY:F4}) than first tile ({firstPixelSizeX:F4}x{firstPixelSizeY:F4})");
-                        }
-                    }
-
-                    // Track native bounding box
-                    nativeMinX = Math.Min(nativeMinX, tileInfo.BoundingBox.MinLongitude);
-                    nativeMinY = Math.Min(nativeMinY, tileInfo.BoundingBox.MinLatitude);
-                    nativeMaxX = Math.Max(nativeMaxX, tileInfo.BoundingBox.MaxLongitude);
-                    nativeMaxY = Math.Max(nativeMaxY, tileInfo.BoundingBox.MaxLatitude);
-
-                    // Track WGS84 bounding box
-                    if (tileInfo.Wgs84BoundingBox != null)
-                    {
-                        wgs84MinLon = Math.Min(wgs84MinLon, tileInfo.Wgs84BoundingBox.MinLongitude);
-                        wgs84MinLat = Math.Min(wgs84MinLat, tileInfo.Wgs84BoundingBox.MinLatitude);
-                        wgs84MaxLon = Math.Max(wgs84MaxLon, tileInfo.Wgs84BoundingBox.MaxLongitude);
-                        wgs84MaxLat = Math.Max(wgs84MaxLat, tileInfo.Wgs84BoundingBox.MaxLatitude);
-                        hasValidWgs84 = true;
-                    }
-
-                    // Track elevation range
-                    if (tileInfo.MinElevation.HasValue)
-                        globalMinElevation = globalMinElevation.HasValue
-                            ? Math.Min(globalMinElevation.Value, tileInfo.MinElevation.Value)
-                            : tileInfo.MinElevation.Value;
-                    if (tileInfo.MaxElevation.HasValue)
-                        globalMaxElevation = globalMaxElevation.HasValue
-                            ? Math.Max(globalMaxElevation.Value, tileInfo.MaxElevation.Value)
-                            : tileInfo.MaxElevation.Value;
-
-                    tiles.Add(new GeoTiffTileInfo
-                    {
-                        FilePath = tiffFile,
-                        Width = tileInfo.Width,
-                        Height = tileInfo.Height,
-                        BoundingBox = tileInfo.BoundingBox,
-                        Wgs84BoundingBox = tileInfo.Wgs84BoundingBox,
-                        MinElevation = tileInfo.MinElevation,
-                        MaxElevation = tileInfo.MaxElevation
-                    });
-
-                    processedCount++;
-
-                    // Report progress every 4 tiles or at completion
-                    if (processedCount % 4 == 0 || processedCount == tiffFiles.Count)
-                        TerrainLogger.Detail($"Analyzed {processedCount}/{tiffFiles.Count} tiles...");
+                    tileResults[i] = (tiffFiles[i], GetGeoTiffInfoExtendedQuiet(tiffFiles[i]), null);
                 }
                 catch (Exception ex)
                 {
-                    warnings.Add($"Could not read tile '{Path.GetFileName(tiffFile)}': {ex.Message}");
+                    tileResults[i] = (tiffFiles[i], null, ex.Message);
                 }
+
+                var count = Interlocked.Increment(ref processedCount);
+                if (count % 10 == 0 || count == tiffFiles.Count)
+                    TerrainLogger.Detail($"Analyzed {count}/{tiffFiles.Count} tiles...");
+                if (count % 10 == 0 || count == tiffFiles.Count)
+                    progress?.Report($"Reading elevation tiles: {count} / {tiffFiles.Count}");
+            });
+
+            progress?.Report($"Combining {tiffFiles.Count} tiles...");
+
+            // Combine results sequentially (preserving original order)
+            var tiles = new List<GeoTiffTileInfo>();
+            double nativeMinX = double.MaxValue, nativeMinY = double.MaxValue;
+            double nativeMaxX = double.MinValue, nativeMaxY = double.MinValue;
+            double wgs84MinLon = double.MaxValue, wgs84MinLat = double.MaxValue;
+            double wgs84MaxLon = double.MinValue, wgs84MaxLat = double.MinValue;
+            var hasValidWgs84 = false;
+            double? globalMinElevation = null;
+            double? globalMaxElevation = null;
+            string? firstProjection = null;
+            string? firstProjectionName = null;
+            double firstPixelSizeX = 0;
+            double firstPixelSizeY = 0;
+            GeoTiffValidationResult? validationResult = null;
+
+            foreach (var (path, tileInfo, error) in tileResults)
+            {
+                if (tileInfo == null)
+                {
+                    warnings.Add($"Could not read tile '{Path.GetFileName(path)}': {error}");
+                    continue;
+                }
+
+                if (firstProjection == null)
+                {
+                    validationResult = ValidateGeoTiff(path);
+                    firstProjection = tileInfo.Projection;
+                    firstProjectionName = tileInfo.ProjectionName;
+
+                    if (tileInfo.GeoTransform != null)
+                    {
+                        firstPixelSizeX = Math.Abs(tileInfo.GeoTransform[1]);
+                        firstPixelSizeY = Math.Abs(tileInfo.GeoTransform[5]);
+                    }
+                }
+                else
+                {
+                    if (tileInfo.GeoTransform != null)
+                    {
+                        var pixelSizeX = Math.Abs(tileInfo.GeoTransform[1]);
+                        var pixelSizeY = Math.Abs(tileInfo.GeoTransform[5]);
+
+                        if (Math.Abs(pixelSizeX - firstPixelSizeX) > 0.001 ||
+                            Math.Abs(pixelSizeY - firstPixelSizeY) > 0.001)
+                            warnings.Add($"Tile '{Path.GetFileName(path)}' has different pixel size " +
+                                         $"({pixelSizeX:F4}x{pixelSizeY:F4}) than first tile ({firstPixelSizeX:F4}x{firstPixelSizeY:F4})");
+                    }
+                }
+
+                nativeMinX = Math.Min(nativeMinX, tileInfo.BoundingBox.MinLongitude);
+                nativeMinY = Math.Min(nativeMinY, tileInfo.BoundingBox.MinLatitude);
+                nativeMaxX = Math.Max(nativeMaxX, tileInfo.BoundingBox.MaxLongitude);
+                nativeMaxY = Math.Max(nativeMaxY, tileInfo.BoundingBox.MaxLatitude);
+
+                if (tileInfo.Wgs84BoundingBox != null)
+                {
+                    wgs84MinLon = Math.Min(wgs84MinLon, tileInfo.Wgs84BoundingBox.MinLongitude);
+                    wgs84MinLat = Math.Min(wgs84MinLat, tileInfo.Wgs84BoundingBox.MinLatitude);
+                    wgs84MaxLon = Math.Max(wgs84MaxLon, tileInfo.Wgs84BoundingBox.MaxLongitude);
+                    wgs84MaxLat = Math.Max(wgs84MaxLat, tileInfo.Wgs84BoundingBox.MaxLatitude);
+                    hasValidWgs84 = true;
+                }
+
+                if (tileInfo.MinElevation.HasValue)
+                    globalMinElevation = globalMinElevation.HasValue
+                        ? Math.Min(globalMinElevation.Value, tileInfo.MinElevation.Value)
+                        : tileInfo.MinElevation.Value;
+                if (tileInfo.MaxElevation.HasValue)
+                    globalMaxElevation = globalMaxElevation.HasValue
+                        ? Math.Max(globalMaxElevation.Value, tileInfo.MaxElevation.Value)
+                        : tileInfo.MaxElevation.Value;
+
+                tiles.Add(new GeoTiffTileInfo
+                {
+                    FilePath = path,
+                    Width = tileInfo.Width,
+                    Height = tileInfo.Height,
+                    BoundingBox = tileInfo.BoundingBox,
+                    Wgs84BoundingBox = tileInfo.Wgs84BoundingBox,
+                    MinElevation = tileInfo.MinElevation,
+                    MaxElevation = tileInfo.MaxElevation
+                });
+            }
 
             if (tiles.Count == 0)
                 throw new InvalidOperationException("No valid GeoTIFF tiles could be read from the directory.");
@@ -948,6 +965,390 @@ public class GeoTiffReader
                 wgs84BoundingBox = boundingBox;
             else
                 wgs84BoundingBox = GeoBoundingBox.TransformToWgs84(boundingBox, projection);
+        }
+        else
+        {
+            wgs84BoundingBox = boundingBox.IsValidWgs84 ? boundingBox : null;
+        }
+
+        // Try to get elevation statistics efficiently
+        double? minElevation = null;
+        double? maxElevation = null;
+        try
+        {
+            var band = dataset.GetRasterBand(1);
+            var minMax = new double[2];
+            band.ComputeRasterMinMax(minMax, 0);
+            minElevation = minMax[0];
+            maxElevation = minMax[1];
+        }
+        catch
+        {
+            // Silently ignore - elevation stats are optional
+        }
+
+        return new GeoTiffInfoResult
+        {
+            Width = width,
+            Height = height,
+            BoundingBox = boundingBox,
+            Wgs84BoundingBox = wgs84BoundingBox,
+            Projection = projection,
+            GeoTransform = geoTransform,
+            MinElevation = minElevation,
+            MaxElevation = maxElevation
+        };
+    }
+
+    /// <summary>
+    ///     Reads an XYZ ASCII elevation file via GDAL and returns the heightmap data with geographic metadata.
+    ///     GDAL 3.10+ natively supports XYZ ASCII format (space/tab/semicolon separated).
+    ///     Since XYZ files lack embedded CRS, the EPSG code must be provided for coordinate transformation.
+    /// </summary>
+    /// <param name="xyzPath">Path to the XYZ ASCII file</param>
+    /// <param name="epsgCode">EPSG code for the coordinate reference system (e.g., 25832 for ETRS89/UTM 32N)</param>
+    /// <param name="targetSize">Optional target size to resize the heightmap to (must be power of 2)</param>
+    /// <returns>Import result containing heightmap image and bounding box</returns>
+    public GeoTiffImportResult ReadXyz(string xyzPath, int epsgCode, int? targetSize = null)
+    {
+        if (!File.Exists(xyzPath))
+            throw new FileNotFoundException($"XYZ file not found: {xyzPath}");
+
+        InitializeGdal();
+
+        TerrainLogger.Info($"Reading XYZ elevation data: {xyzPath} (EPSG:{epsgCode})");
+
+        using var dataset = Gdal.Open(xyzPath, Access.GA_ReadOnly);
+        if (dataset == null)
+            throw new InvalidOperationException(
+                $"Failed to open XYZ file: {xyzPath}. Ensure the file contains space/tab/semicolon-separated X Y Z columns.");
+
+        // Construct projection WKT from EPSG code
+        var projectionWkt = GetProjectionWktFromEpsg(epsgCode);
+        TerrainLogger.Detail($"Using projection from EPSG:{epsgCode}");
+
+        return ReadFromDataset(dataset, xyzPath, targetSize, overrideProjection: projectionWkt);
+    }
+
+    /// <summary>
+    ///     Gets extended information about an XYZ ASCII elevation file without loading full elevation data.
+    ///     Uses GDAL to open the file and reads metadata (dimensions, bounding box, elevation range).
+    /// </summary>
+    /// <param name="xyzPath">Path to the XYZ ASCII file</param>
+    /// <param name="epsgCode">EPSG code for the coordinate reference system</param>
+    /// <returns>Extended info including both native and WGS84 bounding boxes</returns>
+    public GeoTiffInfoResult GetXyzInfoExtended(string xyzPath, int epsgCode)
+    {
+        if (!File.Exists(xyzPath))
+            throw new FileNotFoundException($"XYZ file not found: {xyzPath}");
+
+        InitializeGdal();
+
+        using var dataset = Gdal.Open(xyzPath, Access.GA_ReadOnly);
+        if (dataset == null)
+            throw new InvalidOperationException(
+                $"Failed to open XYZ file: {xyzPath}. Ensure the file contains space/tab/semicolon-separated X Y Z columns.");
+
+        // Construct projection WKT from EPSG code
+        var projectionWkt = GetProjectionWktFromEpsg(epsgCode);
+
+        return GetInfoFromDataset(dataset, xyzPath, projectionWkt);
+    }
+
+    /// <summary>
+    ///     Gets extended information about multiple XYZ ASCII files (tiles) and computes combined metadata.
+    ///     Mirrors <see cref="GetGeoTiffDirectoryInfoExtended"/> but for XYZ files that lack embedded CRS.
+    /// </summary>
+    /// <param name="xyzPaths">Array of paths to XYZ ASCII files</param>
+    /// <param name="epsgCode">EPSG code for the coordinate reference system</param>
+    /// <param name="progress">Optional progress reporter for UI feedback (e.g., "Reading tile 10 / 395")</param>
+    /// <returns>Combined directory info result with merged bounding boxes, dimensions, and elevation range</returns>
+    public GeoTiffDirectoryInfoResult GetXyzFilesInfoExtended(string[] xyzPaths, int epsgCode, IProgress<string>? progress = null)
+    {
+        if (xyzPaths.Length == 0)
+            throw new ArgumentException("No XYZ file paths provided.");
+
+        InitializeGdal();
+
+        var projectionWkt = GetProjectionWktFromEpsg(epsgCode);
+
+        TerrainLogger.Info($"Analyzing {xyzPaths.Length} XYZ tile(s) using parallel processing...");
+
+        var warnings = new List<string>();
+
+        var previousSuppressState = TerrainLogger.SuppressDetailedLogging;
+        TerrainLogger.SuppressDetailedLogging = xyzPaths.Length > 10;
+
+        try
+        {
+            // Read all tiles in parallel — each GDAL dataset is independent
+            var tileResults = new (string path, GeoTiffInfoResult? info, string? error)[xyzPaths.Length];
+            var processedCount = 0;
+
+            Parallel.For(0, xyzPaths.Length, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount)
+            }, i =>
+            {
+                try
+                {
+                    tileResults[i] = (xyzPaths[i], GetXyzInfoExtendedQuiet(xyzPaths[i], projectionWkt), null);
+                }
+                catch (Exception ex)
+                {
+                    tileResults[i] = (xyzPaths[i], null, ex.Message);
+                }
+
+                var count = Interlocked.Increment(ref processedCount);
+                if (count % 50 == 0 || count == xyzPaths.Length)
+                    TerrainLogger.Detail($"Analyzed {count}/{xyzPaths.Length} XYZ tiles...");
+                if (count % 20 == 0 || count == xyzPaths.Length)
+                    progress?.Report($"Reading elevation tiles: {count} / {xyzPaths.Length}");
+            });
+
+            progress?.Report($"Combining {xyzPaths.Length} tiles...");
+
+            // Combine results sequentially (preserving original order)
+            var tiles = new List<GeoTiffTileInfo>();
+            double nativeMinX = double.MaxValue, nativeMinY = double.MaxValue;
+            double nativeMaxX = double.MinValue, nativeMaxY = double.MinValue;
+            double wgs84MinLon = double.MaxValue, wgs84MinLat = double.MaxValue;
+            double wgs84MaxLon = double.MinValue, wgs84MaxLat = double.MinValue;
+            var hasValidWgs84 = false;
+            double? globalMinElevation = null;
+            double? globalMaxElevation = null;
+            double firstPixelSizeX = 0;
+            double firstPixelSizeY = 0;
+            string? firstProjectionName = null;
+
+            foreach (var (path, tileInfo, error) in tileResults)
+            {
+                if (tileInfo == null)
+                {
+                    warnings.Add($"Could not read XYZ tile '{Path.GetFileName(path)}': {error}");
+                    continue;
+                }
+
+                if (firstProjectionName == null)
+                {
+                    firstProjectionName = tileInfo.ProjectionName;
+                    if (tileInfo.GeoTransform != null)
+                    {
+                        firstPixelSizeX = Math.Abs(tileInfo.GeoTransform[1]);
+                        firstPixelSizeY = Math.Abs(tileInfo.GeoTransform[5]);
+                    }
+                }
+
+                nativeMinX = Math.Min(nativeMinX, tileInfo.BoundingBox.MinLongitude);
+                nativeMinY = Math.Min(nativeMinY, tileInfo.BoundingBox.MinLatitude);
+                nativeMaxX = Math.Max(nativeMaxX, tileInfo.BoundingBox.MaxLongitude);
+                nativeMaxY = Math.Max(nativeMaxY, tileInfo.BoundingBox.MaxLatitude);
+
+                if (tileInfo.Wgs84BoundingBox != null)
+                {
+                    wgs84MinLon = Math.Min(wgs84MinLon, tileInfo.Wgs84BoundingBox.MinLongitude);
+                    wgs84MinLat = Math.Min(wgs84MinLat, tileInfo.Wgs84BoundingBox.MinLatitude);
+                    wgs84MaxLon = Math.Max(wgs84MaxLon, tileInfo.Wgs84BoundingBox.MaxLongitude);
+                    wgs84MaxLat = Math.Max(wgs84MaxLat, tileInfo.Wgs84BoundingBox.MaxLatitude);
+                    hasValidWgs84 = true;
+                }
+
+                if (tileInfo.MinElevation.HasValue)
+                    globalMinElevation = globalMinElevation.HasValue
+                        ? Math.Min(globalMinElevation.Value, tileInfo.MinElevation.Value)
+                        : tileInfo.MinElevation.Value;
+                if (tileInfo.MaxElevation.HasValue)
+                    globalMaxElevation = globalMaxElevation.HasValue
+                        ? Math.Max(globalMaxElevation.Value, tileInfo.MaxElevation.Value)
+                        : tileInfo.MaxElevation.Value;
+
+                tiles.Add(new GeoTiffTileInfo
+                {
+                    FilePath = path,
+                    Width = tileInfo.Width,
+                    Height = tileInfo.Height,
+                    BoundingBox = tileInfo.BoundingBox,
+                    Wgs84BoundingBox = tileInfo.Wgs84BoundingBox,
+                    MinElevation = tileInfo.MinElevation,
+                    MaxElevation = tileInfo.MaxElevation
+                });
+            }
+
+            if (tiles.Count == 0)
+                throw new InvalidOperationException("No valid XYZ tiles could be read.");
+
+            var combinedWidth = firstPixelSizeX > 0
+                ? (int)Math.Round((nativeMaxX - nativeMinX) / firstPixelSizeX)
+                : tiles.Sum(t => t.Width);
+            var combinedHeight = firstPixelSizeY > 0
+                ? (int)Math.Round((nativeMaxY - nativeMinY) / firstPixelSizeY)
+                : tiles.Sum(t => t.Height);
+
+            double[]? combinedGeoTransform = null;
+            if (firstPixelSizeX > 0 && firstPixelSizeY > 0)
+                combinedGeoTransform =
+                [
+                    nativeMinX, firstPixelSizeX, 0,
+                    nativeMaxY, 0, -firstPixelSizeY
+                ];
+
+            var nativeBoundingBox = new GeoBoundingBox(nativeMinX, nativeMinY, nativeMaxX, nativeMaxY);
+            GeoBoundingBox? wgs84BoundingBox = hasValidWgs84
+                ? new GeoBoundingBox(wgs84MinLon, wgs84MinLat, wgs84MaxLon, wgs84MaxLat)
+                : null;
+
+            var canFetchOsm = wgs84BoundingBox?.IsValidWgs84 == true;
+            string? osmBlockedReason = null;
+            if (!canFetchOsm)
+                osmBlockedReason = wgs84BoundingBox == null
+                    ? "Could not determine WGS84 coordinates - coordinate transformation failed."
+                    : "WGS84 coordinates are invalid (outside -90/90 lat, -180/180 lon range).";
+
+            TerrainLogger.Info($"Combined XYZ tile dimensions: {combinedWidth}x{combinedHeight}");
+            if (wgs84BoundingBox != null) TerrainLogger.Info($"Combined WGS84 bbox: {wgs84BoundingBox}");
+            if (globalMinElevation.HasValue && globalMaxElevation.HasValue)
+                TerrainLogger.Info($"Combined elevation range: {globalMinElevation:F1}m to {globalMaxElevation:F1}m");
+
+            if (warnings.Count > 0)
+            {
+                if (warnings.Count <= 5)
+                    foreach (var warning in warnings) TerrainLogger.Warning(warning);
+                else
+                    TerrainLogger.Warning(
+                        $"{warnings.Count} warnings encountered during XYZ tile analysis. See logs for details.");
+            }
+
+            return new GeoTiffDirectoryInfoResult
+            {
+                TileCount = tiles.Count,
+                CombinedWidth = combinedWidth,
+                CombinedHeight = combinedHeight,
+                NativeBoundingBox = nativeBoundingBox,
+                Wgs84BoundingBox = wgs84BoundingBox,
+                CombinedGeoTransform = combinedGeoTransform,
+                Projection = projectionWkt,
+                ProjectionName = firstProjectionName ?? $"EPSG:{epsgCode}",
+                MinElevation = globalMinElevation,
+                MaxElevation = globalMaxElevation,
+                Tiles = tiles,
+                CanFetchOsmData = canFetchOsm,
+                OsmBlockedReason = osmBlockedReason,
+                Warnings = warnings
+            };
+        }
+        finally
+        {
+            TerrainLogger.SuppressDetailedLogging = previousSuppressState;
+        }
+    }
+
+    /// <summary>
+    ///     Gets extended information about an XYZ file without logging to UI.
+    ///     Used internally for bulk tile analysis to avoid UI spam.
+    /// </summary>
+    private GeoTiffInfoResult GetXyzInfoExtendedQuiet(string xyzPath, string projectionWkt)
+    {
+        if (!File.Exists(xyzPath))
+            throw new FileNotFoundException($"XYZ file not found: {xyzPath}");
+
+        InitializeGdal();
+
+        using var dataset = Gdal.Open(xyzPath, Access.GA_ReadOnly);
+        if (dataset == null)
+            throw new InvalidOperationException($"Failed to open XYZ file: {xyzPath}");
+
+        return GetInfoFromDataset(dataset, xyzPath, projectionWkt);
+    }
+
+    /// <summary>
+    ///     Auto-detects the EPSG code from an XYZ file by examining coordinate ranges.
+    ///     Currently detects common German ETRS89/UTM zones.
+    ///     Returns null if the CRS cannot be determined automatically.
+    /// </summary>
+    /// <param name="xyzPath">Path to the XYZ ASCII file</param>
+    /// <returns>Detected EPSG code, or null if detection failed</returns>
+    public static int? AutoDetectEpsg(string xyzPath)
+    {
+        try
+        {
+            InitializeGdal();
+
+            using var dataset = Gdal.Open(xyzPath, Access.GA_ReadOnly);
+            if (dataset == null) return null;
+
+            var geoTransform = new double[6];
+            dataset.GetGeoTransform(geoTransform);
+
+            var width = dataset.RasterXSize;
+            var height = dataset.RasterYSize;
+
+            var minX = geoTransform[0];
+            var maxY = geoTransform[3];
+            var maxX = minX + geoTransform[1] * width;
+            var minY = maxY + geoTransform[5] * height;
+
+            // German ETRS89/UTM Zone 32N (EPSG:25832)
+            // Easting (X): typically 280,000 - 840,000
+            // Northing (Y): typically 5,230,000 - 6,090,000
+            if (minX >= 200_000 && maxX <= 900_000 && minY >= 5_000_000 && maxY <= 6_200_000)
+                return 25832;
+
+            // Could extend with Zone 33N (EPSG:25833) and others in the future
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    ///     Constructs a projection WKT string from an EPSG code using GDAL's SpatialReference.
+    /// </summary>
+    private static string GetProjectionWktFromEpsg(int epsgCode)
+    {
+        var srs = new SpatialReference(null);
+        if (srs.ImportFromEPSG(epsgCode) != 0)
+            throw new ArgumentException($"Invalid or unsupported EPSG code: {epsgCode}");
+
+        srs.ExportToWkt(out var projectionWkt, null);
+        return projectionWkt;
+    }
+
+    /// <summary>
+    ///     Gets metadata from an already opened GDAL dataset without loading full elevation data.
+    ///     Shared helper used by both GeoTIFF and XYZ info methods.
+    /// </summary>
+    private GeoTiffInfoResult GetInfoFromDataset(Dataset dataset, string? sourcePath, string? overrideProjection = null)
+    {
+        var width = dataset.RasterXSize;
+        var height = dataset.RasterYSize;
+
+        var geoTransform = new double[6];
+        dataset.GetGeoTransform(geoTransform);
+
+        var minX = geoTransform[0];
+        var maxY = geoTransform[3];
+        var maxX = minX + geoTransform[1] * width;
+        var minY = maxY + geoTransform[5] * height;
+
+        var boundingBox = new GeoBoundingBox(minX, minY, maxX, maxY);
+
+        // Get projection (use override if provided)
+        var projection = overrideProjection ?? dataset.GetProjection();
+        GeoBoundingBox? wgs84BoundingBox = null;
+
+        if (!string.IsNullOrEmpty(projection))
+        {
+            if (GeoBoundingBox.IsWgs84Projection(projection))
+            {
+                wgs84BoundingBox = boundingBox;
+            }
+            else
+            {
+                wgs84BoundingBox = GeoBoundingBox.TransformToWgs84(boundingBox, projection);
+            }
         }
         else
         {

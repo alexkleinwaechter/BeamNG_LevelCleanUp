@@ -170,11 +170,12 @@ Class="my-0">
             
             <!-- Road Material Toggle -->
             <MudItem xs="12" sm="6">
-                <MudSwitch @bind-Value="Material.IsRoadMaterial" 
+                <MudSwitch @bind-Value="Material.IsRoadMaterial"
                           Color="Color.Primary"
                           Label="Enable Road Smoothing"/>
             </MudItem>
-            
+
+
             @if (Material.IsRoadMaterial)
             {
                 <!-- Road Parameters -->
@@ -434,18 +435,6 @@ Class="my-0">
                                                                 <MudSelectItem Value="SplineInterpolationType.LinearControlPoints">Linear Control Points</MudSelectItem>
                                                             </MudSelect>
                                                             <HelpAdornment TooltipText="@RoadParameterTooltips.SplineInterpolationType" />
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.MinPathLengthPixels" 
-                                                                            Label="@(IsUsingOsmSplines ? "Min Path Length (meters)" : "Min Path Length (px)")"
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="10.0f" Max="200.0f" Step="10.0f"
-                                                                            Format="F0"
-                                                                            HelperText="@(IsUsingOsmSplines ? "Short OSM paths filtered (value × metersPerPixel)" : "Shorter paths are filtered out")"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@MinPathLengthPixels"/>
                                                         </div>
                                                     </MudItem>
                                                 </MudGrid>
@@ -726,14 +715,27 @@ Class="my-0">
                                                     </MudItem>
                                                     <MudItem xs="12" sm="4">
                                                         <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.BridgeEndpointMaxDistancePixels" 
-                                                                            Label="Bridge Distance (px)" 
+                                                            <MudNumericField T="float" @bind-Value="Material.BridgeEndpointMaxDistancePixels"
+                                                                            Label="Bridge Distance (px)"
                                                                             Variant="Variant.Outlined"
                                                                             Min="0.0f" Max="100.0f" Step="5.0f"
                                                                             Format="F0"
                                                                             Disabled="@IsUsingOsmSplines"
                                                                             Class="flex-grow-1"/>
                                                             <HelpAdornment TooltipText="@BridgeEndpointMaxDistancePixels"/>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="4">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.MinPathLengthPixels"
+                                                                            Label="Min Path Length (px)"
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="0.0f" Max="200.0f" Step="10.0f"
+                                                                            Format="F0"
+                                                                            HelperText="Shorter paths are filtered out"
+                                                                            Disabled="@IsUsingOsmSplines"
+                                                                            Class="flex-grow-1"/>
+                                                            <HelpAdornment TooltipText="@MinPathLengthPixels"/>
                                                         </div>
                                                     </MudItem>
                                                 </MudGrid>
@@ -1005,60 +1007,6 @@ Class="my-0">
                                                 </MudGrid>
                                             </MudPaper>
                                             
-                                            <!-- Endpoint Tapering -->
-                                            <MudPaper Class="pa-3" Elevation="1">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Size="Size.Small" Class="mr-1"/>
-                                                    Endpoint Tapering (Dead Ends)
-                                                </MudText>
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                                    Controls how isolated road endpoints (dead ends) transition back to terrain.
-                                                </MudText>
-                                                <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.EnableEndpointTaper" 
-                                                                      Color="Color.Primary"
-                                                                      Label="Enable Taper"
-                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"/>
-                                                            <MudTooltip Text="Gradually transition dead-end roads back toward terrain elevation">
-                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                            </MudTooltip>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.EndpointTaperDistanceMeters" 
-                                                                            Label="Taper Distance (m)" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="5.0f" Max="100.0f" Step="5.0f"
-                                                                            Format="F0"
-                                                                            Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableEndpointTaper)"
-                                                                            HelperText="Distance to taper at dead ends"
-                                                                            Class="flex-grow-1"/>
-                                                            <MudTooltip Text="Distance over which to taper elevation back toward terrain at dead ends">
-                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                            </MudTooltip>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.EndpointTerrainBlendStrength" 
-                                                                            Label="Terrain Blend" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="0.0f" Max="1.0f" Step="0.1f"
-                                                                            Format="F1"
-                                                                            Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableEndpointTaper)"
-                                                                            HelperText="0=keep road elev, 1=match terrain"
-                                                                            Class="flex-grow-1"/>
-                                                            <MudTooltip Text="How strongly to blend toward terrain: 0.0=road keeps elevation, 0.3=subtle, 1.0=fully match terrain">
-                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                            </MudTooltip>
-                                                        </div>
-                                                    </MudItem>
-                                                                </MudGrid>
-                                                            </MudPaper>
-                                                            
                                                             <!-- Roundabout Settings -->
                                                             <MudPaper Class="pa-3 mt-3" Elevation="1">
                                                                 <MudText Typo="Typo.subtitle2" Class="mb-2">

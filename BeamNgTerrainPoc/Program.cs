@@ -567,7 +567,7 @@ internal class Program
                     // Junction handling
                     PreferStraightThroughJunctions = false,
                     JunctionAngleThreshold = 90.0f,
-                    MinPathLengthPixels = 40.0f,         // Allow short segments
+                    MinPathLengthPixels = 0f,         // Allow short segments
 
                     // Connectivity & path extraction
                     BridgeEndpointMaxDistancePixels = 25.0f,

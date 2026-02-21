@@ -138,10 +138,30 @@ public class TerrainCreator
                 isGeoTiffSource = true; // GeoTIFF may have data artifacts
                 perfLog.Timing($"Loaded GeoTIFF directory heightmap: {sw.Elapsed.TotalSeconds:F2}s");
             }
+            else if (parameters.XyzFilePaths is { Length: > 0 })
+            {
+                // Combine and load from multiple XYZ ASCII tiles
+                perfLog.Info($"Loading heightmap from {parameters.XyzFilePaths.Length} XYZ tiles");
+                var xyzResult = await LoadFromMultipleXyzAsync(parameters.XyzFilePaths, parameters, perfLog);
+                heightmapImage = xyzResult;
+                shouldDisposeHeightmap = true;
+                isGeoTiffSource = true; // XYZ data may also have artifacts, use same spike prevention
+                perfLog.Timing($"Loaded multi-XYZ heightmap: {sw.Elapsed.TotalSeconds:F2}s");
+            }
+            else if (!string.IsNullOrWhiteSpace(parameters.XyzPath))
+            {
+                // Load from XYZ ASCII elevation file
+                perfLog.Info($"Loading heightmap from XYZ: {parameters.XyzPath}");
+                var xyzResult = await LoadFromXyzAsync(parameters.XyzPath, parameters, perfLog);
+                heightmapImage = xyzResult;
+                shouldDisposeHeightmap = true;
+                isGeoTiffSource = true; // XYZ data may also have artifacts, use same spike prevention
+                perfLog.Timing($"Loaded XYZ heightmap: {sw.Elapsed.TotalSeconds:F2}s");
+            }
             else
             {
                 perfLog.Error(
-                    "No heightmap provided (HeightmapImage, HeightmapPath, GeoTiffPath, or GeoTiffDirectory required)");
+                    "No heightmap provided (HeightmapImage, HeightmapPath, GeoTiffPath, GeoTiffDirectory, or XyzPath required)");
                 return false;
             }
 
@@ -683,6 +703,127 @@ public class TerrainCreator
             log.Warning("Could not determine WGS84 bounding box - OSM road features will not be available.");
             log.Warning(
                 $"Native bounding box was: {result.BoundingBox} (likely in projected coordinates, not lat/lon)");
+        }
+
+        return result.HeightmapImage;
+    }
+
+    /// <summary>
+    ///     Loads heightmap from an XYZ ASCII elevation file and populates parameters with geo-metadata.
+    ///     Uses GDAL's native XYZ driver with user-provided EPSG code for coordinate transformation.
+    /// </summary>
+    private async Task<Image<L16>> LoadFromXyzAsync(
+        string xyzPath, TerrainCreationParameters parameters, TerrainCreationLogger log)
+    {
+        var reader = new GeoTiffReader();
+
+        var result = await Task.Run(() =>
+            reader.ReadXyz(xyzPath, parameters.XyzEpsgCode, parameters.Size));
+
+        // Populate parameters with geo-metadata (same pattern as LoadFromGeoTiffAsync)
+        parameters.GeoBoundingBox = result.Wgs84BoundingBox ??
+                                    (result.BoundingBox.IsValidWgs84 ? result.BoundingBox : null);
+        parameters.GeoTiffMinElevation = result.MinElevation;
+        parameters.GeoTiffMaxElevation = result.MaxElevation;
+
+        // If MaxHeight wasn't explicitly set (<=0), use the elevation range from XYZ
+        if (parameters.MaxHeight <= 0)
+        {
+            parameters.MaxHeight = (float)result.ElevationRange;
+            log.Info($"Using XYZ elevation range as MaxHeight: {parameters.MaxHeight:F1}m");
+
+            if (parameters.AutoSetBaseHeightFromGeoTiff)
+            {
+                parameters.TerrainBaseHeight = (float)result.MinElevation;
+                log.Info(
+                    $"Using XYZ minimum elevation as TerrainBaseHeight: {parameters.TerrainBaseHeight:F1}m");
+            }
+        }
+
+        if (parameters.GeoBoundingBox != null)
+        {
+            log.Info($"XYZ bounding box for Overpass API: {parameters.GeoBoundingBox.ToOverpassBBox()}");
+        }
+        else
+        {
+            log.Warning("Could not determine WGS84 bounding box from XYZ - OSM features will not be available.");
+        }
+
+        return result.HeightmapImage;
+    }
+
+    /// <summary>
+    ///     Combines multiple XYZ ASCII tiles using GeoTiffCombiner and loads as heightmap.
+    ///     Uses the projection override to inject user-provided EPSG code since XYZ files lack embedded CRS.
+    ///     Supports cropping the combined result.
+    /// </summary>
+    private async Task<Image<L16>> LoadFromMultipleXyzAsync(
+        string[] xyzFilePaths, TerrainCreationParameters parameters, TerrainCreationLogger log)
+    {
+        var combiner = new GeoTiffCombiner();
+
+        // Build projection WKT from EPSG code
+        var srs = new OSGeo.OSR.SpatialReference(null);
+        if (srs.ImportFromEPSG(parameters.XyzEpsgCode) != 0)
+            throw new ArgumentException($"Invalid EPSG code: {parameters.XyzEpsgCode}");
+        srs.ExportToWkt(out var projectionWkt, null);
+
+        log.Info($"Combining {xyzFilePaths.Length} XYZ tiles with EPSG:{parameters.XyzEpsgCode}");
+
+        // Combine and import, passing crop parameters if specified
+        GeoTiffImportResult result;
+
+        if (parameters.CropGeoTiff && parameters.CropWidth > 0 && parameters.CropHeight > 0)
+        {
+            log.Info(
+                $"Cropping combined XYZ: offset ({parameters.CropOffsetX}, {parameters.CropOffsetY}), " +
+                $"size {parameters.CropWidth}x{parameters.CropHeight}");
+
+            result = await combiner.CombineFilesAndImportAsync(
+                xyzFilePaths,
+                projectionWkt,
+                parameters.Size,
+                parameters.CropOffsetX,
+                parameters.CropOffsetY,
+                parameters.CropWidth,
+                parameters.CropHeight);
+        }
+        else
+        {
+            result = await combiner.CombineFilesAndImportAsync(
+                xyzFilePaths,
+                projectionWkt,
+                parameters.Size);
+        }
+
+        // Populate parameters with geo-metadata
+        parameters.GeoBoundingBox = result.Wgs84BoundingBox ??
+                                    (result.BoundingBox.IsValidWgs84 ? result.BoundingBox : null);
+        parameters.GeoTiffMinElevation = result.MinElevation;
+        parameters.GeoTiffMaxElevation = result.MaxElevation;
+
+        // If MaxHeight wasn't explicitly set (<=0), use the elevation range
+        if (parameters.MaxHeight <= 0)
+        {
+            parameters.MaxHeight = (float)result.ElevationRange;
+            log.Info($"Using combined XYZ elevation range as MaxHeight: {parameters.MaxHeight:F1}m");
+
+            if (parameters.AutoSetBaseHeightFromGeoTiff)
+            {
+                parameters.TerrainBaseHeight = (float)result.MinElevation;
+                log.Info(
+                    $"Using combined XYZ minimum elevation as TerrainBaseHeight: {parameters.TerrainBaseHeight:F1}m");
+            }
+        }
+
+        if (parameters.GeoBoundingBox != null)
+        {
+            log.Info(
+                $"Combined XYZ bounding box for Overpass API: {parameters.GeoBoundingBox.ToOverpassBBox()}");
+        }
+        else
+        {
+            log.Warning("Could not determine WGS84 bounding box - OSM features will not be available.");
         }
 
         return result.HeightmapImage;

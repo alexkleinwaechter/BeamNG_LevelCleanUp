@@ -63,9 +63,84 @@ public class GeoTiffCombiner
     }
 
     /// <summary>
+    ///     Combines multiple elevation data files (GeoTIFF, XYZ, etc.) from explicit paths.
+    ///     For formats without embedded CRS (like XYZ), pass overrideProjection.
+    /// </summary>
+    public async Task<GeoBoundingBox> CombineFilesAsync(
+        string[] filePaths, string outputPath, string? overrideProjection = null)
+    {
+        if (filePaths.Length == 0)
+            throw new ArgumentException("No files to combine.");
+
+        TerrainLogger.Info($"Found {filePaths.Length} file(s) to combine");
+
+        if (filePaths.Length == 1)
+        {
+            // Single file: just read and re-export as GeoTIFF (ensures consistent format)
+            TerrainLogger.Info("Single file, converting directly");
+            return await Task.Run(() =>
+                CombineFilesInternal(filePaths.ToList(), outputPath, overrideProjection));
+        }
+
+        return await Task.Run(() =>
+            CombineFilesInternal(filePaths.ToList(), outputPath, overrideProjection));
+    }
+
+    /// <summary>
+    ///     Combines multiple files and returns the import result directly.
+    /// </summary>
+    public async Task<GeoTiffImportResult> CombineFilesAndImportAsync(
+        string[] filePaths,
+        string? overrideProjection = null,
+        int? targetSize = null,
+        int? cropOffsetX = null,
+        int? cropOffsetY = null,
+        int? cropWidth = null,
+        int? cropHeight = null,
+        string? tempDirectory = null)
+    {
+        tempDirectory ??= Path.GetTempPath();
+        var combinedPath = Path.Combine(tempDirectory, $"combined_{Guid.NewGuid():N}.tif");
+
+        try
+        {
+            await CombineFilesAsync(filePaths, combinedPath, overrideProjection);
+
+            var shouldCrop = cropOffsetX.HasValue && cropOffsetY.HasValue &&
+                             cropWidth.HasValue && cropHeight.HasValue &&
+                             cropWidth.Value > 0 && cropHeight.Value > 0;
+
+            if (shouldCrop)
+            {
+                TerrainLogger.Info(
+                    $"Applying crop: offset ({cropOffsetX}, {cropOffsetY}), size {cropWidth}x{cropHeight}");
+                return _reader.ReadGeoTiff(combinedPath, targetSize,
+                    cropOffsetX, cropOffsetY, cropWidth, cropHeight);
+            }
+
+            // The combined GeoTIFF already has the projection embedded by CombineFilesInternal,
+            // so no override needed when reading back.
+            return _reader.ReadGeoTiff(combinedPath, targetSize);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(combinedPath))
+                    File.Delete(combinedPath);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    /// <summary>
     ///     Internal method to combine multiple GeoTIFF files.
     /// </summary>
-    private GeoBoundingBox CombineFilesInternal(List<string> inputFiles, string outputPath)
+    private GeoBoundingBox CombineFilesInternal(
+        List<string> inputFiles, string outputPath, string? overrideProjection = null)
     {
         GeoTiffReader.InitializeGdal();
 
@@ -111,7 +186,7 @@ public class GeoTiffCombiner
                     pixelSizeY = Math.Abs(geoTransform[5]);
                     firstTileWidth = dataset.RasterXSize;
                     firstTileHeight = dataset.RasterYSize;
-                    projection = dataset.GetProjection();
+                    projection = overrideProjection ?? dataset.GetProjection();
                     bandCount = dataset.RasterCount;
                     dataType = dataset.GetRasterBand(1).DataType;
                 }

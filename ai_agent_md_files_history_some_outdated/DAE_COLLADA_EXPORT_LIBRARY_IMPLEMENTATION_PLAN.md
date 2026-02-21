@@ -41,7 +41,7 @@ This plan describes the implementation of a new library `BeamNG.Procedural3D` fo
 
 ### Step 1.1: Create New Library Project
 
-**Goal**: Set up the new `BeamNG.Procedural3D` class library project.
+**Goal**: Set up the new `BeamNG.Procedural3D` class library project.<!--  -->
 
 **Tasks**:
 1. Create new .NET 9 class library project: `BeamNG.Procedural3D`

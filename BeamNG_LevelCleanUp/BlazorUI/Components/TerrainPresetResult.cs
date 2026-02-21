@@ -10,7 +10,8 @@ public enum HeightmapSourceType
 {
     Png,
     GeoTiffFile,
-    GeoTiffDirectory
+    GeoTiffDirectory,
+    XyzFile
 }
 
 /// <summary>
@@ -71,6 +72,16 @@ public class TerrainPresetResult
     /// </summary>
     public string? GeoTiffDirectory { get; set; }
 
+    /// <summary>
+    ///     Path to XYZ ASCII file (when HeightmapSourceType is XyzFile).
+    /// </summary>
+    public string? XyzPath { get; set; }
+
+    /// <summary>
+    ///     EPSG code for XYZ coordinate system (when HeightmapSourceType is XyzFile).
+    /// </summary>
+    public int? XyzEpsgCode { get; set; }
+
     // ========== NEW: Terrain Generation Options ==========
 
     /// <summary>
@@ -118,6 +129,41 @@ public class TerrainPresetResult
     ///     When false, tunnel ways are treated as normal roads (legacy behavior).
     /// </summary>
     public bool? ExcludeTunnelsFromTerrain { get; set; }
+
+    /// <summary>
+    ///     Whether to enable building generation.
+    /// </summary>
+    public bool? EnableBuildings { get; set; }
+
+    /// <summary>
+    ///     Whether to enable building clustering (merging nearby buildings into combined DAE files).
+    /// </summary>
+    public bool? EnableBuildingClustering { get; set; }
+
+    /// <summary>
+    ///     Grid cell size in meters for building clustering.
+    /// </summary>
+    public float? BuildingClusterCellSize { get; set; }
+
+    /// <summary>
+    ///     Maximum LOD level to include in building DAE files (0, 1, or 2).
+    /// </summary>
+    public int? MaxBuildingLodLevel { get; set; }
+
+    /// <summary>
+    ///     LOD bias multiplier for building exports.
+    /// </summary>
+    public float? BuildingLodBias { get; set; }
+
+    /// <summary>
+    ///     Pixel-size cull threshold for the nulldetail node in building DAE files.
+    /// </summary>
+    public int? NullDetailPixelSize { get; set; }
+
+    /// <summary>
+    ///     Selected building features at global level.
+    /// </summary>
+    public List<OsmFeatureReference>? SelectedBuildingFeatures { get; set; }
 
     /// <summary>
     ///     Terrain size in pixels (e.g., 1024, 2048, 4096).
@@ -225,12 +271,12 @@ public class RoadSmoothingSettings
     public float RoadWidthMeters { get; set; } = 8.0f;
     public float? RoadSurfaceWidthMeters { get; set; }
     public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
-    
+
     /// <summary>
-    /// Buffer distance beyond road edge protected from other roads' blend zones.
+    ///     Buffer distance beyond road edge protected from other roads' blend zones.
     /// </summary>
     public float RoadEdgeProtectionBufferMeters { get; set; } = 2.0f;
-    
+
     public bool EnableMaxSlopeConstraint { get; set; }
     public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;
@@ -264,7 +310,7 @@ public class SplineParametersSettings
     public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
     public float SimplifyTolerancePixels { get; set; } = 0.5f;
     public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
-    public float MinPathLengthPixels { get; set; } = 100.0f;
+    public float MinPathLengthPixels { get; set; } = 0f;
     public float JunctionAngleThreshold { get; set; } = 90.0f;
     public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
     public int SkeletonDilationRadius { get; set; }
@@ -272,9 +318,9 @@ public class SplineParametersSettings
     public bool UseButterworthFilter { get; set; } = true;
     public int ButterworthFilterOrder { get; set; } = 4;
     public float GlobalLevelingStrength { get; set; }
-    
+
     /// <summary>
-    /// Banking (superelevation) settings for curved roads.
+    ///     Banking (superelevation) settings for curved roads.
     /// </summary>
     public BankingSettingsPreset? Banking { get; set; }
 }
@@ -330,7 +376,7 @@ public class JunctionHarmonizationSettings
     public float RoundaboutConnectionRadiusMeters { get; set; } = 10.0f;
     public float RoundaboutOverlapToleranceMeters { get; set; } = 2.0f;
     public bool ForceUniformRoundaboutElevation { get; set; } = true;
-    public float? RoundaboutBlendDistanceMeters { get; set; } = 20.0f;
+    public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
 }
 
 /// <summary>

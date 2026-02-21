@@ -127,6 +127,13 @@ public class UnifiedCrossSection
     /// </summary>
     public float OriginalTerrainElevation { get; set; } = float.NaN;
 
+    /// <summary>
+    ///     Whether this cross-section was blended by the RoundaboutElevationHarmonizer.
+    ///     When true, Phase 3 endpoint tapering should NOT overwrite the elevation,
+    ///     because the roundabout harmonizer has already set a smooth transition.
+    /// </summary>
+    public bool IsRoundaboutBlended { get; set; }
+
     // ========================================
     // BANKING (SUPERELEVATION) PROPERTIES
     // ========================================

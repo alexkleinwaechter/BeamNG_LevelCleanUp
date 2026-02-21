@@ -10,6 +10,7 @@ using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
+using BeamNgTerrainPoc.Terrain.Building;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
 using SixLabors.ImageSharp;
@@ -131,7 +132,17 @@ public class TerrainGenerationOrchestrator
 
                 var generationSuccess = await creator.CreateTerrainFileAsync(outputPath, parameters);
 
-                return (Success: generationSuccess, Parameters: parameters);
+                // Building generation (after terrain is written so heightmap is available)
+                BuildingGenerationResult? buildingResult = null;
+                if (generationSuccess && state.EnableBuildings && state.SelectedBuildingFeatures.Any() &&
+                    osmQueryResult != null && effectiveBoundingBox != null)
+                {
+                    buildingResult = RunBuildingGeneration(
+                        osmQueryResult, effectiveBoundingBox, coordinateTransformer,
+                        state, parameters);
+                }
+
+                return (Success: generationSuccess, Parameters: parameters, BuildingResult: buildingResult);
             }).ConfigureAwait(false);
 
             success = result.Success;
@@ -228,6 +239,8 @@ public class TerrainGenerationOrchestrator
 
     /// <summary>
     ///     Writes terrain generation logs to files.
+    ///     Takes thread-safe snapshots of the message lists before writing,
+    ///     since the PubSub consumer may be adding messages concurrently.
     /// </summary>
     public void WriteGenerationLogs(TerrainGenerationState state)
     {
@@ -236,24 +249,30 @@ public class TerrainGenerationOrchestrator
 
         try
         {
-            if (state.Messages.Any())
+            // Snapshot the lists to avoid InvalidOperationException from concurrent modification
+            // The PubSub consumer on the UI thread may still be adding messages while we write.
+            var messagesSnapshot = state.Messages.ToList();
+            var warningsSnapshot = state.Warnings.ToList();
+            var errorsSnapshot = state.Errors.ToList();
+
+            if (messagesSnapshot.Count > 0)
             {
                 var messagesPath = Path.Combine(state.WorkingDirectory, "Log_TerrainGen.txt");
-                File.WriteAllLines(messagesPath, state.Messages);
+                File.WriteAllLines(messagesPath, messagesSnapshot);
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Terrain generation log written to: {Path.GetFileName(messagesPath)}");
             }
 
-            if (state.Warnings.Any())
+            if (warningsSnapshot.Count > 0)
             {
                 var warningsPath = Path.Combine(state.WorkingDirectory, "Log_TerrainGen_Warnings.txt");
-                File.WriteAllLines(warningsPath, state.Warnings);
+                File.WriteAllLines(warningsPath, warningsSnapshot);
             }
 
-            if (state.Errors.Any())
+            if (errorsSnapshot.Count > 0)
             {
                 var errorsPath = Path.Combine(state.WorkingDirectory, "Log_TerrainGen_Errors.txt");
-                File.WriteAllLines(errorsPath, state.Errors);
+                File.WriteAllLines(errorsPath, errorsSnapshot);
             }
         }
         catch (Exception ex)
@@ -274,6 +293,71 @@ public class TerrainGenerationOrchestrator
     }
 
     #region Private Helpers
+
+    /// <summary>
+    ///     Runs building generation after terrain creation.
+    ///     Parses OSM buildings, exports DAE meshes, deploys textures, and writes scene files.
+    /// </summary>
+    private static BuildingGenerationResult RunBuildingGeneration(
+        OsmQueryResult osmQueryResult,
+        GeoBoundingBox effectiveBoundingBox,
+        GeoCoordinateTransformer? coordinateTransformer,
+        TerrainGenerationState state,
+        TerrainCreationParameters parameters)
+    {
+        var selectedIds = state.GetSelectedBuildingFeatureIds();
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Generating buildings from OSM data ({selectedIds.Count} features selected)...");
+
+        var processor = new OsmGeometryProcessor();
+        if (coordinateTransformer != null)
+            processor.SetCoordinateTransformer(coordinateTransformer);
+
+        var buildingOrchestrator = new BuildingGenerationOrchestrator();
+        var terrainFilePath = state.GetOutputPath();
+
+        var clusterCellSize = state.EnableBuildingClustering ? state.BuildingClusterCellSize : 0f;
+
+        var result = buildingOrchestrator.GenerateBuildings(
+            osmQueryResult,
+            effectiveBoundingBox,
+            processor,
+            state.TerrainSize,
+            state.MetersPerPixel,
+            parameters.MaxHeight,
+            parameters.TerrainBaseHeight,
+            terrainFilePath,
+            state.WorkingDirectory,
+            state.LevelName,
+            selectedIds,
+            clusterCellSize,
+            state.MaxBuildingLodLevel,
+            state.BuildingLodBias,
+            state.NullDetailPixelSize);
+
+        if (result.Success)
+        {
+            var clusterInfo = result.ClustersCreated > 0
+                ? $" in {result.ClustersCreated} clusters"
+                : "";
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Buildings generated: {result.BuildingsExported} buildings{clusterInfo} " +
+                $"({result.TotalVertices:N0} verts, {result.TotalTriangles:N0} tris), " +
+                $"{result.TexturesDeployed} textures, {result.MaterialsWritten} materials");
+        }
+        else if (result.BuildingsParsed == 0)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "No buildings found in OSM data for this area");
+        }
+        else
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Building generation failed: {result.ErrorMessage}");
+        }
+
+        return result;
+    }
 
     /// <summary>
     ///     Clears all files and subdirectories in the debug folder before starting a new generation.
@@ -599,7 +683,8 @@ public class TerrainGenerationOrchestrator
                     interpolationType,
                     minPathLengthMeters,
                     excludeBridges: state.ExcludeBridgesFromTerrain,
-                    excludeTunnels: state.ExcludeTunnelsFromTerrain);
+                    excludeTunnels: state.ExcludeTunnelsFromTerrain,
+                    routeRelations: osmQueryResult.RouteRelations);
             }
 
             // Log to file only - per-material detail
@@ -724,6 +809,22 @@ public class TerrainGenerationOrchestrator
                         "No cached combined GeoTIFF - will combine tiles during generation");
                 }
 
+                ApplyCropSettings(state, parameters);
+                break;
+
+            case HeightmapSourceType.XyzFile:
+                if (state.XyzFilePaths is { Length: > 1 })
+                {
+                    parameters.XyzFilePaths = state.XyzFilePaths;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Using {state.XyzFilePaths.Length} XYZ tiles — will combine during generation");
+                }
+                else
+                {
+                    parameters.XyzPath = state.XyzPath;
+                }
+
+                parameters.XyzEpsgCode = state.XyzEpsgCode;
                 ApplyCropSettings(state, parameters);
                 break;
         }

@@ -1,5 +1,6 @@
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.State;
@@ -87,6 +88,51 @@ public class TerrainGenerationState
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
     // ========================================
+    // BUILDING GENERATION
+    // ========================================
+    public bool EnableBuildings { get; set; }
+    public List<OsmFeatureSelection> SelectedBuildingFeatures { get; set; } = new();
+
+    /// <summary>
+    ///     When true, nearby buildings are merged into combined DAE files to reduce draw calls.
+    /// </summary>
+    public bool EnableBuildingClustering { get; set; }
+
+    /// <summary>
+    ///     Grid cell size in meters for building clustering.
+    ///     All buildings whose centroid falls within the same grid cell are merged into one DAE.
+    ///     Larger values = fewer draw calls but coarser LOD grouping.
+    ///     Recommended: 100-200m.
+    /// </summary>
+    public float BuildingClusterCellSize { get; set; } = 128f;
+
+    /// <summary>
+    ///     Maximum LOD level to include in exported building DAE files.
+    ///     0 = LOD0 only (walls + roof, no windows — fastest, lowest quality)
+    ///     1 = LOD0 + LOD1 (adds textured window quads)
+    ///     2 = LOD0 + LOD1 + LOD2 (adds full 3D windows, doors, frames — highest quality)
+    /// </summary>
+    public int MaxBuildingLodLevel { get; set; } = 2;
+
+    /// <summary>
+    ///     LOD bias multiplier for building exports. Default 1.0.
+    ///     Controls when LOD transitions occur relative to camera distance.
+    ///     Values &gt; 1 = detail drops sooner (better performance).
+    ///     Values &lt; 1 = detail retained longer (better visuals at distance).
+    /// </summary>
+    public float BuildingLodBias { get; set; } = 1.0f;
+
+    /// <summary>
+    ///     Pixel-size cull threshold for the nulldetail node in building DAE files.
+    ///     When the object is smaller than this many pixels on screen, it is not rendered.
+    ///     0 = no nulldetail node (object always rendered). Default 0.
+    /// </summary>
+    public int NullDetailPixelSize { get; set; }
+
+    public HashSet<long> GetSelectedBuildingFeatureIds() =>
+        SelectedBuildingFeatures.Select(f => f.FeatureId).ToHashSet();
+
+    // ========================================
     // HEIGHTMAP SOURCE
     // ========================================
 
@@ -94,6 +140,10 @@ public class TerrainGenerationState
     public string? HeightmapPath { get; set; }
     public string? GeoTiffPath { get; set; }
     public string? GeoTiffDirectory { get; set; }
+    public string? XyzPath { get; set; }
+    public string[]? XyzFilePaths { get; set; }
+    public int XyzEpsgCode { get; set; } = 25832;
+    public int? XyzDetectedEpsg { get; set; }
 
     // ========================================
     // GEOTIFF METADATA
@@ -207,6 +257,9 @@ public class TerrainGenerationState
             HeightmapSourceType.GeoTiffFile => !string.IsNullOrEmpty(GeoTiffPath) && File.Exists(GeoTiffPath),
             HeightmapSourceType.GeoTiffDirectory => !string.IsNullOrEmpty(GeoTiffDirectory) &&
                                                     Directory.Exists(GeoTiffDirectory),
+            HeightmapSourceType.XyzFile => ((!string.IsNullOrEmpty(XyzPath) && File.Exists(XyzPath)) ||
+                                            (XyzFilePaths is { Length: > 0 })) &&
+                                           XyzEpsgCode > 0,
             _ => false
         };
 
@@ -234,6 +287,7 @@ public class TerrainGenerationState
             HeightmapSourceType.Png => "16-bit grayscale PNG heightmap",
             HeightmapSourceType.GeoTiffFile => "Single GeoTIFF elevation file with geographic coordinates",
             HeightmapSourceType.GeoTiffDirectory => "Directory with multiple GeoTIFF tiles to combine",
+            HeightmapSourceType.XyzFile => "XYZ ASCII elevation file (georeferenced grid data)",
             _ => "Unknown"
         };
     }
@@ -315,10 +369,20 @@ public class TerrainGenerationState
         GlobalJunctionDetectionRadiusMeters = 5.0f;
         GlobalJunctionBlendDistanceMeters = 30.0f;
         FlipMaterialProcessingOrder = false;
+        EnableBuildings = false;
+        EnableBuildingClustering = false;
+        BuildingClusterCellSize = 128f;
+        MaxBuildingLodLevel = 2;
+        BuildingLodBias = 1.0f;
+        SelectedBuildingFeatures = new List<OsmFeatureSelection>();
 
         HeightmapSourceType = HeightmapSourceType.Png;
         GeoTiffPath = null;
         GeoTiffDirectory = null;
+        XyzPath = null;
+        XyzFilePaths = null;
+        XyzEpsgCode = 25832;
+        XyzDetectedEpsg = null;
         CropAnchor = CropAnchor.Center;
         CropResult = null;
         CanFetchOsmData = false;

@@ -86,8 +86,7 @@ public class JunctionElevationHarmonizer
         TerrainLogger.Info("=== JUNCTION ELEVATION HARMONIZATION ===");
         TerrainLogger.Info($"  Junction detection radius: {junctionParams.JunctionDetectionRadiusMeters}m");
         TerrainLogger.Info($"  Blend distance: {junctionParams.JunctionBlendDistanceMeters}m");
-        TerrainLogger.Info($"  Endpoint taper enabled: {junctionParams.EnableEndpointTaper}");
-        TerrainLogger.Info($"  Endpoint terrain blend strength: {junctionParams.EndpointTerrainBlendStrength:P0}");
+        TerrainLogger.Info($"  Endpoint taper: always enabled (auto-computed from road width)");
         
         // Capture pre-harmonization elevations for comparison
         var preHarmonizationElevations = new Dictionary<int, float>();
@@ -112,12 +111,8 @@ public class JunctionElevationHarmonizer
         // Step 4: Propagate junction constraints back along paths
         int propagatedCount = PropagateJunctionConstraints(geometry, junctions, junctionParams);
         
-        // Step 5: Apply endpoint tapering for isolated endpoints
-        int taperedCount = 0;
-        if (junctionParams.EnableEndpointTaper)
-        {
-            taperedCount = ApplyEndpointTapering(geometry, junctions, heightMap, metersPerPixel, junctionParams);
-        }
+        // Step 5: Apply endpoint tapering for isolated endpoints (always enabled)
+        int taperedCount = ApplyEndpointTapering(geometry, junctions, heightMap, metersPerPixel, junctionParams);
         
         // Step 6: Calculate and log elevation changes
         int totalModified = 0;
@@ -398,9 +393,8 @@ public class JunctionElevationHarmonizer
                 float terrainElevation = heightMap[py, px];
                 float roadElevation = junction.CrossSections.Average(cs => cs.TargetElevation);
                 
-                // Blend: mostly road elevation with slight pull toward terrain
-                junction.HarmonizedElevation = roadElevation * (1.0f - junctionParams.EndpointTerrainBlendStrength) 
-                                              + terrainElevation * junctionParams.EndpointTerrainBlendStrength;
+                // Isolated endpoints always blend fully to terrain
+                junction.HarmonizedElevation = terrainElevation;
             }
             else if (junction.CrossSections.Count == 2)
             {
@@ -546,7 +540,9 @@ public class JunctionElevationHarmonizer
         float metersPerPixel,
         JunctionHarmonizationParameters junctionParams)
     {
-        float taperDistance = junctionParams.EndpointTaperDistanceMeters;
+        // Auto-compute taper distance from road width (this legacy harmonizer doesn't have per-spline info,
+        // so use a reasonable default)
+        float taperDistance = 30.0f;
         int mapHeight = heightMap.GetLength(0);
         int mapWidth = heightMap.GetLength(1);
         
@@ -609,11 +605,8 @@ public class JunctionElevationHarmonizer
                     float t = dist / taperDistance;
                     float blend = t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
                     
-                    // Blend: at endpoint (t=0) = blend toward terrain; at taper distance (t=1) = original
-                    float targetAtEndpoint = originalElevation * (1.0f - junctionParams.EndpointTerrainBlendStrength) 
-                                            + terrainElevation * junctionParams.EndpointTerrainBlendStrength;
-                    
-                    cs.TargetElevation = targetAtEndpoint * (1.0f - blend) + originalElevation * blend;
+                    // Blend toward terrain at endpoint, back to road elevation at taper distance
+                    cs.TargetElevation = terrainElevation * (1.0f - blend) + originalElevation * blend;
                     
                     if (MathF.Abs(cs.TargetElevation - originalElevation) > 0.001f)
                         taperedCount++;
@@ -1192,8 +1185,8 @@ public class JunctionElevationHarmonizer
         image.SaveAsPng(filePath);
         
         TerrainLogger.Info($"  Exported slope comparison: {filePath}");
-        TerrainLogger.Info($"  Slope range: 0° (green) to {slopeRange:F1}° (magenta)");
-        TerrainLogger.Info($"  Max slope found: {maxSlope:F2}°");
+        TerrainLogger.Info($"  Slope range: 0Â° (green) to {slopeRange:F1}Â° (magenta)");
+        TerrainLogger.Info($"  Max slope found: {maxSlope:F2}Â°");
     }
     
     /// <summary>

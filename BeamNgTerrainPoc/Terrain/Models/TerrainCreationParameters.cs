@@ -136,9 +136,33 @@ public class TerrainCreationParameters
     ///     Path to a directory containing multiple GeoTIFF tiles to combine.
     ///     When set, all .tif, .tiff, and .geotiff files in the directory will be combined.
     ///     Use this for terrain data that spans multiple tiles (e.g., SRTM tiles).
-    ///     Priority: HeightmapImage > HeightmapPath > GeoTiffPath > GeoTiffDirectory
+    ///     Priority: HeightmapImage > HeightmapPath > GeoTiffPath > GeoTiffDirectory > XyzPath
     /// </summary>
     public string? GeoTiffDirectory { get; set; }
+
+    /// <summary>
+    ///     Path to an XYZ ASCII elevation data file.
+    ///     GDAL 3.10+ reads this format natively (space/tab/semicolon separated X Y Z columns).
+    ///     Requires XyzEpsgCode to be set for coordinate transformation (XYZ files lack embedded CRS).
+    ///     Priority: HeightmapImage > HeightmapPath > GeoTiffPath > GeoTiffDirectory > XyzPath
+    /// </summary>
+    public string? XyzPath { get; set; }
+
+    /// <summary>
+    ///     Paths to multiple XYZ ASCII elevation tiles to combine.
+    ///     Uses GeoTiffCombiner to stitch tiles into a single dataset before heightmap generation.
+    ///     Priority: HeightmapImage > HeightmapPath > GeoTiffPath > GeoTiffDirectory > XyzFilePaths > XyzPath
+    /// </summary>
+    public string[]? XyzFilePaths { get; set; }
+
+    /// <summary>
+    ///     EPSG code for the coordinate reference system of the XYZ file(s).
+    ///     Required when using XyzPath or XyzFilePaths. Common values:
+    ///     - 25832: ETRS89 / UTM zone 32N (Germany, most common)
+    ///     - 25833: ETRS89 / UTM zone 33N (Eastern Germany)
+    ///     - 32632: WGS 84 / UTM zone 32N
+    /// </summary>
+    public int XyzEpsgCode { get; set; } = 25832;
 
     /// <summary>
     ///     Geographic bounding box of the terrain.

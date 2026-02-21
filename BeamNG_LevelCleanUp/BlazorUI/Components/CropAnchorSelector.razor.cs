@@ -95,6 +95,12 @@ public partial class CropAnchorSelector
     public float MetersPerPixel { get; set; } = 1.0f;
 
     /// <summary>
+    ///     Callback when meters per pixel changes (e.g., from bbox input in fullscreen dialog).
+    /// </summary>
+    [Parameter]
+    public EventCallback<float> MetersPerPixelChanged { get; set; }
+
+    /// <summary>
     ///     Native pixel size of the GeoTIFF source in meters.
     ///     If the source is 30m/px and we want 1m/px output, we need to select a smaller area.
     /// </summary>
@@ -641,6 +647,15 @@ public partial class CropAnchorSelector
 
         if (result is { Canceled: false, Data: CropDialogResult cropResult })
         {
+            // Propagate meters per pixel change to parent if it was modified in the dialog
+            if (cropResult.MetersPerPixel.HasValue &&
+                Math.Abs(cropResult.MetersPerPixel.Value - MetersPerPixel) > 0.05f)
+            {
+                MetersPerPixel = cropResult.MetersPerPixel.Value;
+                _previousMetersPerPixel = MetersPerPixel;
+                await MetersPerPixelChanged.InvokeAsync(MetersPerPixel);
+            }
+
             // Propagate terrain size change to parent if it was modified in the dialog
             if (cropResult.TargetSize > 0 && cropResult.TargetSize != TargetSize)
             {

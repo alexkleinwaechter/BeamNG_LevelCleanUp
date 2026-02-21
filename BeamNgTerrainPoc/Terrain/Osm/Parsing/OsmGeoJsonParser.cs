@@ -37,9 +37,22 @@ public class OsmGeoJsonParser
 
             int wayCount = 0;
             int relationCount = 0;
+            int routeRelationCount = 0;
 
             foreach (var element in elements.EnumerateArray())
             {
+                // Route relations (type=route, route=road) are parsed into a separate list.
+                // They define logical road routes (e.g., "B51") by ordering member ways,
+                // NOT polygon geometry. Parsing them as features would incorrectly produce
+                // polygon/ring geometry from what are actually linear route definitions.
+                if (TryParseRouteRelation(element, out var routeRelation))
+                {
+                    result.RouteRelations.Add(routeRelation);
+                    routeRelationCount++;
+                    relationCount++;
+                    continue;
+                }
+
                 var feature = ParseElement(element);
                 if (feature != null)
                 {
@@ -55,7 +68,8 @@ public class OsmGeoJsonParser
             result.WayCount = wayCount;
             result.RelationCount = relationCount;
 
-            TerrainLogger.Info($"Parsed Overpass JSON: {wayCount} ways, {relationCount} relations, {result.Features.Count} total features");
+            var routeInfo = routeRelationCount > 0 ? $", {routeRelationCount} route relations" : "";
+            TerrainLogger.Info($"Parsed Overpass JSON: {wayCount} ways, {relationCount} relations{routeInfo}, {result.Features.Count} total features");
         }
         catch (JsonException ex)
         {
@@ -66,12 +80,92 @@ public class OsmGeoJsonParser
         return result;
     }
 
+    /// <summary>
+    /// Attempts to parse an element as a route relation (type=route, route=road).
+    /// Route relations define ordered sequences of ways forming a named road (e.g., "B51").
+    /// They are stored separately from features because they represent metadata about way
+    /// ordering, not independent geometry.
+    /// 
+    /// Returns true if the element was a route relation (even if it had no valid members).
+    /// </summary>
+    private bool TryParseRouteRelation(JsonElement element, out RouteRelation routeRelation)
+    {
+        routeRelation = null!;
+
+        // Only relations can be route relations
+        if (!element.TryGetProperty("type", out var typeEl) || typeEl.GetString() != "relation")
+            return false;
+
+        // Must have tags with type=route and route=road
+        if (!element.TryGetProperty("tags", out var tagsEl))
+            return false;
+
+        var tags = new Dictionary<string, string>();
+        foreach (var tag in tagsEl.EnumerateObject())
+            tags[tag.Name] = tag.Value.GetString() ?? "";
+
+        if (!tags.TryGetValue("type", out var relType) || relType != "route")
+            return false;
+        if (!tags.TryGetValue("route", out var routeType) || routeType != "road")
+            return false;
+
+        // This is a route=road relation — parse it
+        if (!element.TryGetProperty("id", out var idEl))
+            return false;
+
+        var relationId = idEl.GetInt64();
+        var members = new List<RouteRelationMember>();
+
+        if (element.TryGetProperty("members", out var membersEl))
+        {
+            foreach (var member in membersEl.EnumerateArray())
+            {
+                // Only include way members (nodes and relations are not relevant for road assembly)
+                if (!member.TryGetProperty("type", out var memberTypeEl) || memberTypeEl.GetString() != "way")
+                    continue;
+
+                if (!member.TryGetProperty("ref", out var refEl))
+                    continue;
+
+                var wayId = refEl.GetInt64();
+                var role = member.TryGetProperty("role", out var roleEl) ? (roleEl.GetString() ?? "") : "";
+
+                members.Add(new RouteRelationMember
+                {
+                    WayId = wayId,
+                    Role = role
+                });
+            }
+        }
+
+        routeRelation = new RouteRelation
+        {
+            RelationId = relationId,
+            Tags = tags,
+            Members = members
+        };
+
+        if (members.Count > 0)
+        {
+            var label = routeRelation.Ref ?? routeRelation.Name ?? $"#{relationId}";
+            TerrainLogger.Detail($"Parsed route relation {label}: {members.Count} way members");
+        }
+
+        return true;
+    }
+
     private OsmFeature? ParseElement(JsonElement element)
     {
         if (!element.TryGetProperty("type", out var typeEl))
             return null;
 
         var type = typeEl.GetString();
+
+        // Handle node elements (e.g., entrance=* or door=* nodes)
+        // Overpass returns nodes with lat/lon directly on the element (not in a geometry array)
+        if (type == "node")
+            return ParseNodeElement(element);
+
         if (type != "way" && type != "relation")
             return null;
 
@@ -87,6 +181,16 @@ public class OsmGeoJsonParser
             foreach (var tag in tagsEl.EnumerateObject())
             {
                 tags[tag.Name] = tag.Value.GetString() ?? "";
+            }
+        }
+
+        // Parse node IDs (only present for ways, parallel to geometry array)
+        var nodeIds = new List<long>();
+        if (type == "way" && element.TryGetProperty("nodes", out var nodesEl))
+        {
+            foreach (var nodeEl in nodesEl.EnumerateArray())
+            {
+                nodeIds.Add(nodeEl.GetInt64());
             }
         }
 
@@ -135,6 +239,13 @@ public class OsmGeoJsonParser
         if (coordinates.Count < 2)
             return null;
 
+        // Validate node IDs match geometry for ways
+        if (type == "way" && nodeIds.Count > 0 && nodeIds.Count != coordinates.Count)
+        {
+            TerrainLogger.Warning($"Way {id}: node ID count ({nodeIds.Count}) does not match geometry count ({coordinates.Count}). Node IDs will be discarded.");
+            nodeIds.Clear();
+        }
+
         // Determine geometry type from tags and closure
         var geometryType = DetermineGeometryType(tags, coordinates, isRelation: false);
 
@@ -144,14 +255,53 @@ public class OsmGeoJsonParser
             FeatureType = type == "way" ? OsmFeatureType.Way : OsmFeatureType.Relation,
             GeometryType = geometryType,
             Coordinates = coordinates,
-            Tags = tags
+            Tags = tags,
+            NodeIds = nodeIds
+        };
+    }
+
+    /// <summary>
+    /// Parses a node element from the Overpass API response.
+    /// Nodes have lat/lon directly on the element (not in a geometry array).
+    /// Used for entrance=* and door=* nodes on building outlines.
+    /// </summary>
+    private OsmFeature? ParseNodeElement(JsonElement element)
+    {
+        if (!element.TryGetProperty("id", out var idEl))
+            return null;
+
+        var id = idEl.GetInt64();
+
+        // Node lat/lon are directly on the element
+        if (!element.TryGetProperty("lat", out var latEl) ||
+            !element.TryGetProperty("lon", out var lonEl))
+            return null;
+
+        var lat = latEl.GetDouble();
+        var lon = lonEl.GetDouble();
+
+        var tags = new Dictionary<string, string>();
+        if (element.TryGetProperty("tags", out var tagsEl))
+        {
+            foreach (var tag in tagsEl.EnumerateObject())
+                tags[tag.Name] = tag.Value.GetString() ?? "";
+        }
+
+        return new OsmFeature
+        {
+            Id = id,
+            FeatureType = OsmFeatureType.Node,
+            GeometryType = OsmGeometryType.Point,
+            Coordinates = new List<GeoCoordinate> { new(lon, lat) },
+            Tags = tags,
+            NodeIds = new List<long> { id }
         };
     }
 
     /// <summary>
     /// Parses relation members to extract geometry.
     /// Returns outer ring coordinates, inner rings (holes), and additional parts (disjoint polygons).
-    /// 
+    ///
     /// Handles the common case where multipolygon rings are split across multiple ways
     /// by assembling them into complete rings based on shared endpoints.
     /// </summary>

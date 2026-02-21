@@ -74,6 +74,14 @@ public class OsmFeature
     public Dictionary<string, string> Tags { get; set; } = new();
 
     /// <summary>
+    /// OSM node IDs for each coordinate in the Coordinates list.
+    /// Parallel to Coordinates — NodeIds[i] is the OSM node ID for Coordinates[i].
+    /// Only populated for Way features parsed from Overpass API responses.
+    /// Empty for relations or features without node ID data.
+    /// </summary>
+    public List<long> NodeIds { get; set; } = new();
+
+    /// <summary>
     /// For multi-polygons, stores inner rings (holes).
     /// The main Coordinates list is the outer ring.
     /// </summary>
