@@ -60,10 +60,10 @@ public class ExteriorBuildingWall
     /// No separate glass builder at LOD1 — TexturedWindow uses a single textured quad.
     /// </summary>
     /// <param name="wallBuilder">Builder for the wall mesh (with window holes).</param>
-    /// <param name="windowBuilder">Builder for window quad mesh (textured windows).</param>
+    /// <param name="getElementBuilder">Factory that returns a MeshBuilder for a given material key.</param>
     /// <param name="textureScale">Texture scale for wall material.</param>
     /// <param name="building">Building data for level count, heights, etc.</param>
-    public void RenderLod1(MeshBuilder wallBuilder, MeshBuilder windowBuilder,
+    public void RenderLod1(MeshBuilder wallBuilder, Func<string, MeshBuilder> getElementBuilder,
         Vector2 textureScale, BuildingData building)
     {
         if (!building.HasWindows || _wallSurface.Length < 1.0f)
@@ -73,40 +73,31 @@ public class ExteriorBuildingWall
         }
 
         PlaceDefaultWindows(building, useGeometryWindows: false);
-        _wallSurface.RenderWithElements(wallBuilder, windowBuilder, null, textureScale);
+        _wallSurface.RenderWithElements(wallBuilder, getElementBuilder, null, textureScale);
     }
 
     /// <summary>
-    /// Renders this wall at LOD2: wall surface with 3D geometry windows.
-    /// Places GeometryWindow instances and optionally a door.
+    /// Renders this wall at LOD2: wall surface with 3D geometry windows and any pre-placed doors.
+    /// Windows are placed automatically; doors must be placed before calling this method
+    /// (via PlaceDefaultDoor or PlaceDefaultGarageDoors).
     /// Port of OSM2World: frame geometry → WINDOW_FRAME, glass panes → WINDOW_GLASS.
     /// </summary>
     /// <param name="wallBuilder">Builder for the wall mesh (with holes).</param>
-    /// <param name="frameBuilder">Builder for window frame geometry (WINDOW_FRAME material).</param>
+    /// <param name="getElementBuilder">Factory that returns a MeshBuilder for a given material key.</param>
     /// <param name="glassBuilder">Builder for glass pane geometry (WINDOW_GLASS material).</param>
     /// <param name="textureScale">Texture scale for wall material.</param>
     /// <param name="building">Building data for level count, heights, etc.</param>
-    /// <param name="placeDoor">If true, places a default door on this wall.</param>
-    public void RenderLod2(MeshBuilder wallBuilder, MeshBuilder frameBuilder, MeshBuilder? glassBuilder,
-        Vector2 textureScale, BuildingData building, bool placeDoor = false)
+    public void RenderLod2(MeshBuilder wallBuilder, Func<string, MeshBuilder> getElementBuilder, MeshBuilder? glassBuilder,
+        Vector2 textureScale, BuildingData building)
     {
-        bool hasElements = false;
-
         if (building.HasWindows && _wallSurface.Length >= 1.0f)
         {
             PlaceDefaultWindows(building, useGeometryWindows: true);
-            hasElements = true;
         }
 
-        if (placeDoor && _wallSurface.Length >= 1.0f)
+        if (_wallSurface.Elements.Count > 0)
         {
-            PlaceDefaultDoor(building);
-            hasElements = true;
-        }
-
-        if (hasElements)
-        {
-            _wallSurface.RenderWithElements(wallBuilder, frameBuilder, glassBuilder, textureScale);
+            _wallSurface.RenderWithElements(wallBuilder, getElementBuilder, glassBuilder, textureScale);
         }
         else
         {
@@ -178,7 +169,7 @@ public class ExteriorBuildingWall
     /// Places a default door at the center bottom of the wall.
     /// Port of Java ExteriorBuildingWall lines 392-425 (default door placement).
     /// </summary>
-    private void PlaceDefaultDoor(BuildingData building)
+    public void PlaceDefaultDoor(BuildingData building)
     {
         var doorParams = DoorParameters.FromBuildingType(building.BuildingType);
 
@@ -193,6 +184,73 @@ public class ExteriorBuildingWall
 
         var door = new Door(new Vector2(doorX, doorY), doorParams);
         _wallSurface.AddElementIfSpaceFree(door);
+    }
+
+    /// <summary>
+    /// Places multiple garage doors evenly distributed across the wall.
+    /// Port of OSM2World's ExteriorBuildingWall.placeDefaultGarageDoors() (lines 446-463).
+    /// Door spacing: 1.25 × door width. Number of doors: round(wallLength / doorSpacing).
+    /// </summary>
+    public void PlaceDefaultGarageDoors(BuildingData building)
+    {
+        var doorParams = DoorParameters.FromBuildingType(building.BuildingType);
+        float doorDistance = 1.25f * doorParams.Width; // 3.125m for standard 2.5m garage door
+        int numDoors = Math.Max(1, (int)MathF.Round(_wallSurface.Length / doorDistance));
+
+        for (int i = 0; i < numDoors; i++)
+        {
+            float doorX = _wallSurface.Length / numDoors * (i + 0.5f);
+            float doorY = building.MinHeight;
+            var door = new Door(new Vector2(doorX, doorY), doorParams);
+            _wallSurface.AddElementIfSpaceFree(door);
+        }
+    }
+
+    /// <summary>
+    /// Attempts to place a door at an entrance position if it falls on this wall's footprint edge.
+    /// Port of OSM2World ExteriorBuildingWall.java lines 257-278: for each node on the wall,
+    /// if isDoorNode(node), place a door at points.offsetOf(node.getPos()).
+    /// Returns true if a door was placed on this wall.
+    /// </summary>
+    /// <param name="entrancePos">Entrance position in building local coordinates.</param>
+    /// <param name="building">Building data for door parameters.</param>
+    /// <param name="tolerance">Distance tolerance for matching entrance position to wall edge (meters).</param>
+    public bool TryPlaceDoorAtEntrance(Vector2 entrancePos, BuildingData building, float tolerance = 0.5f)
+    {
+        if (_wallSurface.Length < 0.5f) return false;
+
+        var edgeDir = _footprintEnd - _footprintStart;
+        float edgeLen = edgeDir.Length();
+        if (edgeLen < 0.01f) return false;
+        var edgeNorm = edgeDir / edgeLen;
+
+        // Project entrance position onto this wall's footprint edge
+        var toPoint = entrancePos - _footprintStart;
+        float t = Vector2.Dot(toPoint, edgeNorm);
+
+        // Check if projection falls within the wall segment
+        if (t < -tolerance || t > edgeLen + tolerance) return false;
+
+        // Check perpendicular distance to the edge
+        float perpDist = MathF.Abs(toPoint.X * edgeNorm.Y - toPoint.Y * edgeNorm.X);
+        if (perpDist > tolerance) return false;
+
+        // Entrance position is on this wall — place a door
+        float wallX = MathF.Max(0, MathF.Min(_wallSurface.Length, t));
+
+        var doorParams = DoorParameters.FromBuildingType(building.BuildingType);
+
+        // Check if door fits
+        float halfW = doorParams.Width / 2f;
+        if (wallX - halfW < 0.05f) wallX = halfW + 0.05f;
+        if (wallX + halfW > _wallSurface.Length - 0.05f) wallX = _wallSurface.Length - halfW - 0.05f;
+        if (wallX - halfW < 0 || wallX + halfW > _wallSurface.Length) return false;
+        if (doorParams.Height > building.WallHeight + 0.1f) return false;
+
+        float doorY = building.MinHeight;
+        var door = new Door(new Vector2(wallX, doorY), doorParams);
+        _wallSurface.AddElementIfSpaceFree(door);
+        return true;
     }
 
     /// <summary>

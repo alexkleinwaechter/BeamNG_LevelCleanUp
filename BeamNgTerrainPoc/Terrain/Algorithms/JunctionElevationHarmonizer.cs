@@ -1185,8 +1185,8 @@ public class JunctionElevationHarmonizer
         image.SaveAsPng(filePath);
         
         TerrainLogger.Info($"  Exported slope comparison: {filePath}");
-        TerrainLogger.Info($"  Slope range: 0� (green) to {slopeRange:F1}� (magenta)");
-        TerrainLogger.Info($"  Max slope found: {maxSlope:F2}�");
+        TerrainLogger.Info($"  Slope range: 0° (green) to {slopeRange:F1}° (magenta)");
+        TerrainLogger.Info($"  Max slope found: {maxSlope:F2}°");
     }
     
     /// <summary>

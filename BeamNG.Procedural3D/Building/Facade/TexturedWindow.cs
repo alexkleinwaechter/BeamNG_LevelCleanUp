@@ -47,6 +47,8 @@ public class TexturedWindow : IWallElement
 
     public float InsetDistance => Depth;
 
+    public string MaterialKey => "WINDOW_SINGLE";
+
     /// <summary>
     /// Renders a single textured quad at inset depth.
     /// Port of TexturedWindow.renderTo() in Java.

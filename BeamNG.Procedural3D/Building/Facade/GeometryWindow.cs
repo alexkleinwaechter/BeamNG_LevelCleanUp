@@ -106,6 +106,8 @@ public class GeometryWindow : IWallElement
 
     public float InsetDistance => Depth - OuterFrameThickness;
 
+    public string MaterialKey => "WINDOW_FRAME";
+
     /// <summary>
     /// Renders the full window geometry: pane, outer frame, inner frames.
     /// Port of GeometryWindow.renderTo() lines 256-342.

@@ -124,8 +124,17 @@ public class BuildingGenerationOrchestrator
             var sceneDir = Path.Combine(workingDirectory, "main", "MissionGroup", "MT_buildings");
             CleanBuildingOutputDirectories(shapesDir, sceneDir);
 
-            // 5. Export DAE files
+            // 5. Deploy textures (before DAE export so the PoT rename map is available for texture references)
+            // Uses base materials only — color variants share the same texture files.
             var materialLibrary = new BuildingMaterialLibrary();
+            var baseMaterials = materialLibrary.GetUsedMaterials(buildings);
+            var textureDir = Path.Combine(shapesDir, "textures");
+            result.TexturesDeployed = materialLibrary.DeployTextures(baseMaterials, textureDir);
+
+            // 6. Export DAE files (uses materialLibrary.GetDeployedFileName for texture path references)
+            // NOTE: The exporter mutates part.WallMaterial to color variant keys (e.g., "BUILDING_DEFAULT_08430e")
+            // via GetOrCreateColorVariant(). This is why GetUsedMaterials must be called AGAIN after export
+            // to collect variant materials for materials.json.
             var daeExporter = new BuildingDaeExporter(materialLibrary)
             {
                 MaxLodLevel = maxLodLevel,
@@ -162,12 +171,12 @@ public class BuildingGenerationOrchestrator
                 return result;
             }
 
-            // 6. Deploy textures
-            var usedMaterials = materialLibrary.GetUsedMaterials(buildings);
-            var textureDir = Path.Combine(shapesDir, "textures");
-            result.TexturesDeployed = materialLibrary.DeployTextures(usedMaterials, textureDir);
-
             // 7. Write scene files
+            // Re-compute used materials AFTER export to include color variants created by
+            // the clustered exporter (e.g., mtb_plaster_08430e). The exporter mutates
+            // part.WallMaterial to variant keys, so GetUsedMaterials now picks them up.
+            var usedMaterials = materialLibrary.GetUsedMaterials(buildings);
+
             var sceneWriter = new BuildingSceneWriter();
 
             // Ensure the "Buildings" SimGroup is registered in the parent items.level.json (add if not exists)
@@ -187,10 +196,11 @@ public class BuildingGenerationOrchestrator
                 result.SceneItemsWritten = sceneWriter.WriteSceneItems(buildings, itemsPath, shapePath);
             }
 
-            // Material definitions
+            // Material definitions (with PoT filename resolution)
             var materialsPath = Path.Combine(shapesDir, "main.materials.json");
             var texturePath = $"/levels/{levelName}/art/shapes/MT_buildings/textures/";
-            result.MaterialsWritten = sceneWriter.WriteMaterials(usedMaterials, materialsPath, texturePath);
+            result.MaterialsWritten = sceneWriter.WriteMaterials(
+                usedMaterials, materialsPath, texturePath, materialLibrary.GetDeployedFileName);
 
             result.Success = true;
         }

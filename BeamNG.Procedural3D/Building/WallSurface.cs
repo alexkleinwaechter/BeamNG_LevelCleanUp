@@ -169,10 +169,11 @@ public class WallSurface
     /// Also renders inset reveal/jamb faces around each element hole.
     /// </summary>
     /// <param name="wallBuilder">Mesh builder for the wall surface (with holes).</param>
-    /// <param name="elementBuilder">Mesh builder for element-specific geometry (frames, doors).</param>
+    /// <param name="getElementBuilder">Factory that returns a MeshBuilder for a given material key.
+    /// Each element uses its MaterialKey to get the correct builder.</param>
     /// <param name="glassBuilder">Mesh builder for glass pane geometry. Null for LOD levels without separate glass.</param>
     /// <param name="textureScale">Texture scale for the wall material UVs.</param>
-    public void RenderWithElements(MeshBuilder wallBuilder, MeshBuilder elementBuilder, MeshBuilder? glassBuilder, Vector2 textureScale)
+    public void RenderWithElements(MeshBuilder wallBuilder, Func<string, MeshBuilder> getElementBuilder, MeshBuilder? glassBuilder, Vector2 textureScale)
     {
         if (_wallOutline.Count < 3) return;
 
@@ -224,7 +225,7 @@ public class WallSurface
             }
 
             // Render element geometry (windows, doors, etc.)
-            element.Render(wallBuilder, elementBuilder, glassBuilder, this);
+            element.Render(wallBuilder, getElementBuilder(element.MaterialKey), glassBuilder, this);
         }
     }
 

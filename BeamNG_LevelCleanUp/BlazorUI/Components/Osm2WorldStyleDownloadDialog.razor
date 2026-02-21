@@ -1,0 +1,221 @@
+@using System.IO.Compression
+@using System.Net.Http
+@using BeamNG_LevelCleanUp.Utils
+@using BeamNgTerrainPoc.Terrain.StyleConfig
+
+<MudDialog>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">@_errorMessage</MudAlert>
+        }
+
+        @if (_downloadComplete)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3">
+                <MudText Typo="Typo.subtitle2">Download Complete</MudText>
+                <MudText Typo="Typo.body2">
+                    The OSM2World default style package has been installed successfully.
+                    Building textures will now use high-quality CC0 textures.
+                </MudText>
+            </MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.body1" Class="mb-3">
+                The building generator requires the <b>OSM2World default style</b> texture package
+                for high-quality building textures (brick, plaster, concrete, roof tiles, etc.).
+            </MudText>
+
+            <MudText Typo="Typo.body2" Class="mb-3">
+                This package contains CC0-licensed textures from
+                <MudLink Href="https://ambientcg.com" Target="_blank">ambientCG</MudLink>
+                and is hosted on
+                <MudLink Href="https://github.com/tordanik/OSM2World-default-style" Target="_blank">GitHub</MudLink>.
+            </MudText>
+
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Without this package, solid-color placeholder textures will be used instead.
+            </MudText>
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                <b>Install location:</b> @AppPaths.Osm2WorldStyleFolder
+            </MudText>
+        }
+
+        @if (_isDownloading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-3" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">@_statusMessage</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_downloadComplete)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="CloseWithDownloaded">
+                Continue
+            </MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Cancel" Disabled="@_isDownloading">Cancel</MudButton>
+            <MudButton Color="Color.Default"
+                       Variant="Variant.Outlined"
+                       OnClick="ContinueWithPlaceholders"
+                       Disabled="@_isDownloading">
+                Continue with Placeholders
+            </MudButton>
+            <MudButton Color="Color.Primary"
+                       Variant="Variant.Filled"
+                       StartIcon="@Icons.Material.Filled.Download"
+                       OnClick="DownloadPackage"
+                       Disabled="@_isDownloading">
+                Download
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const string DownloadUrl = "https://github.com/tordanik/OSM2World-default-style/archive/refs/heads/master.zip";
+    private const string ExtractedFolderName = "OSM2World-default-style-master";
+
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private bool _isDownloading;
+    private bool _downloadComplete;
+    private string _statusMessage = string.Empty;
+    private string? _errorMessage;
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private void ContinueWithPlaceholders()
+    {
+        MudDialog.Close(DialogResult.Ok("placeholders"));
+    }
+
+    private void CloseWithDownloaded()
+    {
+        MudDialog.Close(DialogResult.Ok("downloaded"));
+    }
+
+    private async Task DownloadPackage()
+    {
+        _isDownloading = true;
+        _errorMessage = null;
+        _statusMessage = "Downloading package from GitHub...";
+        StateHasChanged();
+
+        var targetFolder = AppPaths.Osm2WorldStyleFolder;
+        var tempZipPath = Path.Combine(AppPaths.TempFolder, "osm2world-default-style.zip");
+        var tempExtractDir = Path.Combine(AppPaths.TempFolder, "osm2world-extract");
+
+        try
+        {
+            // Clean up any previous temp files
+            if (File.Exists(tempZipPath))
+                File.Delete(tempZipPath);
+            if (Directory.Exists(tempExtractDir))
+                Directory.Delete(tempExtractDir, true);
+
+            // Download ZIP
+            using (var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(5) })
+            {
+                using var response = await httpClient.GetAsync(DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                var totalBytes = response.Content.Headers.ContentLength;
+                await using var contentStream = await response.Content.ReadAsStreamAsync();
+                await using var fileStream = new FileStream(tempZipPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true);
+
+                var buffer = new byte[65536];
+                long totalBytesRead = 0;
+                int bytesRead;
+
+                while ((bytesRead = await contentStream.ReadAsync(buffer)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    totalBytesRead += bytesRead;
+
+                    if (totalBytes.HasValue && totalBytes.Value > 0)
+                    {
+                        var percent = (totalBytesRead * 100.0 / totalBytes.Value);
+                        _statusMessage = $"Downloading... {percent:F0}% ({totalBytesRead / 1024:N0} KB / {totalBytes.Value / 1024:N0} KB)";
+                    }
+                    else
+                    {
+                        _statusMessage = $"Downloading... {totalBytesRead / 1024:N0} KB";
+                    }
+
+                    await InvokeAsync(StateHasChanged);
+                }
+            } // HttpClient, response, streams all disposed here
+
+            // Extract ZIP
+            _statusMessage = "Extracting package...";
+            await InvokeAsync(StateHasChanged);
+
+            await Task.Run(() =>
+            {
+                ZipFile.ExtractToDirectory(tempZipPath, tempExtractDir);
+
+                // GitHub archives extract to a folder with "-master" suffix
+                var extractedDir = Path.Combine(tempExtractDir, ExtractedFolderName);
+                if (!Directory.Exists(extractedDir))
+                {
+                    // Try finding the first directory in the extract
+                    var dirs = Directory.GetDirectories(tempExtractDir);
+                    extractedDir = dirs.Length > 0 ? dirs[0] : tempExtractDir;
+                }
+
+                // Remove existing target if present (e.g., partial previous download)
+                if (Directory.Exists(targetFolder))
+                    Directory.Delete(targetFolder, true);
+
+                // Move extracted folder to final location
+                Directory.Move(extractedDir, targetFolder);
+            });
+
+            // Generate style configuration JSON files from the downloaded properties files
+            _statusMessage = "Generating style configuration...";
+            await InvokeAsync(StateHasChanged);
+
+            var generationResult = await Task.Run(() =>
+            {
+                var generator = new StyleConfigGenerator(targetFolder, AppPaths.SettingsFolder);
+                return generator.Generate();
+            });
+
+            if (generationResult.Success)
+            {
+                Console.WriteLine($"StyleConfig: {generationResult}");
+            }
+            else
+            {
+                Console.WriteLine($"StyleConfig generation warning: {generationResult.ErrorMessage}");
+                // Don't fail the download — textures are still available, just no JSON config
+            }
+
+            _downloadComplete = true;
+            _statusMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Download failed: {ex.Message}";
+            _statusMessage = string.Empty;
+        }
+        finally
+        {
+            _isDownloading = false;
+
+            // Clean up temp files
+            try { if (File.Exists(tempZipPath)) File.Delete(tempZipPath); } catch { /* ignore */ }
+            try { if (Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true); } catch { /* ignore */ }
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

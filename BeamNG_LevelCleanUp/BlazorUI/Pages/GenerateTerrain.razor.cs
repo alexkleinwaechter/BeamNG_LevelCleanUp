@@ -1991,6 +1991,23 @@ public partial class GenerateTerrain : IDisposable
     {
         if (!CanGenerate()) return;
 
+        // Check if OSM2World style folder exists when buildings are enabled
+        if (_enableBuildings && _state.SelectedBuildingFeatures.Any())
+        {
+            if (!Directory.Exists(AppPaths.Osm2WorldStyleFolder))
+            {
+                var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium };
+                var dialog = await DialogService.ShowAsync<Osm2WorldStyleDownloadDialog>(
+                    "Building Textures Required", options);
+                var result = await dialog.Result;
+
+                if (result == null || result.Canceled)
+                    return; // User cancelled — abort generation
+
+                // "placeholders" or "downloaded" — both continue with generation
+            }
+        }
+
         // Reorder materials: move those without layer maps (except index 0) to end
         if (ReorderMaterialsWithoutLayerMapsToEnd())
         {

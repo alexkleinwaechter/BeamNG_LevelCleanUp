@@ -195,9 +195,18 @@ public class BuildingMeshGenerator
             var wallBuilder = new MeshBuilder()
                 .WithName($"walls_{building.OsmId}")
                 .WithMaterial(building.WallMaterial);
-            var windowBuilder = new MeshBuilder()
-                .WithName($"windows_{building.OsmId}")
-                .WithMaterial("WINDOW_SINGLE");
+
+            // Per-material element builders (keyed by material key)
+            var elementBuilders = new Dictionary<string, MeshBuilder>();
+            MeshBuilder GetElementBuilder(string key)
+            {
+                if (!elementBuilders.TryGetValue(key, out var b))
+                {
+                    b = new MeshBuilder().WithName($"elem_{key}_{building.OsmId}").WithMaterial(key);
+                    elementBuilders[key] = b;
+                }
+                return b;
+            }
 
             float floorEle = building.MinHeight;
             float heightWithoutRoof = building.WallHeight;
@@ -214,7 +223,7 @@ public class BuildingMeshGenerator
 
             foreach (var wall in walls)
             {
-                wall.RenderLod1(wallBuilder, windowBuilder, wallScale, building);
+                wall.RenderLod1(wallBuilder, GetElementBuilder, wallScale, building);
             }
 
             // Hole walls (same as LOD0 — no windows on courtyards)
@@ -227,9 +236,12 @@ public class BuildingMeshGenerator
             if (wallMesh.HasGeometry)
                 AddOrMergeMesh(meshes, building.WallMaterial, wallMesh);
 
-            var windowMesh = windowBuilder.Build();
-            if (windowMesh.HasGeometry)
-                AddOrMergeMesh(meshes, "WINDOW_SINGLE", windowMesh);
+            foreach (var (matKey, elemBuilder) in elementBuilders)
+            {
+                var elemMesh = elemBuilder.Build();
+                if (elemMesh.HasGeometry)
+                    AddOrMergeMesh(meshes, matKey, elemMesh);
+            }
         }
 
         // Roof is the same as LOD0
@@ -255,7 +267,8 @@ public class BuildingMeshGenerator
     /// <summary>
     /// LOD2: walls with 3D geometry windows + doors + roof.
     /// Windows are full 3D with frames, glass panes, and inner dividers (GeometryWindow).
-    /// The longest wall gets a door.
+    /// Garage buildings get multiple doors on all qualifying walls (OSM2World port).
+    /// Non-garage buildings get a single door on the longest wall.
     /// </summary>
     private Dictionary<string, Mesh> GenerateLod2Meshes(
         BuildingData building,
@@ -281,12 +294,21 @@ public class BuildingMeshGenerator
             var wallBuilder = new MeshBuilder()
                 .WithName($"walls_{building.OsmId}")
                 .WithMaterial(building.WallMaterial);
-            var elementBuilder = new MeshBuilder()
-                .WithName($"facade_{building.OsmId}")
-                .WithMaterial("WINDOW_FRAME");
             var glassBuilder = new MeshBuilder()
                 .WithName($"glass_{building.OsmId}")
                 .WithMaterial("WINDOW_GLASS");
+
+            // Per-material element builders (keyed by material key)
+            var elementBuilders = new Dictionary<string, MeshBuilder>();
+            MeshBuilder GetElementBuilder(string key)
+            {
+                if (!elementBuilders.TryGetValue(key, out var b))
+                {
+                    b = new MeshBuilder().WithName($"elem_{key}_{building.OsmId}").WithMaterial(key);
+                    elementBuilders[key] = b;
+                }
+                return b;
+            }
 
             float floorEle = building.MinHeight;
             float heightWithoutRoof = building.WallHeight;
@@ -301,22 +323,64 @@ public class BuildingMeshGenerator
                     wall.PlacePassages(building.Passages, wallHeight);
             }
 
-            // Find the longest wall for door placement
-            int longestWallIdx = -1;
-            float longestWallLength = 0;
-            for (int i = 0; i < walls.Count; i++)
+            // Place doors before rendering (separate from RenderLod2, matching OSM2World flow)
+            // Port of OSM2World ExteriorBuildingWall.java lines 257-278:
+            // 1. If entrance=*/door=* nodes exist on outline, place doors at those positions
+            // 2. For garages without entrance nodes, auto-place on walls > perimeter/8
+            // 3. For non-garages without entrance nodes, fallback to longest wall
+            bool isGarage = building.BuildingType is "garage" or "garages";
+            bool hasEntranceNodes = building.EntrancePositions.Count > 0;
+
+            if (hasEntranceNodes)
             {
-                if (walls[i].Surface.Length > longestWallLength)
+                // Place doors at OSM entrance/door node positions
+                int placedCount = 0;
+                foreach (var entrancePos in building.EntrancePositions)
                 {
-                    longestWallLength = walls[i].Surface.Length;
-                    longestWallIdx = i;
+                    foreach (var wall in walls)
+                    {
+                        if (wall.TryPlaceDoorAtEntrance(entrancePos, building))
+                        {
+                            placedCount++;
+                            break; // Each entrance matches at most one wall
+                        }
+                    }
+                }
+
+                // Fallback: if entrance nodes exist but none matched any wall (coordinate mismatch),
+                // place a default door on the longest wall so the building isn't doorless
+                if (placedCount == 0)
+                {
+                    PlaceDoorOnLongestWall(walls, building);
                 }
             }
-
-            for (int i = 0; i < walls.Count; i++)
+            else if (isGarage)
             {
-                bool placeDoor = (i == longestWallIdx);
-                walls[i].RenderLod2(wallBuilder, elementBuilder, glassBuilder, wallScale, building, placeDoor);
+                // Port of OSM2World: garage doors on all walls longer than perimeter/8
+                float perimeter = 0;
+                for (int i = 0; i < polygon.Count; i++)
+                {
+                    int next = (i + 1) % polygon.Count;
+                    perimeter += Vector2.Distance(polygon[i], polygon[next]);
+                }
+                float minWallLength = perimeter / 8f;
+
+                foreach (var wall in walls)
+                {
+                    if (wall.Surface.Length > minWallLength)
+                        wall.PlaceDefaultGarageDoors(building);
+                }
+            }
+            else
+            {
+                // No entrance nodes mapped in OSM — fallback to longest wall
+                PlaceDoorOnLongestWall(walls, building);
+            }
+
+            // Render all walls (doors already placed above)
+            foreach (var wall in walls)
+            {
+                wall.RenderLod2(wallBuilder, GetElementBuilder, glassBuilder, wallScale, building);
             }
 
             // Hole walls
@@ -329,9 +393,12 @@ public class BuildingMeshGenerator
             if (wallMesh.HasGeometry)
                 AddOrMergeMesh(meshes, building.WallMaterial, wallMesh);
 
-            var elementMesh = elementBuilder.Build();
-            if (elementMesh.HasGeometry)
-                AddOrMergeMesh(meshes, "WINDOW_FRAME", elementMesh);
+            foreach (var (matKey, elemBuilder) in elementBuilders)
+            {
+                var elemMesh = elemBuilder.Build();
+                if (elemMesh.HasGeometry)
+                    AddOrMergeMesh(meshes, matKey, elemMesh);
+            }
 
             var glassMesh = glassBuilder.Build();
             if (glassMesh.HasGeometry)
@@ -360,6 +427,26 @@ public class BuildingMeshGenerator
 
     /// <summary>
     /// Creates a HeightfieldRoof instance for the building's roof shape.
+    /// Places a default door on the longest wall (fallback when no entrance nodes are available).
+    /// </summary>
+    private static void PlaceDoorOnLongestWall(List<ExteriorBuildingWall> walls, BuildingData building)
+    {
+        int longestWallIdx = -1;
+        float longestWallLength = 0;
+        for (int i = 0; i < walls.Count; i++)
+        {
+            if (walls[i].Surface.Length > longestWallLength)
+            {
+                longestWallLength = walls[i].Surface.Length;
+                longestWallIdx = i;
+            }
+        }
+
+        if (longestWallIdx >= 0)
+            walls[longestWallIdx].PlaceDefaultDoor(building);
+    }
+
+    /// <summary>
     /// Port of Roof.createRoofForShape() in Java's Roof.java.
     /// All roof shapes (including flat) go through HeightfieldRoof so that
     /// ExteriorBuildingWall can uniformly query GetRoofHeightAt().
@@ -378,7 +465,11 @@ public class BuildingMeshGenerator
             "round" => new RoundRoof(building, polygon),
             "cone" => new ConeRoof(building, polygon),
             "dome" => new DomeRoof(building, polygon),
-            _ => new FlatRoof(building, polygon)
+            // Unknown roof shapes: if height data says there's a roof (from facade_height,
+            // roof:height, or roof:levels), fall back to gabled (most common non-flat shape)
+            // instead of flat, which would create a floating slab at building.Height.
+            // This handles roof:shape=3dr and other unrecognized OSM values.
+            _ => building.RoofHeight > 0 ? new GabledRoof(building, polygon) : new FlatRoof(building, polygon)
         };
     }
 
@@ -422,7 +513,7 @@ public class BuildingMeshGenerator
             if (wall.Surface.Elements.Count > 0)
             {
                 // Wall has passages — render with holes via RenderWithElements
-                wall.Surface.RenderWithElements(builder, builder, null, textureScale);
+                wall.Surface.RenderWithElements(builder, _ => builder, null, textureScale);
             }
             else
             {
@@ -515,7 +606,7 @@ public class BuildingMeshGenerator
             .WithName($"roof_{building.OsmId}")
             .WithMaterial(building.RoofMaterial);
 
-        float roofZ = building.Height;
+        float roofZ = building.RoofBaseHeight;
         Vector3 upNormal = Vector3.UnitZ;
 
         return GenerateHorizontalSurface(builder, building, roofZ, upNormal, false, textureScale);

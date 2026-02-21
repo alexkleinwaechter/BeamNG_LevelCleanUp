@@ -36,7 +36,10 @@ public class OverpassApiService : IOverpassApiService, IDisposable
     public static string DefaultEndpoint => AvailableEndpoints[0];
     
     /// <summary>
-    /// Default timeout for queries in seconds (increased for larger areas).
+    /// Default timeout for Overpass server-side query execution in seconds.
+    /// This is embedded in the query as [timeout:N] and controls how long the
+    /// server will spend producing results. Set high (180s) because large
+    /// bounding boxes with many features need significant server processing time.
     /// </summary>
     public const int DefaultTimeoutSeconds = 180;
     
@@ -75,7 +78,11 @@ public class OverpassApiService : IOverpassApiService, IDisposable
         
         _httpClient = new HttpClient
         {
-            Timeout = TimeSpan.FromSeconds(DefaultTimeoutSeconds + 60) // Extra buffer for network
+            // Server-side timeout (180s) + generous buffer for network transfer of large responses.
+            // The HttpClient timeout covers the entire request/response cycle including data transfer,
+            // so it must be substantially larger than the server-side query timeout to avoid killing
+            // active transfers of large payloads.
+            Timeout = TimeSpan.FromSeconds(DefaultTimeoutSeconds + 120)
         };
         _httpClient.DefaultRequestHeaders.UserAgent.Add(
             new ProductInfoHeaderValue("BeamNG_LevelCleanUp", "1.0"));
@@ -327,6 +334,11 @@ public class OverpassApiService : IOverpassApiService, IDisposable
               way["aeroway"]{bboxStr};
               // Barriers (walls, fences - useful for terrain)
               way["barrier"]{bboxStr};
+
+              // Building entrance/door nodes (for correct door placement on building walls)
+              // Port of OSM2World: doors are placed at nodes tagged with entrance=* or door=*
+              node["entrance"]{bboxStr};
+              node["door"]{bboxStr};
 
               // Relations for multipolygons and boundaries
               relation["type"="multipolygon"]["landuse"]{bboxStr};

@@ -306,10 +306,10 @@ public class GeoTiffMetadataService
             var approxMetersX = pixelSizeX * metersPerDegree;
             var approxMetersY = pixelSizeY * 111320.0;
 
-            return $"{arcSecX:F1}\" � {arcSecY:F1}\" (~{approxMetersX:F0}m � {approxMetersY:F0}m)";
+            return $"{arcSecX:F1}\" × {arcSecY:F1}\" (~{approxMetersX:F0}m × {approxMetersY:F0}m)";
         }
 
-        return $"{pixelSizeX:F2}m � {pixelSizeY:F2}m";
+        return $"{pixelSizeX:F2}m × {pixelSizeY:F2}m";
     }
 
     /// <summary>

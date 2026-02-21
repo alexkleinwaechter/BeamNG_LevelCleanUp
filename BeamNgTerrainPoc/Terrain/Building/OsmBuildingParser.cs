@@ -52,6 +52,30 @@ public class OsmBuildingParser
         float metersPerPixel,
         Func<float, float, float>? heightSampler = null)
     {
+        // 0. Collect entrance/door node positions in meter space
+        // Port of OSM2World: Door.isDoorNode() checks entrance=* or door=* tags.
+        // We collect their world-space meter positions so we can match them to building
+        // outline vertices by coordinate proximity (like OSM2World's pointNodeMap).
+        var entranceMeterPositions = new List<Vector2>();
+        int nodeFeatureCount = queryResult.Features.Count(f => f.FeatureType == OsmFeatureType.Node);
+        foreach (var f in queryResult.Features)
+        {
+            if (f.GeometryType == OsmGeometryType.Point && f.FeatureType == OsmFeatureType.Node
+                && f.Coordinates.Count > 0
+                && (f.Tags.ContainsKey("entrance") || f.Tags.ContainsKey("door")))
+            {
+                var meterPos = TransformPointToMeters(f.Coordinates[0], bbox, terrainSize, metersPerPixel);
+                entranceMeterPositions.Add(meterPos);
+            }
+        }
+
+        if (nodeFeatureCount == 0)
+        {
+            Console.WriteLine("OsmBuildingParser WARNING: No node features in query result! " +
+                              "Entrance/door nodes may not be fetched. " +
+                              "Try clearing the OSM cache to re-fetch with entrance node queries.");
+        }
+
         // 1. Collect main building features (building=*) and part features (building:part=*)
         var mainBuildingFeatures = queryResult.Features
             .Where(f => f.GeometryType == OsmGeometryType.Polygon
@@ -64,7 +88,8 @@ public class OsmBuildingParser
             .ToList();
 
         Console.WriteLine($"OsmBuildingParser: Found {mainBuildingFeatures.Count} main buildings, " +
-                          $"{partFeatures.Count} building:part features");
+                          $"{partFeatures.Count} building:part features, " +
+                          $"{entranceMeterPositions.Count} entrance/door nodes");
 
         // 2. Transform all part features to world-space meter coordinates (for point-in-polygon matching)
         var partCandidates = new List<PartCandidate>();
@@ -86,7 +111,7 @@ public class OsmBuildingParser
         foreach (var feature in mainBuildingFeatures)
         {
             var building = ParseMainBuilding(feature, partCandidates, usedPartIds,
-                bbox, terrainSize, metersPerPixel, heightSampler);
+                bbox, terrainSize, metersPerPixel, heightSampler, entranceMeterPositions);
             if (building == null)
             {
                 skippedDegenerate++;
@@ -110,7 +135,7 @@ public class OsmBuildingParser
         {
             if (usedPartIds.Contains(pc.Feature.Id)) continue;
 
-            var orphanBuilding = CreateStandalonePartBuilding(pc, bbox, terrainSize, metersPerPixel, heightSampler);
+            var orphanBuilding = CreateStandalonePartBuilding(pc, bbox, terrainSize, metersPerPixel, heightSampler, entranceMeterPositions);
             if (orphanBuilding == null) continue;
             // Use lower threshold for building:part orphans (pillars etc. can be small)
             // OSM2World has no area filter at all
@@ -166,7 +191,8 @@ public class OsmBuildingParser
         GeoBoundingBox bbox,
         int terrainSize,
         float metersPerPixel,
-        Func<float, float, float>? heightSampler)
+        Func<float, float, float>? heightSampler,
+        List<Vector2> entranceMeterPositions)
     {
         // Transform outline to meter-space
         var outerMeterCoords = TransformRingToMeters(feature.Coordinates, bbox, terrainSize, metersPerPixel);
@@ -215,7 +241,7 @@ public class OsmBuildingParser
 
             // Parse this part using the BUILDING's centroid as coordinate origin
             var partData = ParseBuildingPart(pc.Feature, buildingCentroid,
-                bbox, terrainSize, metersPerPixel, feature.Tags);
+                bbox, terrainSize, metersPerPixel, feature.Tags, entranceMeterPositions);
             if (partData == null) continue;
 
             float partArea = ComputePolygonArea(partData.FootprintOuter);
@@ -241,7 +267,7 @@ public class OsmBuildingParser
         {
             // Parts don't exist or don't cover enough — add building outline as a part too
             var outlinePart = ParseFeatureAsPart(feature, buildingCentroid,
-                bbox, terrainSize, metersPerPixel, parentTags: null);
+                bbox, terrainSize, metersPerPixel, parentTags: null, entranceMeterPositions: entranceMeterPositions);
             if (outlinePart != null)
                 building.Parts.Add(outlinePart);
         }
@@ -259,7 +285,8 @@ public class OsmBuildingParser
         GeoBoundingBox bbox,
         int terrainSize,
         float metersPerPixel,
-        Func<float, float, float>? heightSampler)
+        Func<float, float, float>? heightSampler,
+        List<Vector2>? entranceMeterPositions = null)
     {
         var centroid = pc.WorldCentroid;
 
@@ -268,7 +295,7 @@ public class OsmBuildingParser
             groundElevation = pc.WorldMeterCoords.Min(p => heightSampler(p.X, p.Y));
 
         var partData = ParseFeatureAsPart(pc.Feature, centroid,
-            bbox, terrainSize, metersPerPixel, parentTags: null);
+            bbox, terrainSize, metersPerPixel, parentTags: null, entranceMeterPositions: entranceMeterPositions);
         if (partData == null) return null;
 
         string buildingType = GetTagValue(pc.Feature.Tags, "building:part") ?? "yes";
@@ -296,10 +323,11 @@ public class OsmBuildingParser
         GeoBoundingBox bbox,
         int terrainSize,
         float metersPerPixel,
-        Dictionary<string, string> parentTags)
+        Dictionary<string, string> parentTags,
+        List<Vector2>? entranceMeterPositions = null)
     {
         return ParseFeatureAsPart(partFeature, buildingCentroid,
-            bbox, terrainSize, metersPerPixel, parentTags);
+            bbox, terrainSize, metersPerPixel, parentTags, entranceMeterPositions);
     }
 
     /// <summary>
@@ -312,7 +340,8 @@ public class OsmBuildingParser
         GeoBoundingBox bbox,
         int terrainSize,
         float metersPerPixel,
-        Dictionary<string, string>? parentTags)
+        Dictionary<string, string>? parentTags,
+        List<Vector2>? entranceMeterPositions = null)
     {
         var outerMeterCoords = TransformRingToMeters(feature.Coordinates, bbox, terrainSize, metersPerPixel);
         if (outerMeterCoords.Count < 3) return null;
@@ -320,11 +349,41 @@ public class OsmBuildingParser
         var localOuter = outerMeterCoords
             .Select(p => new Vector2(p.X - centroid.X, p.Y - centroid.Y))
             .ToList();
-        if (!IsCounterClockwise(localOuter)) localOuter.Reverse();
+        bool wasReversed = !IsCounterClockwise(localOuter);
+        if (wasReversed) localOuter.Reverse();
         localOuter = EnsureClosed(localOuter);
 
         // Process inner rings
         var localHoles = TransformInnerRings(feature, centroid, bbox, terrainSize, metersPerPixel);
+
+        // Detect entrance positions by coordinate proximity
+        // Port of OSM2World: each building outline vertex carries its node tags (entrance=*, door=*).
+        // We match entrance/door node world-positions to building outline vertices by proximity
+        // (within 0.5m tolerance). This mirrors OSM2World's pointNodeMap approach.
+        var entrancePositions = new List<Vector2>();
+        if (entranceMeterPositions != null && entranceMeterPositions.Count > 0)
+        {
+            const float matchTolerance = 0.5f; // meters
+            float toleranceSq = matchTolerance * matchTolerance;
+
+            foreach (var entranceWorldPos in entranceMeterPositions)
+            {
+                for (int i = 0; i < outerMeterCoords.Count; i++)
+                {
+                    float dx = outerMeterCoords[i].X - entranceWorldPos.X;
+                    float dy = outerMeterCoords[i].Y - entranceWorldPos.Y;
+                    if (dx * dx + dy * dy <= toleranceSq)
+                    {
+                        // Convert from world meter coords to local coords
+                        var localPos = new Vector2(
+                            outerMeterCoords[i].X - centroid.X,
+                            outerMeterCoords[i].Y - centroid.Y);
+                        entrancePositions.Add(localPos);
+                        break; // Each entrance matches at most one vertex
+                    }
+                }
+            }
+        }
 
         // Build tag set with inheritance from parent building
         var tags = feature.Tags;
@@ -335,7 +394,15 @@ public class OsmBuildingParser
                               ?? GetInheritedTag(parentTags, "building")
                               ?? "yes";
 
-        return ParseTagsIntoBuildingData(feature.Id, buildingType, localOuter, localHoles, tags, parentTags);
+        var data = ParseTagsIntoBuildingData(feature.Id, buildingType, localOuter, localHoles, tags, parentTags);
+        data.EntrancePositions = entrancePositions;
+
+        if (entrancePositions.Count > 0)
+        {
+            Console.WriteLine($"Building {feature.Id}: {entrancePositions.Count} entrance(s) matched by coordinate proximity");
+        }
+
+        return data;
     }
 
     /// <summary>
@@ -876,6 +943,22 @@ public class OsmBuildingParser
 
         // Remove duplicate consecutive points (tolerance 0.01m)
         return RemoveDuplicateConsecutive(meterCoords, 0.01f);
+    }
+
+    /// <summary>
+    /// Transforms a single geo-coordinate to world meter-space.
+    /// Used for entrance/door node positions.
+    /// </summary>
+    private Vector2 TransformPointToMeters(
+        GeoCoordinate coord,
+        GeoBoundingBox bbox,
+        int terrainSize,
+        float metersPerPixel)
+    {
+        var pixelCoords = _geometryProcessor.TransformToTerrainCoordinates(
+            new List<GeoCoordinate> { coord }, bbox, terrainSize);
+        var p = pixelCoords[0];
+        return new Vector2(p.X * metersPerPixel, p.Y * metersPerPixel);
     }
 
     /// <summary>

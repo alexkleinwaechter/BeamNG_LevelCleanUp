@@ -32,6 +32,12 @@ public interface IWallElement
     float InsetDistance { get; }
 
     /// <summary>
+    /// The material key for this element's rendered geometry.
+    /// Used to route element geometry to the correct per-material MeshBuilder.
+    /// </summary>
+    string MaterialKey { get; }
+
+    /// <summary>
     /// Renders the element geometry (frames, glass, door panels, etc.) into mesh builders.
     /// </summary>
     /// <param name="wallBuilder">Mesh builder for opaque wall-material geometry (e.g., inset reveal faces).</param>

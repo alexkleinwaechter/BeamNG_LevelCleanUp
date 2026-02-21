@@ -45,6 +45,25 @@ public static class AppPaths
     public static string SettingsFolder => AppDataFolder;
 
     /// <summary>
+    /// Folder for the OSM2World default style package (CC0 building textures).
+    /// C:\Users\{username}\AppData\Local\BeamNG_LevelCleanUp\OSM2World-default-style
+    /// </summary>
+    public static string Osm2WorldStyleFolder => Path.Combine(AppDataFolder, "OSM2World-default-style");
+
+    /// <summary>
+    /// Path to the main OSM2World style configuration JSON file.
+    /// Generated from standard.properties after the style package is downloaded.
+    /// C:\Users\{username}\AppData\Local\BeamNG_LevelCleanUp\osm2world-style.json
+    /// </summary>
+    public static string StyleConfigFile => Path.Combine(AppDataFolder, "osm2world-style.json");
+
+    /// <summary>
+    /// Folder for locale-specific style configuration files (traffic signs, locale defaults).
+    /// C:\Users\{username}\AppData\Local\BeamNG_LevelCleanUp\osm2world-style-locales\
+    /// </summary>
+    public static string StyleLocalesFolder => Path.Combine(AppDataFolder, "osm2world-style-locales");
+
+    /// <summary>
     /// Ensures all required directories exist.
     /// Call this at application startup.
     /// </summary>

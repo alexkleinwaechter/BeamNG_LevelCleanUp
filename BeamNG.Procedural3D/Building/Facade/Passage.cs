@@ -51,6 +51,8 @@ public class Passage : IWallElement
 
     public float InsetDistance => _insetDistance;
 
+    public string MaterialKey => "PASSAGE";
+
     /// <summary>
     /// Passages render no geometry — they are pure wall cutouts.
     /// The inset reveal/jamb faces are handled by WallSurface.RenderInsetFaces().

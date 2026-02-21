@@ -160,6 +160,12 @@ public class OsmGeoJsonParser
             return null;
 
         var type = typeEl.GetString();
+
+        // Handle node elements (e.g., entrance=* or door=* nodes)
+        // Overpass returns nodes with lat/lon directly on the element (not in a geometry array)
+        if (type == "node")
+            return ParseNodeElement(element);
+
         if (type != "way" && type != "relation")
             return null;
 
@@ -255,9 +261,47 @@ public class OsmGeoJsonParser
     }
 
     /// <summary>
+    /// Parses a node element from the Overpass API response.
+    /// Nodes have lat/lon directly on the element (not in a geometry array).
+    /// Used for entrance=* and door=* nodes on building outlines.
+    /// </summary>
+    private OsmFeature? ParseNodeElement(JsonElement element)
+    {
+        if (!element.TryGetProperty("id", out var idEl))
+            return null;
+
+        var id = idEl.GetInt64();
+
+        // Node lat/lon are directly on the element
+        if (!element.TryGetProperty("lat", out var latEl) ||
+            !element.TryGetProperty("lon", out var lonEl))
+            return null;
+
+        var lat = latEl.GetDouble();
+        var lon = lonEl.GetDouble();
+
+        var tags = new Dictionary<string, string>();
+        if (element.TryGetProperty("tags", out var tagsEl))
+        {
+            foreach (var tag in tagsEl.EnumerateObject())
+                tags[tag.Name] = tag.Value.GetString() ?? "";
+        }
+
+        return new OsmFeature
+        {
+            Id = id,
+            FeatureType = OsmFeatureType.Node,
+            GeometryType = OsmGeometryType.Point,
+            Coordinates = new List<GeoCoordinate> { new(lon, lat) },
+            Tags = tags,
+            NodeIds = new List<long> { id }
+        };
+    }
+
+    /// <summary>
     /// Parses relation members to extract geometry.
     /// Returns outer ring coordinates, inner rings (holes), and additional parts (disjoint polygons).
-    /// 
+    ///
     /// Handles the common case where multipolygon rings are split across multiple ways
     /// by assembling them into complete rings based on shared endpoints.
     /// </summary>

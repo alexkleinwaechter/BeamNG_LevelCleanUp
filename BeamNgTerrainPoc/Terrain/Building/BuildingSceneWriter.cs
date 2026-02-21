@@ -142,11 +142,14 @@ public class BuildingSceneWriter
     /// <param name="outputPath">Absolute path for the materials.json file.</param>
     /// <param name="texturePath">BeamNG-relative path prefix for texture files
     /// (e.g., "/levels/myLevel/art/shapes/MT_buildings/textures/"). Must end with '/'.</param>
+    /// <param name="resolveFileName">Optional function to resolve deployed texture filenames
+    /// (e.g., for PoT dimension renames). When null, original filenames are used.</param>
     /// <returns>Number of materials written.</returns>
     public int WriteMaterials(
         IEnumerable<BuildingMaterialDefinition> usedMaterials,
         string outputPath,
-        string texturePath)
+        string texturePath,
+        Func<string, string>? resolveFileName = null)
     {
         // Ensure texturePath ends with /
         if (!texturePath.EndsWith('/'))
@@ -168,7 +171,7 @@ public class BuildingSceneWriter
             if (!writtenNames.Add(matDef.MaterialName))
                 continue;
 
-            var matDict = CreateMaterialEntry(matDef, texturePath);
+            var matDict = CreateMaterialEntry(matDef, texturePath, resolveFileName);
             materialDicts.Add(matDict);
         }
 
@@ -340,8 +343,12 @@ public class BuildingSceneWriter
     /// Creates a JsonDict representing a BeamNG Material entry for a building material.
     /// Uses the standard Material class with 4-stage Stages array.
     /// </summary>
-    private static JsonDict CreateMaterialEntry(BuildingMaterialDefinition matDef, string texturePath)
+    private static JsonDict CreateMaterialEntry(BuildingMaterialDefinition matDef, string texturePath,
+        Func<string, string>? resolveFileName = null)
     {
+        // Use resolver for deployed filenames (handles PoT renames), or identity if not provided
+        var resolve = resolveFileName ?? (f => f);
+
         var dict = new JsonDict();
 
         dict["class"] = "Material";
@@ -366,19 +373,21 @@ public class BuildingSceneWriter
             dict["doubleSided"] = true;
         }
 
-        // Stage 0: base textures
+        // Stage 0: base textures (filenames resolved through PoT rename map)
         var stage0 = new JsonDict();
-        stage0["baseColorMap"] = texturePath + matDef.ColorMapFile;
+        stage0["baseColorMap"] = texturePath + resolve(matDef.ColorMapFile);
 
         if (matDef.NormalMapFile != null)
-            stage0["normalMap"] = texturePath + matDef.NormalMapFile;
+            stage0["normalMap"] = texturePath + resolve(matDef.NormalMapFile);
 
-        if (matDef.OrmMapFile != null)
-        {
-            // ORM maps: BeamNG uses compositeMap or roughnessMap depending on version.
-            // roughnessMap is the safer choice for DAE-based objects.
-            stage0["roughnessMap"] = texturePath + matDef.OrmMapFile;
-        }
+        // PBR channel textures: uses explicit overrides from config if set,
+        // otherwise auto-derived from combined ORM texture.
+        if (matDef.EffectiveAoMapFile != null)
+            stage0["ambientOcclusionMap"] = texturePath + resolve(matDef.EffectiveAoMapFile);
+        if (matDef.EffectiveRoughnessMapFile != null)
+            stage0["roughnessMap"] = texturePath + resolve(matDef.EffectiveRoughnessMapFile);
+        if (matDef.EffectiveMetallicMapFile != null)
+            stage0["metallicMap"] = texturePath + resolve(matDef.EffectiveMetallicMapFile);
 
         // baseColorFactor tints the texture — without it textures appear washed out / white.
         // DefaultColor is 0-255 RGB, BeamNG expects 0.0-1.0 RGBA.

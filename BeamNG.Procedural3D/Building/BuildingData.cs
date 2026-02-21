@@ -118,6 +118,15 @@ public class BuildingData
     public List<PassageInfo> Passages { get; set; } = new();
 
     /// <summary>
+    /// Entrance/door positions on the building outline, in local coordinates (meters, origin at centroid).
+    /// Derived from OSM nodes tagged with entrance=* or door=* that lie on the building outline.
+    /// Port of OSM2World ExteriorBuildingWall.java lines 257-278: doors are placed at nodes
+    /// where isDoorNode(node) returns true, at the node's exact position on the wall.
+    /// Empty if no entrance/door nodes were found on the building outline.
+    /// </summary>
+    public List<Vector2> EntrancePositions { get; set; } = new();
+
+    /// <summary>
     /// Ground elevation at the building position (Z coordinate in BeamNG world space).
     /// Set during coordinate transformation from terrain heightmap data.
     /// </summary>

@@ -227,7 +227,7 @@ public abstract class HeightfieldRoof
             float nx = normal.X, ny = normal.Y;
             if (nx * nx + ny * ny > 1e-8f)
             {
-                downAngle = MathF.Atan2(ny, nx);
+                downAngle = MathF.Atan2(nx, ny);
                 downAngle = SnapAngle(downAngle, knownAngles);
             }
 
@@ -248,9 +248,11 @@ public abstract class HeightfieldRoof
     /// Port of SlopedTrianglesTexCoordFunction: rotates the vertex position
     /// by the downslope angle so texture aligns with the slope direction.
     ///
-    /// Coordinate system mapping: Java's v.rotateY(-angle) with Y-up right-handed 3D
-    /// is equivalent to a standard 2D rotation by +angle in our X/Y horizontal plane
-    /// (because rotateY in RH coords has opposite handedness to 2D rotation in XZ).
+    /// Coordinate system mapping: Java's VectorXZ.angle() returns atan2(x, z)
+    /// (compass-style: 0 = +Z direction). With our coordinate mapping
+    /// (Java Z → our Y), the equivalent is atan2(nx, ny).
+    /// Java's v.rotateY(-angle).xz() is equivalent to our standard 2D rotation
+    /// by +angle applied to the (X, Y) horizontal position.
     /// </summary>
     private static Vector2 ComputeSlopedTexCoord(Vector2 pos, float downAngle, Vector2 textureScale)
     {

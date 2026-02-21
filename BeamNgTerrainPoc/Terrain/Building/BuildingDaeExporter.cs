@@ -370,7 +370,7 @@ public class BuildingDaeExporter
             var matDef = _materialLibrary.GetMaterial(materialKey);
             mesh.MaterialName = matDef.MaterialName;
             if (seenMaterials.Add(materialKey))
-                allMaterials.Add(matDef.ToExportMaterial());
+                allMaterials.Add(matDef.ToExportMaterial(_materialLibrary.GetDeployedFileName));
         }
 
         // Count vertices/triangles from LOD2 (highest detail, largest)
@@ -421,7 +421,7 @@ public class BuildingDaeExporter
             if (seenMaterials.Add(materialKey))
             {
                 var matDef = _materialLibrary.GetMaterial(materialKey);
-                allMaterials.Add(matDef.ToExportMaterial());
+                allMaterials.Add(matDef.ToExportMaterial(_materialLibrary.GetDeployedFileName));
             }
 
         // Collision mesh from merged LOD0 geometry (all cluster buildings combined)

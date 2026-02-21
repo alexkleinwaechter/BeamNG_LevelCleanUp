@@ -41,10 +41,31 @@ public class BuildingMaterialDefinition
     public string? NormalMapFile { get; init; }
 
     /// <summary>
-    /// Filename of the ORM (Occlusion/Roughness/Metallic) packed texture (e.g., "Bricks029_ORM.jpg").
-    /// Maps to compositeMap in BeamNG's material system.
+    /// Filename of the ORM (Occlusion/Roughness/Metallic) packed texture (e.g., "Bricks029_ORM.data.png").
+    /// Used as source for automatic channel splitting into AO/Roughness/Metallic.
     /// </summary>
     public string? OrmMapFile { get; init; }
+
+    /// <summary>
+    /// Optional explicit ambient occlusion texture filename (e.g., "Bricks029_AO.data.png").
+    /// When null, auto-derived from OrmMapFile via <see cref="OrmTextureHelper"/>.
+    /// Can be set explicitly in osm2world-style.json to use a custom texture.
+    /// </summary>
+    public string? AoMapFile { get; init; }
+
+    /// <summary>
+    /// Optional explicit roughness texture filename (e.g., "Bricks029_Roughness.data.png").
+    /// When null, auto-derived from OrmMapFile via <see cref="OrmTextureHelper"/>.
+    /// Can be set explicitly in osm2world-style.json to use a custom texture.
+    /// </summary>
+    public string? RoughnessMapFile { get; init; }
+
+    /// <summary>
+    /// Optional explicit metallic texture filename (e.g., "Bricks029_Metallic.data.png").
+    /// When null, auto-derived from OrmMapFile via <see cref="OrmTextureHelper"/>.
+    /// Can be set explicitly in osm2world-style.json to use a custom texture.
+    /// </summary>
+    public string? MetallicMapFile { get; init; }
 
     /// <summary>
     /// Texture scale in U direction (meters per texture repeat on walls).
@@ -91,21 +112,55 @@ public class BuildingMaterialDefinition
     public bool InstanceDiffuse { get; init; }
 
     /// <summary>
+    /// Gets the effective AO filename: explicit AoMapFile if set, otherwise derived from OrmMapFile.
+    /// Returns null if neither is available.
+    /// </summary>
+    public string? EffectiveAoMapFile =>
+        AoMapFile ?? (OrmMapFile != null ? OrmTextureHelper.DeriveAoFileName(OrmMapFile) : null);
+
+    /// <summary>
+    /// Gets the effective roughness filename: explicit RoughnessMapFile if set, otherwise derived from OrmMapFile.
+    /// Returns null if neither is available.
+    /// </summary>
+    public string? EffectiveRoughnessMapFile =>
+        RoughnessMapFile ?? (OrmMapFile != null ? OrmTextureHelper.DeriveRoughnessFileName(OrmMapFile) : null);
+
+    /// <summary>
+    /// Gets the effective metallic filename: explicit MetallicMapFile if set, otherwise derived from OrmMapFile.
+    /// Returns null if neither is available.
+    /// </summary>
+    public string? EffectiveMetallicMapFile =>
+        MetallicMapFile ?? (OrmMapFile != null ? OrmTextureHelper.DeriveMetallicFileName(OrmMapFile) : null);
+
+    /// <summary>
     /// Creates a Procedural3D Material for use with ColladaExporter.
     /// Texture paths are set relative to the DAE file location.
     /// </summary>
     /// <param name="textureRelativePath">Relative path from DAE to textures folder (e.g., "textures/").</param>
     public Core.Material ToExportMaterial(string textureRelativePath = "textures/")
     {
+        return ToExportMaterial(null, textureRelativePath);
+    }
+
+    /// <summary>
+    /// Creates a Procedural3D Material for use with ColladaExporter,
+    /// with optional filename resolution for PoT dimension renames.
+    /// </summary>
+    /// <param name="resolveFileName">Optional function to resolve deployed texture filenames.
+    /// When null, original filenames are used.</param>
+    /// <param name="textureRelativePath">Relative path from DAE to textures folder (e.g., "textures/").</param>
+    public Core.Material ToExportMaterial(Func<string, string>? resolveFileName, string textureRelativePath = "textures/")
+    {
+        var resolve = resolveFileName ?? (f => f);
         var path = textureRelativePath.TrimEnd('/') + "/";
         return new Core.Material
         {
             Name = MaterialName,
             DiffuseColor = new Vector3(DefaultColor.X / 255f, DefaultColor.Y / 255f, DefaultColor.Z / 255f),
             Opacity = Opacity,
-            DiffuseTexturePath = path + ColorMapFile,
-            NormalTexturePath = NormalMapFile != null ? path + NormalMapFile : null,
-            SpecularTexturePath = OrmMapFile != null ? path + OrmMapFile : null
+            DiffuseTexturePath = path + resolve(ColorMapFile),
+            NormalTexturePath = NormalMapFile != null ? path + resolve(NormalMapFile) : null,
+            SpecularTexturePath = OrmMapFile != null ? path + resolve(OrmMapFile) : null
         };
     }
 
@@ -116,7 +171,13 @@ public class BuildingMaterialDefinition
     {
         yield return ColorMapFile;
         if (NormalMapFile != null) yield return NormalMapFile;
-        if (OrmMapFile != null) yield return OrmMapFile;
+
+        // Yield the effective PBR channel filenames.
+        // Uses explicit overrides (AoMapFile, RoughnessMapFile, MetallicMapFile) if set,
+        // otherwise auto-derives from OrmMapFile.
+        if (EffectiveAoMapFile != null) yield return EffectiveAoMapFile;
+        if (EffectiveRoughnessMapFile != null) yield return EffectiveRoughnessMapFile;
+        if (EffectiveMetallicMapFile != null) yield return EffectiveMetallicMapFile;
     }
 
     /// <summary>
@@ -137,6 +198,9 @@ public class BuildingMaterialDefinition
             ColorMapFile = ColorMapFile,
             NormalMapFile = NormalMapFile,
             OrmMapFile = OrmMapFile,
+            AoMapFile = AoMapFile,
+            RoughnessMapFile = RoughnessMapFile,
+            MetallicMapFile = MetallicMapFile,
             TextureScaleU = TextureScaleU,
             TextureScaleV = TextureScaleV,
             IsRoofMaterial = IsRoofMaterial,

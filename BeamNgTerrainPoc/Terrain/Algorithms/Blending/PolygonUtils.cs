@@ -70,13 +70,15 @@ public static class PolygonUtils
 
         var cornerCount = corners.Length;
 
+        // Allocate intersection buffer once outside the loop to avoid stack overflow (CA2014)
+        Span<float> intersections = stackalloc float[cornerCount];
+
         // Scanline fill using edge intersection
         for (var y = minY; y <= maxY; y++)
         {
             var scanY = y + 0.5f;
 
             // Find intersection points with polygon edges
-            Span<float> intersections = stackalloc float[cornerCount];
             var intersectionCount = 0;
 
             for (var i = 0; i < cornerCount; i++)
