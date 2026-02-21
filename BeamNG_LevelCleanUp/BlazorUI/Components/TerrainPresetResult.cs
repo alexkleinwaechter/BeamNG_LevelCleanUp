@@ -10,7 +10,8 @@ public enum HeightmapSourceType
 {
     Png,
     GeoTiffFile,
-    GeoTiffDirectory
+    GeoTiffDirectory,
+    XyzFile
 }
 
 /// <summary>
@@ -70,6 +71,16 @@ public class TerrainPresetResult
     ///     Path to GeoTIFF tiles directory (when HeightmapSourceType is GeoTiffDirectory).
     /// </summary>
     public string? GeoTiffDirectory { get; set; }
+
+    /// <summary>
+    ///     Path to XYZ ASCII file (when HeightmapSourceType is XyzFile).
+    /// </summary>
+    public string? XyzPath { get; set; }
+
+    /// <summary>
+    ///     EPSG code for XYZ coordinate system (when HeightmapSourceType is XyzFile).
+    /// </summary>
+    public int? XyzEpsgCode { get; set; }
 
     // ========== NEW: Terrain Generation Options ==========
 

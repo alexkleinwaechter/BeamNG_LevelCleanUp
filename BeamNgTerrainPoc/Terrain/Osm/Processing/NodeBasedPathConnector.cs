@@ -1,34 +1,44 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
 
 /// <summary>
-/// Connects OSM road paths using node-based connectivity (shared OSM node IDs)
-/// instead of purely geometric endpoint proximity matching.
-/// 
-/// Uses a three-tier strategy:
-///   Tier 1 — Shared Node ID: two paths share an OSM node at their endpoints (highest confidence).
-///            No distance check needed — OSM topology guarantees connectivity.
-///   Tier 2 — Same Name/Ref + Proximity: paths share a road name or ref tag and their
-///            endpoints are within the distance tolerance.
-///   Tier 3 — Proximity Only: fallback for cropped paths that lost node IDs at terrain
-///            boundaries. Only applies when at least one matched endpoint has a null node ID.
-/// 
-/// Anti-merge rules prevent inappropriate merges:
-///   - A shared node used by 3+ path endpoints is a junction, not a continuation —
-///     UNLESS both paths form a logical through-road (compatible type, no conflicting names,
-///     not roundabout, deflection angle &lt; 90°). This through-junction exception creates
-///     longer splines that improve elevation smoothing quality. Name/ref matching is NOT
-///     required — unnamed roads merge freely through junctions based on angle alone.
-///   - Different highway types should not merge (e.g., motorway + residential).
-///   - Conflicting non-empty name tags prevent merging.
+///     Connects OSM road paths into longer splines using angle-first greedy matching.
+///     Instead of a tiered first-match strategy, this algorithm scores ALL possible
+///     endpoint connections by deflection angle and always picks the straightest one.
+///     This naturally prevents wrong merges — the correct continuation always has a
+///     smaller deflection angle than an incorrect one.
+///     Guards:
+///     - Different highway types (= different materials/smoothing params) never merge.
+///     - Roundabout-tagged paths are excluded from merging.
+///     - At junction nodes (valence >= 3), deflection angle must be below 90°.
+///     Scoring (higher = better):
+///     - Base: dot product of incoming/outgoing directions (cos of deflection angle)
+///     - Boost for shared OSM node (topology > proximity)
+///     - Boost for same route relation (RelationAware strategy only)
+///     - Tiny penalty for reversal merges (End→End, Start→Start) to prefer natural continuations
+///     Two strategies are available:
+///     - AngleFirst: pure geometry scoring
+///     - RelationAware: same + route relation bonus for paths sharing an OSM route relation
 /// </summary>
 internal static class NodeBasedPathConnector
 {
+    private const float SharedNodeBoost = 0.5f;
+    private const float RelationBoost = 0.5f;
+    private const float ReversalPenalty = 0.001f;
+
     /// <summary>
-    /// Highway type compatibility groups. A main road type and its _link variant
-    /// are considered compatible and may merge. All other cross-type combinations
-    /// are blocked by the anti-merge rule.
+    ///     Distance (in meters) to look back along a path for direction computation.
+    ///     Using a longer distance produces more stable angle estimates near junctions
+    ///     where short stub segments may have unreliable directions.
+    /// </summary>
+    private const float DirectionLookbackMeters = 30f;
+
+    /// <summary>
+    ///     Highway type compatibility groups. A main road type and its _link variant
+    ///     are considered compatible and may merge. All other cross-type combinations
+    ///     are blocked by the anti-merge rule.
     /// </summary>
     private static readonly Dictionary<string, string> HighwayTypeGroups = new()
     {
@@ -52,105 +62,250 @@ internal static class NodeBasedPathConnector
         ["cycleway"] = "cycleway",
         ["bridleway"] = "bridleway",
         ["steps"] = "steps",
-        ["pedestrian"] = "pedestrian",
+        ["pedestrian"] = "pedestrian"
     };
 
     /// <summary>
-    /// Connects paths using the three-tier node-based strategy.
+    ///     Connects paths using angle-first greedy matching.
     /// </summary>
     /// <param name="paths">Paths with OSM metadata to connect.</param>
     /// <param name="tolerance">Maximum distance for geometric proximity fallback (in meters).</param>
+    /// <param name="routeRelations">Optional route relations for relation-aware scoring.</param>
     /// <returns>Connected paths (bare point lists — metadata consumed during merging).</returns>
-    public static List<List<Vector2>> Connect(List<PathWithMetadata> paths, float tolerance)
+    public static List<List<Vector2>> Connect(
+        List<PathWithMetadata> paths,
+        float tolerance,
+        IReadOnlyList<RouteRelation>? routeRelations = null)
     {
         if (paths.Count <= 1)
             return paths.Select(p => p.Points).ToList();
 
-        // Step 1: Build node valence map — count how many path endpoints share each node ID.
-        // Nodes with valence >= 3 are junctions where paths should NOT merge.
         var nodeValence = BuildNodeValenceMap(paths);
-
-        // Step 2: Clone paths into working list (originals are not modified)
         var working = paths.Select(ClonePath).ToList();
-        var toleranceSquared = tolerance * tolerance;
+        var toleranceSq = tolerance * tolerance;
 
-        int tier1Merges = 0;
-        int tier1ThroughJunctionMerges = 0;
-        int tier2Merges = 0;
-        int tier3Merges = 0;
-        int iterations = 0;
-        bool didMerge;
+        // Build relation lookup if route relations are provided
+        Dictionary<long, HashSet<long>>? wayToRelations = null;
+        if (routeRelations is { Count: > 0 })
+            wayToRelations = BuildWayRelationMap(routeRelations);
 
-        do
+        var mergeCount = 0;
+        var sharedNodeMerges = 0;
+        var proximityMerges = 0;
+        var relationBoostedMerges = 0;
+
+        while (mergeCount < 10_000) // Safety limit
         {
-            didMerge = false;
-            iterations++;
+            var best = FindBestCandidate(working, nodeValence, toleranceSq, wayToRelations);
+            if (best == null)
+                break;
 
-            for (int i = 0; i < working.Count && !didMerge; i++)
-            {
-                var path1 = working[i];
-                if (path1.Points.Count < 2) continue;
+            var b = best.Value;
+            var merged = ExecuteMerge(working[b.Index1], working[b.Index2], b.Type);
+            working[b.Index1] = merged;
+            working.RemoveAt(b.Index2);
+            mergeCount++;
 
-                for (int j = i + 1; j < working.Count; j++)
-                {
-                    var path2 = working[j];
-                    if (path2.Points.Count < 2) continue;
+            // Track statistics
+            if (b.Score >= SharedNodeBoost)
+                sharedNodeMerges++;
+            else
+                proximityMerges++;
 
-                    // Name conflict applies to all tiers
-                    if (HaveConflictingNames(path1, path2))
-                        continue;
+            if (wayToRelations != null && b.Score >= SharedNodeBoost + RelationBoost - 0.1f)
+                relationBoostedMerges++;
+        }
 
-                    // Try Tier 1: Shared Node ID (highest confidence)
-                    // At valence-2 nodes (simple continuation), OSM topology is definitive —
-                    // any highway type transition is valid (e.g., track → path, residential → service).
-                    // Type compatibility is only checked at junction nodes (valence >= 3) inside TryMergeByNodeId.
-                    var tier1Result = TryMergeByNodeId(path1, path2, nodeValence, ref tier1ThroughJunctionMerges);
-                    if (tier1Result != null)
-                    {
-                        working[i] = tier1Result;
-                        working.RemoveAt(j);
-                        didMerge = true;
-                        tier1Merges++;
-                        break;
-                    }
-
-                    // Type compatibility — only needed for proximity-based tiers where we
-                    // don't have node-based certainty about the connection
-                    if (!AreTypesCompatible(path1, path2))
-                        continue;
-
-                    // Try Tier 2: Same Name/Ref + Proximity
-                    var tier2Result = TryMergeBySameNameAndProximity(path1, path2, toleranceSquared);
-                    if (tier2Result != null)
-                    {
-                        working[i] = tier2Result;
-                        working.RemoveAt(j);
-                        didMerge = true;
-                        tier2Merges++;
-                        break;
-                    }
-
-                    // Try Tier 3: Proximity Only (for cropped paths with null node IDs)
-                    var tier3Result = TryMergeByProximityWithCropped(path1, path2, toleranceSquared);
-                    if (tier3Result != null)
-                    {
-                        working[i] = tier3Result;
-                        working.RemoveAt(j);
-                        didMerge = true;
-                        tier3Merges++;
-                        break;
-                    }
-                }
-            }
-        } while (didMerge && iterations < 1000); // Safety limit
-
-        int totalMerges = tier1Merges + tier2Merges + tier3Merges;
-        Console.WriteLine($"  Node-based path joining: {totalMerges} merges in {iterations} iterations " +
-            $"(Tier1/NodeID: {tier1Merges} [{tier1ThroughJunctionMerges} through-junction], " +
-            $"Tier2/Name+Prox: {tier2Merges}, Tier3/CroppedProx: {tier3Merges}), " +
-            $"tolerance={tolerance:F2}m");
+        var strategyName = wayToRelations != null ? "RelationAware" : "AngleFirst";
+        Console.WriteLine(
+            $"  Angle-first path joining ({strategyName}): {mergeCount} merges " +
+            $"(shared-node: {sharedNodeMerges}, proximity: {proximityMerges}" +
+            (relationBoostedMerges > 0 ? $", relation-boosted: {relationBoostedMerges}" : "") +
+            $"), {working.Count} paths remaining, tolerance={tolerance:F2}m");
 
         return working.Select(p => p.Points).ToList();
+    }
+
+    // ========================================================================================
+    //  Candidate Finding & Scoring
+    // ========================================================================================
+
+    /// <summary>
+    ///     Scans all pairs of paths and all endpoint combinations to find the single best
+    ///     merge candidate (highest score = straightest connection).
+    /// </summary>
+    private static MergeCandidate? FindBestCandidate(
+        List<PathWithMetadata> working,
+        Dictionary<long, int> nodeValence,
+        float toleranceSq,
+        Dictionary<long, HashSet<long>>? wayToRelations)
+    {
+        MergeCandidate? best = null;
+        var bestScore = float.MinValue;
+
+        // Precompute direction points (~30m lookback) for stable angle estimates.
+        // Much more reliable than using just the last segment, especially near junctions
+        // where short stub ways have noisy/unreliable angles.
+        var endLookback = new Vector2[working.Count];
+        var startLookforward = new Vector2[working.Count];
+        for (var k = 0; k < working.Count; k++)
+        {
+            endLookback[k] = GetDirectionPoint(working[k].Points, true);
+            startLookforward[k] = GetDirectionPoint(working[k].Points, false);
+        }
+
+        for (var i = 0; i < working.Count; i++)
+        {
+            var p1 = working[i];
+            if (p1.Points.Count < 2) continue;
+
+            for (var j = i + 1; j < working.Count; j++)
+            {
+                var p2 = working[j];
+                if (p2.Points.Count < 2) continue;
+                if (!AreTypesCompatible(p1, p2)) continue;
+                if (IsRoundabout(p1) || IsRoundabout(p2)) continue;
+
+                // Relation bonus (computed once per pair)
+                var relationBonus = 0f;
+                if (wayToRelations != null &&
+                    ShareRouteRelation(p1.OsmWayId, p2.OsmWayId, wayToRelations))
+                    relationBonus = RelationBoost;
+
+                // Try all 4 endpoint combinations using lookback direction points
+                // EndToStart: p1 forward → p2 forward (no reversal)
+                ScoreEndpoint(i, j, p1, p2, MergeType.EndToStart,
+                    p1.EndNodeId, p2.StartNodeId,
+                    endLookback[i], p1.Points[^1], startLookforward[j],
+                    false, nodeValence, toleranceSq, relationBonus,
+                    ref best, ref bestScore);
+
+                // EndToEnd: p1 forward → p2 reversed
+                ScoreEndpoint(i, j, p1, p2, MergeType.EndToEnd,
+                    p1.EndNodeId, p2.EndNodeId,
+                    endLookback[i], p1.Points[^1], endLookback[j],
+                    true, nodeValence, toleranceSq, relationBonus,
+                    ref best, ref bestScore);
+
+                // StartToEnd: p2 forward → p1 forward (no reversal)
+                ScoreEndpoint(i, j, p1, p2, MergeType.StartToEnd,
+                    p1.StartNodeId, p2.EndNodeId,
+                    endLookback[j], p1.Points[0], startLookforward[i],
+                    false, nodeValence, toleranceSq, relationBonus,
+                    ref best, ref bestScore);
+
+                // StartToStart: p2 reversed → p1 forward
+                ScoreEndpoint(i, j, p1, p2, MergeType.StartToStart,
+                    p1.StartNodeId, p2.StartNodeId,
+                    startLookforward[j], p1.Points[0], startLookforward[i],
+                    true, nodeValence, toleranceSq, relationBonus,
+                    ref best, ref bestScore);
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    ///     Scores a single endpoint combination and updates the best candidate if this one is better.
+    /// </summary>
+    private static void ScoreEndpoint(
+        int i, int j,
+        PathWithMetadata p1, PathWithMetadata p2,
+        MergeType type,
+        long? nodeId1, long? nodeId2,
+        Vector2 incomingPrev, Vector2 connectionPoint, Vector2 outgoingNext,
+        bool requiresReversal,
+        Dictionary<long, int> nodeValence,
+        float toleranceSq,
+        float relationBonus,
+        ref MergeCandidate? best,
+        ref float bestScore)
+    {
+        // Block reversal merges on one-way roads. EndToEnd and StartToStart reverse path2;
+        // if path2 is oneway=yes, the reversed segment goes against traffic flow.
+        // This prevents dual carriageway wrong merges (two parallel one-way roads sharing a node).
+        if (requiresReversal && IsOneway(p2))
+            return;
+
+        // Determine connection type: shared node or proximity
+        var isSharedNode = nodeId1.HasValue && nodeId2.HasValue && nodeId1.Value == nodeId2.Value;
+
+        if (!isSharedNode)
+        {
+            // Proximity fallback: require endpoints within tolerance AND at least one null node ID
+            // (both having node IDs that don't match = topologically different endpoints)
+            if (nodeId1.HasValue && nodeId2.HasValue)
+                return;
+
+            var ep1 = GetEndpoint(p1, type, true);
+            var ep2 = GetEndpoint(p2, type, false);
+            if (Vector2.DistanceSquared(ep1, ep2) > toleranceSq)
+                return;
+        }
+
+        var isJunction = isSharedNode && IsJunctionNode(nodeId1!.Value, nodeValence);
+
+        // Compute deflection angle as dot product (higher = straighter)
+        var dot = ComputeDotProduct(incomingPrev, connectionPoint, outgoingNext);
+        if (float.IsNaN(dot))
+            return; // Degenerate segment
+
+        // Junction nodes: hard threshold at 90° (dot > 0)
+        if (isJunction && dot <= 0f)
+            return;
+
+        // Compute score
+        var score = dot
+                    + (isSharedNode ? SharedNodeBoost : 0f)
+                    + relationBonus
+                    - (requiresReversal ? ReversalPenalty : 0f);
+
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = new MergeCandidate(i, j, type, score);
+        }
+    }
+
+    /// <summary>
+    ///     Returns the relevant endpoint position for a path given the merge type.
+    /// </summary>
+    private static Vector2 GetEndpoint(PathWithMetadata path, MergeType type, bool isFirst)
+    {
+        return type switch
+        {
+            MergeType.EndToStart => isFirst ? path.Points[^1] : path.Points[0],
+            MergeType.EndToEnd => isFirst ? path.Points[^1] : path.Points[^1],
+            MergeType.StartToEnd => isFirst ? path.Points[0] : path.Points[^1],
+            MergeType.StartToStart => isFirst ? path.Points[0] : path.Points[0],
+            _ => throw new ArgumentOutOfRangeException(nameof(type))
+        };
+    }
+
+    // ========================================================================================
+    //  Angle Computation
+    // ========================================================================================
+
+    /// <summary>
+    ///     Computes the dot product of the normalized incoming and outgoing direction vectors
+    ///     at a connection point. Returns cos(deflection angle):
+    ///     +1.0 = perfectly straight, 0.0 = 90° turn, -1.0 = U-turn.
+    ///     Returns NaN for degenerate (zero-length) segments.
+    /// </summary>
+    private static float ComputeDotProduct(Vector2 incomingPrev, Vector2 connectionPoint, Vector2 outgoingNext)
+    {
+        var dirIn = connectionPoint - incomingPrev;
+        var dirOut = outgoingNext - connectionPoint;
+
+        var lenInSq = dirIn.LengthSquared();
+        var lenOutSq = dirOut.LengthSquared();
+        if (lenInSq < 1e-8f || lenOutSq < 1e-8f)
+            return float.NaN;
+
+        dirIn /= MathF.Sqrt(lenInSq);
+        dirOut /= MathF.Sqrt(lenOutSq);
+        return Vector2.Dot(dirIn, dirOut);
     }
 
     // ========================================================================================
@@ -158,9 +313,8 @@ internal static class NodeBasedPathConnector
     // ========================================================================================
 
     /// <summary>
-    /// Builds a map of nodeId → number of path endpoints that reference this node.
-    /// Nodes with valence >= 3 are junctions (T-junction, crossroads, etc.) where
-    /// merging is blocked unless through-road conditions are met.
+    ///     Builds a map of nodeId → number of path endpoints that reference this node.
+    ///     Nodes with valence >= 3 are junctions where merging requires angle &lt; 90°.
     /// </summary>
     private static Dictionary<long, int> BuildNodeValenceMap(List<PathWithMetadata> paths)
     {
@@ -169,263 +323,44 @@ internal static class NodeBasedPathConnector
         {
             if (path.StartNodeId.HasValue)
             {
-                valence.TryGetValue(path.StartNodeId.Value, out int count);
+                valence.TryGetValue(path.StartNodeId.Value, out var count);
                 valence[path.StartNodeId.Value] = count + 1;
             }
+
             if (path.EndNodeId.HasValue)
             {
-                valence.TryGetValue(path.EndNodeId.Value, out int count);
+                valence.TryGetValue(path.EndNodeId.Value, out var count);
                 valence[path.EndNodeId.Value] = count + 1;
             }
         }
+
         return valence;
     }
 
     private static bool IsJunctionNode(long nodeId, Dictionary<long, int> nodeValence)
     {
-        return nodeValence.TryGetValue(nodeId, out int valence) && valence >= 3;
-    }
-
-    // ========================================================================================
-    //  Tier 1 — Shared Node ID
-    // ========================================================================================
-
-    /// <summary>
-    /// Attempts to merge two paths that share an OSM node ID at their endpoints.
-    /// At valence-2 nodes (simple continuation), merges unconditionally — OSM topology
-    /// is definitive, regardless of highway type differences (e.g., track → path).
-    /// At junction nodes (valence >= 3), merging requires compatible highway types AND
-    /// through-road conditions (not roundabout, deflection angle &lt; 90°).
-    /// </summary>
-    private static PathWithMetadata? TryMergeByNodeId(
-        PathWithMetadata path1, PathWithMetadata path2,
-        Dictionary<long, int> nodeValence,
-        ref int throughJunctionMerges)
-    {
-        // path1.End → path2.Start
-        if (path1.EndNodeId.HasValue && path2.StartNodeId.HasValue &&
-            path1.EndNodeId.Value == path2.StartNodeId.Value)
-        {
-            if (IsJunctionNode(path1.EndNodeId.Value, nodeValence))
-            {
-                if (!AreTypesCompatible(path1, path2))
-                    return null;
-                if (path1.Points.Count >= 2 && path2.Points.Count >= 2 &&
-                    IsThroughRoad(path1, path2, path1.Points[^2], path1.Points[^1], path2.Points[1]))
-                {
-                    throughJunctionMerges++;
-                    return MergeEndToStart(path1, path2);
-                }
-                return null;
-            }
-            return MergeEndToStart(path1, path2);
-        }
-
-        // path1.End → path2.End (reverse path2)
-        if (path1.EndNodeId.HasValue && path2.EndNodeId.HasValue &&
-            path1.EndNodeId.Value == path2.EndNodeId.Value)
-        {
-            if (IsJunctionNode(path1.EndNodeId.Value, nodeValence))
-            {
-                if (!AreTypesCompatible(path1, path2))
-                    return null;
-                if (path1.Points.Count >= 2 && path2.Points.Count >= 2 &&
-                    IsThroughRoad(path1, path2, path1.Points[^2], path1.Points[^1], path2.Points[^2]))
-                {
-                    throughJunctionMerges++;
-                    return MergeEndToEnd(path1, path2);
-                }
-                return null;
-            }
-            return MergeEndToEnd(path1, path2);
-        }
-
-        // path1.Start → path2.End
-        if (path1.StartNodeId.HasValue && path2.EndNodeId.HasValue &&
-            path1.StartNodeId.Value == path2.EndNodeId.Value)
-        {
-            if (IsJunctionNode(path1.StartNodeId.Value, nodeValence))
-            {
-                if (!AreTypesCompatible(path1, path2))
-                    return null;
-                if (path2.Points.Count >= 2 && path1.Points.Count >= 2 &&
-                    IsThroughRoad(path1, path2, path2.Points[^2], path1.Points[0], path1.Points[1]))
-                {
-                    throughJunctionMerges++;
-                    return MergeStartToEnd(path1, path2);
-                }
-                return null;
-            }
-            return MergeStartToEnd(path1, path2);
-        }
-
-        // path1.Start → path2.Start (reverse path2)
-        if (path1.StartNodeId.HasValue && path2.StartNodeId.HasValue &&
-            path1.StartNodeId.Value == path2.StartNodeId.Value)
-        {
-            if (IsJunctionNode(path1.StartNodeId.Value, nodeValence))
-            {
-                if (!AreTypesCompatible(path1, path2))
-                    return null;
-                if (path2.Points.Count >= 2 && path1.Points.Count >= 2 &&
-                    IsThroughRoad(path1, path2, path2.Points[1], path1.Points[0], path1.Points[1]))
-                {
-                    throughJunctionMerges++;
-                    return MergeStartToStart(path1, path2);
-                }
-                return null;
-            }
-            return MergeStartToStart(path1, path2);
-        }
-
-        return null;
-    }
-
-    // ========================================================================================
-    //  Tier 2 — Same Name/Ref + Proximity
-    // ========================================================================================
-
-    /// <summary>
-    /// Attempts to merge paths that share the same non-empty name or ref tag
-    /// AND have endpoints within the proximity tolerance.
-    /// </summary>
-    private static PathWithMetadata? TryMergeBySameNameAndProximity(
-        PathWithMetadata path1, PathWithMetadata path2,
-        float toleranceSquared)
-    {
-        if (!ShareNameOrRef(path1, path2))
-            return null;
-
-        return TryMergeByProximity(path1, path2, toleranceSquared);
-    }
-
-    // ========================================================================================
-    //  Tier 3 — Proximity Only (Cropped Paths)
-    // ========================================================================================
-
-    /// <summary>
-    /// Attempts to merge paths by proximity, but ONLY when at least one of the matched
-    /// endpoints has a null node ID (cropped at terrain boundary).
-    /// 
-    /// This prevents proximity-based merges from overriding node-based topology for paths
-    /// that have full node ID information. If both endpoints have node IDs but they don't
-    /// match, those are topologically different endpoints that happen to be geometrically
-    /// close — they should NOT merge.
-    /// </summary>
-    private static PathWithMetadata? TryMergeByProximityWithCropped(
-        PathWithMetadata path1, PathWithMetadata path2,
-        float toleranceSquared)
-    {
-        var p1End = path1.Points[^1];
-        var p2Start = path2.Points[0];
-        var p2End = path2.Points[^1];
-        var p1Start = path1.Points[0];
-
-        // End → Start
-        if (Vector2.DistanceSquared(p1End, p2Start) <= toleranceSquared &&
-            (!path1.EndNodeId.HasValue || !path2.StartNodeId.HasValue))
-        {
-            return MergeEndToStart(path1, path2);
-        }
-
-        // End → End
-        if (Vector2.DistanceSquared(p1End, p2End) <= toleranceSquared &&
-            (!path1.EndNodeId.HasValue || !path2.EndNodeId.HasValue))
-        {
-            return MergeEndToEnd(path1, path2);
-        }
-
-        // Start → End
-        if (Vector2.DistanceSquared(p1Start, p2End) <= toleranceSquared &&
-            (!path1.StartNodeId.HasValue || !path2.EndNodeId.HasValue))
-        {
-            return MergeStartToEnd(path1, path2);
-        }
-
-        // Start → Start
-        if (Vector2.DistanceSquared(p1Start, p2Start) <= toleranceSquared &&
-            (!path1.StartNodeId.HasValue || !path2.StartNodeId.HasValue))
-        {
-            return MergeStartToStart(path1, path2);
-        }
-
-        return null;
-    }
-
-    // ========================================================================================
-    //  Proximity Merge (used by Tier 2 after name/ref matching)
-    // ========================================================================================
-
-    /// <summary>
-    /// Checks all 4 endpoint combinations for geometric proximity.
-    /// Used by Tier 2 after confirming name/ref compatibility.
-    /// Rejects U-turns on one-way divided roads (e.g. roundabout exit + entry
-    /// sharing a divergence node with the same name/ref).
-    /// </summary>
-    private static PathWithMetadata? TryMergeByProximity(
-        PathWithMetadata path1, PathWithMetadata path2,
-        float toleranceSquared)
-    {
-        var p1End = path1.Points[^1];
-        var p2Start = path2.Points[0];
-        var p2End = path2.Points[^1];
-        var p1Start = path1.Points[0];
-        bool bothOneway = AreBothOneway(path1, path2);
-
-        // End → Start
-        if (Vector2.DistanceSquared(p1End, p2Start) <= toleranceSquared)
-        {
-            if (bothOneway && path1.Points.Count >= 2 && path2.Points.Count >= 2 &&
-                IsUturnAtConnection(path1.Points[^2], p1End, path2.Points[1]))
-                return null;
-            return MergeEndToStart(path1, path2);
-        }
-
-        // End → End
-        if (Vector2.DistanceSquared(p1End, p2End) <= toleranceSquared)
-        {
-            if (bothOneway && path1.Points.Count >= 2 && path2.Points.Count >= 2 &&
-                IsUturnAtConnection(path1.Points[^2], p1End, path2.Points[^2]))
-                return null;
-            return MergeEndToEnd(path1, path2);
-        }
-
-        // Start → End
-        if (Vector2.DistanceSquared(p1Start, p2End) <= toleranceSquared)
-        {
-            if (bothOneway && path2.Points.Count >= 2 && path1.Points.Count >= 2 &&
-                IsUturnAtConnection(path2.Points[^2], p2End, path1.Points[1]))
-                return null;
-            return MergeStartToEnd(path1, path2);
-        }
-
-        // Start → Start
-        if (Vector2.DistanceSquared(p1Start, p2Start) <= toleranceSquared)
-        {
-            if (bothOneway && path2.Points.Count >= 2 && path1.Points.Count >= 2 &&
-                IsUturnAtConnection(path2.Points[1], p2Start, path1.Points[1]))
-                return null;
-            return MergeStartToStart(path1, path2);
-        }
-
-        return null;
+        return nodeValence.TryGetValue(nodeId, out var valence) && valence >= 3;
     }
 
     // ========================================================================================
     //  Merge Operations
     // ========================================================================================
-    //
-    // Each merge returns a NEW PathWithMetadata combining the two input paths' geometry.
-    // The merged path inherits:
-    //   - Tags from path1 (the merge base)
-    //   - OsmWayId from path1
-    //   - Structure metadata from path1
-    //   - StartNodeId/EndNodeId from the appropriate outer endpoints
 
     /// <summary>
-    /// path1.End → path2.Start: append path2 to path1.
-    /// Result: [path1 points...] + [path2 points, skipping shared first point]
+    ///     Dispatches to the appropriate merge method based on merge type.
     /// </summary>
+    private static PathWithMetadata ExecuteMerge(PathWithMetadata path1, PathWithMetadata path2, MergeType type)
+    {
+        return type switch
+        {
+            MergeType.EndToStart => MergeEndToStart(path1, path2),
+            MergeType.EndToEnd => MergeEndToEnd(path1, path2),
+            MergeType.StartToEnd => MergeStartToEnd(path1, path2),
+            MergeType.StartToStart => MergeStartToStart(path1, path2),
+            _ => throw new ArgumentOutOfRangeException(nameof(type))
+        };
+    }
+
     private static PathWithMetadata MergeEndToStart(PathWithMetadata path1, PathWithMetadata path2)
     {
         var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
@@ -433,34 +368,26 @@ internal static class NodeBasedPathConnector
         merged.AddRange(path2.Points.Skip(1));
         return new PathWithMetadata(
             merged,
-            startNodeId: path1.StartNodeId,
-            endNodeId: path2.EndNodeId,
+            path1.StartNodeId,
+            path2.EndNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
     }
 
-    /// <summary>
-    /// path1.End → path2.End: append reversed path2 to path1.
-    /// Result: [path1 points...] + [path2 reversed, skipping shared first (=original last)]
-    /// </summary>
     private static PathWithMetadata MergeEndToEnd(PathWithMetadata path1, PathWithMetadata path2)
     {
         var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
         merged.AddRange(path1.Points);
-        for (int k = path2.Points.Count - 2; k >= 0; k--)
+        for (var k = path2.Points.Count - 2; k >= 0; k--)
             merged.Add(path2.Points[k]);
         return new PathWithMetadata(
             merged,
-            startNodeId: path1.StartNodeId,
-            endNodeId: path2.StartNodeId, // path2 reversed → its original start is now the end
+            path1.StartNodeId,
+            path2.StartNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
     }
 
-    /// <summary>
-    /// path1.Start → path2.End: prepend path2 to path1.
-    /// Result: [path2 points...] + [path1 points, skipping shared first]
-    /// </summary>
     private static PathWithMetadata MergeStartToEnd(PathWithMetadata path1, PathWithMetadata path2)
     {
         var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
@@ -468,26 +395,22 @@ internal static class NodeBasedPathConnector
         merged.AddRange(path1.Points.Skip(1));
         return new PathWithMetadata(
             merged,
-            startNodeId: path2.StartNodeId,
-            endNodeId: path1.EndNodeId,
+            path2.StartNodeId,
+            path1.EndNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
     }
 
-    /// <summary>
-    /// path1.Start → path2.Start: prepend reversed path2 to path1.
-    /// Result: [path2 reversed...] + [path1 points, skipping shared first]
-    /// </summary>
     private static PathWithMetadata MergeStartToStart(PathWithMetadata path1, PathWithMetadata path2)
     {
         var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
-        for (int k = path2.Points.Count - 1; k >= 0; k--)
+        for (var k = path2.Points.Count - 1; k >= 0; k--)
             merged.Add(path2.Points[k]);
         merged.AddRange(path1.Points.Skip(1));
         return new PathWithMetadata(
             merged,
-            startNodeId: path2.EndNodeId, // path2 reversed → its original end is now the start
-            endNodeId: path1.EndNodeId,
+            path2.EndNodeId,
+            path1.EndNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
     }
@@ -496,22 +419,12 @@ internal static class NodeBasedPathConnector
     //  Anti-Merge Rules
     // ========================================================================================
 
-    /// <summary>
-    /// Checks if two paths have compatible highway types for merging.
-    /// Incompatible types (e.g., motorway + residential) should not merge even if they
-    /// share an endpoint — they meet at a junction, not a continuation.
-    /// 
-    /// If either path has no highway tag, merging is allowed (don't block on missing data).
-    /// </summary>
     private static bool AreTypesCompatible(PathWithMetadata path1, PathWithMetadata path2)
     {
         var group1 = GetHighwayGroup(path1);
         var group2 = GetHighwayGroup(path2);
-
-        // Missing highway tag → allow merging (don't block on incomplete data)
         if (group1 == null || group2 == null)
             return true;
-
         return string.Equals(group1, group2, StringComparison.Ordinal);
     }
 
@@ -519,95 +432,7 @@ internal static class NodeBasedPathConnector
     {
         if (!path.Tags.TryGetValue("highway", out var highway) || string.IsNullOrEmpty(highway))
             return null;
-
         return HighwayTypeGroups.TryGetValue(highway, out var group) ? group : highway;
-    }
-
-    /// <summary>
-    /// Returns true if both paths have non-empty name tags that differ AND do not share
-    /// the same ref tag. Empty/missing names don't trigger a conflict — unnamed roads can
-    /// merge with named roads. A shared ref (route number like "D 914", "B51") overrides
-    /// name conflicts because road names commonly change at bridges, intersections, and
-    /// administrative boundaries while the route reference stays the same.
-    /// </summary>
-    private static bool HaveConflictingNames(PathWithMetadata path1, PathWithMetadata path2)
-    {
-        path1.Tags.TryGetValue("name", out var name1);
-        path2.Tags.TryGetValue("name", out var name2);
-
-        if (string.IsNullOrEmpty(name1) || string.IsNullOrEmpty(name2))
-            return false;
-
-        if (string.Equals(name1, name2, StringComparison.OrdinalIgnoreCase))
-            return false; // same name — no conflict
-
-        // Names differ — but a shared ref overrides the conflict
-        path1.Tags.TryGetValue("ref", out var ref1);
-        path2.Tags.TryGetValue("ref", out var ref2);
-        if (!string.IsNullOrEmpty(ref1) && !string.IsNullOrEmpty(ref2) &&
-            string.Equals(ref1, ref2, StringComparison.OrdinalIgnoreCase))
-        {
-            return false; // same route reference — name change is expected (e.g., at bridge)
-        }
-
-        return true; // different names, no shared ref — genuine conflict
-    }
-
-    /// <summary>
-    /// Returns true if both paths share a non-empty name or ref tag value.
-    /// </summary>
-    private static bool ShareNameOrRef(PathWithMetadata path1, PathWithMetadata path2)
-    {
-        // Check name tag
-        path1.Tags.TryGetValue("name", out var name1);
-        path2.Tags.TryGetValue("name", out var name2);
-        if (!string.IsNullOrEmpty(name1) && !string.IsNullOrEmpty(name2) &&
-            string.Equals(name1, name2, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // Check ref tag
-        path1.Tags.TryGetValue("ref", out var ref1);
-        path2.Tags.TryGetValue("ref", out var ref2);
-        if (!string.IsNullOrEmpty(ref1) && !string.IsNullOrEmpty(ref2) &&
-            string.Equals(ref1, ref2, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    // ========================================================================================
-    //  Through-Junction Merging
-    // ========================================================================================
-
-    /// <summary>
-    /// Checks whether two paths form a logical through-road at a junction node.
-    /// Through-junction merging is allowed at junction nodes (valence >= 3) when ALL of:
-    ///   1. Compatible highway types (already checked before Tier 1 call)
-    ///   2. No conflicting names (already checked before Tier 1 call)
-    ///   3. Neither path is tagged junction=roundabout (roundabout rings stay separate)
-    ///   4. The deflection angle at the junction is below 90° (prevents sharp-turn merges)
-    ///
-    /// Name/ref matching is NOT required — unnamed roads (common for unclassified, service,
-    /// residential) should merge through junctions to create longer splines for smooth
-    /// elevation profiles. The angle + type + conflicting-name guards are sufficient.
-    /// </summary>
-    private static bool IsThroughRoad(
-        PathWithMetadata path1, PathWithMetadata path2,
-        Vector2 incomingPrev, Vector2 connectionPoint, Vector2 outgoingNext)
-    {
-        // Condition 3: Neither path is a roundabout
-        if (IsRoundabout(path1) || IsRoundabout(path2))
-            return false;
-
-        // Condition 4: Deflection angle < 90° at junction
-        if (!IsDeflectionBelow90(incomingPrev, connectionPoint, outgoingNext))
-            return false;
-
-        return true;
     }
 
     private static bool IsRoundabout(PathWithMetadata path)
@@ -616,73 +441,104 @@ internal static class NodeBasedPathConnector
                string.Equals(junction, "roundabout", StringComparison.OrdinalIgnoreCase);
     }
 
+    // ========================================================================================
+    //  Route Relation Lookup
+    // ========================================================================================
+
     /// <summary>
-    /// Returns true if the deflection angle at the connection point is below 90°,
-    /// meaning the road continues roughly in the same direction through the junction.
-    /// dot > 0 corresponds to deflection < 90° (cos(90°) = 0).
+    ///     Builds a map from OSM way ID → set of route relation IDs that contain this way.
     /// </summary>
-    private static bool IsDeflectionBelow90(Vector2 incomingPrev, Vector2 connectionPoint, Vector2 outgoingNext)
+    private static Dictionary<long, HashSet<long>> BuildWayRelationMap(IReadOnlyList<RouteRelation> relations)
     {
-        var dirIn = connectionPoint - incomingPrev;
-        var dirOut = outgoingNext - connectionPoint;
+        var map = new Dictionary<long, HashSet<long>>();
+        foreach (var relation in relations)
+        foreach (var member in relation.Members)
+        {
+            if (!map.TryGetValue(member.WayId, out var relationIds))
+            {
+                relationIds = new HashSet<long>();
+                map[member.WayId] = relationIds;
+            }
 
-        float lenInSq = dirIn.LengthSquared();
-        float lenOutSq = dirOut.LengthSquared();
-        if (lenInSq < 1e-8f || lenOutSq < 1e-8f)
-            return false; // degenerate segments — don't merge
+            relationIds.Add(relation.RelationId);
+        }
 
-        dirIn /= MathF.Sqrt(lenInSq);
-        dirOut /= MathF.Sqrt(lenOutSq);
-        float dot = Vector2.Dot(dirIn, dirOut);
-
-        return dot > 0f;
+        return map;
     }
 
-    // ========================================================================================
-    //  U-turn Detection
-    // ========================================================================================
-
     /// <summary>
-    /// Checks whether merging at a connection point would create a U-turn (sharp reversal).
-    /// Only called when both ways are one-way, so a sharp reversal indicates separate
-    /// carriageways of a divided road rather than a hairpin curve on a mountain pass.
+    ///     Returns true if both way IDs share at least one route relation.
     /// </summary>
-    private static bool IsUturnAtConnection(Vector2 incomingPrev, Vector2 connectionPoint, Vector2 outgoingNext)
+    private static bool ShareRouteRelation(
+        long wayId1, long wayId2,
+        Dictionary<long, HashSet<long>> wayToRelations)
     {
-        var dirIn = connectionPoint - incomingPrev;
-        var dirOut = outgoingNext - connectionPoint;
-
-        float lenInSq = dirIn.LengthSquared();
-        float lenOutSq = dirOut.LengthSquared();
-        if (lenInSq < 1e-8f || lenOutSq < 1e-8f)
+        if (!wayToRelations.TryGetValue(wayId1, out var relations1))
             return false;
-
-        dirIn /= MathF.Sqrt(lenInSq);
-        dirOut /= MathF.Sqrt(lenOutSq);
-        float dot = Vector2.Dot(dirIn, dirOut);
-
-        // dot < -0.7 corresponds to angle > ~135° — a clear U-turn
-        return dot < -0.7f;
-    }
-
-    /// <summary>
-    /// Returns true if both paths have oneway=yes (or equivalent). One-way roads that reverse
-    /// direction at a shared node are separate carriageways of a divided road, not a hairpin.
-    /// </summary>
-    private static bool AreBothOneway(PathWithMetadata path1, PathWithMetadata path2)
-    {
-        return IsOneway(path1.Tags) && IsOneway(path2.Tags);
-    }
-
-    private static bool IsOneway(Dictionary<string, string> tags)
-    {
-        return tags.TryGetValue("oneway", out var value) &&
-               (value == "yes" || value == "true" || value == "1" || value == "-1");
+        if (!wayToRelations.TryGetValue(wayId2, out var relations2))
+            return false;
+        return relations1.Overlaps(relations2);
     }
 
     // ========================================================================================
     //  Helpers
     // ========================================================================================
+
+    /// <summary>
+    ///     Returns a point approximately <see cref="DirectionLookbackMeters" /> along the path
+    ///     from the given endpoint, measured along the polyline. Used for computing stable
+    ///     direction vectors that aren't sensitive to short stub segments near junctions.
+    ///     Falls back to the furthest available point if the path is shorter than the lookback distance.
+    /// </summary>
+    /// <param name="points">The path's control points.</param>
+    /// <param name="fromEnd">If true, walk backward from the last point. If false, walk forward from the first.</param>
+    private static Vector2 GetDirectionPoint(List<Vector2> points, bool fromEnd)
+    {
+        var accumulated = 0f;
+
+        if (fromEnd)
+        {
+            for (var i = points.Count - 1; i > 0; i--)
+            {
+                var segLen = Vector2.Distance(points[i], points[i - 1]);
+                accumulated += segLen;
+                if (accumulated >= DirectionLookbackMeters)
+                {
+                    // Interpolate to get exact distance
+                    var overshoot = accumulated - DirectionLookbackMeters;
+                    var t = overshoot / segLen;
+                    return Vector2.Lerp(points[i - 1], points[i], t);
+                }
+            }
+
+            return points[0]; // Path shorter than lookback — use start
+        }
+
+        for (var i = 0; i < points.Count - 1; i++)
+        {
+            var segLen = Vector2.Distance(points[i], points[i + 1]);
+            accumulated += segLen;
+            if (accumulated >= DirectionLookbackMeters)
+            {
+                var overshoot = accumulated - DirectionLookbackMeters;
+                var t = overshoot / segLen;
+                return Vector2.Lerp(points[i + 1], points[i], t);
+            }
+        }
+
+        return points[^1]; // Path shorter than lookback — use end
+    }
+
+    /// <summary>
+    ///     Returns true if the path is a one-way road in the forward direction (oneway=yes/true/1).
+    ///     For such paths, the point order (Start→End) IS the legal driving direction.
+    ///     Reversing this path during a merge would create a segment going against traffic.
+    /// </summary>
+    private static bool IsOneway(PathWithMetadata path)
+    {
+        return path.Tags.TryGetValue("oneway", out var value) &&
+               (value == "yes" || value == "true" || value == "1");
+    }
 
     private static PathWithMetadata ClonePath(PathWithMetadata source)
     {
@@ -691,11 +547,25 @@ internal static class NodeBasedPathConnector
             source.StartNodeId,
             source.EndNodeId,
             source.OsmWayId,
-            source.Tags,  // Tags are not mutated during merging — shared reference is safe
+            source.Tags,
             source.IsBridge,
             source.IsTunnel,
             source.StructureType,
             source.Layer,
             source.BridgeStructureType);
     }
+
+    private enum MergeType
+    {
+        EndToStart,
+        EndToEnd,
+        StartToEnd,
+        StartToStart
+    }
+
+    private readonly record struct MergeCandidate(
+        int Index1,
+        int Index2,
+        MergeType Type,
+        float Score);
 }

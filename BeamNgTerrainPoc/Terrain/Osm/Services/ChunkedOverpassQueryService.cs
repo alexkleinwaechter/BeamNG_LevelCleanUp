@@ -172,7 +172,8 @@ public class ChunkedOverpassQueryService : IDisposable
             return cached;
         }
 
-        // Query Overpass API
+        // Cache miss — must query Overpass API
+        TerrainLogger.Info($"Chunk cache miss, querying Overpass API for bbox: {chunkBbox}");
         var result = await _apiService.QueryAllFeaturesAsync(chunkBbox, cancellationToken);
 
         // Cache the chunk result

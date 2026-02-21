@@ -51,7 +51,7 @@ public class GeoTiffMetadataService
     /// <summary>
     ///     Reads GeoTIFF metadata from a directory of tiles.
     /// </summary>
-    public async Task<GeoTiffMetadataResult> ReadFromDirectoryAsync(string geoTiffDirectory)
+    public async Task<GeoTiffMetadataResult> ReadFromDirectoryAsync(string geoTiffDirectory, IProgress<string>? progress = null)
     {
         return await Task.Run(() =>
         {
@@ -60,7 +60,7 @@ public class GeoTiffMetadataService
             GeoTiffDirectoryInfoResult dirInfo;
             try
             {
-                dirInfo = reader.GetGeoTiffDirectoryInfoExtended(geoTiffDirectory);
+                dirInfo = reader.GetGeoTiffDirectoryInfoExtended(geoTiffDirectory, progress);
             }
             catch (InvalidOperationException ex)
             {
@@ -100,6 +100,92 @@ public class GeoTiffMetadataService
     }
 
     /// <summary>
+    ///     Reads combined metadata from multiple XYZ ASCII elevation tiles.
+    ///     Iterates all tiles to compute combined dimensions, bounding box, and elevation range.
+    ///     Mirrors <see cref="ReadFromDirectoryAsync"/> but for XYZ files.
+    /// </summary>
+    public async Task<GeoTiffMetadataResult> ReadFromXyzFilesAsync(string[] xyzPaths, int epsgCode, IProgress<string>? progress = null)
+    {
+        return await Task.Run(() =>
+        {
+            var reader = new GeoTiffReader();
+
+            GeoTiffDirectoryInfoResult dirInfo;
+            try
+            {
+                dirInfo = reader.GetXyzFilesInfoExtended(xyzPaths, epsgCode, progress);
+            }
+            catch (InvalidOperationException ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, ex.Message);
+                return new GeoTiffMetadataResult();
+            }
+
+            foreach (var warning in dirInfo.Warnings)
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, $"XYZ Tiles: {warning}");
+
+            var suggestedTerrainSize = GetNearestPowerOfTwo(Math.Max(dirInfo.CombinedWidth, dirInfo.CombinedHeight));
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Found {dirInfo.TileCount} XYZ tile(s), combined size {dirInfo.CombinedWidth}x{dirInfo.CombinedHeight}px");
+
+            return new GeoTiffMetadataResult
+            {
+                Wgs84BoundingBox = dirInfo.Wgs84BoundingBox,
+                NativeBoundingBox = dirInfo.NativeBoundingBox,
+                ProjectionName = dirInfo.ProjectionName,
+                ProjectionWkt = dirInfo.Projection,
+                GeoTransform = dirInfo.CombinedGeoTransform,
+                OriginalWidth = dirInfo.CombinedWidth,
+                OriginalHeight = dirInfo.CombinedHeight,
+                MinElevation = dirInfo.MinElevation,
+                MaxElevation = dirInfo.MaxElevation,
+                SuggestedTerrainSize = suggestedTerrainSize,
+                CanFetchOsmData = dirInfo.CanFetchOsmData,
+                OsmBlockedReason = dirInfo.OsmBlockedReason
+            };
+        });
+    }
+
+    /// <summary>
+    ///     Reads metadata from an XYZ ASCII elevation file.
+    ///     Uses GDAL's native XYZ driver with the provided EPSG code for coordinate transformation.
+    /// </summary>
+    public async Task<GeoTiffMetadataResult> ReadFromXyzFileAsync(string xyzPath, int epsgCode)
+    {
+        return await Task.Run(() =>
+        {
+            var reader = new GeoTiffReader();
+            var info = reader.GetXyzInfoExtended(xyzPath, epsgCode);
+            var suggestedTerrainSize = GetNearestPowerOfTwo(Math.Max(info.Width, info.Height));
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"XYZ: {info.Width}x{info.Height}px, EPSG:{epsgCode}");
+            if (info.MinElevation.HasValue && info.MaxElevation.HasValue)
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Elevation: {info.MinElevation:F1}m to {info.MaxElevation:F1}m");
+
+            return new GeoTiffMetadataResult
+            {
+                Wgs84BoundingBox = info.Wgs84BoundingBox,
+                NativeBoundingBox = info.BoundingBox,
+                ProjectionName = info.ProjectionName,
+                ProjectionWkt = info.Projection,
+                GeoTransform = info.GeoTransform,
+                OriginalWidth = info.Width,
+                OriginalHeight = info.Height,
+                MinElevation = info.MinElevation,
+                MaxElevation = info.MaxElevation,
+                SuggestedTerrainSize = suggestedTerrainSize,
+                CanFetchOsmData = info.Wgs84BoundingBox?.IsValidWgs84 == true,
+                OsmBlockedReason = info.Wgs84BoundingBox?.IsValidWgs84 != true
+                    ? "XYZ file requires valid EPSG code for WGS84 coordinate transformation"
+                    : null
+            };
+        });
+    }
+
+    /// <summary>
     ///     Gets the elevation range for a cropped region of a GeoTIFF.
     /// </summary>
     public async Task<(double? Min, double? Max)> GetCroppedElevationRangeAsync(
@@ -131,6 +217,31 @@ public class GeoTiffMetadataService
 
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             "GeoTIFF tiles combined. Subsequent crop changes will be fast.");
+
+        return outputPath;
+    }
+
+    /// <summary>
+    ///     Combines multiple XYZ ASCII tiles into a single GeoTIFF file with the provided EPSG projection.
+    /// </summary>
+    public async Task<string> CombineXyzTilesAsync(string[] xyzFilePaths, int epsgCode)
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"combined_xyz_{Guid.NewGuid():N}.tif");
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Combining {xyzFilePaths.Length} XYZ tiles (one-time operation)...");
+
+        // Build projection WKT from EPSG code
+        var srs = new OSGeo.OSR.SpatialReference(null);
+        if (srs.ImportFromEPSG(epsgCode) != 0)
+            throw new ArgumentException($"Invalid EPSG code: {epsgCode}");
+        srs.ExportToWkt(out var projectionWkt, null);
+
+        var combiner = new GeoTiffCombiner();
+        await combiner.CombineFilesAsync(xyzFilePaths, outputPath, projectionWkt);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            "XYZ tiles combined. Subsequent crop changes will be fast.");
 
         return outputPath;
     }
@@ -195,10 +306,10 @@ public class GeoTiffMetadataService
             var approxMetersX = pixelSizeX * metersPerDegree;
             var approxMetersY = pixelSizeY * 111320.0;
 
-            return $"{arcSecX:F1}\" × {arcSecY:F1}\" (~{approxMetersX:F0}m × {approxMetersY:F0}m)";
+            return $"{arcSecX:F1}\" ï¿½ {arcSecY:F1}\" (~{approxMetersX:F0}m ï¿½ {approxMetersY:F0}m)";
         }
 
-        return $"{pixelSizeX:F2}m × {pixelSizeY:F2}m";
+        return $"{pixelSizeX:F2}m ï¿½ {pixelSizeY:F2}m";
     }
 
     /// <summary>

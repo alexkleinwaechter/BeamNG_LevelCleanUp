@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
@@ -7,7 +8,8 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Services;
 
 /// <summary>
 /// Caches OSM junction query results to disk to avoid repeated API calls.
-/// Uses the same caching strategy as <see cref="OsmQueryCache"/>.
+/// Uses the same caching strategy as <see cref="OsmQueryCache"/>, including
+/// a filename-based bbox index for efficient containing-bbox lookups.
 /// </summary>
 public class OsmJunctionCache
 {
@@ -20,6 +22,12 @@ public class OsmJunctionCache
     private readonly Dictionary<string, OsmJunctionQueryResult> _memoryCache = new();
     private readonly string _cacheDirectory;
     private readonly TimeSpan _cacheExpiry;
+
+    /// <summary>
+    /// In-memory index of cached bounding boxes, built from filenames (no deserialization needed).
+    /// </summary>
+    private List<CacheBboxEntry>? _bboxIndex;
+    private readonly object _indexLock = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -74,6 +82,8 @@ public class OsmJunctionCache
     /// <returns>Cached result if found and valid, null otherwise.</returns>
     public async Task<OsmJunctionQueryResult?> GetAsync(GeoBoundingBox bbox)
     {
+        var cacheKey = GetCacheKey(bbox);
+
         // 1. Try exact match first (fastest path)
         var exactResult = await GetExactMatchAsync(bbox);
         if (exactResult != null)
@@ -84,6 +94,7 @@ public class OsmJunctionCache
         if (containingResult != null)
             return containingResult;
 
+        TerrainLogger.Info($"OSM junction cache miss: no exact or containing match for {cacheKey}");
         return null;
     }
 
@@ -121,6 +132,7 @@ public class OsmJunctionCache
             {
                 // Expired, delete file
                 File.Delete(filePath);
+                InvalidateBboxIndex();
                 return null;
             }
 
@@ -139,7 +151,7 @@ public class OsmJunctionCache
         {
             TerrainLogger.Warning($"Failed to read OSM junction cache: {ex.Message}");
             // Delete corrupted cache file
-            try { File.Delete(filePath); } catch { }
+            try { File.Delete(filePath); InvalidateBboxIndex(); } catch { }
         }
 
         return null;
@@ -147,7 +159,7 @@ public class OsmJunctionCache
 
     /// <summary>
     /// Checks if any cached bounding box contains the requested one.
-    /// If found, filters junctions to only those within the requested bbox.
+    /// Uses an in-memory bbox index built from filenames to avoid deserializing all files.
     /// </summary>
     private async Task<OsmJunctionQueryResult?> GetFromContainingCacheAsync(GeoBoundingBox requestedBbox)
     {
@@ -164,27 +176,25 @@ public class OsmJunctionCache
             }
         }
 
-        // Check disk cache for containing bbox
-        try
+        // Use bbox index to find containing cache on disk (no full deserialization needed)
+        var index = GetOrBuildBboxIndex();
+
+        foreach (var entry in index)
         {
-            var cacheFiles = Directory.GetFiles(_cacheDirectory, "osm_junctions_v*.json");
-            foreach (var filePath in cacheFiles)
+            if (entry.BBox.Contains(requestedBbox) &&
+                DateTime.UtcNow - entry.LastWriteUtc <= _cacheExpiry)
             {
                 try
                 {
-                    var fileInfo = new FileInfo(filePath);
-                    if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiry)
-                        continue; // Skip expired
-
-                    var json = await File.ReadAllTextAsync(filePath);
+                    // Only deserialize the one matching file
+                    var json = await File.ReadAllTextAsync(entry.FilePath);
                     var cachedResult = JsonSerializer.Deserialize<OsmJunctionQueryResult>(json, JsonOptions);
 
                     if (cachedResult?.BoundingBox != null &&
                         cachedResult.BoundingBox.Contains(requestedBbox))
                     {
-                        // Found a containing cache! Filter and return
                         var filtered = FilterJunctionsToBbox(cachedResult, requestedBbox);
-                        TerrainLogger.Info($"OSM junction cache hit (disk, containing): filtered {filtered.Junctions.Count} junctions from larger cached region");
+                        TerrainLogger.Info($"OSM junction cache hit (disk, containing via index): filtered {filtered.Junctions.Count} junctions from larger cached region");
 
                         // Also add to memory cache for faster subsequent lookups
                         var cacheKey = GetCacheKey(cachedResult.BoundingBox);
@@ -193,15 +203,11 @@ public class OsmJunctionCache
                         return filtered;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Skip corrupted files
+                    TerrainLogger.Warning($"Error reading indexed junction cache file {Path.GetFileName(entry.FilePath)}: {ex.Message}");
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            TerrainLogger.Warning($"Error scanning disk cache for containing bbox: {ex.Message}");
         }
 
         return null;
@@ -257,7 +263,13 @@ public class OsmJunctionCache
             var filePath = GetCacheFilePath(cacheKey);
             var json = JsonSerializer.Serialize(result, JsonOptions);
             await File.WriteAllTextAsync(filePath, json);
+
+            var fileInfo = new FileInfo(filePath);
             TerrainLogger.Info($"OSM junction result cached: {cacheKey} ({result.Junctions.Count} junctions)");
+
+            // Add to bbox index
+            AddToBboxIndex(filePath, bbox, fileInfo.LastWriteTimeUtc);
+
             OsmQueryCache.RaiseCacheChanged();
         }
         catch (Exception ex)
@@ -281,6 +293,7 @@ public class OsmJunctionCache
             try
             {
                 File.Delete(filePath);
+                InvalidateBboxIndex();
                 TerrainLogger.Info($"OSM junction cache invalidated: {cacheKey}");
                 OsmQueryCache.RaiseCacheChanged();
             }
@@ -297,6 +310,7 @@ public class OsmJunctionCache
     public void ClearAll()
     {
         _memoryCache.Clear();
+        InvalidateBboxIndex();
 
         try
         {
@@ -378,6 +392,7 @@ public class OsmJunctionCache
 
             if (deletedCount > 0)
             {
+                InvalidateBboxIndex();
                 TerrainLogger.Info($"OSM junction cache cleanup: {deletedCount} expired files deleted");
                 OsmQueryCache.RaiseCacheChanged();
             }
@@ -389,4 +404,107 @@ public class OsmJunctionCache
 
         return deletedCount;
     }
+
+    #region Bbox Index
+
+    private record CacheBboxEntry(string FilePath, GeoBoundingBox BBox, DateTime LastWriteUtc);
+
+    /// <summary>
+    /// Gets or lazily builds the bbox index from cache filenames.
+    /// No file deserialization is needed — bbox is parsed from the filename.
+    /// </summary>
+    private List<CacheBboxEntry> GetOrBuildBboxIndex()
+    {
+        lock (_indexLock)
+        {
+            if (_bboxIndex != null)
+                return _bboxIndex;
+
+            _bboxIndex = new List<CacheBboxEntry>();
+
+            try
+            {
+                var pattern = $"osm_junctions_v{CacheVersion}_*.json";
+                var files = Directory.GetFiles(_cacheDirectory, pattern);
+
+                foreach (var filePath in files)
+                {
+                    var bbox = ParseBboxFromFileName(filePath);
+                    if (bbox != null)
+                    {
+                        var lastWrite = new FileInfo(filePath).LastWriteTimeUtc;
+                        _bboxIndex.Add(new CacheBboxEntry(filePath, bbox, lastWrite));
+                    }
+                }
+
+                if (_bboxIndex.Count > 0)
+                    TerrainLogger.Info($"Built OSM junction cache bbox index: {_bboxIndex.Count} entries");
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Error building junction bbox index: {ex.Message}");
+            }
+
+            return _bboxIndex;
+        }
+    }
+
+    /// <summary>
+    /// Adds a new entry to the bbox index (called after writing a cache file).
+    /// </summary>
+    private void AddToBboxIndex(string filePath, GeoBoundingBox bbox, DateTime lastWriteUtc)
+    {
+        lock (_indexLock)
+        {
+            _bboxIndex ??= new List<CacheBboxEntry>();
+            _bboxIndex.RemoveAll(e => e.FilePath == filePath);
+            _bboxIndex.Add(new CacheBboxEntry(filePath, bbox, lastWriteUtc));
+        }
+    }
+
+    /// <summary>
+    /// Forces the bbox index to be rebuilt on next access.
+    /// </summary>
+    private void InvalidateBboxIndex()
+    {
+        lock (_indexLock)
+        {
+            _bboxIndex = null;
+        }
+    }
+
+    /// <summary>
+    /// Parses a bounding box from a junction cache filename.
+    /// Expected format: osm_junctions_v1_{minLat:F4}_{minLon:F4}_{maxLat:F4}_{maxLon:F4}.json
+    /// </summary>
+    /// <remarks>
+    /// The filename stores coordinates at F4 precision. To prevent false negatives in the
+    /// containing-bbox index pre-filter, we expand by half the F4 step (0.00005° ≈ 5.5m).
+    /// False positives are harmless — the full-precision Contains() check after file
+    /// deserialization is the definitive gate.
+    /// </remarks>
+    private static GeoBoundingBox? ParseBboxFromFileName(string filePath)
+    {
+        var name = Path.GetFileNameWithoutExtension(filePath); // removes .json
+
+        // Split: ["osm", "junctions", "v1", "48.1234", "11.5678", "48.5678", "12.1234"]
+        var parts = name.Split('_');
+        if (parts.Length < 7) return null;
+
+        // Last 4 parts are the bbox coordinates: minLat, minLon, maxLat, maxLon
+        if (double.TryParse(parts[^4], CultureInfo.InvariantCulture, out var minLat) &&
+            double.TryParse(parts[^3], CultureInfo.InvariantCulture, out var minLon) &&
+            double.TryParse(parts[^2], CultureInfo.InvariantCulture, out var maxLat) &&
+            double.TryParse(parts[^1], CultureInfo.InvariantCulture, out var maxLon))
+        {
+            // Expand by half the F4 precision step to compensate for rounding.
+            // This ensures the index bbox is always >= the actual cached bbox.
+            const double halfStep = 0.00005;
+            return new GeoBoundingBox(minLon - halfStep, minLat - halfStep, maxLon + halfStep, maxLat + halfStep);
+        }
+
+        return null;
+    }
+
+    #endregion
 }

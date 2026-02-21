@@ -239,6 +239,8 @@ public class TerrainGenerationOrchestrator
 
     /// <summary>
     ///     Writes terrain generation logs to files.
+    ///     Takes thread-safe snapshots of the message lists before writing,
+    ///     since the PubSub consumer may be adding messages concurrently.
     /// </summary>
     public void WriteGenerationLogs(TerrainGenerationState state)
     {
@@ -247,24 +249,30 @@ public class TerrainGenerationOrchestrator
 
         try
         {
-            if (state.Messages.Any())
+            // Snapshot the lists to avoid InvalidOperationException from concurrent modification
+            // The PubSub consumer on the UI thread may still be adding messages while we write.
+            var messagesSnapshot = state.Messages.ToList();
+            var warningsSnapshot = state.Warnings.ToList();
+            var errorsSnapshot = state.Errors.ToList();
+
+            if (messagesSnapshot.Count > 0)
             {
                 var messagesPath = Path.Combine(state.WorkingDirectory, "Log_TerrainGen.txt");
-                File.WriteAllLines(messagesPath, state.Messages);
+                File.WriteAllLines(messagesPath, messagesSnapshot);
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Terrain generation log written to: {Path.GetFileName(messagesPath)}");
             }
 
-            if (state.Warnings.Any())
+            if (warningsSnapshot.Count > 0)
             {
                 var warningsPath = Path.Combine(state.WorkingDirectory, "Log_TerrainGen_Warnings.txt");
-                File.WriteAllLines(warningsPath, state.Warnings);
+                File.WriteAllLines(warningsPath, warningsSnapshot);
             }
 
-            if (state.Errors.Any())
+            if (errorsSnapshot.Count > 0)
             {
                 var errorsPath = Path.Combine(state.WorkingDirectory, "Log_TerrainGen_Errors.txt");
-                File.WriteAllLines(errorsPath, state.Errors);
+                File.WriteAllLines(errorsPath, errorsSnapshot);
             }
         }
         catch (Exception ex)
@@ -801,6 +809,22 @@ public class TerrainGenerationOrchestrator
                         "No cached combined GeoTIFF - will combine tiles during generation");
                 }
 
+                ApplyCropSettings(state, parameters);
+                break;
+
+            case HeightmapSourceType.XyzFile:
+                if (state.XyzFilePaths is { Length: > 1 })
+                {
+                    parameters.XyzFilePaths = state.XyzFilePaths;
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        $"Using {state.XyzFilePaths.Length} XYZ tiles — will combine during generation");
+                }
+                else
+                {
+                    parameters.XyzPath = state.XyzPath;
+                }
+
+                parameters.XyzEpsgCode = state.XyzEpsgCode;
                 ApplyCropSettings(state, parameters);
                 break;
         }

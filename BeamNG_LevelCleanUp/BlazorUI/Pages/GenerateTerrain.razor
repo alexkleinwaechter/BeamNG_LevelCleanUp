@@ -6,6 +6,7 @@
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Logic
 @using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.BlazorUI.Services
 @using BeamNG_LevelCleanUp.Utils
 @using BeamNgTerrainPoc.Terrain
 @using BeamNgTerrainPoc.Terrain.Models
@@ -99,6 +100,10 @@
                                        HeightmapSourceType="@_heightmapSourceType"
                                        GeoTiffPath="@_geoTiffPath"
                                        GeoTiffDirectory="@_geoTiffDirectory"
+                                       XyzPath="@_state.XyzPath"
+                                       XyzFilePaths="@_state.XyzFilePaths"
+                                       XyzEpsgCode="@_xyzEpsgCode"
+                                       CachedCombinedGeoTiffPath="@_cachedCombinedGeoTiffPath"
                                        UpdateTerrainBlock="@_updateTerrainBlock"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
                                        EnableCrossroadToTJunctionConversion="@_enableCrossroadToTJunctionConversion"
@@ -133,111 +138,129 @@
                     </MudText>
 
                     <MudGrid Spacing="3">
-                        <!-- Heightmap Source Type Selection -->
+                        <!-- Elevation Data Import -->
                         <MudItem xs="12">
                             <div class="d-flex align-center gap-2 mb-2">
-                                <MudText Typo="Typo.subtitle2">Heightmap Source (Required)</MudText>
-                                <MudTooltip Text="Learn about GeoTIFF sources and where to get elevation data">
+                                <MudText Typo="Typo.subtitle2">Elevation Data (Required)</MudText>
+                                <MudTooltip Text="Learn about elevation sources and where to get data">
                                     <MudIconButton Icon="@Icons.Material.Filled.Help"
                                                    Size="Size.Small"
                                                    Color="Color.Primary"
                                                    OnClick="OpenHeightmapSourceHelpDialog" />
                                 </MudTooltip>
                             </div>
-                            <MudButtonGroup OverrideStyles="false" Class="mb-3">
-                                <MudButton Variant="@(_heightmapSourceType == HeightmapSourceType.Png ? Variant.Filled : Variant.Outlined)"
-                                           Color="Color.Primary"
-                                           OnClick="@(() => OnHeightmapSourceTypeChanged(HeightmapSourceType.Png))"
-                                           StartIcon="@Icons.Material.Filled.Image">
-                                    PNG Heightmap
-                                </MudButton>
-                                <MudButton Variant="@(_heightmapSourceType == HeightmapSourceType.GeoTiffFile ? Variant.Filled : Variant.Outlined)"
-                                           Color="Color.Primary"
-                                           OnClick="@(() => OnHeightmapSourceTypeChanged(HeightmapSourceType.GeoTiffFile))"
-                                           StartIcon="@Icons.Material.Filled.Terrain">
-                                    GeoTIFF File
-                                </MudButton>
-                                <MudButton Variant="@(_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory ? Variant.Filled : Variant.Outlined)"
-                                           Color="Color.Primary"
-                                           OnClick="@(() => OnHeightmapSourceTypeChanged(HeightmapSourceType.GeoTiffDirectory))"
-                                           StartIcon="@Icons.Material.Filled.Folder">
-                                    GeoTIFF Tiles
-                                </MudButton>
-                            </MudButtonGroup>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                @GetHeightmapSourceDescription()
-                            </MudText>
 
-                            @* PNG Heightmap Selection *@
-                            @if (_heightmapSourceType == HeightmapSourceType.Png)
+                            @if (_elevationImportResult == null)
                             {
-                                <div class="d-flex align-center gap-2">
-                                    <MudTextField @bind-Value="_heightmapPath"
-                                                  Label="Heightmap Path"
-                                                  Variant="Variant.Outlined"
-                                                  ReadOnly="true"
-                                                  Placeholder="Select a 16-bit grayscale PNG..."
-                                                  Class="flex-grow-1"
-                                                  Error="@(string.IsNullOrEmpty(_heightmapPath))"
-                                                  ErrorText="Heightmap is required" />
-                                    <MudButton Variant="Variant.Filled"
-                                               Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.Image"
-                                               OnClick="SelectHeightmap">
-                                        Browse
-                                    </MudButton>
-                                </div>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                                    16-bit grayscale PNG. Image dimensions should match terrain size.
-                                </MudText>
+                                @* Empty state: two native dialog buttons for file and folder selection *@
+                                <MudPaper Outlined="true" Class="pa-4" Style="border-radius: 8px;">
+                                    <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center">
+                                        <MudButton Variant="Variant.Filled"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.InsertDriveFile"
+                                                   OnClick="ImportElevationFiles"
+                                                   Disabled="@_isImportingElevation">
+                                            Select Files
+                                        </MudButton>
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.Folder"
+                                                   OnClick="ImportElevationFolder"
+                                                   Disabled="@_isImportingElevation">
+                                            Select Folder
+                                        </MudButton>
+                                        @if (_isImportingElevation)
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                            <MudText Typo="Typo.body2">Importing...</MudText>
+                                        }
+                                    </MudStack>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                                        <strong>Select Files:</strong> Pick one or multiple files (hold Ctrl/Shift for multi-select).
+                                        <strong>Select Folder:</strong> Import all elevation tiles from a directory.
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                        Supported formats: GeoTIFF (.tif, .tiff), XYZ ASCII (.xyz, .txt), PNG heightmap (.png), ZIP archive (.zip)
+                                    </MudText>
+                                </MudPaper>
                             }
-
-                            @* GeoTIFF File Selection *@
-                            @if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
+                            else
                             {
-                                <div class="d-flex align-center gap-2">
-                                    <MudTextField @bind-Value="_geoTiffPath"
-                                                  Label="GeoTIFF File Path"
-                                                  Variant="Variant.Outlined"
-                                                  ReadOnly="true"
-                                                  Placeholder="Select a GeoTIFF elevation file..."
-                                                  Class="flex-grow-1"
-                                                  Error="@(string.IsNullOrEmpty(_geoTiffPath))"
-                                                  ErrorText="GeoTIFF file is required" />
-                                    <MudButton Variant="Variant.Filled"
-                                               Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.Terrain"
-                                               OnClick="SelectGeoTiffFile">
-                                        Browse
-                                    </MudButton>
-                                </div>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                                    GeoTIFF with elevation data. Geographic coordinates will be extracted for OSM queries.
-                                </MudText>
-                            }
+                                @* Loaded state: summary card *@
+                                <MudPaper Outlined="true" Class="pa-4" Style="border-radius: 8px;">
+                                    <div class="d-flex align-center justify-space-between">
+                                        <div class="d-flex align-center gap-3">
+                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Medium" />
+                                            <div>
+                                                <MudText Typo="Typo.subtitle2">
+                                                    @_elevationImportResult.FormatLabel
+                                                    @if (_elevationImportResult.FileCount > 1)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">
+                                                            @_elevationImportResult.FileCount files
+                                                        </MudChip>
+                                                    }
+                                                    @if (_elevationImportResult.WasExtractedFromZip)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Class="ml-1">
+                                                            from ZIP
+                                                        </MudChip>
+                                                    }
+                                                </MudText>
+                                                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                                    @GetFileListSummary()
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    @GetHeightmapSourceDescription()
+                                                </MudText>
+                                                @if (_elevationImportResult.SourceType == ElevationSourceType.Png)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                        <strong>File:</strong> @(_elevationImportResult.FilePaths.FirstOrDefault() ?? "—")
+                                                    </MudText>
+                                                    @if (_elevationImportResult.PngWidth > 0 && _elevationImportResult.PngHeight > 0)
+                                                    {
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                            <strong>Image Size:</strong> @_elevationImportResult.PngWidth &times; @_elevationImportResult.PngHeight px
+                                                            @if (_elevationImportResult.PngBitDepth > 0)
+                                                            {
+                                                                <text> (@_elevationImportResult.PngBitDepth-bit)</text>
+                                                            }
+                                                        </MudText>
+                                                    }
+                                                }
+                                            </div>
+                                        </div>
+                                        <MudButton Variant="Variant.Text"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.SwapHoriz"
+                                                   OnClick="ClearElevationImport">
+                                            Change
+                                        </MudButton>
+                                    </div>
 
-                            @* GeoTIFF Directory Selection *@
-                            @if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
-                            {
-                                <div class="d-flex align-center gap-2">
-                                    <MudTextField @bind-Value="_geoTiffDirectory"
-                                                  Label="GeoTIFF Tiles Directory"
-                                                  Variant="Variant.Outlined"
-                                                  ReadOnly="true"
-                                                  Placeholder="Select folder with GeoTIFF tiles..."
-                                                  Class="flex-grow-1"
-                                                  Error="@(string.IsNullOrEmpty(_geoTiffDirectory))"
-                                                  ErrorText="GeoTIFF directory is required" />
-                                    <MudButton Variant="Variant.Filled"
-                                               Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.Folder"
-                                               OnClick="SelectGeoTiffDirectory">
-                                        Browse
-                                    </MudButton>
-                                </div>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                                    Folder containing multiple GeoTIFF tiles (.tif, .tiff, .geotiff). Tiles will be combined.
-                                </MudText>
+                                    @* XYZ EPSG Code Input *@
+                                    @if (_elevationImportResult.NeedsEpsgCode)
+                                    {
+                                        <MudDivider Class="my-3" />
+                                        <div class="d-flex align-center gap-3">
+                                            <MudNumericField T="int" @bind-Value="_xyzEpsgCode"
+                                                             Label="EPSG Code"
+                                                             Variant="Variant.Outlined"
+                                                             Min="1000" Max="99999"
+                                                             HelperText="@GetEpsgHelperText()"
+                                                             Style="max-width: 200px;"
+                                                             DebounceInterval="500"
+                                                             OnDebounceIntervalElapsed="OnEpsgCodeChanged" />
+                                            @if (_elevationImportResult.DetectedEpsgCode.HasValue)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                                                    Auto-detected: EPSG:@_elevationImportResult.DetectedEpsgCode
+                                                </MudChip>
+                                            }
+                                        </div>
+                                    }
+                                </MudPaper>
                             }
                         </MudItem>
 
@@ -315,7 +338,7 @@
 
                         @* OSM Data Availability Warning *@
                         @if (!_canFetchOsmData && !string.IsNullOrEmpty(_osmBlockedReason) &&
-                                            (_heightmapSourceType == HeightmapSourceType.GeoTiffFile || _heightmapSourceType == HeightmapSourceType.GeoTiffDirectory))
+                                            _heightmapSourceType != HeightmapSourceType.Png)
                         {
                             <MudItem xs="12">
                                 <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2" Icon="@Icons.Material.Filled.Warning">
@@ -363,9 +386,9 @@
                             </MudItem>
                         }
 
-                        @* GeoTIFF Crop Settings (when image is larger than terrain) *@
+                        @* Crop Settings (when image is larger than terrain) *@
                         @if (_geoTiffOriginalWidth > 0 && _geoTiffOriginalHeight > 0 &&
-                                            (_heightmapSourceType == HeightmapSourceType.GeoTiffFile || _heightmapSourceType == HeightmapSourceType.GeoTiffDirectory))
+                                            _heightmapSourceType != HeightmapSourceType.Png)
                         {
                             <MudItem xs="12">
                                 <CropAnchorSelector @ref="_cropAnchorSelector"

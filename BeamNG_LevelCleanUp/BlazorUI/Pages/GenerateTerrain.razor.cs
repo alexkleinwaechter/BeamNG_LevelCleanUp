@@ -5,6 +5,7 @@ using BeamNG_LevelCleanUp.BlazorUI.Services;
 using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
@@ -36,6 +37,7 @@ public partial class GenerateTerrain : IDisposable
     // ========================================
     // SERVICES
     // ========================================
+    private readonly ElevationImportService _elevationImportService = new();
     private readonly GeoTiffMetadataService _geoTiffService = new();
     private readonly TerrainMaterialService _materialService = new();
 
@@ -55,6 +57,11 @@ public partial class GenerateTerrain : IDisposable
 
     // Persistent snackbars for long operations
     private Snackbar? _geoTiffLoadingSnackbar;
+    private Snackbar? _elevationImportSnackbar;
+
+    // Elevation import state
+    private ElevationImportResult? _elevationImportResult;
+    private bool _isImportingElevation;
 
     // Analysis state
     private bool _isAnalyzing;
@@ -367,6 +374,12 @@ public partial class GenerateTerrain : IDisposable
         set => _state.GeoTiffValidationResult = value;
     }
 
+    private int _xyzEpsgCode
+    {
+        get => _state.XyzEpsgCode;
+        set => _state.XyzEpsgCode = value;
+    }
+
     /// <summary>
     ///     Gets the effective bounding box for OSM queries.
     /// </summary>
@@ -387,6 +400,9 @@ public partial class GenerateTerrain : IDisposable
         // Cancel the PubSub consumer task
         _disposalCts.Cancel();
         _disposalCts.Dispose();
+
+        // Cleanup temp files from elevation import
+        _elevationImportService.CleanupTempFiles();
 
         // Clear all terrain-related state to release large arrays
         _state.Reset();
@@ -803,14 +819,26 @@ public partial class GenerateTerrain : IDisposable
         _osmBlockedReason = null;
         _geoTiffValidationResult = null;
 
-        // Suppress intermediate snackbars during GeoTIFF loading
+        // Suppress intermediate snackbars during metadata loading
         _suppressSnackbars = true;
 
         // Show persistent loading snackbar (bypasses suppression since we add it directly)
         await InvokeAsync(() =>
         {
-            _geoTiffLoadingSnackbar = Snackbar.Add("Reading GeoTIFF metadata...", Severity.Normal,
+            _geoTiffLoadingSnackbar = Snackbar.Add("Reading elevation metadata...", Severity.Normal,
                 config => { config.VisibleStateDuration = int.MaxValue; });
+        });
+
+        // Progress reporter that updates the loading snackbar with tile processing status
+        var tileProgress = new Progress<string>(message =>
+        {
+            _ = InvokeAsync(() =>
+            {
+                if (_geoTiffLoadingSnackbar != null)
+                    Snackbar.Remove(_geoTiffLoadingSnackbar);
+                _geoTiffLoadingSnackbar = Snackbar.Add(message, Severity.Normal,
+                    config => { config.VisibleStateDuration = int.MaxValue; });
+            });
         });
 
         string? finalMessage = null;
@@ -824,7 +852,13 @@ public partial class GenerateTerrain : IDisposable
             if (!string.IsNullOrEmpty(_geoTiffPath) && File.Exists(_geoTiffPath))
                 result = await _geoTiffService.ReadFromFileAsync(_geoTiffPath);
             else if (!string.IsNullOrEmpty(_geoTiffDirectory) && Directory.Exists(_geoTiffDirectory))
-                result = await _geoTiffService.ReadFromDirectoryAsync(_geoTiffDirectory);
+                result = await _geoTiffService.ReadFromDirectoryAsync(_geoTiffDirectory, tileProgress);
+            else if (_state.XyzFilePaths is { Length: > 1 })
+                result = await _geoTiffService.ReadFromXyzFilesAsync(_state.XyzFilePaths, _xyzEpsgCode, tileProgress);
+            else if (_state.XyzFilePaths is { Length: 1 })
+                result = await _geoTiffService.ReadFromXyzFileAsync(_state.XyzFilePaths[0], _xyzEpsgCode);
+            else if (!string.IsNullOrEmpty(_state.XyzPath) && File.Exists(_state.XyzPath))
+                result = await _geoTiffService.ReadFromXyzFileAsync(_state.XyzPath, _xyzEpsgCode);
 
             if (result == null) return;
 
@@ -867,15 +901,16 @@ public partial class GenerateTerrain : IDisposable
             // Log scale information
             LogScaleInformation(result);
 
-            finalMessage = $"GeoTIFF loaded: {result.OriginalWidth}×{result.OriginalHeight}px, " +
+            var formatLabel = _heightmapSourceType == HeightmapSourceType.XyzFile ? "XYZ" : "GeoTIFF";
+            finalMessage = $"{formatLabel} loaded: {result.OriginalWidth}×{result.OriginalHeight}px, " +
                            $"elevation {_geoTiffMinElevation:F0}m – {_geoTiffMaxElevation:F0}m";
             finalSeverity = Severity.Success;
         }
         catch (Exception ex)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"Could not read GeoTIFF metadata: {ex.Message}. OSM features will not be available until terrain generation.");
-            finalMessage = $"Could not read GeoTIFF metadata: {ex.Message}";
+                $"Could not read elevation metadata: {ex.Message}. OSM features will not be available until terrain generation.");
+            finalMessage = $"Could not read elevation metadata: {ex.Message}";
             finalSeverity = Severity.Warning;
         }
         finally
@@ -963,6 +998,309 @@ public partial class GenerateTerrain : IDisposable
         StateHasChanged();
     }
 
+    // ========================================
+    // UNIFIED ELEVATION IMPORT
+    // ========================================
+
+    /// <summary>
+    ///     Opens a file dialog to select elevation data files, then imports them.
+    ///     Supports GeoTIFF (.tif, .tiff), XYZ ASCII (.xyz, .txt), PNG (.png), and ZIP (.zip).
+    /// </summary>
+    private async Task ImportElevationFiles()
+    {
+        string[]? selectedPaths = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new OpenFileDialog();
+            dialog.Filter =
+                "Elevation Files (*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.png;*.zip)|*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.png;*.zip|" +
+                "GeoTIFF (*.tif;*.tiff;*.geotiff)|*.tif;*.tiff;*.geotiff|" +
+                "XYZ ASCII (*.xyz;*.txt)|*.xyz;*.txt|" +
+                "PNG Heightmap (*.png)|*.png|" +
+                "ZIP Archive (*.zip)|*.zip|" +
+                "All Files (*.*)|*.*";
+            dialog.Title = "Select Elevation Data Files";
+            dialog.Multiselect = true;
+            if (dialog.ShowDialog() == DialogResult.OK)
+                selectedPaths = dialog.FileNames;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (selectedPaths == null || selectedPaths.Length == 0)
+            return;
+
+        _isImportingElevation = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _elevationImportSnackbar = Snackbar.Add("Importing elevation data...", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+
+            var result = await Task.Run(() => _elevationImportService.ImportFilesAsync(selectedPaths));
+            await ApplyImportResult(result);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            if (_elevationImportSnackbar != null)
+            {
+                Snackbar.Remove(_elevationImportSnackbar);
+                _elevationImportSnackbar = null;
+            }
+            _isImportingElevation = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    ///     Opens a folder dialog to select a directory containing elevation tiles.
+    /// </summary>
+    private async Task ImportElevationFolder()
+    {
+        string? selectedPath = null;
+        var staThread = new Thread(() =>
+        {
+            using var dialog = new FolderBrowserDialog();
+            dialog.Description = "Select folder containing elevation data tiles";
+            dialog.UseDescriptionForTitle = true;
+            if (dialog.ShowDialog() == DialogResult.OK)
+                selectedPath = dialog.SelectedPath;
+        });
+        staThread.SetApartmentState(ApartmentState.STA);
+        staThread.Start();
+        staThread.Join();
+
+        if (string.IsNullOrEmpty(selectedPath))
+            return;
+
+        _isImportingElevation = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _elevationImportSnackbar = Snackbar.Add("Importing elevation data...", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+
+            var result = await Task.Run(() => _elevationImportService.ImportFolderAsync(selectedPath));
+            await ApplyImportResult(result);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            if (_elevationImportSnackbar != null)
+            {
+                Snackbar.Remove(_elevationImportSnackbar);
+                _elevationImportSnackbar = null;
+            }
+            _isImportingElevation = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    ///     Applies an import result to the page state, setting paths, source type, and reading metadata.
+    /// </summary>
+    private async Task ApplyImportResult(ElevationImportResult result)
+    {
+        _elevationImportResult = result;
+
+        // Clear previous state
+        ClearGeoMetadata();
+        _heightmapPath = null;
+        _geoTiffPath = null;
+        _geoTiffDirectory = null;
+        _state.XyzPath = null;
+
+        // Set source type and paths based on detected format
+        switch (result.SourceType)
+        {
+            case ElevationSourceType.Png:
+                _heightmapSourceType = HeightmapSourceType.Png;
+                _heightmapPath = result.ResolvedHeightmapPath;
+                break;
+
+            case ElevationSourceType.GeoTiffSingle:
+                _heightmapSourceType = HeightmapSourceType.GeoTiffFile;
+                _geoTiffPath = result.ResolvedGeoTiffPath;
+                break;
+
+            case ElevationSourceType.GeoTiffMultiple:
+                _heightmapSourceType = HeightmapSourceType.GeoTiffDirectory;
+                _geoTiffDirectory = result.ResolvedGeoTiffDirectory;
+                break;
+
+            case ElevationSourceType.XyzFile:
+                _heightmapSourceType = HeightmapSourceType.XyzFile;
+                _state.XyzPath = result.ResolvedXyzPath;
+                _state.XyzFilePaths = null;
+                _xyzEpsgCode = result.EpsgCode;
+                _state.XyzDetectedEpsg = result.DetectedEpsgCode;
+                break;
+
+            case ElevationSourceType.XyzMultiple:
+                _heightmapSourceType = HeightmapSourceType.XyzFile;
+                _state.XyzFilePaths = result.ResolvedXyzFilePaths;
+                _state.XyzPath = null;
+                _xyzEpsgCode = result.EpsgCode;
+                _state.XyzDetectedEpsg = result.DetectedEpsgCode;
+                break;
+        }
+
+        // Apply metadata if available
+        if (result.Metadata != null)
+            ApplyMetadataToState(result.Metadata);
+
+        // For GeoTIFF/XYZ, read full metadata (bounding box, elevation, etc.)
+        if (result.SourceType != ElevationSourceType.Png)
+            await ReadGeoTiffMetadata();
+
+        // Force refresh of the drop container to pass updated GeoBoundingBox to child components
+        _dropContainer?.Refresh();
+
+        var message = result.SourceType switch
+        {
+            ElevationSourceType.Png => $"PNG heightmap loaded: {result.FileNames[0]}",
+            ElevationSourceType.GeoTiffSingle => $"GeoTIFF loaded: {result.FileNames[0]}",
+            ElevationSourceType.GeoTiffMultiple => $"GeoTIFF tiles loaded: {result.FileCount} files",
+            ElevationSourceType.XyzFile => $"XYZ file loaded: {result.FileNames[0]} (EPSG:{result.EpsgCode})",
+            ElevationSourceType.XyzMultiple => $"XYZ tiles loaded: {result.FileCount} files (EPSG:{result.EpsgCode})",
+            _ => "Elevation data loaded"
+        };
+        Snackbar.Add(message, Severity.Success);
+    }
+
+    /// <summary>
+    ///     Applies metadata from the import result to the page state.
+    /// </summary>
+    private void ApplyMetadataToState(GeoTiffMetadataService.GeoTiffMetadataResult metadata)
+    {
+        _geoBoundingBox = metadata.Wgs84BoundingBox;
+        _geoTiffNativeBoundingBox = metadata.NativeBoundingBox;
+        _geoTiffProjectionName = metadata.ProjectionName;
+        _geoTiffProjectionWkt = metadata.ProjectionWkt;
+        _geoTiffGeoTransform = metadata.GeoTransform;
+        _geoTiffOriginalWidth = metadata.OriginalWidth;
+        _geoTiffOriginalHeight = metadata.OriginalHeight;
+        _geoTiffMinElevation = metadata.MinElevation;
+        _geoTiffMaxElevation = metadata.MaxElevation;
+        _canFetchOsmData = metadata.CanFetchOsmData;
+        _osmBlockedReason = metadata.OsmBlockedReason;
+        _geoTiffValidationResult = metadata.ValidationResult;
+    }
+
+    /// <summary>
+    ///     Clears the current elevation import and returns to the empty drop zone state.
+    /// </summary>
+    private void ClearElevationImport()
+    {
+        _elevationImportService.CleanupTempFiles();
+        _elevationImportResult = null;
+
+        // Clear all source paths
+        _heightmapPath = null;
+        _geoTiffPath = null;
+        _geoTiffDirectory = null;
+        _state.XyzPath = null;
+        _state.XyzFilePaths = null;
+
+        // Clear geo metadata
+        ClearGeoMetadata();
+
+        // Reset crop
+        _cropResult = null;
+        _cropAnchor = CropAnchor.Center;
+
+        StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Called when the user changes the EPSG code for XYZ files.
+    ///     Re-reads metadata with the new EPSG code.
+    /// </summary>
+    private async Task OnEpsgCodeChanged()
+    {
+        if (_elevationImportResult == null || !_elevationImportResult.NeedsEpsgCode)
+            return;
+
+        if (_xyzEpsgCode < 1000)
+            return;
+
+        _isImportingElevation = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            // Update the import result's EPSG code
+            _elevationImportResult.EpsgCode = _xyzEpsgCode;
+
+            // Re-read metadata with new EPSG
+            var updatedResult =
+                await Task.Run(() => _elevationImportService.ReloadWithEpsgAsync(_elevationImportResult, _xyzEpsgCode));
+            _elevationImportResult = updatedResult;
+
+            // Re-apply metadata
+            ClearGeoMetadata();
+            if (updatedResult.Metadata != null)
+                ApplyMetadataToState(updatedResult.Metadata);
+
+            await ReadGeoTiffMetadata();
+            _dropContainer?.Refresh();
+
+            Snackbar.Add($"Metadata reloaded with EPSG:{_xyzEpsgCode}", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to reload with EPSG:{_xyzEpsgCode}: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _isImportingElevation = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    ///     Gets a summary of the imported file names for display.
+    /// </summary>
+    private string GetFileListSummary()
+    {
+        if (_elevationImportResult == null)
+            return "";
+
+        if (_elevationImportResult.FileCount == 1)
+            return _elevationImportResult.FileNames[0];
+
+        if (_elevationImportResult.FileCount <= 3)
+            return string.Join(", ", _elevationImportResult.FileNames);
+
+        return $"{_elevationImportResult.FileNames[0]}, {_elevationImportResult.FileNames[1]}, " +
+               $"and {_elevationImportResult.FileCount - 2} more";
+    }
+
+    /// <summary>
+    ///     Gets helper text for the EPSG input field.
+    /// </summary>
+    private string GetEpsgHelperText()
+    {
+        return _xyzEpsgCode switch
+        {
+            25832 => "ETRS89 / UTM zone 32N (Germany)",
+            25833 => "ETRS89 / UTM zone 33N (Eastern Germany)",
+            32632 => "WGS 84 / UTM zone 32N",
+            32633 => "WGS 84 / UTM zone 33N",
+            _ => $"EPSG:{_xyzEpsgCode}"
+        };
+    }
+
     private async Task OnCropTargetSizeChanged(int newSize)
     {
         _terrainSize = newSize;
@@ -1025,8 +1363,7 @@ public partial class GenerateTerrain : IDisposable
     /// </summary>
     private async Task RecalculateCroppedElevation(CropResult cropResult)
     {
-        if (_heightmapSourceType != HeightmapSourceType.GeoTiffFile &&
-            _heightmapSourceType != HeightmapSourceType.GeoTiffDirectory)
+        if (_heightmapSourceType == HeightmapSourceType.Png)
             return;
 
         // Suppress intermediate snackbars during crop elevation recalculation
@@ -1051,6 +1388,25 @@ public partial class GenerateTerrain : IDisposable
                 if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) || !File.Exists(_cachedCombinedGeoTiffPath))
                     _cachedCombinedGeoTiffPath = await _geoTiffService.CombineGeoTiffTilesAsync(_geoTiffDirectory);
                 geoTiffPathToRead = _cachedCombinedGeoTiffPath;
+            }
+            else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
+            {
+                if (_state.XyzFilePaths is { Length: > 1 })
+                {
+                    // Multi-XYZ tiles: use cached combined file (same pattern as GeoTIFF directory)
+                    if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
+                        !File.Exists(_cachedCombinedGeoTiffPath))
+                        _cachedCombinedGeoTiffPath =
+                            await _geoTiffService.CombineXyzTilesAsync(
+                                _state.XyzFilePaths, _xyzEpsgCode);
+                    geoTiffPathToRead = _cachedCombinedGeoTiffPath;
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(_state.XyzPath) || !File.Exists(_state.XyzPath))
+                        return;
+                    geoTiffPathToRead = _state.XyzPath;
+                }
             }
 
             if (string.IsNullOrEmpty(geoTiffPathToRead) || !File.Exists(geoTiffPathToRead))
@@ -1193,6 +1549,35 @@ public partial class GenerateTerrain : IDisposable
                 _pendingCropOffsets = null;
             }
 
+            // Synthesize ElevationImportResult for the summary card display
+            if (result.HeightmapSourceType == HeightmapSourceType.Png &&
+                !string.IsNullOrEmpty(_heightmapPath))
+            {
+                var pngExists = File.Exists(_heightmapPath);
+                var (pngW, pngH, pngBd) = pngExists
+                    ? ElevationImportService.ReadPngHeader(_heightmapPath)
+                    : (0, 0, 0);
+
+                _elevationImportResult = new ElevationImportResult
+                {
+                    SourceType = ElevationSourceType.Png,
+                    FilePaths = [_heightmapPath],
+                    FileNames = [Path.GetFileName(_heightmapPath)],
+                    FileCount = 1,
+                    FormatLabel = "PNG",
+                    ResolvedHeightmapPath = _heightmapPath,
+                    PngWidth = pngW,
+                    PngHeight = pngH,
+                    PngBitDepth = pngBd
+                };
+
+                if (!pngExists)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"PNG heightmap not found: {_heightmapPath}. Please use 'Change' to select the file.");
+                }
+            }
+
             // Apply GeoTIFF paths and trigger metadata read
             // The GeoTIFF must be re-loaded to populate dimensions and bounding box
             var geoTiffLoaded = false;
@@ -1202,6 +1587,16 @@ public partial class GenerateTerrain : IDisposable
             {
                 _geoTiffPath = result.GeoTiffPath;
                 _geoTiffDirectory = null; // Clear the other source
+
+                _elevationImportResult = new ElevationImportResult
+                {
+                    SourceType = ElevationSourceType.GeoTiffSingle,
+                    FilePaths = [result.GeoTiffPath],
+                    FileNames = [Path.GetFileName(result.GeoTiffPath)],
+                    FileCount = 1,
+                    FormatLabel = "GeoTIFF",
+                    ResolvedGeoTiffPath = result.GeoTiffPath
+                };
 
                 if (File.Exists(result.GeoTiffPath))
                 {
@@ -1222,6 +1617,19 @@ public partial class GenerateTerrain : IDisposable
                 _geoTiffDirectory = result.GeoTiffDirectory;
                 _geoTiffPath = null; // Clear the other source
 
+                var dirFiles = Directory.Exists(result.GeoTiffDirectory)
+                    ? Directory.GetFiles(result.GeoTiffDirectory, "*.tif*")
+                    : [];
+                _elevationImportResult = new ElevationImportResult
+                {
+                    SourceType = ElevationSourceType.GeoTiffMultiple,
+                    FilePaths = dirFiles,
+                    FileNames = dirFiles.Select(Path.GetFileName).ToArray()!,
+                    FileCount = dirFiles.Length,
+                    FormatLabel = "GeoTIFF",
+                    ResolvedGeoTiffDirectory = result.GeoTiffDirectory
+                };
+
                 if (Directory.Exists(result.GeoTiffDirectory))
                 {
                     // Don't sync meters per pixel - the preset already specifies it.
@@ -1232,6 +1640,38 @@ public partial class GenerateTerrain : IDisposable
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Warning,
                         $"GeoTIFF directory not found: {result.GeoTiffDirectory}. Please browse to select the folder.");
+                }
+            }
+            else if (result.HeightmapSourceType == HeightmapSourceType.XyzFile &&
+                     !string.IsNullOrEmpty(result.XyzPath))
+            {
+                _state.XyzPath = result.XyzPath;
+                _geoTiffPath = null;
+                _geoTiffDirectory = null;
+                if (result.XyzEpsgCode.HasValue)
+                    _xyzEpsgCode = result.XyzEpsgCode.Value;
+
+                _elevationImportResult = new ElevationImportResult
+                {
+                    SourceType = ElevationSourceType.XyzFile,
+                    FilePaths = [result.XyzPath],
+                    FileNames = [Path.GetFileName(result.XyzPath)],
+                    FileCount = 1,
+                    FormatLabel = "XYZ ASCII",
+                    NeedsEpsgCode = true,
+                    EpsgCode = result.XyzEpsgCode ?? 0,
+                    ResolvedXyzPath = result.XyzPath
+                };
+
+                if (File.Exists(result.XyzPath))
+                {
+                    await ReadGeoTiffMetadata(syncMetersPerPixel: false);
+                    geoTiffLoaded = true;
+                }
+                else
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"XYZ file not found: {result.XyzPath}. Please browse to select the file.");
                 }
             }
 
@@ -1645,6 +2085,9 @@ public partial class GenerateTerrain : IDisposable
 
     private async Task ResetPage()
     {
+        _elevationImportService.CleanupTempFiles();
+        _elevationImportResult = null;
+
         _state.Reset();
         _analysisState.Reset();
         _presetImporter?.Reset();

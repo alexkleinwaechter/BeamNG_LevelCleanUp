@@ -22,7 +22,9 @@
       "Read(//d/**)",
       "Bash(ls:*)",
       "Bash(dotnet run:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:gdal.org)",
+      "WebFetch(domain:mudblazor.com)"
     ]
   }
 }

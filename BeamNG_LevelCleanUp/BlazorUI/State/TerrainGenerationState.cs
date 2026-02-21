@@ -140,6 +140,10 @@ public class TerrainGenerationState
     public string? HeightmapPath { get; set; }
     public string? GeoTiffPath { get; set; }
     public string? GeoTiffDirectory { get; set; }
+    public string? XyzPath { get; set; }
+    public string[]? XyzFilePaths { get; set; }
+    public int XyzEpsgCode { get; set; } = 25832;
+    public int? XyzDetectedEpsg { get; set; }
 
     // ========================================
     // GEOTIFF METADATA
@@ -253,6 +257,9 @@ public class TerrainGenerationState
             HeightmapSourceType.GeoTiffFile => !string.IsNullOrEmpty(GeoTiffPath) && File.Exists(GeoTiffPath),
             HeightmapSourceType.GeoTiffDirectory => !string.IsNullOrEmpty(GeoTiffDirectory) &&
                                                     Directory.Exists(GeoTiffDirectory),
+            HeightmapSourceType.XyzFile => ((!string.IsNullOrEmpty(XyzPath) && File.Exists(XyzPath)) ||
+                                            (XyzFilePaths is { Length: > 0 })) &&
+                                           XyzEpsgCode > 0,
             _ => false
         };
 
@@ -280,6 +287,7 @@ public class TerrainGenerationState
             HeightmapSourceType.Png => "16-bit grayscale PNG heightmap",
             HeightmapSourceType.GeoTiffFile => "Single GeoTIFF elevation file with geographic coordinates",
             HeightmapSourceType.GeoTiffDirectory => "Directory with multiple GeoTIFF tiles to combine",
+            HeightmapSourceType.XyzFile => "XYZ ASCII elevation file (georeferenced grid data)",
             _ => "Unknown"
         };
     }
@@ -371,6 +379,10 @@ public class TerrainGenerationState
         HeightmapSourceType = HeightmapSourceType.Png;
         GeoTiffPath = null;
         GeoTiffDirectory = null;
+        XyzPath = null;
+        XyzFilePaths = null;
+        XyzEpsgCode = 25832;
+        XyzDetectedEpsg = null;
         CropAnchor = CropAnchor.Center;
         CropResult = null;
         CanFetchOsmData = false;

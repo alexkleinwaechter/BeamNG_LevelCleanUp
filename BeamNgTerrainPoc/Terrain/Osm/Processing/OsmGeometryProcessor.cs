@@ -826,10 +826,11 @@ public class OsmGeometryProcessor
                 regularPathsMeta, routeRelations);
         }
 
-        // Step 4: Connect only regular (non-structure) paths using node-based connectivity.
-        // Uses 3-tier strategy: shared node ID → same name/ref + proximity → proximity for cropped paths.
+        // Step 4: Connect only regular (non-structure) paths using angle-first greedy matching.
+        // Scores all possible connections by deflection angle and picks the straightest one.
+        // Route relations provide optional scoring bonus for relation-aware strategy.
         var connectedPaths = regularPathsMeta.Count > 0
-            ? NodeBasedPathConnector.Connect(regularPathsMeta, endpointJoinToleranceMeters)
+            ? NodeBasedPathConnector.Connect(regularPathsMeta, endpointJoinToleranceMeters, routeRelations)
             : new List<List<Vector2>>();
 
         Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPathsMeta.Count})");
