@@ -362,39 +362,9 @@
                     <MudDivider Class="my-4"/>
                     
                     <MudAlert Severity="Severity.Success" Class="mb-4">
-                        <b>Level Creation Complete!</b> Your level is ready with terrain materials, forest brushes, 
-                        assets, and generated terrain.
+                        <b>Level Creation Complete!</b> Your level has been automatically copied to the BeamNG levels folder
+                        and is ready to play with terrain materials, forest brushes, assets, and generated terrain.
                     </MudAlert>
-                    
-                    <MudStack Row="true" Class="mt-4" Spacing="2">
-                        <MudButton OnClick="@ZipAndDeploy" 
-                                  Color="Color.Primary" 
-                                  Variant="Variant.Filled"
-                                  StartIcon="@Icons.Material.Filled.Archive">
-                            Build Deployment ZIP
-                        </MudButton>
-                        
-                        <MudButton OnClick="@CopyToLevelsFolder" 
-                                  Color="Color.Success" 
-                                  Variant="Variant.Filled"
-                                  StartIcon="@Icons.Material.Filled.Folder">
-                            Copy to BeamNG Levels Folder
-                        </MudButton>
-                        
-                        <MudButton OnClick="@(() => Navigation.NavigateTo("/GenerateTerrain"))" 
-                                  Color="Color.Secondary" 
-                                  Variant="Variant.Outlined"
-                                  StartIcon="@Icons.Material.Filled.Terrain">
-                            Refine Terrain
-                        </MudButton>
-                        
-                        <MudButton OnClick="@ResetWizard" 
-                                  Color="Color.Default" 
-                                  Variant="Variant.Outlined"
-                                  StartIcon="@Icons.Material.Filled.Refresh">
-                            Create Another Level
-                        </MudButton>
-                    </MudStack>
                 </MudPaper>
             }
 
@@ -444,16 +414,16 @@
                         Build ZIP
                     </MudButton>
                     
-                    <MudButton OnClick="@CopyToLevelsFolder" 
-                              Color="Color.Success" 
-                              Variant="Variant.Filled"
-                              StartIcon="@Icons.Material.Filled.Folder"
+                    <MudButton OnClick="@(() => Navigation.NavigateTo("/GenerateTerrain"))"
+                              Color="Color.Secondary"
+                              Variant="Variant.Outlined"
+                              StartIcon="@Icons.Material.Filled.Terrain"
                               Size="Size.Small">
-                        Copy to Levels
+                        Refine Terrain
                     </MudButton>
-                    
-                    <MudButton OnClick="@ResetWizard" 
-                              Color="Color.Default" 
+
+                    <MudButton OnClick="@ResetWizard"
+                              Color="Color.Default"
                               Variant="Variant.Outlined"
                               StartIcon="@Icons.Material.Filled.Refresh"
                               Size="Size.Small">

@@ -100,7 +100,7 @@
                               !string.IsNullOrEmpty(TerrainName) && 
                               !string.IsNullOrEmpty(WorkingDirectory);
 
-    private async Task SelectExportFolder()
+    public async Task SelectExportFolder()
     {
         string? selectedPath = null;
         var staThread = new Thread(() =>
