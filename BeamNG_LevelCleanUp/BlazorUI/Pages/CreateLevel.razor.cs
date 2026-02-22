@@ -323,43 +323,22 @@ public partial class CreateLevel
 
     private async Task CopyToLevelsFolder()
     {
-        var copySucceeded = false;
+        string? deployedPath = null;
 
         try
         {
             var path = Path.Join(ZipFileHandler.WorkingDirectory, "_unpacked", "levels");
-            var customChangesChecker = new CustomChangesChecker(_wizardState.TargetLevelPath, path);
-
-            // Check if target directory exists and ask for confirmation
-            if (customChangesChecker.TargetDirectoryExists())
-            {
-                var options = new DialogOptions { CloseOnEscapeKey = true };
-                var parameters = new DialogParameters();
-                parameters.Add("ContentText",
-                    $"The level '{_wizardState.TargetLevelPath}' already exists in your BeamNG levels folder. Do you want to overwrite it?");
-                parameters.Add("ButtonText", "Yes, Overwrite");
-                parameters.Add("Color", Color.Warning);
-
-                var dialog = await DialogService.ShowAsync<SimpleDialog>("Level Already Exists", parameters, options);
-                var result = await dialog.Result;
-
-                if (result.Canceled) return; // User canceled, don't proceed with copy
-
-                // Delete the existing directory before copying
-                customChangesChecker.DeleteTargetDirectory();
-            }
 
             _staticSnackbar = Snackbar.Add("Copying level to BeamNG levels folder...", Severity.Normal,
                 config => { config.VisibleStateDuration = int.MaxValue; });
 
-            await Task.Run(() =>
-            {
-                ZipFileHandler.RemoveModInfo(path);
-                customChangesChecker.CopyUnpackedToUserFolder();
-            });
+            deployedPath = await LevelDeploymentHelper.CopyToLevelsFolder(
+                _wizardState.TargetLevelPath,
+                path,
+                DialogService);
 
-            Snackbar.Remove(_staticSnackbar);
-            copySucceeded = true;
+            if (_staticSnackbar != null)
+                Snackbar.Remove(_staticSnackbar);
         }
         catch (Exception ex)
         {
@@ -375,7 +354,7 @@ public partial class CreateLevel
             {
                 Snackbar.Clear();
 
-                if (copySucceeded)
+                if (deployedPath != null)
                 {
                     Snackbar.Add($"Level '{_wizardState.LevelName}' successfully copied to BeamNG levels folder.",
                         Severity.Success);

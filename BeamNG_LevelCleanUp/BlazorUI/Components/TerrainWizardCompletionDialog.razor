@@ -7,33 +7,51 @@
                 <MudText Typo="Typo.h6">Terrain Generated Successfully!</MudText>
             </MudAlert>
 
-            <MudText Typo="Typo.body1">
-                Your terrain file has been created. Follow these steps to complete your level setup:
-            </MudText>
+            @if (CopySucceeded)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true" Icon="@Icons.Material.Filled.Folder">
+                    <MudText Typo="Typo.body1">
+                        Your level <b>@LevelName</b> has been automatically copied to the BeamNG levels folder.
+                        You can launch BeamNG.drive and test your terrain right away.
+                    </MudText>
+                </MudAlert>
+            }
+            else if (!string.IsNullOrEmpty(CopyErrorMessage))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Icon="@Icons.Material.Filled.Warning">
+                    <MudText Typo="Typo.body1">
+                        Could not auto-copy level to BeamNG levels folder: @CopyErrorMessage
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mt-1">
+                        You can manually copy the level later from the Create Level page.
+                    </MudText>
+                </MudAlert>
+            }
 
             <MudPaper Class="pa-4" Elevation="2">
                 <MudStack Spacing="3">
-                    <MudStack Row="true" AlignItems="AlignItems.Center">
-                        <MudAvatar Color="Color.Primary" Size="Size.Small">1</MudAvatar>
-                        <MudText Typo="Typo.body1">
-                            <strong>Save Your Preset</strong> - At the top of the Generate Terrain page, save your current
-                            settings as a preset so you can reload them later for refinements.
-                        </MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                            <MudAvatar Color="Color.Primary" Size="Size.Small">1</MudAvatar>
+                            <MudText Typo="Typo.body1">
+                                <strong>Save Your Preset</strong> — Export your terrain settings so you can
+                                reload and refine them later.
+                            </MudText>
+                        </MudStack>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Download"
+                                   OnClick="ExportPreset"
+                                   Size="Size.Small">
+                            Export Preset
+                        </MudButton>
                     </MudStack>
 
                     <MudStack Row="true" AlignItems="AlignItems.Center">
                         <MudAvatar Color="Color.Primary" Size="Size.Small">2</MudAvatar>
                         <MudText Typo="Typo.body1">
-                            <strong>Finish the Wizard</strong> - Click the "Finish Wizard" button below to return to
-                            the Create Level page and copy your level to the BeamNG levels folder.
-                        </MudText>
-                    </MudStack>
-
-                    <MudStack Row="true" AlignItems="AlignItems.Center">
-                        <MudAvatar Color="Color.Primary" Size="Size.Small">3</MudAvatar>
-                        <MudText Typo="Typo.body1">
-                            <strong>Test & Refine</strong> - Launch BeamNG to test your terrain. Come back to this page
-                            anytime to load your level and preset to regenerate the terrain with adjustments.
+                            <strong>Test & Refine</strong> — Launch BeamNG to test your terrain. Come back to
+                            the Generate Terrain page anytime to load your preset and regenerate with adjustments.
                         </MudText>
                     </MudStack>
                 </MudStack>
@@ -50,11 +68,11 @@
         </MudStack>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Close" 
-                   Variant="Variant.Filled" 
+        <MudButton OnClick="Close"
+                   Variant="Variant.Filled"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Check">
-            Got It - Show Finish Button
+            Finish Wizard
         </MudButton>
     </DialogActions>
 </MudDialog>
@@ -63,11 +81,26 @@
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; }
 
-    /// <summary>
-    /// Path to the generated terrain file (optional, for display)
-    /// </summary>
     [Parameter]
     public string TerrainFilePath { get; set; }
+
+    [Parameter]
+    public string LevelName { get; set; }
+
+    [Parameter]
+    public bool CopySucceeded { get; set; }
+
+    [Parameter]
+    public string CopyErrorMessage { get; set; }
+
+    [Parameter]
+    public EventCallback OnExportPreset { get; set; }
+
+    private async Task ExportPreset()
+    {
+        if (OnExportPreset.HasDelegate)
+            await OnExportPreset.InvokeAsync();
+    }
 
     private void Close()
     {

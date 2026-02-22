@@ -4,6 +4,7 @@ using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNG_LevelCleanUp.BlazorUI.Services;
 using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
+using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
@@ -595,10 +596,43 @@ public partial class GenerateTerrain : IDisposable
     }
 
     /// <summary>
-    ///     Shows the wizard completion dialog with next-steps instructions
+    ///     Shows the wizard completion dialog with next-steps instructions.
+    ///     Auto-copies the level to BeamNG levels folder before showing the dialog.
     /// </summary>
     private async Task ShowTerrainWizardCompletionDialog()
     {
+        // Clear all snackbars before showing the dialog
+        _suppressSnackbars = true;
+        await InvokeAsync(() => Snackbar.Clear());
+
+        // Auto-copy level to BeamNG levels folder
+        string? deployedLevelPath = null;
+        string? copyErrorMessage = null;
+        try
+        {
+            if (WizardState != null && !string.IsNullOrEmpty(WizardState.TargetLevelPath))
+            {
+                var unpackedPath = Path.Join(ZipFileHandler.WorkingDirectory, "_unpacked", "levels");
+                deployedLevelPath = await LevelDeploymentHelper.CopyToLevelsFolder(
+                    WizardState.TargetLevelPath,
+                    unpackedPath,
+                    skipConfirmation: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            copyErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _suppressSnackbars = false;
+        }
+
+        // Show terrain file path in the deployed location (BeamNG levels folder)
+        var terrainFilePath = deployedLevelPath != null
+            ? Path.Combine(deployedLevelPath, $"{_terrainName}.ter")
+            : GetOutputPath();
+
         var options = new DialogOptions
         {
             CloseButton = false,
@@ -609,7 +643,16 @@ public partial class GenerateTerrain : IDisposable
 
         var parameters = new DialogParameters<TerrainWizardCompletionDialog>
         {
-            { x => x.TerrainFilePath, GetOutputPath() }
+            { x => x.TerrainFilePath, terrainFilePath },
+            { x => x.LevelName, WizardState?.LevelName ?? "" },
+            { x => x.CopySucceeded, deployedLevelPath != null },
+            { x => x.CopyErrorMessage, copyErrorMessage ?? "" },
+            { x => x.OnExportPreset, EventCallback.Factory.Create(this, async () =>
+                {
+                    if (_presetExporter != null)
+                        await _presetExporter.SelectExportFolder();
+                })
+            }
         };
 
         var dialog = await DialogService.ShowAsync<TerrainWizardCompletionDialog>(
@@ -2084,16 +2127,20 @@ public partial class GenerateTerrain : IDisposable
         {
             _isGenerating = false;
 
-            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
-            _suppressSnackbars = true;
-            await InvokeAsync(() =>
+            // In wizard mode, snackbars are already cleared before the completion dialog
+            if (!(_terrainGeneratedInWizard && WizardMode))
             {
-                Snackbar.Clear();
+                // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+                _suppressSnackbars = true;
+                await InvokeAsync(() =>
+                {
+                    Snackbar.Clear();
 
-                if (generationSucceeded && finalSuccessMessage != null)
-                    Snackbar.Add(finalSuccessMessage, Severity.Success);
-            });
-            _suppressSnackbars = false;
+                    if (generationSucceeded && finalSuccessMessage != null)
+                        Snackbar.Add(finalSuccessMessage, Severity.Success);
+                });
+                _suppressSnackbars = false;
+            }
 
             _terrainGenerationSnackbar = null;
             await InvokeAsync(StateHasChanged);
