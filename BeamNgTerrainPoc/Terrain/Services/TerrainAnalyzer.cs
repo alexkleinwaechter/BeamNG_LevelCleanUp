@@ -2,7 +2,6 @@ using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
-using BeamNgTerrainPoc.Terrain.Osm.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -433,63 +432,44 @@ public class TerrainAnalyzer
             }
         }
 
-        // Draw detected junctions with OSM hint visualization
+        // Draw detected junctions
         foreach (var junction in network.Junctions)
         {
             var jx = (int)(junction.Position.X / metersPerPixel);
             var jy = imageHeight - 1 - (int)(junction.Position.Y / metersPerPixel);
 
-            // Get radius based on junction type (and OSM hint if present)
-            var radius = JunctionTypeColors.GetNetworkJunctionRadius(junction.Type);
-            if (junction.OsmHint != null)
+            var radius = junction.Type switch
             {
-                // Use larger radius for OSM-sourced junctions
-                radius = Math.Max(radius, JunctionTypeColors.GetOsmJunctionRadius(junction.OsmHint.Type));
-            }
+                JunctionType.Complex => 6,
+                JunctionType.CrossRoads => 5,
+                JunctionType.Roundabout => 7,
+                _ => 4
+            };
 
             Rgba32 junctionColor;
             if (junction.IsExcluded)
             {
-                // Excluded junctions are shown in dim gray with strikethrough effect
                 junctionColor = new Rgba32(128, 128, 128, 180);
-            }
-            else if (junction.OsmHint != null)
-            {
-                // Use composite color when OSM hint is available
-                junctionColor = JunctionTypeColors.GetCompositeJunctionColor(junction);
             }
             else
             {
-                // Standard network junction color
-                junctionColor = JunctionTypeColors.GetNetworkJunctionColor(junction.Type);
+                junctionColor = junction.Type switch
+                {
+                    JunctionType.TJunction => new Rgba32(255, 165, 0, 200),
+                    JunctionType.CrossRoads => new Rgba32(255, 0, 0, 200),
+                    JunctionType.Complex => new Rgba32(255, 0, 255, 200),
+                    JunctionType.Roundabout => new Rgba32(0, 255, 255, 200),
+                    JunctionType.MidSplineCrossing => new Rgba32(255, 255, 0, 200),
+                    _ => new Rgba32(0, 255, 0, 200)
+                };
             }
 
-            // Draw the main junction marker
             DrawFilledCircle(image, jx, jy, radius, junctionColor);
 
-            // Draw OSM hint ring (if OSM data available and not excluded)
-            if (junction.OsmHint != null && !junction.IsExcluded)
-            {
-                var osmRingColor = JunctionTypeColors.GetOsmJunctionColor(junction.OsmHint.Type);
-                DrawCircleOutline(image, jx, jy, radius + 2, osmRingColor);
-                
-                // Draw an additional outer ring for explicitly tagged OSM junctions
-                if (junction.OsmHint.IsExplicitlyTagged)
-                {
-                    DrawCircleOutline(image, jx, jy, radius + 4, new Rgba32(255, 255, 255, 150));
-                }
-            }
-
-            // Draw cross-material indicator (white outline) - after OSM ring
-            if (junction.IsCrossMaterial && !junction.IsExcluded && junction.OsmHint == null)
+            // Draw cross-material indicator (white outline)
+            if (junction.IsCrossMaterial && !junction.IsExcluded)
             {
                 DrawCircleOutline(image, jx, jy, radius + 3, new Rgba32(255, 255, 255, 200));
-            }
-
-            // Draw OSM-sourced indicator (dashed appearance via dots)
-            if (junction.IsOsmSourced && !junction.IsExcluded)
-            {
-                DrawDottedCircle(image, jx, jy, radius + 5, new Rgba32(100, 200, 255, 200));
             }
 
             // Draw exclusion indicator (X mark)

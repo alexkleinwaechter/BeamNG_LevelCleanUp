@@ -107,7 +107,6 @@
                                        UpdateTerrainBlock="@_updateTerrainBlock"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
                                        EnableCrossroadToTJunctionConversion="@_enableCrossroadToTJunctionConversion"
-                                       EnableExtendedOsmJunctionDetection="@_enableExtendedOsmJunctionDetection"
                                        GlobalJunctionDetectionRadiusMeters="@_globalJunctionDetectionRadiusMeters"
                                        GlobalJunctionBlendDistanceMeters="@_globalJunctionBlendDistanceMeters"
                                        ExcludeBridgesFromTerrain="@_excludeBridgesFromTerrain"
@@ -543,20 +542,6 @@
                                 </MudText>
                             </MudItem>
 
-                            @* Todo: Not sure if we need that anymore or if it makes more problems because of unprecise data *@
-                            @*                             <MudItem xs="12" sm="6" md="3">
-                                <div class="d-flex align-center gap-1">
-                                    <MudCheckBox @bind-Value="_enableExtendedOsmJunctionDetection"
-                                                 Label="Extended OSM Junction Detection"
-                                                 Color="Color.Primary" />
-                                    <MudTooltip Text="When enabled and using GeoTIFF/OSM source, queries OpenStreetMap for explicit junction tags (motorway exits, traffic signals, stop signs) to improve junction detection accuracy. Only applies when geographic coordinates are available.">
-                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
-                                    </MudTooltip>
-                                </div>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                    Use OSM junction hints (if applicable)
-                                </MudText>
-                            </MudItem> *@
                         }
 
                         @* Bridge/Tunnel Structure Handling *@
