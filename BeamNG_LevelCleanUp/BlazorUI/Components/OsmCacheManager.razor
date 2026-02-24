@@ -8,25 +8,20 @@
         <MudStack Spacing="2">
             <MudText Typo="Typo.body2">
                 OSM data from the Overpass API is cached locally to avoid repeated downloads.
-                This includes both road data and junction detection data.
                 Cache expires after 7 days.
             </MudText>
-            
+
             <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
                 <div>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Road Cache</MudText>
-                    <MudText Typo="Typo.body1"><strong>@_stats.RoadCacheDiskCount</strong> files (@FormatBytes(_stats.RoadCacheDiskSizeBytes))</MudText>
-                </div>
-                <div>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Junction Cache</MudText>
-                    <MudText Typo="Typo.body1"><strong>@_stats.JunctionCacheDiskCount</strong> files (@FormatBytes(_stats.JunctionCacheDiskSizeBytes))</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Disk Cache</MudText>
+                    <MudText Typo="Typo.body1"><strong>@_stats.DiskCount</strong> files (@FormatBytes(_stats.DiskSizeBytes))</MudText>
                 </div>
                 <div>
                     <MudText Typo="Typo.caption" Color="Color.Secondary">Memory Cache</MudText>
-                    <MudText Typo="Typo.body1"><strong>@_stats.TotalMemoryCount</strong> entries</MudText>
+                    <MudText Typo="Typo.body1"><strong>@_stats.MemoryCount</strong> entries</MudText>
                 </div>
             </MudStack>
-            
+
             <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Primary"
@@ -57,7 +52,7 @@
                     Open Folder
                 </MudButton>
             </MudStack>
-            
+
             <MudText Typo="Typo.caption" Color="Color.Secondary">
                 Cache location: @_cacheDirectory
             </MudText>
@@ -78,7 +73,7 @@
         OsmQueryCache.CacheChanged += OnCacheChanged;
         RefreshStats();
     }
-    
+
     private void OnCacheChanged()
     {
         // Use InvokeAsync to ensure we're on the UI thread
@@ -88,7 +83,7 @@
             StateHasChanged();
         });
     }
-    
+
     public void Dispose()
     {
         // Unsubscribe to prevent memory leaks
@@ -97,9 +92,9 @@
 
     private string GetTitle()
     {
-        if (_stats.TotalDiskCount == 0)
+        if (_stats.DiskCount == 0)
             return "OSM Cache (empty)";
-        return $"OSM Cache ({_stats.TotalDiskCount} files, {_stats.TotalDiskSizeFormatted})";
+        return $"OSM Cache ({_stats.DiskCount} files, {_stats.DiskSizeFormatted})";
     }
 
     private static string FormatBytes(long bytes)
@@ -125,7 +120,7 @@
         {
             Snackbar.Add($"Error reading cache stats: {ex.Message}", Severity.Warning);
         }
-        
+
         StateHasChanged();
     }
 
@@ -135,7 +130,7 @@
         {
             var cacheManager = new BeamNgTerrainPoc.Terrain.Osm.Services.OsmCacheManager();
             var deletedCount = cacheManager.CleanupAllExpired();
-            
+
             if (deletedCount > 0)
             {
                 Snackbar.Add($"Cleaned up {deletedCount} expired cache file(s)", Severity.Success);
@@ -144,7 +139,7 @@
             {
                 Snackbar.Add("No expired cache files found", Severity.Info);
             }
-            
+
             RefreshStats();
         }
         catch (Exception ex)
@@ -158,9 +153,9 @@
         try
         {
             var cacheManager = new BeamNgTerrainPoc.Terrain.Osm.Services.OsmCacheManager();
-            var diskCount = _stats.TotalDiskCount;
+            var diskCount = _stats.DiskCount;
             cacheManager.ClearAll();
-            
+
             Snackbar.Add($"Cleared {diskCount} cached OSM file(s)", Severity.Success);
             RefreshStats();
         }

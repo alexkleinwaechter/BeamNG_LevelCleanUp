@@ -22,6 +22,12 @@ Class="my-0">
                     Layer Map
                 </MudChip>
             }
+            @if (Material.EnableRoadPainting && !Material.IsRoadMaterial)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">
+                    Paint
+                </MudChip>
+            }
             @if (Material.IsRoadMaterial)
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
@@ -170,11 +176,89 @@ Class="my-0">
             
             <!-- Road Material Toggle -->
             <MudItem xs="12" sm="6">
-                <MudSwitch @bind-Value="Material.IsRoadMaterial"
-                          Color="Color.Primary"
-                          Label="Enable Road Smoothing"/>
+                <div class="d-flex align-center gap-1">
+                    <MudSwitch T="bool"
+                               Value="Material.IsRoadMaterial"
+                               ValueChanged="OnRoadSmoothingToggled"
+                               Color="Color.Primary"
+                               Label="Enable Road Smoothing"/>
+                    <MudTooltip Text="Modifies terrain elevation to create smooth, driveable road surfaces. Includes elevation smoothing along the road, terrain blending at road edges, junction harmonization, and optional post-processing. Also enables material painting and master spline export.">
+                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                    </MudTooltip>
+                </div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Smooth terrain elevation along roads
+                </MudText>
             </MudItem>
 
+            <!-- Road Painting Toggle -->
+            <MudItem xs="12" sm="6">
+                <div class="d-flex align-center gap-1">
+                    <MudSwitch @bind-Value="Material.EnableRoadPainting"
+                               Color="Color.Warning"
+                               Label="Enable Road Painting"
+                               Disabled="@Material.IsRoadMaterial"/>
+                    <MudTooltip Text="Paint this material's texture along roads and export BeamNG master splines, without modifying terrain elevation. Use this when you want the original heightmap/GeoTIFF elevation unchanged but still need road textures and splines. Automatically enabled when Road Smoothing is active.">
+                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                    </MudTooltip>
+                </div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    @(Material.IsRoadMaterial
+                        ? "Enabled automatically (Road Smoothing is active)"
+                        : "Paint material + export splines, no elevation changes")
+                </MudText>
+            </MudItem>
+
+            @if (Material.EnableRoadPainting && !Material.IsRoadMaterial)
+            {
+                <!-- Paint-Only Parameters -->
+                <MudItem xs="12">
+                    <MudDivider Class="my-2"/>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Brush" Size="Size.Small" Class="mr-1"/>
+                        Paint-Only Parameters
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                        Material painting width and master spline export settings. Terrain elevation will NOT be modified.
+                    </MudText>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="Material.RoadSurfaceWidthMeters"
+                                     Label="Road Surface Width (meters)"
+                                     Variant="Variant.Outlined"
+                                     Min="0.0f" Max="50.0f" Step="0.5f"
+                                     HelperText="Material painting width"
+                                     Placeholder="Required for painting"/>
+                </MudItem>
+
+                <!-- Master Spline Export -->
+                <MudItem xs="12">
+                    <MudDivider Class="my-2"/>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Route" Size="Size.Small" Class="mr-1"/>
+                        Master Spline Export (BeamNG)
+                    </MudText>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="float" @bind-Value="Material.MasterSplineNodeDistanceMeters"
+                                     Label="Node Distance (meters)"
+                                     Variant="Variant.Outlined"
+                                     Min="5.0f" Max="100.0f" Step="5.0f"
+                                     Format="F0"
+                                     HelperText="Distance between spline nodes in exported JSON"/>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="Material.MasterSplineWidthMeters"
+                                     Label="Master Spline Width (meters)"
+                                     Variant="Variant.Outlined"
+                                     Min="0.0f" Max="50.0f" Step="0.5f"
+                                     HelperText="BeamNG spline width (empty = same as Surface Width)"
+                                     Placeholder="Same as Road Surface Width"/>
+                </MudItem>
+            }
 
             @if (Material.IsRoadMaterial)
             {

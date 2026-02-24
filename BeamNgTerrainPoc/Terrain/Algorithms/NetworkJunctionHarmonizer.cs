@@ -3,7 +3,6 @@ using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
-using BeamNgTerrainPoc.Terrain.Osm.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -99,13 +98,12 @@ public class NetworkJunctionHarmonizer
         result.PreHarmonizationElevations = preHarmonizationElevations;
 
         // Step 1: Get junctions from network
-        // IMPORTANT: Junction detection may have ALREADY been run with OSM hints
-        // (by DetectJunctionsWithOsm in UnifiedRoadSmoother). In that case, network.Junctions
-        // contains OSM-enhanced junctions that we must NOT overwrite.
+        // Junction detection may have already been run by UnifiedRoadSmoother.
+        // In that case, network.Junctions already contains detected junctions.
         //
         // The detection flow is:
-        // 1. UnifiedRoadSmoother calls DetectJunctionsWithOsm() or DetectJunctions()
-        // 2. That populates network.Junctions with detected junctions (including OSM-sourced ones)
+        // 1. UnifiedRoadSmoother calls DetectJunctions()
+        // 2. That populates network.Junctions with detected junctions
         // 3. HarmonizeNetwork is called - it should USE those junctions, not re-detect
         //
         // We only re-run detection if no regular junctions exist yet (only roundabout junctions
@@ -124,22 +122,16 @@ public class NetworkJunctionHarmonizer
 
         if (existingRegularJunctions.Count > 0)
         {
-            // Junctions were already detected (possibly with OSM hints) - use them as-is
+            // Junctions were already detected - use them as-is
             junctions = network.Junctions.ToList();
-
-            var osmSourcedCount = junctions.Count(j => j.IsOsmSourced);
-            var osmHintedCount = junctions.Count(j => j.OsmHint != null && !j.IsOsmSourced);
 
             TerrainLogger.Detail($"  Using {junctions.Count} pre-detected junction(s) " +
                                  $"({existingRoundaboutJunctions.Count} roundabout, " +
-                                 $"{existingRegularJunctions.Count} regular, " +
-                                 $"{osmSourcedCount} OSM-sourced, {osmHintedCount} OSM-hinted)");
+                                 $"{existingRegularJunctions.Count} regular)");
         }
         else
         {
             // No regular junctions yet - run detection now
-            // This handles the case where HarmonizeNetwork is called directly without
-            // going through DetectJunctionsWithOsm first
             TerrainLogger.Detail("  No pre-detected junctions found, running detection...");
 
             if (existingRoundaboutJunctions.Count > 0)
@@ -1646,39 +1638,29 @@ public class NetworkJunctionHarmonizer
             var jx = (int)(junction.Position.X / metersPerPixel);
             var jy = imageHeight - 1 - (int)(junction.Position.Y / metersPerPixel);
 
-            // Get radius and color using the centralized helper
-            var radius = JunctionTypeColors.GetNetworkJunctionRadius(junction.Type);
-            if (junction.OsmHint != null)
-                // Use larger radius for OSM-sourced junctions
-                radius = Math.Max(radius, JunctionTypeColors.GetOsmJunctionRadius(junction.OsmHint.Type));
+            var radius = junction.Type switch
+            {
+                JunctionType.Complex => 6,
+                JunctionType.CrossRoads => 5,
+                JunctionType.Roundabout => 7,
+                _ => 4
+            };
 
-            // Get junction color (composite if OSM hint available)
-            Rgba32 junctionColor;
-            if (junction.OsmHint != null)
-                junctionColor = JunctionTypeColors.GetCompositeJunctionColor(junction);
-            else
-                junctionColor = JunctionTypeColors.GetNetworkJunctionColor(junction.Type);
+            var junctionColor = junction.Type switch
+            {
+                JunctionType.TJunction => new Rgba32(255, 165, 0, 200),
+                JunctionType.CrossRoads => new Rgba32(255, 0, 0, 200),
+                JunctionType.Complex => new Rgba32(255, 0, 255, 200),
+                JunctionType.Roundabout => new Rgba32(0, 255, 255, 200),
+                JunctionType.MidSplineCrossing => new Rgba32(255, 255, 0, 200),
+                _ => new Rgba32(0, 255, 0, 200)
+            };
 
-            // Draw main junction marker
             DrawFilledCircle(image, jx, jy, radius, junctionColor);
 
-            // Draw OSM hint ring (if OSM data available)
-            if (junction.OsmHint != null)
-            {
-                var osmRingColor = JunctionTypeColors.GetOsmJunctionColor(junction.OsmHint.Type);
-                DrawCircleOutline(image, jx, jy, radius + 2, osmRingColor);
-
-                // Draw an additional outer ring for explicitly tagged OSM junctions
-                if (junction.OsmHint.IsExplicitlyTagged)
-                    DrawCircleOutline(image, jx, jy, radius + 4, new Rgba32(255, 255, 255, 150));
-            }
-
-            // Draw cross-material indicator (white outline) - after OSM ring
-            if (junction.IsCrossMaterial && junction.OsmHint == null)
+            // Draw cross-material indicator (white outline)
+            if (junction.IsCrossMaterial)
                 DrawCircleOutline(image, jx, jy, radius + 3, new Rgba32(255, 255, 255, 200));
-
-            // Draw OSM-sourced indicator (dotted circle)
-            if (junction.IsOsmSourced) DrawDottedCircle(image, jx, jy, radius + 5, new Rgba32(100, 200, 255, 200));
         }
 
         // Save image

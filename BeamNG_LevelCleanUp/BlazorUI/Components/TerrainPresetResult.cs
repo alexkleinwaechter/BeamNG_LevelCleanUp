@@ -101,12 +101,6 @@ public class TerrainPresetResult
     public bool? EnableCrossroadToTJunctionConversion { get; set; }
 
     /// <summary>
-    ///     Whether to enable extended OSM junction detection.
-    ///     When enabled, queries OSM for junction hints to improve detection accuracy.
-    /// </summary>
-    public bool? EnableExtendedOsmJunctionDetection { get; set; }
-
-    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's UseGlobalJunctionSettings is true.
     /// </summary>
@@ -254,9 +248,19 @@ public class MaterialLayerSettings
     public bool IsRoadMaterial { get; set; }
 
     /// <summary>
+    ///     Whether this material has road painting enabled (paint-only mode, without elevation smoothing).
+    /// </summary>
+    public bool EnableRoadPainting { get; set; }
+
+    /// <summary>
     ///     Road smoothing settings (only populated if IsRoadMaterial is true).
     /// </summary>
     public RoadSmoothingSettings? RoadSmoothing { get; set; }
+
+    /// <summary>
+    ///     Paint-only settings (only populated if EnableRoadPainting is true and IsRoadMaterial is false).
+    /// </summary>
+    public PaintOnlySettings? PaintOnlySettings { get; set; }
 }
 
 /// <summary>
@@ -270,6 +274,8 @@ public class RoadSmoothingSettings
     // Primary parameters
     public float RoadWidthMeters { get; set; } = 8.0f;
     public float? RoadSurfaceWidthMeters { get; set; }
+    public float? MasterSplineWidthMeters { get; set; }
+    public float MasterSplineNodeDistanceMeters { get; set; } = 15.0f;
     public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
 
     /// <summary>
@@ -377,6 +383,17 @@ public class JunctionHarmonizationSettings
     public float RoundaboutOverlapToleranceMeters { get; set; } = 2.0f;
     public bool ForceUniformRoundaboutElevation { get; set; } = true;
     public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
+}
+
+/// <summary>
+///     Paint-only settings for preset export/import.
+///     Used when road painting is enabled without road smoothing.
+/// </summary>
+public class PaintOnlySettings
+{
+    public float? RoadSurfaceWidthMeters { get; set; }
+    public float MasterSplineNodeDistanceMeters { get; set; } = 15.0f;
+    public float? MasterSplineWidthMeters { get; set; }
 }
 
 /// <summary>

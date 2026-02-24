@@ -10,6 +10,17 @@ namespace BeamNgTerrainPoc.Terrain.Models;
 public class RoadSmoothingParameters
 {
     // ========================================
+    // PAINT-ONLY MODE
+    // ========================================
+
+    /// <summary>
+    ///     When true, this material is in paint-only mode: material painting and master spline export
+    ///     happen, but ALL elevation modification is skipped (no smoothing, no blending, no post-processing).
+    ///     The spline system (PNG or OSM) still runs to extract road geometry for painting.
+    /// </summary>
+    public bool PaintOnlyMode { get; set; }
+
+    // ========================================
     // SPLINE PARAMETERS
     // ========================================
 

@@ -67,7 +67,6 @@
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
     [Parameter] public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
-    [Parameter] public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
     [Parameter] public float GlobalJunctionDetectionRadiusMeters { get; set; } = 5.0f;
     [Parameter] public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
     [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
@@ -467,7 +466,6 @@
                 ["updateTerrainBlock"] = UpdateTerrainBlock,
                 ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization,
                 ["enableCrossroadToTJunctionConversion"] = EnableCrossroadToTJunctionConversion,
-                ["enableExtendedOsmJunctionDetection"] = EnableExtendedOsmJunctionDetection,
                 ["globalJunctionDetectionRadiusMeters"] = GlobalJunctionDetectionRadiusMeters,
                 ["globalJunctionBlendDistanceMeters"] = GlobalJunctionBlendDistanceMeters,
                 ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
@@ -548,7 +546,8 @@
             ["order"] = mat.Order,
             ["layerSourceType"] = mat.LayerSourceType.ToString(),
             ["layerMapPath"] = portableLayerMapPath,
-            ["isRoadMaterial"] = mat.IsRoadMaterial
+            ["isRoadMaterial"] = mat.IsRoadMaterial,
+            ["enableRoadPainting"] = mat.EnableRoadPainting
         };
 
         // OSM feature selections
@@ -575,6 +574,17 @@
             matSettings["roadSmoothing"] = BuildRoadSmoothingSettings(mat);
         }
 
+        // Paint-only settings (only if road painting enabled without road smoothing)
+        if (mat.EnableRoadPainting && !mat.IsRoadMaterial)
+        {
+            matSettings["paintOnlySettings"] = new JsonObject
+            {
+                ["roadSurfaceWidthMeters"] = mat.RoadSurfaceWidthMeters,
+                ["masterSplineNodeDistanceMeters"] = mat.MasterSplineNodeDistanceMeters,
+                ["masterSplineWidthMeters"] = mat.MasterSplineWidthMeters
+            };
+        }
+
         return matSettings;
     }
 
@@ -585,6 +595,8 @@
             ["selectedPreset"] = mat.SelectedPreset.ToString(),
             ["roadWidthMeters"] = mat.RoadWidthMeters,
             ["roadSurfaceWidthMeters"] = mat.RoadSurfaceWidthMeters,
+            ["masterSplineWidthMeters"] = mat.MasterSplineWidthMeters,
+            ["masterSplineNodeDistanceMeters"] = mat.MasterSplineNodeDistanceMeters,
             ["terrainAffectedRangeMeters"] = mat.TerrainAffectedRangeMeters,
             ["roadEdgeProtectionBufferMeters"] = mat.RoadEdgeProtectionBufferMeters,
             ["enableMaxSlopeConstraint"] = mat.EnableMaxSlopeConstraint,

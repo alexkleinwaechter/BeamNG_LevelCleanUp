@@ -117,12 +117,6 @@ public partial class GenerateTerrain : IDisposable
         set => _state.EnableCrossroadToTJunctionConversion = value;
     }
 
-    private bool _enableExtendedOsmJunctionDetection
-    {
-        get => _state.EnableExtendedOsmJunctionDetection;
-        set => _state.EnableExtendedOsmJunctionDetection = value;
-    }
-
     private float _globalJunctionDetectionRadiusMeters
     {
         get => _state.GlobalJunctionDetectionRadiusMeters;
@@ -1727,9 +1721,6 @@ public partial class GenerateTerrain : IDisposable
 
             if (result.EnableCrossroadToTJunctionConversion.HasValue)
                 _enableCrossroadToTJunctionConversion = result.EnableCrossroadToTJunctionConversion.Value;
-
-            if (result.EnableExtendedOsmJunctionDetection.HasValue)
-                _enableExtendedOsmJunctionDetection = result.EnableExtendedOsmJunctionDetection.Value;
 
             if (result.GlobalJunctionDetectionRadiusMeters.HasValue)
                 _globalJunctionDetectionRadiusMeters = result.GlobalJunctionDetectionRadiusMeters.Value;

@@ -83,15 +83,6 @@ public class TerrainCreationParameters
     public bool EnableCrossroadToTJunctionConversion { get; set; } = false;
 
     /// <summary>
-    ///     Enable extended OSM junction detection.
-    ///     When enabled and geographic bounding box is available, queries OSM for junction hints
-    ///     (motorway exits, traffic signals, stop signs, etc.) to improve junction detection accuracy.
-    ///     When disabled, only geometric junction detection is used.
-    ///     Default: true
-    /// </summary>
-    public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
-
-    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     ///     Maximum distance between path endpoints to consider them part of the same junction.

@@ -680,8 +680,6 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.EnableCrossMaterialHarmonization = terrainOptions["enableCrossMaterialHarmonization"]!.GetValue<bool>();
                 if (terrainOptions["enableCrossroadToTJunctionConversion"] != null)
                     result.EnableCrossroadToTJunctionConversion = terrainOptions["enableCrossroadToTJunctionConversion"]!.GetValue<bool>();
-                if (terrainOptions["enableExtendedOsmJunctionDetection"] != null)
-                    result.EnableExtendedOsmJunctionDetection = terrainOptions["enableExtendedOsmJunctionDetection"]!.GetValue<bool>();
                 if (terrainOptions["globalJunctionDetectionRadiusMeters"] != null)
                     result.GlobalJunctionDetectionRadiusMeters = terrainOptions["globalJunctionDetectionRadiusMeters"]!.GetValue<float>();
                 if (terrainOptions["globalJunctionBlendDistanceMeters"] != null)
@@ -804,6 +802,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     if (matSettings["isRoadMaterial"] != null)
                         layerSettings.IsRoadMaterial = matSettings["isRoadMaterial"]!.GetValue<bool>();
 
+                    // Parse enableRoadPainting flag
+                    if (matSettings["enableRoadPainting"] != null)
+                        layerSettings.EnableRoadPainting = matSettings["enableRoadPainting"]!.GetValue<bool>();
+
                     // Parse OSM feature selections
                     var osmFeatures = matSettings["osmFeatureSelections"]?.AsArray();
                     if (osmFeatures != null && osmFeatures.Count > 0)
@@ -839,6 +841,18 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     {
                         layerSettings.RoadSmoothing = ImportRoadSmoothingFromJson(roadSmoothing);
                         roadSmoothingImportedCount++;
+                    }
+
+                    // Parse paint-only settings
+                    var paintOnlyNode = matSettings["paintOnlySettings"];
+                    if (paintOnlyNode != null && layerSettings.EnableRoadPainting && !layerSettings.IsRoadMaterial)
+                    {
+                        layerSettings.PaintOnlySettings = new PaintOnlySettings
+                        {
+                            RoadSurfaceWidthMeters = paintOnlyNode["roadSurfaceWidthMeters"]?.GetValue<float>(),
+                            MasterSplineNodeDistanceMeters = paintOnlyNode["masterSplineNodeDistanceMeters"]?.GetValue<float>() ?? 15.0f,
+                            MasterSplineWidthMeters = paintOnlyNode["masterSplineWidthMeters"]?.GetValue<float>()
+                        };
                     }
 
                     result.MaterialLayerSettings[matName] = layerSettings;
@@ -882,6 +896,18 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                         // Apply road material flag
                         if (layerSettings.IsRoadMaterial)
                             matchingMaterial.IsRoadMaterial = true;
+
+                        // Apply road painting flag and paint-only settings
+                        if (layerSettings.EnableRoadPainting)
+                        {
+                            matchingMaterial.EnableRoadPainting = true;
+                            if (layerSettings.PaintOnlySettings != null && !layerSettings.IsRoadMaterial)
+                            {
+                                matchingMaterial.RoadSurfaceWidthMeters = layerSettings.PaintOnlySettings.RoadSurfaceWidthMeters;
+                                matchingMaterial.MasterSplineNodeDistanceMeters = layerSettings.PaintOnlySettings.MasterSplineNodeDistanceMeters;
+                                matchingMaterial.MasterSplineWidthMeters = layerSettings.PaintOnlySettings.MasterSplineWidthMeters;
+                            }
+                        }
                     }
                 }
                 // Road smoothing import count included in Snackbar summary
@@ -929,6 +955,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 settings.RoadWidthMeters = roadSmoothing["roadWidthMeters"]!.GetValue<float>();
             if (roadSmoothing["roadSurfaceWidthMeters"] != null)
                 settings.RoadSurfaceWidthMeters = roadSmoothing["roadSurfaceWidthMeters"]!.GetValue<float>();
+            if (roadSmoothing["masterSplineWidthMeters"] != null)
+                settings.MasterSplineWidthMeters = roadSmoothing["masterSplineWidthMeters"]!.GetValue<float>();
+            if (roadSmoothing["masterSplineNodeDistanceMeters"] != null)
+                settings.MasterSplineNodeDistanceMeters = roadSmoothing["masterSplineNodeDistanceMeters"]!.GetValue<float>();
             if (roadSmoothing["terrainAffectedRangeMeters"] != null)
                 settings.TerrainAffectedRangeMeters = roadSmoothing["terrainAffectedRangeMeters"]!.GetValue<float>();
             if (roadSmoothing["roadEdgeProtectionBufferMeters"] != null)
@@ -1096,6 +1126,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             // Primary parameters
             material.RoadWidthMeters = settings.RoadWidthMeters;
             material.RoadSurfaceWidthMeters = settings.RoadSurfaceWidthMeters;
+            material.MasterSplineWidthMeters = settings.MasterSplineWidthMeters;
+            material.MasterSplineNodeDistanceMeters = settings.MasterSplineNodeDistanceMeters;
             material.TerrainAffectedRangeMeters = settings.TerrainAffectedRangeMeters;
             material.RoadEdgeProtectionBufferMeters = settings.RoadEdgeProtectionBufferMeters;
             material.EnableMaxSlopeConstraint = settings.EnableMaxSlopeConstraint;

@@ -544,11 +544,11 @@ public class TerrainGenerationOrchestrator
         else if (mat.LayerSourceType == LayerSourceType.PngFile)
         {
             layerImagePath = mat.LayerMapPath;
-            if (mat.IsRoadMaterial)
+            if (mat.IsRoadMaterial || mat.EnableRoadPainting)
                 roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
                     state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
         }
-        else if (mat.IsRoadMaterial)
+        else if (mat.IsRoadMaterial || mat.EnableRoadPainting)
         {
             roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
                 state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
@@ -584,7 +584,7 @@ public class TerrainGenerationOrchestrator
         RoadSmoothingParameters? roadParams = null;
         string? layerImagePath = null;
 
-        if (mat.IsRoadMaterial)
+        if (mat.IsRoadMaterial || mat.EnableRoadPainting)
             (layerImagePath, roadParams) = await ProcessOsmRoadMaterialAsync(
                 mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state, osmQueryResult);
         else
@@ -760,7 +760,6 @@ public class TerrainGenerationOrchestrator
             Materials = materialDefinitions,
             EnableCrossMaterialHarmonization = state.EnableCrossMaterialHarmonization,
             EnableCrossroadToTJunctionConversion = state.EnableCrossroadToTJunctionConversion,
-            EnableExtendedOsmJunctionDetection = state.EnableExtendedOsmJunctionDetection,
             GlobalJunctionDetectionRadiusMeters = state.GlobalJunctionDetectionRadiusMeters,
             GlobalJunctionBlendDistanceMeters = state.GlobalJunctionBlendDistanceMeters,
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
@@ -10,7 +11,8 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Services;
 
 /// <summary>
 /// Service for querying OpenStreetMap data via the Overpass API.
-/// Uses round-robin retry across multiple endpoints for resilience.
+/// Uses hedged (racing) requests across multiple endpoints for speed and resilience:
+/// all endpoints are queried simultaneously, and the first valid response wins.
 /// </summary>
 public class OverpassApiService : IOverpassApiService, IDisposable
 {
@@ -44,8 +46,8 @@ public class OverpassApiService : IOverpassApiService, IDisposable
     public const int DefaultTimeoutSeconds = 180;
     
     /// <summary>
-    /// Maximum number of complete rounds through all endpoints.
-    /// Total attempts = MaxRounds * AvailableEndpoints.Length
+    /// Maximum number of racing rounds. Each round queries all endpoints simultaneously.
+    /// If no endpoint returns a valid response in a round, the next round starts after a delay.
     /// </summary>
     public const int MaxRounds = 3;
     
@@ -126,119 +128,204 @@ public class OverpassApiService : IOverpassApiService, IDisposable
     /// <inheritdoc />
     public async Task<string> ExecuteRawQueryAsync(string query, CancellationToken cancellationToken = default)
     {
-        return await ExecuteRawQueryWithRoundRobinAsync(query, cancellationToken);
+        return await ExecuteRawQueryWithHedgedRequestsAsync(query, cancellationToken);
     }
-    
+
     /// <summary>
-    /// Executes a query with round-robin retry across all available endpoints.
-    /// Cycles through all endpoints on each failure, with no delay between servers
-    /// within a round, but adds delay between complete rounds.
+    /// Executes a query using hedged requests across all available endpoints.
+    /// All endpoints are queried simultaneously in each round. The first endpoint
+    /// to return a valid JSON response wins, and all other in-flight requests are cancelled.
+    /// If all endpoints fail in a round, retries after exponential backoff delay.
     /// </summary>
-    private async Task<string> ExecuteRawQueryWithRoundRobinAsync(
+    private async Task<string> ExecuteRawQueryWithHedgedRequestsAsync(
         string query,
         CancellationToken cancellationToken)
     {
         var totalEndpoints = AvailableEndpoints.Length;
-        var totalAttempts = MaxRounds * totalEndpoints;
-        
-        TerrainLogger.Info($"Executing Overpass query ({query.Length} chars) with round-robin across {totalEndpoints} endpoints...");
-        
-        Exception? lastException = null;
-        string? lastErrorMessage = null;
-        
+
+        TerrainLogger.Info($"Executing Overpass query ({query.Length} chars) with hedged requests across {totalEndpoints} endpoints...");
+
+        List<string>? lastRoundErrors = null;
+
         for (int round = 0; round < MaxRounds; round++)
         {
             // Add delay between rounds (not before the first round)
             if (round > 0)
             {
                 var roundDelayMs = BaseRoundDelayMs * round; // 0ms, 2000ms, 4000ms
-                TerrainLogger.Info($"Starting round {round + 1}/{MaxRounds} after {roundDelayMs}ms delay...");
+                TerrainLogger.Info($"Starting race round {round + 1}/{MaxRounds} after {roundDelayMs}ms delay...");
                 await Task.Delay(roundDelayMs, cancellationToken);
             }
-            
-            for (int endpointIndex = 0; endpointIndex < totalEndpoints; endpointIndex++)
+
+            var (result, errors) = await RaceEndpointsAsync(query, round, cancellationToken);
+            if (result != null)
+                return result;
+
+            lastRoundErrors = errors;
+        }
+
+        // All rounds exhausted
+        var errorSummary = lastRoundErrors != null ? string.Join("; ", lastRoundErrors) : "Unknown error";
+        var finalMessage = $"Overpass API request failed after {MaxRounds} racing rounds across {totalEndpoints} endpoints. Last round errors: {errorSummary}";
+        TerrainLogger.Error(finalMessage);
+
+        throw new HttpRequestException(finalMessage);
+    }
+
+    /// <summary>
+    /// Races all endpoints simultaneously for a single round.
+    /// Returns the first valid JSON response, or null with collected errors if all fail.
+    /// </summary>
+    private async Task<(string? Result, List<string> Errors)> RaceEndpointsAsync(
+        string query,
+        int round,
+        CancellationToken callerToken)
+    {
+        using var raceCts = CancellationTokenSource.CreateLinkedTokenSource(callerToken);
+        var raceToken = raceCts.Token;
+        var sw = Stopwatch.StartNew();
+        var errors = new List<string>();
+
+        // Launch all endpoint requests simultaneously
+        var tasks = new List<Task<(string? Result, string Endpoint, string? Error)>>(AvailableEndpoints.Length);
+        foreach (var endpoint in AvailableEndpoints)
+        {
+            tasks.Add(QuerySingleEndpointAsync(endpoint, query, raceToken));
+        }
+
+        // Process completions one by one — first valid response wins
+        var remaining = new HashSet<Task<(string? Result, string Endpoint, string? Error)>>(tasks);
+        string? winningResult = null;
+
+        try
+        {
+            while (remaining.Count > 0)
             {
-                var endpoint = AvailableEndpoints[endpointIndex];
-                var attemptNumber = round * totalEndpoints + endpointIndex + 1;
-                var endpointName = GetEndpointShortName(endpoint);
-                
-                try
+                var completed = await Task.WhenAny(remaining);
+                remaining.Remove(completed);
+
+                var (result, endpoint, error) = await completed;
+
+                if (result != null)
                 {
-                    TerrainLogger.Info($"Attempt {attemptNumber}/{totalAttempts}: Trying {endpointName}...");
-                    
-                    var content = new FormUrlEncodedContent(new[]
-                    {
-                        new KeyValuePair<string, string>("data", query)
-                    });
-                    
-                    var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
-                    
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var result = await response.Content.ReadAsStringAsync(cancellationToken);
-                        
-                        // Validate that the response is actually JSON, not an HTML error page
-                        // Overpass API can return 200 OK with HTML when overloaded
-                        var trimmed = result.TrimStart();
-                        if (trimmed.StartsWith('<'))
-                        {
-                            lastErrorMessage = $"Overpass API ({endpointName}) returned HTML instead of JSON (server error page)";
-                            lastException = new HttpRequestException(lastErrorMessage);
-                            TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
-                            continue; // Try next endpoint
-                        }
-                        
-                        if (!trimmed.StartsWith('{') && !trimmed.StartsWith('['))
-                        {
-                            lastErrorMessage = $"Overpass API ({endpointName}) returned invalid response (not JSON)";
-                            lastException = new HttpRequestException(lastErrorMessage);
-                            TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
-                            continue; // Try next endpoint
-                        }
-                        
-                        TerrainLogger.Info($"Success on {endpointName} (attempt {attemptNumber}/{totalAttempts})");
-                        return result;
-                    }
-                    
-                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                    var isRetryable = IsRetryableError(response.StatusCode, errorBody);
-                    
-                    lastErrorMessage = $"Overpass API ({endpointName}) returned {response.StatusCode}";
-                    if (errorBody.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
-                        errorBody.Contains("too busy", StringComparison.OrdinalIgnoreCase))
-                    {
-                        lastErrorMessage += " - Server is busy";
-                    }
-                    
-                    TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts}, retryable: {isRetryable})");
-                    
-                    // For non-retryable errors, still try the next endpoint in round-robin
-                    // Only skip to next endpoint, don't throw yet
-                    lastException = new HttpRequestException(lastErrorMessage);
+                    var endpointName = GetEndpointShortName(endpoint);
+                    TerrainLogger.Info(
+                        $"Race winner: {endpointName} responded in {sw.ElapsedMilliseconds}ms " +
+                        $"(round {round + 1}/{MaxRounds})");
+                    winningResult = result;
+                    break;
                 }
-                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    // HTTP client timeout (not user cancellation)
-                    lastErrorMessage = $"Request to {endpointName} timed out";
-                    lastException = new HttpRequestException(lastErrorMessage);
-                    TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
-                }
-                catch (HttpRequestException ex)
-                {
-                    lastErrorMessage = $"Request to {endpointName} failed: {ex.Message}";
-                    lastException = ex;
-                    TerrainLogger.Warning($"{lastErrorMessage} (attempt {attemptNumber}/{totalAttempts})");
-                }
-                
-                // No delay between endpoints within the same round - immediately try the next one
+
+                errors.Add(error ?? "Unknown error");
             }
         }
-        
-        // All rounds exhausted
-        var finalMessage = $"Overpass API request failed after {totalAttempts} attempts across {totalEndpoints} endpoints ({MaxRounds} rounds). Last error: {lastErrorMessage}";
-        TerrainLogger.Error(finalMessage);
-        
-        throw lastException ?? new HttpRequestException(finalMessage);
+        finally
+        {
+            // Cancel remaining in-flight requests
+            await raceCts.CancelAsync();
+
+            // Await all remaining tasks to observe exceptions and ensure cleanup
+            foreach (var task in remaining)
+            {
+                try
+                {
+                    await task;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected — we cancelled these
+                }
+                catch (Exception ex)
+                {
+                    TerrainLogger.Detail($"Cancelled request cleanup: {ex.Message}");
+                }
+            }
+        }
+
+        if (winningResult != null)
+            return (winningResult, errors);
+
+        TerrainLogger.Warning(
+            $"All {AvailableEndpoints.Length} endpoints failed in round {round + 1}/{MaxRounds}. " +
+            $"Errors: {string.Join("; ", errors)}");
+        return (null, errors);
+    }
+
+    /// <summary>
+    /// Queries a single Overpass endpoint. Returns the valid JSON result on success,
+    /// or null with an error message on failure.
+    /// </summary>
+    private async Task<(string? Result, string Endpoint, string? Error)> QuerySingleEndpointAsync(
+        string endpoint,
+        string query,
+        CancellationToken cancellationToken)
+    {
+        var endpointName = GetEndpointShortName(endpoint);
+
+        try
+        {
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("data", query)
+            });
+
+            var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                // Validate that the response is actually JSON, not an HTML error page
+                // Overpass API can return 200 OK with HTML when overloaded
+                var trimmed = result.TrimStart();
+                if (trimmed.StartsWith('<'))
+                {
+                    var error = $"{endpointName} returned HTML instead of JSON (server error page)";
+                    TerrainLogger.Warning(error);
+                    return (null, endpoint, error);
+                }
+
+                if (!trimmed.StartsWith('{') && !trimmed.StartsWith('['))
+                {
+                    var error = $"{endpointName} returned invalid response (not JSON)";
+                    TerrainLogger.Warning(error);
+                    return (null, endpoint, error);
+                }
+
+                return (result, endpoint, null);
+            }
+
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var isRetryable = IsRetryableError(response.StatusCode, errorBody);
+
+            var errorMsg = $"{endpointName} returned {response.StatusCode}";
+            if (errorBody.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+                errorBody.Contains("too busy", StringComparison.OrdinalIgnoreCase))
+            {
+                errorMsg += " - Server is busy";
+            }
+
+            TerrainLogger.Warning($"{errorMsg} (retryable: {isRetryable})");
+            return (null, endpoint, errorMsg);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Caller cancelled or race was won — propagate cancellation
+            throw;
+        }
+        catch (TaskCanceledException)
+        {
+            // HttpClient timeout (not cancellation — that case is caught above)
+            var error = $"{endpointName} timed out";
+            TerrainLogger.Warning(error);
+            return (null, endpoint, error);
+        }
+        catch (HttpRequestException ex)
+        {
+            var error = $"{endpointName} failed: {ex.Message}";
+            TerrainLogger.Warning(error);
+            return (null, endpoint, error);
+        }
     }
     
     /// <summary>

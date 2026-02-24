@@ -2,13 +2,10 @@ using System.Diagnostics;
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
-using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
-using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
-using BeamNgTerrainPoc.Terrain.Osm.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -41,7 +38,6 @@ public class UnifiedRoadSmoother
     private readonly UnifiedRoadNetworkBuilder _networkBuilder;
     private readonly RoundaboutElevationHarmonizer _roundaboutHarmonizer;
     private readonly UnifiedTerrainBlender _terrainBlender;
-    private readonly IOsmJunctionQueryService _osmJunctionQueryService;
     private StructureElevationIntegrator _structureElevationIntegrator;
 
     public UnifiedRoadSmoother()
@@ -54,7 +50,6 @@ public class UnifiedRoadSmoother
         _terrainBlender = new UnifiedTerrainBlender();
         _materialPainter = new MaterialPainter();
         _elevationCalculator = new OptimizedElevationSmoother();
-        _osmJunctionQueryService = new OsmJunctionQueryService();
         _structureElevationIntegrator = new StructureElevationIntegrator();
     }
 
@@ -95,10 +90,6 @@ public class UnifiedRoadSmoother
     ///     Whether to convert mid-spline crossings to T-junctions by splitting the secondary road.
     ///     Disable for overpasses/underpasses where roads should maintain independent elevations.
     /// </param>
-    /// <param name="enableExtendedOsmJunctionDetection">
-    ///     Whether to query OSM for junction hints when geographic bounding box is available.
-    ///     When disabled, only geometric junction detection is used.
-    /// </param>
     /// <param name="globalJunctionDetectionRadius">
     ///     Global junction detection radius in meters (used when material's
     ///     UseGlobalSettings is true).
@@ -111,10 +102,6 @@ public class UnifiedRoadSmoother
     ///     When true, materials at top of list (index 0) get higher priority for road
     ///     smoothing.
     /// </param>
-    /// <param name="geoBoundingBox">
-    ///     Optional geographic bounding box (WGS84). When provided, OSM junction hints
-    ///     are automatically queried to improve junction detection accuracy.
-    /// </param>
     /// <returns>Result containing smoothed heightmap, material layers, and network data.</returns>
     public UnifiedSmoothingResult? SmoothAllRoads(
         float[,] heightMap,
@@ -123,11 +110,9 @@ public class UnifiedRoadSmoother
         int size,
         bool enableCrossMaterialHarmonization = true,
         bool enableCrossroadToTJunctionConversion = true,
-        bool enableExtendedOsmJunctionDetection = true,
         float globalJunctionDetectionRadius = 10.0f,
         float globalJunctionBlendDistance = 30.0f,
-        bool flipMaterialProcessingOrder = true,
-        GeoBoundingBox? geoBoundingBox = null)
+        bool flipMaterialProcessingOrder = true)
     {
         var perfLog = TerrainCreationLogger.Current;
         var totalSw = Stopwatch.StartNew();
@@ -161,6 +146,41 @@ public class UnifiedRoadSmoother
 
         TerrainCreationLogger.Current?.InfoFileOnly(
             $"  Network built: {network.Splines.Count} splines, {network.CrossSections.Count} cross-sections");
+
+        // Mark paint-only splines and temporarily remove them from elevation phases.
+        // Paint-only splines participate in material painting and master spline export
+        // but must NOT modify terrain elevation in any way.
+        var paintOnlyMaterialNames = new HashSet<string>(
+            roadMaterials.Where(m => m.RoadParameters?.PaintOnlyMode == true)
+                         .Select(m => m.MaterialName));
+
+        foreach (var spline in network.Splines.Where(s => paintOnlyMaterialNames.Contains(s.MaterialName)))
+            spline.IsPaintOnly = true;
+
+        var paintOnlySplines = network.Splines.Where(s => s.IsPaintOnly).ToList();
+        var paintOnlySplineIds = new HashSet<int>(paintOnlySplines.Select(s => s.SplineId));
+        var paintOnlyCrossSections = network.CrossSections
+            .Where(cs => paintOnlySplineIds.Contains(cs.OwnerSplineId)).ToList();
+
+        if (paintOnlySplines.Count > 0)
+        {
+            TerrainLogger.Info($"  Paint-only splines: {paintOnlySplines.Count} (excluded from elevation phases)");
+            // Remove from network for elevation phases (2-4 + post-processing)
+            foreach (var s in paintOnlySplines) network.Splines.Remove(s);
+            foreach (var cs in paintOnlyCrossSections) network.CrossSections.Remove(cs);
+        }
+
+        var allPaintOnly = network.Splines.Count == 0 && paintOnlySplines.Count > 0;
+        float[,] smoothedHeightMap;
+
+        if (allPaintOnly)
+        {
+            TerrainLogger.Info("  All splines are paint-only - skipping elevation phases");
+            // No elevation modification: use the original heightmap directly
+            smoothedHeightMap = heightMap;
+        }
+        else
+        {
 
         // Phase 1.5: Identify roundabout splines early (before banking)
         // This must happen BEFORE banking pre-calculation so that roundabout splines
@@ -279,26 +299,7 @@ public class UnifiedRoadSmoother
             TerrainCreationLogger.Current?.InfoFileOnly(
                 $"  Cross-material harmonization: {enableCrossMaterialHarmonization && roadMaterials.Count > 1}");
             TerrainCreationLogger.Current?.InfoFileOnly($"  Banking-aware: {bankingApplied}");
-            TerrainCreationLogger.Current?.InfoFileOnly($"  Extended OSM junction detection: {enableExtendedOsmJunctionDetection}");
             sw.Restart();
-
-            // Query OSM junctions if bounding box is available AND extended OSM detection is enabled
-            OsmJunctionQueryResult? osmJunctions = null;
-            if (enableExtendedOsmJunctionDetection && geoBoundingBox != null)
-            {
-                try
-                {
-                    osmJunctions = QueryOsmJunctions(geoBoundingBox, size, metersPerPixel);
-                }
-                catch (Exception ex)
-                {
-                    TerrainLogger.Warning($"  OSM junction query failed (continuing with geometric detection only): {ex.Message}");
-                }
-            }
-            else if (!enableExtendedOsmJunctionDetection && geoBoundingBox != null)
-            {
-                TerrainCreationLogger.Current?.InfoFileOnly("  Extended OSM junction detection disabled, using geometric detection only");
-            }
 
             // IMPORTANT: Save roundabout junctions BEFORE Phase 3 detection.
             // DetectJunctions() calls network.Junctions.Clear() which would wipe out
@@ -309,25 +310,9 @@ public class UnifiedRoadSmoother
                 .Where(j => j.Type == JunctionType.Roundabout)
                 .ToList();
 
-            // Detect junctions (with OSM hints if available)
-            if (osmJunctions != null && osmJunctions.Junctions.Count > 0)
-            {
-                TerrainCreationLogger.Current?.InfoFileOnly($"  Using OSM junction hints: {osmJunctions.Junctions.Count} junctions " +
-                                  $"({osmJunctions.ExplicitJunctionCount} explicit, {osmJunctions.GeometricJunctionCount} geometric)");
+            _junctionDetector.DetectJunctions(network, globalJunctionDetectionRadius);
 
-                // Get included OSM junction types from the first material that has junction harmonization enabled
-                var includedOsmTypes = roadMaterials
-                    .FirstOrDefault(m => m.RoadParameters?.JunctionHarmonizationParameters?.EnableJunctionHarmonization == true)
-                    ?.RoadParameters?.JunctionHarmonizationParameters?.IncludedOsmJunctionTypes;
-
-                _junctionDetector.DetectJunctionsWithOsm(network, osmJunctions, globalJunctionDetectionRadius, includedOsmTypes);
-            }
-            else
-            {
-                _junctionDetector.DetectJunctions(network, globalJunctionDetectionRadius);
-            }
-
-            // Restore roundabout junctions that were cleared by DetectJunctions/DetectJunctionsWithOsm.
+            // Restore roundabout junctions that were cleared by DetectJunctions.
             // Remove any regular junctions that overlap with roundabout junction positions to avoid
             // duplicate processing, then add the roundabout junctions back with their IsExcluded flag.
             if (savedRoundaboutJunctions.Count > 0)
@@ -372,7 +357,7 @@ public class UnifiedRoadSmoother
         perfLog?.LogSection("Phase 4: Terrain Blending");
         TerrainLogger.Info("Phase 4: Applying protected terrain blending...");
         sw.Restart();
-        var smoothedHeightMap = _terrainBlender.BlendNetworkWithTerrain(heightMap, network, metersPerPixel);
+        smoothedHeightMap = _terrainBlender.BlendNetworkWithTerrain(heightMap, network, metersPerPixel);
         perfLog?.Timing($"BlendNetworkWithTerrain: {sw.Elapsed.TotalSeconds:F2}s");
 
         // Apply post-processing smoothing if enabled
@@ -381,6 +366,16 @@ public class UnifiedRoadSmoother
             sw.Restart();
             _terrainBlender.ApplyPostProcessingSmoothing(smoothedHeightMap, network, metersPerPixel);
             perfLog?.Timing($"PostProcessingSmoothing: {sw.Elapsed.TotalSeconds:F2}s");
+        }
+
+        } // end of else (non-paint-only elevation phases)
+
+        // Re-add paint-only splines before painting phase
+        if (paintOnlySplines.Count > 0)
+        {
+            network.Splines.AddRange(paintOnlySplines);
+            network.CrossSections.AddRange(paintOnlyCrossSections);
+            TerrainLogger.Info($"  Re-added {paintOnlySplines.Count} paint-only spline(s) for painting phase");
         }
 
         // Phase 5: Paint material layers
@@ -431,64 +426,6 @@ public class UnifiedRoadSmoother
     {
         return roadMaterials.Any(m =>
             m.RoadParameters?.GetSplineParameters()?.Banking?.EnableAutoBanking == true);
-    }
-
-    /// <summary>
-    ///     Queries OSM junction data for the given bounding box and transforms coordinates to terrain space.
-    ///     This provides junction hints from OpenStreetMap to improve junction detection accuracy.
-    /// </summary>
-    /// <param name="bbox">Geographic bounding box (WGS84).</param>
-    /// <param name="terrainSize">Terrain size in pixels.</param>
-    /// <param name="metersPerPixel">Scale factor for coordinate conversion.</param>
-    /// <returns>OSM junction query result with coordinates transformed to terrain meters.</returns>
-    private OsmJunctionQueryResult? QueryOsmJunctions(
-        GeoBoundingBox bbox,
-        int terrainSize,
-        float metersPerPixel)
-    {
-        var perfLog = TerrainCreationLogger.Current;
-        perfLog?.LogSection("OSM Junction Query");
-        
-        var sw = Stopwatch.StartNew();
-        
-        // Query OSM junctions (uses caching internally)
-        var result = _osmJunctionQueryService.QueryJunctionsAsync(bbox).GetAwaiter().GetResult();
-        
-        perfLog?.Timing($"OSM junction query: {sw.ElapsedMilliseconds}ms, {result.Junctions.Count} junctions");
-        
-        if (result.Junctions.Count == 0)
-        {
-            return result;
-        }
-        
-        // Transform junction coordinates from WGS84 to terrain meters
-        // Using simple linear interpolation since we don't have the GDAL transformer here
-        // This is the same approach used in OsmGeometryProcessor.TransformToTerrainCoordinate
-        var terrainSizeMeters = terrainSize * metersPerPixel;
-        var transformedCount = 0;
-        
-        foreach (var junction in result.Junctions)
-        {
-            if (junction.Location == null)
-                continue;
-            
-            // Normalize longitude/latitude to 0-1 range within bbox
-            var normalizedX = (junction.Location.Longitude - bbox.MinLongitude) / bbox.Width;
-            var normalizedY = (junction.Location.Latitude - bbox.MinLatitude) / bbox.Height;
-            
-            // Convert to terrain-space meters (bottom-left origin, matching BeamNG coordinate system)
-            // No Y inversion needed - latitude increases northward, which corresponds to
-            // increasing Y in BeamNG's bottom-up coordinate system
-            var meterX = (float)(normalizedX * terrainSizeMeters);
-            var meterY = (float)(normalizedY * terrainSizeMeters);
-            
-            junction.PositionMeters = new Vector2(meterX, meterY);
-            transformedCount++;
-        }
-        
-        TerrainLogger.Detail($"  Transformed {transformedCount} OSM junction coordinates to terrain meters");
-        
-        return result;
     }
 
     /// <summary>

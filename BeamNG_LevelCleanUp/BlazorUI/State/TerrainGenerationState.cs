@@ -41,14 +41,6 @@ public class TerrainGenerationState
     public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
 
     /// <summary>
-    ///     When true and geographic bounding box is available, queries OSM for junction hints
-    ///     to improve junction detection accuracy. OSM provides explicit junction tags
-    ///     (motorway exits, traffic signals, etc.) that enhance geometric detection.
-    ///     Default: true
-    /// </summary>
-    public bool EnableExtendedOsmJunctionDetection { get; set; } = true;
-
-    /// <summary>
     ///     Global junction detection radius in meters.
     ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
     /// </summary>
@@ -365,7 +357,6 @@ public class TerrainGenerationState
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
         EnableCrossroadToTJunctionConversion = true;
-        EnableExtendedOsmJunctionDetection = true;
         GlobalJunctionDetectionRadiusMeters = 5.0f;
         GlobalJunctionBlendDistanceMeters = 30.0f;
         FlipMaterialProcessingOrder = false;
