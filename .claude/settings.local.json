@@ -25,7 +25,9 @@
       "Bash(git ls-tree:*)",
       "WebFetch(domain:github.com)",
       "Bash(dotnet restore:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(xargs grep -l \"class TerrainMaterialItemExtended\")",
+      "Bash(find \"c:/SourcesPrivate/beamng_mapping_pro\" -name \"*.cs\" -type f -exec grep -l \"^public class TerrainMaterialItemExtended\\\\|^public record TerrainMaterialItemExtended\" {} ;)"
     ]
   }
 }

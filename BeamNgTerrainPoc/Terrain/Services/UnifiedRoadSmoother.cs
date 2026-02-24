@@ -147,6 +147,41 @@ public class UnifiedRoadSmoother
         TerrainCreationLogger.Current?.InfoFileOnly(
             $"  Network built: {network.Splines.Count} splines, {network.CrossSections.Count} cross-sections");
 
+        // Mark paint-only splines and temporarily remove them from elevation phases.
+        // Paint-only splines participate in material painting and master spline export
+        // but must NOT modify terrain elevation in any way.
+        var paintOnlyMaterialNames = new HashSet<string>(
+            roadMaterials.Where(m => m.RoadParameters?.PaintOnlyMode == true)
+                         .Select(m => m.MaterialName));
+
+        foreach (var spline in network.Splines.Where(s => paintOnlyMaterialNames.Contains(s.MaterialName)))
+            spline.IsPaintOnly = true;
+
+        var paintOnlySplines = network.Splines.Where(s => s.IsPaintOnly).ToList();
+        var paintOnlySplineIds = new HashSet<int>(paintOnlySplines.Select(s => s.SplineId));
+        var paintOnlyCrossSections = network.CrossSections
+            .Where(cs => paintOnlySplineIds.Contains(cs.OwnerSplineId)).ToList();
+
+        if (paintOnlySplines.Count > 0)
+        {
+            TerrainLogger.Info($"  Paint-only splines: {paintOnlySplines.Count} (excluded from elevation phases)");
+            // Remove from network for elevation phases (2-4 + post-processing)
+            foreach (var s in paintOnlySplines) network.Splines.Remove(s);
+            foreach (var cs in paintOnlyCrossSections) network.CrossSections.Remove(cs);
+        }
+
+        var allPaintOnly = network.Splines.Count == 0 && paintOnlySplines.Count > 0;
+        float[,] smoothedHeightMap;
+
+        if (allPaintOnly)
+        {
+            TerrainLogger.Info("  All splines are paint-only - skipping elevation phases");
+            // No elevation modification: use the original heightmap directly
+            smoothedHeightMap = heightMap;
+        }
+        else
+        {
+
         // Phase 1.5: Identify roundabout splines early (before banking)
         // This must happen BEFORE banking pre-calculation so that roundabout splines
         // don't get banking applied to them. Roundabouts are circular and should never be banked.
@@ -322,7 +357,7 @@ public class UnifiedRoadSmoother
         perfLog?.LogSection("Phase 4: Terrain Blending");
         TerrainLogger.Info("Phase 4: Applying protected terrain blending...");
         sw.Restart();
-        var smoothedHeightMap = _terrainBlender.BlendNetworkWithTerrain(heightMap, network, metersPerPixel);
+        smoothedHeightMap = _terrainBlender.BlendNetworkWithTerrain(heightMap, network, metersPerPixel);
         perfLog?.Timing($"BlendNetworkWithTerrain: {sw.Elapsed.TotalSeconds:F2}s");
 
         // Apply post-processing smoothing if enabled
@@ -331,6 +366,16 @@ public class UnifiedRoadSmoother
             sw.Restart();
             _terrainBlender.ApplyPostProcessingSmoothing(smoothedHeightMap, network, metersPerPixel);
             perfLog?.Timing($"PostProcessingSmoothing: {sw.Elapsed.TotalSeconds:F2}s");
+        }
+
+        } // end of else (non-paint-only elevation phases)
+
+        // Re-add paint-only splines before painting phase
+        if (paintOnlySplines.Count > 0)
+        {
+            network.Splines.AddRange(paintOnlySplines);
+            network.CrossSections.AddRange(paintOnlyCrossSections);
+            TerrainLogger.Info($"  Re-added {paintOnlySplines.Count} paint-only spline(s) for painting phase");
         }
 
         // Phase 5: Paint material layers

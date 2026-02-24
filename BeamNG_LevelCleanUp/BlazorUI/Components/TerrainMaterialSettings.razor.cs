@@ -648,6 +648,17 @@ public partial class TerrainMaterialSettings
         }
     }
 
+    /// <summary>
+    ///     Handles the Road Smoothing toggle. When enabled, automatically enables Road Painting too.
+    /// </summary>
+    private async Task OnRoadSmoothingToggled(bool value)
+    {
+        Material.IsRoadMaterial = value;
+        if (value)
+            Material.EnableRoadPainting = true;
+        await OnMaterialChanged.InvokeAsync(Material);
+    }
+
     private async Task OnPresetChanged(RoadPresetType preset)
     {
         Material.SelectedPreset = preset;
@@ -718,6 +729,13 @@ public partial class TerrainMaterialSettings
 
         // Road smoothing enabled
         public bool IsRoadMaterial { get; set; }
+
+        /// <summary>
+        /// Enable road painting (material painting + master spline export) without elevation smoothing.
+        /// Automatically true when IsRoadMaterial is true. Can be enabled independently for paint-only mode.
+        /// </summary>
+        public bool EnableRoadPainting { get; set; }
+
         public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.PngHighway;
 
         // ========================================
@@ -1025,25 +1043,30 @@ public partial class TerrainMaterialSettings
                 materialDebugDirectory = Path.Combine(debugOutputDirectory, safeMaterialName);
             }
 
+            var isPaintOnlyMode = EnableRoadPainting && !IsRoadMaterial;
+
             var result = new RoadSmoothingParameters
             {
+                // Paint-only mode: material painting + spline export, no elevation modification
+                PaintOnlyMode = isPaintOnlyMode,
+
                 // Primary parameters
-                RoadWidthMeters = RoadWidthMeters,
+                RoadWidthMeters = isPaintOnlyMode ? (RoadSurfaceWidthMeters ?? 6.0f) : RoadWidthMeters,
                 RoadSurfaceWidthMeters = RoadSurfaceWidthMeters,
                 MasterSplineWidthMeters = MasterSplineWidthMeters,
-                TerrainAffectedRangeMeters = TerrainAffectedRangeMeters,
-                RoadEdgeProtectionBufferMeters = RoadEdgeProtectionBufferMeters,
-                EnableMaxSlopeConstraint = EnableMaxSlopeConstraint,
+                TerrainAffectedRangeMeters = isPaintOnlyMode ? 0 : TerrainAffectedRangeMeters,
+                RoadEdgeProtectionBufferMeters = isPaintOnlyMode ? 0 : RoadEdgeProtectionBufferMeters,
+                EnableMaxSlopeConstraint = isPaintOnlyMode ? false : EnableMaxSlopeConstraint,
                 RoadMaxSlopeDegrees = RoadMaxSlopeDegrees,
                 SideMaxSlopeDegrees = SideMaxSlopeDegrees,
 
-                // Algorithm settings
+                // Algorithm settings - disable blending for paint-only
                 BlendFunctionType = BlendFunctionType,
                 CrossSectionIntervalMeters = CrossSectionIntervalMeters,
-                EnableTerrainBlending = EnableTerrainBlending,
+                EnableTerrainBlending = isPaintOnlyMode ? false : EnableTerrainBlending,
 
-                // Post-processing
-                EnablePostProcessingSmoothing = EnablePostProcessingSmoothing,
+                // Post-processing - disable for paint-only
+                EnablePostProcessingSmoothing = isPaintOnlyMode ? false : EnablePostProcessingSmoothing,
                 SmoothingType = SmoothingType,
                 SmoothingKernelSize = SmoothingKernelSize,
                 SmoothingSigma = SmoothingSigma,

@@ -62,6 +62,13 @@ public class ParameterizedRoadSpline
     public string? DisplayName { get; init; }
 
     /// <summary>
+    ///     When true, this spline participates in material painting and master spline export
+    ///     but does NOT modify terrain elevation (no smoothing, no blending, no post-processing).
+    ///     Paint-only splines are also invisible to the junction detection system.
+    /// </summary>
+    public bool IsPaintOnly { get; set; }
+
+    /// <summary>
     ///     Whether this spline represents a roundabout ring.
     ///     Roundabout splines are treated specially:
     ///     - They form closed loops
