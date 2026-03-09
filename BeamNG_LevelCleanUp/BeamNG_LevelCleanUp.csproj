@@ -10,7 +10,7 @@
     <AssemblyVersion>1.5.5.0</AssemblyVersion>
     <FileVersion>1.5.5.0</FileVersion>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <!-- Publish settings for GDAL: dotnet publish -c Release -r win-x64 -->
+    <!-- Publish settings for GDAL: dotnet publish -c Release -r win-x64 (self-contained) -->
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
