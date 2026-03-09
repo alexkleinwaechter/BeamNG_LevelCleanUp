@@ -17,11 +17,6 @@ public class SplineRoadParameters
     /// </summary>
     public BankingParameters? Banking { get; set; }
 
-    /// <summary>
-    ///     Convenience property: true if banking is enabled.
-    /// </summary>
-    public bool IsBankingEnabled => Banking?.EnableAutoBanking == true;
-
     // ========================================
     // SPLINE INTERPOLATION TYPE
     // ========================================

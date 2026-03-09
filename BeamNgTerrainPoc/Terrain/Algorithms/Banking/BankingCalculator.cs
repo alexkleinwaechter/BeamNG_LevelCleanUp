@@ -24,9 +24,8 @@ public class BankingCalculator
         IList<UnifiedCrossSection> crossSections,
         BankingParameters parameters)
     {
-        if (!parameters.EnableAutoBanking || crossSections.Count < 2)
+        if (crossSections.Count < 2)
         {
-            // No banking - set all to zero/default
             foreach (var cs in crossSections)
             {
                 cs.BankAngleRadians = 0;
@@ -68,7 +67,7 @@ public class BankingCalculator
         IList<UnifiedCrossSection> crossSections,
         BankingParameters parameters)
     {
-        if (!parameters.EnableAutoBanking || crossSections.Count < 2)
+        if (crossSections.Count < 2)
         {
             foreach (var cs in crossSections)
             {
@@ -120,7 +119,7 @@ public class BankingCalculator
         BankingParameters parameters,
         Func<UnifiedCrossSection, float>? getAdaptiveBankAngle = null)
     {
-        if (!parameters.EnableAutoBanking || crossSections.Count < 2)
+        if (crossSections.Count < 2)
         {
             return;
         }
@@ -178,7 +177,7 @@ public class BankingCalculator
         BankingParameters parameters,
         Func<UnifiedCrossSection, float>? getHigherPriorityBankAngle = null)
     {
-        if (!parameters.EnableAutoBanking || crossSections.Count < 2)
+        if (crossSections.Count < 2)
         {
             foreach (var cs in crossSections)
             {
@@ -463,6 +462,69 @@ public class BankingCalculator
     }
 
     /// <summary>
+    /// Applies Gaussian smoothing to bank angles to reduce edge-elevation bumps
+    /// caused by curvature noise on strongly banked curves.
+    /// Structurally identical to CurvatureCalculator.SmoothCurvature but operates
+    /// on BankAngleRadians. Also recalculates banked normals after smoothing.
+    /// </summary>
+    /// <param name="crossSections">Ordered cross-sections for a single spline</param>
+    /// <param name="windowSize">Size of the Gaussian window (must be odd, default 7)</param>
+    /// <param name="sigma">Standard deviation for Gaussian kernel (default 1.5)</param>
+    public void SmoothBankAngles(IList<UnifiedCrossSection> crossSections, int windowSize = 7, float sigma = 1.5f)
+    {
+        if (crossSections.Count < windowSize || windowSize < 3)
+            return;
+
+        // Ensure window size is odd
+        if (windowSize % 2 == 0)
+            windowSize++;
+
+        var halfWindow = windowSize / 2;
+
+        // Pre-compute Gaussian kernel
+        var kernel = new float[windowSize];
+        var kernelSum = 0f;
+        for (int i = 0; i < windowSize; i++)
+        {
+            var x = i - halfWindow;
+            kernel[i] = MathF.Exp(-(x * x) / (2 * sigma * sigma));
+            kernelSum += kernel[i];
+        }
+
+        // Normalize kernel
+        for (int i = 0; i < windowSize; i++)
+            kernel[i] /= kernelSum;
+
+        // Apply convolution
+        var smoothedAngles = new float[crossSections.Count];
+        for (int i = 0; i < crossSections.Count; i++)
+        {
+            var sum = 0f;
+            var weightSum = 0f;
+
+            for (int j = -halfWindow; j <= halfWindow; j++)
+            {
+                var idx = i + j;
+                if (idx >= 0 && idx < crossSections.Count)
+                {
+                    var weight = kernel[j + halfWindow];
+                    sum += crossSections[idx].BankAngleRadians * weight;
+                    weightSum += weight;
+                }
+            }
+
+            smoothedAngles[i] = weightSum > 0 ? sum / weightSum : crossSections[i].BankAngleRadians;
+        }
+
+        // Apply smoothed values
+        for (int i = 0; i < crossSections.Count; i++)
+            crossSections[i].BankAngleRadians = smoothedAngles[i];
+
+        // Recalculate 3D banked normals with smoothed angles
+        CalculateBankedNormals(crossSections);
+    }
+
+    /// <summary>
     /// Calculates the 3D banked normal by rotating the horizontal normal
     /// around the tangent axis by the bank angle.
     /// Uses Rodrigues' rotation formula.
@@ -506,7 +568,7 @@ public class BankingCalculator
 
     /// <summary>
     /// Rotates a vector around an axis using Rodrigues' rotation formula.
-    /// v_rot = v*cos(?) + (k×v)*sin(?) + k*(k·v)*(1-cos(?))
+    /// v_rot = v*cos(?) + (kï¿½v)*sin(?) + k*(kï¿½v)*(1-cos(?))
     /// where k is the normalized rotation axis.
     /// </summary>
     /// <param name="v">The vector to rotate</param>

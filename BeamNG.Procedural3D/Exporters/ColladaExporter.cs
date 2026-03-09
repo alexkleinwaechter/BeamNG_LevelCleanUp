@@ -64,6 +64,26 @@ public class ColladaExporter : IMeshExporter
     }
 
     /// <summary>
+    ///     Exports a flat list of meshes to a Collada DAE file using direct XML generation
+    ///     with Z_UP coordinate system. This bypasses Assimp entirely, avoiding any ambiguous
+    ///     Y-up/Z-up coordinate conversions. Vertex positions are written as-is in BeamNG's
+    ///     native Z-up coordinate system (X=East, Y=North, Z=Up).
+    ///     Use this for road meshes and other assets where exact coordinate alignment with
+    ///     the BeamNG terrain is critical.
+    /// </summary>
+    public void ExportZUp(IEnumerable<Mesh> meshes, string filePath)
+    {
+        ArgumentNullException.ThrowIfNull(meshes);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
+        var meshList = meshes.ToList();
+        if (meshList.Count == 0)
+            throw new ArgumentException("At least one mesh is required for export.", nameof(meshes));
+
+        WriteSimpleDae(meshList, filePath);
+    }
+
+    /// <summary>
     ///     Registers a material to be included in the export.
     /// </summary>
     public void RegisterMaterial(Material material)
@@ -140,6 +160,88 @@ public class ColladaExporter : IMeshExporter
                         new XAttribute("url", "#BeamNGScene")))));
 
         doc.Save(filePath);
+    }
+
+    /// <summary>
+    ///     Writes a simple Collada DAE file from a flat list of meshes using Z_UP.
+    ///     Each mesh becomes a separate geometry and visual scene node.
+    ///     No coordinate conversion is applied — positions are written in BeamNG's native
+    ///     Z-up coordinate system. Only the scale factor from options is applied.
+    /// </summary>
+    private void WriteSimpleDae(List<Mesh> meshes, string filePath)
+    {
+        var directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            Directory.CreateDirectory(directory);
+
+        // Collect unique material names across all meshes
+        var uniqueMaterials = meshes
+            .Where(m => !string.IsNullOrEmpty(m.MaterialName))
+            .Select(m => m.MaterialName!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var doc = new XDocument(
+            new XDeclaration("1.0", "utf-8", null),
+            new XElement(Ns + "COLLADA",
+                new XAttribute("version", "1.4.1"),
+                BuildAssetElement(),
+                BuildLibraryEffects(uniqueMaterials),
+                BuildLibraryMaterials(uniqueMaterials),
+                BuildSimpleLibraryGeometries(meshes),
+                BuildSimpleLibraryVisualScenes(meshes),
+                new XElement(Ns + "scene",
+                    new XElement(Ns + "instance_visual_scene",
+                        new XAttribute("url", "#BeamNGScene")))));
+
+        doc.Save(filePath);
+    }
+
+    /// <summary>
+    ///     Builds library_geometries for a flat mesh list (one geometry per mesh).
+    /// </summary>
+    private XElement BuildSimpleLibraryGeometries(List<Mesh> meshes)
+    {
+        var libGeo = new XElement(Ns + "library_geometries");
+
+        for (int i = 0; i < meshes.Count; i++)
+        {
+            var mesh = meshes[i];
+            if (!mesh.HasGeometry) continue;
+
+            var name = !string.IsNullOrEmpty(mesh.Name) ? mesh.Name : $"mesh_{i}";
+            libGeo.Add(BuildGeometryElement(name, [mesh]));
+        }
+
+        return libGeo;
+    }
+
+    /// <summary>
+    ///     Builds library_visual_scenes for a flat mesh list (one node per mesh under a root node).
+    /// </summary>
+    private XElement BuildSimpleLibraryVisualScenes(List<Mesh> meshes)
+    {
+        var rootNode = new XElement(Ns + "node",
+            new XAttribute("id", "node-root"),
+            new XAttribute("name", "RootNode"));
+
+        for (int i = 0; i < meshes.Count; i++)
+        {
+            var mesh = meshes[i];
+            if (!mesh.HasGeometry) continue;
+
+            var name = !string.IsNullOrEmpty(mesh.Name) ? mesh.Name : $"mesh_{i}";
+            var materialNames = !string.IsNullOrEmpty(mesh.MaterialName)
+                ? new List<string> { mesh.MaterialName }
+                : new List<string>();
+
+            rootNode.Add(BuildNodeElement(name, materialNames));
+        }
+
+        return new XElement(Ns + "library_visual_scenes",
+            new XElement(Ns + "visual_scene",
+                new XAttribute("id", "BeamNGScene"),
+                rootNode));
     }
 
     /// <summary>

@@ -15,8 +15,7 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms;
 ///     - Y/X junctions: Weighted average based on priority and angle
 ///     - Complex intersections: Priority-weighted elevation resolution
 ///     - Isolated endpoints: Taper toward terrain elevation
-///     The key difference from JunctionElevationHarmonizer is that this operates on
-///     the unified network, enabling cross-material junction harmonization.
+///     Operates on the unified network, enabling cross-material junction harmonization.
 /// </summary>
 public class NetworkJunctionHarmonizer
 {
@@ -25,8 +24,6 @@ public class NetworkJunctionHarmonizer
     ///     If elevation difference is less than this, use weighted average instead.
     /// </summary>
     private const float SmallElevationDifferenceMeters = 0.5f;
-
-    private readonly CrossroadToTJunctionConverter _crossroadConverter;
 
     private readonly NetworkJunctionDetector _detector;
 
@@ -44,7 +41,6 @@ public class NetworkJunctionHarmonizer
     public NetworkJunctionHarmonizer()
     {
         _detector = new NetworkJunctionDetector();
-        _crossroadConverter = new CrossroadToTJunctionConverter();
     }
 
     /// <summary>
@@ -52,25 +48,17 @@ public class NetworkJunctionHarmonizer
     ///     Algorithm:
     ///     1. Detect all junctions (if not already detected)
     ///     2. Sort by priority (handle highest-priority roads first)
-    ///     3. Harmonize each junction based on its type
-    ///     4. Propagate elevation constraints along affected splines
+    ///     3. Compute harmonized elevation for each junction based on its type
     /// </summary>
     /// <param name="network">The unified road network with calculated target elevations.</param>
     /// <param name="heightMap">The original terrain heightmap.</param>
     /// <param name="metersPerPixel">Scale factor for coordinate conversion.</param>
-    /// <param name="globalDetectionRadius">Global junction detection radius in meters.</param>
-    /// <param name="globalBlendDistance">Global junction blend distance in meters.</param>
-    /// <param name="enableCrossroadToTJunctionConversion">
-    ///     Whether to convert mid-spline crossings to T-junctions by splitting the secondary road.
-    ///     Disable for overpasses/underpasses where roads should maintain independent elevations.
-    /// </param>
+    /// <param name="skipDetection">When true, reuses existing junctions (for iterative refinement).</param>
     public HarmonizationResult HarmonizeNetwork(
         UnifiedRoadNetwork network,
         float[,] heightMap,
         float metersPerPixel,
-        float globalDetectionRadius = 10.0f,
-        float globalBlendDistance = 30.0f,
-        bool enableCrossroadToTJunctionConversion = true)
+        bool skipDetection = false)
     {
         var result = new HarmonizationResult();
         var perfLog = TerrainCreationLogger.Current;
@@ -90,91 +78,80 @@ public class NetworkJunctionHarmonizer
 
         perfLog?.LogSection("NetworkJunctionHarmonizer");
         TerrainLogger.Info("=== UNIFIED NETWORK JUNCTION HARMONIZATION ===");
-        TerrainLogger.Detail($"  Global detection radius: {globalDetectionRadius}m");
-        TerrainLogger.Detail($"  Global blend distance: {globalBlendDistance}m");
+        if (skipDetection)
+            TerrainLogger.Detail("  skipDetection=true: reusing existing junctions");
 
         // Capture pre-harmonization elevations for comparison
         var preHarmonizationElevations = CaptureElevations(network);
         result.PreHarmonizationElevations = preHarmonizationElevations;
 
-        // Step 1: Get junctions from network
-        // Junction detection may have already been run by UnifiedRoadSmoother.
-        // In that case, network.Junctions already contains detected junctions.
-        //
-        // The detection flow is:
-        // 1. UnifiedRoadSmoother calls DetectJunctions()
-        // 2. That populates network.Junctions with detected junctions
-        // 3. HarmonizeNetwork is called - it should USE those junctions, not re-detect
-        //
-        // We only re-run detection if no regular junctions exist yet (only roundabout junctions
-        // from Phase 2.6 might exist before general detection runs).
-
-        // Check if we already have regular (non-roundabout) junctions detected
-        var existingRegularJunctions = network.Junctions
-            .Where(j => j.Type != JunctionType.Roundabout)
-            .ToList();
-
-        var existingRoundaboutJunctions = network.Junctions
-            .Where(j => j.Type == JunctionType.Roundabout)
-            .ToList();
-
         List<NetworkJunction> junctions;
 
-        if (existingRegularJunctions.Count > 0)
+        if (skipDetection)
         {
-            // Junctions were already detected - use them as-is
+            // Iterative refinement: reuse already-detected junctions, skip detection and crossroad conversion
             junctions = network.Junctions.ToList();
-
-            TerrainLogger.Detail($"  Using {junctions.Count} pre-detected junction(s) " +
-                                 $"({existingRoundaboutJunctions.Count} roundabout, " +
-                                 $"{existingRegularJunctions.Count} regular)");
+            TerrainLogger.Detail($"  Reusing {junctions.Count} existing junction(s) (iterative refinement)");
         }
         else
         {
-            // No regular junctions yet - run detection now
-            TerrainLogger.Detail("  No pre-detected junctions found, running detection...");
+            // Step 1: Get junctions from network
+            // Junction detection may have already been run by UnifiedRoadSmoother.
+            // In that case, network.Junctions already contains detected junctions.
+            //
+            // The detection flow is:
+            // 1. UnifiedRoadSmoother calls DetectJunctions()
+            // 2. That populates network.Junctions with detected junctions
+            // 3. HarmonizeNetwork is called - it should USE those junctions, not re-detect
+            //
+            // We only re-run detection if no regular junctions exist yet (only roundabout junctions
+            // from Phase 2.6 might exist before general detection runs).
 
-            if (existingRoundaboutJunctions.Count > 0)
-                TerrainLogger.Detail(
-                    $"  Preserving {existingRoundaboutJunctions.Count} existing roundabout junction(s)");
+            // Check if we already have regular (non-roundabout) junctions detected
+            var existingRegularJunctions = network.Junctions
+                .Where(j => j.Type != JunctionType.Roundabout)
+                .ToList();
 
-            // Run standard junction detection
-            var detectedJunctions = _detector.DetectJunctions(network, globalDetectionRadius);
-            TerrainLogger.Detail($"  Detected {detectedJunctions.Count} regular junction(s)");
+            var existingRoundaboutJunctions = network.Junctions
+                .Where(j => j.Type == JunctionType.Roundabout)
+                .ToList();
 
-            // Merge: combine detected junctions with preserved roundabout junctions
-            junctions = detectedJunctions;
-
-            foreach (var roundaboutJunction in existingRoundaboutJunctions)
-                if (!junctions.Any(j => j.JunctionId == roundaboutJunction.JunctionId))
-                    junctions.Add(roundaboutJunction);
-
-            // Update the network's junction list
-            network.Junctions.Clear();
-            network.Junctions.AddRange(junctions);
-
-            // Re-assign sequential junction IDs after merging
-            for (var i = 0; i < junctions.Count; i++) junctions[i].JunctionId = i;
-        }
-
-        // CRITICAL: Convert mid-spline crossings (crossroads) to logical T-junctions
-        // This must happen BEFORE elevation harmonization so that secondary roads
-        // get proper surface constraints at crossings.
-        // The converter marks secondary road cross-sections as "virtual endpoints"
-        // and applies junction surface constraints that follow the primary road's surface.
-        // Can be disabled for overpasses/underpasses where roads should maintain independent elevations.
-        if (enableCrossroadToTJunctionConversion)
-        {
-            var crossingsConverted = _crossroadConverter.ConvertCrossroadsToTJunctions(network, globalBlendDistance);
-            if (crossingsConverted > 0)
+            if (existingRegularJunctions.Count > 0)
             {
-                TerrainLogger.Info($"  Converted {crossingsConverted} crossroad(s) to T-junctions");
-                perfLog?.Timing($"Converted {crossingsConverted} crossroads to T-junctions");
+                // Junctions were already detected - use them as-is
+                junctions = network.Junctions.ToList();
+
+                TerrainLogger.Detail($"  Using {junctions.Count} pre-detected junction(s) " +
+                                     $"({existingRoundaboutJunctions.Count} roundabout, " +
+                                     $"{existingRegularJunctions.Count} regular)");
             }
-        }
-        else
-        {
-            TerrainCreationLogger.Current?.InfoFileOnly("  Crossroad to T-junction conversion disabled (mid-spline crossings will retain independent elevations)");
+            else
+            {
+                // No regular junctions yet - run detection now
+                TerrainLogger.Detail("  No pre-detected junctions found, running detection...");
+
+                if (existingRoundaboutJunctions.Count > 0)
+                    TerrainLogger.Detail(
+                        $"  Preserving {existingRoundaboutJunctions.Count} existing roundabout junction(s)");
+
+                // Run standard junction detection
+                var detectedJunctions = _detector.DetectJunctions(network);
+                TerrainLogger.Detail($"  Detected {detectedJunctions.Count} regular junction(s)");
+
+                // Merge: combine detected junctions with preserved roundabout junctions
+                junctions = detectedJunctions;
+
+                foreach (var roundaboutJunction in existingRoundaboutJunctions)
+                    if (!junctions.Any(j => j.JunctionId == roundaboutJunction.JunctionId))
+                        junctions.Add(roundaboutJunction);
+
+                // Update the network's junction list
+                network.Junctions.Clear();
+                network.Junctions.AddRange(junctions);
+
+                // Re-assign sequential junction IDs after merging
+                for (var i = 0; i < junctions.Count; i++) junctions[i].JunctionId = i;
+            }
         }
 
         if (junctions.Count == 0)
@@ -192,27 +169,8 @@ public class NetworkJunctionHarmonizer
             TerrainLogger.Detail($"  {excludedCount} junction(s) marked as excluded, will be skipped");
 
         // Step 3: Compute harmonized elevation for each junction (skip excluded)
-        ComputeJunctionElevations(sortedJunctions, heightMap, metersPerPixel, globalBlendDistance);
+        ComputeJunctionElevations(sortedJunctions, heightMap, metersPerPixel);
         perfLog?.Timing("Computed junction elevations");
-
-        // Step 4: Propagate junction constraints along affected splines
-        var propagatedCount = PropagateJunctionConstraints(network, sortedJunctions, globalBlendDistance);
-        result.PropagatedCrossSections = propagatedCount;
-        perfLog?.Timing($"Propagated constraints to {propagatedCount} cross-sections");
-
-        // Step 5: Apply endpoint tapering for isolated endpoints
-        var taperedCount = ApplyEndpointTapering(network, sortedJunctions, heightMap, metersPerPixel);
-        result.TaperedCrossSections = taperedCount;
-        perfLog?.Timing($"Applied taper to {taperedCount} cross-sections");
-
-        // Step 6: Apply multi-way junction plateau smoothing to reduce dents
-        // IMPORTANT: Pass preHarmonizationElevations so we sample ORIGINAL elevations, not already-blended ones
-        var plateauSmoothedCount = ApplyMultiWayJunctionPlateauSmoothing(network, sortedJunctions, globalBlendDistance,
-            preHarmonizationElevations);
-        result.PlateauSmoothedCrossSections = plateauSmoothedCount;
-        if (plateauSmoothedCount > 0)
-            perfLog?.Timing(
-                $"Applied plateau smoothing to {plateauSmoothedCount} cross-sections at multi-way junctions");
 
         // Calculate statistics
         var stats = CalculateHarmonizationStats(network, preHarmonizationElevations);
@@ -220,8 +178,6 @@ public class NetworkJunctionHarmonizer
         result.MaxElevationChange = stats.MaxChange;
 
         TerrainLogger.Info($"  RESULT: Modified {result.ModifiedCrossSections} cross-sections");
-        TerrainLogger.Info(
-            $"  RESULT: Propagated {propagatedCount}, Tapered {taperedCount}, Plateau {plateauSmoothedCount}");
         TerrainLogger.Info($"  RESULT: Max elevation change: {result.MaxElevationChange:F3}m");
         TerrainLogger.Info("=== NETWORK HARMONIZATION COMPLETE ===");
 
@@ -250,8 +206,7 @@ public class NetworkJunctionHarmonizer
     private void ComputeJunctionElevations(
         List<NetworkJunction> junctions,
         float[,] heightMap,
-        float metersPerPixel,
-        float globalBlendDistance)
+        float metersPerPixel)
     {
         var mapHeight = heightMap.GetLength(0);
         var mapWidth = heightMap.GetLength(1);
@@ -272,7 +227,7 @@ public class NetworkJunctionHarmonizer
                     break;
 
                 case JunctionType.TJunction:
-                    ComputeTJunctionElevation(junction, globalBlendDistance);
+                    ComputeTJunctionElevation(junction);
                     break;
 
                 case JunctionType.MidSplineCrossing:
@@ -331,7 +286,7 @@ public class NetworkJunctionHarmonizer
     ///     This prevents both "cliff" artifacts from banking AND "step" artifacts from
     ///     slope mismatches at T-junctions.
     /// </summary>
-    private void ComputeTJunctionElevation(NetworkJunction junction, float globalBlendDistance)
+    private void ComputeTJunctionElevation(NetworkJunction junction)
     {
         // Get continuous and terminating contributors
         var continuous = junction.GetContinuousRoads().ToList();
@@ -795,747 +750,6 @@ public class NetworkJunctionHarmonizer
     }
 
     /// <summary>
-    ///     Propagates junction elevation constraints back along each affected spline.
-    ///     Uses smooth blending over the configured blend distance.
-    ///     For T-junctions: Only propagates along terminating roads.
-    ///     For Y/X junctions: Propagates along all contributing roads.
-    ///     For Mid-spline crossings: Propagates in both directions from the crossing point.
-    ///     CRITICAL FIX FOR DENSE NETWORKS:
-    ///     When multiple junctions have overlapping blend zones (common in dense road networks),
-    ///     each cross-section accumulates weighted influences from ALL nearby junctions rather than
-    ///     letting each junction independently overwrite. This prevents elevation "steps" at the
-    ///     boundaries where different junction blend zones meet.
-    ///     Algorithm:
-    ///     1. First pass: Collect all junction influences for each cross-section
-    ///     2. Second pass: Compute final elevation as weighted average of all influences
-    ///     The weight for each junction is based on: (1 - blend_factor) where blend_factor
-    ///     increases with distance. Closer junctions have more influence.
-    /// </summary>
-    /// <returns>Number of cross-sections modified.</returns>
-    private int PropagateJunctionConstraints(
-        UnifiedRoadNetwork network,
-        List<NetworkJunction> junctions,
-        float globalBlendDistance)
-    {
-        var modifiedCount = 0;
-
-        // Cache cross-sections by spline for faster access
-        var crossSectionsBySpline = network.CrossSections
-            .GroupBy(cs => cs.OwnerSplineId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
-
-        // CRITICAL FIX: Capture ORIGINAL elevations BEFORE any propagation
-        // This prevents reading already-modified values when processing overlapping blend zones
-        var originalElevations = network.CrossSections
-            .Where(cs => !float.IsNaN(cs.TargetElevation))
-            .ToDictionary(cs => cs.Index, cs => cs.TargetElevation);
-
-        // NEW: Track all junction influences for each cross-section
-        // Key: cross-section Index, Value: list of (harmonized elevation, weight, junction ID)
-        var crossSectionInfluences = new Dictionary<int, List<(float elevation, float weight, int junctionId)>>();
-
-        // First pass: Collect all junction influences
-        foreach (var junction in junctions.Where(j => j.Type != JunctionType.Endpoint && !j.IsExcluded))
-        {
-            // For T-junctions, only propagate along terminating roads
-            // For cross-material junctions with mixed priorities, only propagate along lower-priority roads
-            // For mid-spline crossings and other types, propagate along all roads
-            IEnumerable<JunctionContributor> contributorsToPropagate;
-
-            if (junction.Type == JunctionType.TJunction)
-                contributorsToPropagate = junction.GetTerminatingRoads();
-            else
-                contributorsToPropagate = junction.Contributors;
-
-            foreach (var contributor in contributorsToPropagate)
-            {
-                if (!crossSectionsBySpline.TryGetValue(contributor.Spline.SplineId, out var splineSections))
-                    continue;
-
-                // Get blend distance from spline parameters or use global
-                var blendDistance = globalBlendDistance;
-                var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters;
-                if (junctionParams != null) blendDistance = junctionParams.JunctionBlendDistanceMeters;
-
-                // Get blend function type
-                var blendFunctionType = junctionParams?.BlendFunctionType ?? JunctionBlendFunctionType.Cosine;
-
-                // For mid-spline crossings, collect influences bidirectionally
-                if (junction.Type == JunctionType.MidSplineCrossing)
-                {
-                    CollectBidirectionalInfluences(
-                        splineSections,
-                        contributor.CrossSection,
-                        junction,
-                        blendDistance,
-                        blendFunctionType,
-                        crossSectionInfluences);
-                }
-                else
-                {
-                    // For endpoints (Y, X, Complex), collect influences from the endpoint
-                    var distances = CalculateDistancesFromEndpoint(splineSections, contributor.IsSplineStart);
-
-                    for (var i = 0; i < splineSections.Count; i++)
-                    {
-                        var dist = distances[i];
-                        if (dist >= blendDistance) continue; // Outside blend zone
-
-                        var cs = splineSections[i];
-
-                        // Calculate blend factor using configured function
-                        var t = dist / blendDistance;
-                        var blend = ApplyBlendFunction(t, blendFunctionType);
-
-                        // Weight is inverse of blend: closer = higher weight
-                        // At junction center (t=0, blend=0): weight = 1.0 (full junction influence)
-                        // At blend boundary (t=1, blend=1): weight = 0.0 (no junction influence)
-                        var weight = 1.0f - blend;
-
-                        if (weight > 0.001f)
-                        {
-                            if (!crossSectionInfluences.TryGetValue(cs.Index, out var influences))
-                            {
-                                influences = new List<(float, float, int)>();
-                                crossSectionInfluences[cs.Index] = influences;
-                            }
-
-                            influences.Add((junction.HarmonizedElevation, weight, junction.JunctionId));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Log junction influence statistics
-        var multiInfluenceCount = crossSectionInfluences.Count(kvp => kvp.Value.Count > 1);
-        if (multiInfluenceCount > 0)
-        {
-            TerrainLogger.Detail(
-                $"  {multiInfluenceCount} cross-sections have overlapping junction influences (will be blended)");
-            var maxInfluences = crossSectionInfluences.Max(kvp => kvp.Value.Count);
-            if (maxInfluences > 2) TerrainLogger.Detail($"  Maximum overlapping influences: {maxInfluences}");
-        }
-
-        // Second pass: Apply weighted average of all influences
-        foreach (var (csIndex, influences) in crossSectionInfluences)
-        {
-            if (!originalElevations.TryGetValue(csIndex, out var originalElevation))
-                continue;
-
-            var cs = network.CrossSections.FirstOrDefault(c => c.Index == csIndex);
-            if (cs == null)
-                continue;
-
-            // Skip cross-sections already blended by roundabout harmonizer (Phase 2.6).
-            // The roundabout blend creates a smooth transition to the ring elevation;
-            // general junction propagation would overwrite it and create bumps.
-            if (cs.IsRoundaboutBlended)
-                continue;
-
-            // Calculate weighted average of all junction influences
-            var totalWeight = influences.Sum(inf => inf.weight);
-
-            if (totalWeight < 0.001f)
-                continue;
-
-            // Weighted elevation from all junctions
-            var weightedJunctionElevation = influences.Sum(inf => inf.elevation * inf.weight) / totalWeight;
-
-            // The total junction influence determines how much we blend from original
-            // Cap at 1.0 to avoid over-correction when many junctions overlap
-            var totalInfluence = MathF.Min(totalWeight, 1.0f);
-
-            // Final elevation: blend between weighted junction average and original
-            var newElevation = weightedJunctionElevation * totalInfluence + originalElevation * (1.0f - totalInfluence);
-
-            if (MathF.Abs(newElevation - cs.TargetElevation) > 0.001f)
-            {
-                cs.TargetElevation = newElevation;
-                modifiedCount++;
-            }
-        }
-
-        // Third pass: Propagate edge constraints for T-junctions
-        // This is separate from elevation propagation because edge constraints only apply to terminating roads
-        var edgeConstraintCount = PropagateEdgeConstraintsForTJunctions(
-            network,
-            junctions.Where(j => j.Type == JunctionType.TJunction && !j.IsExcluded).ToList(),
-            crossSectionsBySpline,
-            globalBlendDistance);
-
-        TerrainLogger.Detail($"  Propagated junction constraints to {modifiedCount} cross-sections");
-        if (edgeConstraintCount > 0)
-            TerrainLogger.Detail(
-                $"  Propagated edge constraints to {edgeConstraintCount} cross-sections along terminating roads");
-
-        return modifiedCount;
-    }
-
-    /// <summary>
-    ///     Propagates edge constraints from T-junction terminating cross-sections along the terminating road.
-    ///     Uses SURFACE-FOLLOWING approach: instead of interpolating from a fixed junction constraint,
-    ///     each cross-section's edges are projected onto the primary road's surface to calculate fresh
-    ///     constraints. This handles sloped primary roads correctly - the terminating road "wraps around"
-    ///     to match the continuously changing primary surface elevation.
-    ///     CRITICAL: Also updates the centerline TargetElevation to follow the primary surface,
-    ///     which prevents the "jagged junction" artifact where edges are correct but the center doesn't match.
-    ///     IMPROVEMENT: For each terminating cross-section, finds the NEAREST primary road cross-section
-    ///     rather than using the fixed junction cross-section. This handles curved/varying-slope primary
-    ///     roads more accurately.
-    /// </summary>
-    /// <returns>Number of cross-sections that received propagated edge constraints.</returns>
-    private int PropagateEdgeConstraintsForTJunctions(
-        UnifiedRoadNetwork network,
-        List<NetworkJunction> tJunctions,
-        Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
-        float globalBlendDistance)
-    {
-        var propagatedCount = 0;
-
-        foreach (var junction in tJunctions)
-        {
-            // Get the primary (continuous) road for surface calculations
-            var continuousRoads = junction.GetContinuousRoads().ToList();
-            if (continuousRoads.Count == 0)
-                continue;
-
-            var primaryContributor = continuousRoads.OrderByDescending(c => c.Spline.Priority).First();
-            var primarySplineId = primaryContributor.Spline.SplineId;
-
-            // Get all cross-sections for the primary road (needed for finding nearest)
-            if (!crossSectionsBySpline.TryGetValue(primarySplineId, out var primarySections))
-                continue;
-
-            // Calculate the primary road's slope for surface calculations
-            var primarySlope = _crossSectionsBySpline != null
-                ? CalculatePrimaryRoadSlope(primaryContributor)
-                : 0f;
-            if (float.IsNaN(primarySlope))
-                primarySlope = 0f;
-
-            foreach (var terminating in junction.GetTerminatingRoads())
-            {
-                var terminatingCs = terminating.CrossSection;
-
-                // Skip if no constraints were set on this terminating cross-section
-                if (!terminatingCs.HasJunctionConstraint)
-                    continue;
-
-                if (!crossSectionsBySpline.TryGetValue(terminating.Spline.SplineId, out var splineSections))
-                    continue;
-
-                // Get blend distance from spline parameters or use global
-                var blendDistance = globalBlendDistance;
-                var junctionParams = terminating.Spline.Parameters.JunctionHarmonizationParameters;
-                if (junctionParams != null)
-                    blendDistance = junctionParams.JunctionBlendDistanceMeters;
-
-                // Get blend function type
-                var blendFunctionType = junctionParams?.BlendFunctionType ?? JunctionBlendFunctionType.Cosine;
-
-                // Calculate distances from the terminating endpoint
-                var distances = CalculateDistancesFromEndpoint(splineSections, terminating.IsSplineStart);
-
-                // Propagate constraints along the terminating road using SURFACE-FOLLOWING approach
-                for (var i = 0; i < splineSections.Count; i++)
-                {
-                    var dist = distances[i];
-
-                    // Skip the junction cross-section itself (it already has constraints)
-                    if (splineSections[i].Index == terminatingCs.Index)
-                        continue;
-
-                    // Outside blend zone
-                    if (dist >= blendDistance)
-                        continue;
-
-                    var cs = splineSections[i];
-
-                    // Calculate blend factor using configured function
-                    var t = dist / blendDistance;
-                    var blend = ApplyBlendFunction(t, blendFunctionType);
-
-                    // Weight decreases with distance: at junction = 1.0, at blend boundary = 0.0
-                    var weight = 1.0f - blend;
-
-                    if (weight > 0.001f)
-                    {
-                        // IMPROVEMENT: Find the nearest primary cross-section for this terminating cross-section
-                        // This provides more accurate surface projection for curved/varying-slope primary roads
-                        var nearestPrimaryCs = FindNearestPrimaryCrossSection(cs.CenterPoint, primarySections);
-
-                        // Calculate local slope at the nearest primary cross-section
-                        var localPrimarySlope = CalculateLocalSlopeAtCrossSection(primarySections, nearestPrimaryCs);
-                        if (float.IsNaN(localPrimarySlope))
-                            localPrimarySlope = primarySlope; // Fallback to junction slope
-
-                        // SURFACE-FOLLOWING: Calculate fresh constraints by projecting this cross-section's
-                        // edges AND CENTERLINE onto the primary road's surface, then blend with natural elevations
-                        var (interpolatedLeft, interpolatedRight, interpolatedCenter) =
-                            JunctionSurfaceCalculator.CalculateFullSurfaceFollowingConstraints(
-                                cs,
-                                nearestPrimaryCs,
-                                localPrimarySlope,
-                                weight);
-
-                        // Apply interpolated edge constraints
-                        if (interpolatedLeft.HasValue)
-                            cs.ConstrainedLeftEdgeElevation = interpolatedLeft.Value;
-                        if (interpolatedRight.HasValue)
-                            cs.ConstrainedRightEdgeElevation = interpolatedRight.Value;
-
-                        // CRITICAL: Also update centerline TargetElevation to follow the primary surface
-                        // This ensures the entire cross-section lies flat on the primary road, not just the edges
-                        if (interpolatedCenter.HasValue)
-                            cs.TargetElevation = interpolatedCenter.Value;
-
-                        propagatedCount++;
-                    }
-                }
-            }
-        }
-
-        return propagatedCount;
-    }
-
-    /// <summary>
-    ///     Finds the nearest cross-section on the primary road to a given world position.
-    /// </summary>
-    private static UnifiedCrossSection FindNearestPrimaryCrossSection(
-        Vector2 worldPos,
-        List<UnifiedCrossSection> primarySections)
-    {
-        var nearest = primarySections[0];
-        var minDist = float.MaxValue;
-
-        foreach (var cs in primarySections)
-        {
-            var dist = Vector2.Distance(worldPos, cs.CenterPoint);
-            if (dist < minDist)
-            {
-                minDist = dist;
-                nearest = cs;
-            }
-        }
-
-        return nearest;
-    }
-
-    /// <summary>
-    ///     Calculates the local longitudinal slope at a specific cross-section.
-    /// </summary>
-    private static float CalculateLocalSlopeAtCrossSection(
-        List<UnifiedCrossSection> sections,
-        UnifiedCrossSection targetCs)
-    {
-        var targetIndex = sections.FindIndex(cs => cs.Index == targetCs.Index);
-        if (targetIndex < 0)
-            return float.NaN;
-
-        return JunctionSurfaceCalculator.CalculateLocalSlope(sections, targetIndex);
-    }
-
-    /// <summary>
-    ///     Collects junction influences bidirectionally from a mid-spline crossing point.
-    ///     Used in the first pass of the multi-junction influence algorithm.
-    /// </summary>
-    private void CollectBidirectionalInfluences(
-        List<UnifiedCrossSection> splineSections,
-        UnifiedCrossSection crossingSection,
-        NetworkJunction junction,
-        float blendDistance,
-        JunctionBlendFunctionType blendFunctionType,
-        Dictionary<int, List<(float elevation, float weight, int junctionId)>> crossSectionInfluences)
-    {
-        // Find the index of the crossing section (or closest to it)
-        var crossingIndex = splineSections.FindIndex(cs => cs.Index == crossingSection.Index);
-        if (crossingIndex < 0)
-        {
-            // Find closest by position
-            var minDist = float.MaxValue;
-            for (var i = 0; i < splineSections.Count; i++)
-            {
-                var dist = Vector2.Distance(splineSections[i].CenterPoint, crossingSection.CenterPoint);
-                if (dist < minDist)
-                {
-                    minDist = dist;
-                    crossingIndex = i;
-                }
-            }
-        }
-
-        if (crossingIndex < 0) return;
-
-        // Propagate in the "backward" direction (toward spline start)
-        var cumulativeDist = 0f;
-        for (var i = crossingIndex; i >= 0; i--)
-        {
-            if (i < crossingIndex)
-                cumulativeDist += Vector2.Distance(splineSections[i].CenterPoint, splineSections[i + 1].CenterPoint);
-
-            if (cumulativeDist >= blendDistance) break;
-
-            var cs = splineSections[i];
-            var t = cumulativeDist / blendDistance;
-            var blend = ApplyBlendFunction(t, blendFunctionType);
-            var weight = 1.0f - blend;
-
-            if (weight > 0.001f)
-            {
-                if (!crossSectionInfluences.TryGetValue(cs.Index, out var influences))
-                {
-                    influences = new List<(float, float, int)>();
-                    crossSectionInfluences[cs.Index] = influences;
-                }
-
-                influences.Add((junction.HarmonizedElevation, weight, junction.JunctionId));
-            }
-        }
-
-        // Propagate in the "forward" direction (toward spline end)
-        cumulativeDist = 0f;
-        for (var i = crossingIndex; i < splineSections.Count; i++)
-        {
-            if (i > crossingIndex)
-                cumulativeDist += Vector2.Distance(splineSections[i].CenterPoint, splineSections[i - 1].CenterPoint);
-
-            if (cumulativeDist >= blendDistance) break;
-
-            var cs = splineSections[i];
-            var t = cumulativeDist / blendDistance;
-            var blend = ApplyBlendFunction(t, blendFunctionType);
-            var weight = 1.0f - blend;
-
-            if (weight > 0.001f)
-            {
-                if (!crossSectionInfluences.TryGetValue(cs.Index, out var influences))
-                {
-                    influences = new List<(float, float, int)>();
-                    crossSectionInfluences[cs.Index] = influences;
-                }
-
-                influences.Add((junction.HarmonizedElevation, weight, junction.JunctionId));
-            }
-        }
-    }
-
-    /// <summary>
-    ///     Applies endpoint tapering for isolated endpoints (dead ends).
-    ///     Gradually transitions the road elevation back toward terrain.
-    ///     Taper distance is auto-computed from road width: clamp(width * 4, 10, 50) meters.
-    ///     Always fully blends to terrain elevation at the endpoint.
-    /// </summary>
-    /// <returns>Number of cross-sections modified.</returns>
-    private int ApplyEndpointTapering(
-        UnifiedRoadNetwork network,
-        List<NetworkJunction> junctions,
-        float[,] heightMap,
-        float metersPerPixel)
-    {
-        var taperedCount = 0;
-        var mapHeight = heightMap.GetLength(0);
-        var mapWidth = heightMap.GetLength(1);
-
-        // Cache cross-sections by spline
-        var crossSectionsBySpline = network.CrossSections
-            .GroupBy(cs => cs.OwnerSplineId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
-
-        foreach (var junction in junctions.Where(j => j.Type == JunctionType.Endpoint && !j.IsExcluded))
-        foreach (var contributor in junction.Contributors)
-        {
-            if (!crossSectionsBySpline.TryGetValue(contributor.Spline.SplineId, out var splineSections))
-                continue;
-
-            // Auto-compute taper distance from road width
-            var roadWidth = contributor.Spline.Parameters.RoadWidthMeters;
-            var taperDistance = Math.Clamp(roadWidth * 4.0f, 10.0f, 50.0f);
-
-            // Get terrain elevation at endpoint
-            var px = (int)(junction.Position.X / metersPerPixel);
-            var py = (int)(junction.Position.Y / metersPerPixel);
-            px = Math.Clamp(px, 0, mapWidth - 1);
-            py = Math.Clamp(py, 0, mapHeight - 1);
-            var terrainElevation = heightMap[py, px];
-
-            // Calculate distances from endpoint
-            var distances = CalculateDistancesFromEndpoint(splineSections, contributor.IsSplineStart);
-
-            // Apply taper
-            for (var i = 0; i < splineSections.Count; i++)
-            {
-                var dist = distances[i];
-                if (dist >= taperDistance) continue;
-
-                var cs = splineSections[i];
-
-                // Skip cross-sections already blended by roundabout harmonizer.
-                if (cs.IsRoundaboutBlended)
-                    continue;
-
-                var originalElevation = cs.TargetElevation;
-
-                // Use quintic smoothstep for very smooth taper
-                var t = dist / taperDistance;
-                var blend = t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
-
-                // Blend toward terrain at endpoint, back to road elevation at taper distance
-                cs.TargetElevation = terrainElevation * (1.0f - blend) + originalElevation * blend;
-
-                if (MathF.Abs(cs.TargetElevation - originalElevation) > 0.001f)
-                    taperedCount++;
-            }
-        }
-
-        return taperedCount;
-    }
-
-    /// <summary>
-    ///     Calculates cumulative distances from a spline endpoint.
-    /// </summary>
-    private float[] CalculateDistancesFromEndpoint(List<UnifiedCrossSection> sections, bool fromStart)
-    {
-        var distances = new float[sections.Count];
-
-        if (fromStart)
-        {
-            distances[0] = 0;
-            for (var i = 1; i < sections.Count; i++)
-                distances[i] = distances[i - 1] +
-                               Vector2.Distance(sections[i].CenterPoint, sections[i - 1].CenterPoint);
-        }
-        else
-        {
-            distances[sections.Count - 1] = 0;
-            for (var i = sections.Count - 2; i >= 0; i--)
-                distances[i] = distances[i + 1] +
-                               Vector2.Distance(sections[i].CenterPoint, sections[i + 1].CenterPoint);
-        }
-
-        return distances;
-    }
-
-    /// <summary>
-    ///     Applies plateau smoothing to multi-way junctions (Y, CrossRoads, Complex) to reduce dents.
-    ///     The problem: When multiple roads at different elevations meet, the weighted average
-    ///     can create a "dent" where one road's lower elevation pulls down the junction center.
-    ///     The solution: Sample ORIGINAL elevations (before harmonization) from further back along
-    ///     each road, compute a smoother plateau elevation from these stable samples, and apply it
-    ///     to cross-sections within a "plateau radius" of the junction center.
-    ///     CRITICAL: We must use preHarmonizationElevations to get the original road elevations,
-    ///     NOT the current TargetElevation values which have already been modified by propagation.
-    ///     NOTE: This method intentionally EXCLUDES T-junctions. T-junction surface matching is
-    ///     handled by junction surface constraints (Phase 3) which set ConstrainedLeftEdgeElevation
-    ///     and ConstrainedRightEdgeElevation on terminating road cross-sections.
-    ///     See JUNCTION_SURFACE_CONSTRAINT_IMPLEMENTATION_PLAN.md for details.
-    /// </summary>
-    /// <returns>Number of cross-sections modified.</returns>
-    private int ApplyMultiWayJunctionPlateauSmoothing(
-        UnifiedRoadNetwork network,
-        List<NetworkJunction> junctions,
-        float globalBlendDistance,
-        Dictionary<int, float> preHarmonizationElevations)
-    {
-        var smoothedCount = 0;
-
-        // Only process multi-way junctions (Y, CrossRoads, Complex) - not T-junctions, isolated endpoints, or excluded
-        var multiWayJunctions = junctions.Where(j =>
-            !j.IsExcluded &&
-            (j.Type == JunctionType.YJunction ||
-             j.Type == JunctionType.CrossRoads ||
-             j.Type == JunctionType.Complex)).ToList();
-
-        if (multiWayJunctions.Count == 0)
-            return 0;
-
-        TerrainLogger.Detail($"  Applying plateau smoothing to {multiWayJunctions.Count} multi-way junction(s)...");
-
-        // Cache cross-sections by spline for faster access
-        var crossSectionsBySpline = network.CrossSections
-            .GroupBy(cs => cs.OwnerSplineId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
-
-        foreach (var junction in multiWayJunctions)
-        {
-            // Get the maximum road width at this junction (used to determine plateau radius)
-            var maxRoadWidth = junction.Contributors.Max(c => c.Spline.Parameters.RoadWidthMeters);
-
-            // Plateau radius: covers the junction area where all roads meet
-            // For complex junctions with many contributors, increase the radius
-            // Base: 2x max road width, plus additional for each contributor beyond 2
-            var contributorCount = junction.Contributors.Count;
-            var baseRadius = maxRoadWidth * 2.0f;
-            var additionalRadius = Math.Max(0, contributorCount - 2) * maxRoadWidth * 0.5f;
-            var plateauRadius = baseRadius + additionalRadius;
-
-            // Also ensure minimum plateau radius based on blend distance
-            plateauRadius = MathF.Max(plateauRadius, globalBlendDistance * 0.5f);
-
-            // Reference distance: sample ORIGINAL elevations from this far back along each road
-            // Use 100% of blend distance to get samples OUTSIDE the blend zone
-            // This ensures we're sampling truly stable, unmodified road elevations
-            var referenceDistance = globalBlendDistance * 1.0f;
-
-            TerrainCreationLogger.Current?.Detail(
-                $"Junction #{junction.JunctionId} ({junction.Type}): {contributorCount} contributors, " +
-                $"plateau radius={plateauRadius:F1}m, ref dist={referenceDistance:F1}m");
-
-            // Collect ORIGINAL (pre-harmonization) reference elevations from each contributing spline
-            var referenceElevations = new List<(float elevation, float priority, int splineId)>();
-
-            foreach (var contributor in junction.Contributors)
-            {
-                if (!crossSectionsBySpline.TryGetValue(contributor.Spline.SplineId, out var splineSections))
-                    continue;
-
-                // Calculate distances from the endpoint
-                var distances = CalculateDistancesFromEndpoint(splineSections, contributor.IsSplineStart);
-
-                // Find the cross-section closest to the reference distance
-                UnifiedCrossSection? referenceCs = null;
-                var closestDistDiff = float.MaxValue;
-
-                for (var i = 0; i < splineSections.Count; i++)
-                {
-                    var distDiff = MathF.Abs(distances[i] - referenceDistance);
-                    if (distDiff < closestDistDiff)
-                    {
-                        closestDistDiff = distDiff;
-                        referenceCs = splineSections[i];
-                    }
-                }
-
-                if (referenceCs != null)
-                {
-                    // CRITICAL: Use the ORIGINAL elevation from preHarmonizationElevations
-                    // This is the elevation before any junction blending was applied
-                    if (preHarmonizationElevations.TryGetValue(referenceCs.Index, out var originalElevation) &&
-                        !float.IsNaN(originalElevation))
-                        referenceElevations.Add((originalElevation, contributor.Spline.Priority,
-                            contributor.Spline.SplineId));
-                    else if (!float.IsNaN(referenceCs.TargetElevation))
-                        // Fallback: if not in dictionary, use current value (shouldn't happen normally)
-                        referenceElevations.Add((referenceCs.TargetElevation, contributor.Spline.Priority,
-                            contributor.Spline.SplineId));
-                }
-            }
-
-            if (referenceElevations.Count == 0)
-            {
-                TerrainCreationLogger.Current?.Detail(
-                    $"Junction #{junction.JunctionId}: No valid reference elevations found, skipping");
-                continue;
-            }
-
-            // Compute plateau elevation
-            float plateauElevation;
-
-            if (junction.IsCrossMaterial && junction.HasMixedPriorities)
-            {
-                // Cross-material: both roads taper to terrain, use the harmonized (terrain) elevation
-                plateauElevation = junction.HarmonizedElevation;
-            }
-            else
-            {
-                // Standard: priority-weighted average of ORIGINAL reference elevations
-                var totalPriority = referenceElevations.Sum(r => r.priority);
-                plateauElevation = totalPriority > 0
-                    ? referenceElevations.Sum(r => r.elevation * r.priority) / totalPriority
-                    : referenceElevations.Average(r => r.elevation);
-            }
-
-            // Log elevation range for debugging
-            var minElev = referenceElevations.Min(r => r.elevation);
-            var maxElev = referenceElevations.Max(r => r.elevation);
-            var elevRange = maxElev - minElev;
-
-            TerrainCreationLogger.Current?.Detail(
-                $"Junction #{junction.JunctionId}: ORIGINAL reference elevations range [{minElev:F2}, {maxElev:F2}] (range={elevRange:F2}m), " +
-                $"plateau={plateauElevation:F2}m, harmonized={junction.HarmonizedElevation:F2}m");
-
-            // For junctions with significant elevation differences, use the HIGHER elevation
-            // to prevent dents. Roads going downhill will ramp down; roads going uphill will ramp up.
-            if (elevRange > 1.0f)
-            {
-                // Use the maximum elevation weighted by priority to prevent dents
-                // The highest-priority road at the highest elevation should dominate
-                var maxPriorityAtHighElev = referenceElevations
-                    .Where(r => r.elevation >= maxElev - 0.5f)
-                    .Sum(r => r.priority);
-                var totalMaxElev = referenceElevations
-                    .Where(r => r.elevation >= maxElev - 0.5f)
-                    .Sum(r => r.elevation * r.priority);
-
-                if (maxPriorityAtHighElev > 0)
-                {
-                    var highElevAvg = totalMaxElev / maxPriorityAtHighElev;
-                    // Bias toward higher elevation to prevent dents (70% high, 30% weighted average)
-                    plateauElevation = highElevAvg * 0.7f + plateauElevation * 0.3f;
-                    TerrainCreationLogger.Current?.Detail(
-                        $"Junction #{junction.JunctionId}: Large elev range detected, biasing plateau UP to {plateauElevation:F2}m");
-                }
-            }
-
-            // Apply plateau elevation to cross-sections within plateau radius
-            var junctionSmoothedCount = 0;
-            foreach (var contributor in junction.Contributors)
-            {
-                if (!crossSectionsBySpline.TryGetValue(contributor.Spline.SplineId, out var splineSections))
-                    continue;
-
-                foreach (var cs in splineSections)
-                {
-                    var distToJunction = Vector2.Distance(cs.CenterPoint, junction.Position);
-
-                    if (distToJunction > plateauRadius)
-                        continue;
-
-                    var currentElevation = cs.TargetElevation;
-                    if (float.IsNaN(currentElevation))
-                        continue;
-
-                    // Smooth blend: full plateau at center, gradual transition at edge
-                    // Using quintic smoothstep for very smooth transition
-                    var t = distToJunction / plateauRadius;
-                    var blend = t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f); // quintic smoothstep
-
-                    // At center (t=0): use plateauElevation
-                    // At edge (t=1): keep current elevation
-                    var newElevation = plateauElevation * (1.0f - blend) + currentElevation * blend;
-
-                    if (MathF.Abs(newElevation - currentElevation) > 0.001f)
-                    {
-                        cs.TargetElevation = newElevation;
-                        junctionSmoothedCount++;
-                        smoothedCount++;
-                    }
-                }
-            }
-
-            TerrainCreationLogger.Current?.Detail(
-                $"Junction #{junction.JunctionId}: Smoothed {junctionSmoothedCount} cross-sections");
-        }
-
-        return smoothedCount;
-    }
-
-    /// <summary>
-    ///     Applies the configured blend function.
-    /// </summary>
-    private float ApplyBlendFunction(float t, JunctionBlendFunctionType functionType)
-    {
-        return functionType switch
-        {
-            JunctionBlendFunctionType.Linear => t,
-            JunctionBlendFunctionType.Cosine => 0.5f - 0.5f * MathF.Cos(MathF.PI * t),
-            JunctionBlendFunctionType.Cubic => t * t * (3.0f - 2.0f * t),
-            JunctionBlendFunctionType.Quintic => t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f),
-            _ => t
-        };
-    }
-
-    /// <summary>
     ///     Calculates statistics about the harmonization changes.
     /// </summary>
     private (int ModifiedCount, float MaxChange) CalculateHarmonizationStats(
@@ -1751,21 +965,6 @@ public class NetworkJunctionHarmonizer
 public class HarmonizationResult
 {
     /// <summary>
-    ///     Number of cross-sections whose elevation was modified during propagation.
-    /// </summary>
-    public int PropagatedCrossSections { get; set; }
-
-    /// <summary>
-    ///     Number of cross-sections modified during endpoint tapering.
-    /// </summary>
-    public int TaperedCrossSections { get; set; }
-
-    /// <summary>
-    ///     Number of cross-sections modified during multi-way junction plateau smoothing.
-    /// </summary>
-    public int PlateauSmoothedCrossSections { get; set; }
-
-    /// <summary>
     ///     Total number of cross-sections with elevation changes.
     /// </summary>
     public int ModifiedCrossSections { get; set; }
@@ -1783,5 +982,5 @@ public class HarmonizationResult
     /// <summary>
     ///     Whether the harmonization was successful (had junctions to process).
     /// </summary>
-    public bool Success => ModifiedCrossSections > 0 || PropagatedCrossSections == 0;
+    public bool Success => ModifiedCrossSections > 0;
 }

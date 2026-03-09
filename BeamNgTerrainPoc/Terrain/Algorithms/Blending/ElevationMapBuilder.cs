@@ -15,7 +15,7 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms.Blending;
 /// - OSM roads: Inverse-distance weighted interpolation from ALL nearby cross-sections
 ///   (works well for clean vector data)
 /// - PNG roads: Inverse-distance weighted interpolation from ONLY ADJACENT cross-sections
-///   along the spline path (±2 from nearest). This prevents spikes at curves where different
+///   along the spline path (ï¿½2 from nearest). This prevents spikes at curves where different
 ///   parts of the same spline are geometrically close but at different elevations.
 /// 
 /// Both approaches use interpolation (not nearest-neighbor) to avoid discontinuities.
@@ -211,7 +211,7 @@ public class ElevationMapBuilder
     /// 
     /// Algorithm:
     /// 1. Find all cross-sections within the search radius
-    /// 2. Weight each by 1/distance² (closer = more influence)
+    /// 2. Weight each by 1/distanceï¿½ (closer = more influence)
     /// 3. For banked roads, calculate elevation at the world position (not center)
     /// 4. Return weighted average elevation and dominant owner (HIGHEST PRIORITY, not just nearest)
     /// 
@@ -261,8 +261,10 @@ public class ElevationMapBuilder
             if (float.IsNaN(elevationAtPos))
                 elevationAtPos = cs.TargetElevation; // Fallback to center elevation
 
-            // Inverse-distance weighting with epsilon to avoid division by zero
-            var weight = 1f / MathF.Max(dist * dist, 0.01f);
+            // Inverse-distance weighting with epsilon to avoid division by zero.
+            // JunctionIdwWeightModifier (WI-8) reduces weight for terminating roads near junctions,
+            // letting the continuous road's elevation profile dominate.
+            var weight = cs.JunctionIdwWeightModifier / MathF.Max(dist * dist, 0.01f);
             weightedElevation += elevationAtPos * weight;
             totalWeight += weight;
         }
@@ -323,7 +325,8 @@ public class ElevationMapBuilder
             if (float.IsNaN(elevationAtPos))
                 elevationAtPos = cs.TargetElevation;
 
-            var weight = 1f / MathF.Max(dist * dist, 0.01f);
+            // JunctionIdwWeightModifier (WI-8) reduces weight for terminating roads near junctions
+            var weight = cs.JunctionIdwWeightModifier / MathF.Max(dist * dist, 0.01f);
             weightedElevation += elevationAtPos * weight;
             totalWeight += weight;
         }
@@ -345,7 +348,7 @@ public class ElevationMapBuilder
     /// 
     /// Algorithm:
     /// 1. Find the nearest cross-section from the target spline
-    /// 2. Only interpolate with that cross-section and its immediate neighbors (±2 along LocalIndex)
+    /// 2. Only interpolate with that cross-section and its immediate neighbors (ï¿½2 along LocalIndex)
     /// 3. This ensures smooth elevation transitions along the road path
     /// 
     /// NOTE: This overload uses the yield-return FindWithinRadius. For hot loops, use
@@ -380,7 +383,7 @@ public class ElevationMapBuilder
         // Second pass: only interpolate with cross-sections that are adjacent along the spline path
         // This prevents spikes at curves where distant parts of the spline are geometrically close
         var nearestLocalIndex = nearestCs.LocalIndex;
-        const int maxIndexDistance = 2; // Only consider ±2 cross-sections along the path
+        const int maxIndexDistance = 2; // Only consider ï¿½2 cross-sections along the path
 
         var weightedElevation = 0f;
         var totalWeight = 0f;

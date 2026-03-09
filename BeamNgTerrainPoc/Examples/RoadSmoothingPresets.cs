@@ -106,7 +106,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 50.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -177,7 +177,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 40.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -249,7 +249,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 30.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -320,7 +320,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 20.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -393,7 +393,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 60.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -468,7 +468,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 60.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -537,7 +537,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 40.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -606,7 +606,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 30.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -675,7 +675,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 15.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Cosine
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 
@@ -746,7 +746,7 @@ public static class RoadSmoothingPresets
             EnableJunctionHarmonization = true,
             JunctionDetectionRadiusMeters = 5.0f,
             JunctionBlendDistanceMeters = 60.0f,
-            BlendFunctionType = JunctionBlendFunctionType.Quintic
+            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
         }
     };
 

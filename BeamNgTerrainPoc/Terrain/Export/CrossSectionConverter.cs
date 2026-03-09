@@ -28,11 +28,9 @@ public static class CrossSectionConverter
             WidthMeters = source.EffectiveRoadWidth,
             BankAngleRadians = source.BankAngleRadians,
             DistanceAlongRoad = source.DistanceAlongSpline,
-            // Use constrained elevations if available, otherwise use calculated values
-            LeftEdgeElevation = source.ConstrainedLeftEdgeElevation ?? 
-                               (float.IsNaN(source.LeftEdgeElevation) ? null : source.LeftEdgeElevation),
-            RightEdgeElevation = source.ConstrainedRightEdgeElevation ?? 
-                                (float.IsNaN(source.RightEdgeElevation) ? null : source.RightEdgeElevation)
+            // Edge elevations derived from (TargetElevation, BankAngle) by unified junction system
+            LeftEdgeElevation = float.IsNaN(source.LeftEdgeElevation) ? null : source.LeftEdgeElevation,
+            RightEdgeElevation = float.IsNaN(source.RightEdgeElevation) ? null : source.RightEdgeElevation
         };
     }
 
@@ -62,18 +60,11 @@ public static class CrossSectionConverter
         // This ensures the DAE mesh sits at the correct absolute height when placed at (0,0,0)
         var centerElevation = source.TargetElevation + terrainBaseHeight;
         
-        // Calculate edge elevations with base height offset
-        float? leftEdgeElevation = null;
-        if (source.ConstrainedLeftEdgeElevation.HasValue)
-            leftEdgeElevation = source.ConstrainedLeftEdgeElevation.Value + terrainBaseHeight;
-        else if (!float.IsNaN(source.LeftEdgeElevation))
-            leftEdgeElevation = source.LeftEdgeElevation + terrainBaseHeight;
-        
-        float? rightEdgeElevation = null;
-        if (source.ConstrainedRightEdgeElevation.HasValue)
-            rightEdgeElevation = source.ConstrainedRightEdgeElevation.Value + terrainBaseHeight;
-        else if (!float.IsNaN(source.RightEdgeElevation))
-            rightEdgeElevation = source.RightEdgeElevation + terrainBaseHeight;
+        // Edge elevations derived from (TargetElevation, BankAngle) by unified junction system
+        float? leftEdgeElevation = !float.IsNaN(source.LeftEdgeElevation)
+            ? source.LeftEdgeElevation + terrainBaseHeight : null;
+        float? rightEdgeElevation = !float.IsNaN(source.RightEdgeElevation)
+            ? source.RightEdgeElevation + terrainBaseHeight : null;
 
         return new RoadCrossSection
         {

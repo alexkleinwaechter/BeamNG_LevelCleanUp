@@ -987,26 +987,8 @@ Class="my-0">
                                                 Cross-material harmonization is controlled at the terrain level (Terrain Parameters section).
                                             </MudAlert>
                                             
-                                            <!-- Master Enable -->
-                                            <MudPaper Class="pa-3 mb-3" Elevation="1">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.ToggleOn" Size="Size.Small" Class="mr-1"/>
-                                                    Enable Harmonization
-                                                </MudText>
-                                                <MudGrid Spacing="2">
-                                                    <MudItem xs="12">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.EnableJunctionHarmonization" 
-                                                                      Color="Color.Primary"
-                                                                      Label="Enable Junction Harmonization (within this material)"/>
-                                                            <MudTooltip Text="Smooths road elevations at intersections and endpoints to eliminate discontinuities within this material's road network">
-                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                            </MudTooltip>
-                                                        </div>
-                                                    </MudItem>
-                                                </MudGrid>
-                                            </MudPaper>
-                                            
+                                            @* Junction Harmonization is always enabled — UI toggle removed *@
+
                                             <!-- Junction Detection & Blending -->
                                             <MudPaper Class="pa-3 mb-3" Elevation="1">
                                                 <MudText Typo="Typo.subtitle2" Class="mb-2">
@@ -1017,80 +999,97 @@ Class="my-0">
                                                     Controls how junctions are detected and how elevations blend at intersections.
                                                 </MudText>
                                                 <MudGrid Spacing="2">
-                                                    <MudItem xs="12">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.UseGlobalJunctionSettings"
-                                                                      Color="Color.Secondary"
-                                                                      Label="Use Global Junction Settings"
-                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"/>
-                                                            <MudTooltip Text="When enabled, uses the global junction detection radius and blend distance from Terrain Parameters. Disable to use custom per-material values.">
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.JunctionDetectionRadiusMeters"
+                                                                            Label="Detection Radius (m)"
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="5.0f" Max="50.0f" Step="5.0f"
+                                                                            Format="F0"
+                                                                                                                                                        HelperText="Endpoints within this distance form a junction"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="Maximum distance between path endpoints to consider them part of the same junction. Larger = merge more endpoints.">
                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
                                                             </MudTooltip>
                                                         </div>
-                                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-12">
-                                                            @(Material.UseGlobalJunctionSettings 
-                                                                ? "Using global junction detection and blend settings from Terrain Parameters" 
-                                                                : "Using custom junction settings for this material")
-                                                        </MudText>
                                                     </MudItem>
-                                                    
-                                                    @* Show per-material detection/blend settings only when not using global *@
-                                                    @if (!Material.UseGlobalJunctionSettings)
-                                                    {
-                                                        <MudItem xs="12" sm="4">
-                                                            <div class="d-flex align-start gap-1">
-                                                                <MudNumericField T="float" @bind-Value="Material.JunctionDetectionRadiusMeters" 
-                                                                                Label="Detection Radius (m)" 
-                                                                                Variant="Variant.Outlined"
-                                                                                Min="5.0f" Max="50.0f" Step="5.0f"
-                                                                                Format="F0"
-                                                                                Disabled="@(!Material.EnableJunctionHarmonization)"
-                                                                                HelperText="Endpoints within this distance form a junction"
-                                                                                Class="flex-grow-1"/>
-                                                                <MudTooltip Text="Maximum distance between path endpoints to consider them part of the same junction. Larger = merge more endpoints.">
-                                                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                                </MudTooltip>
-                                                            </div>
-                                                        </MudItem>
-                                                        <MudItem xs="12" sm="4">
-                                                            <div class="d-flex align-start gap-1">
-                                                                <MudNumericField T="float" @bind-Value="Material.JunctionBlendDistanceMeters" 
-                                                                                Label="Blend Distance (m)" 
-                                                                                Variant="Variant.Outlined"
-                                                                                Min="10.0f" Max="100.0f" Step="5.0f"
-                                                                                Format="F0"
-                                                                                Disabled="@(!Material.EnableJunctionHarmonization)"
-                                                                                HelperText="Distance to blend along each path"
-                                                                                Class="flex-grow-1"/>
-                                                                <MudTooltip Text="Distance over which to blend from junction elevation back to path elevation. Larger = smoother but affects more road.">
-                                                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
-                                                                </MudTooltip>
-                                                            </div>
-                                                        </MudItem>
-                                                    }
-                                                    
-                                                    @* Blend function is always per-material *@
-                                                    <MudItem xs="12" sm="4">
+                                                    <MudItem xs="12" sm="6">
                                                         <div class="d-flex align-start gap-1">
-                                                            <MudSelect T="JunctionBlendFunctionType" 
-                                                                      @bind-Value="Material.JunctionBlendFunction"
-                                                                      Label="Blend Function"
-                                                                      Variant="Variant.Outlined"
-                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"
-                                                                      Class="flex-grow-1">
-                                                                <MudSelectItem Value="JunctionBlendFunctionType.Linear">Linear</MudSelectItem>
-                                                                <MudSelectItem Value="JunctionBlendFunctionType.Cosine">Cosine (smooth)</MudSelectItem>
-                                                                <MudSelectItem Value="JunctionBlendFunctionType.Cubic">Cubic</MudSelectItem>
-                                                                <MudSelectItem Value="JunctionBlendFunctionType.Quintic">Quintic (smoothest)</MudSelectItem>
-                                                            </MudSelect>
-                                                            <MudTooltip Text="Blend curve type. Cosine recommended for natural transitions.">
+                                                            <MudNumericField T="float" @bind-Value="Material.JunctionBlendDistanceMeters"
+                                                                            Label="Min Blend Distance (m)"
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="10.0f" Max="100.0f" Step="5.0f"
+                                                                            Format="F0"
+                                                                            Disabled="@(Material.AutoCalculateBlendDistance)"
+                                                                            HelperText="@(Material.AutoCalculateBlendDistance ? $"Auto: {Math.Clamp(Material.RoadWidthMeters * 3.0f + 5.0f, 15.0f, 60.0f):F0}m (from road width)" : "Minimum distance; auto-extends on steep terrain")"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="Minimum blend distance from junction elevation back to path elevation. On steep terrain, the distance automatically increases to keep the ramp slope within the road's max slope limit (or 6° default).">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                        <MudSwitch T="bool" @bind-Value="Material.AutoCalculateBlendDistance"
+                                                                   Label="Auto-calculate from road width"
+                                                                   Color="Color.Primary"
+                                                                   Size="Size.Small"/>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudPaper>
+
+                                            <!-- Junction IDW Filtering -->
+                                            <MudPaper Class="pa-3 mt-3" Elevation="1">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                                    <MudIcon Icon="@Icons.Material.Filled.FilterAlt" Size="Size.Small" Class="mr-1"/>
+                                                    Terrain Blend Filtering (IDW)
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                                    Controls how terminating road influence is suppressed near junctions during terrain blending (Phase 4).
+                                                    Lets the continuous road's elevation dominate the junction area.
+                                                </MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12">
+                                                        <div class="d-flex align-center gap-1">
+                                                            <MudSwitch T="bool" @bind-Value="Material.EnableJunctionIdwFiltering"
+                                                                       Color="Color.Primary"
+                                                                       Label="Enable Junction IDW Filtering"/>
+                                                            <MudTooltip Text="When enabled, terminating roads near junctions get reduced terrain blending weights, letting the continuous road's elevation profile dominate the junction area. Only affects OSM roads.">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float" @bind-Value="Material.MinTerminatingIdwWeight"
+                                                                            Label="Min Terminating Weight"
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="0.0f" Max="1.0f" Step="0.05f"
+                                                                            Format="F2"
+                                                                            Disabled="@(!Material.EnableJunctionIdwFiltering)"
+                                                                            HelperText="0 = fully suppress at junction, 1 = no suppression"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="Weight multiplier for terminating road cross-sections at the junction point. Lower values suppress the side road's terrain influence more strongly, preventing bumps where side roads meet main roads.">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="float?" @bind-Value="Material.IdwFilterTaperDistanceMeters"
+                                                                            Label="Taper Distance (m)"
+                                                                            Variant="Variant.Outlined"
+                                                                            Min="5.0f" Max="100.0f" Step="5.0f"
+                                                                            Format="F0"
+                                                                            Disabled="@(!Material.EnableJunctionIdwFiltering)"
+                                                                            Placeholder="Same as blend distance"
+                                                                            HelperText="Distance over which weight tapers from 1.0 to minimum"
+                                                                            Class="flex-grow-1"/>
+                                                            <MudTooltip Text="Distance over which the IDW weight modifier tapers from 1.0 (full influence) to the minimum weight. Leave empty to use the junction blend distance.">
                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
                                                             </MudTooltip>
                                                         </div>
                                                     </MudItem>
                                                 </MudGrid>
                                             </MudPaper>
-                                            
+
                                                             <!-- Roundabout Settings -->
                                                             <MudPaper Class="pa-3 mt-3" Elevation="1">
                                                                 <MudText Typo="Typo.subtitle2" Class="mb-2">
@@ -1105,8 +1104,7 @@ Class="my-0">
                                                                         <div class="d-flex align-center gap-1">
                                                                             <MudSwitch T="bool" @bind-Value="Material.EnableRoundaboutDetection" 
                                                                                       Color="Color.Primary"
-                                                                                      Label="Enable Roundabout Detection"
-                                                                                      Disabled="@(!Material.EnableJunctionHarmonization)"/>
+                                                                                      Label="Enable Roundabout Detection"/>
                                                                             <MudTooltip Text="Automatically detect and handle roundabouts from OSM data. Roundabout segments are merged into ring splines.">
                                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
                                                                             </MudTooltip>
@@ -1117,7 +1115,7 @@ Class="my-0">
                                                                             <MudSwitch T="bool" @bind-Value="Material.EnableRoundaboutRoadTrimming" 
                                                                                       Color="Color.Primary"
                                                                                       Label="Trim Overlapping Roads"
-                                                                                      Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableRoundaboutDetection)"/>
+                                                                                      Disabled="@(!Material.EnableRoundaboutDetection)"/>
                                                                             <MudTooltip Text="Automatically trim connecting roads that overlap with roundabout rings to prevent elevation spikes and quirky splines. Strongly recommended.">
                                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
                                                                             </MudTooltip>
@@ -1128,7 +1126,7 @@ Class="my-0">
                                                                             <MudSwitch T="bool" @bind-Value="Material.ForceUniformRoundaboutElevation" 
                                                                                       Color="Color.Primary"
                                                                                       Label="Uniform Ring Elevation"
-                                                                                      Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableRoundaboutDetection)"/>
+                                                                                      Disabled="@(!Material.EnableRoundaboutDetection)"/>
                                                                             <MudTooltip Text="Force uniform elevation around the entire roundabout ring. Disable to allow gradual elevation changes on sloped terrain.">
                                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
                                                                             </MudTooltip>
@@ -1141,7 +1139,7 @@ Class="my-0">
                                                                                             Variant="Variant.Outlined"
                                                                                             Min="5.0f" Max="20.0f" Step="1.0f"
                                                                                             Format="F0"
-                                                                                            Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableRoundaboutDetection)"
+                                                                                            Disabled="@(!Material.EnableRoundaboutDetection)"
                                                                                             HelperText="Roads within this distance are connected"
                                                                                             Class="flex-grow-1"/>
                                                                             <MudTooltip Text="Detection radius for roundabout connections. Roads within this distance of the roundabout ring are considered connected.">
@@ -1156,7 +1154,7 @@ Class="my-0">
                                                                                             Variant="Variant.Outlined"
                                                                                             Min="0.5f" Max="5.0f" Step="0.5f"
                                                                                             Format="F1"
-                                                                                            Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableRoundaboutDetection || !Material.EnableRoundaboutRoadTrimming)"
+                                                                                            Disabled="@(!Material.EnableRoundaboutDetection || !Material.EnableRoundaboutRoadTrimming)"
                                                                                             HelperText="Points within this distance are trimmed"
                                                                                             Class="flex-grow-1"/>
                                                                             <MudTooltip Text="Tolerance for determining if a road point is on the roundabout ring. Points within this distance will be trimmed when road trimming is enabled.">
@@ -1171,7 +1169,7 @@ Class="my-0">
                                                                                             Variant="Variant.Outlined"
                                                                                             Min="10.0f" Max="60.0f" Step="5.0f"
                                                                                             Format="F0"
-                                                                                            Disabled="@(!Material.EnableJunctionHarmonization || !Material.EnableRoundaboutDetection)"
+                                                                                            Disabled="@(!Material.EnableRoundaboutDetection)"
                                                                                             HelperText="Transition distance to ring elevation"
                                                                                             Placeholder="@($"Default ({Material.JunctionBlendDistanceMeters}m)")"
                                                                                             Class="flex-grow-1"/>

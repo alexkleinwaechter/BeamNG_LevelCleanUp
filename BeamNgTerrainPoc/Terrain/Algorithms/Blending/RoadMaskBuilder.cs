@@ -150,15 +150,12 @@ public class RoadMaskBuilder
                     new Vector2(left2.X / metersPerPixel, left2.Y / metersPerPixel)
                 };
 
-                // Check if segment has banking - use banking-aware elevation if so
-                var hasBanking = BankedTerrainHelper.SegmentHasBanking(cs1, cs2);
-
-                // Fill the polygon with ownership tracking
+                // Fill the polygon with ownership tracking and per-pixel elevation
                 var (filled, overwritten) = FillConvexPolygonWithOwnershipAndBanking(
                     protectionMask, ownershipMap, elevationMap, priorityMap,
                     corners, width, height,
                     splineId, priority,
-                    cs1, cs2, metersPerPixel, hasBanking);
+                    cs1, cs2, metersPerPixel);
 
                 protectedPixels += filled;
                 overwrittenByPriority += overwritten;
@@ -192,8 +189,7 @@ public class RoadMaskBuilder
         int priority,
         UnifiedCrossSection cs1,
         UnifiedCrossSection cs2,
-        float metersPerPixel,
-        bool hasBanking)
+        float metersPerPixel)
     {
         var filledCount = 0;
         var overwrittenCount = 0;
@@ -209,11 +205,6 @@ public class RoadMaskBuilder
         maxY = Math.Min(height - 1, maxY);
         minX = Math.Max(0, minX);
         maxX = Math.Min(width - 1, maxX);
-
-        // Pre-calculate average elevation for non-banked case (optimization)
-        var averageElevation = hasBanking 
-            ? 0f  // Will calculate per-pixel
-            : BankedTerrainHelper.GetSegmentAverageElevation(cs1, cs2);
 
         var cornerCount = corners.Length;
 
@@ -261,17 +252,9 @@ public class RoadMaskBuilder
 
                 for (var x = xStart; x <= xEnd; x++)
                 {
-                    // Calculate elevation for this pixel
-                    float pixelElevation;
-                    if (hasBanking)
-                    {
-                        var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
-                        pixelElevation = BankedTerrainHelper.GetBankedElevationForPixel(cs1, cs2, worldPos);
-                    }
-                    else
-                    {
-                        pixelElevation = averageElevation;
-                    }
+                    // Always compute per-pixel bilinear elevation for smooth road surface
+                    var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
+                    var pixelElevation = BankedTerrainHelper.GetBankedElevationForPixel(cs1, cs2, worldPos);
 
                     // Check if we should claim this pixel
                     if (!protectionMask[y, x])

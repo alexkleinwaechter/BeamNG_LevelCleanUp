@@ -122,6 +122,13 @@ public class NetworkJunction
     public int JunctionId { get; set; }
 
     /// <summary>
+    ///     2D convex hull polygon defining the junction plateau area in world coordinates (meters).
+    ///     Computed by JunctionPlateauBuilder after harmonization.
+    ///     Null if no polygon could be computed (single road endpoint, excluded junction).
+    /// </summary>
+    public Vector2[]? Polygon { get; set; }
+
+    /// <summary>
     ///     Whether this junction is excluded from harmonization.
     ///     Excluded junctions are skipped during elevation harmonization,
     ///     allowing the original terrain elevation to be used at this location.

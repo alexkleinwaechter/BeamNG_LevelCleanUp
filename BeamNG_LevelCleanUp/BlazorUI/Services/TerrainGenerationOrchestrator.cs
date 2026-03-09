@@ -204,26 +204,23 @@ public class TerrainGenerationOrchestrator
             //        "Could not find terrain materials.json for PBR texture set update.");
             //}
 
-            // Update TerrainBlock
-            if (state.UpdateTerrainBlock)
-            {
-                taskStopwatch.Restart();
-                var terrainBlockUpdated = TerrainBlockUpdater.UpdateOrCreateTerrainBlock(
-                    state.WorkingDirectory,
-                    state.TerrainName,
-                    state.TerrainSize,
-                    state.MaxHeight,
-                    state.TerrainBaseHeight,
-                    state.MetersPerPixel);
-                // Log timing to file only
-                Console.WriteLine($"[Perf] UpdateOrCreateTerrainBlock: {taskStopwatch.ElapsedMilliseconds}ms");
+            // Update TerrainBlock (always runs)
+            taskStopwatch.Restart();
+            var terrainBlockUpdated = TerrainBlockUpdater.UpdateOrCreateTerrainBlock(
+                state.WorkingDirectory,
+                state.TerrainName,
+                state.TerrainSize,
+                state.MaxHeight,
+                state.TerrainBaseHeight,
+                state.MetersPerPixel);
+            // Log timing to file only
+            Console.WriteLine($"[Perf] UpdateOrCreateTerrainBlock: {taskStopwatch.ElapsedMilliseconds}ms");
 
-                if (terrainBlockUpdated)
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, "TerrainBlock updated in items.level.json");
-                else
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        "Could not update TerrainBlock - check warnings");
-            }
+            if (terrainBlockUpdated)
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "TerrainBlock updated in items.level.json");
+            else
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Could not update TerrainBlock - check warnings");
 
             // Handle spawn points
             taskStopwatch.Restart();
@@ -759,9 +756,6 @@ public class TerrainGenerationOrchestrator
             TerrainBaseHeight = state.TerrainBaseHeight,
             Materials = materialDefinitions,
             EnableCrossMaterialHarmonization = state.EnableCrossMaterialHarmonization,
-            EnableCrossroadToTJunctionConversion = state.EnableCrossroadToTJunctionConversion,
-            GlobalJunctionDetectionRadiusMeters = state.GlobalJunctionDetectionRadiusMeters,
-            GlobalJunctionBlendDistanceMeters = state.GlobalJunctionBlendDistanceMeters,
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
             ExcludeBridgesFromTerrain = state.ExcludeBridgesFromTerrain,
             ExcludeTunnelsFromTerrain = state.ExcludeTunnelsFromTerrain,

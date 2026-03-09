@@ -28,4 +28,13 @@ public interface IHeightCalculator
         RoadSmoothingParameters parameters,
         float[,] heightMap,
         float metersPerPixel);
+
+    /// <summary>
+    /// Re-smooths elevations using existing TargetElevation values as input instead of sampling
+    /// from the heightmap. Used in iterative junction refinement (WI-4) where the smoother
+    /// operates on already-harmonized profiles to produce smoother results.
+    /// </summary>
+    void ReSmoothFromExistingElevations(
+        List<UnifiedCrossSection> crossSections,
+        RoadSmoothingParameters parameters);
 }

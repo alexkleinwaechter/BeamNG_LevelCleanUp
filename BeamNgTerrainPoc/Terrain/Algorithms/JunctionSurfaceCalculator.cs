@@ -305,6 +305,118 @@ public static class JunctionSurfaceCalculator
     }
     
     /// <summary>
+    /// Gets the primary road's surface elevation at a given world position,
+    /// with offset clamping to prevent extrapolation beyond the road surface.
+    /// Banking is only applied within the primary road's half-width, and slope
+    /// contribution is clamped to prevent amplification at distant points.
+    ///
+    /// This fixes elevation spikes at T-junctions where cross-sections far from the
+    /// primary road received wildly extrapolated elevations from banking/slope formulas
+    /// that are only physically valid within the road's actual width.
+    /// </summary>
+    /// <param name="worldPos">World position to query</param>
+    /// <param name="primaryCS">The cross-section of the primary road</param>
+    /// <param name="primarySlope">Longitudinal slope of the primary road (rise/run)</param>
+    /// <param name="maxLateralOffset">Maximum lateral offset for banking extrapolation (typically primary road half-width)</param>
+    /// <param name="maxLongitudinalOffset">Maximum longitudinal offset for slope extrapolation</param>
+    /// <returns>Surface elevation at the given position, with extrapolation clamped</returns>
+    public static float GetPrimarySurfaceElevationClamped(
+        Vector2 worldPos,
+        UnifiedCrossSection primaryCS,
+        float primarySlope,
+        float maxLateralOffset,
+        float maxLongitudinalOffset)
+    {
+        var toPoint = worldPos - primaryCS.CenterPoint;
+        var lateralOffset = Math.Clamp(
+            Vector2.Dot(toPoint, primaryCS.NormalDirection),
+            -maxLateralOffset, maxLateralOffset);
+        var longitudinalOffset = Math.Clamp(
+            Vector2.Dot(toPoint, primaryCS.TangentDirection),
+            -maxLongitudinalOffset, maxLongitudinalOffset);
+
+        var elevation = primaryCS.TargetElevation;
+
+        if (MathF.Abs(primaryCS.BankAngleRadians) > 0.0001f)
+            elevation += lateralOffset * MathF.Sin(primaryCS.BankAngleRadians);
+
+        if (MathF.Abs(primarySlope) > 0.0001f)
+            elevation += longitudinalOffset * primarySlope;
+
+        return elevation;
+    }
+
+    /// <summary>
+    /// Calculates FULL surface-following constraints with offset clamping.
+    /// Same as CalculateFullSurfaceFollowingConstraints but prevents banking and slope
+    /// extrapolation beyond the primary road's physical extent.
+    ///
+    /// This fixes elevation spikes at T-junctions where the terminating road's cross-sections
+    /// move away from the primary road and the unclamped surface projection formula
+    /// (which assumes an infinite planar road surface) produces wildly incorrect elevations.
+    /// Banking contribution is clamped to the primary road half-width, and slope contribution
+    /// is clamped to a reasonable longitudinal extent.
+    /// </summary>
+    public static (float? leftEdge, float? rightEdge, float? centerline) CalculateFullSurfaceFollowingConstraintsClamped(
+        UnifiedCrossSection terminatingCS,
+        UnifiedCrossSection primaryCS,
+        float primarySlope,
+        float weight,
+        float primaryRoadHalfWidth)
+    {
+        if (weight < 0.001f)
+            return (null, null, null);
+
+        // Calculate where this cross-section's edges AND CENTER project onto the primary road surface
+        var halfWidth = terminatingCS.EffectiveRoadWidth / 2.0f;
+        var leftEdgePos = terminatingCS.CenterPoint - terminatingCS.NormalDirection * halfWidth;
+        var rightEdgePos = terminatingCS.CenterPoint + terminatingCS.NormalDirection * halfWidth;
+        var centerPos = terminatingCS.CenterPoint;
+
+        // Clamp offsets: banking is only valid within the primary road width,
+        // and slope contribution should be minimal when using projected CS lookup.
+        // Use primary road half-width as the max longitudinal offset too (generous but bounded).
+        var maxLongitudinalOffset = primaryRoadHalfWidth;
+
+        // Get primary surface elevation at all three positions (with clamping)
+        var primaryLeftElev = GetPrimarySurfaceElevationClamped(
+            leftEdgePos, primaryCS, primarySlope, primaryRoadHalfWidth, maxLongitudinalOffset);
+        var primaryRightElev = GetPrimarySurfaceElevationClamped(
+            rightEdgePos, primaryCS, primarySlope, primaryRoadHalfWidth, maxLongitudinalOffset);
+        var primaryCenterElev = GetPrimarySurfaceElevationClamped(
+            centerPos, primaryCS, primarySlope, primaryRoadHalfWidth, maxLongitudinalOffset);
+
+        // Get natural (unconstrained) elevations for this cross-section
+        var naturalLeftElev = GetUnconstrainedEdgeElevation(terminatingCS, isRightEdge: false);
+        var naturalRightElev = GetUnconstrainedEdgeElevation(terminatingCS, isRightEdge: true);
+        var naturalCenterElev = terminatingCS.TargetElevation;
+
+        float? interpolatedLeft = null;
+        float? interpolatedRight = null;
+        float? interpolatedCenter = null;
+
+        // Interpolate left edge
+        if (!float.IsNaN(naturalLeftElev))
+            interpolatedLeft = primaryLeftElev * weight + naturalLeftElev * (1f - weight);
+        else
+            interpolatedLeft = primaryLeftElev;
+
+        // Interpolate right edge
+        if (!float.IsNaN(naturalRightElev))
+            interpolatedRight = primaryRightElev * weight + naturalRightElev * (1f - weight);
+        else
+            interpolatedRight = primaryRightElev;
+
+        // Interpolate centerline
+        if (!float.IsNaN(naturalCenterElev))
+            interpolatedCenter = primaryCenterElev * weight + naturalCenterElev * (1f - weight);
+        else
+            interpolatedCenter = primaryCenterElev;
+
+        return (interpolatedLeft, interpolatedRight, interpolatedCenter);
+    }
+
+    /// <summary>
     /// Gets the edge elevation for a cross-section ignoring any constraints.
     /// Used when interpolating between constrained and unconstrained cross-sections.
     /// </summary>

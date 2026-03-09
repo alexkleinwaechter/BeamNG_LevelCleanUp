@@ -34,14 +34,13 @@ public class RoundaboutElevationHarmonizer
     /// <param name="roundaboutJunctionInfos">Information about detected roundabout junctions.</param>
     /// <param name="heightMap">The original terrain heightmap (for terrain elevation sampling).</param>
     /// <param name="metersPerPixel">Scale factor for coordinate conversion.</param>
-    /// <param name="globalBlendDistance">Default blend distance for connecting roads.</param>
     /// <returns>Result containing statistics about the harmonization.</returns>
     public RoundaboutHarmonizationResult HarmonizeRoundaboutElevations(
         UnifiedRoadNetwork network,
         List<RoundaboutJunctionInfo> roundaboutJunctionInfos,
         float[,] heightMap,
         float metersPerPixel,
-        float globalBlendDistance = 30.0f)
+        bool skipConnectingRoadBlending = false)
     {
         TerrainLogger.SuppressDetailedLogging = true;
         var result = new RoundaboutHarmonizationResult();
@@ -110,19 +109,29 @@ public class RoundaboutElevationHarmonizer
                                  $"{ringModified} ring cross-sections modified");
 
             // Step 3: Blend connecting roads toward the roundabout elevation
-            var connectingBlended = BlendConnectingRoads(
-                roundaboutInfo,
-                crossSectionsBySpline,
-                network,
-                globalBlendDistance,
-                ref maxElevChange);
-            result.MaxElevationChange = maxElevChange;
+            // When skipConnectingRoadBlending is true, the unified Hermite C1 pipeline (Phase 3)
+            // handles connecting road blending with three-zone model + surface matching.
+            if (!skipConnectingRoadBlending)
+            {
+                var connectingBlended = BlendConnectingRoads(
+                    roundaboutInfo,
+                    crossSectionsBySpline,
+                    network,
+                    ref maxElevChange);
+                result.MaxElevationChange = maxElevChange;
 
-            result.ConnectingRoadCrossSectionsBlended += connectingBlended;
+                result.ConnectingRoadCrossSectionsBlended += connectingBlended;
+
+                TerrainLogger.Detail(
+                    $"  Roundabout {ringSplineId}: {connectingBlended} connecting road cross-sections blended");
+            }
+            else
+            {
+                TerrainLogger.Detail(
+                    $"  Roundabout {ringSplineId}: Connecting road blending deferred to unified Hermite pipeline");
+            }
+
             result.RoundaboutsProcessed++;
-
-            TerrainLogger.Detail(
-                $"  Roundabout {ringSplineId}: {connectingBlended} connecting road cross-sections blended");
 
             // Step 4: Mark all roundabout junctions as excluded from general harmonization
             // This prevents double-processing by NetworkJunctionHarmonizer
@@ -379,7 +388,6 @@ public class RoundaboutElevationHarmonizer
         RoundaboutJunctionInfo roundaboutInfo,
         Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
         UnifiedRoadNetwork network,
-        float globalBlendDistance,
         ref float maxElevationChange)
     {
         var blendedCount = 0;
@@ -432,14 +440,11 @@ public class RoundaboutElevationHarmonizer
                 continue;
 
             // Get blend distance from spline parameters or use global
-            // IMPORTANT: Use EffectiveRoundaboutBlendDistanceMeters for roundabout-specific blending
+            // IMPORTANT: Use effective roundabout blend distance (supports auto-calculation from road width)
             var junctionParams = connectingSpline.Parameters.JunctionHarmonizationParameters
                                  ?? new JunctionHarmonizationParameters();
-            var blendDistance = junctionParams.EffectiveRoundaboutBlendDistanceMeters;
-            if (junctionParams.UseGlobalSettings)
-                // When using global settings, still prefer RoundaboutBlendDistanceMeters if set,
-                // otherwise fall back to global blend distance
-                blendDistance = junctionParams.RoundaboutBlendDistanceMeters ?? globalBlendDistance;
+            var roadWidth = connectingSpline.Parameters.RoadWidthMeters;
+            var blendDistance = junctionParams.GetEffectiveRoundaboutBlendDistance(roadWidth);
 
             // Calculate the total length of the connecting road
             var isSplineStart = junction.IsConnectingRoadStart;
