@@ -96,17 +96,13 @@ public class RoadNetworkDaeExporter
             Directory.CreateDirectory(outputDir);
         }
 
-        // Export all meshes to single DAE file
-        // Road mesh is in BeamNG's Z-up coordinate system.
-        // The ColladaExporter converts to Y-up (Collada standard) with proper
-        // handedness preservation: (X, Y, Z) -> (X, Z, -Y)
-        var exportOptions = new ColladaExportOptions
-        {
-            ConvertToZUp = true,     // Convert Z-up to Y-up for Collada
-            FlipWindingOrder = false // Handedness preserved by coordinate transform
-        };
-        var exporter = new ColladaExporter(exportOptions);
-        exporter.Export(meshes, outputPath);
+        // Export all meshes to single DAE file using direct XML with Z_UP.
+        // Road mesh coordinates are already in BeamNG's native Z-up system
+        // (X=East, Y=North, Z=Up). The ExportZUp method writes them as-is
+        // with <up_axis>Z_UP</up_axis>, avoiding any Assimp Y-up conversion
+        // ambiguity that caused position/scale mismatches in BeamNG.
+        var exporter = new ColladaExporter();
+        exporter.ExportZUp(meshes, outputPath);
 
         result.Success = true;
         result.OutputPath = outputPath;
@@ -202,16 +198,9 @@ public class RoadNetworkDaeExporter
             if (materialMeshes.Count > 0)
             {
                 var outputPath = Path.Combine(outputDirectory, $"{fileNamePrefix}_{materialName}.dae");
-                // Road mesh is in BeamNG's Z-up coordinate system.
-                // The ColladaExporter converts to Y-up (Collada standard) with proper
-                // handedness preservation: (X, Y, Z) -> (X, Z, -Y)
-                var exportOptions = new ColladaExportOptions
-                {
-                    ConvertToZUp = true,     // Convert Z-up to Y-up for Collada
-                    FlipWindingOrder = false // Handedness preserved by coordinate transform
-                };
-                var exporter = new ColladaExporter(exportOptions);
-                exporter.Export(materialMeshes, outputPath);
+                // Export using direct XML with Z_UP — no Assimp conversion ambiguity
+                var exporter = new ColladaExporter();
+                exporter.ExportZUp(materialMeshes, outputPath);
                 result.MeshCount += materialMeshes.Count;
             }
         }

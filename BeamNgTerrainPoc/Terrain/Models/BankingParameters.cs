@@ -21,7 +21,7 @@ public class BankingParameters
 
     /// <summary>
     /// Maximum bank angle in degrees.
-    /// Real-world highways typically use 4-8°, race tracks up to 15°.
+    /// Real-world highways typically use 4-8ï¿½, race tracks up to 15ï¿½.
     /// Default: 8.0 (moderate banking suitable for highways)
     /// </summary>
     public float MaxBankAngleDegrees { get; set; } = 8.0f;
@@ -63,6 +63,20 @@ public class BankingParameters
     /// Default: 30.0 (smooth transitions)
     /// </summary>
     public float BankTransitionLengthMeters { get; set; } = 30.0f;
+
+    /// <summary>
+    /// Window size for Gaussian smoothing of curvature values before bank angle calculation.
+    /// Reduces noise from OSM node spacing. Must be odd. Set to 0 to disable.
+    /// Default: 5
+    /// </summary>
+    public int CurvatureSmoothingWindow { get; set; } = 5;
+
+    /// <summary>
+    /// Window size for Gaussian smoothing of bank angles after calculation.
+    /// Reduces edge-elevation bumps on strongly banked curves. Must be odd. Set to 0 to disable.
+    /// Default: 7
+    /// </summary>
+    public int BankAngleSmoothingWindow { get; set; } = 7;
 
     /// <summary>
     /// Validates banking parameters and returns any errors.
@@ -134,6 +148,8 @@ public class BankingParameters
         AutoBankFalloff = AutoBankFalloff,
         CurvatureToBankScale = CurvatureToBankScale,
         MinCurveRadiusForMaxBank = MinCurveRadiusForMaxBank,
-        BankTransitionLengthMeters = BankTransitionLengthMeters
+        BankTransitionLengthMeters = BankTransitionLengthMeters,
+        CurvatureSmoothingWindow = CurvatureSmoothingWindow,
+        BankAngleSmoothingWindow = BankAngleSmoothingWindow
     };
 }

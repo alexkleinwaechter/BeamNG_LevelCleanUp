@@ -106,9 +106,6 @@
                                        CachedCombinedGeoTiffPath="@_cachedCombinedGeoTiffPath"
                                        UpdateTerrainBlock="@_updateTerrainBlock"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
-                                       EnableCrossroadToTJunctionConversion="@_enableCrossroadToTJunctionConversion"
-                                       GlobalJunctionDetectionRadiusMeters="@_globalJunctionDetectionRadiusMeters"
-                                       GlobalJunctionBlendDistanceMeters="@_globalJunctionBlendDistanceMeters"
                                        ExcludeBridgesFromTerrain="@_excludeBridgesFromTerrain"
                                        ExcludeTunnelsFromTerrain="@_excludeTunnelsFromTerrain"
                                        EnableBuildings="@_enableBuildings"
@@ -458,91 +455,9 @@
                                              HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Auto-calculated from GeoTIFF min elevation" : "Z position offset for terrain")" />
                         </MudItem>
 
-                        <!-- Update TerrainBlock Checkbox -->
-                        <MudItem xs="12" sm="6" md="3">
-                            <MudCheckBox @bind-Value="_updateTerrainBlock"
-                                         Label="Update TerrainBlock"
-                                         Color="Color.Primary" />
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Update MissionGroup items.level.json
-                            </MudText>
-                        </MudItem>
-
-                        <!-- Flip Material Processing Order -->
-                        <MudItem xs="12" sm="6" md="3">
-                            <div class="d-flex align-center gap-1">
-                                <MudCheckBox @bind-Value="_flipMaterialProcessingOrder"
-                                             Label="Flip Processing Order"
-                                             Color="Color.Primary" />
-                                <MudTooltip Text="When enabled (default), materials at the top of the list get higher priority for road smoothing at junctions. When disabled, materials at the bottom get higher priority (matches texture painting order). Could be better when banking enabled.">
-                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
-                                </MudTooltip>
-                            </div>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Top material = highest road priority
-                            </MudText>
-                        </MudItem>
-
-                        <!-- Cross-Material Harmonization -->
-                        <MudItem xs="12" sm="6" md="3">
-                            <div class="d-flex align-center gap-1">
-                                <MudCheckBox @bind-Value="_enableCrossMaterialHarmonization"
-                                             Label="Cross-Material Harmonization"
-                                             Color="Color.Primary" />
-                                <MudTooltip Text="When multiple materials have road smoothing enabled, harmonize elevations where roads from different materials meet (e.g., highway meets local road). Requires at least one material to have Junction Harmonization enabled.">
-                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
-                                </MudTooltip>
-                            </div>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Smooth transitions between road types
-                            </MudText>
-                        </MudItem>
-
-                        @* Global Junction Settings - only visible when cross-material harmonization is enabled *@
-                        @if (_enableCrossMaterialHarmonization)
-                        {
-                            <MudItem xs="12">
-                                <MudDivider Class="my-2" />
-                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                    <MudIcon Icon="@Icons.Material.Filled.CallSplit" Size="Size.Small" Class="mr-1" />
-                                    Global Junction Settings
-                                </MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                    Default values for cross-material junction handling. Individual materials can override these.
-                                </MudText>
-                            </MudItem>
-
-                            <MudItem xs="12" sm="6" md="3">
-                                <MudNumericField @bind-Value="_globalJunctionDetectionRadiusMeters"
-                                                 Label="Global Junction Detection Radius (m)"
-                                                 Variant="Variant.Outlined"
-                                                 Min="1.0f" Max="50.0f" Step="1.0f"
-                                                 HelperText="Distance to detect road intersections" />
-                            </MudItem>
-
-                            <MudItem xs="12" sm="6" md="3">
-                                <MudNumericField @bind-Value="_globalJunctionBlendDistanceMeters"
-                                                 Label="Global Junction Blend Distance (m)"
-                                                 Variant="Variant.Outlined"
-                                                 Min="5.0f" Max="100.0f" Step="5.0f"
-                                                 HelperText="Distance to blend elevations at junctions" />
-                            </MudItem>
-
-                            <MudItem xs="12" sm="6" md="3">
-                                <div class="d-flex align-center gap-1">
-                                    <MudCheckBox @bind-Value="_enableCrossroadToTJunctionConversion"
-                                                 Label="Crossroad to T-Junction"
-                                                 Color="Color.Primary" />
-                                    <MudTooltip Text="When enabled, mid-spline crossings (where two roads cross without either terminating) are converted to T-junctions by splitting the secondary road. This enables proper elevation harmonization at crossings. Disable for overpasses/underpasses where roads should maintain independent elevations.">
-                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
-                                    </MudTooltip>
-                                </div>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                    Split crossing roads for proper blending
-                                </MudText>
-                            </MudItem>
-
-                        }
+                        @* UpdateTerrainBlock: always true, UI removed *@
+                        @* FlipMaterialProcessingOrder: always false, UI removed *@
+                        @* Cross-Material Harmonization: always enabled, UI removed *@
 
                         @* Bridge/Tunnel Structure Handling *@
                         <MudItem xs="12">

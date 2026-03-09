@@ -8,19 +8,6 @@ namespace BeamNgTerrainPoc.Terrain.Models;
 public class JunctionHarmonizationParameters
 {
     // ========================================
-    // GLOBAL/PER-MATERIAL SETTINGS
-    // ========================================
-
-    /// <summary>
-    ///     When true, uses global junction settings from TerrainCreationParameters.
-    ///     When false, uses the values specified in this instance.
-    ///     This only affects JunctionDetectionRadiusMeters and JunctionBlendDistanceMeters.
-    ///     Other settings (blend function, endpoint taper, etc.) are always per-material.
-    ///     Default: true (use global settings)
-    /// </summary>
-    public bool UseGlobalSettings { get; set; } = true;
-
-    // ========================================
     // MASTER ENABLE
     // ========================================
 
@@ -54,9 +41,12 @@ public class JunctionHarmonizationParameters
     // ========================================
 
     /// <summary>
-    ///     Distance (in meters) over which to blend from junction elevation back to path elevation.
+    ///     Minimum distance (in meters) over which to blend from junction elevation back to path elevation.
     ///     This affects the SIDE ROAD that joins the main road - the side road's elevation
     ///     will smoothly transition from the main road's elevation back to its own calculated elevation.
+    ///     On steep terrain, the actual blend distance automatically increases beyond this minimum
+    ///     to keep the ramp slope within the road's max slope limit (or 6° default).
+    ///     Formula: max(this, elevDiff / tan(maxSlopeDeg)).
     ///     Typical values:
     ///     - 15-25m: Tight blending (urban roads)
     ///     - 25-40m: Standard blending (DEFAULT)
@@ -65,11 +55,48 @@ public class JunctionHarmonizationParameters
     /// </summary>
     public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
 
+    // ========================================
+    // AUTO-CALCULATION FROM ROAD WIDTH
+    // ========================================
+
+    /// <summary>
+    ///     When true, junction blend distance is automatically calculated from road width.
+    ///     Formula: clamp(RoadWidthMeters * BlendDistanceMultiplier + BlendDistanceOffset,
+    ///                    MinAutoBlendDistanceMeters, MaxAutoBlendDistanceMeters)
+    ///     The explicit JunctionBlendDistanceMeters value is ignored when this is true.
+    ///     Default: true (auto-calculate from road width)
+    /// </summary>
+    public bool AutoCalculateBlendDistance { get; set; } = true;
+
+    /// <summary>
+    ///     Multiplier for road width when auto-calculating blend distance.
+    ///     Default: 3.0 (derived from preset data regression)
+    /// </summary>
+    public float BlendDistanceMultiplier { get; set; } = 3.0f;
+
+    /// <summary>
+    ///     Offset added to (roadWidth * multiplier) when auto-calculating blend distance.
+    ///     Default: 5.0
+    /// </summary>
+    public float BlendDistanceOffset { get; set; } = 5.0f;
+
+    /// <summary>
+    ///     Minimum auto-calculated blend distance in meters.
+    ///     Default: 15.0
+    /// </summary>
+    public float MinAutoBlendDistanceMeters { get; set; } = 15.0f;
+
+    /// <summary>
+    ///     Maximum auto-calculated blend distance in meters.
+    ///     Default: 60.0
+    /// </summary>
+    public float MaxAutoBlendDistanceMeters { get; set; } = 60.0f;
+
     /// <summary>
     ///     Blend function type for junction transitions.
-    ///     Default: Cosine (smooth S-curve)
+    ///     Default: CubicHermiteC1 (C1-continuous, matches slope at blend boundary)
     /// </summary>
-    public JunctionBlendFunctionType BlendFunctionType { get; set; } = JunctionBlendFunctionType.Cosine;
+    public JunctionBlendFunctionType BlendFunctionType { get; set; } = JunctionBlendFunctionType.CubicHermiteC1;
 
     // ========================================
     // ROUNDABOUT SETTINGS
@@ -155,6 +182,73 @@ public class JunctionHarmonizationParameters
         RoundaboutBlendDistanceMeters ?? JunctionBlendDistanceMeters;
 
     // ========================================
+    // EFFECTIVE VALUE METHODS
+    // ========================================
+
+    /// <summary>
+    ///     Gets the effective junction blend distance, considering auto-calculation.
+    ///     When AutoCalculateBlendDistance is true, computes from road width using the formula:
+    ///     clamp(roadWidthMeters * BlendDistanceMultiplier + BlendDistanceOffset,
+    ///            MinAutoBlendDistanceMeters, MaxAutoBlendDistanceMeters)
+    ///     When false, returns JunctionBlendDistanceMeters unchanged.
+    /// </summary>
+    /// <param name="roadWidthMeters">The road width to calculate from (from RoadSmoothingParameters.RoadWidthMeters).</param>
+    public float GetEffectiveBlendDistance(float roadWidthMeters)
+    {
+        if (!AutoCalculateBlendDistance)
+            return JunctionBlendDistanceMeters;
+
+        var calculated = roadWidthMeters * BlendDistanceMultiplier + BlendDistanceOffset;
+        return Math.Clamp(calculated, MinAutoBlendDistanceMeters, MaxAutoBlendDistanceMeters);
+    }
+
+    /// <summary>
+    ///     Gets the effective roundabout blend distance, considering auto-calculation.
+    ///     Returns RoundaboutBlendDistanceMeters if explicitly set, otherwise GetEffectiveBlendDistance.
+    /// </summary>
+    /// <param name="roadWidthMeters">The road width to calculate from.</param>
+    public float GetEffectiveRoundaboutBlendDistance(float roadWidthMeters)
+    {
+        return RoundaboutBlendDistanceMeters ?? GetEffectiveBlendDistance(roadWidthMeters);
+    }
+
+    // ========================================
+    // IDW WEIGHT MODIFIER FOR TERRAIN BLENDING (WI-8)
+    // ========================================
+
+    /// <summary>
+    ///     Enable junction-aware IDW weight modification for terrain blending (Phase 4).
+    ///     When enabled, terminating roads near junctions get reduced IDW weights,
+    ///     letting the continuous road's elevation profile dominate the junction area
+    ///     in blend zones. Only affects OSM roads (PNG roads use single-spline interpolation).
+    ///     Default: true
+    /// </summary>
+    public bool EnableJunctionIdwFiltering { get; set; } = true;
+
+    /// <summary>
+    ///     Minimum IDW weight modifier for terminating road cross-sections at the junction point.
+    ///     0.0 = fully suppress terminating road's influence at the junction.
+    ///     0.3 = retain 30% influence (some blending for smoother transitions).
+    ///     1.0 = effectively disabled (no suppression).
+    ///     Only affects cross-sections from roads that TERMINATE at a junction;
+    ///     continuous roads always keep modifier = 1.0.
+    ///     Typical values:
+    ///     - 0.05-0.1: Strong suppression (DEFAULT - nearly suppress, retain small influence)
+    ///     - 0.2-0.4: Moderate suppression (gentler blending)
+    ///     - 0.5-0.8: Light suppression
+    ///     Default: 0.1
+    /// </summary>
+    public float MinTerminatingIdwWeight { get; set; } = 0.1f;
+
+    /// <summary>
+    ///     Distance (in meters) over which the IDW weight modifier tapers from 1.0 to MinTerminatingIdwWeight.
+    ///     If null, uses the junction blend distance (same as elevation harmonization).
+    ///     Typical values: same as or slightly larger than JunctionBlendDistanceMeters.
+    ///     Default: null (use junction blend distance)
+    /// </summary>
+    public float? IdwFilterTaperDistanceMeters { get; set; } = null;
+
+    // ========================================
     // DEBUG OPTIONS
     // All debug images are always exported to the MT_TerrainGeneration folder.
     // ========================================
@@ -188,14 +282,30 @@ public class JunctionHarmonizationParameters
         if (JunctionDetectionRadiusMeters <= 0)
             errors.Add("JunctionDetectionRadiusMeters must be greater than 0");
 
-        if (JunctionBlendDistanceMeters <= 0)
+        if (!AutoCalculateBlendDistance && JunctionBlendDistanceMeters <= 0)
             errors.Add("JunctionBlendDistanceMeters must be greater than 0");
+
+        if (AutoCalculateBlendDistance)
+        {
+            if (BlendDistanceMultiplier <= 0)
+                errors.Add("BlendDistanceMultiplier must be greater than 0 when auto-calculation is enabled");
+            if (MinAutoBlendDistanceMeters <= 0)
+                errors.Add("MinAutoBlendDistanceMeters must be greater than 0");
+            if (MaxAutoBlendDistanceMeters < MinAutoBlendDistanceMeters)
+                errors.Add("MaxAutoBlendDistanceMeters must be >= MinAutoBlendDistanceMeters");
+        }
 
         if (RoundaboutConnectionRadiusMeters <= 0)
             errors.Add("RoundaboutConnectionRadiusMeters must be greater than 0");
 
         if (RoundaboutOverlapToleranceMeters <= 0)
             errors.Add("RoundaboutOverlapToleranceMeters must be greater than 0");
+
+        if (MinTerminatingIdwWeight < 0 || MinTerminatingIdwWeight > 1.0f)
+            errors.Add("MinTerminatingIdwWeight must be between 0.0 and 1.0");
+
+        if (IdwFilterTaperDistanceMeters.HasValue && IdwFilterTaperDistanceMeters.Value <= 0)
+            errors.Add("IdwFilterTaperDistanceMeters must be greater than 0");
 
         return errors;
     }
@@ -225,5 +335,12 @@ public enum JunctionBlendFunctionType
     ///     Quintic (smootherstep) - extremely smooth with zero first and second derivatives.
     ///     Best quality but slightly more computation.
     /// </summary>
-    Quintic
+    Quintic,
+
+    /// <summary>
+    ///     Cubic Hermite interpolation matching elevation AND slope at both endpoints.
+    ///     Guarantees C1 continuity (no slope discontinuity at blend boundary).
+    ///     This is the recommended blend function for the smoothest results.
+    /// </summary>
+    CubicHermiteC1
 }

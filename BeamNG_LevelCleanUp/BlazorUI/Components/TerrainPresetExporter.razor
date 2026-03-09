@@ -66,9 +66,6 @@
     [Parameter] public string? CachedCombinedGeoTiffPath { get; set; }
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
-    [Parameter] public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
-    [Parameter] public float GlobalJunctionDetectionRadiusMeters { get; set; } = 5.0f;
-    [Parameter] public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
     [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
     [Parameter] public bool ExcludeTunnelsFromTerrain { get; set; } = false;
     [Parameter] public bool EnableBuildings { get; set; }
@@ -465,9 +462,6 @@
                 ["terrainBaseHeight"] = TerrainBaseHeight,
                 ["updateTerrainBlock"] = UpdateTerrainBlock,
                 ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization,
-                ["enableCrossroadToTJunctionConversion"] = EnableCrossroadToTJunctionConversion,
-                ["globalJunctionDetectionRadiusMeters"] = GlobalJunctionDetectionRadiusMeters,
-                ["globalJunctionBlendDistanceMeters"] = GlobalJunctionBlendDistanceMeters,
                 ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
                 ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain
             },
@@ -633,7 +627,9 @@
                     ["autoBankFalloff"] = mat.AutoBankFalloff,
                     ["curvatureToBankScale"] = mat.CurvatureToBankScale,
                     ["minCurveRadiusForMaxBank"] = mat.MinCurveRadiusForMaxBank,
-                    ["bankTransitionLengthMeters"] = mat.BankTransitionLengthMeters
+                    ["bankTransitionLengthMeters"] = mat.BankTransitionLengthMeters,
+                    ["curvatureSmoothingWindow"] = mat.CurvatureSmoothingWindow,
+                    ["bankAngleSmoothingWindow"] = mat.BankAngleSmoothingWindow
                 }
             },
             ["postProcessing"] = new JsonObject
@@ -648,11 +644,14 @@
             // Debug settings are always enabled - no need to export them
             ["junctionHarmonization"] = new JsonObject
             {
-                ["useGlobalSettings"] = mat.UseGlobalJunctionSettings,
                 ["enableJunctionHarmonization"] = mat.EnableJunctionHarmonization,
                 ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
                 ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,
                 ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
+                // IDW filtering
+                ["enableJunctionIdwFiltering"] = mat.EnableJunctionIdwFiltering,
+                ["minTerminatingIdwWeight"] = mat.MinTerminatingIdwWeight,
+                ["idwFilterTaperDistanceMeters"] = mat.IdwFilterTaperDistanceMeters,
                 // Roundabout settings
                 ["enableRoundaboutDetection"] = mat.EnableRoundaboutDetection,
                 ["enableRoundaboutRoadTrimming"] = mat.EnableRoundaboutRoadTrimming,

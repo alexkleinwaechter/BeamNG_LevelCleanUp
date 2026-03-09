@@ -33,11 +33,9 @@ public class NetworkJunctionDetector
     ///     5. Detect mid-spline crossings (where two roads cross without either terminating)
     /// </summary>
     /// <param name="network">The unified road network containing all splines and cross-sections.</param>
-    /// <param name="globalDetectionRadius">Global detection radius in meters (can be overridden per-material).</param>
     /// <returns>List of detected network junctions.</returns>
     public List<NetworkJunction> DetectJunctions(
-        UnifiedRoadNetwork network,
-        float globalDetectionRadius)
+        UnifiedRoadNetwork network)
     {
         TerrainLogger.SuppressDetailedLogging = true;
         var perfLog = TerrainCreationLogger.Current;
@@ -58,17 +56,19 @@ public class NetworkJunctionDetector
         perfLog?.Timing("Built spatial index for cross-sections");
 
         // Step 3: Cluster endpoints into junctions
-        var junctions = ClusterEndpointsIntoJunctions(endpoints, network, globalDetectionRadius);
+        // Detection radius is per-material (from JunctionHarmonizationParameters), default 5m
+        const float defaultDetectionRadius = 5.0f;
+        var junctions = ClusterEndpointsIntoJunctions(endpoints, network, defaultDetectionRadius);
         perfLog?.Timing($"Clustered into {junctions.Count} potential junctions");
 
         // Step 4: Detect T-junctions (endpoint meeting middle of another road)
-        var tJunctionCount = DetectTJunctions(junctions, network, spatialIndex, globalDetectionRadius);
+        var tJunctionCount = DetectTJunctions(junctions, network, spatialIndex, defaultDetectionRadius);
         if (tJunctionCount > 0)
             TerrainCreationLogger.Current?.InfoFileOnly(
                 $"Detected {tJunctionCount} T-junction(s) (endpoint meeting middle of road)");
 
         // Step 5: Detect mid-spline crossings (two roads crossing without either terminating)
-        var midSplineCrossings = DetectMidSplineCrossings(network, spatialIndex, globalDetectionRadius, junctions);
+        var midSplineCrossings = DetectMidSplineCrossings(network, spatialIndex, defaultDetectionRadius, junctions);
         if (midSplineCrossings.Count > 0)
         {
             junctions.AddRange(midSplineCrossings);

@@ -72,41 +72,6 @@ public class TerrainCreationParameters
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
 
     /// <summary>
-    ///     Enable crossroad to T-junction conversion.
-    ///     When enabled, mid-spline crossings (where two roads cross without either terminating)
-    ///     are converted to T-junctions by splitting the secondary road at the crossing point.
-    ///     This enables proper elevation harmonization at crossings.
-    ///     Disable this for special scenarios like overpasses/underpasses where roads should
-    ///     maintain independent elevations.
-    ///     Default: true
-    /// </summary>
-    public bool EnableCrossroadToTJunctionConversion { get; set; } = false;
-
-    /// <summary>
-    ///     Global junction detection radius in meters.
-    ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
-    ///     Maximum distance between path endpoints to consider them part of the same junction.
-    ///     Typical values:
-    ///     - 5-8m: Narrow roads (single lane)
-    ///     - 8-12m: Standard roads
-    ///     - 12-15m: Wide roads (highways)
-    ///     Default: 15.0
-    /// </summary>
-    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 5.0f;
-
-    /// <summary>
-    ///     Global junction blend distance in meters.
-    ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
-    ///     Distance over which to blend from junction elevation back to path elevation.
-    ///     Typical values:
-    ///     - 15-25m: Tight blending (urban roads)
-    ///     - 25-40m: Standard blending
-    ///     - 40-60m: Smooth blending (highways)
-    ///     Default: 30.0
-    /// </summary>
-    public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
-
-    /// <summary>
     ///     When true, flips the material processing order for road network building.
     ///     By default (true), materials at the top of the list (index 0) get higher priority
     ///     for junction harmonization. When false, materials at the bottom get higher priority.

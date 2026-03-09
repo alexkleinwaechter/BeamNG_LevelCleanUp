@@ -446,7 +446,9 @@ public partial class TerrainMaterialSettings
                         ["autoBankFalloff"] = Material.AutoBankFalloff,
                         ["curvatureToBankScale"] = Material.CurvatureToBankScale,
                         ["minCurveRadiusForMaxBank"] = Material.MinCurveRadiusForMaxBank,
-                        ["bankTransitionLengthMeters"] = Material.BankTransitionLengthMeters
+                        ["bankTransitionLengthMeters"] = Material.BankTransitionLengthMeters,
+                        ["curvatureSmoothingWindow"] = Material.CurvatureSmoothingWindow,
+                        ["bankAngleSmoothingWindow"] = Material.BankAngleSmoothingWindow
                     }
                 },
                 ["postProcessing"] = new JsonObject
@@ -460,11 +462,14 @@ public partial class TerrainMaterialSettings
                 },
                 ["junctionHarmonization"] = new JsonObject
                 {
-                    ["useGlobalSettings"] = Material.UseGlobalJunctionSettings,
                     ["enableJunctionHarmonization"] = Material.EnableJunctionHarmonization,
                     ["junctionDetectionRadiusMeters"] = Material.JunctionDetectionRadiusMeters,
                     ["junctionBlendDistanceMeters"] = Material.JunctionBlendDistanceMeters,
-                    ["blendFunctionType"] = Material.JunctionBlendFunction.ToString()
+                    ["autoCalculateBlendDistance"] = Material.AutoCalculateBlendDistance,
+                    ["blendFunctionType"] = Material.JunctionBlendFunction.ToString(),
+                    ["enableJunctionIdwFiltering"] = Material.EnableJunctionIdwFiltering,
+                    ["minTerminatingIdwWeight"] = Material.MinTerminatingIdwWeight,
+                    ["idwFilterTaperDistanceMeters"] = Material.IdwFilterTaperDistanceMeters
                 }
             };
 
@@ -585,6 +590,12 @@ public partial class TerrainMaterialSettings
                     if (bankingParams["bankTransitionLengthMeters"] != null)
                         Material.BankTransitionLengthMeters =
                             bankingParams["bankTransitionLengthMeters"]!.GetValue<float>();
+                    if (bankingParams["curvatureSmoothingWindow"] != null)
+                        Material.CurvatureSmoothingWindow =
+                            bankingParams["curvatureSmoothingWindow"]!.GetValue<int>();
+                    if (bankingParams["bankAngleSmoothingWindow"] != null)
+                        Material.BankAngleSmoothingWindow =
+                            bankingParams["bankAngleSmoothingWindow"]!.GetValue<int>();
                 }
             }
 
@@ -618,8 +629,6 @@ public partial class TerrainMaterialSettings
             var junctionParams = jsonNode["junctionHarmonization"];
             if (junctionParams != null)
             {
-                if (junctionParams["useGlobalSettings"] != null)
-                    Material.UseGlobalJunctionSettings = junctionParams["useGlobalSettings"]!.GetValue<bool>();
                 if (junctionParams["enableJunctionHarmonization"] != null)
                     Material.EnableJunctionHarmonization =
                         junctionParams["enableJunctionHarmonization"]!.GetValue<bool>();
@@ -629,10 +638,23 @@ public partial class TerrainMaterialSettings
                 if (junctionParams["junctionBlendDistanceMeters"] != null)
                     Material.JunctionBlendDistanceMeters =
                         junctionParams["junctionBlendDistanceMeters"]!.GetValue<float>();
+                if (junctionParams["autoCalculateBlendDistance"] != null)
+                    Material.AutoCalculateBlendDistance =
+                        junctionParams["autoCalculateBlendDistance"]!.GetValue<bool>();
                 if (junctionParams["blendFunctionType"] != null &&
                     Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(),
                         out var junctionBlendType))
                     Material.JunctionBlendFunction = junctionBlendType;
+                // IDW filtering
+                if (junctionParams["enableJunctionIdwFiltering"] != null)
+                    Material.EnableJunctionIdwFiltering =
+                        junctionParams["enableJunctionIdwFiltering"]!.GetValue<bool>();
+                if (junctionParams["minTerminatingIdwWeight"] != null)
+                    Material.MinTerminatingIdwWeight =
+                        junctionParams["minTerminatingIdwWeight"]!.GetValue<float>();
+                if (junctionParams["idwFilterTaperDistanceMeters"] != null)
+                    Material.IdwFilterTaperDistanceMeters =
+                        junctionParams["idwFilterTaperDistanceMeters"]!.GetValue<float>();
                 // Note: enableEndpointTaper, endpointTaperDistanceMeters, endpointTerrainBlendStrength
                 // are no longer configurable (auto-computed from road width). Old configs silently ignored.
             }
@@ -814,16 +836,16 @@ public partial class TerrainMaterialSettings
         // JUNCTION HARMONIZATION
         // ========================================
 
-        /// <summary>
-        ///     When true, uses global junction settings from TerrainGenerationState.
-        ///     When false, uses the per-material values specified below.
-        /// </summary>
-        public bool UseGlobalJunctionSettings { get; set; } = true;
-
         public bool EnableJunctionHarmonization { get; set; } = true;
         public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
         public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
-        public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.Cosine;
+        public bool AutoCalculateBlendDistance { get; set; } = true;
+        public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.CubicHermiteC1;
+
+        // IDW filtering for terrain blending near junctions
+        public bool EnableJunctionIdwFiltering { get; set; } = true;
+        public float MinTerminatingIdwWeight { get; set; } = 0.1f;
+        public float? IdwFilterTaperDistanceMeters { get; set; } = null;
 
         // ========================================
         // ROUNDABOUT SETTINGS
@@ -906,22 +928,44 @@ public partial class TerrainMaterialSettings
         public float BankTransitionLengthMeters { get; set; } = 30.0f;
 
         /// <summary>
+        ///     Gaussian smoothing window for curvature signal (must be odd, 0=disabled).
+        /// </summary>
+        public int CurvatureSmoothingWindow { get; set; } = 5;
+
+        /// <summary>
+        ///     Gaussian smoothing window for bank angle signal (must be odd, 0=disabled).
+        /// </summary>
+        public int BankAngleSmoothingWindow { get; set; } = 7;
+
+        /// <summary>
         ///     Gets the banking parameters as a BankingParameters object.
         /// </summary>
-        public BankingParameters? GetBankingParameters()
+        public BankingParameters GetBankingParameters()
         {
             if (!EnableAutoBanking)
-                return null;
+            {
+                // Banking pipeline always runs, but with zero angles when user has banking disabled.
+                // This ensures junction elevation adaptation (Phase 3.5) always executes,
+                // preventing terrain spikes at T-junctions.
+                return new BankingParameters
+                {
+                    EnableAutoBanking = false,
+                    MaxBankAngleDegrees = 0f,
+                    BankStrength = 0f,
+                };
+            }
 
             return new BankingParameters
             {
-                EnableAutoBanking = EnableAutoBanking,
+                EnableAutoBanking = true,
                 MaxBankAngleDegrees = MaxBankAngleDegrees,
                 BankStrength = BankStrength,
                 AutoBankFalloff = AutoBankFalloff,
                 CurvatureToBankScale = CurvatureToBankScale,
                 MinCurveRadiusForMaxBank = MinCurveRadiusForMaxBank,
-                BankTransitionLengthMeters = BankTransitionLengthMeters
+                BankTransitionLengthMeters = BankTransitionLengthMeters,
+                CurvatureSmoothingWindow = CurvatureSmoothingWindow,
+                BankAngleSmoothingWindow = BankAngleSmoothingWindow
             };
         }
 
@@ -943,6 +987,8 @@ public partial class TerrainMaterialSettings
             CurvatureToBankScale = banking.CurvatureToBankScale;
             MinCurveRadiusForMaxBank = banking.MinCurveRadiusForMaxBank;
             BankTransitionLengthMeters = banking.BankTransitionLengthMeters;
+            CurvatureSmoothingWindow = banking.CurvatureSmoothingWindow;
+            BankAngleSmoothingWindow = banking.BankAngleSmoothingWindow;
         }
 
         /// <summary>
@@ -1002,11 +1048,15 @@ public partial class TerrainMaterialSettings
             // Junction harmonization parameters
             if (preset.JunctionHarmonizationParameters != null)
             {
-                UseGlobalJunctionSettings = preset.JunctionHarmonizationParameters.UseGlobalSettings;
                 EnableJunctionHarmonization = preset.JunctionHarmonizationParameters.EnableJunctionHarmonization;
                 JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
                 JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
+                AutoCalculateBlendDistance = preset.JunctionHarmonizationParameters.AutoCalculateBlendDistance;
                 JunctionBlendFunction = preset.JunctionHarmonizationParameters.BlendFunctionType;
+                // IDW filtering
+                EnableJunctionIdwFiltering = preset.JunctionHarmonizationParameters.EnableJunctionIdwFiltering;
+                MinTerminatingIdwWeight = preset.JunctionHarmonizationParameters.MinTerminatingIdwWeight;
+                IdwFilterTaperDistanceMeters = preset.JunctionHarmonizationParameters.IdwFilterTaperDistanceMeters;
                 // Roundabout settings
                 EnableRoundaboutDetection = preset.JunctionHarmonizationParameters.EnableRoundaboutDetection;
                 EnableRoundaboutRoadTrimming = preset.JunctionHarmonizationParameters.EnableRoundaboutRoadTrimming;
@@ -1116,11 +1166,15 @@ public partial class TerrainMaterialSettings
             // Junction harmonization parameters - debug exports always enabled
             result.JunctionHarmonizationParameters = new JunctionHarmonizationParameters
             {
-                UseGlobalSettings = UseGlobalJunctionSettings,
                 EnableJunctionHarmonization = EnableJunctionHarmonization,
                 JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
                 JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,
+                AutoCalculateBlendDistance = AutoCalculateBlendDistance,
                 BlendFunctionType = JunctionBlendFunction,
+                // IDW filtering
+                EnableJunctionIdwFiltering = EnableJunctionIdwFiltering,
+                MinTerminatingIdwWeight = MinTerminatingIdwWeight,
+                IdwFilterTaperDistanceMeters = IdwFilterTaperDistanceMeters,
                 // Roundabout settings
                 EnableRoundaboutDetection = EnableRoundaboutDetection,
                 EnableRoundaboutRoadTrimming = EnableRoundaboutRoadTrimming,

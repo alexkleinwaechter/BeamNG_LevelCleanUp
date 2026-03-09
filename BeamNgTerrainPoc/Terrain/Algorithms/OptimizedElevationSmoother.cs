@@ -5,6 +5,19 @@ using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
+///     Anchor elevation data for a spline endpoint at a junction.
+///     Used by WI-6 to bias smoothed elevations toward the terrain elevation at junction centers.
+/// </summary>
+public readonly struct EndpointAnchor
+{
+    /// <summary>Terrain elevation sampled at the junction center.</summary>
+    public float AnchorElevation { get; init; }
+
+    /// <summary>Decay distance in meters for the exponential blend (typically matches junction blend distance).</summary>
+    public float DecayDistanceMeters { get; init; }
+}
+
+/// <summary>
 ///     Optimized elevation smoothing with support for Box filter (prefix sums) and Butterworth low-pass filter.
 ///     Box Filter: O(N) using prefix sums - fast, suitable for flat terrain.
 ///     Butterworth Filter: O(N x order) - maximally flat passband, ideal for hilly terrain.
@@ -187,6 +200,122 @@ public class OptimizedElevationSmoother : IHeightCalculator
         if (invalidSamplesTotal > 0)
             TerrainLogger.Warning(
                 $"  WARNING: Found {invalidSamplesTotal} invalid elevation samples (zero/NaN) - interpolated from neighbors");
+    }
+
+    /// <summary>
+    ///     Applies endpoint anchoring to smoothed elevations (WI-6).
+    ///     For each spline endpoint that participates in a junction, biases the smoothed
+    ///     elevation profile toward the terrain elevation at the junction center using
+    ///     exponential decay. This reduces the gap between Phase 2 smoothed elevations
+    ///     and Phase 3 harmonized elevations, leading to smaller corrections and smoother results.
+    /// </summary>
+    /// <param name="crossSections">Cross-sections for a single spline, ordered by LocalIndex.</param>
+    /// <param name="startAnchor">Anchor for the spline start endpoint (null if no junction).</param>
+    /// <param name="endAnchor">Anchor for the spline end endpoint (null if no junction).</param>
+    public void ApplyEndpointAnchoring(
+        List<UnifiedCrossSection> crossSections,
+        EndpointAnchor? startAnchor,
+        EndpointAnchor? endAnchor)
+    {
+        if (crossSections.Count == 0) return;
+        if (!startAnchor.HasValue && !endAnchor.HasValue) return;
+
+        var totalLength = crossSections[^1].DistanceAlongSpline;
+        if (totalLength < 0.01f) return;
+
+        var anchored = 0;
+
+        for (var i = 0; i < crossSections.Count; i++)
+        {
+            var cs = crossSections[i];
+            var originalElevation = cs.TargetElevation;
+
+            // Accumulate weighted anchor contributions from both ends.
+            // Each anchor applies an exponential decay: weight = 0.5 * exp(-dist / decay).
+            // For splines with both endpoints at junctions, the decays from both ends
+            // naturally blend in the middle.
+            float totalWeight = 0f;
+            float weightedElevation = 0f;
+
+            if (startAnchor.HasValue && startAnchor.Value.DecayDistanceMeters > 0.01f)
+            {
+                var w = 0.5f * MathF.Exp(-cs.DistanceAlongSpline / startAnchor.Value.DecayDistanceMeters);
+                totalWeight += w;
+                weightedElevation += w * startAnchor.Value.AnchorElevation;
+            }
+
+            if (endAnchor.HasValue && endAnchor.Value.DecayDistanceMeters > 0.01f)
+            {
+                var distFromEnd = totalLength - cs.DistanceAlongSpline;
+                var w = 0.5f * MathF.Exp(-distFromEnd / endAnchor.Value.DecayDistanceMeters);
+                totalWeight += w;
+                weightedElevation += w * endAnchor.Value.AnchorElevation;
+            }
+
+            if (totalWeight > 0.001f)
+            {
+                // Clamp total weight to prevent over-anchoring on very short splines
+                totalWeight = MathF.Min(totalWeight, 0.8f);
+                // Blend: (1 - totalWeight) * smoothed + totalWeight * (weighted average of anchors)
+                var anchorAvg = weightedElevation / totalWeight;
+                cs.TargetElevation = cs.TargetElevation * (1f - totalWeight) + anchorAvg * totalWeight;
+
+                if (MathF.Abs(cs.TargetElevation - originalElevation) > 0.001f)
+                    anchored++;
+            }
+        }
+
+        if (anchored > 0)
+            TerrainCreationLogger.Current?.Detail(
+                $"  Endpoint anchoring modified {anchored} cross-sections (spline {crossSections[0].OwnerSplineId})");
+    }
+
+    /// <summary>
+    ///     Re-smooths elevations using existing TargetElevation values as input instead of sampling
+    ///     from the heightmap. Used in iterative junction refinement where the smoother operates
+    ///     on already-harmonized profiles to produce smoother results.
+    /// </summary>
+    public void ReSmoothFromExistingElevations(
+        List<UnifiedCrossSection> crossSections,
+        RoadSmoothingParameters parameters)
+    {
+        var splineParams = parameters?.GetSplineParameters();
+        var windowSize = splineParams?.SmoothingWindowSize ?? 101;
+        var useButterworthFilter = splineParams?.UseButterworthFilter ?? false;
+        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 3;
+        var crossSectionSpacing = parameters?.CrossSectionIntervalMeters ?? 0.5f;
+        var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
+        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 4.0f;
+
+        // Group by OwnerSplineId for per-spline processing
+        var splineGroups = crossSections
+            .Where(cs => !cs.IsExcluded)
+            .GroupBy(cs => cs.OwnerSplineId)
+            .ToList();
+
+        foreach (var splineGroup in splineGroups)
+        {
+            var sections = splineGroup.OrderBy(cs => cs.LocalIndex).ToList();
+            if (sections.Count == 0) continue;
+
+            // Use existing TargetElevation as raw input instead of sampling heightmap
+            var rawElevations = new float[sections.Count];
+            for (var i = 0; i < sections.Count; i++)
+                rawElevations[i] = sections[i].TargetElevation;
+
+            // Apply smoothing filter
+            var smoothed = useButterworthFilter
+                ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
+                : BoxFilterPrefixSum(rawElevations, windowSize);
+
+            // Enforce max slope constraint if enabled
+            if (enableMaxSlopeConstraint)
+                EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
+
+            // Assign final elevations
+            for (var i = 0; i < sections.Count; i++)
+                sections[i].TargetElevation = smoothed[i];
+        }
     }
 
     /// <summary>

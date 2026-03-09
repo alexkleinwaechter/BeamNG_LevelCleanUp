@@ -16,11 +16,13 @@ namespace BeamNgTerrainPoc.Terrain.Services;
 ///     This replaces the material-centric processing in MultiMaterialRoadSmoother with
 ///     a network-centric approach that:
 ///     1. Builds a unified road network from all materials
-///     2. Calculates target elevations per-spline using each spline's parameters
-///     3. Detects roundabout junctions and harmonizes roundabout elevations
-///     4. Harmonizes junctions across the entire network (including cross-material)
-///     5. Applies protected terrain blending in a single pass
-///     6. Paints material layers separately (using surface width, not elevation width)
+///     1.5. Identifies roundabout splines (before banking)
+///     1.8. Detects junctions early (topology-only, before elevation calculation) (WI-5)
+///     2. Calculates target elevations per-spline with endpoint anchoring to junctions (WI-6)
+///     2.6. Detects roundabout junctions and harmonizes roundabout elevations
+///     3. Harmonizes junctions across the entire network (including cross-material)
+///     4. Applies protected terrain blending in a single pass
+///     5. Paints material layers separately (using surface width, not elevation width)
 ///     Key benefits:
 ///     - Single EDT computation (faster than per-material)
 ///     - Road core pixels are protected from neighbor's blend zones
@@ -38,6 +40,7 @@ public class UnifiedRoadSmoother
     private readonly UnifiedRoadNetworkBuilder _networkBuilder;
     private readonly RoundaboutElevationHarmonizer _roundaboutHarmonizer;
     private readonly UnifiedTerrainBlender _terrainBlender;
+    private readonly UnifiedJunctionProfileBlender _unifiedProfileBlender;
     private StructureElevationIntegrator _structureElevationIntegrator;
 
     public UnifiedRoadSmoother()
@@ -51,6 +54,7 @@ public class UnifiedRoadSmoother
         _materialPainter = new MaterialPainter();
         _elevationCalculator = new OptimizedElevationSmoother();
         _structureElevationIntegrator = new StructureElevationIntegrator();
+        _unifiedProfileBlender = new UnifiedJunctionProfileBlender();
     }
 
     /// <summary>
@@ -86,18 +90,6 @@ public class UnifiedRoadSmoother
     /// <param name="metersPerPixel">Scale factor for converting meters to pixels.</param>
     /// <param name="size">Terrain size in pixels.</param>
     /// <param name="enableCrossMaterialHarmonization">Whether to harmonize junctions across materials.</param>
-    /// <param name="enableCrossroadToTJunctionConversion">
-    ///     Whether to convert mid-spline crossings to T-junctions by splitting the secondary road.
-    ///     Disable for overpasses/underpasses where roads should maintain independent elevations.
-    /// </param>
-    /// <param name="globalJunctionDetectionRadius">
-    ///     Global junction detection radius in meters (used when material's
-    ///     UseGlobalSettings is true).
-    /// </param>
-    /// <param name="globalJunctionBlendDistance">
-    ///     Global junction blend distance in meters (used when material's
-    ///     UseGlobalSettings is true).
-    /// </param>
     /// <param name="flipMaterialProcessingOrder">
     ///     When true, materials at top of list (index 0) get higher priority for road
     ///     smoothing.
@@ -109,9 +101,6 @@ public class UnifiedRoadSmoother
         float metersPerPixel,
         int size,
         bool enableCrossMaterialHarmonization = true,
-        bool enableCrossroadToTJunctionConversion = true,
-        float globalJunctionDetectionRadius = 10.0f,
-        float globalJunctionBlendDistance = 30.0f,
         bool flipMaterialProcessingOrder = true)
     {
         var perfLog = TerrainCreationLogger.Current;
@@ -196,161 +185,243 @@ public class UnifiedRoadSmoother
             perfLog?.Timing($"IdentifyRoundaboutSplines: {sw.Elapsed.TotalSeconds:F2}s");
         }
 
-        // Phase 2: Calculate target elevations for each spline
-        perfLog?.LogSection("Phase 2: Elevation Calculation");
-        TerrainCreationLogger.Current?.InfoFileOnly("Phase 2: Calculating target elevations...");
-        sw.Restart();
-        CalculateNetworkElevations(network, heightMap, metersPerPixel);
-        perfLog?.Timing($"CalculateNetworkElevations: {sw.Elapsed.TotalSeconds:F2}s");
+        var shouldHarmonize = ShouldHarmonize(roadMaterials);
 
-        // Phase 2.3: Calculate elevation profiles for bridge/tunnel structures
-        // This calculates independent elevation profiles for structures that are excluded from terrain smoothing.
-        // The profiles are stored on the splines for future DAE generation even though the cross-sections
-        // are excluded from terrain modification.
-        var structureCount = network.Splines.Count(s => s.IsStructure);
-        if (structureCount > 0)
+        // Phase 1.8: Early junction detection (WI-5)
+        // Detect junctions BEFORE elevation calculation so that future phases
+        // (WI-6 endpoint anchoring, WI-9 junction plateau) can use junction data.
+        // Detection is purely topology-based (endpoint clustering + spatial proximity)
+        // and does not require elevation data.
+        if (shouldHarmonize)
         {
-            perfLog?.LogSection("Phase 2.3: Structure Elevation Profiles");
-            TerrainCreationLogger.Current?.InfoFileOnly($"Phase 2.3: Calculating elevation profiles for {structureCount} structure(s)...");
+            perfLog?.LogSection("Phase 1.8: Early Junction Detection");
+            TerrainCreationLogger.Current?.InfoFileOnly("Phase 1.8: Detecting junctions early...");
             sw.Restart();
-            
-            // Calculate profiles for excluded structures (profiles stored for DAE generation)
-            var structureResult = _structureElevationIntegrator.IntegrateStructureElevationsSelective(
-                network, heightMap, metersPerPixel,
-                excludeBridges: roadMaterials.Any(m => m.RoadParameters?.ExcludeBridgesFromTerrain == true),
-                excludeTunnels: roadMaterials.Any(m => m.RoadParameters?.ExcludeTunnelsFromTerrain == true));
-            
-            perfLog?.Timing($"StructureElevationProfiles: {sw.Elapsed.TotalSeconds:F2}s");
-            
-            if (structureResult.TotalStructuresProcessed > 0)
-            {
-                TerrainCreationLogger.Current?.InfoFileOnly($"  Calculated profiles for {structureResult.BridgesProcessed} bridge(s), " +
-                                  $"{structureResult.TunnelsProcessed} tunnel(s)");
-            }
-            
-            if (structureResult.ValidationMessages.Count > 0)
-            {
-                foreach (var msg in structureResult.ValidationMessages)
-                {
-                    TerrainLogger.Warning($"  Structure validation: {msg}");
-                }
-            }
-        }
-
-        // Phase 2.5: Pre-calculate banking (bank angles and edge elevations)
-        // This must happen BEFORE junction harmonization so that the harmonizer can
-        // account for banked road surfaces when calculating connection point elevations.
-        // Without this, secondary roads connecting to banked primary roads would get
-        // the wrong elevation (centerline instead of edge).
-        var bankingApplied = false;
-        if (HasAnyBankingEnabled(roadMaterials))
-        {
-            perfLog?.LogSection("Phase 2.5: Banking Pre-calculation");
-            TerrainCreationLogger.Current?.InfoFileOnly("Phase 2.5: Pre-calculating road banking (for junction awareness)...");
-            sw.Restart();
-            bankingApplied = _bankingOrchestrator.ApplyBankingPreCalculation(network, globalJunctionBlendDistance);
-            perfLog?.Timing($"ApplyBankingPreCalculation: {sw.Elapsed.TotalSeconds:F2}s");
-        }
-
-        // Phase 2.6: Detect and harmonize roundabout elevations
-        // This must happen AFTER initial elevation calculation but BEFORE general junction harmonization
-        // so that roundabout junctions are already at their target elevation when other roads blend to them.
-        var roundaboutJunctionInfos = new List<RoundaboutJunctionInfo>();
-        if (HasRoundaboutsInNetwork(network, roadMaterials))
-        {
-            perfLog?.LogSection("Phase 2.6: Roundabout Elevation Harmonization");
-            TerrainCreationLogger.Current?.InfoFileOnly("Phase 2.6: Processing roundabout elevations...");
-            sw.Restart();
-
-            // Step 1: Collect roundabout processing results from all materials
-            var allRoundaboutInfos = CollectRoundaboutInfos(roadMaterials, network);
-
-            if (allRoundaboutInfos.Count > 0)
-            {
-                // Step 2: Detect roundabout junctions (where roads meet roundabout rings)
-                var roundaboutConnectionRadius = GetRoundaboutConnectionRadius(roadMaterials);
-                roundaboutJunctionInfos = _junctionDetector.DetectRoundaboutJunctions(
-                    network, allRoundaboutInfos, roundaboutConnectionRadius);
-
-                // Step 3: Harmonize roundabout elevations (uniform ring elevation + connecting road blending)
-                var roundaboutHarmonizationResult = _roundaboutHarmonizer.HarmonizeRoundaboutElevations(
-                    network,
-                    roundaboutJunctionInfos,
-                    heightMap,
-                    metersPerPixel,
-                    globalJunctionBlendDistance);
-
-                TerrainCreationLogger.Current?.InfoFileOnly($"  Processed {roundaboutHarmonizationResult.RoundaboutsProcessed} roundabout(s), " +
-                                   $"modified {roundaboutHarmonizationResult.RingCrossSectionsModified} ring cross-sections, " +
-                                   $"blended {roundaboutHarmonizationResult.ConnectingRoadCrossSectionsBlended} connecting road cross-sections");
-            }
-
-            perfLog?.Timing($"Roundabout elevation harmonization: {sw.Elapsed.TotalSeconds:F2}s");
-        }
-
-        // Phase 3: Detect and harmonize junctions
-        // This handles both within-material junctions (single material) and cross-material junctions (multiple materials)
-        // IMPORTANT: Now banking-aware - uses edge elevations for banked roads when calculating connection points
-        // When OSM bounding box is available, OSM junction hints are used to improve detection accuracy
-        if (ShouldHarmonize(roadMaterials))
-        {
-            perfLog?.LogSection("Phase 3: Junction Harmonization");
-            TerrainLogger.Info("Phase 3: Detecting and harmonizing junctions...");
+            _junctionDetector.DetectJunctions(network);
             TerrainCreationLogger.Current?.InfoFileOnly(
-                $"  Cross-material harmonization: {enableCrossMaterialHarmonization && roadMaterials.Count > 1}");
-            TerrainCreationLogger.Current?.InfoFileOnly($"  Banking-aware: {bankingApplied}");
+                $"  Early detection found {network.Junctions.Count} junction(s)");
+            perfLog?.Timing($"EarlyJunctionDetection: {sw.Elapsed.TotalSeconds:F2}s");
+        }
+
+        // === Iterative Junction Refinement Loop (WI-4) ===
+        // Phases 2 and 3 are wrapped in a convergence loop. On iteration 0, the full pipeline runs
+        // (heightmap sampling, structure profiles, banking, roundabouts, junction harmonization).
+        // On subsequent iterations, Phase 2 re-smooths from existing TargetElevation values and
+        // Phase 3 re-harmonizes using already-detected junctions. The loop converges when the max
+        // elevation correction falls below threshold or stops improving.
+        const int maxIterations = 3;
+        const float convergenceThresholdMeters = 0.01f;
+        var previousMaxCorrection = float.MaxValue;
+        HarmonizationResult? lastHarmonizationResult = null;
+
+        for (var iteration = 0; iteration < maxIterations; iteration++)
+        {
+            var isFirstIteration = iteration == 0;
+            var iterationLabel = maxIterations > 1 && shouldHarmonize
+                ? $" (iteration {iteration + 1}/{maxIterations})"
+                : "";
+
+            // Phase 2: Calculate target elevations for each spline (+ WI-6 endpoint anchoring)
+            perfLog?.LogSection($"Phase 2: Elevation Calculation{iterationLabel}");
+            TerrainCreationLogger.Current?.InfoFileOnly($"Phase 2: Calculating target elevations{iterationLabel}...");
             sw.Restart();
+            CalculateNetworkElevations(network, heightMap, metersPerPixel, reSmoothFromExisting: !isFirstIteration);
+            perfLog?.Timing($"CalculateNetworkElevations: {sw.Elapsed.TotalSeconds:F2}s");
 
-            // IMPORTANT: Save roundabout junctions BEFORE Phase 3 detection.
-            // DetectJunctions() calls network.Junctions.Clear() which would wipe out
-            // the roundabout junctions created in Phase 2.6. Without this, connecting
-            // road endpoints near roundabouts lose their IsExcluded flag and get
-            // processed as regular endpoints, overwriting the smooth roundabout blend.
-            var savedRoundaboutJunctions = network.Junctions
-                .Where(j => j.Type == JunctionType.Roundabout)
-                .ToList();
-
-            _junctionDetector.DetectJunctions(network, globalJunctionDetectionRadius);
-
-            // Restore roundabout junctions that were cleared by DetectJunctions.
-            // Remove any regular junctions that overlap with roundabout junction positions to avoid
-            // duplicate processing, then add the roundabout junctions back with their IsExcluded flag.
-            if (savedRoundaboutJunctions.Count > 0)
+            // Phases 2.3, 2.5, 2.6 run ONLY on iteration 0
+            if (isFirstIteration)
             {
-                RestoreRoundaboutJunctions(network, savedRoundaboutJunctions);
+                // Phase 2.3: Calculate elevation profiles for bridge/tunnel structures
+                // This calculates independent elevation profiles for structures that are excluded from terrain smoothing.
+                // The profiles are stored on the splines for future DAE generation even though the cross-sections
+                // are excluded from terrain modification.
+                var structureCount = network.Splines.Count(s => s.IsStructure);
+                if (structureCount > 0)
+                {
+                    perfLog?.LogSection("Phase 2.3: Structure Elevation Profiles");
+                    TerrainCreationLogger.Current?.InfoFileOnly($"Phase 2.3: Calculating elevation profiles for {structureCount} structure(s)...");
+                    sw.Restart();
+
+                    // Calculate profiles for excluded structures (profiles stored for DAE generation)
+                    var structureResult = _structureElevationIntegrator.IntegrateStructureElevationsSelective(
+                        network, heightMap, metersPerPixel,
+                        excludeBridges: roadMaterials.Any(m => m.RoadParameters?.ExcludeBridgesFromTerrain == true),
+                        excludeTunnels: roadMaterials.Any(m => m.RoadParameters?.ExcludeTunnelsFromTerrain == true));
+
+                    perfLog?.Timing($"StructureElevationProfiles: {sw.Elapsed.TotalSeconds:F2}s");
+
+                    if (structureResult.TotalStructuresProcessed > 0)
+                    {
+                        TerrainCreationLogger.Current?.InfoFileOnly($"  Calculated profiles for {structureResult.BridgesProcessed} bridge(s), " +
+                                          $"{structureResult.TunnelsProcessed} tunnel(s)");
+                    }
+
+                    if (structureResult.ValidationMessages.Count > 0)
+                    {
+                        foreach (var msg in structureResult.ValidationMessages)
+                        {
+                            TerrainLogger.Warning($"  Structure validation: {msg}");
+                        }
+                    }
+                }
+
+                // Phase 2.5: Pre-calculate banking (bank angles and edge elevations)
+                // This ALWAYS runs - even without user-enabled banking, the pipeline computes
+                // curvature, edge elevations, and junction adaptation that prevents terrain spikes.
+                {
+                    perfLog?.LogSection("Phase 2.5: Banking Pre-calculation");
+                    TerrainCreationLogger.Current?.InfoFileOnly("Phase 2.5: Pre-calculating road banking (for junction awareness)...");
+                    sw.Restart();
+                    _bankingOrchestrator.ApplyBankingPreCalculation(network);
+                    perfLog?.Timing($"ApplyBankingPreCalculation: {sw.Elapsed.TotalSeconds:F2}s");
+                }
+
+                // Phase 2.6: Detect and harmonize roundabout elevations
+                // This must happen AFTER initial elevation calculation but BEFORE general junction harmonization
+                // so that roundabout junctions are already at their target elevation when other roads blend to them.
+                if (HasRoundaboutsInNetwork(network, roadMaterials))
+                {
+                    perfLog?.LogSection("Phase 2.6: Roundabout Elevation Harmonization");
+                    TerrainCreationLogger.Current?.InfoFileOnly("Phase 2.6: Processing roundabout elevations...");
+                    sw.Restart();
+
+                    // Step 1: Collect roundabout processing results from all materials
+                    var allRoundaboutInfos = CollectRoundaboutInfos(roadMaterials, network);
+
+                    if (allRoundaboutInfos.Count > 0)
+                    {
+                        // Step 2: Detect roundabout junctions (where roads meet roundabout rings)
+                        var roundaboutConnectionRadius = GetRoundaboutConnectionRadius(roadMaterials);
+                        var roundaboutJunctionInfos = _junctionDetector.DetectRoundaboutJunctions(
+                            network, allRoundaboutInfos, roundaboutConnectionRadius);
+
+                        // Step 3: Harmonize roundabout elevations (uniform ring elevation + connecting road blending)
+                        var roundaboutHarmonizationResult = _roundaboutHarmonizer.HarmonizeRoundaboutElevations(
+                            network,
+                            roundaboutJunctionInfos,
+                            heightMap,
+                            metersPerPixel,
+                            skipConnectingRoadBlending: true);
+
+                        TerrainCreationLogger.Current?.InfoFileOnly($"  Processed {roundaboutHarmonizationResult.RoundaboutsProcessed} roundabout(s), " +
+                                           $"modified {roundaboutHarmonizationResult.RingCrossSectionsModified} ring cross-sections, " +
+                                           $"blended {roundaboutHarmonizationResult.ConnectingRoadCrossSectionsBlended} connecting road cross-sections");
+                    }
+
+                    perfLog?.Timing($"Roundabout elevation harmonization: {sw.Elapsed.TotalSeconds:F2}s");
+                }
+            } // end first-iteration-only phases
+
+            // Phase 3: Harmonize junctions
+            // Junction detection was already performed in Phase 1.8 (WI-5: early detection).
+            // Phase 2.6 may have added roundabout junctions afterward — merge them here on the first iteration.
+            // IMPORTANT: Banking-aware - uses edge elevations for banked roads when calculating connection points
+            if (shouldHarmonize)
+            {
+                perfLog?.LogSection($"Phase 3: Junction Harmonization{iterationLabel}");
+                TerrainLogger.Info($"Phase 3: Harmonizing junctions{iterationLabel}...");
+                TerrainCreationLogger.Current?.InfoFileOnly(
+                    $"  Cross-material harmonization: {enableCrossMaterialHarmonization && roadMaterials.Count > 1}");
+                sw.Restart();
+
+                if (isFirstIteration)
+                {
+                    // Phase 2.6 may have added roundabout junctions to network.Junctions AFTER
+                    // Phase 1.8's early detection. Use RestoreRoundaboutJunctions to exclude
+                    // regular junctions that overlap with roundabout junction positions, preventing
+                    // duplicate processing and preserving the smooth roundabout blend.
+                    var roundaboutJunctions = network.Junctions
+                        .Where(j => j.Type == JunctionType.Roundabout)
+                        .ToList();
+
+                    if (roundaboutJunctions.Count > 0)
+                    {
+                        RestoreRoundaboutJunctions(network, roundaboutJunctions);
+                    }
+                }
+
+                // Capture the natural (terrain-following) elevations and bank angles
+                // BEFORE the harmonizer modifies them. The unified blender needs these as the
+                // "natural profile" to blend junction constraints against.
+                var originalElevations = network.CrossSections
+                    .Where(cs => !float.IsNaN(cs.TargetElevation))
+                    .ToDictionary(cs => cs.Index, cs => cs.TargetElevation);
+                var originalBankAngles = network.CrossSections
+                    .ToDictionary(cs => cs.Index, cs => cs.BankAngleRadians);
+
+                // Run the harmonizer for junction detection + classification + elevation computation.
+                lastHarmonizationResult = _junctionHarmonizer.HarmonizeNetwork(
+                    network, heightMap, metersPerPixel,
+                    skipDetection: !isFirstIteration);
+
+                // Restore original elevations and reset harmonizer side effects before
+                // unified blending — the harmonizer modified TargetElevation, but the unified
+                // blender needs the natural terrain-following profile to compute correct deltas.
+                foreach (var cs in network.CrossSections)
+                {
+                    if (originalElevations.TryGetValue(cs.Index, out var origElev))
+                        cs.TargetElevation = origElev;
+                    if (originalBankAngles.TryGetValue(cs.Index, out var origBank))
+                        cs.BankAngleRadians = origBank;
+                    cs.JunctionIdwWeightModifier = 1.0f;
+                }
+
+                // Apply the unified profile blender — handles all propagation
+                // (elevation blending, banking adaptation, edge constraints) in one system.
+                var unifiedResult = _unifiedProfileBlender.ApplyUnifiedProfiles(
+                    network, originalElevations, originalBankAngles, heightMap, metersPerPixel);
+
+                // Update harmonization result for convergence checking
+                if (lastHarmonizationResult != null)
+                {
+                    lastHarmonizationResult.ModifiedCrossSections = unifiedResult.ModifiedCrossSections;
+                }
+
+                perfLog?.Timing($"UnifiedJunctionProfiles: {sw.Elapsed.TotalSeconds:F2}s, " +
+                                $"modified {unifiedResult.ModifiedCrossSections} cross-sections, " +
+                                $"{unifiedResult.ConstraintsComputed} constraints");
+
+                // Check convergence
+                var maxCorrection = lastHarmonizationResult?.MaxElevationChange ?? 0f;
+                TerrainLogger.Info($"  Iteration {iteration + 1}: max elevation correction = {maxCorrection:F3}m");
+
+                if (maxCorrection < convergenceThresholdMeters)
+                {
+                    TerrainLogger.Info($"  Converged after {iteration + 1} iteration(s)");
+                    break;
+                }
+
+                if (maxCorrection > previousMaxCorrection * 0.9f && !isFirstIteration)
+                {
+                    TerrainLogger.Info($"  Not improving, stopping after {iteration + 1} iteration(s)");
+                    break;
+                }
+
+                previousMaxCorrection = maxCorrection;
             }
+            else
+            {
+                TerrainCreationLogger.Current?.InfoFileOnly("Phase 3: Junction harmonization skipped (no materials have it enabled)");
+                break; // No harmonization = no iteration needed
+            }
+        } // end iteration loop
 
-            // Use global params, but harmonizer will respect per-material UseGlobalSettings
-            var harmonizationResult = _junctionHarmonizer.HarmonizeNetwork(
-                network,
-                heightMap,
-                metersPerPixel,
-                globalJunctionDetectionRadius,
-                globalJunctionBlendDistance,
-                enableCrossroadToTJunctionConversion);
-
-            perfLog?.Timing($"HarmonizeNetwork: {sw.Elapsed.TotalSeconds:F2}s, " +
-                            $"modified {harmonizationResult.ModifiedCrossSections} cross-sections");
-
-            // Export junction debug image if requested
-            ExportJunctionDebugImageIfRequested(network, harmonizationResult, heightMap, metersPerPixel, roadMaterials);
-        }
-        else
+        // Final T-junction snap: after all iterations, directly match terminating road
+        // endpoints to the CURRENT primary surface. The iterative loop can cause the primary
+        // road's elevation/banking to drift, so this ensures the final values match.
+        if (shouldHarmonize)
         {
-            TerrainCreationLogger.Current?.InfoFileOnly("Phase 3: Junction harmonization skipped (no materials have it enabled)");
+            var snapCount = _unifiedProfileBlender.FinalSnapTJunctionEndpoints(network);
+            if (snapCount > 0)
+            {
+                TerrainLogger.Info($"  Final T-junction snap: corrected {snapCount} cross-sections");
+            }
         }
 
-        // Phase 3.5: Finalize banking (adapt secondary roads to banked junctions)
-        // Now that junction harmonization has run, we need to:
-        // 1. Recalculate edge elevations based on harmonized TargetElevation
-        // 2. Adapt secondary road elevations to smoothly meet banked primary roads
-        if (bankingApplied)
+        // Export junction debug image after final iteration
+        if (lastHarmonizationResult != null)
         {
-            perfLog?.LogSection("Phase 3.5: Banking Finalization");
-            TerrainCreationLogger.Current?.InfoFileOnly("Phase 3.5: Finalizing road banking (adapting to junctions)...");
-            sw.Restart();
-            _bankingOrchestrator.FinalizeBankingAfterHarmonization(network, globalJunctionBlendDistance);
-            perfLog?.Timing($"FinalizeBankingAfterHarmonization: {sw.Elapsed.TotalSeconds:F2}s");
+            ExportJunctionDebugImageIfRequested(network, lastHarmonizationResult, heightMap, metersPerPixel, roadMaterials);
         }
 
         // Phase 4: Apply terrain blending (single pass)
@@ -419,14 +490,6 @@ public class UnifiedRoadSmoother
             m.RoadParameters?.JunctionHarmonizationParameters?.EnableJunctionHarmonization == true);
     }
 
-    /// <summary>
-    ///     Determines if any material has road banking (superelevation) enabled.
-    /// </summary>
-    private static bool HasAnyBankingEnabled(List<MaterialDefinition> roadMaterials)
-    {
-        return roadMaterials.Any(m =>
-            m.RoadParameters?.GetSplineParameters()?.Banking?.EnableAutoBanking == true);
-    }
 
     /// <summary>
     ///     Determines if any materials have roundabout data that needs processing.
@@ -657,9 +720,18 @@ public class UnifiedRoadSmoother
     private void CalculateNetworkElevations(
         UnifiedRoadNetwork network,
         float[,] heightMap,
-        float metersPerPixel)
+        float metersPerPixel,
+        bool reSmoothFromExisting = false)
     {
         var totalCalculated = 0;
+
+        // WI-6: Build endpoint anchor lookup from pre-detected junctions.
+        // Maps (splineId, isStart) → anchor elevation sampled at the junction center.
+        // This is the terrain elevation at the junction, which is the best estimate before
+        // harmonization runs. On re-smooth iterations, use the junction's harmonized elevation
+        // if available (from previous iteration's Phase 3).
+        var endpointAnchors = BuildEndpointAnchorLookup(network, heightMap, metersPerPixel, reSmoothFromExisting);
+        var elevationSmoother = _elevationCalculator as OptimizedElevationSmoother;
 
         // Group cross-sections by spline for efficient processing
         var crossSectionsBySpline = network.CrossSections
@@ -673,38 +745,148 @@ public class UnifiedRoadSmoother
 
             var parameters = spline.Parameters;
 
-            // Phase 4: Exclude bridge/tunnel structures from elevation smoothing if configured
+            // Exclude bridge/tunnel structures from elevation smoothing if configured
             if ((spline.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
                 (spline.IsTunnel && parameters.ExcludeTunnelsFromTerrain))
             {
-                // Mark all cross-sections from this structure as excluded
-                foreach (var cs in crossSections)
-                    cs.IsExcluded = true;
+                if (!reSmoothFromExisting)
+                {
+                    // Mark all cross-sections from this structure as excluded (only on first iteration)
+                    foreach (var cs in crossSections)
+                        cs.IsExcluded = true;
 
-                TerrainCreationLogger.Current?.Detail(
-                    $"Excluding {(spline.IsBridge ? "bridge" : "tunnel")} spline {spline.SplineId} " +
-                    $"from elevation smoothing ({crossSections.Count} cross-sections)");
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Excluding {(spline.IsBridge ? "bridge" : "tunnel")} spline {spline.SplineId} " +
+                        $"from elevation smoothing ({crossSections.Count} cross-sections)");
+                }
+
                 continue;
             }
 
-            // Sample raw terrain elevations BEFORE smoothing for OriginalTerrainElevation
-            var mapHeight = heightMap.GetLength(0);
-            var mapWidth = heightMap.GetLength(1);
-            for (var i = 0; i < crossSections.Count; i++)
+            if (reSmoothFromExisting)
             {
-                var px = (int)(crossSections[i].CenterPoint.X / metersPerPixel);
-                var py = (int)(crossSections[i].CenterPoint.Y / metersPerPixel);
-                px = Math.Clamp(px, 0, mapWidth - 1);
-                py = Math.Clamp(py, 0, mapHeight - 1);
-                crossSections[i].OriginalTerrainElevation = heightMap[py, px];
+                // Re-smooth using existing TargetElevation values (iterative refinement)
+                _elevationCalculator.ReSmoothFromExistingElevations(crossSections, parameters);
+            }
+            else
+            {
+                // Sample raw terrain elevations BEFORE smoothing for OriginalTerrainElevation
+                var mapHeight = heightMap.GetLength(0);
+                var mapWidth = heightMap.GetLength(1);
+                for (var i = 0; i < crossSections.Count; i++)
+                {
+                    var px = (int)(crossSections[i].CenterPoint.X / metersPerPixel);
+                    var py = (int)(crossSections[i].CenterPoint.Y / metersPerPixel);
+                    px = Math.Clamp(px, 0, mapWidth - 1);
+                    py = Math.Clamp(py, 0, mapHeight - 1);
+                    crossSections[i].OriginalTerrainElevation = heightMap[py, px];
+                }
+
+                // Calculate elevations directly on UnifiedCrossSections (no conversion roundtrip)
+                _elevationCalculator.CalculateTargetElevations(crossSections, parameters, heightMap, metersPerPixel);
             }
 
-            // Calculate elevations directly on UnifiedCrossSections (no conversion roundtrip)
-            _elevationCalculator.CalculateTargetElevations(crossSections, parameters, heightMap, metersPerPixel);
+            // WI-6: Apply endpoint anchoring after smoothing/re-smoothing.
+            // Biases spline endpoints toward the terrain elevation at junction centers,
+            // reducing the gap that Phase 3 harmonization must bridge.
+            if (elevationSmoother != null && endpointAnchors.Count > 0)
+            {
+                endpointAnchors.TryGetValue((spline.SplineId, true), out var startAnchor);
+                endpointAnchors.TryGetValue((spline.SplineId, false), out var endAnchor);
+
+                if (startAnchor != null || endAnchor != null)
+                    elevationSmoother.ApplyEndpointAnchoring(crossSections, startAnchor, endAnchor);
+            }
+
             totalCalculated += crossSections.Count;
         }
 
-        TerrainCreationLogger.Current?.Detail($"Calculated elevations for {totalCalculated} cross-sections");
+        var mode = reSmoothFromExisting ? "re-smoothed" : "calculated";
+        TerrainCreationLogger.Current?.Detail($"{mode.Substring(0, 1).ToUpperInvariant() + mode.Substring(1)} elevations for {totalCalculated} cross-sections");
+    }
+
+    /// <summary>
+    ///     Builds endpoint anchor lookup from pre-detected junctions (WI-6).
+    ///     For each spline endpoint that participates in a junction, creates an anchor
+    ///     with the terrain elevation at the junction center and a decay distance
+    ///     matching the junction blend distance.
+    /// </summary>
+    private Dictionary<(int splineId, bool isStart), EndpointAnchor?> BuildEndpointAnchorLookup(
+        UnifiedRoadNetwork network,
+        float[,] heightMap,
+        float metersPerPixel,
+        bool useHarmonizedElevation)
+    {
+        var anchors = new Dictionary<(int splineId, bool isStart), EndpointAnchor?>();
+
+        if (network.Junctions.Count == 0)
+            return anchors;
+
+        var mapHeight = heightMap.GetLength(0);
+        var mapWidth = heightMap.GetLength(1);
+        var anchoredEndpoints = 0;
+
+        foreach (var junction in network.Junctions)
+        {
+            if (junction.IsExcluded) continue;
+
+            // Only anchor isolated endpoints (dead-end roads) toward terrain.
+            // Multi-road junctions are handled by the rubberband blend envelope in Phase 3,
+            // which smoothly interpolates between junction elevations and terrain-following.
+            // Anchoring at multi-road junctions was the root cause of the "ditch" artifact.
+            if (junction.Type != JunctionType.Endpoint) continue;
+
+            // Sample terrain elevation at junction center
+            float anchorElevation;
+            if (useHarmonizedElevation && !float.IsNaN(junction.HarmonizedElevation))
+            {
+                // On re-smooth iterations, use the harmonized elevation from the previous Phase 3 pass.
+                // This is a better estimate than raw terrain because it accounts for road network context.
+                anchorElevation = junction.HarmonizedElevation;
+            }
+            else
+            {
+                // First iteration: sample raw terrain at junction center
+                var px = (int)(junction.Position.X / metersPerPixel);
+                var py = (int)(junction.Position.Y / metersPerPixel);
+                px = Math.Clamp(px, 0, mapWidth - 1);
+                py = Math.Clamp(py, 0, mapHeight - 1);
+                anchorElevation = heightMap[py, px];
+
+                if (float.IsNaN(anchorElevation) || float.IsInfinity(anchorElevation) || anchorElevation < -1000.0f)
+                    continue; // Skip invalid terrain samples
+            }
+
+            foreach (var contributor in junction.Contributors)
+            {
+                if (!contributor.IsEndpoint) continue;
+
+                // Get blend distance from the spline's junction harmonization parameters
+                var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters;
+                var blendDistance = junctionParams?.GetEffectiveBlendDistance(contributor.Spline.Parameters.RoadWidthMeters) ?? 30.0f;
+
+                var anchor = new EndpointAnchor
+                {
+                    AnchorElevation = anchorElevation,
+                    DecayDistanceMeters = blendDistance
+                };
+
+                var key = (contributor.Spline.SplineId, contributor.IsSplineStart);
+                // If the same endpoint participates in multiple junctions (unlikely but possible),
+                // keep the first one encountered
+                if (!anchors.ContainsKey(key))
+                {
+                    anchors[key] = anchor;
+                    anchoredEndpoints++;
+                }
+            }
+        }
+
+        if (anchoredEndpoints > 0)
+            TerrainCreationLogger.Current?.Detail(
+                $"WI-6 endpoint anchoring: {anchoredEndpoints} endpoint(s) anchored to {network.Junctions.Count(j => !j.IsExcluded)} junction(s)");
+
+        return anchors;
     }
 
     /// <summary>

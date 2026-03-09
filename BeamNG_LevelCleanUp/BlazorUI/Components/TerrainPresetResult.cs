@@ -95,24 +95,6 @@ public class TerrainPresetResult
     public bool? EnableCrossMaterialHarmonization { get; set; }
 
     /// <summary>
-    ///     Whether to enable crossroad to T-junction conversion.
-    ///     When enabled, mid-spline crossings are converted to T-junctions for proper elevation harmonization.
-    /// </summary>
-    public bool? EnableCrossroadToTJunctionConversion { get; set; }
-
-    /// <summary>
-    ///     Global junction detection radius in meters.
-    ///     Used when a material's UseGlobalJunctionSettings is true.
-    /// </summary>
-    public float? GlobalJunctionDetectionRadiusMeters { get; set; }
-
-    /// <summary>
-    ///     Global junction blend distance in meters.
-    ///     Used when a material's UseGlobalJunctionSettings is true.
-    /// </summary>
-    public float? GlobalJunctionBlendDistanceMeters { get; set; }
-
-    /// <summary>
     ///     When true, bridges are excluded from terrain smoothing and material painting.
     ///     When false, bridge ways are treated as normal roads (legacy behavior).
     /// </summary>
@@ -288,7 +270,7 @@ public class RoadSmoothingSettings
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
     // Algorithm settings
-    public string BlendFunctionType { get; set; } = "Cosine";
+    public string BlendFunctionType { get; set; } = "CubicHermiteC1";
     public float CrossSectionIntervalMeters { get; set; } = 0.5f;
     public bool EnableTerrainBlending { get; set; } = true;
 
@@ -343,6 +325,8 @@ public class BankingSettingsPreset
     public float CurvatureToBankScale { get; set; } = 500.0f;
     public float MinCurveRadiusForMaxBank { get; set; } = 50.0f;
     public float BankTransitionLengthMeters { get; set; } = 30.0f;
+    public int CurvatureSmoothingWindow { get; set; } = 5;
+    public int BankAngleSmoothingWindow { get; set; } = 7;
 }
 
 /// <summary>
@@ -371,10 +355,15 @@ public class JunctionHarmonizationSettings
     public bool EnableJunctionHarmonization { get; set; } = true;
     public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
     public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
-    public string BlendFunctionType { get; set; } = "Cosine";
+    public string BlendFunctionType { get; set; } = "CubicHermiteC1";
     public bool EnableEndpointTaper { get; set; } = true;
     public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
     public float EndpointTerrainBlendStrength { get; set; } = 1f;
+
+    // IDW filtering
+    public bool EnableJunctionIdwFiltering { get; set; } = true;
+    public float MinTerminatingIdwWeight { get; set; } = 0.1f;
+    public float? IdwFilterTaperDistanceMeters { get; set; } = null;
 
     // Roundabout settings
     public bool EnableRoundaboutDetection { get; set; } = true;

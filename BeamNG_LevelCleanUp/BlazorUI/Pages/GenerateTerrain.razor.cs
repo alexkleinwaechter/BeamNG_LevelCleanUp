@@ -111,24 +111,6 @@ public partial class GenerateTerrain : IDisposable
         set => _state.EnableCrossMaterialHarmonization = value;
     }
 
-    private bool _enableCrossroadToTJunctionConversion
-    {
-        get => _state.EnableCrossroadToTJunctionConversion;
-        set => _state.EnableCrossroadToTJunctionConversion = value;
-    }
-
-    private float _globalJunctionDetectionRadiusMeters
-    {
-        get => _state.GlobalJunctionDetectionRadiusMeters;
-        set => _state.GlobalJunctionDetectionRadiusMeters = value;
-    }
-
-    private float _globalJunctionBlendDistanceMeters
-    {
-        get => _state.GlobalJunctionBlendDistanceMeters;
-        set => _state.GlobalJunctionBlendDistanceMeters = value;
-    }
-
     private bool _excludeBridgesFromTerrain
     {
         get => _state.ExcludeBridgesFromTerrain;
@@ -1718,15 +1700,6 @@ public partial class GenerateTerrain : IDisposable
 
             if (result.EnableCrossMaterialHarmonization.HasValue)
                 _enableCrossMaterialHarmonization = result.EnableCrossMaterialHarmonization.Value;
-
-            if (result.EnableCrossroadToTJunctionConversion.HasValue)
-                _enableCrossroadToTJunctionConversion = result.EnableCrossroadToTJunctionConversion.Value;
-
-            if (result.GlobalJunctionDetectionRadiusMeters.HasValue)
-                _globalJunctionDetectionRadiusMeters = result.GlobalJunctionDetectionRadiusMeters.Value;
-
-            if (result.GlobalJunctionBlendDistanceMeters.HasValue)
-                _globalJunctionBlendDistanceMeters = result.GlobalJunctionBlendDistanceMeters.Value;
 
             if (result.ExcludeBridgesFromTerrain.HasValue)
                 _excludeBridgesFromTerrain = result.ExcludeBridgesFromTerrain.Value;

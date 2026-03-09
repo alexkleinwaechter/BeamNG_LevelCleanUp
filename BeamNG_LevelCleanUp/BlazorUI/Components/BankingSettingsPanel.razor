@@ -56,10 +56,10 @@
                     <MudItem xs="12" sm="6">
                         <MudNumericField @bind-Value="MaxBankAngle"
                                          @bind-Value:after="NotifyChanged"
-                                         Label="Max Bank Angle (°)"
+                                         Label="Max Bank Angle (Â°)"
                                          Variant="Variant.Outlined"
                                          Min="0f" Max="20f" Step="0.5f"
-                                         HelperText="Highways: 4-8°, Race tracks: up to 15°"
+                                         HelperText="Highways: 4-8Â°, Race tracks: up to 15Â°"
                                          T="float" />
                     </MudItem>
 
@@ -120,6 +120,33 @@
 
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
                     <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Small" Class="mr-1" />
+                    Smoothing
+                </MudText>
+                <MudGrid Spacing="2" Class="mb-2">
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="CurvatureSmoothingWindow"
+                                         @bind-Value:after="NotifyChanged"
+                                         Label="Curvature Smoothing Window"
+                                         Variant="Variant.Outlined"
+                                         Min="0" Max="21" Step="2"
+                                         HelperText="Must be odd, 0 = disabled"
+                                         T="int" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="BankAngleSmoothingWindow"
+                                         @bind-Value:after="NotifyChanged"
+                                         Label="Bank Angle Smoothing Window"
+                                         Variant="Variant.Outlined"
+                                         Min="0" Max="21" Step="2"
+                                         HelperText="Must be odd, 0 = disabled"
+                                         T="int" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-2" />
+
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">
+                    <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Small" Class="mr-1" />
                     Quick Presets:
                 </MudText>
                 <MudButtonGroup OverrideStyles="false" Size="Size.Small">
@@ -133,7 +160,7 @@
                     <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
                         @foreach (var error in ValidationErrors)
                         {
-                            <MudText Typo="Typo.caption">• @error</MudText>
+                            <MudText Typo="Typo.caption">- @error</MudText>
                         }
                     </MudAlert>
                 }
@@ -223,6 +250,26 @@
         }
     }
 
+    private int CurvatureSmoothingWindow
+    {
+        get => Parameters?.CurvatureSmoothingWindow ?? 5;
+        set
+        {
+            EnsureParameters();
+            Parameters!.CurvatureSmoothingWindow = value;
+        }
+    }
+
+    private int BankAngleSmoothingWindow
+    {
+        get => Parameters?.BankAngleSmoothingWindow ?? 7;
+        set
+        {
+            EnsureParameters();
+            Parameters!.BankAngleSmoothingWindow = value;
+        }
+    }
+
     private List<string> ValidationErrors => Parameters?.Validate() ?? new List<string>();
 
     private void EnsureParameters()
@@ -231,7 +278,7 @@
     }
 
     private string GetPanelTitle() => EnableBanking
-        ? $"Road Banking (Max {MaxBankAngle:F0}°, Strength {BankStrength:P0})"
+        ? $"Road Banking (Max {MaxBankAngle:F0}Â°, Strength {BankStrength:P0})"
         : "Road Banking (Disabled)";
 
     private async Task NotifyChanged()
@@ -270,5 +317,7 @@
         Parameters.BankTransitionLengthMeters = preset.BankTransitionLengthMeters;
         Parameters.CurvatureToBankScale = preset.CurvatureToBankScale;
         Parameters.MinCurveRadiusForMaxBank = preset.MinCurveRadiusForMaxBank;
+        Parameters.CurvatureSmoothingWindow = preset.CurvatureSmoothingWindow;
+        Parameters.BankAngleSmoothingWindow = preset.BankAngleSmoothingWindow;
     }
 }

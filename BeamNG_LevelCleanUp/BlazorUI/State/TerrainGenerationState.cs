@@ -33,26 +33,6 @@ public class TerrainGenerationState
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
 
     /// <summary>
-    ///     When true, converts mid-spline crossings (where two roads cross without either terminating)
-    ///     into T-junctions by splitting the secondary road at the crossing point.
-    ///     This enables proper elevation harmonization at crossings.
-    ///     Default: true
-    /// </summary>
-    public bool EnableCrossroadToTJunctionConversion { get; set; } = true;
-
-    /// <summary>
-    ///     Global junction detection radius in meters.
-    ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
-    /// </summary>
-    public float GlobalJunctionDetectionRadiusMeters { get; set; } = 5.0f;
-
-    /// <summary>
-    ///     Global junction blend distance in meters.
-    ///     Used when a material's JunctionHarmonizationParameters.UseGlobalSettings is true.
-    /// </summary>
-    public float GlobalJunctionBlendDistanceMeters { get; set; } = 30.0f;
-
-    /// <summary>
     ///     When true, flips the material processing order for road network building.
     ///     By default (true), materials at the top of the list (index 0) get higher priority
     ///     for junction harmonization. When false, materials at the bottom get higher priority.
@@ -356,9 +336,6 @@ public class TerrainGenerationState
         TerrainBaseHeight = 0.0f;
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
-        EnableCrossroadToTJunctionConversion = true;
-        GlobalJunctionDetectionRadiusMeters = 5.0f;
-        GlobalJunctionBlendDistanceMeters = 30.0f;
         FlipMaterialProcessingOrder = false;
         EnableBuildings = false;
         EnableBuildingClustering = false;

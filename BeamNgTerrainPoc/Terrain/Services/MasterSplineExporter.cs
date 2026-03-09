@@ -161,8 +161,8 @@ public static class MasterSplineExporter
 
         TerrainCreationLogger.Current?.Detail($"Exported {masterSplines.Count} master spline(s) to: {outputPath}");
 
-        // Also export combined spline mask
-        ExportUnifiedSplineMasks(network, metersPerPixel, terrainSizePixels, splinesDir);
+        // Also export combined spline mask (commented out for performance)
+        // ExportUnifiedSplineMasks(network, metersPerPixel, terrainSizePixels, splinesDir);
     }
 
     /// <summary>
@@ -287,7 +287,8 @@ public static class MasterSplineExporter
             var terrainX = cs.CenterPoint.X;
             var terrainY = cs.CenterPoint.Y;
 
-            // Use smoothed target elevation if available
+            // With the unified junction system, TargetElevation already incorporates
+            // junction surface matching — it's the correct centerline elevation everywhere.
             float elevation = 0;
             if (!float.IsNaN(cs.TargetElevation) && cs.TargetElevation > -1000f)
             {

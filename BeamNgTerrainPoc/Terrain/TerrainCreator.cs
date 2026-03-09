@@ -190,9 +190,6 @@ public class TerrainCreator
                     parameters.MetersPerPixel,
                     parameters.Size,
                     parameters.EnableCrossMaterialHarmonization,
-                    parameters.EnableCrossroadToTJunctionConversion,
-                    parameters.GlobalJunctionDetectionRadiusMeters,
-                    parameters.GlobalJunctionBlendDistanceMeters,
                     parameters.FlipMaterialProcessingOrder,
                     debugBaseDir,
                     perfLog,
@@ -520,9 +517,6 @@ public class TerrainCreator
         float metersPerPixel,
         int size,
         bool enableCrossMaterialHarmonization,
-        bool enableCrossroadToTJunctionConversion,
-        float globalJunctionDetectionRadius,
-        float globalJunctionBlendDistance,
         bool flipMaterialProcessingOrder,
         string? debugBaseDir,
         TerrainCreationLogger log,
@@ -543,9 +537,6 @@ public class TerrainCreator
             metersPerPixel,
             size,
             enableCrossMaterialHarmonization,
-            enableCrossroadToTJunctionConversion,
-            globalJunctionDetectionRadius,
-            globalJunctionBlendDistance,
             flipMaterialProcessingOrder);
 
         if (unifiedResult == null)

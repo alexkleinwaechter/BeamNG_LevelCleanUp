@@ -678,12 +678,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.UpdateTerrainBlock = terrainOptions["updateTerrainBlock"]!.GetValue<bool>();
                 if (terrainOptions["enableCrossMaterialHarmonization"] != null)
                     result.EnableCrossMaterialHarmonization = terrainOptions["enableCrossMaterialHarmonization"]!.GetValue<bool>();
-                if (terrainOptions["enableCrossroadToTJunctionConversion"] != null)
-                    result.EnableCrossroadToTJunctionConversion = terrainOptions["enableCrossroadToTJunctionConversion"]!.GetValue<bool>();
-                if (terrainOptions["globalJunctionDetectionRadiusMeters"] != null)
-                    result.GlobalJunctionDetectionRadiusMeters = terrainOptions["globalJunctionDetectionRadiusMeters"]!.GetValue<float>();
-                if (terrainOptions["globalJunctionBlendDistanceMeters"] != null)
-                    result.GlobalJunctionBlendDistanceMeters = terrainOptions["globalJunctionBlendDistanceMeters"]!.GetValue<float>();
+                // Note: globalJunctionDetectionRadiusMeters and globalJunctionBlendDistanceMeters
+                // are no longer used (settings are now per-material only). Old presets silently ignored.
                 if (terrainOptions["excludeBridgesFromTerrain"] != null)
                     result.ExcludeBridgesFromTerrain = terrainOptions["excludeBridgesFromTerrain"]!.GetValue<bool>();
                 if (terrainOptions["excludeTunnelsFromTerrain"] != null)
@@ -1037,6 +1033,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                         settings.SplineParameters.Banking.MinCurveRadiusForMaxBank = bankingParams["minCurveRadiusForMaxBank"]!.GetValue<float>();
                     if (bankingParams["bankTransitionLengthMeters"] != null)
                         settings.SplineParameters.Banking.BankTransitionLengthMeters = bankingParams["bankTransitionLengthMeters"]!.GetValue<float>();
+                    if (bankingParams["curvatureSmoothingWindow"] != null)
+                        settings.SplineParameters.Banking.CurvatureSmoothingWindow = bankingParams["curvatureSmoothingWindow"]!.GetValue<int>();
+                    if (bankingParams["bankAngleSmoothingWindow"] != null)
+                        settings.SplineParameters.Banking.BankAngleSmoothingWindow = bankingParams["bankAngleSmoothingWindow"]!.GetValue<int>();
                 }
             }
 
@@ -1080,6 +1080,13 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.JunctionHarmonization.JunctionBlendDistanceMeters = junctionHarmonization["junctionBlendDistanceMeters"]!.GetValue<float>();
                 if (junctionHarmonization["blendFunctionType"] != null)
                     settings.JunctionHarmonization.BlendFunctionType = junctionHarmonization["blendFunctionType"]!.GetValue<string>();
+                // IDW filtering
+                if (junctionHarmonization["enableJunctionIdwFiltering"] != null)
+                    settings.JunctionHarmonization.EnableJunctionIdwFiltering = junctionHarmonization["enableJunctionIdwFiltering"]!.GetValue<bool>();
+                if (junctionHarmonization["minTerminatingIdwWeight"] != null)
+                    settings.JunctionHarmonization.MinTerminatingIdwWeight = junctionHarmonization["minTerminatingIdwWeight"]!.GetValue<float>();
+                if (junctionHarmonization["idwFilterTaperDistanceMeters"] != null)
+                    settings.JunctionHarmonization.IdwFilterTaperDistanceMeters = junctionHarmonization["idwFilterTaperDistanceMeters"]!.GetValue<float?>();
                 if (junctionHarmonization["enableEndpointTaper"] != null)
                     settings.JunctionHarmonization.EnableEndpointTaper = junctionHarmonization["enableEndpointTaper"]!.GetValue<bool>();
                 if (junctionHarmonization["endpointTaperDistanceMeters"] != null)
@@ -1172,6 +1179,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     material.CurvatureToBankScale = settings.SplineParameters.Banking.CurvatureToBankScale;
                     material.MinCurveRadiusForMaxBank = settings.SplineParameters.Banking.MinCurveRadiusForMaxBank;
                     material.BankTransitionLengthMeters = settings.SplineParameters.Banking.BankTransitionLengthMeters;
+                    material.CurvatureSmoothingWindow = settings.SplineParameters.Banking.CurvatureSmoothingWindow;
+                    material.BankAngleSmoothingWindow = settings.SplineParameters.Banking.BankAngleSmoothingWindow;
                 }
             }
 
@@ -1195,13 +1204,17 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             // Junction harmonization settings
             if (settings.JunctionHarmonization != null)
             {
-                material.UseGlobalJunctionSettings = settings.JunctionHarmonization.UseGlobalSettings;
+                // UseGlobalSettings is no longer used (settings are now per-material only). Old presets silently ignored.
                 material.EnableJunctionHarmonization = settings.JunctionHarmonization.EnableJunctionHarmonization;
                 material.JunctionDetectionRadiusMeters = settings.JunctionHarmonization.JunctionDetectionRadiusMeters;
                 material.JunctionBlendDistanceMeters = settings.JunctionHarmonization.JunctionBlendDistanceMeters;
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
                 // Endpoint tapering is auto-computed from road width - old preset values silently ignored
+                // IDW filtering
+                material.EnableJunctionIdwFiltering = settings.JunctionHarmonization.EnableJunctionIdwFiltering;
+                material.MinTerminatingIdwWeight = settings.JunctionHarmonization.MinTerminatingIdwWeight;
+                material.IdwFilterTaperDistanceMeters = settings.JunctionHarmonization.IdwFilterTaperDistanceMeters;
                 // Roundabout settings
                 material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
                 material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;

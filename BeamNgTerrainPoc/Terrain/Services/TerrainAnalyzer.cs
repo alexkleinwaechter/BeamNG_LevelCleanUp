@@ -108,7 +108,6 @@ public class TerrainAnalyzer
     /// <param name="heightMap">The terrain heightmap.</param>
     /// <param name="metersPerPixel">Scale factor for coordinate conversion.</param>
     /// <param name="size">Terrain size in pixels.</param>
-    /// <param name="globalJunctionDetectionRadius">Global junction detection radius in meters.</param>
     /// <param name="generateDebugImage">Whether to generate a debug image.</param>
     /// <returns>Analysis result containing the network and junctions.</returns>
     public AnalysisResult Analyze(
@@ -116,7 +115,6 @@ public class TerrainAnalyzer
         float[,] heightMap,
         float metersPerPixel,
         int size,
-        float globalJunctionDetectionRadius = 10.0f,
         bool generateDebugImage = true)
     {
         try
@@ -162,7 +160,7 @@ public class TerrainAnalyzer
 
             // Phase 3: Detect junctions
             TerrainCreationLogger.Current?.InfoFileOnly("  Phase 3: Detecting junctions...");
-            var junctions = _junctionDetector.DetectJunctions(network, globalJunctionDetectionRadius);
+            var junctions = _junctionDetector.DetectJunctions(network);
             TerrainCreationLogger.Current?.InfoFileOnly($"    Detected {junctions.Count} junction(s)");
 
             // Store the analyzed network for later modification

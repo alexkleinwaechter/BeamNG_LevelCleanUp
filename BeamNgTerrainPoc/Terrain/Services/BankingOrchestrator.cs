@@ -28,7 +28,6 @@ public class BankingOrchestrator
     private readonly CurvatureCalculator _curvatureCalc;
     private readonly BankingCalculator _bankingCalc;
     private readonly BankedElevationCalculator _edgeCalc;
-    private readonly JunctionBankingAdapter _junctionAdapter;
 
     public BankingOrchestrator()
     {
@@ -36,7 +35,6 @@ public class BankingOrchestrator
         _curvatureCalc = new CurvatureCalculator();
         _bankingCalc = new BankingCalculator();
         _edgeCalc = new BankedElevationCalculator();
-        _junctionAdapter = new JunctionBankingAdapter();
     }
 
     /// <summary>
@@ -56,11 +54,9 @@ public class BankingOrchestrator
     /// because junctions haven't been detected yet. That happens in FinalizeBankingAfterHarmonization.
     /// </summary>
     /// <param name="network">The road network with calculated target elevations.</param>
-    /// <param name="junctionBlendDistanceMeters">Distance for banking transitions (for later use).</param>
     /// <returns>True if any banking was pre-calculated.</returns>
     public bool ApplyBankingPreCalculation(
-        UnifiedRoadNetwork network,
-        float junctionBlendDistanceMeters = 30.0f)
+        UnifiedRoadNetwork network)
     {
         var perfLog = TerrainCreationLogger.Current;
         perfLog?.LogSection("BankingOrchestrator.PreCalculation");
@@ -68,15 +64,8 @@ public class BankingOrchestrator
         // Run configuration diagnostic first (before curvature calculation)
         DiagnoseBankingConfiguration(network);
 
-        // Check if any spline has banking enabled
-        if (!HasAnyBankingEnabled(network))
-        {
-            TerrainLogger.Info("BankingOrchestrator.PreCalculation: No splines have banking enabled, skipping.");
-            return false;
-        }
-
         var enabledSplines = network.Splines
-            .Where(s => IsBankingEnabled(s))
+            .Where(s => !ShouldExcludeFromBanking(s))
             .ToList();
 
         TerrainLogger.Info($"BankingOrchestrator.PreCalculation: Pre-calculating banking for {enabledSplines.Count} spline(s)...");
@@ -90,9 +79,7 @@ public class BankingOrchestrator
 
         foreach (var spline in enabledSplines)
         {
-            var bankingParams = GetBankingParameters(spline);
-            if (bankingParams == null || !bankingParams.EnableAutoBanking)
-                continue;
+            var bankingParams = GetBankingParameters(spline) ?? new BankingParameters();
 
             if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
                 continue;
@@ -100,8 +87,20 @@ public class BankingOrchestrator
             // Calculate curvature
             _curvatureCalc.CalculateCurvature(crossSections);
 
+            // Smooth curvature to reduce noise from OSM node spacing
+            if (bankingParams.EnableAutoBanking && bankingParams.CurvatureSmoothingWindow >= 3)
+            {
+                _curvatureCalc.SmoothCurvature(crossSections, bankingParams.CurvatureSmoothingWindow);
+            }
+
             // Calculate bank angles (without junction awareness - that comes later)
             _bankingCalc.CalculateBankingBasic(crossSections, bankingParams);
+
+            // Additional Gaussian smoothing pass for bank angles
+            if (bankingParams.EnableAutoBanking && bankingParams.BankAngleSmoothingWindow >= 3)
+            {
+                _bankingCalc.SmoothBankAngles(crossSections, bankingParams.BankAngleSmoothingWindow);
+            }
 
             // Calculate edge elevations
             var halfWidth = spline.Parameters.RoadWidthMeters / 2.0f;
@@ -119,276 +118,39 @@ public class BankingOrchestrator
         TerrainLogger.Info($"BankingOrchestrator.PreCalculation: Pre-calculated banking for {splinesProcessed} splines");
         perfLog?.Timing($"Pre-calculated banking for {splinesProcessed} splines");
 
-        return splinesProcessed > 0;
-    }
-
-    /// <summary>
-    /// Finalizes banking AFTER junction harmonization.
-    /// 
-    /// This is Phase 2 of the two-phase banking process. It runs AFTER junction harmonization
-    /// to handle the interaction between banking and junction elevation harmonization.
-    /// 
-    /// This phase:
-    /// 1. Calculates junction banking behavior (AdaptToHigherPriority, MaintainBanking, etc.)
-    /// 2. Adjusts bank angles near junctions based on priority
-    /// 3. Adapts secondary road elevations to smoothly meet banked primary road surfaces
-    /// 4. Recalculates edge elevations after elevation adaptation
-    /// </summary>
-    /// <param name="network">The road network after junction harmonization.</param>
-    /// <param name="junctionBlendDistanceMeters">Distance for banking transitions at junctions.</param>
-    public void FinalizeBankingAfterHarmonization(
-        UnifiedRoadNetwork network,
-        float junctionBlendDistanceMeters = 30.0f)
-    {
-        var perfLog = TerrainCreationLogger.Current;
-        perfLog?.LogSection("BankingOrchestrator.Finalization");
-
-        // Check if any spline has banking enabled
-        var bankingEnabledCount = network.Splines.Count(IsBankingEnabled);
-        perfLog?.Detail($"Finalization check: {bankingEnabledCount} splines with banking enabled out of {network.Splines.Count} total");
-        
-        if (!HasAnyBankingEnabled(network))
-        {
-            perfLog?.Detail("Finalization: No splines have banking enabled, skipping.");
-            TerrainLogger.Info("BankingOrchestrator.Finalization: No splines have banking enabled, skipping.");
-            return;
-        }
-
-        var enabledSplines = network.Splines
-            .Where(s => IsBankingEnabled(s))
-            .ToList();
-
-        TerrainLogger.Info($"BankingOrchestrator.Finalization: Finalizing banking for {enabledSplines.Count} spline(s)...");
-
-        // Build cross-sections by spline lookup
-        var crossSectionsBySpline = network.CrossSections
-            .GroupBy(cs => cs.OwnerSplineId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
-
-        // Step 1: Calculate junction banking behavior (priority-aware)
-        TerrainLogger.Info("  Step 1: Calculating junction banking behavior...");
-        _junctionBankingCalc.CalculateJunctionBankingBehavior(network, junctionBlendDistanceMeters);
-        perfLog?.Timing("Step 1: Junction banking behavior");
-
-        // Step 2: Apply junction-aware bank angle adjustments
-        TerrainLogger.Info("  Step 2: Applying junction-aware bank angle adjustments...");
-        foreach (var spline in enabledSplines)
-        {
-            var bankingParams = GetBankingParameters(spline);
-            if (bankingParams == null || !bankingParams.EnableAutoBanking)
-                continue;
-
-            if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
-                continue;
-
-            // Create function to get higher-priority bank angle for AdaptToHigherPriority behavior
-            Func<UnifiedCrossSection, float> getHigherPriorityBankAngle = cs =>
-                GetHigherPriorityBankAngle(cs, network, crossSectionsBySpline);
-
-            // Apply junction-aware adjustments to bank angles
-            _bankingCalc.ApplyJunctionAwareBankingAdjustments(
-                crossSections,
-                bankingParams,
-                getHigherPriorityBankAngle);
-
-            // Recalculate edge elevations with updated bank angles
-            var halfWidth = spline.Parameters.RoadWidthMeters / 2.0f;
-            foreach (var cs in crossSections)
-            {
-                _edgeCalc.CalculateEdgeElevationsForCS(cs, halfWidth);
-            }
-        }
-        perfLog?.Timing("Step 2: Junction-aware bank angle adjustments");
-
-        // Step 3: Adapt secondary road elevations to smoothly meet banked primary roads
-        TerrainLogger.Info("  Step 3: Adapting elevations for junction banking...");
-        var adaptedCount = _junctionAdapter.AdaptElevationsToHigherPriorityBanking(
-            network,
-            junctionBlendDistanceMeters);
-        perfLog?.Timing($"Step 3: Adapted {adaptedCount} cross-section elevations");
-
-        // Step 4: Recalculate edge elevations after elevation adaptation
-        if (adaptedCount > 0)
-        {
-            TerrainLogger.Info("  Step 4: Recalculating edge elevations after adaptation...");
-            foreach (var spline in enabledSplines)
-            {
-                var bankingParams = GetBankingParameters(spline);
-                if (bankingParams == null || !bankingParams.EnableAutoBanking)
-                    continue;
-
-                if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
-                    continue;
-
-                var halfWidth = spline.Parameters.RoadWidthMeters / 2.0f;
-                foreach (var cs in crossSections)
-                {
-                    _edgeCalc.CalculateEdgeElevationsForCS(cs, halfWidth);
-                }
-            }
-            perfLog?.Timing("Step 4: Recalculated edge elevations");
-        }
-
-        // Log final statistics
-        LogBankingStatistics(network);
-    }
-
-    /// <summary>
-    /// Applies banking to the entire road network.
-    /// 
-    /// Must be called AFTER:
-    /// - Junction detection (network.Junctions populated)
-    /// - Elevation harmonization (TargetElevation set on all cross-sections)
-    /// 
-    /// This method handles:
-    /// 1. Determining junction banking behavior based on road priority
-    /// 2. Calculating curvature at each cross-section
-    /// 3. Calculating bank angles with junction awareness
-    /// 4. Calculating left/right edge elevations (with adaptive blending)
-    /// </summary>
-    /// <param name="network">The road network with detected junctions and calculated elevations.</param>
-    /// <param name="junctionBlendDistanceMeters">
-    /// Distance over which banking transitions occur at junctions.
-    /// Should match or be close to JunctionBlendDistanceMeters from harmonization.
-    /// </param>
-    /// <returns>True if any banking was applied, false if no materials have banking enabled.</returns>
-    public bool ApplyBanking(
-        UnifiedRoadNetwork network,
-        float junctionBlendDistanceMeters = 30.0f)
-    {
-        var perfLog = TerrainCreationLogger.Current;
-        perfLog?.LogSection("BankingOrchestrator");
-
-        // Check if any spline has banking enabled
-        if (!HasAnyBankingEnabled(network))
-        {
-            TerrainLogger.Info("BankingOrchestrator: No splines have banking enabled, skipping.");
-            return false;
-        }
-
-        var enabledSplines = network.Splines
-            .Where(s => IsBankingEnabled(s))
-            .ToList();
-
-        TerrainLogger.Info($"BankingOrchestrator: Processing banking for {enabledSplines.Count} spline(s)...");
-
-        // Phase 1: Calculate junction banking behavior (priority-aware)
-        TerrainLogger.Info("  Phase 1: Calculating junction banking behavior...");
-        _junctionBankingCalc.CalculateJunctionBankingBehavior(network, junctionBlendDistanceMeters);
-        perfLog?.Timing("Phase 1: Junction banking behavior calculation");
-
-        // Phase 2: Calculate curvature and bank angles for each spline with banking enabled
-        TerrainLogger.Info("  Phase 2: Calculating bank angles...");
-
-        // Build cross-sections by spline lookup
-        var crossSectionsBySpline = network.CrossSections
-            .GroupBy(cs => cs.OwnerSplineId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
-
-        int splinesWithBanking = 0;
-
-        foreach (var spline in enabledSplines)
-        {
-            var bankingParams = GetBankingParameters(spline);
-            if (bankingParams == null || !bankingParams.EnableAutoBanking)
-                continue;
-
-            if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
-                continue;
-
-            // Create function to get higher-priority bank angle for AdaptToHigherPriority behavior
-            Func<UnifiedCrossSection, float> getHigherPriorityBankAngle = cs =>
-                GetHigherPriorityBankAngle(cs, network, crossSectionsBySpline);
-
-            // Calculate banking with junction awareness
-            _bankingCalc.CalculateBankingWithJunctionAwareness(
-                crossSections,
-                bankingParams,
-                getHigherPriorityBankAngle);
-
-            // Calculate edge elevations
-            var halfWidth = spline.Parameters.RoadWidthMeters / 2.0f;
-
-            // For cross-sections that adapt to higher-priority roads, use adaptive edge elevation
-            foreach (var cs in crossSections)
-            {
-                if (cs.JunctionBankingBehavior == JunctionBankingBehavior.AdaptToHigherPriority)
-                {
-                    _edgeCalc.CalculateAdaptiveEdgeElevations(
-                        cs,
-                        halfWidth,
-                        adaptingCs => FindNearestHigherPriorityCrossSection(adaptingCs, network, crossSectionsBySpline));
-                }
-                else
-                {
-                    _edgeCalc.CalculateEdgeElevationsForCS(cs, halfWidth);
-                }
-            }
-
-            splinesWithBanking++;
-        }
-
-        perfLog?.Timing($"Phase 2: Calculated banking for {splinesWithBanking} splines");
-
-        // Phase 3: Adapt elevations for roads connecting to banked higher-priority roads
-        // This creates smooth ramps where secondary roads meet banked primary roads
-        TerrainLogger.Info("  Phase 3: Adapting elevations for junction banking...");
-        var adaptedCount = _junctionAdapter.AdaptElevationsToHigherPriorityBanking(
-            network,
-            junctionBlendDistanceMeters);
-        perfLog?.Timing($"Phase 3: Adapted {adaptedCount} cross-section elevations");
-
-        // Phase 4: Recalculate edge elevations after elevation adaptation
-        // This ensures edge elevations are correct after center elevations were modified
-        if (adaptedCount > 0)
-        {
-            TerrainLogger.Info("  Phase 4: Recalculating edge elevations after adaptation...");
-            foreach (var spline in enabledSplines)
-            {
-                var bankingParams = GetBankingParameters(spline);
-                if (bankingParams == null || !bankingParams.EnableAutoBanking)
-                    continue;
-
-                if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
-                    continue;
-
-                var halfWidth = spline.Parameters.RoadWidthMeters / 2.0f;
-
-                foreach (var cs in crossSections)
-                {
-                    _edgeCalc.CalculateEdgeElevationsForCS(cs, halfWidth);
-                }
-            }
-            perfLog?.Timing("Phase 4: Recalculated edge elevations");
-        }
-
-        // Log final statistics
-        LogBankingStatistics(network);
-
         return true;
     }
 
     /// <summary>
-    /// Checks if any spline in the network has banking enabled.
+    /// Computes the maximum effective blend distance across all splines in the network.
+    /// Used to synchronize banking transition distances with edge constraint blend zones.
+    /// Falls back to 30m if no junction harmonization parameters are configured.
     /// </summary>
-    private static bool HasAnyBankingEnabled(UnifiedRoadNetwork network)
+    private static float GetMaxEffectiveBlendDistance(UnifiedRoadNetwork network)
     {
-        return network.Splines.Any(IsBankingEnabled);
+        var maxBlendDistance = 30.0f; // Fallback default
+
+        foreach (var spline in network.Splines)
+        {
+            var junctionParams = spline.Parameters.JunctionHarmonizationParameters;
+            if (junctionParams == null)
+                continue;
+
+            var effectiveBlend = junctionParams.GetEffectiveBlendDistance(
+                spline.Parameters.RoadWidthMeters);
+            maxBlendDistance = MathF.Max(maxBlendDistance, effectiveBlend);
+        }
+
+        return maxBlendDistance;
     }
 
     /// <summary>
-    /// Checks if a spline has banking enabled.
-    /// Note: Roundabout splines never have banking, even if the material has banking enabled.
+    /// Checks if a spline should be excluded from banking calculations.
+    /// Roundabout splines are always excluded - they're circular and banking would create a tilted ring.
     /// </summary>
-    private static bool IsBankingEnabled(ParameterizedRoadSpline spline)
+    private static bool ShouldExcludeFromBanking(ParameterizedRoadSpline spline)
     {
-        // Roundabout splines should never be banked - they're circular and
-        // banking would create a tilted ring which doesn't make sense
-        if (spline.IsRoundabout)
-            return false;
-        
-        var bankingParams = GetBankingParameters(spline);
-        return bankingParams?.EnableAutoBanking == true;
+        return spline.IsRoundabout;
     }
 
     /// <summary>
@@ -411,7 +173,7 @@ public class BankingOrchestrator
     /// 2. The road width over which this ramp must occur
     /// 
     /// For example: If a secondary road is 10m wide and needs to rise 0.5m from left to right
-    /// to meet a banked primary road, the bank angle would be arcsin(0.5/5) ? 5.7°
+    /// to meet a banked primary road, the bank angle would be arcsin(0.5/5) ? 5.7ï¿½
     /// </summary>
     private static float CalculateAdaptiveBankAngle(
         UnifiedCrossSection cs,
@@ -557,7 +319,7 @@ public class BankingOrchestrator
 
         TerrainLogger.Info(
             $"BankingOrchestrator: Applied banking to {bankedCount}/{totalCount} cross-sections, " +
-            $"max angle: {maxAngleDeg:F1}°, avg angle: {avgAngleDeg:F1}°");
+            $"max angle: {maxAngleDeg:F1}ï¿½, avg angle: {avgAngleDeg:F1}ï¿½");
 
         // Log behavior breakdown
         var behaviorCounts = network.CrossSections
@@ -688,12 +450,12 @@ public class BankingOrchestrator
             // Check EnableAutoBanking flag
             if (!banking.EnableAutoBanking)
             {
-                Log($"    [FAIL] EnableAutoBanking = FALSE");
+                Log($"    [INFO] EnableAutoBanking = FALSE (banking pipeline runs with angle=0)");
                 splinesWithBankingDisabled++;
                 continue;
             }
 
-            // Banking is enabled - log parameters
+            // Banking is enabled with user-configured angles
             splinesWithBankingEnabled++;
             Log($"    [OK] EnableAutoBanking = TRUE");
             Log($"       MaxBankAngleDegrees = {banking.MaxBankAngleDegrees:F1} deg");
@@ -724,15 +486,7 @@ public class BankingOrchestrator
 
         if (splinesWithBankingEnabled == 0)
         {
-            Log("[FAIL] CONCLUSION: NO splines have banking enabled!");
-            Log("");
-            Log("   Possible causes:");
-            Log("   1. Preset was created before banking feature was added");
-            Log("   2. EnableAutoBanking checkbox is not checked in material settings");
-            Log("   3. Banking parameters not being passed to BuildRoadSmoothingParameters()");
-            Log("");
-            Log("   Solution: Enable banking in the Road Banking (Superelevation) section");
-            Log("   of the material settings, then save the preset again.");
+            Log($"[OK] CONCLUSION: No splines have user-enabled banking. Pipeline runs with angle=0 for junction adaptation.");
         }
         else
         {

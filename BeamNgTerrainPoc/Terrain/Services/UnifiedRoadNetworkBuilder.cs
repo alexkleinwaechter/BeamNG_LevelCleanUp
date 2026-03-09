@@ -63,27 +63,9 @@ public class UnifiedRoadNetworkBuilder
             return network;
         }
 
-        // Material order handling for priority calculation:
-        // - Materials are listed in UI with index 0 at top
-        // - For TEXTURE PAINTING: the LAST material (highest index) wins overlaps
-        // - For JUNCTION HARMONIZATION: we want configurable priority
-        //
-        // When flipMaterialProcessingOrder is TRUE (default):
-        //   - Reverse the list so index 0 becomes last processed with highest materialOrderIndex
-        //   - This gives the FIRST material (top of UI list) HIGHEST priority for road smoothing
-        //
-        // When flipMaterialProcessingOrder is FALSE:
-        //   - Process in original order, so LAST material (bottom of UI list) gets highest priority
-        //   - This matches the texture painting behavior
-        if (flipMaterialProcessingOrder)
-        {
-            roadMaterials.Reverse();
-            TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order FLIPPED - top material (index 0) gets highest priority");
-        }
-        else
-        {
-            TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order NORMAL - bottom material gets highest priority");
-        }
+        // Material order: process in original order, bottom material (highest index) gets highest priority.
+        // This matches texture painting behavior where the last material wins overlaps.
+        TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Material order NORMAL - bottom material gets highest priority");
 
         TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network from {roadMaterials.Count} road material(s)");
         perfLog?.LogSection("UnifiedRoadNetworkBuilder");

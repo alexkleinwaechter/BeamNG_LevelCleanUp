@@ -27,7 +27,19 @@
       "Bash(dotnet restore:*)",
       "Bash(git log:*)",
       "Bash(xargs grep -l \"class TerrainMaterialItemExtended\")",
-      "Bash(find \"c:/SourcesPrivate/beamng_mapping_pro\" -name \"*.cs\" -type f -exec grep -l \"^public class TerrainMaterialItemExtended\\\\|^public record TerrainMaterialItemExtended\" {} ;)"
+      "Bash(find \"c:/SourcesPrivate/beamng_mapping_pro\" -name \"*.cs\" -type f -exec grep -l \"^public class TerrainMaterialItemExtended\\\\|^public record TerrainMaterialItemExtended\" {} ;)",
+      "Bash(grep -l \"ExcludeBridges\\\\|ExcludeTunnels\" /c/SourcesPrivate/beamng_mapping_pro/BeamNgTerrainPoc/Terrain/**/*.cs)",
+      "Bash(claude --version)",
+      "Bash(xargs grep -l \"WI-3\\\\|C1 Hermite\\\\|Junction Blending\")",
+      "Bash(find . -name \"*.cs\" -type f -exec grep -l \"skipDetection\\\\|ReSmoothFromExisting\" {} ;)",
+      "Bash(git checkout -- BeamNgTerrainPoc/Terrain/Algorithms/NetworkJunctionHarmonizer.cs BeamNgTerrainPoc/Terrain/Services/UnifiedRoadSmoother.cs)",
+      "Bash(grep -n \"class.*Parameters\\\\|struct.*Parameters\" \"d:/Source_Heroes/beamng_mapping_pro/BeamNgTerrainPoc/Terrain/Models\"/*.cs)",
+      "Bash(grep -v \"//\")",
+      "Bash(xargs grep -l \"JunctionBlendDistanceMeters\\\\|AutoCalculateBlendDistance\")",
+      "Bash(find /d/Source_Heroes/beamng_mapping_pro/BeamNgTerrainPoc -name \"*.cs\" -type f ! -path \"*/obj/*\" -exec grep -l \"JunctionBankingAdapter\\\\|AdaptElevationsToHigherPriorityBanking\" {} ;)",
+      "Bash(xargs grep -l \"ApplyJunctionAwareBankingAdjustments\\\\|FinalizeBankingAfterHarmonization\")",
+      "Bash(xargs grep -l \"CubicHermiteC1\\\\|rubberband\\\\|Rubberband\")",
+      "Bash(xargs grep -l \"JunctionSurfaceCalculator\\\\|ApplyEdgeConstraints\")"
     ]
   }
 }

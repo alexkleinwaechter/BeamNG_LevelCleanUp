@@ -114,7 +114,6 @@ public class TerrainAnalysisOrchestrator
                 heightMap,
                 state.MetersPerPixel,
                 state.TerrainSize,
-                state.GlobalJunctionDetectionRadiusMeters,
                 true);
 
             if (!analyzerResult.Success)
