@@ -165,6 +165,63 @@ public class TerrainCreator
                 return false;
             }
 
+            // 2b. Validate elevation parameters before processing (GeoTIFF/XYZ only)
+            // For PNG sources, MaxHeight is user-set and 0 just means flat terrain — that's valid.
+            if (isGeoTiffSource && parameters.MaxHeight <= 0)
+            {
+                perfLog.Error(
+                    $"CRITICAL: MaxHeight is {parameters.MaxHeight}m — GeoTIFF elevation data is invalid. " +
+                    "Tiles may be corrupted, missing, or the crop region has no valid elevation data. " +
+                    "Aborting terrain generation.");
+                return false;
+            }
+
+            // 2c. Validate heightmap image data for corruption (GeoTIFF/XYZ only)
+            if (isGeoTiffSource)
+            {
+                var imgWidth = heightmapImage.Width;
+                var imgHeight = heightmapImage.Height;
+                var totalPixels = imgWidth * imgHeight;
+                var zeroPixels = 0;
+                var maxPixelValue = (ushort)0;
+
+                heightmapImage.ProcessPixelRows(accessor =>
+                {
+                    for (var row = 0; row < imgHeight; row++)
+                    {
+                        var span = accessor.GetRowSpan(row);
+                        for (var col = 0; col < imgWidth; col++)
+                        {
+                            var val = span[col].PackedValue;
+                            if (val == 0) Interlocked.Increment(ref zeroPixels);
+                            if (val > maxPixelValue) maxPixelValue = val;
+                        }
+                    }
+                });
+
+                var zeroPct = (double)zeroPixels / totalPixels * 100;
+                if (maxPixelValue == 0)
+                {
+                    perfLog.Error(
+                        "CRITICAL: Heightmap image is completely black (all pixels = 0). " +
+                        "The GeoTIFF source has no valid elevation data in this region. " +
+                        "Tiles may be corrupted, missing, or the crop region falls outside tile coverage. " +
+                        "Aborting terrain generation.");
+                    return false;
+                }
+
+                if (zeroPct > 50)
+                {
+                    perfLog.Warning(
+                        $"WARNING: Heightmap has {zeroPct:F0}% zero-value pixels ({zeroPixels}/{totalPixels}). " +
+                        "Large areas of the terrain will be at minimum elevation. " +
+                        "This may indicate missing or corrupted GeoTIFF tiles in parts of the selection.");
+                }
+
+                perfLog.Info(
+                    $"Heightmap validation: {zeroPct:F1}% zero pixels, max pixel value: {maxPixelValue}/65535");
+            }
+
             // 3. Process heightmap
             perfLog.LogSection("Heightmap Processing");
             sw.Restart();
@@ -284,7 +341,7 @@ public class TerrainCreator
             // 6. Fill terrain data with spike prevention
             perfLog.LogSection("Terrain Data Assembly");
             sw.Restart();
-            perfLog.Info("Filling terrain data...");
+            perfLog.Info($"Filling terrain data ({parameters.Size}x{parameters.Size} = {(long)parameters.Size * parameters.Size:N0} pixels)...");
             
             // PRE-SAVE SPIKE PREVENTION: Scan and fix height values before writing
             // Strategy differs by source:
@@ -303,6 +360,7 @@ public class TerrainCreator
             if (isGeoTiffSource)
             {
                 var maxThreshold = parameters.MaxHeight * 0.95f;
+                perfLog.Info("  Computing median height for spike detection...");
                 medianHeight = QuickSelect.FilteredMedian(
                     heightMap2D,
                     h => !float.IsNaN(h) && !float.IsInfinity(h) && h >= 0 && h < maxThreshold,
@@ -388,6 +446,7 @@ public class TerrainCreator
             }
             
             perfLog.Timing($"Fill terrain data array: {sw.ElapsedMilliseconds}ms");
+            perfLog.Info($"Terrain data filled: {sw.ElapsedMilliseconds}ms, {spikeFixCount} spike fixes");
             
             // Report pre-save fixes
             if (spikeFixCount > 0)
@@ -414,6 +473,7 @@ public class TerrainCreator
             // Save synchronously (the Save method is synchronous)
             await Task.Run(() => terrain.Save(outputPath, parameters.MaxHeight));
             perfLog.Timing($"terrain.Save: {sw.Elapsed.TotalSeconds:F2}s");
+            perfLog.Info($"Terrain file written: {sw.Elapsed.TotalSeconds:F2}s");
 
             // 7b. Validate terrain for spikes (informational only - spikes should already be fixed)
             perfLog.LogSection("Spike Validation");

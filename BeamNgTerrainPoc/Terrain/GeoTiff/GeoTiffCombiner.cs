@@ -325,6 +325,362 @@ public class GeoTiffCombiner
     }
 
     /// <summary>
+    ///     Gets the elevation range for a cropped region directly from tiles,
+    ///     without creating a combined file. Only reads tiles that overlap the crop region.
+    /// </summary>
+    public (double MinElevation, double MaxElevation) GetCroppedElevationRangeFromTiles(
+        List<string> inputFiles,
+        int cropOffsetX, int cropOffsetY, int cropWidth, int cropHeight)
+    {
+        GeoTiffReader.InitializeGdal();
+
+        // First pass: analyze tiles for combined bounds
+        double minX = double.MaxValue, maxY = double.MinValue;
+        double maxX = double.MinValue, minY = double.MaxValue;
+        double pixelSizeX = 0, pixelSizeY = 0;
+        var unopenableTiles = new List<string>();
+
+        foreach (var file in inputFiles)
+        {
+            using var dataset = Gdal.Open(file, Access.GA_ReadOnly);
+            if (dataset == null)
+            {
+                unopenableTiles.Add(Path.GetFileName(file));
+                continue;
+            }
+
+            var gt = new double[6];
+            dataset.GetGeoTransform(gt);
+
+            if (pixelSizeX == 0)
+            {
+                pixelSizeX = Math.Abs(gt[1]);
+                pixelSizeY = Math.Abs(gt[5]);
+            }
+
+            var tileMinX = gt[0];
+            var tileMaxY = gt[3];
+            minX = Math.Min(minX, tileMinX);
+            maxY = Math.Max(maxY, tileMaxY);
+            maxX = Math.Max(maxX, tileMinX + gt[1] * dataset.RasterXSize);
+            minY = Math.Min(minY, tileMaxY + gt[5] * dataset.RasterYSize);
+        }
+
+        if (unopenableTiles.Count > 0)
+            TerrainLogger.Warning(
+                $"Could not open {unopenableTiles.Count} tile(s): {string.Join(", ", unopenableTiles.Take(5))}" +
+                (unopenableTiles.Count > 5 ? $" and {unopenableTiles.Count - 5} more" : ""));
+
+        if (pixelSizeX == 0)
+        {
+            TerrainLogger.Warning("No valid GeoTIFF tiles found. Base height will default to 0.");
+            return (0, 100);
+        }
+
+        var cropRight = cropOffsetX + cropWidth;
+        var cropBottom = cropOffsetY + cropHeight;
+        var totalCropPixels = (long)cropWidth * cropHeight;
+
+        var globalMin = double.MaxValue;
+        var globalMax = double.MinValue;
+        var validCount = 0L;
+        var nodataCount = 0L;
+        var zeroCount = 0L;
+        var skippedTiles = 0;
+        var contributingTiles = 0;
+        var coveredPixels = 0L; // Total pixels covered by overlapping tiles
+
+        // Second pass: read elevation only from overlapping tiles
+        foreach (var file in inputFiles)
+        {
+            using var inputDataset = Gdal.Open(file, Access.GA_ReadOnly);
+            if (inputDataset == null) continue;
+
+            var gt = new double[6];
+            inputDataset.GetGeoTransform(gt);
+
+            var tileOffsetX = (int)Math.Round((gt[0] - minX) / pixelSizeX);
+            var tileOffsetY = (int)Math.Round((maxY - gt[3]) / pixelSizeY);
+            var thisTileWidth = inputDataset.RasterXSize;
+            var thisTileHeight = inputDataset.RasterYSize;
+
+            var tileRight = tileOffsetX + thisTileWidth;
+            var tileBottom = tileOffsetY + thisTileHeight;
+
+            // Skip tiles with no overlap
+            if (tileRight <= cropOffsetX || tileOffsetX >= cropRight ||
+                tileBottom <= cropOffsetY || tileOffsetY >= cropBottom)
+            {
+                skippedTiles++;
+                continue;
+            }
+
+            // Calculate intersection
+            var isectLeft = Math.Max(tileOffsetX, cropOffsetX);
+            var isectTop = Math.Max(tileOffsetY, cropOffsetY);
+            var isectRight = Math.Min(tileRight, cropRight);
+            var isectBottom = Math.Min(tileBottom, cropBottom);
+            var isectWidth = isectRight - isectLeft;
+            var isectHeight = isectBottom - isectTop;
+
+            if (isectWidth <= 0 || isectHeight <= 0)
+            {
+                skippedTiles++;
+                continue;
+            }
+
+            coveredPixels += (long)isectWidth * isectHeight;
+            contributingTiles++;
+
+            var readX = isectLeft - tileOffsetX;
+            var readY = isectTop - tileOffsetY;
+
+            var band = inputDataset.GetRasterBand(1);
+            var buffer = new double[isectWidth * isectHeight];
+            band.ReadRaster(readX, readY, isectWidth, isectHeight,
+                buffer, isectWidth, isectHeight, 0, 0);
+
+            // Check for nodata
+            band.GetNoDataValue(out var nodataValue, out var hasNodata);
+            var useNodata = hasNodata != 0;
+            var tileValidCount = 0;
+            var tileNodataCount = 0;
+
+            foreach (var elevation in buffer)
+            {
+                if (useNodata && Math.Abs(elevation - nodataValue) < 0.001)
+                {
+                    tileNodataCount++;
+                    nodataCount++;
+                    continue;
+                }
+
+                if (elevation < -1000000 || elevation > 1000000)
+                {
+                    tileNodataCount++;
+                    nodataCount++;
+                    continue;
+                }
+
+                if (Math.Abs(elevation) < 0.001)
+                    zeroCount++;
+
+                if (elevation < globalMin) globalMin = elevation;
+                if (elevation > globalMax) globalMax = elevation;
+                tileValidCount++;
+                validCount++;
+            }
+
+            // Warn about tiles with high nodata percentage
+            var totalTilePixels = buffer.Length;
+            if (tileNodataCount > 0 && tileValidCount == 0)
+            {
+                TerrainLogger.Warning(
+                    $"Tile {Path.GetFileName(file)}: 100% nodata/invalid in crop overlap " +
+                    $"({tileNodataCount} pixels) — tile may be corrupted or empty");
+            }
+            else if (tileNodataCount > totalTilePixels * 0.5)
+            {
+                var pct = (double)tileNodataCount / totalTilePixels * 100;
+                TerrainLogger.Warning(
+                    $"Tile {Path.GetFileName(file)}: {pct:F0}% nodata in crop overlap " +
+                    $"({tileNodataCount}/{totalTilePixels} pixels)");
+            }
+        }
+
+        // Check for coverage gaps
+        if (coveredPixels < totalCropPixels)
+        {
+            var coveragePct = (double)coveredPixels / totalCropPixels * 100;
+            var gapPixels = totalCropPixels - coveredPixels;
+            TerrainLogger.Warning(
+                $"Crop region only {coveragePct:F0}% covered by tiles ({gapPixels} pixels have no tile data). " +
+                "Missing tiles will result in zero elevation. Base height may be incorrect.");
+        }
+
+        if (validCount == 0 || globalMin == double.MaxValue)
+        {
+            TerrainLogger.Warning(
+                $"No valid elevation data in crop region ({contributingTiles} tiles checked, " +
+                $"{nodataCount} nodata pixels). Base height defaults to 0m.");
+            return (0, 100);
+        }
+
+        // Warn if suspiciously many zero-elevation pixels
+        if (zeroCount > validCount * 0.3 && globalMin >= 0)
+        {
+            var zeroPct = (double)zeroCount / validCount * 100;
+            TerrainLogger.Warning(
+                $"Elevation data has {zeroPct:F0}% zero-value pixels ({zeroCount}/{validCount}). " +
+                "This may indicate missing data disguised as zero elevation. " +
+                $"Calculated base height: {globalMin:F1}m");
+        }
+
+        TerrainLogger.Info(
+            $"Elevation from tiles: {globalMin:F1}m to {globalMax:F1}m " +
+            $"({contributingTiles} tiles, {skippedTiles} skipped, " +
+            $"{validCount} valid pixels, {nodataCount} nodata)");
+
+        return (globalMin, globalMax);
+    }
+
+    /// <summary>
+    ///     Combines multiple GeoTIFF tiles directly into a cropped output file.
+    ///     Only reads pixels from tiles that overlap the crop region, skipping the rest entirely.
+    ///     Much faster than combining all tiles first and then cropping.
+    /// </summary>
+    /// <param name="inputFiles">List of GeoTIFF file paths</param>
+    /// <param name="outputPath">Path for the cropped output file</param>
+    /// <param name="cropOffsetX">X offset in combined-image pixels</param>
+    /// <param name="cropOffsetY">Y offset in combined-image pixels</param>
+    /// <param name="cropWidth">Width of the crop region in pixels</param>
+    /// <param name="cropHeight">Height of the crop region in pixels</param>
+    public void CombineAndCropDirect(
+        List<string> inputFiles, string outputPath,
+        int cropOffsetX, int cropOffsetY, int cropWidth, int cropHeight)
+    {
+        GeoTiffReader.InitializeGdal();
+
+        if (File.Exists(outputPath))
+            File.Delete(outputPath);
+
+        // First pass: analyze tiles for combined bounds and metadata
+        double minX = double.MaxValue, minY = double.MaxValue;
+        double maxX = double.MinValue, maxY = double.MinValue;
+        var geoTransform = new double[6];
+        double pixelSizeX = 0, pixelSizeY = 0;
+        string? projection = null;
+        var dataType = DataType.GDT_Unknown;
+        var bandCount = 0;
+
+        foreach (var file in inputFiles)
+        {
+            using var dataset = Gdal.Open(file, Access.GA_ReadOnly);
+            if (dataset == null) continue;
+
+            dataset.GetGeoTransform(geoTransform);
+
+            if (pixelSizeX == 0)
+            {
+                pixelSizeX = Math.Abs(geoTransform[1]);
+                pixelSizeY = Math.Abs(geoTransform[5]);
+                projection = dataset.GetProjection();
+                bandCount = dataset.RasterCount;
+                dataType = dataset.GetRasterBand(1).DataType;
+            }
+
+            var tileMinX = geoTransform[0];
+            var tileMaxY = geoTransform[3];
+            var tileMaxX = tileMinX + geoTransform[1] * dataset.RasterXSize;
+            var tileMinY = tileMaxY + geoTransform[5] * dataset.RasterYSize;
+
+            minX = Math.Min(minX, tileMinX);
+            minY = Math.Min(minY, tileMinY);
+            maxX = Math.Max(maxX, tileMaxX);
+            maxY = Math.Max(maxY, tileMaxY);
+        }
+
+        if (pixelSizeX == 0)
+            throw new InvalidOperationException("No valid GeoTIFF files found.");
+
+        // Compute the crop region's geographic origin
+        var cropOriginX = minX + cropOffsetX * pixelSizeX;
+        var cropOriginY = maxY - cropOffsetY * pixelSizeY; // maxY is top, Y goes down
+
+        // Create output dataset with crop dimensions
+        var driver = Gdal.GetDriverByName("GTiff");
+        using var outputDataset = driver.Create(
+            outputPath, cropWidth, cropHeight, bandCount, dataType, null);
+
+        outputDataset.SetGeoTransform([
+            cropOriginX,   // Origin X (adjusted to crop start)
+            pixelSizeX,    // Pixel width
+            0,             // Rotation X
+            cropOriginY,   // Origin Y (adjusted to crop start)
+            0,             // Rotation Y
+            -pixelSizeY    // Pixel height (negative)
+        ]);
+
+        if (!string.IsNullOrEmpty(projection))
+            outputDataset.SetProjection(projection);
+
+        // Second pass: only read tiles that overlap the crop region
+        var skippedTiles = 0;
+        var copiedTiles = 0;
+
+        foreach (var file in inputFiles)
+        {
+            using var inputDataset = Gdal.Open(file, Access.GA_ReadOnly);
+            if (inputDataset == null) continue;
+
+            var thisTileWidth = inputDataset.RasterXSize;
+            var thisTileHeight = inputDataset.RasterYSize;
+
+            var inputGeoTransform = new double[6];
+            inputDataset.GetGeoTransform(inputGeoTransform);
+
+            // Calculate this tile's position in the combined image (pixel coords)
+            var tileOffsetX = (int)Math.Round((inputGeoTransform[0] - minX) / pixelSizeX);
+            var tileOffsetY = (int)Math.Round((maxY - inputGeoTransform[3]) / pixelSizeY);
+
+            // Check if this tile overlaps the crop region
+            var tileRight = tileOffsetX + thisTileWidth;
+            var tileBottom = tileOffsetY + thisTileHeight;
+            var cropRight = cropOffsetX + cropWidth;
+            var cropBottom = cropOffsetY + cropHeight;
+
+            if (tileRight <= cropOffsetX || tileOffsetX >= cropRight ||
+                tileBottom <= cropOffsetY || tileOffsetY >= cropBottom)
+            {
+                skippedTiles++;
+                continue; // No overlap — skip entirely
+            }
+
+            // Calculate the intersection rectangle
+            var isectLeft = Math.Max(tileOffsetX, cropOffsetX);
+            var isectTop = Math.Max(tileOffsetY, cropOffsetY);
+            var isectRight = Math.Min(tileRight, cropRight);
+            var isectBottom = Math.Min(tileBottom, cropBottom);
+
+            var isectWidth = isectRight - isectLeft;
+            var isectHeight = isectBottom - isectTop;
+
+            if (isectWidth <= 0 || isectHeight <= 0)
+            {
+                skippedTiles++;
+                continue;
+            }
+
+            // Read position within this tile
+            var readX = isectLeft - tileOffsetX;
+            var readY = isectTop - tileOffsetY;
+
+            // Write position within the output (crop-relative)
+            var writeX = isectLeft - cropOffsetX;
+            var writeY = isectTop - cropOffsetY;
+
+            for (var bandIndex = 1; bandIndex <= bandCount; bandIndex++)
+            {
+                var inputBand = inputDataset.GetRasterBand(bandIndex);
+                var outputBand = outputDataset.GetRasterBand(bandIndex);
+
+                var buffer = new double[isectWidth * isectHeight];
+                inputBand.ReadRaster(readX, readY, isectWidth, isectHeight,
+                    buffer, isectWidth, isectHeight, 0, 0);
+                outputBand.WriteRaster(writeX, writeY, isectWidth, isectHeight,
+                    buffer, isectWidth, isectHeight, 0, 0);
+            }
+
+            copiedTiles++;
+        }
+
+        outputDataset.FlushCache();
+
+        TerrainLogger.Info(
+            $"Direct crop: {copiedTiles} tiles contributed, {skippedTiles} skipped (no overlap)");
+    }
+
+    /// <summary>
     ///     Combines multiple GeoTIFF files and returns the import result directly.
     /// </summary>
     /// <param name="inputDirectory">Directory containing GeoTIFF tiles</param>

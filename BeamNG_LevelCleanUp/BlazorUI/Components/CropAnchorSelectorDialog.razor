@@ -103,12 +103,12 @@
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4" Style="flex-wrap: wrap;">
                     <MudText Typo="Typo.body2">
                         <MudIcon Icon="@Icons.Material.Filled.PhotoSizeSelectLarge" Size="Size.Small" Class="mr-1" />
-                        <strong>Source:</strong> @OriginalWidth × @OriginalHeight px (@GetSourceRealWorldSize())
+                        <strong>Source:</strong> @OriginalWidth ï¿½ @OriginalHeight px (@GetSourceRealWorldSize())
                     </MudText>
                     <MudDivider Vertical="true" FlexItem="true" />
                     <MudText Typo="Typo.body2">
                         <MudIcon Icon="@Icons.Material.Filled.CropSquare" Size="Size.Small" Class="mr-1" />
-                        <strong>Selection:</strong> @SelectionWidthPixels × @SelectionHeightPixels px (@GetSelectionRealWorldSize())
+                        <strong>Selection:</strong> @SelectionWidthPixels ï¿½ @SelectionHeightPixels px (@GetSelectionRealWorldSize())
                     </MudText>
                     <MudDivider Vertical="true" FlexItem="true" />
                     <MudText Typo="Typo.body2">
@@ -119,7 +119,7 @@
                         <MudDivider Vertical="true" FlexItem="true" />
                         <MudText Typo="Typo.body2">
                             <MudIcon Icon="@Icons.Material.Filled.MyLocation" Size="Size.Small" Class="mr-1" />
-                            <strong>Center:</strong> @_selectionBoundingBox.Center.Latitude.ToString("F5")°, @_selectionBoundingBox.Center.Longitude.ToString("F5")°
+                            <strong>Center:</strong> @_selectionBoundingBox.Center.Latitude.ToString("F5")ï¿½, @_selectionBoundingBox.Center.Longitude.ToString("F5")ï¿½
                         </MudText>
                     }
                     <MudSpacer />
@@ -155,7 +155,6 @@
                                                   DisplayHeight="@_displayHeight"
                                                   IsVisible="true"
                                                   Opacity="@_mapOpacity"
-                                                  MaxTiles="200"
                                                   ShowAttribution="false"
                                                   EnableScrollZoom="true"
                                                   EnablePanning="@(!_isMouseOverSelection && !_isDragging)"
@@ -192,10 +191,10 @@
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
                         <MudIcon Icon="@Icons.Material.Filled.PanTool" Size="Size.Small" Class="mr-1" />
-                        Drag the selection box to reposition • Scroll wheel to zoom • Drag outside selection to pan the map
+                        Drag the selection box to reposition ï¿½ Scroll wheel to zoom ï¿½ Drag outside selection to pan the map
                     </MudText>
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color: inherit;">OpenStreetMap</a> contributors
+                        Map data ï¿½ <a href="https://www.openstreetmap.org/copyright" target="_blank" style="color: inherit;">OpenStreetMap</a> contributors
                     </MudText>
                 </MudStack>
             </div>

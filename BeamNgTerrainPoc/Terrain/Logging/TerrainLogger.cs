@@ -48,6 +48,17 @@ public static class TerrainLogger
     }
 
     /// <summary>
+    /// Gets the current log handler (may be null).
+    /// </summary>
+    public static TerrainLogHandler? GetCurrentHandler()
+    {
+        lock (_lock)
+        {
+            return _logHandler;
+        }
+    }
+
+    /// <summary>
     /// Logs an informational message.
     /// </summary>
     public static void Info(string message)

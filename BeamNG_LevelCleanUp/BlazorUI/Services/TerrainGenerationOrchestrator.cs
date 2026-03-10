@@ -68,6 +68,20 @@ public class TerrainGenerationOrchestrator
 
         try
         {
+            // Pre-validate elevation data before starting the heavy generation pipeline.
+            // This catches corrupted/missing tiles early with a clear error message,
+            // preventing long-running generation that produces garbage output.
+            var preValidation = await PreValidateElevationDataAsync(state);
+            if (!preValidation.IsValid)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                    $"Terrain generation aborted: {preValidation.ErrorMessage}");
+                return new GenerationResult { Success = false, ErrorMessage = preValidation.ErrorMessage };
+            }
+
+            if (preValidation.WarningMessage != null)
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, preValidation.WarningMessage);
+
             // Run the heavy computation on a background thread to keep the UI responsive
             // This allows Windows to properly handle ALT-TAB and taskbar clicks during generation
             var result = await Task.Run(async () =>
@@ -117,7 +131,7 @@ public class TerrainGenerationOrchestrator
                     debugPath);
 
                 // Build terrain creation parameters
-                var parameters = BuildTerrainParameters(state, materialDefinitions, analysisState);
+                var parameters = await BuildTerrainParametersAsync(state, materialDefinitions, analysisState);
 
                 // Execute terrain creation
                 var outputPath = state.GetOutputPath();
@@ -407,6 +421,167 @@ public class TerrainGenerationOrchestrator
         {
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Could not fully clear debug folder: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    ///     Pre-validates elevation data before starting the heavy generation pipeline.
+    ///     Quickly reads the GeoTIFF to check for corrupted/missing data.
+    /// </summary>
+    private static async Task<(bool IsValid, string? ErrorMessage, string? WarningMessage)>
+        PreValidateElevationDataAsync(TerrainGenerationState state)
+    {
+        // Only validate GeoTIFF sources (PNG heightmaps are user-created and always valid)
+        if (state.HeightmapSourceType == HeightmapSourceType.Png)
+            return (true, null, null);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Pre-validating elevation data...");
+
+        try
+        {
+            // Determine the GeoTIFF file to validate
+            string? geoTiffPath = null;
+
+            if (state.HeightmapSourceType == HeightmapSourceType.GeoTiffFile)
+                geoTiffPath = state.GeoTiffPath;
+            else if (state.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
+                     !string.IsNullOrEmpty(state.CachedCombinedGeoTiffPath) &&
+                     File.Exists(state.CachedCombinedGeoTiffPath))
+                geoTiffPath = state.CachedCombinedGeoTiffPath;
+
+            if (string.IsNullOrEmpty(geoTiffPath) || !File.Exists(geoTiffPath))
+            {
+                // For directory without cached combined file, validation happens during generation
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Elevation pre-validation: skipped (tiles will be validated during generation)");
+                return (true, null, null);
+            }
+
+            // Quick read: open the GeoTIFF and sample elevation data
+            return await Task.Run(() =>
+            {
+                GeoTiffReader.InitializeGdal();
+
+                using var dataset = OSGeo.GDAL.Gdal.Open(geoTiffPath, OSGeo.GDAL.Access.GA_ReadOnly);
+                if (dataset == null)
+                    return (false, $"Cannot open GeoTIFF file: {Path.GetFileName(geoTiffPath)}", (string?)null);
+
+                var width = dataset.RasterXSize;
+                var height = dataset.RasterYSize;
+
+                if (width == 0 || height == 0)
+                    return (false, $"GeoTIFF has zero dimensions ({width}x{height})", (string?)null);
+
+                var band = dataset.GetRasterBand(1);
+                band.GetNoDataValue(out var nodataValue, out var hasNodata);
+                var useNodata = hasNodata != 0;
+
+                // Determine the region to validate (crop or full)
+                var readX = 0;
+                var readY = 0;
+                var readW = width;
+                var readH = height;
+
+                if (state.CropResult is { NeedsCropping: true })
+                {
+                    readX = state.CropResult.OffsetX;
+                    readY = state.CropResult.OffsetY;
+                    readW = Math.Min(state.CropResult.CropWidth, width - readX);
+                    readH = Math.Min(state.CropResult.CropHeight, height - readY);
+                }
+
+                // Read all elevation values in the region
+                var buffer = new double[readW * readH];
+                band.ReadRaster(readX, readY, readW, readH, buffer, readW, readH, 0, 0);
+
+                var totalPixels = buffer.Length;
+                var nodataCount = 0;
+                var zeroCount = 0; // Exactly 0.0 elevation (potential missing tile indicator)
+                var validNonZeroCount = 0;
+                var minElevation = double.MaxValue;
+                var maxElevation = double.MinValue;
+
+                foreach (var val in buffer)
+                {
+                    if (useNodata && Math.Abs(val - nodataValue) < 0.001)
+                    {
+                        nodataCount++;
+                        continue;
+                    }
+
+                    if (val < -1000000 || val > 1000000)
+                    {
+                        nodataCount++;
+                        continue;
+                    }
+
+                    if (Math.Abs(val) < 0.001)
+                        zeroCount++;
+                    else
+                        validNonZeroCount++;
+
+                    if (val < minElevation) minElevation = val;
+                    if (val > maxElevation) maxElevation = val;
+                }
+
+                var validCount = zeroCount + validNonZeroCount;
+                var nodataPct = (double)nodataCount / totalPixels * 100;
+                var zeroPct = validCount > 0 ? (double)zeroCount / totalPixels * 100 : 0;
+
+                if (validCount == 0)
+                    return (false,
+                        $"GeoTIFF has NO valid elevation data in the selected region " +
+                        $"({nodataCount:N0} pixels are nodata/invalid out of {totalPixels:N0} total). " +
+                        "All tiles in this area may be corrupted or missing.",
+                        (string?)null);
+
+                // Detect missing tiles disguised as zero elevation:
+                // If we have valid non-zero elevation data AND a large percentage of exactly-zero pixels,
+                // the zeros are likely from missing/corrupted tiles that defaulted to 0 during combination.
+                // A real coastline area might have ~5-10% near-zero pixels, but >30% exact zeros
+                // combined with valid data at 50m+ is almost certainly tile corruption.
+                string? warning = null;
+
+                if (zeroCount > 0 && validNonZeroCount > 0 && maxElevation > 10)
+                {
+                    if (zeroPct > 70)
+                    {
+                        return (false,
+                            $"GeoTIFF has {zeroPct:F0}% zero-elevation pixels ({zeroCount:N0}/{totalPixels:N0}) " +
+                            $"while valid data ranges from {minElevation:F0}m to {maxElevation:F0}m. " +
+                            "This strongly indicates missing or corrupted GeoTIFF tiles. " +
+                            "The terrain would be mostly at sea level with small islands of real elevation. " +
+                            "Please check your tile coverage and re-download missing tiles.",
+                            (string?)null);
+                    }
+
+                    if (zeroPct > 30)
+                    {
+                        warning = $"WARNING: {zeroPct:F0}% of pixels are exactly zero elevation " +
+                                  $"({zeroCount:N0}/{totalPixels:N0}), while valid data ranges " +
+                                  $"{minElevation:F0}m to {maxElevation:F0}m. " +
+                                  "This may indicate missing GeoTIFF tiles. " +
+                                  "Generation will proceed but large areas will be at 0m elevation.";
+                    }
+                }
+
+                if (nodataPct > 30 && warning == null)
+                    warning = $"GeoTIFF has {nodataPct:F0}% nodata pixels in the selected region " +
+                              $"({nodataCount:N0}/{totalPixels:N0}). " +
+                              "Some tiles may be corrupted.";
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Elevation pre-validation: {validNonZeroCount:N0} valid, {zeroCount:N0} zero-elevation, " +
+                    $"{nodataCount:N0} nodata ({minElevation:F0}m to {maxElevation:F0}m)");
+
+                return (true, (string?)null, warning);
+            });
+        }
+        catch (Exception ex)
+        {
+            // Don't block generation for validation errors — just warn
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Elevation pre-validation failed: {ex.Message}. Proceeding with generation.");
+            return (true, null, null);
         }
     }
 
@@ -742,7 +917,7 @@ public class TerrainGenerationOrchestrator
         return layerImagePath;
     }
 
-    private static TerrainCreationParameters BuildTerrainParameters(
+    private static async Task<TerrainCreationParameters> BuildTerrainParametersAsync(
         TerrainGenerationState state,
         List<MaterialDefinition> materialDefinitions,
         TerrainAnalysisState? analysisState = null)
@@ -794,15 +969,32 @@ public class TerrainGenerationOrchestrator
                     parameters.GeoTiffPath = state.CachedCombinedGeoTiffPath;
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         "Using cached combined GeoTIFF (skipping tile re-combination)");
+                    ApplyCropSettings(state, parameters);
+                }
+                else if (state.CropResult is { NeedsCropping: true } &&
+                         !string.IsNullOrEmpty(state.GeoTiffDirectory) &&
+                         Directory.Exists(state.GeoTiffDirectory))
+                {
+                    // No cached combined file, but we have crop settings:
+                    // Create a direct-cropped file from tiles (only reads overlapping tiles)
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Creating cropped GeoTIFF directly from tiles (skipping full combination)...");
+                    var service = new GeoTiffMetadataService();
+                    var croppedPath = await service.CombineAndCropDirectAsync(
+                        state.GeoTiffDirectory,
+                        state.CropResult.OffsetX, state.CropResult.OffsetY,
+                        state.CropResult.CropWidth, state.CropResult.CropHeight);
+                    parameters.GeoTiffPath = croppedPath;
+                    // Crop already applied — don't pass crop offsets again
                 }
                 else
                 {
                     parameters.GeoTiffDirectory = state.GeoTiffDirectory;
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         "No cached combined GeoTIFF - will combine tiles during generation");
+                    ApplyCropSettings(state, parameters);
                 }
 
-                ApplyCropSettings(state, parameters);
                 break;
 
             case HeightmapSourceType.XyzFile:

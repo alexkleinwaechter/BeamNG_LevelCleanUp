@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using BeamNG_LevelCleanUp.BlazorUI.Services;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -10,6 +11,7 @@ public partial class OsmMapTileBackground
 {
     private const int OsmTileSize = 256;
     private const float ZoomStep = 0.15f; // Zoom change per scroll wheel tick
+    private const int MaxTileHardLimit = 500; // Safety limit to prevent extreme tile counts
     private bool _isPanning;
     private float _panStartViewCenterX;
     private float _panStartViewCenterY;
@@ -59,10 +61,12 @@ public partial class OsmMapTileBackground
     public string AttributionPosition { get; set; } = "bottom-right";
 
     /// <summary>
-    ///     Maximum number of tiles to load (to prevent performance issues).
+    ///     Maximum number of tiles to load. No longer enforced — tiles are disk-cached.
+    ///     Kept for API compatibility; the hard limit is internal.
     /// </summary>
     [Parameter]
-    public int MaxTiles { get; set; } = 25;
+    [Obsolete("MaxTiles is no longer enforced. Tiles are disk-cached for performance.")]
+    public int MaxTiles { get; set; } = 200;
 
     /// <summary>
     ///     Z-index for the tile container.
@@ -339,7 +343,7 @@ public partial class OsmMapTileBackground
 
     /// <summary>
     ///     Gets the list of OSM tiles needed to cover the bounding box.
-    ///     Uses EffectiveBoundingBox when zoomed.
+    ///     Uses EffectiveBoundingBox when zoomed. Tiles are served from disk cache when available.
     /// </summary>
     private List<OsmTileInfo> GetVisibleTiles()
     {
@@ -361,13 +365,12 @@ public partial class OsmMapTileBackground
         var (minTileX, minTileY) = LatLonToTile(bbox.MaxLatitude, bbox.MinLongitude, zoom);
         var (maxTileX, maxTileY) = LatLonToTile(bbox.MinLatitude, bbox.MaxLongitude, zoom);
 
-        // Limit the number of tiles to prevent performance issues
+        // Safety limit: reduce zoom if tile count is extreme (prevents runaway memory usage)
         var tileCountX = maxTileX - minTileX + 1;
         var tileCountY = maxTileY - minTileY + 1;
 
-        if (tileCountX * tileCountY > MaxTiles)
+        if (tileCountX * tileCountY > MaxTileHardLimit)
         {
-            // Too many tiles, reduce zoom level
             zoom = Math.Max(1, zoom - 2);
             (minTileX, minTileY) = LatLonToTile(bbox.MaxLatitude, bbox.MinLongitude, zoom);
             (maxTileX, maxTileY) = LatLonToTile(bbox.MinLatitude, bbox.MaxLongitude, zoom);
@@ -376,6 +379,8 @@ public partial class OsmMapTileBackground
         // Calculate how the tile grid maps to display pixels
         var bboxLonRange = bbox.MaxLongitude - bbox.MinLongitude;
         var bboxLatRange = bbox.MaxLatitude - bbox.MinLatitude;
+
+        var cache = OsmTileCacheService.Shared;
 
         for (var tileY = minTileY; tileY <= maxTileY; tileY++)
         for (var tileX = minTileX; tileX <= maxTileX; tileX++)
@@ -392,8 +397,8 @@ public partial class OsmMapTileBackground
             var widthPx = tileLonSpan / bboxLonRange * DisplayWidth;
             var heightPx = tileLatSpan / bboxLatRange * DisplayHeight;
 
-            // Build tile URL (using OpenStreetMap tile server)
-            var url = $"https://tile.openstreetmap.org/{zoom}/{tileX}/{tileY}.png";
+            // Get tile URL from cache (returns file:// URI if cached, remote URL if not yet cached)
+            var url = cache.GetTileUrl(zoom, tileX, tileY);
 
             // Build CSS style for positioning
             var style = string.Format(CultureInfo.InvariantCulture,
