@@ -66,6 +66,7 @@ public partial class GenerateTerrain : IDisposable
 
     // Analysis state
     private bool _isAnalyzing;
+    private bool _isReducingGeoTiff;
     private bool _openDrawer;
 
     // Pending crop settings from preset import (applied after GeoTIFF metadata is loaded)
@@ -690,7 +691,8 @@ public partial class GenerateTerrain : IDisposable
                         }
 
                         // Show snackbar and update UI on the main thread (unless suppressed)
-                        if (!_suppressSnackbars)
+                        // Error snackbars are never suppressed - they must always be visible to the user
+                        if (!_suppressSnackbars || msg.MessageType == PubSubMessageType.Error)
                             await InvokeAsync(() =>
                             {
                                 switch (msg.MessageType)
@@ -702,7 +704,8 @@ public partial class GenerateTerrain : IDisposable
                                         Snackbar.Add(msg.Message, Severity.Warning);
                                         break;
                                     case PubSubMessageType.Error:
-                                        Snackbar.Add(msg.Message, Severity.Error);
+                                        Snackbar.Add(msg.Message, Severity.Error,
+                                            config => config.VisibleStateDuration = int.MaxValue);
                                         break;
                                 }
                             });
@@ -1372,9 +1375,137 @@ public partial class GenerateTerrain : IDisposable
             await InvokeAsync(StateHasChanged);
         }
 
-        // IMPORTANT: Refresh the drop container to ensure child TerrainMaterialSettings 
+        // IMPORTANT: Refresh the drop container to ensure child TerrainMaterialSettings
         // components receive the updated EffectiveBoundingBox for OSM queries
         _dropContainer?.Refresh();
+    }
+
+    /// <summary>
+    ///     Reduces the GeoTIFF to the current crop selection, creating a smaller file.
+    ///     After reduction, the source type switches to GeoTiffFile and crop offsets reset to zero.
+    /// </summary>
+    private async Task ReduceGeoTiffToCropAsync()
+    {
+        if (_cropResult is not { NeedsCropping: true })
+            return;
+
+        _isReducingGeoTiff = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string croppedPath;
+
+            if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
+            {
+                // Single file: crop directly
+                if (string.IsNullOrEmpty(_geoTiffPath) || !File.Exists(_geoTiffPath))
+                    return;
+                croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
+                    _geoTiffPath,
+                    _cropResult.OffsetX, _cropResult.OffsetY,
+                    _cropResult.CropWidth, _cropResult.CropHeight);
+            }
+            else if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
+            {
+                // Directory of tiles: combine-and-crop in one pass (skips non-overlapping tiles)
+                if (string.IsNullOrEmpty(_geoTiffDirectory) || !Directory.Exists(_geoTiffDirectory))
+                    return;
+                croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
+                    _geoTiffDirectory,
+                    _cropResult.OffsetX, _cropResult.OffsetY,
+                    _cropResult.CropWidth, _cropResult.CropHeight);
+            }
+            else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
+            {
+                if (_state.XyzFilePaths is { Length: > 1 })
+                {
+                    // Multi-XYZ: combine and crop
+                    croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
+                        _state.XyzFilePaths, _xyzEpsgCode,
+                        _cropResult.OffsetX, _cropResult.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+                }
+                else if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
+                         File.Exists(_cachedCombinedGeoTiffPath))
+                {
+                    // Single XYZ already converted: crop the cached file
+                    croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
+                        _cachedCombinedGeoTiffPath,
+                        _cropResult.OffsetX, _cropResult.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+                }
+                else
+                {
+                    return;
+                }
+            }
+            else
+            {
+                return;
+            }
+
+            // Cleanup old temp combined file if it's different from the source and from the cropped file
+            if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
+                _cachedCombinedGeoTiffPath != _geoTiffPath &&
+                _cachedCombinedGeoTiffPath != croppedPath)
+            {
+                try
+                {
+                    if (File.Exists(_cachedCombinedGeoTiffPath))
+                        File.Delete(_cachedCombinedGeoTiffPath);
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+
+            // Switch to GeoTiffFile source type (simplifies entire downstream chain)
+            _heightmapSourceType = HeightmapSourceType.GeoTiffFile;
+            _geoTiffPath = croppedPath;
+            _cachedCombinedGeoTiffPath = croppedPath;
+            _geoTiffDirectory = null;
+            _state.XyzPath = null;
+            _state.XyzFilePaths = null;
+
+            // Reset crop result - the file IS the crop now
+            _cropResult = null;
+
+            // Update the elevation import result to reflect single-file state
+            if (_elevationImportResult != null)
+            {
+                _elevationImportResult = new ElevationImportResult
+                {
+                    SourceType = ElevationSourceType.GeoTiffSingle,
+                    FileCount = 1,
+                    FileNames = [Path.GetFileName(croppedPath)],
+                    FilePaths = [croppedPath],
+                    FormatLabel = "GeoTIFF (reduced)",
+                    ResolvedGeoTiffPath = croppedPath,
+                    ResolvedGeoTiffDirectory = null,
+                    NeedsEpsgCode = false
+                };
+            }
+
+            // Re-read metadata from the cropped file (updates bbox, dimensions, elevation, etc.)
+            await ReadGeoTiffMetadata(syncMetersPerPixel: false);
+
+            Snackbar.Add(
+                $"GeoTIFF reduced to {_geoTiffOriginalWidth}x{_geoTiffOriginalHeight}px",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to reduce GeoTIFF: {ex.Message}", Severity.Error);
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
+                $"GeoTIFF reduction failed: {ex.Message}");
+        }
+        finally
+        {
+            _isReducingGeoTiff = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     /// <summary>
@@ -1390,61 +1521,68 @@ public partial class GenerateTerrain : IDisposable
 
         try
         {
-            string? geoTiffPathToRead = null;
+            (double? croppedMin, double? croppedMax) elevationRange;
 
             if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
             {
                 if (string.IsNullOrEmpty(_geoTiffPath) || !File.Exists(_geoTiffPath))
                     return;
-                geoTiffPathToRead = _geoTiffPath;
+                elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
+                    _geoTiffPath,
+                    cropResult.OffsetX, cropResult.OffsetY,
+                    cropResult.CropWidth, cropResult.CropHeight);
             }
             else if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
             {
                 if (string.IsNullOrEmpty(_geoTiffDirectory) || !Directory.Exists(_geoTiffDirectory))
                     return;
 
-                // Use cached combined file to avoid re-combining on every crop change
-                if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) || !File.Exists(_cachedCombinedGeoTiffPath))
-                    _cachedCombinedGeoTiffPath = await _geoTiffService.CombineGeoTiffTilesAsync(_geoTiffDirectory);
-                geoTiffPathToRead = _cachedCombinedGeoTiffPath;
+                // Read elevation directly from overlapping tiles — no full combination needed
+                elevationRange = await _geoTiffService.GetCroppedElevationRangeFromTilesAsync(
+                    _geoTiffDirectory,
+                    cropResult.OffsetX, cropResult.OffsetY,
+                    cropResult.CropWidth, cropResult.CropHeight);
             }
             else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
             {
                 if (_state.XyzFilePaths is { Length: > 1 })
                 {
-                    // Multi-XYZ tiles: use cached combined file (same pattern as GeoTIFF directory)
+                    // Multi-XYZ tiles: still need cached combined file (XYZ lacks tile structure)
                     if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
                         !File.Exists(_cachedCombinedGeoTiffPath))
                         _cachedCombinedGeoTiffPath =
                             await _geoTiffService.CombineXyzTilesAsync(
                                 _state.XyzFilePaths, _xyzEpsgCode);
-                    geoTiffPathToRead = _cachedCombinedGeoTiffPath;
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
+                        _cachedCombinedGeoTiffPath,
+                        cropResult.OffsetX, cropResult.OffsetY,
+                        cropResult.CropWidth, cropResult.CropHeight);
                 }
                 else
                 {
-                    if (string.IsNullOrEmpty(_state.XyzPath) || !File.Exists(_state.XyzPath))
+                    var xyzPath = _cachedCombinedGeoTiffPath ?? _state.XyzPath;
+                    if (string.IsNullOrEmpty(xyzPath) || !File.Exists(xyzPath))
                         return;
-                    geoTiffPathToRead = _state.XyzPath;
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
+                        xyzPath,
+                        cropResult.OffsetX, cropResult.OffsetY,
+                        cropResult.CropWidth, cropResult.CropHeight);
                 }
             }
-
-            if (string.IsNullOrEmpty(geoTiffPathToRead) || !File.Exists(geoTiffPathToRead))
+            else
+            {
                 return;
+            }
 
-            var (croppedMin, croppedMax) = await _geoTiffService.GetCroppedElevationRangeAsync(
-                geoTiffPathToRead,
-                cropResult.OffsetX,
-                cropResult.OffsetY,
-                cropResult.CropWidth,
-                cropResult.CropHeight);
+            var (croppedMin, croppedMax) = elevationRange;
 
             if (croppedMin.HasValue && croppedMax.HasValue)
             {
                 cropResult.CroppedMinElevation = croppedMin.Value;
                 cropResult.CroppedMaxElevation = croppedMax.Value;
 
-                var elevationRange = croppedMax.Value - croppedMin.Value;
-                _maxHeight = (float)elevationRange;
+                var elevRange = croppedMax.Value - croppedMin.Value;
+                _maxHeight = (float)elevRange;
                 _terrainBaseHeight = (float)croppedMin.Value;
 
                 Console.WriteLine(
@@ -2074,12 +2212,12 @@ public partial class GenerateTerrain : IDisposable
             }
             else
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
-                });
+                // Don't call ShowException here — the orchestrator already sent the error
+                // via PubSub (with "Terrain generation aborted:" prefix), which the PubSub
+                // consumer adds to _errors. Calling ShowException would create a duplicate
+                // error entry with slightly different text, bypassing the dedup check.
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
-                    ShowException(new Exception(result.ErrorMessage));
+                    Console.WriteLine($"Terrain generation failed: {result.ErrorMessage}");
             }
         }
         catch (Exception ex)
@@ -2094,7 +2232,8 @@ public partial class GenerateTerrain : IDisposable
             // In wizard mode, snackbars are already cleared before the completion dialog
             if (!(_terrainGeneratedInWizard && WizardMode))
             {
-                // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+                // Suppress new info/warning snackbars from PubSub consumer, clear all existing ones,
+                // then show final message and re-add any error snackbars so users see what went wrong
                 _suppressSnackbars = true;
                 await InvokeAsync(() =>
                 {
@@ -2102,6 +2241,17 @@ public partial class GenerateTerrain : IDisposable
 
                     if (generationSucceeded && finalSuccessMessage != null)
                         Snackbar.Add(finalSuccessMessage, Severity.Success);
+
+                    // Re-add error snackbars so the user can see what went wrong
+                    // Error messages are critical and must not be silently swallowed
+                    if (!generationSucceeded)
+                    {
+                        foreach (var error in _errors.ToList())
+                        {
+                            Snackbar.Add(error, Severity.Error,
+                                config => config.VisibleStateDuration = int.MaxValue);
+                        }
+                    }
                 });
                 _suppressSnackbars = false;
             }
@@ -2395,12 +2545,11 @@ public partial class GenerateTerrain : IDisposable
             }
             else
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
-                });
+                // Don't call ShowException here — the orchestrator already sent the error
+                // via PubSub, which the PubSub consumer adds to _errors. Calling ShowException
+                // would create a duplicate error entry with slightly different text.
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
-                    ShowException(new Exception(result.ErrorMessage));
+                    Console.WriteLine($"Terrain generation (with analysis) failed: {result.ErrorMessage}");
             }
         }
         catch (Exception ex)
@@ -2412,7 +2561,8 @@ public partial class GenerateTerrain : IDisposable
         {
             _isGenerating = false;
 
-            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+            // Suppress new info/warning snackbars from PubSub consumer, clear all existing ones,
+            // then show final message and re-add any error snackbars so users see what went wrong
             _suppressSnackbars = true;
             await InvokeAsync(() =>
             {
@@ -2420,6 +2570,16 @@ public partial class GenerateTerrain : IDisposable
 
                 if (generationSucceeded && finalSuccessMessage != null)
                     Snackbar.Add(finalSuccessMessage, Severity.Success);
+
+                // Re-add error snackbars so the user can see what went wrong
+                if (!generationSucceeded)
+                {
+                    foreach (var error in _errors.ToList())
+                    {
+                        Snackbar.Add(error, Severity.Error,
+                            config => config.VisibleStateDuration = int.MaxValue);
+                    }
+                }
             });
             _suppressSnackbars = false;
 

@@ -400,6 +400,30 @@
                                                     SelectedAnchorChanged="OnCropAnchorChanged"
                                                     OriginalBoundingBox="@_geoBoundingBox"
                                                     CropResultChanged="OnCropResultChanged" />
+                                @if (_cropResult is { NeedsCropping: true })
+                                {
+                                    <div class="d-flex align-center gap-2 mt-2">
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Warning"
+                                                   StartIcon="@Icons.Material.Filled.ContentCut"
+                                                   OnClick="ReduceGeoTiffToCropAsync"
+                                                   Disabled="@(_isGenerating || _isReducingGeoTiff)"
+                                                   Size="Size.Small">
+                                            @if (_isReducingGeoTiff)
+                                            {
+                                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                <span>Reducing...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Reduce GeoTIFF to Selection</span>
+                                            }
+                                        </MudButton>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            Creates a smaller GeoTIFF from the selected region only. Re-import files to expand.
+                                        </MudText>
+                                    </div>
+                                }
                             </MudItem>
                         }
 
@@ -799,9 +823,10 @@
                 <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
                         var list = (_showErrorLog ? _errors : _showWarningLog ? _warnings : _messages).ToList();
+                        var index = 0;
                         @foreach (var item in list)
                         {
-                            <MudListItem T="string" @key="@item.GetHashCode()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@($"{(_showErrorLog ? "e" : _showWarningLog ? "w" : "m")}_{index++}")" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }

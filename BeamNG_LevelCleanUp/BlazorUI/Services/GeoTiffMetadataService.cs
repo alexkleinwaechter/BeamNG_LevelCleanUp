@@ -1,6 +1,7 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using OSGeo.GDAL;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 
@@ -203,6 +204,62 @@ public class GeoTiffMetadataService
     }
 
     /// <summary>
+    ///     Gets the elevation range for a cropped region directly from GeoTIFF tiles,
+    ///     without creating a combined file. Only reads tiles that overlap the crop region.
+    /// </summary>
+    public async Task<(double? Min, double? Max)> GetCroppedElevationRangeFromTilesAsync(
+        string sourceDirectory,
+        int offsetX, int offsetY, int cropWidth, int cropHeight)
+    {
+        return await Task.Run(() =>
+        {
+            var inputFiles = Directory.GetFiles(sourceDirectory)
+                .Where(f => f.EndsWith(".tif", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".geotiff", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f)
+                .ToList();
+
+            // Set up TerrainLogger to forward warnings to PubSub so they appear in the UI
+            var previousHandler = BeamNgTerrainPoc.Terrain.Logging.TerrainLogger.GetCurrentHandler();
+            BeamNgTerrainPoc.Terrain.Logging.TerrainLogger.SetLogHandler((level, message) =>
+            {
+                // Forward to previous handler if any
+                previousHandler?.Invoke(level, message);
+
+                // Also send warnings/errors to PubSub for UI visibility
+                if (level == BeamNgTerrainPoc.Terrain.Logging.TerrainLogLevel.Warning)
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning, message);
+                else if (level == BeamNgTerrainPoc.Terrain.Logging.TerrainLogLevel.Error)
+                    PubSubChannel.SendMessage(PubSubMessageType.Error, message);
+            });
+
+            try
+            {
+                var combiner = new GeoTiffCombiner();
+                var (min, max) = combiner.GetCroppedElevationRangeFromTiles(
+                    inputFiles, offsetX, offsetY, cropWidth, cropHeight);
+
+                // Send a PubSub warning if elevation looks suspicious
+                if (min == 0 && max == 100)
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        "Elevation defaults used (0-100m). GeoTIFF tiles may be corrupted or missing in the crop region.");
+                else if (min == 0 && max > 0)
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Base elevation is 0m (range: 0-{max:F0}m). " +
+                        "Some tiles may be missing or contain nodata. Check the Messages panel for details.");
+
+                return ((double?)min, (double?)max);
+            }
+            finally
+            {
+                // Restore previous handler
+                BeamNgTerrainPoc.Terrain.Logging.TerrainLogger.SetLogHandler(previousHandler);
+            }
+        });
+    }
+
+    /// <summary>
     ///     Combines multiple GeoTIFF tiles into a single file.
     /// </summary>
     public async Task<string> CombineGeoTiffTilesAsync(string sourceDirectory)
@@ -242,6 +299,138 @@ public class GeoTiffMetadataService
 
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             "XYZ tiles combined. Subsequent crop changes will be fast.");
+
+        return outputPath;
+    }
+
+    /// <summary>
+    ///     Combines multiple GeoTIFF tiles and crops directly to the selection in a single pass.
+    ///     Only reads pixels from tiles that overlap the crop region — much faster than combining all first.
+    /// </summary>
+    public async Task<string> CombineAndCropDirectAsync(
+        string sourceDirectory,
+        int offsetX, int offsetY, int cropWidth, int cropHeight)
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"cropped_geotiff_{Guid.NewGuid():N}.tif");
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Reducing GeoTIFF tiles directly to selection ({cropWidth}x{cropHeight}px)...");
+
+        await Task.Run(() =>
+        {
+            var combiner = new GeoTiffCombiner();
+            var inputFiles = Directory.GetFiles(sourceDirectory)
+                .Where(f => f.EndsWith(".tif", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".geotiff", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f)
+                .ToList();
+
+            combiner.CombineAndCropDirect(inputFiles, outputPath,
+                offsetX, offsetY, cropWidth, cropHeight);
+        });
+
+        var fileSize = new FileInfo(outputPath).Length / (1024.0 * 1024.0);
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"GeoTIFF tiles reduced to {cropWidth}x{cropHeight}px ({fileSize:F1} MB)");
+
+        return outputPath;
+    }
+
+    /// <summary>
+    ///     Combines multiple XYZ files and crops directly to the selection in a single pass.
+    /// </summary>
+    public async Task<string> CombineXyzAndCropDirectAsync(
+        string[] xyzFilePaths, int epsgCode,
+        int offsetX, int offsetY, int cropWidth, int cropHeight)
+    {
+        // XYZ files need to be combined first (they lack GDAL-native tile structure),
+        // then crop the combined result
+        var combinedPath = await CombineXyzTilesAsync(xyzFilePaths, epsgCode);
+        try
+        {
+            var croppedPath = await CropGeoTiffToFileAsync(combinedPath,
+                offsetX, offsetY, cropWidth, cropHeight);
+            return croppedPath;
+        }
+        finally
+        {
+            try { if (File.Exists(combinedPath)) File.Delete(combinedPath); }
+            catch { /* ignore */ }
+        }
+    }
+
+    /// <summary>
+    ///     Crops a GeoTIFF file to the specified pixel region and saves it as a new file.
+    ///     The output file has an adjusted geotransform so its origin matches the crop region.
+    /// </summary>
+    /// <param name="sourceGeoTiffPath">Path to the source GeoTIFF file</param>
+    /// <param name="offsetX">X offset in pixels from the left edge</param>
+    /// <param name="offsetY">Y offset in pixels from the top edge</param>
+    /// <param name="cropWidth">Width of the crop region in pixels</param>
+    /// <param name="cropHeight">Height of the crop region in pixels</param>
+    /// <returns>Path to the cropped GeoTIFF temp file</returns>
+    public async Task<string> CropGeoTiffToFileAsync(
+        string sourceGeoTiffPath, int offsetX, int offsetY, int cropWidth, int cropHeight)
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"cropped_geotiff_{Guid.NewGuid():N}.tif");
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Reducing GeoTIFF to selection ({cropWidth}x{cropHeight}px)...");
+
+        await Task.Run(() =>
+        {
+            GeoTiffReader.InitializeGdal();
+
+            using var sourceDataset = Gdal.Open(sourceGeoTiffPath, Access.GA_ReadOnly);
+            if (sourceDataset == null)
+                throw new InvalidOperationException($"Could not open source GeoTIFF: {sourceGeoTiffPath}");
+
+            var sourceGeoTransform = new double[6];
+            sourceDataset.GetGeoTransform(sourceGeoTransform);
+
+            var projection = sourceDataset.GetProjection();
+            var bandCount = sourceDataset.RasterCount;
+            var dataType = sourceDataset.GetRasterBand(1).DataType;
+
+            // Compute adjusted geotransform: shift origin to crop start
+            var croppedGeoTransform = new double[6];
+            croppedGeoTransform[0] = sourceGeoTransform[0] + offsetX * sourceGeoTransform[1]; // new origin X
+            croppedGeoTransform[1] = sourceGeoTransform[1]; // pixel width (unchanged)
+            croppedGeoTransform[2] = sourceGeoTransform[2]; // rotation X (unchanged)
+            croppedGeoTransform[3] = sourceGeoTransform[3] + offsetY * sourceGeoTransform[5]; // new origin Y
+            croppedGeoTransform[4] = sourceGeoTransform[4]; // rotation Y (unchanged)
+            croppedGeoTransform[5] = sourceGeoTransform[5]; // pixel height (unchanged)
+
+            // Create output dataset
+            var driver = Gdal.GetDriverByName("GTiff");
+            using var outputDataset = driver.Create(
+                outputPath, cropWidth, cropHeight, bandCount, dataType, null);
+
+            outputDataset.SetGeoTransform(croppedGeoTransform);
+
+            if (!string.IsNullOrEmpty(projection))
+                outputDataset.SetProjection(projection);
+
+            // Copy each band from the crop region
+            for (var bandIndex = 1; bandIndex <= bandCount; bandIndex++)
+            {
+                var inputBand = sourceDataset.GetRasterBand(bandIndex);
+                var outputBand = outputDataset.GetRasterBand(bandIndex);
+
+                var buffer = new double[cropWidth * cropHeight];
+                inputBand.ReadRaster(offsetX, offsetY, cropWidth, cropHeight,
+                    buffer, cropWidth, cropHeight, 0, 0);
+                outputBand.WriteRaster(0, 0, cropWidth, cropHeight,
+                    buffer, cropWidth, cropHeight, 0, 0);
+            }
+
+            outputDataset.FlushCache();
+        });
+
+        var fileSize = new FileInfo(outputPath).Length / (1024.0 * 1024.0);
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"GeoTIFF reduced to {cropWidth}x{cropHeight}px ({fileSize:F1} MB)");
 
         return outputPath;
     }

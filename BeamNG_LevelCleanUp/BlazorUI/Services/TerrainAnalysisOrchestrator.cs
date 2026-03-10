@@ -467,38 +467,67 @@ public class TerrainAnalysisOrchestrator
     {
         // Use cached combined GeoTIFF if available
         var geoTiffPath = state.CachedCombinedGeoTiffPath;
+        string? tempCroppedPath = null;
 
         if (string.IsNullOrEmpty(geoTiffPath) || !File.Exists(geoTiffPath))
         {
             if (string.IsNullOrEmpty(state.GeoTiffDirectory) || !Directory.Exists(state.GeoTiffDirectory))
                 return null;
 
-            // Combine tiles on the fly
-            var combiner = new GeoTiffCombiner();
-
-            var tempPath = Path.Combine(Path.GetTempPath(), $"combined_{Guid.NewGuid():N}.tif");
-            await combiner.CombineGeoTiffsAsync(state.GeoTiffDirectory, tempPath);
-            geoTiffPath = tempPath;
+            if (state.CropResult is { NeedsCropping: true })
+            {
+                // No cached combined file, but we have crop settings:
+                // Create a direct-cropped file from tiles (only reads overlapping tiles)
+                var service = new GeoTiffMetadataService();
+                tempCroppedPath = await service.CombineAndCropDirectAsync(
+                    state.GeoTiffDirectory,
+                    state.CropResult.OffsetX, state.CropResult.OffsetY,
+                    state.CropResult.CropWidth, state.CropResult.CropHeight);
+                geoTiffPath = tempCroppedPath;
+            }
+            else
+            {
+                // No crop — must combine all tiles
+                var combiner = new GeoTiffCombiner();
+                var tempPath = Path.Combine(Path.GetTempPath(), $"combined_{Guid.NewGuid():N}.tif");
+                await combiner.CombineGeoTiffsAsync(state.GeoTiffDirectory, tempPath);
+                geoTiffPath = tempPath;
+            }
         }
 
-        return await Task.Run(() =>
+        try
         {
-            var reader = new GeoTiffReader();
-            GeoTiffImportResult result;
+            return await Task.Run(() =>
+            {
+                var reader = new GeoTiffReader();
+                GeoTiffImportResult result;
 
-            if (state.CropResult is { NeedsCropping: true })
-                result = reader.ReadGeoTiff(
-                    geoTiffPath,
-                    state.TerrainSize,
-                    state.CropResult.OffsetX,
-                    state.CropResult.OffsetY,
-                    state.CropResult.CropWidth,
-                    state.CropResult.CropHeight);
-            else
-                result = reader.ReadGeoTiff(geoTiffPath, state.TerrainSize);
+                // If we created a direct-cropped file, don't apply crop again
+                if (tempCroppedPath != null)
+                    result = reader.ReadGeoTiff(geoTiffPath, state.TerrainSize);
+                else if (state.CropResult is { NeedsCropping: true })
+                    result = reader.ReadGeoTiff(
+                        geoTiffPath,
+                        state.TerrainSize,
+                        state.CropResult.OffsetX,
+                        state.CropResult.OffsetY,
+                        state.CropResult.CropWidth,
+                        state.CropResult.CropHeight);
+                else
+                    result = reader.ReadGeoTiff(geoTiffPath, state.TerrainSize);
 
-            return ConvertImageToHeightMap(result.HeightmapImage, result.MinElevation, result.MaxElevation);
-        });
+                return ConvertImageToHeightMap(result.HeightmapImage, result.MinElevation, result.MaxElevation);
+            });
+        }
+        finally
+        {
+            // Clean up temp cropped file
+            if (tempCroppedPath != null)
+            {
+                try { if (File.Exists(tempCroppedPath)) File.Delete(tempCroppedPath); }
+                catch { /* ignore */ }
+            }
+        }
     }
 
     /// <summary>
