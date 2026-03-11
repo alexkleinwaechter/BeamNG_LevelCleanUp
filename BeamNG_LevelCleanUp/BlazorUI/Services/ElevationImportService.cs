@@ -258,7 +258,7 @@ public class ElevationImportService
             var firstXyz = xyzFiles[0];
 
             // Auto-detect EPSG code
-            var detectedEpsg = GeoTiffReader.AutoDetectEpsg(firstXyz);
+            var detectedEpsg = XyzFastScanner.AutoDetectEpsg(firstXyz);
             var epsgCode = detectedEpsg ?? 25832; // Default to German UTM 32N
 
             if (detectedEpsg.HasValue)

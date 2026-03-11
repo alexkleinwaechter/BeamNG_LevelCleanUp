@@ -44,9 +44,23 @@ public partial class TerrainMaterialSettings
     [Parameter] public GeoBoundingBox? GeoBoundingBox { get; set; }
     [Parameter] public int TerrainSize { get; set; } = 2048;
 
+    /// <summary>
+    ///     Cascading effective bounding box from GenerateTerrain page.
+    ///     Always reflects the current crop region. Used as primary source
+    ///     because MudDropContainer's ItemRenderer may not re-pass parameters
+    ///     when the crop changes.
+    /// </summary>
+    [CascadingParameter(Name = "EffectiveBoundingBox")]
+    private GeoBoundingBox? CascadingBoundingBox { get; set; }
+
     [Inject] private IDialogService DialogService { get; set; } = null!;
 
-    private bool HasGeoBoundingBox => GeoBoundingBox != null;
+    /// <summary>
+    ///     The actual bounding box to use — prefers cascading (always fresh) over parameter.
+    /// </summary>
+    private GeoBoundingBox? ActiveBoundingBox => CascadingBoundingBox ?? GeoBoundingBox;
+
+    private bool HasGeoBoundingBox => ActiveBoundingBox != null;
 
     /// <summary>
     ///     Returns true when this road material has OSM features mode selected as its layer source.
@@ -304,13 +318,13 @@ public partial class TerrainMaterialSettings
 
     private async Task OpenOsmFeatureSelector()
     {
-        if (GeoBoundingBox == null)
+        if (ActiveBoundingBox == null)
             return;
 
         var parameters = new DialogParameters<OsmFeatureSelectorDialog>
         {
             { x => x.MaterialName, Material.InternalName },
-            { x => x.BoundingBox, GeoBoundingBox },
+            { x => x.BoundingBox, ActiveBoundingBox },
             { x => x.TerrainSize, TerrainSize },
             { x => x.IsRoadMaterial, Material.IsRoadMaterial },
             { x => x.ExistingSelections, Material.SelectedOsmFeatures }
