@@ -157,14 +157,6 @@ public class TerrainGenerationOrchestrator
                         state, parameters);
                 }
 
-                // Release memory from large intermediate objects after generation completes.
-                // OSM memory cache can hold 100-200MB+ of deserialized query results per run.
-                // LOH (Large Object Heap) fragmentation from terrain/building arrays prevents
-                // the runtime from returning memory to the OS without explicit compaction.
-                OsmQueryCache.Shared.ClearMemoryCache();
-                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-                GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-
                 return (Success: generationSuccess, Parameters: parameters, BuildingResult: buildingResult);
             }).ConfigureAwait(false);
 
@@ -173,6 +165,16 @@ public class TerrainGenerationOrchestrator
 
             // Update state with auto-calculated values
             UpdateStateFromParameters(state, terrainParameters);
+
+            // Fire-and-forget memory cleanup — runs in background so UI gets result immediately.
+            // OSM memory cache can hold 100-200MB+ of deserialized query results per run.
+            // LOH compaction returns fragmented large arrays to the OS.
+            _ = Task.Run(() =>
+            {
+                OsmQueryCache.Shared.ClearMemoryCache();
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(2, GCCollectionMode.Forced, blocking: false, compacting: true);
+            });
 
             return new GenerationResult
             {
