@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime;
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
@@ -155,6 +156,14 @@ public class TerrainGenerationOrchestrator
                         osmQueryResult, effectiveBoundingBox, coordinateTransformer,
                         state, parameters);
                 }
+
+                // Release memory from large intermediate objects after generation completes.
+                // OSM memory cache can hold 100-200MB+ of deserialized query results per run.
+                // LOH (Large Object Heap) fragmentation from terrain/building arrays prevents
+                // the runtime from returning memory to the OS without explicit compaction.
+                OsmQueryCache.Shared.ClearMemoryCache();
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
 
                 return (Success: generationSuccess, Parameters: parameters, BuildingResult: buildingResult);
             }).ConfigureAwait(false);

@@ -237,18 +237,24 @@ public class BuildingGenerationOrchestrator
     private static Func<float, float, float> CreateHeightSampler(
         string terrainFilePath, float maxHeight, float metersPerPixel)
     {
-        var terrain = new Grille.BeamNG.Terrain(terrainFilePath, maxHeight);
-        int size = terrain.Size;
-
-        // Extract heights to a 2D array for fast bilinear sampling
-        // Array indexing: [y, x] (row-major, matching SampleHeightmapBilinear convention)
-        var heightMap = new float[size, size];
-        for (int y = 0; y < size; y++)
+        // Load terrain and extract heights, then let the Terrain object be collected.
+        // The Terrain holds a full TerrainDataBuffer which duplicates the height data we copy below.
+        float[,] heightMap;
         {
-            for (int x = 0; x < size; x++)
+            var terrain = new Grille.BeamNG.Terrain(terrainFilePath, maxHeight);
+            int size = terrain.Size;
+
+            // Extract heights to a 2D array for fast bilinear sampling
+            // Array indexing: [y, x] (row-major, matching SampleHeightmapBilinear convention)
+            heightMap = new float[size, size];
+            for (int y = 0; y < size; y++)
             {
-                heightMap[y, x] = terrain.Data[x, y].Height;
+                for (int x = 0; x < size; x++)
+                {
+                    heightMap[y, x] = terrain.Data[x, y].Height;
+                }
             }
+            // terrain goes out of scope here, allowing GC to reclaim the TerrainDataBuffer
         }
 
         return (worldX, worldY) =>
