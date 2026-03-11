@@ -980,11 +980,24 @@ public class TerrainGenerationOrchestrator
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         "Creating cropped GeoTIFF directly from tiles (skipping full combination)...");
                     var service = new GeoTiffMetadataService();
-                    var croppedPath = await service.CombineAndCropDirectAsync(
-                        state.GeoTiffDirectory,
-                        state.CropResult.OffsetX, state.CropResult.OffsetY,
-                        state.CropResult.CropWidth, state.CropResult.CropHeight);
-                    parameters.GeoTiffPath = croppedPath;
+                    var filterResult = FilterOverlappingTiles(state);
+                    if (filterResult != null)
+                    {
+                        var (files, offsetX, offsetY) = filterResult.Value;
+                        var croppedPath = await service.CombineAndCropDirectAsync(
+                            files,
+                            offsetX, offsetY,
+                            state.CropResult.CropWidth, state.CropResult.CropHeight);
+                        parameters.GeoTiffPath = croppedPath;
+                    }
+                    else
+                    {
+                        var croppedPath = await service.CombineAndCropDirectAsync(
+                            state.GeoTiffDirectory,
+                            state.CropResult.OffsetX, state.CropResult.OffsetY,
+                            state.CropResult.CropWidth, state.CropResult.CropHeight);
+                        parameters.GeoTiffPath = croppedPath;
+                    }
                     // Crop already applied — don't pass crop offsets again
                 }
                 else
@@ -1000,21 +1013,89 @@ public class TerrainGenerationOrchestrator
             case HeightmapSourceType.XyzFile:
                 if (state.XyzFilePaths is { Length: > 1 })
                 {
-                    parameters.XyzFilePaths = state.XyzFilePaths;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Using {state.XyzFilePaths.Length} XYZ tiles — will combine during generation");
+                    var xyzFilterResult = FilterOverlappingTiles(state);
+                    if (xyzFilterResult != null)
+                    {
+                        parameters.XyzFilePaths = xyzFilterResult.Value.Files;
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Using {xyzFilterResult.Value.Files.Length}/{state.XyzFilePaths.Length} XYZ tiles (filtered to crop region)");
+                        // Use adjusted offsets relative to the filtered tiles' combined extent
+                        ApplyCropSettingsWithAdjustedOffsets(xyzFilterResult.Value, state, parameters);
+                    }
+                    else
+                    {
+                        parameters.XyzFilePaths = state.XyzFilePaths;
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Using {state.XyzFilePaths.Length} XYZ tiles — will combine during generation");
+                        ApplyCropSettings(state, parameters);
+                    }
                 }
                 else
                 {
                     parameters.XyzPath = state.XyzPath;
+                    ApplyCropSettings(state, parameters);
                 }
 
                 parameters.XyzEpsgCode = state.XyzEpsgCode;
-                ApplyCropSettings(state, parameters);
                 break;
         }
 
         return parameters;
+    }
+
+    private static (string[] Files, int OffsetX, int OffsetY)? FilterOverlappingTiles(TerrainGenerationState state)
+    {
+        if (state.TileBoundsInfo == null || state.GeoTiffGeoTransform == null ||
+            state.CropResult is not { NeedsCropping: true })
+            return null;
+
+        var gt = state.GeoTiffGeoTransform;
+        var crop = state.CropResult;
+        var pixelSizeX = gt[1];
+        var pixelSizeY = Math.Abs(gt[5]);
+
+        var cropMinX = gt[0] + crop.OffsetX * pixelSizeX;
+        var cropMaxX = gt[0] + (crop.OffsetX + crop.CropWidth) * pixelSizeX;
+        var cropMaxY = gt[3] - crop.OffsetY * pixelSizeY;
+        var cropMinY = gt[3] - (crop.OffsetY + crop.CropHeight) * pixelSizeY;
+
+        var filtered = XyzFastScanner.FilterTilesByBbox(
+            state.TileBoundsInfo, cropMinX, cropMinY, cropMaxX, cropMaxY);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Tile filtering: {filtered.Length}/{state.TileBoundsInfo.Count} tiles overlap crop region");
+
+        if (filtered.Length == 0)
+            return (filtered, 0, 0);
+
+        var filteredBounds = state.TileBoundsInfo
+            .Where(t => filtered.Contains(t.FilePath));
+        var filteredMinX = filteredBounds.Min(t => t.MinX);
+        var filteredMaxY = filteredBounds.Max(t => t.MaxY);
+
+        var adjustedOffsetX = (int)Math.Round((cropMinX - filteredMinX) / pixelSizeX);
+        var adjustedOffsetY = (int)Math.Round((filteredMaxY - cropMaxY) / pixelSizeY);
+
+        return (filtered, adjustedOffsetX, adjustedOffsetY);
+    }
+
+    private static void ApplyCropSettingsWithAdjustedOffsets(
+        (string[] Files, int OffsetX, int OffsetY) filterResult,
+        TerrainGenerationState state,
+        TerrainCreationParameters parameters)
+    {
+        if (state.CropResult is not { NeedsCropping: true })
+            return;
+
+        parameters.CropGeoTiff = true;
+        parameters.CropOffsetX = filterResult.OffsetX;
+        parameters.CropOffsetY = filterResult.OffsetY;
+        parameters.CropWidth = state.CropResult.CropWidth;
+        parameters.CropHeight = state.CropResult.CropHeight;
+
+        Console.WriteLine(
+            $"Applying filtered crop: offset ({filterResult.OffsetX}, {filterResult.OffsetY}), " +
+            $"size {state.CropResult.CropWidth}x{state.CropResult.CropHeight} (adjusted for filtered tiles)");
     }
 
     private static void ApplyCropSettings(TerrainGenerationState state, TerrainCreationParameters parameters)

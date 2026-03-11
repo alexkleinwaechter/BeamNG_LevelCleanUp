@@ -117,6 +117,12 @@ public class TerrainGenerationState
     public int XyzEpsgCode { get; set; } = 25832;
     public int? XyzDetectedEpsg { get; set; }
 
+    /// <summary>
+    ///     Per-tile bounding boxes for filtering tiles before combine operations.
+    ///     Populated during GeoTIFF/XYZ metadata import.
+    /// </summary>
+    public List<TileBoundsInfo>? TileBoundsInfo { get; set; }
+
     // ========================================
     // GEOTIFF METADATA
     // ========================================
@@ -282,6 +288,7 @@ public class TerrainGenerationState
         GeoTiffOriginalHeight = 0;
         GeoTiffMinElevation = null;
         GeoTiffMaxElevation = null;
+        TileBoundsInfo = null;
 
         CleanupCachedCombinedGeoTiff();
     }
