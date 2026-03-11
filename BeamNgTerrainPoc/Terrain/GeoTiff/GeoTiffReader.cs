@@ -238,8 +238,10 @@ public class GeoTiffReader
         TerrainLogger.Info(
             $"Elevation range: {minElevation:F1}m to {maxElevation:F1}m (range: {maxElevation - minElevation:F1}m)");
 
-        // Convert to 16-bit heightmap image
+        // Convert to 16-bit heightmap image, then release the elevation array
+        // (can be 256MB+ for 16K x 16K terrains)
         var heightmapImage = ConvertToHeightmap(elevationData, width, height, minElevation, maxElevation);
+        elevationData = null!; // Allow GC to reclaim before resize allocates another large buffer
 
         // Resize if target size is specified and different from source
         if (targetSize.HasValue &&
@@ -380,8 +382,9 @@ public class GeoTiffReader
         TerrainLogger.Info(
             $"Cropped elevation range: {minElevation:F1}m to {maxElevation:F1}m (range: {maxElevation - minElevation:F1}m)");
 
-        // Convert to 16-bit heightmap image
+        // Convert to 16-bit heightmap image, then release the elevation array
         var heightmapImage = ConvertToHeightmap(elevationData, cropWidth, cropHeight, minElevation, maxElevation);
+        elevationData = null!; // Allow GC to reclaim before resize allocates another large buffer
 
         // Resize if target size is specified and different from cropped source
         if (targetSize.HasValue &&

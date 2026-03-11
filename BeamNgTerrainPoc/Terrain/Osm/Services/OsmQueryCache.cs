@@ -49,6 +49,11 @@ public class OsmQueryCache
     private readonly TimeSpan _cacheExpiry;
 
     /// <summary>
+    /// Per-key file locks to prevent concurrent read/write/delete races on the same cache file.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _fileLocks = new();
+
+    /// <summary>
     /// In-memory index of cached bounding boxes, built from filenames (no deserialization needed).
     /// </summary>
     private List<CacheBboxEntry>? _bboxIndex;
@@ -146,20 +151,26 @@ public class OsmQueryCache
             _memoryCache.TryRemove(cacheKey, out _);
         }
 
-        // Check disk cache (GZip-compressed)
+        // Check disk cache (GZip-compressed) with per-key lock
         var filePath = GetCacheFilePath(cacheKey);
         if (!File.Exists(filePath))
         {
             return null;
         }
 
+        var fileLock = GetFileLock(cacheKey);
+        await fileLock.WaitAsync();
         try
         {
+            // Re-check after acquiring lock (file may have been deleted)
+            if (!File.Exists(filePath))
+                return null;
+
             var fileInfo = new FileInfo(filePath);
             if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiry)
             {
                 // Expired, delete file
-                File.Delete(filePath);
+                SafeDeleteFile(filePath);
                 InvalidateBboxIndex();
                 return null;
             }
@@ -178,7 +189,11 @@ public class OsmQueryCache
         {
             TerrainLogger.Warning($"Failed to read OSM cache: {ex.Message}");
             // Delete corrupted cache file
-            try { File.Delete(filePath); InvalidateBboxIndex(); } catch { }
+            try { SafeDeleteFile(filePath); InvalidateBboxIndex(); } catch { }
+        }
+        finally
+        {
+            fileLock.Release();
         }
 
         return null;
@@ -211,8 +226,16 @@ public class OsmQueryCache
             if (entry.BBox.Contains(requestedBbox) &&
                 DateTime.UtcNow - entry.LastWriteUtc <= _cacheExpiry)
             {
+                // Derive cache key from the indexed file's bbox for per-key locking
+                var entryFileName = Path.GetFileNameWithoutExtension(
+                    Path.GetFileNameWithoutExtension(entry.FilePath)); // strip .json.gz
+                var entryLock = GetFileLock(entryFileName);
+                await entryLock.WaitAsync();
                 try
                 {
+                    if (!File.Exists(entry.FilePath))
+                        continue;
+
                     // Only deserialize the one matching file
                     var cachedResult = await ReadCompressedCacheFileAsync(entry.FilePath);
 
@@ -232,6 +255,10 @@ public class OsmQueryCache
                 catch (Exception ex)
                 {
                     TerrainLogger.Warning($"Error reading indexed cache file {Path.GetFileName(entry.FilePath)}: {ex.Message}");
+                }
+                finally
+                {
+                    entryLock.Release();
                 }
             }
         }
@@ -309,10 +336,12 @@ public class OsmQueryCache
     {
         var cacheKey = GetCacheKey(bbox);
 
-        // Store in memory
+        // Store in memory (ConcurrentDictionary — thread-safe)
         _memoryCache[cacheKey] = result;
 
-        // Store to disk (GZip-compressed)
+        // Store to disk (GZip-compressed) with per-key lock
+        var fileLock = GetFileLock(cacheKey);
+        await fileLock.WaitAsync();
         try
         {
             var filePath = GetCacheFilePath(cacheKey);
@@ -330,6 +359,10 @@ public class OsmQueryCache
         {
             TerrainLogger.Warning($"Failed to write OSM cache: {ex.Message}");
         }
+        finally
+        {
+            fileLock.Release();
+        }
     }
 
     /// <summary>
@@ -344,9 +377,11 @@ public class OsmQueryCache
         var filePath = GetCacheFilePath(cacheKey);
         if (File.Exists(filePath))
         {
+            var fileLock = GetFileLock(cacheKey);
+            fileLock.Wait();
             try
             {
-                File.Delete(filePath);
+                SafeDeleteFile(filePath);
                 InvalidateBboxIndex();
                 TerrainLogger.Info($"OSM cache invalidated: {cacheKey}");
                 CacheChanged?.Invoke();
@@ -354,6 +389,10 @@ public class OsmQueryCache
             catch (Exception ex)
             {
                 TerrainLogger.Warning($"Failed to delete OSM cache: {ex.Message}");
+            }
+            finally
+            {
+                fileLock.Release();
             }
         }
     }
@@ -371,7 +410,7 @@ public class OsmQueryCache
             var files = GetAllCacheFiles();
             foreach (var file in files)
             {
-                File.Delete(file);
+                SafeDeleteFile(file);
             }
             TerrainLogger.Info($"OSM cache cleared: {files.Length} files deleted");
             if (files.Length > 0)
@@ -434,7 +473,7 @@ public class OsmQueryCache
                     var fileInfo = new FileInfo(file);
                     if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiry)
                     {
-                        File.Delete(file);
+                        SafeDeleteFile(file);
                         deletedCount++;
                     }
                 }
@@ -460,6 +499,19 @@ public class OsmQueryCache
     }
 
     /// <summary>
+    /// Clears only the in-memory cache tier, releasing deserialized OSM data from RAM.
+    /// Disk cache remains intact. Call this after terrain generation completes
+    /// to free memory while keeping the disk cache for future runs.
+    /// </summary>
+    public void ClearMemoryCache()
+    {
+        var count = _memoryCache.Count;
+        _memoryCache.Clear();
+        if (count > 0)
+            TerrainLogger.Info($"OSM memory cache cleared: {count} entries released");
+    }
+
+    /// <summary>
     /// Raises the CacheChanged event manually. Useful when external code modifies the cache.
     /// </summary>
     public static void RaiseCacheChanged()
@@ -481,12 +533,28 @@ public class OsmQueryCache
 
     /// <summary>
     /// Serializes and GZip-compresses a cache result to disk.
+    /// Writes to a temporary file first, then atomically moves it into place
+    /// to prevent readers from seeing partially-written data.
     /// </summary>
     private static async Task WriteCompressedCacheFileAsync(string filePath, OsmQueryResult result)
     {
-        await using var fileStream = File.Create(filePath);
-        await using var gzipStream = new GZipStream(fileStream, CompressionLevel.Fastest);
-        await JsonSerializer.SerializeAsync(gzipStream, result, JsonOptions);
+        var tempPath = filePath + ".tmp";
+        try
+        {
+            await using (var fileStream = File.Create(tempPath))
+            await using (var gzipStream = new GZipStream(fileStream, CompressionLevel.Fastest))
+            {
+                await JsonSerializer.SerializeAsync(gzipStream, result, JsonOptions);
+            }
+
+            File.Move(tempPath, filePath, overwrite: true);
+        }
+        catch
+        {
+            // Clean up temp file on failure
+            try { File.Delete(tempPath); } catch { }
+            throw;
+        }
     }
 
     #endregion
@@ -605,6 +673,33 @@ public class OsmQueryCache
     #endregion
 
     #region File Helpers
+
+    /// <summary>
+    /// Gets or creates a per-key SemaphoreSlim for file-level synchronization.
+    /// </summary>
+    private SemaphoreSlim GetFileLock(string cacheKey)
+    {
+        return _fileLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+    }
+
+    /// <summary>
+    /// Safely deletes a file, ignoring FileNotFoundException (already deleted by another thread).
+    /// </summary>
+    private static void SafeDeleteFile(string filePath)
+    {
+        try
+        {
+            File.Delete(filePath);
+        }
+        catch (FileNotFoundException)
+        {
+            // Already deleted by another thread — not an error
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Directory already removed — not an error
+        }
+    }
 
     /// <summary>
     /// Gets all cache files (both compressed v3+ and legacy uncompressed).
