@@ -352,6 +352,17 @@ public partial class GenerateTerrain : IDisposable
         set => _state.GeoTiffValidationResult = value;
     }
 
+    // Per-tile bounding boxes for filtering tiles before combine operations
+    private List<TileBoundsInfo>? _tileBoundsInfo
+    {
+        get => _state.TileBoundsInfo;
+        set => _state.TileBoundsInfo = value;
+    }
+
+    // Tracks which XYZ files were used to build the cached combined GeoTIFF,
+    // so we can invalidate the cache when the filtered tile set changes.
+    private string[]? _cachedFilteredXyzFiles;
+
     private int _xyzEpsgCode
     {
         get => _state.XyzEpsgCode;
@@ -897,6 +908,7 @@ public partial class GenerateTerrain : IDisposable
             _canFetchOsmData = result.CanFetchOsmData;
             _osmBlockedReason = result.OsmBlockedReason;
             _geoTiffValidationResult = result.ValidationResult;
+            _tileBoundsInfo = result.TileBounds;
 
             // Only update terrain size from GeoTIFF if no existing terrain.json was loaded
             if (result.SuggestedTerrainSize.HasValue && !_hasExistingTerrainSettings)
@@ -1411,20 +1423,36 @@ public partial class GenerateTerrain : IDisposable
                 // Directory of tiles: combine-and-crop in one pass (skips non-overlapping tiles)
                 if (string.IsNullOrEmpty(_geoTiffDirectory) || !Directory.Exists(_geoTiffDirectory))
                     return;
-                croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
-                    _geoTiffDirectory,
-                    _cropResult.OffsetX, _cropResult.OffsetY,
-                    _cropResult.CropWidth, _cropResult.CropHeight);
+
+                // Filter to only overlapping tiles if bounds are available
+                var filteredTiles = FilterOverlappingTiles(_cropResult);
+                if (filteredTiles != null)
+                    croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
+                        filteredTiles.Value.Files,
+                        filteredTiles.Value.OffsetX, filteredTiles.Value.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+                else
+                    croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
+                        _geoTiffDirectory,
+                        _cropResult.OffsetX, _cropResult.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
             }
             else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
             {
                 if (_state.XyzFilePaths is { Length: > 1 })
                 {
-                    // Multi-XYZ: combine and crop
-                    croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
-                        _state.XyzFilePaths, _xyzEpsgCode,
-                        _cropResult.OffsetX, _cropResult.OffsetY,
-                        _cropResult.CropWidth, _cropResult.CropHeight);
+                    // Multi-XYZ: filter to overlapping tiles, then combine and crop
+                    var filteredXyz = FilterOverlappingTiles(_cropResult);
+                    if (filteredXyz != null)
+                        croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
+                            filteredXyz.Value.Files, _xyzEpsgCode,
+                            filteredXyz.Value.OffsetX, filteredXyz.Value.OffsetY,
+                            _cropResult.CropWidth, _cropResult.CropHeight);
+                    else
+                        croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
+                            _state.XyzFilePaths, _xyzEpsgCode,
+                            _cropResult.OffsetX, _cropResult.OffsetY,
+                            _cropResult.CropWidth, _cropResult.CropHeight);
                 }
                 else if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
                          File.Exists(_cachedCombinedGeoTiffPath))
@@ -1432,6 +1460,14 @@ public partial class GenerateTerrain : IDisposable
                     // Single XYZ already converted: crop the cached file
                     croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
                         _cachedCombinedGeoTiffPath,
+                        _cropResult.OffsetX, _cropResult.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+                }
+                else if (!string.IsNullOrEmpty(_state.XyzPath))
+                {
+                    // Single XYZ, no cached GeoTIFF — combine-and-crop directly
+                    croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
+                        new[] { _state.XyzPath }, _xyzEpsgCode,
                         _cropResult.OffsetX, _cropResult.OffsetY,
                         _cropResult.CropWidth, _cropResult.CropHeight);
                 }
@@ -1468,6 +1504,8 @@ public partial class GenerateTerrain : IDisposable
             _geoTiffDirectory = null;
             _state.XyzPath = null;
             _state.XyzFilePaths = null;
+            _tileBoundsInfo = null;
+            _cachedFilteredXyzFiles = null;
 
             // Reset crop result - the file IS the crop now
             _cropResult = null;
@@ -1537,34 +1575,70 @@ public partial class GenerateTerrain : IDisposable
                 if (string.IsNullOrEmpty(_geoTiffDirectory) || !Directory.Exists(_geoTiffDirectory))
                     return;
 
-                // Read elevation directly from overlapping tiles — no full combination needed
-                elevationRange = await _geoTiffService.GetCroppedElevationRangeFromTilesAsync(
-                    _geoTiffDirectory,
-                    cropResult.OffsetX, cropResult.OffsetY,
-                    cropResult.CropWidth, cropResult.CropHeight);
+                // Filter to only overlapping tiles if bounds are available
+                var filteredTiles = FilterOverlappingTiles(cropResult);
+                if (filteredTiles != null)
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeFromTilesAsync(
+                        filteredTiles.Value.Files,
+                        filteredTiles.Value.OffsetX, filteredTiles.Value.OffsetY,
+                        cropResult.CropWidth, cropResult.CropHeight);
+                else
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeFromTilesAsync(
+                        _geoTiffDirectory,
+                        cropResult.OffsetX, cropResult.OffsetY,
+                        cropResult.CropWidth, cropResult.CropHeight);
             }
             else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
             {
                 if (_state.XyzFilePaths is { Length: > 1 })
                 {
-                    // Multi-XYZ tiles: still need cached combined file (XYZ lacks tile structure)
+                    // Multi-XYZ tiles: filter to overlapping tiles, then combine
+                    var filteredXyz = FilterOverlappingTiles(cropResult);
+                    var xyzFiles = filteredXyz?.Files ?? _state.XyzFilePaths;
+
+                    // Invalidate cache when filtered tile set changes (different crop region
+                    // may overlap different tiles, making the cached combined file stale)
+                    if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
+                        File.Exists(_cachedCombinedGeoTiffPath) &&
+                        _cachedFilteredXyzFiles != null &&
+                        !xyzFiles.SequenceEqual(_cachedFilteredXyzFiles))
+                    {
+                        _state.CleanupCachedCombinedGeoTiff();
+                    }
+
                     if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
                         !File.Exists(_cachedCombinedGeoTiffPath))
+                    {
                         _cachedCombinedGeoTiffPath =
                             await _geoTiffService.CombineXyzTilesAsync(
-                                _state.XyzFilePaths, _xyzEpsgCode);
+                                xyzFiles, _xyzEpsgCode);
+                        _cachedFilteredXyzFiles = xyzFiles;
+                    }
+
+                    // Use adjusted offsets for filtered tiles, original offsets for full set
+                    var elOffX = filteredXyz?.OffsetX ?? cropResult.OffsetX;
+                    var elOffY = filteredXyz?.OffsetY ?? cropResult.OffsetY;
                     elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
                         _cachedCombinedGeoTiffPath,
-                        cropResult.OffsetX, cropResult.OffsetY,
+                        elOffX, elOffY,
                         cropResult.CropWidth, cropResult.CropHeight);
                 }
                 else
                 {
-                    var xyzPath = _cachedCombinedGeoTiffPath ?? _state.XyzPath;
-                    if (string.IsNullOrEmpty(xyzPath) || !File.Exists(xyzPath))
+                    // Single XYZ: lazy-create cached GeoTIFF on first crop adjustment
+                    if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
+                        !File.Exists(_cachedCombinedGeoTiffPath))
+                    {
+                        if (!string.IsNullOrEmpty(_state.XyzPath))
+                            _cachedCombinedGeoTiffPath =
+                                await _geoTiffService.CombineXyzTilesAsync(
+                                    new[] { _state.XyzPath }, _xyzEpsgCode);
+                    }
+                    if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
+                        !File.Exists(_cachedCombinedGeoTiffPath))
                         return;
                     elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
-                        xyzPath,
+                        _cachedCombinedGeoTiffPath,
                         cropResult.OffsetX, cropResult.OffsetY,
                         cropResult.CropWidth, cropResult.CropHeight);
                 }
@@ -1607,6 +1681,49 @@ public partial class GenerateTerrain : IDisposable
             await InvokeAsync(() => { Snackbar.Clear(); });
             _suppressSnackbars = false;
         }
+    }
+
+    /// <summary>
+    ///     Filters tile bounds to only those overlapping the current crop region.
+    ///     Converts crop pixel offsets to native CRS coordinates using the GeoTransform.
+    ///     Returns adjusted offsets relative to the filtered tiles' combined extent,
+    ///     because CombineAndCropDirect computes its origin from the tiles it receives.
+    /// </summary>
+    private (string[] Files, int OffsetX, int OffsetY)? FilterOverlappingTiles(CropResult crop)
+    {
+        if (_tileBoundsInfo == null || _geoTiffGeoTransform == null)
+            return null;
+
+        var gt = _geoTiffGeoTransform;
+        var pixelSizeX = gt[1];           // positive
+        var pixelSizeY = Math.Abs(gt[5]); // make positive
+
+        // Crop region in native CRS coordinates
+        var cropMinX = gt[0] + crop.OffsetX * pixelSizeX;
+        var cropMaxX = gt[0] + (crop.OffsetX + crop.CropWidth) * pixelSizeX;
+        var cropMaxY = gt[3] - crop.OffsetY * pixelSizeY;       // gt[3] is top, Y goes down
+        var cropMinY = gt[3] - (crop.OffsetY + crop.CropHeight) * pixelSizeY;
+
+        var filtered = XyzFastScanner.FilterTilesByBbox(
+            _tileBoundsInfo, cropMinX, cropMinY, cropMaxX, cropMaxY);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Tile filtering: {filtered.Length}/{_tileBoundsInfo.Count} tiles overlap crop region");
+
+        if (filtered.Length == 0)
+            return (filtered, 0, 0);
+
+        // Compute the filtered tiles' combined extent (what CombineAndCropDirect will see)
+        var filteredBounds = _tileBoundsInfo
+            .Where(t => filtered.Contains(t.FilePath));
+        var filteredMinX = filteredBounds.Min(t => t.MinX);
+        var filteredMaxY = filteredBounds.Max(t => t.MaxY);
+
+        // Adjust offsets: shift from full mosaic origin to filtered tiles' origin
+        var adjustedOffsetX = (int)Math.Round((cropMinX - filteredMinX) / pixelSizeX);
+        var adjustedOffsetY = (int)Math.Round((filteredMaxY - cropMaxY) / pixelSizeY);
+
+        return (filtered, adjustedOffsetX, adjustedOffsetY);
     }
 
     private string GetHeightmapSourceDescription()

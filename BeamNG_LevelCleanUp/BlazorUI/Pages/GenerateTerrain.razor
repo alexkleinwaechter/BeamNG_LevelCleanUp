@@ -16,6 +16,7 @@
 @inject IDialogService DialogService
 @inject NavigationManager Navigation
 
+<CascadingValue Value="@EffectiveBoundingBox" Name="EffectiveBoundingBox">
 <ErrorBoundary>
     <ChildContent>
         <div class="content @(WizardMode ? "wizard-content" : "")">
@@ -896,6 +897,7 @@
         <CustomErrorContent />
     </ErrorContent>
 </ErrorBoundary>
+</CascadingValue>
 
 @code {
     // State variables
