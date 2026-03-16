@@ -37,9 +37,62 @@ public class GeoTiffReader
             }
             catch (Exception ex)
             {
-                TerrainLogger.Error($"Failed to initialize GDAL: {ex.Message}");
+                var appDir = AppContext.BaseDirectory;
+                var diagnostics = new System.Text.StringBuilder();
+                diagnostics.AppendLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss UTC}] GDAL initialization failed. Diagnostics:");
+                diagnostics.AppendLine($"  App base directory: {appDir}");
+                diagnostics.AppendLine($"  OS: {Environment.OSVersion} ({(Environment.Is64BitProcess ? "64-bit" : "32-bit")} process)");
+                diagnostics.AppendLine($"  .NET: {Environment.Version}");
+                diagnostics.AppendLine($"  GDAL_DATA env: {Environment.GetEnvironmentVariable("GDAL_DATA") ?? "(not set)"}");
+                diagnostics.AppendLine($"  PROJ_LIB env: {Environment.GetEnvironmentVariable("PROJ_LIB") ?? "(not set)"}");
+
+                var criticalFiles = new[] { "gdal.dll", "gdal_wrap.dll", "proj_9.dll", "proj.db", "ogr_wrap.dll", "osr_wrap.dll" };
+                foreach (var file in criticalFiles)
+                {
+                    var filePath = Path.Combine(appDir, file);
+                    diagnostics.AppendLine($"  {file}: {(File.Exists(filePath) ? "FOUND" : "MISSING")}");
+                }
+
+                // Log full exception chain
+                var current = ex;
+                while (current != null)
+                {
+                    diagnostics.AppendLine($"  Exception: [{current.GetType().Name}] {current.Message}");
+                    current = current.InnerException;
+                }
+
+                var diagText = diagnostics.ToString();
+
+                // Write to TerrainCreationLogger (file-backed) if available
+                if (TerrainCreationLogger.Current != null)
+                {
+                    TerrainCreationLogger.Current.Error(diagText);
+                }
+                else
+                {
+                    // No logger session active yet — write directly to AppData as fallback
+                    try
+                    {
+                        var logDir = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                            "BeamNG_LevelCleanUp");
+                        Directory.CreateDirectory(logDir);
+                        var logPath = Path.Combine(logDir, "gdal_error.log");
+                        File.AppendAllText(logPath, diagText + Environment.NewLine);
+                    }
+                    catch
+                    {
+                        // Can't write log file either
+                    }
+                }
+
+                // Also send to TerrainLogger in case a UI handler is active
+                TerrainLogger.Error(diagText);
+
                 throw new InvalidOperationException(
-                    "GDAL initialization failed. Ensure GDAL native libraries are installed.", ex);
+                    $"GDAL initialization failed. Ensure GDAL native libraries are installed. " +
+                    $"Check error log in %LocalAppData%\\BeamNG_LevelCleanUp\\ | " +
+                    $"App dir: {appDir} | Error: {ex.Message}", ex);
             }
         }
     }
