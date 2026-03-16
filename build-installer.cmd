@@ -50,6 +50,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Verify publish output contains GDAL files (flattened into publish root by RID-specific publish)
+set "PUBLISH_DIR=BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
+if exist "%PUBLISH_DIR%\gdal.dll" (
+    if exist "%PUBLISH_DIR%\proj.db" (
+        echo GDAL native libraries and proj.db found in publish folder.
+    ) else (
+        echo WARNING: proj.db not found in publish folder!
+    )
+) else (
+    echo WARNING: gdal.dll not found in publish folder!
+)
+
 REM Step 4: Build the MSI installer
 echo.
 echo [4/4] Building MSI installer...

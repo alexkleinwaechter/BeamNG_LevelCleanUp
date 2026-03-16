@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using BeamNgTerrainPoc.Terrain.Logging;
 using MaxRev.Gdal.Core;
 using OSGeo.GDAL;
@@ -17,6 +18,9 @@ public class GeoTiffReader
     private static bool _gdalInitialized;
     private static readonly object _initLock = new();
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetDllDirectory(string lpPathName);
+
     /// <summary>
     ///     Initializes GDAL library. Called automatically on first use.
     ///     Uses MaxRev.Gdal.Core for automatic configuration of GDAL_DATA and PROJ_LIB paths.
@@ -29,6 +33,10 @@ public class GeoTiffReader
 
             try
             {
+                // Ensure the app directory is in the native DLL search path,
+                // preventing conflicts with other GDAL installations (QGIS, OSGeo4W, etc.)
+                SetDllDirectory(AppContext.BaseDirectory);
+
                 // MaxRev.Gdal.Core handles all environment variable setup (GDAL_DATA, PROJ_LIB)
                 GdalBase.ConfigureAll();
                 Gdal.AllRegister();

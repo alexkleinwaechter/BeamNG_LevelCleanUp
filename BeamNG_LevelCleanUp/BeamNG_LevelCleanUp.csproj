@@ -11,6 +11,7 @@
     <FileVersion>1.5.5.0</FileVersion>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- Publish settings for GDAL: dotnet publish -c Release -r win-x64 (self-contained) -->
+    <PlatformTarget>x64</PlatformTarget>
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
@@ -25,8 +26,8 @@
     <PackageReference Include="HelixToolkit.Wpf.SharpDX" Version="2.24.0" />
     <PackageReference Include="HelixToolkit.SharpDX.Assimp" Version="2.24.0" />
     <!-- MaxRev GDAL packages for WiX installer compatibility -->
-    <PackageReference Include="MaxRev.Gdal.Core" Version="3.10.0.300" />
-    <PackageReference Include="MaxRev.Gdal.WindowsRuntime.Minimal" Version="3.10.0.300" />
+    <PackageReference Include="MaxRev.Gdal.Core" Version="3.12.2.472" />
+    <PackageReference Include="MaxRev.Gdal.WindowsRuntime.Minimal" Version="3.12.2.472" />
     <PackageReference Include="JsonRepairUtils" Version="0.0.2" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.WindowsForms" Version="9.0.0" />
