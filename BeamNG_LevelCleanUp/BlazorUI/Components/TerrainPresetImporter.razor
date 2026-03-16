@@ -1,8 +1,11 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
 @using System.Text.RegularExpressions
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
 @using BeamNgTerrainPoc.Terrain.Models
+@using BeamNgTerrainPoc.Terrain.Models.DecalRoad
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 @using SplineInterpolationType = BeamNgTerrainPoc.Terrain.Models.SplineInterpolationType
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
@@ -762,6 +765,26 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 result.GeoTiffProjectionName = geoTiffMetadata["projectionName"]?.GetValue<string>();
                 if (geoTiffMetadata["nativePixelSizeMeters"] != null)
                     result.NativePixelSizeMeters = geoTiffMetadata["nativePixelSizeMeters"]!.GetValue<float>();
+            }
+
+            // Import DecalRoad settings (v3.0+) — gracefully handle missing section
+            var decalRoadNode = appSettings["decalRoadSettings"];
+            if (decalRoadNode != null)
+            {
+                try
+                {
+                    var drJsonOptions = new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+                    };
+                    result.DecalRoadSettings = decalRoadNode.Deserialize<DecalRoadSettings>(drJsonOptions);
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Could not parse DecalRoad settings from preset: {ex.Message}");
+                }
             }
 
             // Import per-material layer source settings including road smoothing

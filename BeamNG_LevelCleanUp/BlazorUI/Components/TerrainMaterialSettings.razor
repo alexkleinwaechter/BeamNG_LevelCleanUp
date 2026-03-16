@@ -1,5 +1,6 @@
 ﻿@using DialogResult = System.Windows.Forms.DialogResult
 @using BeamNgTerrainPoc.Terrain.Models
+@using BeamNgTerrainPoc.Terrain.Models.DecalRoad
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 @using BeamNgTerrainPoc.Terrain.GeoTiff
 @using BeamNgTerrainPoc.Examples
@@ -1187,6 +1188,52 @@ Class="my-0">
                             </ChildContent>
                         </MudExpansionPanel>
                     </MudExpansionPanels>
+                </MudItem>
+            }
+
+            @* DecalRoad Layer Override *@
+            @if (DecalRoadSettings != null && (Material.IsRoadMaterial || Material.EnableRoadPainting))
+            {
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1" />
+                        DecalRoad Layers
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <div class="d-flex align-center gap-1 mb-2">
+                        <MudCheckBox T="bool" Value="@IsUsingDecalRoadDefaults()"
+                                     ValueChanged="OnUseDecalRoadDefaultsChanged"
+                                     Label="Use defaults (resolved via cascade)"
+                                     Color="Color.Primary" />
+                    </div>
+                    @if (IsUsingDecalRoadDefaults())
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Layer set resolved from defaults based on road type / material name.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <div class="d-flex align-center gap-2">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Edit"
+                                       Size="Size.Small"
+                                       OnClick="OpenDecalRoadLayerSetDialog">
+                                Edit Custom Layer Set
+                            </MudButton>
+                            @{
+                                var customSet = GetCustomLayerSet();
+                                if (customSet != null)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Custom: @customSet.Layers.Count layers, @customSet.DefaultLaneCount lanes
+                                    </MudText>
+                                }
+                            }
+                        </div>
+                    }
                 </MudItem>
             }
         </MudGrid>

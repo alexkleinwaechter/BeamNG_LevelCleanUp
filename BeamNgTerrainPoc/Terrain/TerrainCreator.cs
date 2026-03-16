@@ -308,6 +308,55 @@ public class TerrainCreator
                 perfLog.Timing($"Spawn point extraction: {sw.ElapsedMilliseconds}ms");
             }
 
+            // 3c. Generate DecalRoads (requires unified network and heightmap)
+            perfLog.Info($"DecalRoad check: unifiedResult null={unifiedResult == null}, " +
+                         $"Network null={unifiedResult?.Network == null}, " +
+                         $"Splines={unifiedResult?.Network?.Splines?.Count ?? 0}, " +
+                         $"Settings null={parameters.DecalRoadSettings == null}, " +
+                         $"Enabled={parameters.DecalRoadSettings?.Enabled}");
+            if (unifiedResult?.Network != null &&
+                parameters.DecalRoadSettings is { Enabled: true })
+            {
+                perfLog.LogSection("DecalRoad Generation");
+                sw.Restart();
+
+                var appDataDefaults = parameters.DecalRoadAppDataDefaults
+                    ?? Services.DecalRoad.DecalRoadDefaultLayerSets.GetDefaults();
+
+                var decalRoads = Services.DecalRoad.DecalRoadGenerator.Generate(
+                    unifiedResult.Network,
+                    heightMap2D,
+                    parameters.MetersPerPixel,
+                    parameters.Size,
+                    parameters.TerrainBaseHeight,
+                    parameters.DecalRoadSettings,
+                    appDataDefaults);
+
+                perfLog.Info($"DecalRoadGenerator.Generate returned {decalRoads.Count} roads");
+                if (decalRoads.Count > 0)
+                {
+                    var levelDir = Path.GetDirectoryName(outputPath)!;
+
+                    // Clean previous DecalRoads to avoid duplicates on re-generation
+                    Services.DecalRoad.DecalRoadSceneWriter.CleanPrevious(levelDir);
+
+                    perfLog.Info($"Writing DecalRoads to: {levelDir}");
+                    var writer = new Services.DecalRoad.DecalRoadSceneWriter();
+                    var written = writer.WriteAll(decalRoads, levelDir);
+                    perfLog.Info($"Generated {written} DecalRoad objects");
+                }
+                else
+                {
+                    perfLog.Info("DecalRoadGenerator returned 0 roads — check layer set resolution and spline data");
+                }
+
+                perfLog.Timing($"DecalRoad generation: {sw.ElapsedMilliseconds}ms");
+            }
+
+            // Populate output properties for downstream use (re-generation)
+            parameters.OutputNetwork = unifiedResult?.Network;
+            parameters.OutputHeightMap = heightMap2D;
+
             // 4. Process material layers
             // IMPORTANT: If road smoothing was applied, the MaterialPainter has generated
             // correct layer maps using RoadSurfaceWidthMeters. We need to save these and

@@ -9,11 +9,13 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Building;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
+using BeamNG_LevelCleanUp.Utils;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -165,6 +167,13 @@ public class TerrainGenerationOrchestrator
 
             // Update state with auto-calculated values
             UpdateStateFromParameters(state, terrainParameters);
+
+            // Cache network and heightmap for standalone DecalRoad re-generation
+            if (terrainParameters != null)
+            {
+                state.CachedNetwork = terrainParameters.OutputNetwork;
+                state.CachedHeightMap = terrainParameters.OutputHeightMap;
+            }
 
             // Fire-and-forget memory cleanup — runs in background so UI gets result immediately.
             // OSM memory cache can hold 100-200MB+ of deserialized query results per run.
@@ -880,6 +889,18 @@ public class TerrainGenerationOrchestrator
 
             roadParams.PreBuiltSplines = splines;
 
+            // Stamp OSM highway type onto splines that don't have it yet (merged regular paths lose metadata)
+            var dominantHighwayType = lineFeatures
+                .Select(f => f.Tags.GetValueOrDefault("highway"))
+                .Where(h => h != null)
+                .GroupBy(h => h)
+                .MaxBy(g => g.Count())?.Key;
+            if (dominantHighwayType != null)
+            {
+                foreach (var s in splines.Where(s => s.OsmRoadType == null))
+                    s.OsmRoadType = dominantHighwayType;
+            }
+
             // Rasterize layer map FROM THE SPLINES (not from OSM line features)
             // This ensures the layer map matches the interpolated spline path used for elevation smoothing
             var effectiveRoadSurfaceWidth = mat.RoadSurfaceWidthMeters is > 0
@@ -945,7 +966,13 @@ public class TerrainGenerationOrchestrator
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
             ExcludeBridgesFromTerrain = state.ExcludeBridgesFromTerrain,
             ExcludeTunnelsFromTerrain = state.ExcludeTunnelsFromTerrain,
-            AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0
+            AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0,
+            DecalRoadSettings = state.EnableDecalRoads
+                ? state.DecalRoadSettings ?? new DecalRoadSettings { Enabled = true }
+                : null,
+            DecalRoadAppDataDefaults = state.EnableDecalRoads
+                ? DecalRoadDefaultsManager.Load()
+                : null,
         };
 
         // Pass pre-analyzed network if available

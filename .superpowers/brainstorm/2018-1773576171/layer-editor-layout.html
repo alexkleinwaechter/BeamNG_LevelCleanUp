@@ -1,0 +1,162 @@
+<h2>DecalRoad Layer Set Editor — Component Layout</h2>
+<p class="subtitle">This reusable component will be used in 3 contexts: Defaults editor, Per-material override, and (future) Per-OSM-feature override. Which layout feels right?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>List + Detail Panel (BeamNG-style)</h3>
+      <p>Layer list on top with selectable rows (name, material chip, enable toggle). Selected layer expands a detail panel below with sliders for width, position, fade, priority. Matches BeamNG's roadSpline editor pattern.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Layer Set: "Primary Road"</div>
+        <div class="mockup-body" style="padding:12px;font-size:13px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center">
+            <span style="font-weight:600">Layers</span>
+            <span style="font-size:11px;opacity:0.6">[+ Add] [Duplicate] [Remove All]</span>
+          </div>
+          <div style="border:1px solid #444;border-radius:4px;overflow:hidden;margin-bottom:12px">
+            <div style="padding:6px 10px;background:#2a3a4a;display:flex;align-items:center;gap:8px;border-left:3px solid #4fc3f7">
+              <span style="width:24px;height:24px;background:#555;border-radius:3px;display:inline-block"></span>
+              <span style="flex:1">EdgeLine</span>
+              <span style="font-size:11px;color:#90caf9">m_line_white</span>
+              <span style="color:#4caf50">●</span>
+            </div>
+            <div style="padding:6px 10px;display:flex;align-items:center;gap:8px">
+              <span style="width:24px;height:24px;background:#555;border-radius:3px;display:inline-block"></span>
+              <span style="flex:1">CenterLine</span>
+              <span style="font-size:11px;color:#90caf9">m_line_white_disc...</span>
+              <span style="color:#4caf50">●</span>
+            </div>
+            <div style="padding:6px 10px;display:flex;align-items:center;gap:8px">
+              <span style="width:24px;height:24px;background:#555;border-radius:3px;display:inline-block"></span>
+              <span style="flex:1">EdgeBlend</span>
+              <span style="font-size:11px;color:#90caf9">m_road_asphalt_edge</span>
+              <span style="color:#4caf50">●</span>
+            </div>
+            <div style="padding:6px 10px;display:flex;align-items:center;gap:8px">
+              <span style="width:24px;height:24px;background:#555;border-radius:3px;display:inline-block"></span>
+              <span style="flex:1;opacity:0.5">AIRoad</span>
+              <span style="font-size:11px;color:#90caf9;opacity:0.5">road_invisible</span>
+              <span style="color:#666">●</span>
+            </div>
+          </div>
+          <div style="border:1px solid #333;border-radius:4px;padding:10px;background:#1a2a3a">
+            <div style="font-weight:600;margin-bottom:8px">EdgeLine Properties</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+              <div>Material: <code>m_line_white</code></div>
+              <div>Type: <code>EdgeLine</code></div>
+              <div>Width: <code>0.15m</code> ━━━━●━</div>
+              <div>Position: <code>1.0</code> ━━━━━━●</div>
+              <div>☑ Mirrored &nbsp; ☑ Interrupt@Jnc</div>
+              <div>Priority: <code>10</code> ━━●━━━━</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Familiar to BeamNG users</li><li>Compact — fits in expansion panel</li><li>Good for many layers</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Two-level interaction (select then edit)</li><li>Can't see all properties at once</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Inline Cards (Accordion)</h3>
+      <p>Each layer is an expansion panel card showing key info in the header (name, material, type chip, enable toggle). Expand to see all properties inline. No separate detail panel.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Layer Set: "Primary Road"</div>
+        <div class="mockup-body" style="padding:12px;font-size:13px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center">
+            <span style="font-weight:600">Layers</span>
+            <span style="font-size:11px;opacity:0.6">[+ Add Layer]</span>
+          </div>
+          <!-- Collapsed card -->
+          <div style="border:1px solid #444;border-radius:4px;margin-bottom:6px;padding:8px 12px;display:flex;align-items:center;gap:8px">
+            <span style="cursor:move;opacity:0.5">⋮⋮</span>
+            <span style="background:#2196f3;color:white;font-size:10px;padding:2px 6px;border-radius:10px">EdgeLine</span>
+            <span style="flex:1;font-weight:500">EdgeLine</span>
+            <span style="font-size:11px;color:#90caf9">m_line_white</span>
+            <span style="font-size:11px">0.15m</span>
+            <span style="color:#4caf50">●</span>
+            <span style="opacity:0.5">▶</span>
+          </div>
+          <!-- Expanded card -->
+          <div style="border:1px solid #4fc3f7;border-radius:4px;margin-bottom:6px;background:#1a2a3a">
+            <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #333">
+              <span style="cursor:move;opacity:0.5">⋮⋮</span>
+              <span style="background:#ff9800;color:white;font-size:10px;padding:2px 6px;border-radius:10px">CenterLine</span>
+              <span style="flex:1;font-weight:500">CenterLine</span>
+              <span style="color:#4caf50">●</span>
+              <span style="opacity:0.5">▼</span>
+            </div>
+            <div style="padding:10px 12px;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div>Material: <code>m_line_white_discontinue</code></div>
+              <div>Width: 0.12m</div>
+              <div>Position: 0.0 (center)</div>
+              <div>Priority: 10</div>
+              <div>☐ Mirrored &nbsp; ☑ Interrupt</div>
+              <div>Fade: 0 / 0</div>
+              <div style="grid-column:span 2;text-align:right;margin-top:4px">
+                <span style="color:#f44336;font-size:11px;cursor:pointer">🗑 Delete</span>
+              </div>
+            </div>
+          </div>
+          <!-- Collapsed cards -->
+          <div style="border:1px solid #444;border-radius:4px;margin-bottom:6px;padding:8px 12px;display:flex;align-items:center;gap:8px">
+            <span style="cursor:move;opacity:0.5">⋮⋮</span>
+            <span style="background:#4caf50;color:white;font-size:10px;padding:2px 6px;border-radius:10px">EdgeBlend</span>
+            <span style="flex:1;font-weight:500">EdgeBlend</span>
+            <span style="font-size:11px;color:#90caf9">m_road_asphalt_edge</span>
+            <span style="font-size:11px">1.5m</span>
+            <span style="color:#4caf50">●</span>
+            <span style="opacity:0.5">▶</span>
+          </div>
+          <div style="border:1px solid #444;border-radius:4px;padding:8px 12px;display:flex;align-items:center;gap:8px;opacity:0.5">
+            <span style="cursor:move;opacity:0.5">⋮⋮</span>
+            <span style="background:#9e9e9e;color:white;font-size:10px;padding:2px 6px;border-radius:10px">AIRoad</span>
+            <span style="flex:1;font-weight:500">AIRoad</span>
+            <span style="font-size:11px;color:#90caf9">road_invisible</span>
+            <span style="color:#666">●</span>
+            <span style="opacity:0.5">▶</span>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>All info visible in headers</li><li>Drag-to-reorder natural with cards</li><li>Matches existing MudBlazor expansion pattern in app</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Takes more vertical space when expanded</li><li>Only one layer editable at a time (accordion)</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Compact Table with Inline Edit</h3>
+      <p>Data grid / table with editable cells. Each row = one layer. Columns for key properties (type, material, width, position, flags). Click to edit inline. Add/remove via row actions.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Layer Set: "Primary Road"</div>
+        <div class="mockup-body" style="padding:12px;font-size:12px;">
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr style="text-align:left;border-bottom:2px solid #444;font-size:11px;color:#999">
+                <th style="padding:4px">⋮⋮</th><th style="padding:4px">On</th><th style="padding:4px">Name</th><th style="padding:4px">Type</th><th style="padding:4px">Material</th><th style="padding:4px">W</th><th style="padding:4px">Pos</th><th style="padding:4px">Mir</th><th style="padding:4px">Jnc</th><th style="padding:4px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #333"><td>⋮⋮</td><td>☑</td><td>EdgeLine</td><td><span style="background:#2196f3;color:white;font-size:9px;padding:1px 4px;border-radius:8px">Edge</span></td><td style="color:#90caf9">m_line_white</td><td>0.15</td><td>1.0</td><td>☑</td><td>☑</td><td style="color:#f44336">✕</td></tr>
+              <tr style="border-bottom:1px solid #333"><td>⋮⋮</td><td>☑</td><td>CenterLine</td><td><span style="background:#ff9800;color:white;font-size:9px;padding:1px 4px;border-radius:8px">Center</span></td><td style="color:#90caf9">m_line_w_disc</td><td>0.12</td><td>0.0</td><td>☐</td><td>☑</td><td style="color:#f44336">✕</td></tr>
+              <tr style="border-bottom:1px solid #333"><td>⋮⋮</td><td>☑</td><td>EdgeBlend</td><td><span style="background:#4caf50;color:white;font-size:9px;padding:1px 4px;border-radius:8px">Blend</span></td><td style="color:#90caf9">m_road_asph_edge</td><td>1.5</td><td>1.0</td><td>☑</td><td>☑</td><td style="color:#f44336">✕</td></tr>
+              <tr style="opacity:0.5"><td>⋮⋮</td><td>☐</td><td>AIRoad</td><td><span style="background:#9e9e9e;color:white;font-size:9px;padding:1px 4px;border-radius:8px">AI</span></td><td style="color:#90caf9">road_invisible</td><td>trk</td><td>0.0</td><td>☐</td><td>☐</td><td style="color:#f44336">✕</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:8px">
+        <div class="pros"><h4>Pros</h4><ul><li>Most compact — see everything at once</li><li>Fast editing for power users</li><li>Good for comparing layers</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Cramped on smaller screens</li><li>Hard to show all properties (fade, priority, AI props)</li><li>Less discoverable for new users</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

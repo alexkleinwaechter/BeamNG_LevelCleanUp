@@ -9,7 +9,9 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
+using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using MudBlazor.Utilities;
@@ -122,6 +124,16 @@ public partial class GenerateTerrain : IDisposable
     {
         get => _state.ExcludeTunnelsFromTerrain;
         set => _state.ExcludeTunnelsFromTerrain = value;
+    }
+
+    private bool _enableDecalRoads
+    {
+        get => _state.EnableDecalRoads;
+        set
+        {
+            _state.EnableDecalRoads = value;
+            if (value) EnsureDecalRoadSettings();
+        }
     }
 
     private bool _enableBuildings
@@ -1978,6 +1990,13 @@ public partial class GenerateTerrain : IDisposable
                 _state.SelectedBuildingFeatures = result.SelectedBuildingFeatures
                     .Select(r => r.ToSelection()).ToList();
 
+            // Apply DecalRoad settings from preset
+            if (result.DecalRoadSettings != null)
+            {
+                _state.DecalRoadSettings = result.DecalRoadSettings;
+                _state.EnableDecalRoads = result.DecalRoadSettings.Enabled;
+            }
+
             // Apply GeoTIFF metadata from preset (as fallback if GeoTIFF couldn't be loaded)
             if (!geoTiffLoaded)
             {
@@ -2396,6 +2415,124 @@ public partial class GenerateTerrain : IDisposable
 
         StateHasChanged();
         Snackbar.Add("Page reset. You can now select a different folder.", Severity.Info);
+    }
+
+    private void EnsureDecalRoadSettings()
+    {
+        _state.DecalRoadSettings ??= new DecalRoadSettings
+        {
+            Enabled = true,
+            NodeSpacingMeters = 2.0f,
+            JunctionExclusionMarginMeters = 0.0f
+        };
+    }
+
+    private float GetDecalRoadNodeSpacing()
+    {
+        EnsureDecalRoadSettings();
+        return _state.DecalRoadSettings!.NodeSpacingMeters;
+    }
+
+    private void SetDecalRoadNodeSpacing(float value)
+    {
+        EnsureDecalRoadSettings();
+        _state.DecalRoadSettings!.NodeSpacingMeters = value;
+    }
+
+    private float GetDecalRoadJunctionMargin()
+    {
+        EnsureDecalRoadSettings();
+        return _state.DecalRoadSettings!.JunctionExclusionMarginMeters;
+    }
+
+    private void SetDecalRoadJunctionMargin(float value)
+    {
+        EnsureDecalRoadSettings();
+        _state.DecalRoadSettings!.JunctionExclusionMarginMeters = value;
+    }
+
+    private async Task OpenDefaultLayerSetsDialog()
+    {
+        var currentDefaults = DecalRoadDefaultsManager.Load();
+
+        var options = new MudBlazor.DialogOptions
+        {
+            FullScreen = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        var parameters = new DialogParameters
+        {
+            { nameof(DecalRoadLayerSetEditorDialog.DefaultLayerSets), currentDefaults },
+            { nameof(DecalRoadLayerSetEditorDialog.LevelPath), _state.WorkingDirectory }
+        };
+
+        var dialog = await DialogService.ShowAsync<DecalRoadLayerSetEditorDialog>(
+            "DecalRoad Default Layer Sets", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: Dictionary<string, DecalRoadLayerSet> editedDefaults })
+        {
+            DecalRoadDefaultsManager.Save(editedDefaults);
+            Snackbar.Add("Default layer sets saved", Severity.Success);
+        }
+    }
+
+    private async Task RegenerateDecalRoads()
+    {
+        if (_state.CachedNetwork == null || _state.CachedHeightMap == null) return;
+        _state.DecalRoadSettings ??= new DecalRoadSettings { Enabled = true };
+
+        _isGenerating = true;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                var appDataDefaults = DecalRoadDefaultsManager.Load();
+
+                DecalRoadSceneWriter.CleanPrevious(_state.WorkingDirectory);
+
+                var decalRoads = DecalRoadGenerator.Generate(
+                    _state.CachedNetwork,
+                    _state.CachedHeightMap,
+                    _state.MetersPerPixel,
+                    _state.TerrainSize,
+                    _state.TerrainBaseHeight,
+                    _state.DecalRoadSettings,
+                    appDataDefaults);
+
+                if (decalRoads.Count > 0)
+                {
+                    var writer = new DecalRoadSceneWriter();
+                    writer.WriteAll(decalRoads, _state.WorkingDirectory);
+                }
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Re-generated {decalRoads.Count} DecalRoad objects");
+            });
+
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add("DecalRoads re-generated successfully", Severity.Success);
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add($"DecalRoad generation failed: {ex.Message}", Severity.Error);
+            });
+        }
+        finally
+        {
+            _isGenerating = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void OpenWorkingDirectory()

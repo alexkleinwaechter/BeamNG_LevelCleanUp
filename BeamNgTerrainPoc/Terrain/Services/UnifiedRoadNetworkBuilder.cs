@@ -94,22 +94,14 @@ public class UnifiedRoadNetworkBuilder
                 // Convert to ParameterizedRoadSpline and add to network
                 foreach (var spline in splines)
                 {
-                    // Determine OSM road type if available
-                    string? osmRoadType = null;
-                    string? displayName = null;
-
-                    // For OSM-based materials, we could extract road type from the spline
-                    // This would require additional metadata to be passed through
-                    // For now, we use width-based priority as fallback
-
                     var paramSpline = new ParameterizedRoadSpline
                     {
                         Spline = spline,
                         Parameters = parameters,
                         MaterialName = material.MaterialName,
                         SplineId = splineIdCounter,
-                        OsmRoadType = osmRoadType,
-                        DisplayName = displayName,
+                        OsmRoadType = spline.OsmRoadType,
+                        DisplayName = spline.OsmRoadType != null ? $"{material.MaterialName}_{spline.OsmRoadType}" : null,
 
                         // Copy structure flags from RoadSpline (which got them from OsmFeature)
                         IsBridge = spline.IsBridge,
@@ -148,103 +140,6 @@ public class UnifiedRoadNetworkBuilder
         // Log network statistics
         var stats = network.GetStatistics();
         TerrainLogger.Info(stats.ToString());
-
-        // Log structure statistics
-        var bridgeCount = network.Splines.Count(s => s.IsBridge);
-        var tunnelCount = network.Splines.Count(s => s.IsTunnel);
-
-        if (bridgeCount > 0 || tunnelCount > 0)
-        {
-            TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
-        }
-
-        return network;
-    }
-
-    /// <summary>
-    /// Builds a unified road network with OSM road type information preserved.
-    /// Use this overload when you have OSM feature metadata to preserve road classifications.
-    /// </summary>
-    /// <param name="materials">List of material definitions.</param>
-    /// <param name="osmRoadTypes">Dictionary mapping material name to list of OSM road types for each spline.</param>
-    /// <param name="heightMap">The terrain heightmap.</param>
-    /// <param name="metersPerPixel">Scale factor.</param>
-    /// <param name="terrainSize">Terrain size in pixels.</param>
-    /// <returns>A unified road network with OSM road type priorities.</returns>
-    public UnifiedRoadNetwork BuildNetworkWithOsmMetadata(
-        List<MaterialDefinition> materials,
-        Dictionary<string, List<string?>> osmRoadTypes,
-        float[,] heightMap,
-        float metersPerPixel,
-        int terrainSize)
-    {
-        var network = new UnifiedRoadNetwork();
-        var splineIdCounter = 0;
-
-        var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
-
-        if (roadMaterials.Count == 0)
-        {
-            return network;
-        }
-
-        TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network with OSM metadata from {roadMaterials.Count} material(s)");
-
-        for (var materialIndex = 0; materialIndex < roadMaterials.Count; materialIndex++)
-        {
-            var material = roadMaterials[materialIndex];
-            var parameters = material.RoadParameters!;
-
-            try
-            {
-                var splines = ExtractSplinesFromMaterial(material, parameters, metersPerPixel, terrainSize);
-
-                // Get OSM road types for this material if available
-                var roadTypesForMaterial = osmRoadTypes.GetValueOrDefault(material.MaterialName);
-
-                for (var splineIndex = 0; splineIndex < splines.Count; splineIndex++)
-                {
-                    var spline = splines[splineIndex];
-
-                    // Get OSM road type if available
-                    string? osmRoadType = null;
-                    if (roadTypesForMaterial != null && splineIndex < roadTypesForMaterial.Count)
-                    {
-                        osmRoadType = roadTypesForMaterial[splineIndex];
-                    }
-
-                    var paramSpline = new ParameterizedRoadSpline
-                    {
-                        Spline = spline,
-                        Parameters = parameters,
-                        MaterialName = material.MaterialName,
-                        SplineId = splineIdCounter,
-                        OsmRoadType = osmRoadType,
-
-                        // Copy structure flags from RoadSpline (which got them from OsmFeature)
-                        IsBridge = spline.IsBridge,
-                        IsTunnel = spline.IsTunnel,
-                        StructureType = spline.StructureType,
-                        Layer = spline.Layer,
-                        BridgeStructureType = spline.BridgeStructureType
-                    };
-
-                    paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
-
-                    network.AddSpline(paramSpline);
-                    splineIdCounter++;
-                }
-            }
-            catch (Exception ex)
-            {
-                TerrainLogger.Error($"Error processing material '{material.MaterialName}': {ex.Message}");
-            }
-        }
-
-        if (network.Splines.Count > 0)
-        {
-            GenerateCrossSections(network, metersPerPixel);
-        }
 
         // Log structure statistics
         var bridgeCount = network.Splines.Count(s => s.IsBridge);

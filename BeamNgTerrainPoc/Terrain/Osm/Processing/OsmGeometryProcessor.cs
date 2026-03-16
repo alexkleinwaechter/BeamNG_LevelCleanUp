@@ -865,7 +865,8 @@ public class OsmGeometryProcessor
                     IsTunnel = pm.IsTunnel,
                     StructureType = pm.StructureType,
                     Layer = pm.Layer,
-                    BridgeStructureType = pm.BridgeStructureType
+                    BridgeStructureType = pm.BridgeStructureType,
+                    OsmRoadType = pm.Tags.GetValueOrDefault("highway")
                 };
                 splines.Add(spline);
 

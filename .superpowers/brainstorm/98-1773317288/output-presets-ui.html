@@ -1,0 +1,222 @@
+<h2>File Output, Presets & UI Design</h2>
+<p class="subtitle">How DecalRoads are written to BeamNG files, stored in presets, and configured in the UI.</p>
+
+<div class="section">
+  <h3>1. File Output — Scene Writing</h3>
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;font-family:monospace;font-size:12px;line-height:1.8;color:#e0e0e0;">
+    <span style="color:#aaa;">Output structure in level directory:</span><br><br>
+    levels/{levelname}/<br>
+    └── main/<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;└── MissionGroup/<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── items.level.json &nbsp;<span style="color:#aaa;">← add SimGroup "DecalRoads" entry</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── <span style="color:#4fc3f7;">DecalRoads/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── items.level.json &nbsp;<span style="color:#aaa;">← all DecalRoad NDJSON lines here</span><br>
+    <br>
+    <span style="color:#aaa;">Each DecalRoad line (NDJSON):</span><br>
+    {"class":"DecalRoad","persistentId":"<span style="color:#81c784;">guid</span>",<br>
+    &nbsp;"__parent":"DecalRoads",<br>
+    &nbsp;"material":"<span style="color:#81c784;">m_line_white</span>",<br>
+    &nbsp;"textureLength":<span style="color:#81c784;">10.0</span>,<br>
+    &nbsp;"breakAngle":<span style="color:#81c784;">3.0</span>,<br>
+    &nbsp;"renderPriority":<span style="color:#81c784;">10</span>,<br>
+    &nbsp;"startEndFade":[<span style="color:#81c784;">0,0</span>],<br>
+    &nbsp;"distanceFade":[<span style="color:#81c784;">1000,1500</span>],<br>
+    &nbsp;"drivability":<span style="color:#81c784;">-1.0</span>,<br>
+    &nbsp;"improvedSpline":<span style="color:#81c784;">true</span>,<br>
+    &nbsp;"position":[<span style="color:#81c784;">x,y,z</span>],<br>
+    &nbsp;"nodes":[[<span style="color:#81c784;">x,y,z,width</span>],...]}
+    <br><br>
+    <span style="color:#aaa;">Writer: <span style="color:#4fc3f7;">DecalRoadSceneWriter</span></span><br>
+    &nbsp;&nbsp;→ Follows <span style="color:#81c784;">BuildingSceneWriter</span> pattern<br>
+    &nbsp;&nbsp;→ Uses <span style="color:#81c784;">SimItemsJsonSerializer.Save()</span> for NDJSON<br>
+    &nbsp;&nbsp;→ Creates SimGroup first, then DecalRoad entries
+  </div>
+</div>
+
+<div class="section">
+  <h3>2. Preset Integration</h3>
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;font-family:monospace;font-size:12px;line-height:1.8;color:#e0e0e0;">
+    <span style="color:#aaa;">Added to existing TerrainPreset _appSettings:</span><br><br>
+    "_appSettings": {<br>
+    &nbsp;&nbsp;"version": "3.0", &nbsp;<span style="color:#aaa;">← bump from 2.0</span><br>
+    &nbsp;&nbsp;... <span style="color:#aaa;">existing settings ...</span><br>
+    &nbsp;&nbsp;<span style="color:#4fc3f7;">"decalRoadSettings"</span>: {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"enabled": true,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"nodeSpacingMeters": 2.0,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"junctionExclusionMarginMeters": 5.0,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#81c784;">"materialLayerSets"</span>: {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Asphalt": { <span style="color:#aaa;">/* DecalRoadLayerSet JSON */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"DirtRoad": { <span style="color:#aaa;">/* DecalRoadLayerSet JSON */</span> }<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#81c784;">"osmLayerSets"</span>: {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"motorway": { <span style="color:#aaa;">/* DecalRoadLayerSet JSON */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"primary": { <span style="color:#aaa;">/* DecalRoadLayerSet JSON */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"residential": { <span style="color:#aaa;">/* DecalRoadLayerSet JSON */</span> }<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+    &nbsp;&nbsp;}<br>
+    }
+  </div>
+  <p style="color:#aaa;font-size:13px;margin-top:8px;">
+    Backward compatible: presets without <code>decalRoadSettings</code> default to disabled. Version bump to 3.0 signals new capabilities.
+  </p>
+</div>
+
+<div class="section">
+  <h3>3. AppData Default Layer Sets</h3>
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;font-family:monospace;font-size:12px;line-height:1.8;color:#e0e0e0;">
+    <span style="color:#aaa;">Location:</span><br>
+    %LocalAppData%\BeamNG_LevelCleanUp\<br>
+    └── <span style="color:#4fc3f7;">decalroad-defaults.json</span><br>
+    <br>
+    <span style="color:#aaa;">Created on first run if missing. Contains:</span><br>
+    {<br>
+    &nbsp;&nbsp;"version": "1.0",<br>
+    &nbsp;&nbsp;"osmLayerSets": {<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"motorway": { <span style="color:#aaa;">/* 4 lanes, edge lines, lane markings, edge blends */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"trunk": { <span style="color:#aaa;">/* 4 lanes, similar to motorway */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"primary": { <span style="color:#aaa;">/* 2 lanes, edge lines, center dashed, edge blends */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"secondary": { <span style="color:#aaa;">/* 2 lanes, edge lines, center dashed */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"tertiary": { <span style="color:#aaa;">/* 2 lanes, edge lines only */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"residential": { <span style="color:#aaa;">/* 2 lanes, minimal markings */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"service": { <span style="color:#aaa;">/* 1 lane, edge only */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"track": { <span style="color:#aaa;">/* no markings, dirt edge blend only */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"path": { <span style="color:#aaa;">/* disabled by default */</span> },<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;"footway": { <span style="color:#aaa;">/* disabled by default */</span> }<br>
+    &nbsp;&nbsp;}<br>
+    }
+  </div>
+  <p style="color:#aaa;font-size:13px;margin-top:8px;">
+    User edits this file to change global defaults. Project presets override these. If file is corrupted/deleted, app recreates from hardcoded fallback.
+  </p>
+</div>
+
+<div class="section">
+  <h3>4. UI Components</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+    <div style="background:#1a1a2e;padding:16px;border-radius:8px;">
+      <h4 style="color:#4fc3f7;margin:0 0 8px;">In TerrainMaterialSettings</h4>
+      <div style="background:#0d1117;padding:12px;border-radius:6px;font-size:12px;color:#e0e0e0;line-height:1.6;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="color:#81c784;">☑</span> <b>DecalRoad Layers</b>
+          <span style="background:#333;padding:2px 8px;border-radius:10px;font-size:11px;">4 layers active</span>
+        </div>
+        <div style="padding-left:20px;color:#aaa;font-size:11px;">
+          ├ Edge Lines (×2, mirrored)<br>
+          ├ Lane Marking (dashed)<br>
+          └ Edge Blend (×2, mirrored)
+        </div>
+        <div style="margin-top:8px;">
+          <span style="background:#4fc3f7;color:#000;padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;">Edit Layers...</span>
+        </div>
+      </div>
+      <p style="color:#aaa;font-size:11px;margin-top:6px;">Compact summary inside each material's expandable panel. "Edit Layers" opens the full editor dialog.</p>
+    </div>
+
+    <div style="background:#1a1a2e;padding:16px;border-radius:8px;">
+      <h4 style="color:#4fc3f7;margin:0 0 8px;">Layer Set Editor (Dialog)</h4>
+      <div style="background:#0d1117;padding:12px;border-radius:6px;font-size:12px;color:#e0e0e0;line-height:1.6;">
+        <div style="border-bottom:1px solid #333;padding-bottom:6px;margin-bottom:6px;">
+          <b>Edit Layer Set: Asphalt</b>
+          <span style="float:right;color:#aaa;font-size:11px;">Lanes: 2 | Width: 3.5m</span>
+        </div>
+        <table style="width:100%;font-size:11px;border-collapse:collapse;">
+          <tr style="color:#4fc3f7;"><td>☑</td><td>Edge Line</td><td>m_line_white</td><td>0.25m</td><td>±1.0</td><td>✓mir</td></tr>
+          <tr style="color:#81c784;"><td>☑</td><td>Lane Mark</td><td>m_line_dashed</td><td>0.20m</td><td>0.0</td><td>✓lane</td></tr>
+          <tr style="color:#ffb74d;"><td>☑</td><td>Edge Blend</td><td>m_road_edge</td><td>1.0m</td><td>±1.1</td><td>✓mir</td></tr>
+          <tr style="color:#aaa;"><td>☐</td><td>Tread Marks</td><td>m_tread_light</td><td>track</td><td>per-lane</td><td></td></tr>
+        </table>
+        <div style="margin-top:8px;display:flex;gap:6px;">
+          <span style="background:#81c784;color:#000;padding:3px 10px;border-radius:4px;font-size:11px;">+ Add Layer</span>
+          <span style="background:#333;color:#e0e0e0;padding:3px 10px;border-radius:4px;font-size:11px;">Load Default</span>
+        </div>
+      </div>
+      <p style="color:#aaa;font-size:11px;margin-top:6px;">Full editor dialog with drag-drop reordering, add/remove/edit each layer's properties.</p>
+    </div>
+  </div>
+
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;margin-top:16px;">
+    <h4 style="color:#4fc3f7;margin:0 0 8px;">OSM Override Section (separate panel in GenerateTerrain)</h4>
+    <div style="background:#0d1117;padding:12px;border-radius:6px;font-size:12px;color:#e0e0e0;line-height:1.6;">
+      <div style="border-bottom:1px solid #333;padding-bottom:6px;margin-bottom:6px;">
+        <b>OSM Road Type DecalRoad Overrides</b>
+        <span style="float:right;">
+          <span style="background:#333;padding:2px 8px;border-radius:4px;font-size:11px;">Load All Defaults</span>
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        <div style="background:#1a1a2e;padding:8px;border-radius:4px;border:1px solid #333;">
+          <div style="font-size:11px;color:#4fc3f7;">motorway</div>
+          <div style="font-size:10px;color:#aaa;">4 lanes, 6 layers</div>
+          <div style="font-size:10px;color:#81c784;">✓ custom</div>
+        </div>
+        <div style="background:#1a1a2e;padding:8px;border-radius:4px;border:1px solid #333;">
+          <div style="font-size:11px;color:#4fc3f7;">primary</div>
+          <div style="font-size:10px;color:#aaa;">2 lanes, 4 layers</div>
+          <div style="font-size:10px;color:#81c784;">✓ custom</div>
+        </div>
+        <div style="background:#1a1a2e;padding:8px;border-radius:4px;border:1px solid #555;">
+          <div style="font-size:11px;color:#aaa;">residential</div>
+          <div style="font-size:10px;color:#666;">using default</div>
+        </div>
+      </div>
+      <p style="color:#aaa;font-size:10px;margin-top:6px;">Click a road type card to open its layer set editor. Customized types show green. Types using AppData defaults are dimmed.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>5. New Components Summary</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <tr style="border-bottom:1px solid #333;">
+      <th style="text-align:left;padding:6px;">Component</th>
+      <th style="text-align:left;padding:6px;">Location</th>
+      <th style="text-align:left;padding:6px;">Purpose</th>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#4fc3f7;">DecalRoadLayerSetEditor.razor</td>
+      <td style="padding:6px;">BlazorUI/Components/</td>
+      <td style="padding:6px;">MudDialog for editing a single layer set</td>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#4fc3f7;">DecalRoadOsmOverrides.razor</td>
+      <td style="padding:6px;">BlazorUI/Components/</td>
+      <td style="padding:6px;">Panel showing OSM road type override cards</td>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#81c784;">DecalRoadLayerDefinition.cs</td>
+      <td style="padding:6px;">BeamNgTerrainPoc/Models/</td>
+      <td style="padding:6px;">Data model for a single layer</td>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#81c784;">DecalRoadLayerSet.cs</td>
+      <td style="padding:6px;">BeamNgTerrainPoc/Models/</td>
+      <td style="padding:6px;">Data model for a collection of layers</td>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#81c784;">DecalRoadLayerSetResolver.cs</td>
+      <td style="padding:6px;">BeamNgTerrainPoc/Services/</td>
+      <td style="padding:6px;">Override cascade resolution logic</td>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#81c784;">DecalRoadGenerator.cs</td>
+      <td style="padding:6px;">BeamNgTerrainPoc/Services/</td>
+      <td style="padding:6px;">Core generation engine (spline → DecalRoad objects)</td>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#81c784;">JunctionInterrupter.cs</td>
+      <td style="padding:6px;">BeamNgTerrainPoc/Services/</td>
+      <td style="padding:6px;">Splits DecalRoad segments at junction zones</td>
+    </tr>
+    <tr style="border-bottom:1px solid #222;">
+      <td style="padding:6px;color:#81c784;">DecalRoadSceneWriter.cs</td>
+      <td style="padding:6px;">BeamNgTerrainPoc/Services/</td>
+      <td style="padding:6px;">NDJSON writer (follows BuildingSceneWriter pattern)</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;color:#81c784;">DecalRoadDefaultsManager.cs</td>
+      <td style="padding:6px;">BeamNG_LevelCleanUp/Utils/</td>
+      <td style="padding:6px;">AppData default JSON management</td>
+    </tr>
+  </table>
+</div>

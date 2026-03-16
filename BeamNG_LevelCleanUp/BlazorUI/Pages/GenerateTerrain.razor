@@ -124,6 +124,7 @@
                                        GeoTiffOriginalHeight="@_geoTiffOriginalHeight"
                                        GeoTiffProjectionName="@_geoTiffProjectionName"
                                        NativePixelSizeMeters="@GetNativePixelSizeAverage()"
+                                       DecalRoadSettings="@_state.DecalRoadSettings"
                                        OnRequestMaterialReorder="HandleMaterialReorderRequest"
                                        Class="mt-4" />
 
@@ -714,7 +715,8 @@
                                         <TerrainMaterialSettings Material="@context"
                                                                  OnMaterialChanged="OnMaterialSettingsChanged"
                                                                  GeoBoundingBox="@EffectiveBoundingBox"
-                                                                 TerrainSize="@_terrainSize" />
+                                                                 TerrainSize="@_terrainSize"
+                                                                 DecalRoadSettings="@(_enableDecalRoads ? _state.DecalRoadSettings : null)" />
                                     </div>
                                     <MudMenu Icon="@Icons.Material.Filled.MoreVert"
                                              Size="Size.Small"
@@ -738,6 +740,72 @@
                             </MudPaper>
                         </ItemRenderer>
                     </MudDropContainer>
+                </MudPaper>
+
+                @* DecalRoad Generation Section *@
+                <MudPaper Class="pa-4 mt-4" Elevation="1">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1" />
+                        DecalRoad Generation
+                    </MudText>
+                    <MudCheckBox @bind-Value="_enableDecalRoads"
+                                 Label="Generate road markings and edge blends (DecalRoads)"
+                                 Color="Color.Primary"
+                                 Disabled="@(!_canFetchOsmData)" />
+                    @if (!_canFetchOsmData)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Requires GeoTIFF source with OSM data
+                        </MudText>
+                    }
+                    @if (_enableDecalRoads)
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
+                            Generates visual road detail layers (edge lines, lane markings, edge blends)
+                            projected onto the terrain surface along road splines.
+                        </MudText>
+                        <MudGrid Spacing="2" Class="mb-3">
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadNodeSpacing()"
+                                                 ValueChanged="SetDecalRoadNodeSpacing"
+                                                 Label="Node Spacing (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="0.5f" Max="10.0f" Step="0.5f"
+                                                 HelperText="Distance between DecalRoad nodes" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadJunctionMargin()"
+                                                 ValueChanged="SetDecalRoadJunctionMargin"
+                                                 Label="Junction Margin (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="0.0f" Max="20.0f" Step="0.5f"
+                                                 HelperText="Extra corridor margin at junctions" />
+                            </MudItem>
+                        </MudGrid>
+                        <div class="d-flex gap-2 align-center">
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Settings"
+                                       OnClick="OpenDefaultLayerSetsDialog">
+                                Edit Default Layer Sets
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Disabled="@(_state.CachedNetwork == null || _isGenerating)"
+                                       OnClick="RegenerateDecalRoads">
+                                Re-generate DecalRoads
+                            </MudButton>
+                        </div>
+                        @if (_state.CachedNetwork == null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-1">
+                                Generate terrain first to enable re-generation.
+                            </MudText>
+                        }
+                    }
                 </MudPaper>
 
                 <!-- Generate Button -->

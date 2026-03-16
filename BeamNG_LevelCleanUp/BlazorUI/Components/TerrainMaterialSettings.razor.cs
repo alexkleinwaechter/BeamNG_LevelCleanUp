@@ -1,8 +1,10 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
+using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Examples;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
@@ -43,6 +45,8 @@ public partial class TerrainMaterialSettings
     [Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
     [Parameter] public GeoBoundingBox? GeoBoundingBox { get; set; }
     [Parameter] public int TerrainSize { get; set; } = 2048;
+    [Parameter] public DecalRoadSettings? DecalRoadSettings { get; set; }
+    [Parameter] public EventCallback<DecalRoadSettings> DecalRoadSettingsChanged { get; set; }
 
     /// <summary>
     ///     Cascading effective bounding box from GenerateTerrain page.
@@ -1224,4 +1228,96 @@ public partial class TerrainMaterialSettings
             return string.IsNullOrWhiteSpace(sanitized) ? "unknown_material" : sanitized;
         }
     }
+
+    #region DecalRoad Layer Override
+
+    private bool IsUsingDecalRoadDefaults()
+    {
+        return DecalRoadSettings?.MaterialLayerSets
+            .ContainsKey(Material.InternalName) != true;
+    }
+
+    private void OnUseDecalRoadDefaultsChanged(bool useDefaults)
+    {
+        if (DecalRoadSettings == null) return;
+
+        if (useDefaults)
+        {
+            // Remove custom override — revert to cascade resolution
+            DecalRoadSettings.MaterialLayerSets.Remove(Material.InternalName);
+        }
+        else
+        {
+            // Create custom override by deep-copying a resolved default
+            var defaults = DecalRoadDefaultsManager.Load();
+            DecalRoadLayerSet? startingSet = null;
+            if (defaults.TryGetValue(Material.InternalName, out var byName))
+                startingSet = byName;
+            else if (defaults.TryGetValue("primary", out var primary))
+                startingSet = primary;
+            else if (defaults.Count > 0)
+                startingSet = defaults.Values.First();
+
+            startingSet ??= new DecalRoadLayerSet
+            {
+                Name = Material.InternalName,
+                IsEnabled = true,
+                DefaultLaneCount = 2,
+                DefaultLaneWidth = 3.5f,
+                Layers = []
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(startingSet, _decalRoadJsonOptions);
+            var copy = System.Text.Json.JsonSerializer.Deserialize<DecalRoadLayerSet>(json, _decalRoadJsonOptions)!;
+            copy.Name = Material.InternalName;
+            DecalRoadSettings.MaterialLayerSets[Material.InternalName] = copy;
+        }
+    }
+
+    private DecalRoadLayerSet? GetCustomLayerSet()
+    {
+        if (DecalRoadSettings?.MaterialLayerSets
+            .TryGetValue(Material.InternalName, out var set) == true)
+            return set;
+        return null;
+    }
+
+    private async Task OpenDecalRoadLayerSetDialog()
+    {
+        var customSet = GetCustomLayerSet();
+        if (customSet == null) return;
+
+        var options = new MudBlazor.DialogOptions
+        {
+            FullScreen = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        var parameters = new DialogParameters
+        {
+            { nameof(DecalRoadLayerSetEditorDialog.SingleLayerSet), customSet },
+            { nameof(DecalRoadLayerSetEditorDialog.SingleLayerSetTitle), Material.InternalName }
+        };
+
+        var dialog = await DialogService.ShowAsync<DecalRoadLayerSetEditorDialog>(
+            $"DecalRoad Layers — {Material.InternalName}", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: DecalRoadLayerSet editedSet })
+        {
+            DecalRoadSettings!.MaterialLayerSets[Material.InternalName] = editedSet;
+            if (DecalRoadSettingsChanged.HasDelegate)
+                await DecalRoadSettingsChanged.InvokeAsync(DecalRoadSettings);
+        }
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions _decalRoadJsonOptions = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(
+            System.Text.Json.JsonNamingPolicy.CamelCase) }
+    };
+
+    #endregion
 }

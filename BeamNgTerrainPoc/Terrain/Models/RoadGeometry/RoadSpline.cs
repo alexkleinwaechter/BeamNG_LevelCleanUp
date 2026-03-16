@@ -99,6 +99,16 @@ public class RoadSpline
     public float TotalLength { get; }
 
     // ========================================
+    // OSM METADATA
+    // ========================================
+
+    /// <summary>
+    ///     OSM highway type (e.g. "primary", "residential") if this spline originated from OSM data.
+    ///     Set during spline creation in the orchestrator.
+    /// </summary>
+    public string? OsmRoadType { get; set; }
+
+    // ========================================
     // STRUCTURE METADATA (Bridge/Tunnel)
     // ========================================
 

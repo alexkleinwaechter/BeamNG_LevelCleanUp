@@ -380,6 +380,18 @@ public class TerrainAnalysisOrchestrator
                     state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
                 roadParams.PreBuiltSplines = splines;
 
+                // Stamp OSM highway type onto splines that don't have it (merged paths lose metadata)
+                var dominantHighwayType = lineFeatures
+                    .Select(f => f.Tags.GetValueOrDefault("highway"))
+                    .Where(h => h != null)
+                    .GroupBy(h => h)
+                    .MaxBy(g => g.Count())?.Key;
+                if (dominantHighwayType != null)
+                {
+                    foreach (var s in splines.Where(s => s.OsmRoadType == null))
+                        s.OsmRoadType = dominantHighwayType;
+                }
+
                 var effectiveRoadSurfaceWidth = mat.RoadSurfaceWidthMeters is > 0
                     ? mat.RoadSurfaceWidthMeters.Value
                     : mat.RoadWidthMeters;

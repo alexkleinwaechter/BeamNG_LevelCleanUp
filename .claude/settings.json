@@ -1,6 +1,13 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"error CS|^.*Fehler$\")",
+      "Bash(grep -l \"DecalRoadGenerator\\\\|DecalRoadSceneWriter\" \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Services\"* \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Orchestrators\"*)"
+    ]
+  },
   "enabledPlugins": {
     "document-skills@anthropic-agent-skills": true,
-    "frontend-design@claude-plugins-official": true
+    "frontend-design@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true
   }
 }

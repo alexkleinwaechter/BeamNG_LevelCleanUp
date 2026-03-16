@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Components;
@@ -189,6 +190,13 @@ public class TerrainPresetResult
     ///     Native pixel size in meters (average of X and Y).
     /// </summary>
     public float? NativePixelSizeMeters { get; set; }
+
+    // ========== NEW: DecalRoad Settings ==========
+
+    /// <summary>
+    ///     DecalRoad generation settings (node spacing, junction margin, layer sets).
+    /// </summary>
+    public DecalRoadSettings? DecalRoadSettings { get; set; }
 
     // ========== NEW: Per-Material OSM Feature Selections ==========
 

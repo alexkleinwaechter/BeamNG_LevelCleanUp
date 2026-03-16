@@ -1,0 +1,133 @@
+<h2>Generation Pipeline & Junction Interruption</h2>
+<p class="subtitle">How DecalRoads are generated from splines and how junctions are handled in Phase 1.</p>
+
+<div class="section">
+  <h3>Generation Pipeline (per spline)</h3>
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;font-family:monospace;font-size:12px;line-height:1.8;color:#e0e0e0;">
+    <span style="color:#ffb74d;">For each ParameterizedRoadSpline in UnifiedRoadNetwork:</span><br><br>
+
+    1. <span style="color:#4fc3f7;">Resolve layer set</span><br>
+    &nbsp;&nbsp;&nbsp;→ OsmRoadType override? → Material fallback? → AppData default?<br>
+    &nbsp;&nbsp;&nbsp;→ If none found, skip this spline<br><br>
+
+    2. <span style="color:#4fc3f7;">Determine lane count</span><br>
+    &nbsp;&nbsp;&nbsp;→ Parse OSM <code>lanes=*</code> tag from spline's OsmFeature tags<br>
+    &nbsp;&nbsp;&nbsp;→ Fallback to LayerSet.DefaultLaneCount<br><br>
+
+    3. <span style="color:#4fc3f7;">Find junction zones</span> for this spline<br>
+    &nbsp;&nbsp;&nbsp;→ Query UnifiedRoadNetwork.Junctions for junctions involving this spline<br>
+    &nbsp;&nbsp;&nbsp;→ Each junction → exclusion zone = junction position ± exclusion radius<br>
+    &nbsp;&nbsp;&nbsp;→ Exclusion radius = max(contributing road widths) + margin<br><br>
+
+    4. <span style="color:#ffb74d;">For each layer in the resolved LayerSet:</span><br><br>
+
+    &nbsp;&nbsp;&nbsp;4a. <span style="color:#81c784;">Expand layer</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ If IsMirrored: create two layers (left + right positions)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ If IsPerLane: replicate for each lane boundary<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Result: list of concrete positioned layers<br><br>
+
+    &nbsp;&nbsp;&nbsp;4b. <span style="color:#81c784;">Sample centerline nodes</span> along spline<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Use spline.SampleByDistance(interval) — reuse existing<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Default interval: ~2m for smooth curves<br><br>
+
+    &nbsp;&nbsp;&nbsp;4c. <span style="color:#81c784;">Apply lateral offset</span> per node<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ offsetPoint = center + normal × position × 0.5 × roadWidth<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Get Z elevation from heightmap at offset point<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Transform to BeamNG world coords<br><br>
+
+    &nbsp;&nbsp;&nbsp;4d. <span style="color:#81c784;">Apply junction interruption</span> (if InterruptAtJunctions = true)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Mark nodes inside junction exclusion zones<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Split node sequence into segments at zone boundaries<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Each segment becomes a separate DecalRoad<br><br>
+
+    &nbsp;&nbsp;&nbsp;4e. <span style="color:#81c784;">Chunk segments</span> (max 100 nodes per DecalRoad)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Share boundary nodes between chunks<br><br>
+
+    &nbsp;&nbsp;&nbsp;4f. <span style="color:#81c784;">Create DecalRoad objects</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Set material, width, renderPriority, textureLength<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Set position = first node's XYZ<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Add to output list
+  </div>
+</div>
+
+<div class="section">
+  <h3>Junction Interruption — Visual Concept</h3>
+  <div style="background:#0d1117;padding:20px;border-radius:8px;text-align:center;">
+    <svg viewBox="0 0 500 300" style="max-width:500px;margin:auto;">
+      <!-- Main road (horizontal) -->
+      <rect x="20" y="120" width="460" height="60" fill="#333" rx="2"/>
+      <!-- Side road (vertical, coming from bottom) -->
+      <rect x="200" y="160" width="60" height="140" fill="#333" rx="2"/>
+
+      <!-- Junction exclusion zone (circle) -->
+      <circle cx="230" cy="150" r="55" fill="none" stroke="#ef5350" stroke-width="2" stroke-dasharray="6,4" opacity="0.7"/>
+      <text x="230" y="100" fill="#ef5350" text-anchor="middle" font-size="11" font-family="monospace">exclusion zone</text>
+
+      <!-- Edge lines on main road - LEFT of junction -->
+      <line x1="20" y1="125" x2="178" y2="125" stroke="#fff" stroke-width="2"/>
+      <line x1="20" y1="175" x2="178" y2="175" stroke="#fff" stroke-width="2"/>
+
+      <!-- Edge lines on main road - RIGHT of junction -->
+      <line x1="282" y1="125" x2="480" y2="125" stroke="#fff" stroke-width="2"/>
+      <line x1="282" y1="175" x2="480" y2="175" stroke="#fff" stroke-width="2"/>
+
+      <!-- Center dashed line on main road - LEFT -->
+      <line x1="20" y1="150" x2="60" y2="150" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+      <line x1="60" y1="150" x2="100" y2="150" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+      <line x1="100" y1="150" x2="178" y2="150" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+
+      <!-- Center dashed line on main road - RIGHT -->
+      <line x1="282" y1="150" x2="340" y2="150" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+      <line x1="340" y1="150" x2="400" y2="150" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+      <line x1="400" y1="150" x2="480" y2="150" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+
+      <!-- Edge lines on side road - below junction -->
+      <line x1="205" y1="210" x2="205" y2="300" stroke="#fff" stroke-width="2"/>
+      <line x1="255" y1="210" x2="255" y2="300" stroke="#fff" stroke-width="2"/>
+
+      <!-- Labels -->
+      <text x="100" y="200" fill="#4fc3f7" font-size="10" font-family="monospace">edge lines stop</text>
+      <text x="100" y="212" fill="#4fc3f7" font-size="10" font-family="monospace">at zone boundary</text>
+
+      <text x="340" y="200" fill="#81c784" font-size="10" font-family="monospace">resume after zone</text>
+
+      <text x="270" y="260" fill="#4fc3f7" font-size="10" font-family="monospace">side road edges</text>
+      <text x="270" y="272" fill="#4fc3f7" font-size="10" font-family="monospace">also interrupted</text>
+    </svg>
+  </div>
+  <p style="color:#aaa;font-size:13px;text-align:center;margin-top:8px;">
+    Phase 1: Markings stop at junction exclusion zone. Phase 2 would add curved contour edges.
+  </p>
+</div>
+
+<div class="section">
+  <h3>Lane Marking Replication</h3>
+  <div style="background:#0d1117;padding:20px;border-radius:8px;text-align:center;">
+    <svg viewBox="0 0 500 120" style="max-width:500px;margin:auto;">
+      <!-- Road surface -->
+      <rect x="20" y="10" width="460" height="100" fill="#333" rx="2"/>
+
+      <!-- 4-lane road: lane boundaries -->
+      <!-- Left edge -->
+      <line x1="20" y1="15" x2="480" y2="15" stroke="#fff" stroke-width="2"/>
+      <!-- Lane 1-2 boundary -->
+      <line x1="20" y1="35" x2="480" y2="35" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+      <!-- Center line (solid double) -->
+      <line x1="20" y1="58" x2="480" y2="58" stroke="#fff" stroke-width="2"/>
+      <line x1="20" y1="62" x2="480" y2="62" stroke="#fff" stroke-width="2"/>
+      <!-- Lane 3-4 boundary -->
+      <line x1="20" y1="85" x2="480" y2="85" stroke="#ffb74d" stroke-width="1.5" stroke-dasharray="8,6"/>
+      <!-- Right edge -->
+      <line x1="20" y1="105" x2="480" y2="105" stroke="#fff" stroke-width="2"/>
+
+      <!-- Lane labels -->
+      <text x="250" y="28" fill="#4fc3f7" text-anchor="middle" font-size="10" font-family="monospace">Lane 1</text>
+      <text x="250" y="52" fill="#4fc3f7" text-anchor="middle" font-size="10" font-family="monospace">Lane 2</text>
+      <text x="250" y="80" fill="#4fc3f7" text-anchor="middle" font-size="10" font-family="monospace">Lane 3</text>
+      <text x="250" y="100" fill="#4fc3f7" text-anchor="middle" font-size="10" font-family="monospace">Lane 4</text>
+    </svg>
+    <p style="color:#aaa;font-size:12px;margin-top:8px;">
+      4-lane road: IsPerLane creates dashed lines between lanes. Edge lines at ±1.0. Center line at 0.0.
+    </p>
+  </div>
+</div>

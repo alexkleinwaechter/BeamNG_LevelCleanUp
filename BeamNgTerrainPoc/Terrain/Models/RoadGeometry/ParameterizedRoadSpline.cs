@@ -56,6 +56,12 @@ public class ParameterizedRoadSpline
     public string? OsmRoadType { get; init; }
 
     /// <summary>
+    ///     Subset of OSM tags relevant to road rendering (lanes, surface, oneway, etc.).
+    ///     Null for PNG-sourced splines.
+    /// </summary>
+    public Dictionary<string, string>? OsmTags { get; init; }
+
+    /// <summary>
     ///     Optional display name for the road (e.g., from OSM name tag).
     ///     Used for debugging and BeamNG export.
     /// </summary>

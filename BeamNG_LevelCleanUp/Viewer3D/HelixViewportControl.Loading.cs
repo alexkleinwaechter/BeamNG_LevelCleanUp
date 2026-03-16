@@ -336,12 +336,13 @@ public partial class HelixViewportControl
 
                 foreach (var file in material.MaterialFiles)
                 {
-                    if (file.File == null) continue;
+                    // Determine the texture path — filesystem file or game asset path
+                    var filePath = file.File?.FullName;
+                    if (filePath == null && !string.IsNullOrEmpty(file.OriginalJsonPath))
+                        filePath = file.OriginalJsonPath;
+                    if (filePath == null) continue;
 
-                    var filePath = file.File.FullName;
-                    var canResolve = file.File.Exists || LinkFileResolver.CanResolve(filePath);
-
-                    if (!canResolve) continue;
+                    if (!TextureLoader.CanLoadTexture(filePath)) continue;
 
                     if (TextureLookup.IsColorMap(file.MapType))
                     {
@@ -359,16 +360,24 @@ public partial class HelixViewportControl
             // Fallback to first available texture
             if (colorMapPath == null)
             {
-                var firstFile = request.Materials
-                    .Where(m => m.MaterialFiles != null)
-                    .SelectMany(m => m.MaterialFiles)
-                    .FirstOrDefault(f => f.File != null &&
-                                         (f.File.Exists || LinkFileResolver.CanResolve(f.File.FullName)));
-
-                if (firstFile != null)
+                foreach (var mat in request.Materials)
                 {
-                    colorMapPath = firstFile.File!.FullName;
-                    if (preferredAspectRatio == null) aspectRatio = TextureLoader.GetImageAspectRatio(colorMapPath);
+                    if (mat.MaterialFiles == null) continue;
+                    foreach (var f in mat.MaterialFiles)
+                    {
+                        var path = f.File?.FullName;
+                        if (path == null && !string.IsNullOrEmpty(f.OriginalJsonPath))
+                            path = f.OriginalJsonPath;
+                        if (path == null) continue;
+
+                        if (TextureLoader.CanLoadTexture(path))
+                        {
+                            colorMapPath = path;
+                            if (preferredAspectRatio == null) aspectRatio = TextureLoader.GetImageAspectRatio(path);
+                            break;
+                        }
+                    }
+                    if (colorMapPath != null) break;
                 }
             }
 
