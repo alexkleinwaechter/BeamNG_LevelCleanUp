@@ -641,19 +641,6 @@ Class="my-0">
                                                             <HelpAdornment TooltipText="@BlendFunction"/>
                                                         </div>
                                                     </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-center gap-1">
-                                                            <MudSwitch T="bool" @bind-Value="Material.EnableTerrainBlending" 
-                                                                      Color="Color.Primary"
-                                                                      Label="Enable Terrain Blending"/>
-                                                            <HelpAdornment TooltipText="@EnableTerrainBlending"/>
-                                                        </div>
-                                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-12">
-                                                            @(Material.EnableTerrainBlending 
-                                                                ? "Road will be blended into terrain" 
-                                                                : "Debug mode: geometry only, no terrain modification")
-                                                        </MudText>
-                                                    </MudItem>
                                                 </MudGrid>
                                             </MudPaper>
                                         </div>
@@ -666,81 +653,18 @@ Class="my-0">
                                             {
                                                 <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
                                                     <strong>OSM Mode Active:</strong> Using pre-built splines from OpenStreetMap.
-                                                    "Path Extraction" and "Curve Fitting" parameters are <strong>not used</strong> because
+                                                    "Path Extraction" parameters are <strong>not used</strong> because
                                                     splines are generated directly from OSM vector data (skeleton extraction is bypassed).
                                                 </MudAlert>
                                             }
                                             else
                                             {
                                                 <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-                                                    Spline extraction, curve fitting, and elevation smoothing parameters.
+                                                    Spline extraction and elevation smoothing parameters.
                                                 </MudAlert>
                                             }
                                             
                                            
-                                            <!-- Curve Fitting Card (PNG layer map only - not used for OSM) -->
-                                            <MudPaper Class="pa-3 mb-3" Elevation="1" Style="@(IsUsingOsmSplines ? "opacity: 0.5;" : "")">
-                                                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                                    <MudIcon Icon="@Icons.Material.Filled.ShowChart" Size="Size.Small" Class="mr-1"/>
-                                                    Curve Fitting
-                                                    @if (IsUsingOsmSplines)
-                                                    {
-                                                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined" Class="ml-2">Not used for OSM</MudChip>
-                                                    }
-                                                </MudText>
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                                    @if (IsUsingOsmSplines)
-                                                    {
-                                                        <span>⚠️ These parameters are ignored when using OSM splines (splines come from OSM vectors).</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span>Controls how the spline curve follows the road centerline.</span>
-                                                    }
-                                                </MudText>
-                                                <MudGrid Spacing="2">
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.SplineTension" 
-                                                                            Label="Tension" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="0.0f" Max="1.0f" Step="0.1f"
-                                                                            Format="F1"
-                                                                            HelperText="0=loose curves, 1=tight"
-                                                                            Disabled="@IsUsingOsmSplines"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@SplineTension"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.SplineContinuity" 
-                                                                            Label="Continuity" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="-1.0f" Max="1.0f" Step="0.1f"
-                                                                            Format="F1"
-                                                                            HelperText="-1=sharp corners, 1=smooth"
-                                                                            Disabled="@IsUsingOsmSplines"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@SplineContinuity"/>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="4">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.SplineBias" 
-                                                                            Label="Bias" 
-                                                                            Variant="Variant.Outlined"
-                                                                            Min="-1.0f" Max="1.0f" Step="0.1f"
-                                                                            Format="F1"
-                                                                            HelperText="Curve direction bias"
-                                                                            Disabled="@IsUsingOsmSplines"
-                                                                            Class="flex-grow-1"/>
-                                                            <HelpAdornment TooltipText="@SplineBias"/>
-                                                        </div>
-                                                    </MudItem>
-                                                </MudGrid>
-                                            </MudPaper>
-                                            
                                             <!-- Path Extraction Card (PNG layer map only - not used for OSM) -->
                                             <MudPaper Class="pa-3 mb-3" Elevation="1" Style="@(IsUsingOsmSplines ? "opacity: 0.5;" : "")">
                                                 <MudText Typo="Typo.subtitle2" Class="mb-2">
@@ -825,27 +749,6 @@ Class="my-0">
                                                     </MudItem>
                                                 </MudGrid>
                                                 
-                                                <!-- Graph Ordering sub-section -->
-                                                <MudDivider Class="my-3"/>
-                                                <div class="d-flex align-center gap-3 mb-2">
-                                                    <div class="d-flex align-center gap-1">
-                                                        <MudSwitch T="bool" @bind-Value="Material.UseGraphOrdering" 
-                                                                  Color="Color.Primary"
-                                                                  Label="Use Graph Ordering"
-                                                                  Disabled="@IsUsingOsmSplines"/>
-                                                        <HelpAdornment TooltipText="@UseGraphOrdering"/>
-                                                    </div>
-                                                    <div class="d-flex align-start gap-1">
-                                                        <MudNumericField T="float" @bind-Value="Material.OrderingNeighborRadiusPixels" 
-                                                                        Label="Neighbor Radius (px)" 
-                                                                        Variant="Variant.Outlined"
-                                                                        Min="1.0f" Max="10.0f" Step="0.5f"
-                                                                        Format="F1"
-                                                                        Disabled="@(!Material.UseGraphOrdering || IsUsingOsmSplines)"
-                                                                        Style="max-width: 200px;"/>
-                                                        <HelpAdornment TooltipText="@OrderingNeighborRadiusPixels"/>
-                                                    </div>
-                                                </div>
                                             </MudPaper>
                                             
                                             <!-- Junction Handling Card (PNG layer map only - not used for OSM) -->

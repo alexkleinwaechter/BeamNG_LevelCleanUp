@@ -274,11 +274,11 @@ public class SkeletonizationRoadExtractor
         var walkedArms = new Dictionary<int, HashSet<int>>();
 
         var preferStraight = parameters?.SplineParameters?.PreferStraightThroughJunctions ?? false;
-        var angleThreshold = parameters?.SplineParameters?.JunctionAngleThreshold ?? 45.0f;
+        var angleThreshold = parameters?.SplineParameters?.JunctionAngleThreshold ?? 90.0f;
 
         if (preferStraight)
             TerrainLogger.Info(
-                $"Junction awareness enabled: preferring paths within {angleThreshold}° of current direction");
+                $"Junction awareness enabled: preferring paths within {angleThreshold}ï¿½ of current direction");
 
         // Mark arm as walked
         void MarkArmWalked(int fromIdx, int toIdx)

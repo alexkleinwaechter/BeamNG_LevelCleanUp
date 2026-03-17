@@ -436,21 +436,15 @@ public partial class TerrainMaterialSettings
                 ["sideMaxSlopeDegrees"] = Material.SideMaxSlopeDegrees,
                 ["blendFunctionType"] = Material.BlendFunctionType.ToString(),
                 ["crossSectionIntervalMeters"] = Material.CrossSectionIntervalMeters,
-                ["enableTerrainBlending"] = Material.EnableTerrainBlending,
                 ["splineParameters"] = new JsonObject
                 {
                     ["splineInterpolationType"] = Material.SplineInterpolationType.ToString(),
-                    ["tension"] = Material.SplineTension,
-                    ["continuity"] = Material.SplineContinuity,
-                    ["bias"] = Material.SplineBias,
-                    ["useGraphOrdering"] = Material.UseGraphOrdering,
                     ["preferStraightThroughJunctions"] = Material.PreferStraightThroughJunctions,
                     ["densifyMaxSpacingPixels"] = Material.DensifyMaxSpacingPixels,
                     ["simplifyTolerancePixels"] = Material.SimplifyTolerancePixels,
                     ["bridgeEndpointMaxDistancePixels"] = Material.BridgeEndpointMaxDistancePixels,
                     ["minPathLengthPixels"] = Material.MinPathLengthPixels,
                     ["junctionAngleThreshold"] = Material.JunctionAngleThreshold,
-                    ["orderingNeighborRadiusPixels"] = Material.OrderingNeighborRadiusPixels,
                     ["skeletonDilationRadius"] = Material.SkeletonDilationRadius,
                     ["smoothingWindowSize"] = Material.SplineSmoothingWindowSize,
                     ["useButterworthFilter"] = Material.SplineUseButterworthFilter,
@@ -541,9 +535,6 @@ public partial class TerrainMaterialSettings
                 Material.BlendFunctionType = blendType;
             if (jsonNode["crossSectionIntervalMeters"] != null)
                 Material.CrossSectionIntervalMeters = jsonNode["crossSectionIntervalMeters"]!.GetValue<float>();
-            if (jsonNode["enableTerrainBlending"] != null)
-                Material.EnableTerrainBlending = jsonNode["enableTerrainBlending"]!.GetValue<bool>();
-
             // Import spline parameters
             var splineParams = jsonNode["splineParameters"];
             if (splineParams != null)
@@ -552,14 +543,6 @@ public partial class TerrainMaterialSettings
                     Enum.TryParse<SplineInterpolationType>(splineParams["splineInterpolationType"]!.GetValue<string>(),
                         out var interpType))
                     Material.SplineInterpolationType = interpType;
-                if (splineParams["tension"] != null)
-                    Material.SplineTension = splineParams["tension"]!.GetValue<float>();
-                if (splineParams["continuity"] != null)
-                    Material.SplineContinuity = splineParams["continuity"]!.GetValue<float>();
-                if (splineParams["bias"] != null)
-                    Material.SplineBias = splineParams["bias"]!.GetValue<float>();
-                if (splineParams["useGraphOrdering"] != null)
-                    Material.UseGraphOrdering = splineParams["useGraphOrdering"]!.GetValue<bool>();
                 if (splineParams["preferStraightThroughJunctions"] != null)
                     Material.PreferStraightThroughJunctions =
                         splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
@@ -574,9 +557,6 @@ public partial class TerrainMaterialSettings
                     Material.MinPathLengthPixels = splineParams["minPathLengthPixels"]!.GetValue<float>();
                 if (splineParams["junctionAngleThreshold"] != null)
                     Material.JunctionAngleThreshold = splineParams["junctionAngleThreshold"]!.GetValue<float>();
-                if (splineParams["orderingNeighborRadiusPixels"] != null)
-                    Material.OrderingNeighborRadiusPixels =
-                        splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
                 if (splineParams["skeletonDilationRadius"] != null)
                     Material.SkeletonDilationRadius = splineParams["skeletonDilationRadius"]!.GetValue<int>();
                 if (splineParams["smoothingWindowSize"] != null)
@@ -800,7 +780,6 @@ public partial class TerrainMaterialSettings
         // ========================================
         public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
         public float CrossSectionIntervalMeters { get; set; } = 0.5f;
-        public bool EnableTerrainBlending { get; set; } = true;
 
         // ========================================
         // SPLINE PARAMETERS
@@ -809,20 +788,13 @@ public partial class TerrainMaterialSettings
         public SplineInterpolationType SplineInterpolationType { get; set; } =
             SplineInterpolationType.SmoothInterpolated;
 
-        // Curve fitting
-        public float SplineTension { get; set; } = 0.2f;
-        public float SplineContinuity { get; set; } = 0.7f;
-        public float SplineBias { get; set; }
-
         // Path extraction
-        public bool UseGraphOrdering { get; set; } = true;
         public bool PreferStraightThroughJunctions { get; set; }
         public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
         public float SimplifyTolerancePixels { get; set; } = 0.5f;
         public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
         public float MinPathLengthPixels { get; set; }
         public float JunctionAngleThreshold { get; set; } = 90.0f;
-        public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
         public int SkeletonDilationRadius { get; set; }
 
         // Elevation smoothing (Spline)
@@ -1027,8 +999,6 @@ public partial class TerrainMaterialSettings
             // Algorithm settings
             BlendFunctionType = preset.BlendFunctionType;
             CrossSectionIntervalMeters = preset.CrossSectionIntervalMeters;
-            EnableTerrainBlending = preset.EnableTerrainBlending;
-
             // Post-processing
             EnablePostProcessingSmoothing = preset.EnablePostProcessingSmoothing;
             SmoothingType = preset.SmoothingType;
@@ -1041,17 +1011,12 @@ public partial class TerrainMaterialSettings
             if (preset.SplineParameters != null)
             {
                 SplineInterpolationType = preset.SplineParameters.SplineInterpolationType;
-                SplineTension = preset.SplineParameters.SplineTension;
-                SplineContinuity = preset.SplineParameters.SplineContinuity;
-                SplineBias = preset.SplineParameters.SplineBias;
-                UseGraphOrdering = preset.SplineParameters.UseGraphOrdering;
                 PreferStraightThroughJunctions = preset.SplineParameters.PreferStraightThroughJunctions;
                 DensifyMaxSpacingPixels = preset.SplineParameters.DensifyMaxSpacingPixels;
                 SimplifyTolerancePixels = preset.SplineParameters.SimplifyTolerancePixels;
                 BridgeEndpointMaxDistancePixels = preset.SplineParameters.BridgeEndpointMaxDistancePixels;
                 MinPathLengthPixels = preset.SplineParameters.MinPathLengthPixels;
                 JunctionAngleThreshold = preset.SplineParameters.JunctionAngleThreshold;
-                OrderingNeighborRadiusPixels = preset.SplineParameters.OrderingNeighborRadiusPixels;
                 SkeletonDilationRadius = preset.SplineParameters.SkeletonDilationRadius;
                 SplineSmoothingWindowSize = preset.SplineParameters.SmoothingWindowSize;
                 SplineUseButterworthFilter = preset.SplineParameters.UseButterworthFilter;
@@ -1131,8 +1096,6 @@ public partial class TerrainMaterialSettings
                 // Algorithm settings - disable blending for paint-only
                 BlendFunctionType = BlendFunctionType,
                 CrossSectionIntervalMeters = CrossSectionIntervalMeters,
-                EnableTerrainBlending = isPaintOnlyMode ? false : EnableTerrainBlending,
-
                 // Post-processing - disable for paint-only
                 EnablePostProcessingSmoothing = isPaintOnlyMode ? false : EnablePostProcessingSmoothing,
                 SmoothingType = SmoothingType,
@@ -1158,17 +1121,12 @@ public partial class TerrainMaterialSettings
             result.SplineParameters = new SplineRoadParameters
             {
                 SplineInterpolationType = SplineInterpolationType,
-                SplineTension = SplineTension,
-                SplineContinuity = SplineContinuity,
-                SplineBias = SplineBias,
-                UseGraphOrdering = UseGraphOrdering,
                 PreferStraightThroughJunctions = PreferStraightThroughJunctions,
                 DensifyMaxSpacingPixels = DensifyMaxSpacingPixels,
                 SimplifyTolerancePixels = SimplifyTolerancePixels,
                 BridgeEndpointMaxDistancePixels = BridgeEndpointMaxDistancePixels,
                 MinPathLengthPixels = MinPathLengthPixels,
                 JunctionAngleThreshold = JunctionAngleThreshold,
-                OrderingNeighborRadiusPixels = OrderingNeighborRadiusPixels,
                 SkeletonDilationRadius = SkeletonDilationRadius,
                 SmoothingWindowSize = SplineSmoothingWindowSize,
                 UseButterworthFilter = SplineUseButterworthFilter,

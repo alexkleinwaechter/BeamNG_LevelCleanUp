@@ -63,16 +63,16 @@ public class OptimizedElevationSmoother : IHeightCalculator
     {
         // Get smoothing parameters from SplineParameters
         var splineParams = parameters?.GetSplineParameters();
-        var windowSize = splineParams?.SmoothingWindowSize ?? 101;
+        var windowSize = splineParams?.SmoothingWindowSize ?? 301;
         var useButterworthFilter = splineParams?.UseButterworthFilter ?? false;
-        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 3;
+        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 4;
         var crossSectionSpacing = parameters?.CrossSectionIntervalMeters ?? 0.5f;
         var smoothingRadiusMeters = windowSize / 2.0f * crossSectionSpacing;
 
         // Get global leveling and slope constraint parameters
         var globalLevelingStrength = splineParams?.GlobalLevelingStrength ?? 0.0f;
         var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
-        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 4.0f;
+        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 6.0f;
 
         var filterType = useButterworthFilter
             ? $"Butterworth (order {butterworthOrder})"
@@ -280,12 +280,12 @@ public class OptimizedElevationSmoother : IHeightCalculator
         RoadSmoothingParameters parameters)
     {
         var splineParams = parameters?.GetSplineParameters();
-        var windowSize = splineParams?.SmoothingWindowSize ?? 101;
+        var windowSize = splineParams?.SmoothingWindowSize ?? 301;
         var useButterworthFilter = splineParams?.UseButterworthFilter ?? false;
-        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 3;
+        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 4;
         var crossSectionSpacing = parameters?.CrossSectionIntervalMeters ?? 0.5f;
         var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
-        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 4.0f;
+        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 6.0f;
 
         // Group by OwnerSplineId for per-spline processing
         var splineGroups = crossSections

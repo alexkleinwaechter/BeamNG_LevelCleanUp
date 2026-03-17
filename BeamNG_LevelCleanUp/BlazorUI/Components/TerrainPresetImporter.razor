@@ -994,9 +994,6 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 settings.BlendFunctionType = roadSmoothing["blendFunctionType"]!.GetValue<string>();
             if (roadSmoothing["crossSectionIntervalMeters"] != null)
                 settings.CrossSectionIntervalMeters = roadSmoothing["crossSectionIntervalMeters"]!.GetValue<float>();
-            if (roadSmoothing["enableTerrainBlending"] != null)
-                settings.EnableTerrainBlending = roadSmoothing["enableTerrainBlending"]!.GetValue<bool>();
-
             // Spline parameters
             var splineParams = roadSmoothing["splineParameters"];
             if (splineParams != null)
@@ -1004,14 +1001,6 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 settings.SplineParameters = new SplineParametersSettings();
                 if (splineParams["splineInterpolationType"] != null)
                     settings.SplineParameters.SplineInterpolationType = splineParams["splineInterpolationType"]!.GetValue<string>();
-                if (splineParams["tension"] != null)
-                    settings.SplineParameters.Tension = splineParams["tension"]!.GetValue<float>();
-                if (splineParams["continuity"] != null)
-                    settings.SplineParameters.Continuity = splineParams["continuity"]!.GetValue<float>();
-                if (splineParams["bias"] != null)
-                    settings.SplineParameters.Bias = splineParams["bias"]!.GetValue<float>();
-                if (splineParams["useGraphOrdering"] != null)
-                    settings.SplineParameters.UseGraphOrdering = splineParams["useGraphOrdering"]!.GetValue<bool>();
                 if (splineParams["preferStraightThroughJunctions"] != null)
                     settings.SplineParameters.PreferStraightThroughJunctions = splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
                 if (splineParams["densifyMaxSpacingPixels"] != null)
@@ -1024,8 +1013,6 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.SplineParameters.MinPathLengthPixels = splineParams["minPathLengthPixels"]!.GetValue<float>();
                 if (splineParams["junctionAngleThreshold"] != null)
                     settings.SplineParameters.JunctionAngleThreshold = splineParams["junctionAngleThreshold"]!.GetValue<float>();
-                if (splineParams["orderingNeighborRadiusPixels"] != null)
-                    settings.SplineParameters.OrderingNeighborRadiusPixels = splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
                 if (splineParams["skeletonDilationRadius"] != null)
                     settings.SplineParameters.SkeletonDilationRadius = splineParams["skeletonDilationRadius"]!.GetValue<int>();
                 if (splineParams["smoothingWindowSize"] != null)
@@ -1168,24 +1155,17 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             if (Enum.TryParse<BlendFunctionType>(settings.BlendFunctionType, out var blendType))
                 material.BlendFunctionType = blendType;
             material.CrossSectionIntervalMeters = settings.CrossSectionIntervalMeters;
-            material.EnableTerrainBlending = settings.EnableTerrainBlending;
-
             // Spline parameters
             if (settings.SplineParameters != null)
             {
                 if (Enum.TryParse<SplineInterpolationType>(settings.SplineParameters.SplineInterpolationType, out var interpType))
                     material.SplineInterpolationType = interpType;
-                material.SplineTension = settings.SplineParameters.Tension;
-                material.SplineContinuity = settings.SplineParameters.Continuity;
-                material.SplineBias = settings.SplineParameters.Bias;
-                material.UseGraphOrdering = settings.SplineParameters.UseGraphOrdering;
                 material.PreferStraightThroughJunctions = settings.SplineParameters.PreferStraightThroughJunctions;
                 material.DensifyMaxSpacingPixels = settings.SplineParameters.DensifyMaxSpacingPixels;
                 material.SimplifyTolerancePixels = settings.SplineParameters.SimplifyTolerancePixels;
                 material.BridgeEndpointMaxDistancePixels = settings.SplineParameters.BridgeEndpointMaxDistancePixels;
                 material.MinPathLengthPixels = settings.SplineParameters.MinPathLengthPixels;
                 material.JunctionAngleThreshold = settings.SplineParameters.JunctionAngleThreshold;
-                material.OrderingNeighborRadiusPixels = settings.SplineParameters.OrderingNeighborRadiusPixels;
                 material.SkeletonDilationRadius = settings.SplineParameters.SkeletonDilationRadius;
                 material.SplineSmoothingWindowSize = settings.SplineParameters.SmoothingWindowSize;
                 material.SplineUseButterworthFilter = settings.SplineParameters.UseButterworthFilter;

@@ -357,7 +357,6 @@ internal class Program
         {
             return new RoadSmoothingParameters
             {
-                EnableTerrainBlending = true,
                 DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\highway",
 
                 // ========================================
@@ -411,13 +410,6 @@ internal class Program
                     BridgeEndpointMaxDistancePixels = 40.0f,
                     DensifyMaxSpacingPixels = 1.5f,
                     SimplifyTolerancePixels = 0.5f,
-                    UseGraphOrdering = true,
-                    OrderingNeighborRadiusPixels = 2.5f,
-
-                    // Spline curve fitting
-                    SplineTension = 0.2f,                // Loose for smooth curves
-                    SplineContinuity = 0.7f,             // Very smooth corners
-                    SplineBias = 0.0f,
 
                     // Elevation smoothing
                     SmoothingWindowSize = 301,           // ~150m smoothing window
@@ -443,7 +435,6 @@ internal class Program
         {
             return new RoadSmoothingParameters
             {
-                EnableTerrainBlending = true,
                 DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\mountain",
 
                 // ========================================
@@ -492,13 +483,6 @@ internal class Program
                     BridgeEndpointMaxDistancePixels = 30.0f,
                     DensifyMaxSpacingPixels = 1.5f,
                     SimplifyTolerancePixels = 0.5f,
-                    UseGraphOrdering = true,
-                    OrderingNeighborRadiusPixels = 2.5f,
-
-                    // Spline curve fitting - tighter for mountain curves
-                    SplineTension = 0.3f,                // Tighter following
-                    SplineContinuity = 0.5f,             // Allow sharper corners
-                    SplineBias = 0.0f,
 
                     // Elevation smoothing
                     SmoothingWindowSize = 201,           // ~100m smoothing window
@@ -524,7 +508,6 @@ internal class Program
         {
             return new RoadSmoothingParameters
             {
-                EnableTerrainBlending = true,
                 DebugOutputDirectory = @"d:\temp\TestMappingTools\_output\dirt",
 
                 // ========================================
@@ -573,13 +556,6 @@ internal class Program
                     BridgeEndpointMaxDistancePixels = 25.0f,
                     DensifyMaxSpacingPixels = 2.0f,      // Less dense
                     SimplifyTolerancePixels = 0.75f,     // More simplification
-                    UseGraphOrdering = true,
-                    OrderingNeighborRadiusPixels = 2.5f,
-
-                    // Spline curve fitting - preserve character
-                    SplineTension = 0.4f,                // Follow terrain more closely
-                    SplineContinuity = 0.3f,             // Allow natural bumps
-                    SplineBias = 0.0f,
 
                     // Elevation smoothing
                     SmoothingWindowSize = 51,            // ~40m smoothing window

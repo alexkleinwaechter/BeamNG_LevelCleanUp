@@ -86,7 +86,7 @@ public class RoadSmoothingParameters
     ///     - 20-30m: Wide highway or when using high GlobalLevelingStrength
     ///     Default: 12.0
     /// </summary>
-    public float TerrainAffectedRangeMeters { get; set; } = 12.0f;
+    public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
 
     /// <summary>
     ///     Buffer distance (in meters) beyond the road edge that is protected
@@ -117,13 +117,6 @@ public class RoadSmoothingParameters
     /// </summary>
     public float CrossSectionIntervalMeters { get; set; } = 0.5f;
 
-    /// <summary>
-    ///     Window size for longitudinal smoothing in meters.
-    ///     Affects how smooth the road is along its length direction.
-    ///     Default: 20.0
-    /// </summary>
-    public float LongitudinalSmoothingWindowMeters { get; set; } = 20.0f;
-
     // ========================================
     // SLOPE CONSTRAINTS (All Approaches)
     // ========================================
@@ -145,7 +138,7 @@ public class RoadSmoothingParameters
     ///     - 8-10°: Mountain road (steep but driveable)
     ///     Default: 4.0
     /// </summary>
-    public float RoadMaxSlopeDegrees { get; set; } = 4.0f;
+    public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
 
     /// <summary>
     ///     Maximum slope for embankments/sides in degrees.
@@ -156,7 +149,7 @@ public class RoadSmoothingParameters
     ///     - 35-40°: Steep embankment (1:1.2 ratio)
     ///     Default: 30.0
     /// </summary>
-    public float SideMaxSlopeDegrees { get; set; } = 30.0f;
+    public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
     // ========================================
     // BLENDING (All Approaches)
@@ -168,12 +161,6 @@ public class RoadSmoothingParameters
     /// </summary>
     public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
 
-    /// <summary>
-    ///     If false, skip terrain blending (debug mode: only extract geometry/elevations).
-    ///     Default: true
-    /// </summary>
-    public bool EnableTerrainBlending { get; set; } = true;
-
     // ========================================
     // POST-PROCESSING SMOOTHING (All Approaches)
     // ========================================
@@ -184,7 +171,7 @@ public class RoadSmoothingParameters
     ///     This addresses the visible interval-based staircase effect that can occur after blending.
     ///     Default: false (disabled for backward compatibility)
     /// </summary>
-    public bool EnablePostProcessingSmoothing { get; set; } = false;
+    public bool EnablePostProcessingSmoothing { get; set; } = true;
 
     /// <summary>
     ///     Type of smoothing filter to apply in post-processing.
@@ -390,9 +377,6 @@ public class RoadSmoothingParameters
 
         if (CrossSectionIntervalMeters <= 0)
             errors.Add("CrossSectionIntervalMeters must be greater than 0");
-
-        if (LongitudinalSmoothingWindowMeters <= 0)
-            errors.Add("LongitudinalSmoothingWindowMeters must be greater than 0");
 
         // Validate post-processing smoothing parameters
         if (EnablePostProcessingSmoothing)

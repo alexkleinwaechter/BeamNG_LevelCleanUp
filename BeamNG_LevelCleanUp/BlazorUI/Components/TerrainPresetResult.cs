@@ -280,8 +280,6 @@ public class RoadSmoothingSettings
     // Algorithm settings
     public string BlendFunctionType { get; set; } = "CubicHermiteC1";
     public float CrossSectionIntervalMeters { get; set; } = 0.5f;
-    public bool EnableTerrainBlending { get; set; } = true;
-
     // Spline parameters
     public SplineParametersSettings? SplineParameters { get; set; }
 
@@ -298,17 +296,12 @@ public class RoadSmoothingSettings
 public class SplineParametersSettings
 {
     public string SplineInterpolationType { get; set; } = "SmoothInterpolated";
-    public float Tension { get; set; } = 0.2f;
-    public float Continuity { get; set; } = 0.7f;
-    public float Bias { get; set; }
-    public bool UseGraphOrdering { get; set; } = true;
     public bool PreferStraightThroughJunctions { get; set; }
     public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
     public float SimplifyTolerancePixels { get; set; } = 0.5f;
     public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
     public float MinPathLengthPixels { get; set; } = 0f;
     public float JunctionAngleThreshold { get; set; } = 90.0f;
-    public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
     public int SkeletonDilationRadius { get; set; }
     public int SmoothingWindowSize { get; set; } = 301;
     public bool UseButterworthFilter { get; set; } = true;

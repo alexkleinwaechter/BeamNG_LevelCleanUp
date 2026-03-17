@@ -51,8 +51,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters PngHighway => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Wide highway with wider smoothing corridor
         RoadWidthMeters = 20.0f,
         RoadSurfaceWidthMeters = 10.0f,
@@ -83,13 +81,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.5f,
             MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 40.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Spline fitting
-            SplineTension = 0.2f,
-            SplineContinuity = 0.7f,
-            SplineBias = 0.0f,
 
             // Elevation smoothing - aggressive for flat road surface
             SmoothingWindowSize = 601,
@@ -122,8 +114,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters PngRuralRoad => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY
         RoadWidthMeters = 9.0f,
         RoadSurfaceWidthMeters = 7.0f,
@@ -154,13 +144,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.5f,
             MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 40.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Spline fitting - balanced
-            SplineTension = 0.3f,
-            SplineContinuity = 0.5f,
-            SplineBias = 0.0f,
 
             // Elevation smoothing - moderate
             SmoothingWindowSize = 401,
@@ -194,8 +178,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters PngMountainRoad => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Narrow road with steep sides
         RoadWidthMeters = 6.0f,
         RoadSurfaceWidthMeters = 5.0f,
@@ -226,13 +208,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.5f,
             MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 30.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // TIGHT SPLINE FITTING for hairpins
-            SplineTension = 0.5f,
-            SplineContinuity = 0.2f,
-            SplineBias = 0.0f,
 
             // Elevation smoothing - responsive for curves
             SmoothingWindowSize = 401,
@@ -265,8 +241,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters PngDirtRoad => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Narrow dirt road
         RoadWidthMeters = 5.0f,
         RoadSurfaceWidthMeters = 4.0f,
@@ -297,13 +271,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.75f,
             MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 25.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Spline fitting - looser for natural character
-            SplineTension = 0.4f,
-            SplineContinuity = 0.3f,
-            SplineBias = 0.0f,
 
             // Box filter for organic feel
             SmoothingWindowSize = 51,
@@ -337,8 +305,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters PngRacingCircuit => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Wide racing surface
         RoadWidthMeters = 30.0f,
         RoadSurfaceWidthMeters = 15.0f,
@@ -370,13 +336,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.5f,
             MinPathLengthPixels = 0f,
             BridgeEndpointMaxDistancePixels = 50.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // HAIRPIN-OPTIMIZED SPLINE FITTING
-            SplineTension = 0.55f,
-            SplineContinuity = 0.15f,
-            SplineBias = 0.0f,
 
             // Elevation smoothing
             SmoothingWindowSize = 601,
@@ -413,8 +373,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmHighway => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Wide highway with wider smoothing corridor
         RoadWidthMeters = 20.0f,
         RoadSurfaceWidthMeters = 10.0f,
@@ -445,13 +403,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.5f,
             MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 50.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Spline fitting
-            SplineTension = 0.2f,
-            SplineContinuity = 0.7f,
-            SplineBias = 0.0f,
 
             // Very strong elevation smoothing
             SmoothingWindowSize = 601,
@@ -483,8 +435,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmRuralRoad => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY
         RoadWidthMeters = 9.0f,
         RoadSurfaceWidthMeters = 7.0f,
@@ -514,13 +464,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.5f,
             MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 40.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Spline fitting - balanced
-            SplineTension = 0.3f,
-            SplineContinuity = 0.5f,
-            SplineBias = 0.0f,
 
             // Strong elevation smoothing
             SmoothingWindowSize = 401,
@@ -552,8 +496,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmMountainRoad => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Narrow road with steep sides
         RoadWidthMeters = 6.0f,
         RoadSurfaceWidthMeters = 5.0f,
@@ -583,13 +525,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.5f,
             MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 30.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Tighter spline fitting for curves
-            SplineTension = 0.4f,
-            SplineContinuity = 0.3f,
-            SplineBias = 0.0f,
 
             // Moderate elevation smoothing
             SmoothingWindowSize = 401,
@@ -621,8 +557,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmDirtRoad => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Narrow track
         RoadWidthMeters = 5.0f,
         RoadSurfaceWidthMeters = 4.0f,
@@ -652,13 +586,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 1.0f,
             MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 20.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Spline fitting - allows sharp corners
-            SplineTension = 0.4f,
-            SplineContinuity = 0.2f,
-            SplineBias = 0.0f,
 
             // Light elevation smoothing - natural feel
             SmoothingWindowSize = 51,
@@ -691,8 +619,6 @@ public static class RoadSmoothingPresets
     /// </summary>
     public static RoadSmoothingParameters OsmRacingCircuit => new()
     {
-        EnableTerrainBlending = true,
-
         // ROAD GEOMETRY - Wide racing surface
         RoadWidthMeters = 30.0f,
         RoadSurfaceWidthMeters = 15.0f,
@@ -723,13 +649,7 @@ public static class RoadSmoothingPresets
             SimplifyTolerancePixels = 0.3f,
             MinPathLengthPixels = 0.0f, // OSM: no min length filter - keep all paths
             BridgeEndpointMaxDistancePixels = 50.0f,
-            UseGraphOrdering = true,
-            OrderingNeighborRadiusPixels = 2.5f,
-
             // Tight spline fitting for precision
-            SplineTension = 0.5f,
-            SplineContinuity = 0.2f,
-            SplineBias = 0.0f,
 
             // Elevation smoothing
             SmoothingWindowSize = 601,
