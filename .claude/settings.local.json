@@ -56,6 +56,9 @@
       "Read(//c/Windows/**)",
       "Bash(dotnet package:*)",
       "Bash(nuget list:*)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }
