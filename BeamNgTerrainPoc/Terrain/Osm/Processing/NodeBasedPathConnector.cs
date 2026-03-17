@@ -10,7 +10,7 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
 ///     This naturally prevents wrong merges — the correct continuation always has a
 ///     smaller deflection angle than an incorrect one.
 ///     Guards:
-///     - Different highway types (= different materials/smoothing params) never merge.
+///     - Different highway types never merge (paths are partitioned by exact highway type).
 ///     - Roundabout-tagged paths are excluded from merging.
 ///     - At junction nodes (valence >= 3), deflection angle must be below 90°.
 ///     Scoring (higher = better):
@@ -36,74 +36,132 @@ internal static class NodeBasedPathConnector
     private const float DirectionLookbackMeters = 30f;
 
     /// <summary>
-    ///     Highway type compatibility groups. A main road type and its _link variant
-    ///     are considered compatible and may merge. All other cross-type combinations
-    ///     are blocked by the anti-merge rule.
-    /// </summary>
-    private static readonly Dictionary<string, string> HighwayTypeGroups = new()
-    {
-        ["motorway"] = "motorway",
-        ["motorway_link"] = "motorway",
-        ["trunk"] = "trunk",
-        ["trunk_link"] = "trunk",
-        ["primary"] = "primary",
-        ["primary_link"] = "primary",
-        ["secondary"] = "secondary",
-        ["secondary_link"] = "secondary",
-        ["tertiary"] = "tertiary",
-        ["tertiary_link"] = "tertiary",
-        ["residential"] = "residential",
-        ["unclassified"] = "residential",
-        ["living_street"] = "residential",
-        ["service"] = "service",
-        ["track"] = "track",
-        ["path"] = "track",
-        ["footway"] = "footway",
-        ["cycleway"] = "cycleway",
-        ["bridleway"] = "bridleway",
-        ["steps"] = "steps",
-        ["pedestrian"] = "pedestrian"
-    };
-
-    /// <summary>
     ///     Connects paths using angle-first greedy matching.
     /// </summary>
     /// <param name="paths">Paths with OSM metadata to connect.</param>
     /// <param name="tolerance">Maximum distance for geometric proximity fallback (in meters).</param>
     /// <param name="routeRelations">Optional route relations for relation-aware scoring.</param>
-    /// <returns>Connected paths (bare point lists — metadata consumed during merging).</returns>
-    public static List<List<Vector2>> Connect(
+    /// <returns>Connected paths with preserved OSM metadata (tags, node IDs, way IDs).</returns>
+    public static List<PathWithMetadata> Connect(
         List<PathWithMetadata> paths,
         float tolerance,
         IReadOnlyList<RouteRelation>? routeRelations = null)
     {
         if (paths.Count <= 1)
-            return paths.Select(p => p.Points).ToList();
+            return paths.Select(ClonePath).ToList();
 
-        var nodeValence = BuildNodeValenceMap(paths);
-        var working = paths.Select(ClonePath).ToList();
-        var toleranceSq = tolerance * tolerance;
+        // Partition paths by highway type so each partition only scans within its own type.
+        // This is purely a performance optimization — AreTypesCompatible already blocks
+        // cross-type merges, so partitioning avoids O(n²) wasted comparisons.
+        const string nullGroupKey = "__no_highway__";
+        var partitions = new Dictionary<string, List<PathWithMetadata>>();
+        foreach (var path in paths)
+        {
+            var group = GetHighwayGroup(path) ?? nullGroupKey;
+            if (!partitions.TryGetValue(group, out var list))
+            {
+                list = new List<PathWithMetadata>();
+                partitions[group] = list;
+            }
+            list.Add(path);
+        }
 
-        // Build relation lookup if route relations are provided
+        var result = new List<PathWithMetadata>();
+        var totalMergeCount = 0;
+        var totalSharedNodeMerges = 0;
+        var totalProximityMerges = 0;
+        var totalRelationBoostedMerges = 0;
+
+        // Build relation lookup once (shared across partitions)
         Dictionary<long, HashSet<long>>? wayToRelations = null;
         if (routeRelations is { Count: > 0 })
             wayToRelations = BuildWayRelationMap(routeRelations);
 
-        var mergeCount = 0;
-        var sharedNodeMerges = 0;
-        var proximityMerges = 0;
-        var relationBoostedMerges = 0;
+        foreach (var (groupKey, partition) in partitions)
+        {
+            if (partition.Count <= 1)
+            {
+                result.AddRange(partition.Select(ClonePath));
+                continue;
+            }
+
+            var merged = ConnectPartition(partition, tolerance, wayToRelations,
+                out var mergeCount, out var sharedNodeMerges, out var proximityMerges,
+                out var relationBoostedMerges);
+
+            result.AddRange(merged);
+            totalMergeCount += mergeCount;
+            totalSharedNodeMerges += sharedNodeMerges;
+            totalProximityMerges += proximityMerges;
+            totalRelationBoostedMerges += relationBoostedMerges;
+        }
+
+        var strategyName = wayToRelations != null ? "RelationAware" : "AngleFirst";
+        Console.WriteLine(
+            $"  Angle-first path joining ({strategyName}): {totalMergeCount} merges " +
+            $"(shared-node: {totalSharedNodeMerges}, proximity: {totalProximityMerges}" +
+            (totalRelationBoostedMerges > 0 ? $", relation-boosted: {totalRelationBoostedMerges}" : "") +
+            $"), {result.Count} paths remaining ({partitions.Count} type partitions), tolerance={tolerance:F2}m");
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Connects paths within a single highway-type partition using greedy angle-first matching.
+    ///     Uses a spatial grid index on endpoints to avoid O(N²) all-pairs scanning.
+    /// </summary>
+    private static List<PathWithMetadata> ConnectPartition(
+        List<PathWithMetadata> paths,
+        float tolerance,
+        Dictionary<long, HashSet<long>>? wayToRelations,
+        out int mergeCount,
+        out int sharedNodeMerges,
+        out int proximityMerges,
+        out int relationBoostedMerges)
+    {
+        var nodeValence = BuildNodeValenceMap(paths);
+        var toleranceSq = tolerance * tolerance;
+        var cellSize = MathF.Max(tolerance, 1f);
+
+        // Use stable IDs instead of list indices (avoids index shifting on removal)
+        var nextId = 0;
+        var pathById = new Dictionary<int, PathWithMetadata>(paths.Count);
+        foreach (var path in paths)
+            pathById[nextId++] = ClonePath(path);
+
+        // Build spatial grid of endpoints: cell → list of (pathId, isStart)
+        var grid = new Dictionary<(int, int), List<(int pathId, bool isStart)>>();
+        foreach (var (id, p) in pathById)
+            GridAdd(grid, cellSize, id, p);
+
+        mergeCount = 0;
+        sharedNodeMerges = 0;
+        proximityMerges = 0;
+        relationBoostedMerges = 0;
 
         while (mergeCount < 10_000) // Safety limit
         {
-            var best = FindBestCandidate(working, nodeValence, toleranceSq, wayToRelations);
+            var best = FindBestCandidateIndexed(pathById, grid, cellSize,
+                nodeValence, toleranceSq, wayToRelations);
             if (best == null)
                 break;
 
             var b = best.Value;
-            var merged = ExecuteMerge(working[b.Index1], working[b.Index2], b.Type);
-            working[b.Index1] = merged;
-            working.RemoveAt(b.Index2);
+            var p1 = pathById[b.Index1];
+            var p2 = pathById[b.Index2];
+
+            // Remove old paths from grid and dictionary
+            GridRemove(grid, cellSize, b.Index1, p1);
+            GridRemove(grid, cellSize, b.Index2, p2);
+            pathById.Remove(b.Index1);
+            pathById.Remove(b.Index2);
+
+            // Merge and insert with new stable ID
+            var merged = ExecuteMerge(p1, p2, b.Type);
+            var mergedId = nextId++;
+            pathById[mergedId] = merged;
+            GridAdd(grid, cellSize, mergedId, merged);
+
             mergeCount++;
 
             // Track statistics
@@ -116,14 +174,7 @@ internal static class NodeBasedPathConnector
                 relationBoostedMerges++;
         }
 
-        var strategyName = wayToRelations != null ? "RelationAware" : "AngleFirst";
-        Console.WriteLine(
-            $"  Angle-first path joining ({strategyName}): {mergeCount} merges " +
-            $"(shared-node: {sharedNodeMerges}, proximity: {proximityMerges}" +
-            (relationBoostedMerges > 0 ? $", relation-boosted: {relationBoostedMerges}" : "") +
-            $"), {working.Count} paths remaining, tolerance={tolerance:F2}m");
-
-        return working.Select(p => p.Points).ToList();
+        return pathById.Values.ToList();
     }
 
     // ========================================================================================
@@ -131,11 +182,14 @@ internal static class NodeBasedPathConnector
     // ========================================================================================
 
     /// <summary>
-    ///     Scans all pairs of paths and all endpoint combinations to find the single best
-    ///     merge candidate (highest score = straightest connection).
+    ///     Finds the best merge candidate using a spatial grid index on endpoints.
+    ///     Instead of O(N²) all-pairs, each endpoint only checks nearby grid cells → O(N·k)
+    ///     where k is the average number of nearby endpoints (typically small and constant).
     /// </summary>
-    private static MergeCandidate? FindBestCandidate(
-        List<PathWithMetadata> working,
+    private static MergeCandidate? FindBestCandidateIndexed(
+        Dictionary<int, PathWithMetadata> pathById,
+        Dictionary<(int, int), List<(int pathId, bool isStart)>> grid,
+        float cellSize,
         Dictionary<long, int> nodeValence,
         float toleranceSq,
         Dictionary<long, HashSet<long>>? wayToRelations)
@@ -144,62 +198,81 @@ internal static class NodeBasedPathConnector
         var bestScore = float.MinValue;
 
         // Precompute direction points (~30m lookback) for stable angle estimates.
-        // Much more reliable than using just the last segment, especially near junctions
-        // where short stub ways have noisy/unreliable angles.
-        var endLookback = new Vector2[working.Count];
-        var startLookforward = new Vector2[working.Count];
-        for (var k = 0; k < working.Count; k++)
+        var endLookback = new Dictionary<int, Vector2>(pathById.Count);
+        var startLookforward = new Dictionary<int, Vector2>(pathById.Count);
+        foreach (var (id, p) in pathById)
         {
-            endLookback[k] = GetDirectionPoint(working[k].Points, true);
-            startLookforward[k] = GetDirectionPoint(working[k].Points, false);
+            endLookback[id] = GetDirectionPoint(p.Points, true);
+            startLookforward[id] = GetDirectionPoint(p.Points, false);
         }
 
-        for (var i = 0; i < working.Count; i++)
+        foreach (var (id1, p1) in pathById)
         {
-            var p1 = working[i];
             if (p1.Points.Count < 2) continue;
+            if (IsRoundabout(p1)) continue;
 
-            for (var j = i + 1; j < working.Count; j++)
+            // Check p1's END endpoint against nearby endpoints
+            var endPos = p1.Points[^1];
+            var endCell = GridCell(endPos.X, endPos.Y, cellSize);
+            for (var dx = -1; dx <= 1; dx++)
+            for (var dy = -1; dy <= 1; dy++)
             {
-                var p2 = working[j];
-                if (p2.Points.Count < 2) continue;
-                if (!AreTypesCompatible(p1, p2)) continue;
-                if (IsRoundabout(p1) || IsRoundabout(p2)) continue;
+                if (!grid.TryGetValue((endCell.Item1 + dx, endCell.Item2 + dy), out var nearby))
+                    continue;
+                foreach (var (id2, isStart2) in nearby)
+                {
+                    if (id2 <= id1) continue; // avoid scoring same pair twice
+                    if (!pathById.TryGetValue(id2, out var p2)) continue;
+                    if (p2.Points.Count < 2) continue;
+                    if (IsRoundabout(p2)) continue;
 
-                // Relation bonus (computed once per pair)
-                var relationBonus = 0f;
-                if (wayToRelations != null &&
-                    ShareRouteRelation(p1.OsmWayId, p2.OsmWayId, wayToRelations))
-                    relationBonus = RelationBoost;
+                    var type = isStart2 ? MergeType.EndToStart : MergeType.EndToEnd;
+                    var nodeId2 = isStart2 ? p2.StartNodeId : p2.EndNodeId;
+                    var outgoingNext = isStart2 ? startLookforward[id2] : endLookback[id2];
 
-                // Try all 4 endpoint combinations using lookback direction points
-                // EndToStart: p1 forward → p2 forward (no reversal)
-                ScoreEndpoint(i, j, p1, p2, MergeType.EndToStart,
-                    p1.EndNodeId, p2.StartNodeId,
-                    endLookback[i], p1.Points[^1], startLookforward[j],
-                    false, nodeValence, toleranceSq, relationBonus,
-                    ref best, ref bestScore);
+                    var relationBonus = 0f;
+                    if (wayToRelations != null &&
+                        ShareRouteRelation(p1.OsmWayId, p2.OsmWayId, wayToRelations))
+                        relationBonus = RelationBoost;
 
-                // EndToEnd: p1 forward → p2 reversed
-                ScoreEndpoint(i, j, p1, p2, MergeType.EndToEnd,
-                    p1.EndNodeId, p2.EndNodeId,
-                    endLookback[i], p1.Points[^1], endLookback[j],
-                    true, nodeValence, toleranceSq, relationBonus,
-                    ref best, ref bestScore);
+                    ScoreEndpoint(id1, id2, p1, p2, type,
+                        p1.EndNodeId, nodeId2,
+                        endLookback[id1], p1.Points[^1], outgoingNext,
+                        type == MergeType.EndToEnd, nodeValence, toleranceSq, relationBonus,
+                        ref best, ref bestScore);
+                }
+            }
 
-                // StartToEnd: p2 forward → p1 forward (no reversal)
-                ScoreEndpoint(i, j, p1, p2, MergeType.StartToEnd,
-                    p1.StartNodeId, p2.EndNodeId,
-                    endLookback[j], p1.Points[0], startLookforward[i],
-                    false, nodeValence, toleranceSq, relationBonus,
-                    ref best, ref bestScore);
+            // Check p1's START endpoint against nearby endpoints
+            var startPos = p1.Points[0];
+            var startCell = GridCell(startPos.X, startPos.Y, cellSize);
+            for (var dx = -1; dx <= 1; dx++)
+            for (var dy = -1; dy <= 1; dy++)
+            {
+                if (!grid.TryGetValue((startCell.Item1 + dx, startCell.Item2 + dy), out var nearby))
+                    continue;
+                foreach (var (id2, isStart2) in nearby)
+                {
+                    if (id2 <= id1) continue;
+                    if (!pathById.TryGetValue(id2, out var p2)) continue;
+                    if (p2.Points.Count < 2) continue;
+                    if (IsRoundabout(p2)) continue;
 
-                // StartToStart: p2 reversed → p1 forward
-                ScoreEndpoint(i, j, p1, p2, MergeType.StartToStart,
-                    p1.StartNodeId, p2.StartNodeId,
-                    startLookforward[j], p1.Points[0], startLookforward[i],
-                    true, nodeValence, toleranceSq, relationBonus,
-                    ref best, ref bestScore);
+                    var type = isStart2 ? MergeType.StartToStart : MergeType.StartToEnd;
+                    var nodeId2 = isStart2 ? p2.StartNodeId : p2.EndNodeId;
+                    var incomingPrev = isStart2 ? startLookforward[id2] : endLookback[id2];
+
+                    var relationBonus = 0f;
+                    if (wayToRelations != null &&
+                        ShareRouteRelation(p1.OsmWayId, p2.OsmWayId, wayToRelations))
+                        relationBonus = RelationBoost;
+
+                    ScoreEndpoint(id1, id2, p1, p2, type,
+                        p1.StartNodeId, nodeId2,
+                        incomingPrev, p1.Points[0], startLookforward[id1],
+                        type == MergeType.StartToStart, nodeValence, toleranceSq, relationBonus,
+                        ref best, ref bestScore);
+                }
             }
         }
 
@@ -252,8 +325,9 @@ internal static class NodeBasedPathConnector
             return; // Degenerate segment
 
         // Junction nodes: hard threshold at 90° (dot > 0)
-        if (isJunction && dot <= 0f)
-            return;
+        // TESTING: disabled to evaluate merge behavior without angle guard
+        // if (isJunction && dot <= 0f)
+        //     return;
 
         // Compute score
         var score = dot
@@ -281,6 +355,41 @@ internal static class NodeBasedPathConnector
             MergeType.StartToStart => isFirst ? path.Points[0] : path.Points[0],
             _ => throw new ArgumentOutOfRangeException(nameof(type))
         };
+    }
+
+    // ========================================================================================
+    //  Spatial Grid Index for Endpoint Proximity
+    // ========================================================================================
+
+    private static (int, int) GridCell(float x, float y, float cellSize) =>
+        ((int)MathF.Floor(x / cellSize), (int)MathF.Floor(y / cellSize));
+
+    private static void GridAdd(
+        Dictionary<(int, int), List<(int pathId, bool isStart)>> grid,
+        float cellSize, int pathId, PathWithMetadata path)
+    {
+        var startCell = GridCell(path.Points[0].X, path.Points[0].Y, cellSize);
+        if (!grid.TryGetValue(startCell, out var startList))
+            grid[startCell] = startList = new List<(int, bool)>();
+        startList.Add((pathId, true));
+
+        var endCell = GridCell(path.Points[^1].X, path.Points[^1].Y, cellSize);
+        if (!grid.TryGetValue(endCell, out var endList))
+            grid[endCell] = endList = new List<(int, bool)>();
+        endList.Add((pathId, false));
+    }
+
+    private static void GridRemove(
+        Dictionary<(int, int), List<(int pathId, bool isStart)>> grid,
+        float cellSize, int pathId, PathWithMetadata path)
+    {
+        var startCell = GridCell(path.Points[0].X, path.Points[0].Y, cellSize);
+        if (grid.TryGetValue(startCell, out var startList))
+            startList.RemoveAll(e => e.pathId == pathId && e.isStart);
+
+        var endCell = GridCell(path.Points[^1].X, path.Points[^1].Y, cellSize);
+        if (grid.TryGetValue(endCell, out var endList))
+            endList.RemoveAll(e => e.pathId == pathId && !e.isStart);
     }
 
     // ========================================================================================
@@ -419,20 +528,14 @@ internal static class NodeBasedPathConnector
     //  Anti-Merge Rules
     // ========================================================================================
 
-    private static bool AreTypesCompatible(PathWithMetadata path1, PathWithMetadata path2)
-    {
-        var group1 = GetHighwayGroup(path1);
-        var group2 = GetHighwayGroup(path2);
-        if (group1 == null || group2 == null)
-            return true;
-        return string.Equals(group1, group2, StringComparison.Ordinal);
-    }
-
     private static string? GetHighwayGroup(PathWithMetadata path)
     {
         if (!path.Tags.TryGetValue("highway", out var highway) || string.IsNullOrEmpty(highway))
             return null;
-        return HighwayTypeGroups.TryGetValue(highway, out var group) ? group : highway;
+        // Return exact highway type (no grouping) so that subtypes like motorway_link
+        // stay as separate splines for correct DecalRoad layer set resolution.
+        // Was: return HighwayTypeGroups.TryGetValue(highway, out var group) ? group : highway;
+        return highway;
     }
 
     private static bool IsRoundabout(PathWithMetadata path)

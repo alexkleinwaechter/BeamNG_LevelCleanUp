@@ -23,6 +23,18 @@ public partial class DecalRoadLayerSetEditor
     /// </summary>
     [Parameter] public EventCallback<string> OnPreviewMaterial { get; set; }
 
+    /// <summary>
+    /// Available road type names for "Copy layer to..." feature (multi-set mode only).
+    /// When empty, the "Copy to" button is hidden.
+    /// </summary>
+    [Parameter] public List<string> OtherRoadTypeNames { get; set; } = [];
+
+    /// <summary>
+    /// Callback when user wants to copy a layer to another road type.
+    /// Tuple: (layer to copy, target road type name).
+    /// </summary>
+    [Parameter] public EventCallback<(DecalRoadLayerDefinition Layer, string TargetRoadType)> OnCopyLayerToRoadType { get; set; }
+
     private HashSet<int> _expandedIndices = [];
     private DecalRoadLayerSet? _previousLayerSet;
     private int _renderKey;
@@ -156,6 +168,12 @@ public partial class DecalRoadLayerSetEditor
             .Distinct();
 
         return Task.FromResult(result);
+    }
+
+    private async Task CopyLayerToRoadType(DecalRoadLayerDefinition layer, string targetRoadType)
+    {
+        if (OnCopyLayerToRoadType.HasDelegate)
+            await OnCopyLayerToRoadType.InvokeAsync((layer, targetRoadType));
     }
 
     private async Task PreviewMaterial(string? materialName)

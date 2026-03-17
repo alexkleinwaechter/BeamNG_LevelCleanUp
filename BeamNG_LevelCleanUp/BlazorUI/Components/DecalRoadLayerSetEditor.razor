@@ -318,6 +318,23 @@
                     {
                         <MudItem xs="12">
                             <div class="d-flex justify-end gap-2">
+                                @if (OtherRoadTypeNames.Count > 0)
+                                {
+                                    <MudMenu Icon="@Icons.Material.Filled.DriveFileMove"
+                                             Size="Size.Small" Color="Color.Primary"
+                                             Variant="Variant.Text"
+                                             Label="Copy to..."
+                                             Dense="true"
+                                             AnchorOrigin="Origin.BottomLeft">
+                                        @foreach (var roadType in OtherRoadTypeNames)
+                                        {
+                                            var rt = roadType;
+                                            <MudMenuItem OnClick="() => CopyLayerToRoadType(layer, rt)">
+                                                @rt
+                                            </MudMenuItem>
+                                        }
+                                    </MudMenu>
+                                }
                                 <MudButton Variant="Variant.Text" Color="Color.Primary"
                                            StartIcon="@Icons.Material.Filled.ContentCopy"
                                            Size="Size.Small"

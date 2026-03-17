@@ -219,6 +219,61 @@ public partial class DecalRoadLayerSetEditorDialog
         }
     }
 
+    // Inline input for duplicating a road type
+    private string _duplicateTypeName = string.Empty;
+    private bool _showDuplicateTypeInput;
+
+    private void StartDuplicateType()
+    {
+        if (_selectedKey == null) return;
+        _duplicateTypeName = $"{_selectedKey}_copy";
+        _showDuplicateTypeInput = true;
+    }
+
+    private void ConfirmDuplicateType()
+    {
+        if (string.IsNullOrWhiteSpace(_duplicateTypeName) || _editingDefaults == null || _selectedKey == null) return;
+        if (_editingDefaults.ContainsKey(_duplicateTypeName))
+        {
+            Snackbar.Add($"Road type \"{_duplicateTypeName}\" already exists", Severity.Warning);
+            return;
+        }
+
+        var source = _editingDefaults[_selectedKey];
+        var copy = DeepCopy(source);
+        copy.Name = _duplicateTypeName;
+        _editingDefaults[_duplicateTypeName] = copy;
+        _modifiedFlags[_duplicateTypeName] = true;
+        SelectRoadType(_duplicateTypeName);
+        _showDuplicateTypeInput = false;
+        _duplicateTypeName = string.Empty;
+        Snackbar.Add($"Duplicated \"{_selectedKey}\" as \"{copy.Name}\"", Severity.Info);
+    }
+
+    private void CancelDuplicateType()
+    {
+        _duplicateTypeName = string.Empty;
+        _showDuplicateTypeInput = false;
+    }
+
+    private void CopyLayerToRoadType((DecalRoadLayerDefinition Layer, string TargetRoadType) args)
+    {
+        if (_editingDefaults == null) return;
+        if (!_editingDefaults.TryGetValue(args.TargetRoadType, out var targetSet)) return;
+
+        var copy = DeepCopy(args.Layer);
+        copy.Name = $"{args.Layer.Name} (from {_selectedKey})";
+        targetSet.Layers.Add(copy);
+        _modifiedFlags[args.TargetRoadType] = true;
+        Snackbar.Add($"Layer \"{args.Layer.Name}\" copied to {args.TargetRoadType}", Severity.Info);
+    }
+
+    private List<string> GetOtherRoadTypeNames()
+    {
+        if (_editingDefaults == null || _selectedKey == null) return [];
+        return _editingDefaults.Keys.Where(k => k != _selectedKey).ToList();
+    }
+
     private void Cancel() => MudDialog.Cancel();
 
     private void ComputeAllModifiedFlags()

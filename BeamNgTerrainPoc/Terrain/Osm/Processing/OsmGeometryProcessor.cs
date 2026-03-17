@@ -831,7 +831,7 @@ public class OsmGeometryProcessor
         // Route relations provide optional scoring bonus for relation-aware strategy.
         var connectedPaths = regularPathsMeta.Count > 0
             ? NodeBasedPathConnector.Connect(regularPathsMeta, endpointJoinToleranceMeters, routeRelations)
-            : new List<List<Vector2>>();
+            : new List<PathWithMetadata>();
 
         Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPathsMeta.Count})");
 
@@ -880,17 +880,18 @@ public class OsmGeometryProcessor
         }
 
         // Step 6: Create splines from regular (merged) paths
-        foreach (var path in connectedPaths)
+        // PathWithMetadata preserves OSM tags through merges (tags from merge base path).
+        foreach (var pm in connectedPaths)
         {
             // Remove any duplicate points that might have been introduced by joining
-            var cleanPath = RemoveDuplicateConsecutivePoints(path, duplicatePointToleranceMeters);
-            
+            var cleanPath = RemoveDuplicateConsecutivePoints(pm.Points, duplicatePointToleranceMeters);
+
             if (cleanPath.Count < 2)
             {
                 skippedTooFewPoints++;
                 continue;
             }
-            
+
             // Calculate total path length and skip if too short
             float totalLength = CalculatePathLength(cleanPath);
             if (totalLength < minPathLengthMeters)
@@ -898,7 +899,7 @@ public class OsmGeometryProcessor
                 skippedZeroLength++;
                 continue;
             }
-            
+
             try
             {
                 var spline = new RoadSpline(cleanPath, interpolationType)
@@ -908,7 +909,9 @@ public class OsmGeometryProcessor
                     IsTunnel = false,
                     StructureType = StructureType.None,
                     Layer = 0,
-                    BridgeStructureType = null
+                    BridgeStructureType = null,
+                    // Propagate OSM road type from preserved tags (survives merges)
+                    OsmRoadType = pm.Tags.GetValueOrDefault("highway")
                 };
                 splines.Add(spline);
             }
