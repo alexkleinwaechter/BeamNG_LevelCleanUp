@@ -25,4 +25,7 @@ public class DecalRoadLayerDefinition
     public int LanesRight { get; set; } = 1;
     public bool OneWay { get; set; }
     public bool FlipDirection { get; set; }
+
+    // Rendering
+    public bool OverObjects { get; set; } // When true, DecalRoad renders on top of mesh objects
 }

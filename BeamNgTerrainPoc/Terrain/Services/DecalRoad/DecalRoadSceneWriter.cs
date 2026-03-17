@@ -138,6 +138,7 @@ public class DecalRoadSceneWriter
         dict["material"] = dr.Material;
         dict["detail"] = 1;
         dict["improvedSpline"] = true;
+        dict["overObjects"] = dr.OverObjects;
         dict["textureLength"] = dr.TextureLength;
         dict["renderPriority"] = dr.RenderPriority;
         dict["startEndFade"] = dr.StartEndFade;

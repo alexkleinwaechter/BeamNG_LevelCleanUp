@@ -194,6 +194,7 @@ public class DecalRoadGenerator
                         LanesRight = layer.LanesRight,
                         OneWay = layer.OneWay,
                         FlipDirection = layer.FlipDirection,
+                        OverObjects = layer.OverObjects,
                         Nodes = chunks[ci]
                     });
                 }
