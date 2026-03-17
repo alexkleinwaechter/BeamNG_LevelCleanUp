@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -56,10 +57,10 @@ public class ParameterizedRoadSpline
     public string? OsmRoadType { get; init; }
 
     /// <summary>
-    ///     Subset of OSM tags relevant to road rendering (lanes, surface, oneway, etc.).
-    ///     Null for PNG-sourced splines.
+    ///     Per-segment lane configuration from OSM tags.
+    ///     Null if no lane data was parsed.
     /// </summary>
-    public Dictionary<string, string>? OsmTags { get; init; }
+    public List<LaneSegment>? LaneSegments { get; init; }
 
     /// <summary>
     ///     Optional display name for the road (e.g., from OSM name tag).

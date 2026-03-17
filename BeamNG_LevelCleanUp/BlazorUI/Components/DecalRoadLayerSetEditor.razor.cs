@@ -132,7 +132,7 @@ public partial class DecalRoadLayerSetEditor
 
     private static Color GetLayerTypeColor(DecalRoadLayerType type) => type switch
     {
-        DecalRoadLayerType.CenterLine => Color.Warning,
+        DecalRoadLayerType.DirectionDivider => Color.Warning,
         DecalRoadLayerType.LaneMarking => Color.Tertiary,
         DecalRoadLayerType.EdgeLine => Color.Info,
         DecalRoadLayerType.EdgeBlend => Color.Success,

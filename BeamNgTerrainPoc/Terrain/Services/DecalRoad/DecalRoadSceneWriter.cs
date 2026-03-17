@@ -148,7 +148,7 @@ public class DecalRoadSceneWriter
         if (dr.IsAIRoad)
         {
             dict["drivability"] = dr.Drivability;
-            dict["autoLanes"] = true;
+            dict["autoLanes"] = dr.AutoLanes;
             dict["lanesLeft"] = dr.LanesLeft;
             dict["lanesRight"] = dr.LanesRight;
             dict["oneWay"] = dr.OneWay;

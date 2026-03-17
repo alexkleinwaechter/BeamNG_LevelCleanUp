@@ -59,7 +59,7 @@
     var layerIndex = LayerSet.Layers.IndexOf(layer);
     var isExpanded = IsExpanded(layerIndex);
 
-    <MudPaper Class="@($"mb-1 {(isExpanded ? "mud-border-primary" : "")}")"
+    <MudPaper @key="layer" Class="@($"mb-1 {(isExpanded ? "mud-border-primary" : "")}")"
               Outlined="true" Elevation="0">
         @* Collapsed Header Row *@
         <div class="d-flex align-center pa-2 gap-2" style="cursor:pointer"

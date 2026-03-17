@@ -101,6 +101,7 @@ public class UnifiedRoadNetworkBuilder
                         MaterialName = material.MaterialName,
                         SplineId = splineIdCounter,
                         OsmRoadType = spline.OsmRoadType,
+                        LaneSegments = spline.LaneSegments,
                         DisplayName = spline.OsmRoadType != null ? $"{material.MaterialName}_{spline.OsmRoadType}" : null,
 
                         // Copy structure flags from RoadSpline (which got them from OsmFeature)

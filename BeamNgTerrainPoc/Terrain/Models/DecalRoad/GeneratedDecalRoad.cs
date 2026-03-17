@@ -23,10 +23,11 @@ public class GeneratedDecalRoad
 
     // AI Road properties
     public bool IsAIRoad { get; init; }
-    public int LanesLeft { get; init; } = 1;
-    public int LanesRight { get; init; } = 1;
-    public bool OneWay { get; init; }
-    public bool FlipDirection { get; init; }
+    public bool AutoLanes { get; set; } = true;
+    public int LanesLeft { get; set; } = 1;
+    public int LanesRight { get; set; } = 1;
+    public bool OneWay { get; set; }
+    public bool FlipDirection { get; set; }
 
     // Rendering
     public bool OverObjects { get; init; }

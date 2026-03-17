@@ -2,6 +2,7 @@ using System.Numerics;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using SixLabors.ImageSharp;
@@ -769,7 +770,7 @@ public class OsmGeometryProcessor
                 long? endNodeId = (!endCropped && feature.NodeIds.Count > 0)
                     ? feature.NodeIds[^1] : null;
 
-                allPathsMeta.Add(new PathWithMetadata(
+                var pathMeta = new PathWithMetadata(
                     uniqueCoords,
                     startNodeId,
                     endNodeId,
@@ -780,7 +781,16 @@ public class OsmGeometryProcessor
                     feature.GetStructureType(),
                     feature.Layer,
                     feature.BridgeStructureType
-                ));
+                );
+
+                // Parse lane info from OSM tags
+                var laneInfo = OsmLaneInfo.TryParse(feature.Tags);
+                if (laneInfo != null)
+                {
+                    pathMeta.LaneSegments = [new LaneSegment { StartPointIndex = 0, LaneInfo = laneInfo }];
+                }
+
+                allPathsMeta.Add(pathMeta);
             }
             else
             {
@@ -868,6 +878,7 @@ public class OsmGeometryProcessor
                     BridgeStructureType = pm.BridgeStructureType,
                     OsmRoadType = pm.Tags.GetValueOrDefault("highway")
                 };
+                PropagatePathLaneSegmentsToSpline(pm, spline);
                 splines.Add(spline);
 
                 if (spline.IsBridge) bridgeCount++;
@@ -913,6 +924,7 @@ public class OsmGeometryProcessor
                     // Propagate OSM road type from preserved tags (survives merges)
                     OsmRoadType = pm.Tags.GetValueOrDefault("highway")
                 };
+                PropagatePathLaneSegmentsToSpline(pm, spline);
                 splines.Add(spline);
             }
             catch (Exception ex)
@@ -961,6 +973,30 @@ public class OsmGeometryProcessor
     /// <summary>
     /// Calculates the total length of a path.
     /// </summary>
+    /// <summary>
+    /// Converts LaneSegments from point-index space to cumulative-distance space
+    /// and assigns them to the RoadSpline.
+    /// </summary>
+    private static void PropagatePathLaneSegmentsToSpline(PathWithMetadata pm, RoadSpline spline)
+    {
+        if (pm.LaneSegments.Count == 0) return;
+
+        // Compute cumulative distances for each point in the PathWithMetadata
+        var distances = new float[pm.Points.Count];
+        distances[0] = 0f;
+        for (int d = 1; d < pm.Points.Count; d++)
+            distances[d] = distances[d - 1] + Vector2.Distance(pm.Points[d - 1], pm.Points[d]);
+
+        spline.LaneSegments = pm.LaneSegments.Select(seg => new LaneSegment
+        {
+            StartPointIndex = seg.StartPointIndex,
+            StartDistance = seg.StartPointIndex < distances.Length
+                ? distances[seg.StartPointIndex]
+                : distances[^1],
+            LaneInfo = seg.LaneInfo
+        }).ToList();
+    }
+
     private static float CalculatePathLength(List<Vector2> points)
     {
         float length = 0;

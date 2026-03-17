@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
@@ -230,12 +231,15 @@ internal static class RouteRelationAssembler
             var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
             merged.AddRange(path1.Points);
             merged.AddRange(path2.Points.Skip(1));
-            return new PathWithMetadata(
+            var result = new PathWithMetadata(
                 merged,
                 startNodeId: path1.StartNodeId,
                 endNodeId: path2.EndNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            result.LaneSegments = LaneSegmentOps.MergeSegments(
+                path1.LaneSegments, path2.LaneSegments, path1.Points.Count - 1);
+            return result;
         }
         return null;
     }
@@ -255,12 +259,16 @@ internal static class RouteRelationAssembler
             merged.AddRange(path1.Points);
             for (int k = path2.Points.Count - 2; k >= 0; k--)
                 merged.Add(path2.Points[k]);
-            return new PathWithMetadata(
+            var result = new PathWithMetadata(
                 merged,
                 startNodeId: path1.StartNodeId,
                 endNodeId: path2.StartNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
+            result.LaneSegments = LaneSegmentOps.MergeSegments(
+                path1.LaneSegments, reversedSegs2, path1.Points.Count - 1);
+            return result;
         }
         return null;
     }
@@ -279,12 +287,15 @@ internal static class RouteRelationAssembler
             var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
             merged.AddRange(path2.Points);
             merged.AddRange(path1.Points.Skip(1));
-            return new PathWithMetadata(
+            var result = new PathWithMetadata(
                 merged,
                 startNodeId: path2.StartNodeId,
                 endNodeId: path1.EndNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            result.LaneSegments = LaneSegmentOps.MergeSegments(
+                path2.LaneSegments, path1.LaneSegments, path2.Points.Count - 1);
+            return result;
         }
         return null;
     }
@@ -304,12 +315,16 @@ internal static class RouteRelationAssembler
             for (int k = path2.Points.Count - 1; k >= 0; k--)
                 merged.Add(path2.Points[k]);
             merged.AddRange(path1.Points.Skip(1));
-            return new PathWithMetadata(
+            var result = new PathWithMetadata(
                 merged,
                 startNodeId: path2.EndNodeId,
                 endNodeId: path1.EndNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
+            result.LaneSegments = LaneSegmentOps.MergeSegments(
+                reversedSegs2, path1.LaneSegments, path2.Points.Count - 1);
+            return result;
         }
         return null;
     }
@@ -371,7 +386,7 @@ internal static class RouteRelationAssembler
 
     private static PathWithMetadata ClonePath(PathWithMetadata source)
     {
-        return new PathWithMetadata(
+        var clone = new PathWithMetadata(
             new List<Vector2>(source.Points),
             source.StartNodeId,
             source.EndNodeId,
@@ -382,5 +397,9 @@ internal static class RouteRelationAssembler
             source.StructureType,
             source.Layer,
             source.BridgeStructureType);
+        clone.LaneSegments = source.LaneSegments
+            .Select(s => new LaneSegment { StartPointIndex = s.StartPointIndex, LaneInfo = s.LaneInfo })
+            .ToList();
+        return clone;
     }
 }

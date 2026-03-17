@@ -2,6 +2,7 @@ using System.Numerics;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
@@ -325,6 +326,14 @@ public class RoundaboutMerger
             // For roundabouts, always use smooth interpolation for nice circular curves
             // regardless of what the caller requested
             var spline = new RoadSpline(uniqueCoords, SplineInterpolationType.SmoothInterpolated);
+
+            // Parse lane info from roundabout tags (e.g., oneway=yes, lanes=2)
+            var laneInfo = OsmLaneInfo.TryParse(roundabout.Tags);
+            if (laneInfo != null)
+            {
+                spline.LaneSegments = [new LaneSegment { StartPointIndex = 0, StartDistance = 0f, LaneInfo = laneInfo }];
+            }
+
             return spline;
         }
         catch (Exception ex)

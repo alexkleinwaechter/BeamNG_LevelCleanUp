@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using MathNet.Numerics.Interpolation;
 
@@ -107,6 +108,12 @@ public class RoadSpline
     ///     Set during spline creation in the orchestrator.
     /// </summary>
     public string? OsmRoadType { get; set; }
+
+    /// <summary>
+    ///     Per-segment lane configuration from OSM tags.
+    ///     Null if no lane data was parsed. StartDistance is populated during spline creation.
+    /// </summary>
+    public List<LaneSegment>? LaneSegments { get; set; }
 
     // ========================================
     // STRUCTURE METADATA (Bridge/Tunnel)

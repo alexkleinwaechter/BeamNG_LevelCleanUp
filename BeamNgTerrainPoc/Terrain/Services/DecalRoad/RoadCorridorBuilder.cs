@@ -118,10 +118,9 @@ public static class RoadCorridorBuilder
 
     private static int GetLaneCount(ParameterizedRoadSpline spline, DecalRoadLayerSet layerSet)
     {
-        if (spline.OsmTags != null &&
-            spline.OsmTags.TryGetValue("lanes", out var lanesStr) &&
-            int.TryParse(lanesStr, out var lanes) && lanes > 0)
-            return lanes;
+        // Use max lane count across all segments for corridor width
+        if (spline.LaneSegments != null && spline.LaneSegments.Count > 0)
+            return spline.LaneSegments.Max(s => s.LaneInfo.TotalLanes);
         return layerSet.DefaultLaneCount;
     }
 }

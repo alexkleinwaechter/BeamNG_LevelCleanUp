@@ -2,7 +2,7 @@ namespace BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 
 public enum DecalRoadLayerType
 {
-    CenterLine,
+    DirectionDivider,
     LaneMarking,
     EdgeLine,
     EdgeBlend,

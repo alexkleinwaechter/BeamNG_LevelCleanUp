@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
@@ -53,6 +54,13 @@ internal class PathWithMetadata
     public StructureType StructureType { get; init; }
     public int Layer { get; init; }
     public string? BridgeStructureType { get; init; }
+
+    /// <summary>
+    /// Per-segment lane configuration parsed from OSM tags.
+    /// Empty list means no lane data available (use defaults at generation time).
+    /// Segments survive merges via LaneSegmentOps.
+    /// </summary>
+    public List<LaneSegment> LaneSegments { get; set; } = [];
 
     public PathWithMetadata(
         List<Vector2> points,
