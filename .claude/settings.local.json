@@ -55,7 +55,9 @@
       "Read(//c/Windows/System32/**)",
       "Read(//c/Windows/**)",
       "Bash(dotnet package:*)",
-      "Bash(nuget list:*)"
+      "Bash(nuget list:*)",
+      "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.4/skills/subagent-driven-development/**)",
+      "Bash(gh pr:*)"
     ],
     "additionalDirectories": [
       "\\tmp"
