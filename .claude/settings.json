@@ -5,7 +5,9 @@
       "Bash(grep -l \"DecalRoadGenerator\\\\|DecalRoadSceneWriter\" \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Services\"* \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Orchestrators\"*)",
       "Read(//c/Users/alexander.kleinwaech/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/subagent-driven-development/**)",
       "Bash(gh pr:*)",
-      "Bash(where gh:*)"
+      "Bash(where gh:*)",
+      "Read(//c/Users/alexander.kleinwaech/AppData/Local/BeamNG_LevelCleanUp/**)",
+      "WebFetch(domain:mudblazor.com)"
     ]
   },
   "enabledPlugins": {

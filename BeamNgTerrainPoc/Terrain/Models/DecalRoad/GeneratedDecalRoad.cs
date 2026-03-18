@@ -31,4 +31,9 @@ public class GeneratedDecalRoad
 
     // Rendering
     public bool OverObjects { get; init; }
+
+    // Spline behaviour
+    public bool ImprovedSpline { get; init; } = true;
+    public float Smoothness { get; init; } = 0.5f;
+    public float Detail { get; init; } = 1.0f;
 }

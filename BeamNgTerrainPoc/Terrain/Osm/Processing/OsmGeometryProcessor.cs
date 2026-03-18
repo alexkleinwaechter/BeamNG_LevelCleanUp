@@ -2,6 +2,7 @@ using System.Numerics;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
@@ -866,6 +867,13 @@ public class OsmGeometryProcessor
                 continue;
             }
 
+            // Densify sparse OSM nodes with Chaikin corner-cutting (2 iterations).
+            // OSM ways typically have 10-100m between nodes — too sparse for smooth curves.
+            // Chaikin inserts points at 1/4 and 3/4 of each segment, roughly quadrupling
+            // the control point count while smoothing sharp corners.
+            if (cleanPath.Count >= 4)
+                cleanPath = PathSmoothing.ChaikinSmooth(cleanPath, 2);
+
             try
             {
                 var spline = new RoadSpline(cleanPath, interpolationType)
@@ -910,6 +918,10 @@ public class OsmGeometryProcessor
                 skippedZeroLength++;
                 continue;
             }
+
+            // Densify sparse OSM nodes with Chaikin corner-cutting (2 iterations)
+            if (cleanPath.Count >= 4)
+                cleanPath = PathSmoothing.ChaikinSmooth(cleanPath, 2);
 
             try
             {

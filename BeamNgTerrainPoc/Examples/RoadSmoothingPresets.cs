@@ -1,13 +1,13 @@
 // Road Smoothing Parameter Presets
 // Organized into two categories:
 // - PNG presets: Optimized for skeleton extraction from layer masks (use SmoothInterpolated splines)
-// - OSM presets: Optimized for pre-built splines from vector data (use LinearControlPoints)
+// - OSM presets: Optimized for pre-built splines from vector data (use SmoothInterpolated + Chaikin densification)
 //
 // IMPORTANT PARAMETER RELATIONSHIPS:
-// 
+//
 // 1. PNG vs OSM differences:
-//    - PNG uses SmoothInterpolated splines (smooth curves from jagged skeleton)
-//    - OSM uses LinearControlPoints splines (accurate geometry from clean vectors)
+//    - Both pipelines use SmoothInterpolated splines (Akima/cubic interpolation)
+//    - OSM paths are pre-smoothed with Chaikin corner-cutting to densify sparse nodes
 //    - PNG benefits from lower DensifyMaxSpacingPixels (1.5f) for better path following
 //    - PNG needs SkeletonDilationRadius = 0 for clean skeleton
 //
@@ -26,7 +26,7 @@ namespace BeamNgTerrainPoc.Examples;
 ///     Pre-configured road smoothing parameter presets for different road types.
 ///     PRESET CATEGORIES:
 ///     - PNG presets: For skeleton extraction from layer masks (use SmoothInterpolated for smooth curves)
-///     - OSM presets: For pre-built splines from OSM vector data (use LinearControlPoints for accuracy)
+///     - OSM presets: For pre-built splines from OSM vector data (use SmoothInterpolated + Chaikin densification)
 ///     ROAD TYPES (5 each for PNG and OSM):
 ///     - Highway: Wide roads with aggressive smoothing (8-10m)
 ///     - RuralRoad: General-purpose roads for mixed terrain (7m)
@@ -363,11 +363,11 @@ public static class RoadSmoothingPresets
 
     /// <summary>
     ///     OSM HIGHWAY: Major roads from OpenStreetMap (10m surface, 20m smoothing corridor).
-    ///     Uses LinearControlPoints for accurate geometry from clean OSM vectors.
+    ///     Uses SmoothInterpolated with Chaikin-densified control points for smooth curves.
     ///     Key features:
     ///     - Wide 10m painted surface for major highways
     ///     - 20m elevation smoothing corridor for safe vehicle handling
-    ///     - LinearControlPoints preserves accurate OSM geometry
+    ///     - Akima interpolation produces smooth curves through densified OSM nodes
     ///     - Large junction blending for interchange areas
     ///     Best for: OSM motorway, trunk, and primary roads.
     /// </summary>
@@ -394,8 +394,8 @@ public static class RoadSmoothingPresets
 
         SplineParameters = new SplineRoadParameters
         {
-            // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
-            SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
+            // OSM: SmoothInterpolated for smooth curves (Chaikin densification applied upstream)
+            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
 
             // Not used for OSM but set reasonable defaults
             SkeletonDilationRadius = 0,
@@ -456,8 +456,8 @@ public static class RoadSmoothingPresets
 
         SplineParameters = new SplineRoadParameters
         {
-            // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
-            SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
+            // OSM: SmoothInterpolated for smooth curves (Chaikin densification applied upstream)
+            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
 
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
@@ -517,8 +517,8 @@ public static class RoadSmoothingPresets
 
         SplineParameters = new SplineRoadParameters
         {
-            // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
-            SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
+            // OSM: SmoothInterpolated for smooth curves (Chaikin densification applied upstream)
+            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
 
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
@@ -578,8 +578,8 @@ public static class RoadSmoothingPresets
 
         SplineParameters = new SplineRoadParameters
         {
-            // OSM-SPECIFIC: Use LinearControlPoints
-            SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
+            // OSM: SmoothInterpolated for smooth curves (Chaikin densification applied upstream)
+            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
 
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,
@@ -641,8 +641,8 @@ public static class RoadSmoothingPresets
 
         SplineParameters = new SplineRoadParameters
         {
-            // OSM-SPECIFIC: Use LinearControlPoints for accurate geometry
-            SplineInterpolationType = SplineInterpolationType.LinearControlPoints,
+            // OSM: SmoothInterpolated for smooth curves (Chaikin densification applied upstream)
+            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
 
             SkeletonDilationRadius = 0,
             DensifyMaxSpacingPixels = 2.0f,

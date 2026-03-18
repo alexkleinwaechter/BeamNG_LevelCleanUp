@@ -341,6 +341,9 @@ public class DecalRoadGenerator
                     OneWay = layer.OneWay,
                     FlipDirection = layer.FlipDirection,
                     OverObjects = layer.OverObjects,
+                    ImprovedSpline = layer.ImprovedSpline,
+                    Smoothness = layer.Smoothness,
+                    Detail = layer.Detail,
                     Nodes = chunks[ci]
                 };
 
@@ -493,19 +496,54 @@ public class DecalRoadGenerator
     /// Splits a node list into chunks of at most maxNodesPerChunk.
     /// Adjacent chunks share a boundary node (overlap by 1) to ensure
     /// seamless spline continuity, matching BeamNG's chunking behavior.
+    /// Avoids tiny last chunks (less than minLastChunkNodes) by redistributing
+    /// nodes evenly — prevents fade values from making short chunks invisible.
     /// </summary>
-    public static List<List<float[]>> ChunkNodes(List<float[]> nodes, int maxNodesPerChunk = 100)
+    public static List<List<float[]>> ChunkNodes(List<float[]> nodes, int maxNodesPerChunk = 100,
+        int minLastChunkNodes = 20)
     {
-        var chunks = new List<List<float[]>>();
-        int i = 0;
-        while (i < nodes.Count)
+        if (nodes.Count <= maxNodesPerChunk)
+            return [nodes];
+
+        // Calculate how many chunks we need, accounting for overlap of 1
+        int stride = maxNodesPerChunk - 1;
+        int naiveChunkCount = (int)Math.Ceiling((double)(nodes.Count - 1) / stride);
+
+        // Check if the last chunk would be too small
+        int lastChunkSize = nodes.Count - (naiveChunkCount - 1) * stride;
+        if (lastChunkSize < minLastChunkNodes && naiveChunkCount > 1)
         {
-            var count = Math.Min(maxNodesPerChunk, nodes.Count - i);
-            chunks.Add(nodes.GetRange(i, count));
-            // Advance by (maxNodesPerChunk - 1) so last node becomes first of next chunk
-            i += maxNodesPerChunk - 1;
+            // Redistribute: use equal-sized chunks that all fit within maxNodesPerChunk
+            // Each chunk overlaps by 1, so total coverage = sum(chunkSize - 1) + 1 = nodes.Count
+            // With N chunks: N * (chunkSize - 1) + 1 = nodes.Count
+            // chunkSize = ceil((nodes.Count - 1) / N) + 1
+            int chunkSize = (int)Math.Ceiling((double)(nodes.Count - 1) / naiveChunkCount) + 1;
+            chunkSize = Math.Min(chunkSize, maxNodesPerChunk);
+
+            var chunks = new List<List<float[]>>();
+            int i = 0;
+            while (i < nodes.Count)
+            {
+                var count = Math.Min(chunkSize, nodes.Count - i);
+                chunks.Add(nodes.GetRange(i, count));
+                i += count - 1; // overlap by 1
+                if (i >= nodes.Count - 1) break;
+            }
+            return chunks;
         }
-        return chunks;
+
+        // Standard chunking — last chunk is large enough
+        {
+            var chunks = new List<List<float[]>>();
+            int i = 0;
+            while (i < nodes.Count)
+            {
+                var count = Math.Min(maxNodesPerChunk, nodes.Count - i);
+                chunks.Add(nodes.GetRange(i, count));
+                i += maxNodesPerChunk - 1;
+            }
+            return chunks;
+        }
     }
 
     /// <summary>

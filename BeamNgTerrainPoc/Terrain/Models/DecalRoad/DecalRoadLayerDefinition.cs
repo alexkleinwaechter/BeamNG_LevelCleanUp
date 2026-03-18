@@ -30,6 +30,28 @@ public class DecalRoadLayerDefinition
     public bool OverObjects { get; set; } // When true, DecalRoad renders on top of mesh objects
 
     // ========================================
+    // SPLINE BEHAVIOUR
+    // ========================================
+
+    /// <summary>
+    /// Uses BeamNG's improved spline interpolation for smoother curves.
+    /// When false, uses legacy Catmull-Rom interpolation.
+    /// </summary>
+    public bool ImprovedSpline { get; set; } = true;
+
+    /// <summary>
+    /// Spline smoothness factor (0.0 = sharp corners, 1.0 = maximum smoothing).
+    /// Controls how much the spline rounds off between control points.
+    /// </summary>
+    public float Smoothness { get; set; } = 0.5f;
+
+    /// <summary>
+    /// Spline tessellation detail (0.1 = coarse, 1.0 = high detail).
+    /// Controls segment subdivision for rendering. Lower = better performance, higher = smoother visuals.
+    /// </summary>
+    public float Detail { get; set; } = 1.0f;
+
+    // ========================================
     // CURVE-ONLY CONSTRAINT
     // ========================================
 

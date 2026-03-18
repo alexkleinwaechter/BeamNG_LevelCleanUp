@@ -136,12 +136,14 @@ public class DecalRoadSceneWriter
         dict["__parent"] = dr.ParentGroupName;
         dict["name"] = dr.Name;
         dict["material"] = dr.Material;
-        dict["detail"] = 1;
-        dict["improvedSpline"] = true;
+        dict["improvedSpline"] = dr.ImprovedSpline;
+        dict["smoothness"] = dr.Smoothness;
+        dict["detail"] = dr.Detail;
         dict["overObjects"] = dr.OverObjects;
         dict["textureLength"] = dr.TextureLength;
         dict["renderPriority"] = dr.RenderPriority;
         dict["startEndFade"] = dr.StartEndFade;
+        dict["distanceFade"] = dr.DistanceFade;
         dict["position"] = new float[] { dr.Position.X, dr.Position.Y, dr.Position.Z };
 
         // AI road pathfinding properties

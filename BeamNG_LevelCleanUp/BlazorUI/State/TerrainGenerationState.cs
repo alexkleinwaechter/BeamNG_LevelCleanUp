@@ -68,7 +68,7 @@ public class TerrainGenerationState
     /// <summary>
     ///     Enable DecalRoad generation during terrain creation.
     /// </summary>
-    public bool EnableDecalRoads { get; set; }
+    public bool EnableDecalRoads { get; set; } = true;
 
     /// <summary>
     ///     DecalRoad generation settings (node spacing, junction margin, layer sets).
