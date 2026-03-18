@@ -28,4 +28,56 @@ public class DecalRoadLayerDefinition
 
     // Rendering
     public bool OverObjects { get; set; } // When true, DecalRoad renders on top of mesh objects
+
+    // ========================================
+    // CURVE-ONLY CONSTRAINT
+    // ========================================
+
+    /// <summary>
+    /// When true, this layer is only generated in road sections where curvature
+    /// exceeds CurveMinCurvature. Straight sections are skipped.
+    /// </summary>
+    public bool CurveOnly { get; set; }
+
+    /// <summary>
+    /// Minimum curvature threshold (1/radius in 1/meters) for curve detection.
+    /// Default 0.01 = curves tighter than 100m radius.
+    /// Uses absolute value of UnifiedCrossSection.Curvature.
+    /// </summary>
+    public float CurveMinCurvature { get; set; } = 0.01f;
+
+    /// <summary>
+    /// Distance in meters to extend the generated zone before and after the detected curve.
+    /// Creates a lead-in/lead-out zone. FadeIn/FadeOut control visual fade independently.
+    /// </summary>
+    public float CurveTransitionLength { get; set; } = 15.0f;
+
+    // ========================================
+    // RANDOMIZER CONSTRAINT
+    // ========================================
+
+    /// <summary>
+    /// When true, this layer is generated as random patches with gaps instead of continuously.
+    /// </summary>
+    public bool Randomize { get; set; }
+
+    /// <summary>
+    /// Minimum length of each generated patch in meters.
+    /// </summary>
+    public float RandomMinPatchLength { get; set; } = 10.0f;
+
+    /// <summary>
+    /// Maximum length of each generated patch in meters.
+    /// </summary>
+    public float RandomMaxPatchLength { get; set; } = 50.0f;
+
+    /// <summary>
+    /// Minimum gap between patches in meters.
+    /// </summary>
+    public float RandomMinGapLength { get; set; } = 20.0f;
+
+    /// <summary>
+    /// Maximum gap between patches in meters.
+    /// </summary>
+    public float RandomMaxGapLength { get; set; } = 100.0f;
 }

@@ -2451,6 +2451,18 @@ public partial class GenerateTerrain : IDisposable
         _state.DecalRoadSettings!.JunctionExclusionMarginMeters = value;
     }
 
+    private int GetDecalRoadRandomSeed()
+    {
+        EnsureDecalRoadSettings();
+        return _state.DecalRoadSettings!.RandomSeed;
+    }
+
+    private void SetDecalRoadRandomSeed(int value)
+    {
+        EnsureDecalRoadSettings();
+        _state.DecalRoadSettings!.RandomSeed = value;
+    }
+
     private async Task OpenDefaultLayerSetsDialog()
     {
         var currentDefaults = DecalRoadDefaultsManager.Load();

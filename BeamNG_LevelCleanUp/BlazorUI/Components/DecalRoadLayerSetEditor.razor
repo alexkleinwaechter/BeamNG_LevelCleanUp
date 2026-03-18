@@ -106,6 +106,16 @@
                 {
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Text">perLn</MudChip>
                 }
+                @if (layer.CurveOnly)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="Color.Warning">curve</MudChip>
+                }
+                @if (layer.Randomize)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="Color.Warning">rnd</MudChip>
+                }
             </div>
             <MudIcon Icon="@Icons.Material.Filled.Circle"
                      Size="Size.Small"
@@ -245,6 +255,80 @@
                                          Dense="true" Disabled="@ReadOnly" />
                         </div>
                     </MudItem>
+
+                    @* Row 4b: Curve Constraint *@
+                    <MudItem xs="12">
+                        <MudCheckBox T="bool" @bind-Value="layer.CurveOnly"
+                                     Label="Curve Only" Color="Color.Warning"
+                                     Dense="true" Disabled="@ReadOnly" />
+                    </MudItem>
+                    @if (layer.CurveOnly)
+                    {
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField T="float" @bind-Value="layer.CurveMinCurvature"
+                                             Label="Min Curvature (1/m)"
+                                             Variant="Variant.Outlined"
+                                             Min="0.001f" Max="1.0f" Step="0.001f"
+                                             Format="F3"
+                                             HelperText="@($"= {(layer.CurveMinCurvature > 0 ? (1.0f / layer.CurveMinCurvature).ToString("F0") : "∞")}m radius")"
+                                             Disabled="@ReadOnly" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField T="float" @bind-Value="layer.CurveTransitionLength"
+                                             Label="Transition Length (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="0.0f" Max="200.0f" Step="5.0f"
+                                             HelperText="Lead-in/lead-out before/after curve"
+                                             Disabled="@ReadOnly" />
+                        </MudItem>
+                    }
+
+                    @* Row 4c: Randomizer Constraint *@
+                    <MudItem xs="12">
+                        <MudCheckBox T="bool" @bind-Value="layer.Randomize"
+                                     Label="Randomize" Color="Color.Warning"
+                                     Dense="true" Disabled="@ReadOnly" />
+                    </MudItem>
+                    @if (layer.Randomize)
+                    {
+                        <MudItem xs="6" sm="3">
+                            <MudNumericField T="float" @bind-Value="layer.RandomMinPatchLength"
+                                             Label="Min Length (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="1.0f" Max="500.0f" Step="5.0f"
+                                             Disabled="@ReadOnly" />
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudNumericField T="float" @bind-Value="layer.RandomMaxPatchLength"
+                                             Label="Max Length (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="1.0f" Max="500.0f" Step="5.0f"
+                                             Disabled="@ReadOnly" />
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudNumericField T="float" @bind-Value="layer.RandomMinGapLength"
+                                             Label="Min Gap (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="1.0f" Max="500.0f" Step="5.0f"
+                                             Disabled="@ReadOnly" />
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudNumericField T="float" @bind-Value="layer.RandomMaxGapLength"
+                                             Label="Max Gap (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="1.0f" Max="500.0f" Step="5.0f"
+                                             Disabled="@ReadOnly" />
+                        </MudItem>
+                        @if (layer.RandomMaxPatchLength < layer.RandomMinPatchLength ||
+                             layer.RandomMaxGapLength < layer.RandomMinGapLength)
+                        {
+                            <MudItem xs="12">
+                                <MudAlert Severity="Severity.Warning" Dense="true">
+                                    Max value is less than Min value — will be clamped during generation.
+                                </MudAlert>
+                            </MudItem>
+                        }
+                    }
 
                     @* Row 5: Fades *@
                     <MudItem xs="6" sm="3">

@@ -58,7 +58,7 @@ public class DecalRoadGenerator
                 spline, layerSet, crossSections,
                 corridors, junctionZones, continuityLookup,
                 heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
-                settings.NodeSpacingMeters);
+                settings.NodeSpacingMeters, settings);
             results.AddRange(splineResults);
         }
 
@@ -76,7 +76,8 @@ public class DecalRoadGenerator
         float metersPerPixel,
         int terrainSizePixels,
         float terrainBaseHeight,
-        float nodeSpacingMeters)
+        float nodeSpacingMeters,
+        DecalRoadSettings settings)
     {
         var results = new List<GeneratedDecalRoad>();
         // Use master spline width for lateral offsets (cascade: MasterSplineWidth → RoadSurfaceWidth → RoadWidth)
@@ -138,30 +139,46 @@ public class DecalRoadGenerator
                     var rangeEnd = rangeEnds![r];
                     if (rangeEnd - rangeStart < 2) continue;
 
-                    var rangeSections = sampledSections.GetRange(rangeStart, rangeEnd - rangeStart);
-                    var rangeDist = csDistances[rangeStart];
-                    var segInfo = ResolveLaneInfo(spline.LaneSegments!, rangeDist);
-                    var segLaneCount = segInfo.TotalLanes;
+                    // rangeEnd is exclusive (from rangeEnds), convert to inclusive for filter
+                    var filteredRanges = ComputeFilteredRanges(
+                        layer, sampledSections, csDistances,
+                        rangeStart, rangeEnd - 1, settings, spline.SplineId);
 
+                    foreach (var (subStart, subEnd) in filteredRanges)
+                    {
+                        var subSections = sampledSections.GetRange(subStart, subEnd - subStart + 1);
+                        var subDist = csDistances[subStart];
+                        var segInfo = ResolveLaneInfo(spline.LaneSegments!, subDist);
+                        var segLaneCount = segInfo.TotalLanes;
+
+                        GenerateForLayerRange(
+                            layer, position, side, laneIndex, isFlipped,
+                            subSections, segInfo, segLaneCount,
+                            spline, roadWidth, splineName,
+                            corridors, junctionZones, continuityLookup,
+                            heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
+                            ref chunkIndex, results);
+                    }
+                }
+            }
+            else
+            {
+                // Lane-independent or no lane changes: apply constraint filters then generate
+                var filteredRanges = ComputeFilteredRanges(
+                    layer, sampledSections, csDistances,
+                    0, sampledSections.Count - 1, settings, spline.SplineId);
+
+                foreach (var (subStart, subEnd) in filteredRanges)
+                {
+                    var subSections = sampledSections.GetRange(subStart, subEnd - subStart + 1);
                     GenerateForLayerRange(
                         layer, position, side, laneIndex, isFlipped,
-                        rangeSections, segInfo, segLaneCount,
+                        subSections, baseLaneInfo, laneCount,
                         spline, roadWidth, splineName,
                         corridors, junctionZones, continuityLookup,
                         heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                         ref chunkIndex, results);
                 }
-            }
-            else
-            {
-                // Lane-independent or no lane changes: process all sections as before
-                GenerateForLayerRange(
-                    layer, position, side, laneIndex, isFlipped,
-                    sampledSections, baseLaneInfo, laneCount,
-                    spline, roadWidth, splineName,
-                    corridors, junctionZones, continuityLookup,
-                    heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
-                    ref chunkIndex, results);
             }
         }
 
@@ -186,13 +203,26 @@ public class DecalRoadGenerator
                 var segExpanded = ExpandLayersWithLaneInfo(laneAwareLayers, segLaneCount, segInfo);
                 foreach (var (layer, position, side, laneIndex, isFlipped) in segExpanded)
                 {
-                    GenerateForLayerRange(
-                        layer, position, side, laneIndex, isFlipped,
-                        rangeSections, segInfo, segLaneCount,
-                        spline, roadWidth, splineName,
-                        corridors, junctionZones, continuityLookup,
-                        heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
-                        ref chunkIndex, results);
+                    // rangeEnd is exclusive (from rangeEnds), convert to inclusive for filter
+                    var filteredRanges = ComputeFilteredRanges(
+                        layer, sampledSections, csDistances,
+                        rangeStart, rangeEnd - 1, settings, spline.SplineId);
+
+                    foreach (var (subStart, subEnd) in filteredRanges)
+                    {
+                        var subSections = sampledSections.GetRange(subStart, subEnd - subStart + 1);
+                        var subDist = csDistances[subStart];
+                        var subSegInfo = ResolveLaneInfo(spline.LaneSegments!, subDist);
+                        var subLaneCount = subSegInfo.TotalLanes;
+
+                        GenerateForLayerRange(
+                            layer, position, side, laneIndex, isFlipped,
+                            subSections, subSegInfo, subLaneCount,
+                            spline, roadWidth, splineName,
+                            corridors, junctionZones, continuityLookup,
+                            heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
+                            ref chunkIndex, results);
+                    }
                 }
             }
         }
@@ -328,6 +358,42 @@ public class DecalRoadGenerator
                 results.Add(road);
             }
         }
+    }
+
+    /// <summary>
+    /// Computes constraint-filtered sub-ranges for a layer within [rangeStart, rangeEnd].
+    /// Applies curve filter (if CurveOnly), then randomizer (if Randomize).
+    /// Returns the original range as-is when neither constraint is active.
+    /// </summary>
+    private static List<(int Start, int End)> ComputeFilteredRanges(
+        DecalRoadLayerDefinition layer,
+        IReadOnlyList<UnifiedCrossSection> sampledSections,
+        IReadOnlyList<float> csDistances,
+        int rangeStart,
+        int rangeEnd,
+        DecalRoadSettings settings,
+        int splineId)
+    {
+        var eligibleRanges = new List<(int Start, int End)> { (rangeStart, rangeEnd) };
+
+        if (layer.CurveOnly)
+        {
+            eligibleRanges = DecalRoadLayerFilter.ApplyCurveFilter(
+                sampledSections, csDistances, layer.CurveMinCurvature,
+                layer.CurveTransitionLength, rangeStart, rangeEnd);
+        }
+
+        if (layer.Randomize && eligibleRanges.Count > 0)
+        {
+            int splineSeed = settings.RandomSeed ^ splineId;
+            eligibleRanges = DecalRoadLayerFilter.ApplyRandomizer(
+                eligibleRanges, csDistances,
+                layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
+                layer.RandomMinGapLength, layer.RandomMaxGapLength,
+                splineSeed);
+        }
+
+        return eligibleRanges;
     }
 
     /// <summary>

@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(grep -E \"error CS|^.*Fehler$\")",
-      "Bash(grep -l \"DecalRoadGenerator\\\\|DecalRoadSceneWriter\" \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Services\"* \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Orchestrators\"*)"
+      "Bash(grep -l \"DecalRoadGenerator\\\\|DecalRoadSceneWriter\" \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Services\"* \"C:\\\\SourcesPrivate\\\\beamng_mapping_pro\\\\BeamNgTerrainPoc\\\\Terrain\\\\Orchestrators\"*)",
+      "Read(//c/Users/alexander.kleinwaech/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/subagent-driven-development/**)",
+      "Bash(gh pr:*)",
+      "Bash(where gh:*)"
     ]
   },
   "enabledPlugins": {

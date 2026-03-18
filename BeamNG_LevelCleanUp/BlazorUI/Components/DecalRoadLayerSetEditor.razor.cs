@@ -126,7 +126,16 @@ public partial class DecalRoadLayerSetEditor
             LanesLeft = source.LanesLeft,
             LanesRight = source.LanesRight,
             OneWay = source.OneWay,
-            FlipDirection = source.FlipDirection
+            FlipDirection = source.FlipDirection,
+            OverObjects = source.OverObjects,
+            CurveOnly = source.CurveOnly,
+            CurveMinCurvature = source.CurveMinCurvature,
+            CurveTransitionLength = source.CurveTransitionLength,
+            Randomize = source.Randomize,
+            RandomMinPatchLength = source.RandomMinPatchLength,
+            RandomMaxPatchLength = source.RandomMaxPatchLength,
+            RandomMinGapLength = source.RandomMinGapLength,
+            RandomMaxGapLength = source.RandomMaxGapLength,
         };
     }
 

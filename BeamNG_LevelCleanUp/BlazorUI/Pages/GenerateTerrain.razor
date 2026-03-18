@@ -783,6 +783,15 @@
                                                  Min="0.0f" Max="20.0f" Step="0.5f"
                                                  HelperText="Extra corridor margin at junctions" />
                             </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="int"
+                                                 Value="@GetDecalRoadRandomSeed()"
+                                                 ValueChanged="SetDecalRoadRandomSeed"
+                                                 Label="Random Seed"
+                                                 Variant="Variant.Outlined"
+                                                 Step="1"
+                                                 HelperText="Seed for randomizer constraint" />
+                            </MudItem>
                         </MudGrid>
                         <div class="d-flex gap-2 align-center">
                             <MudButton Variant="Variant.Outlined"
