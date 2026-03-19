@@ -571,9 +571,9 @@ public class DecalRoadGenerator
                 var side = layer.Position < -0.01f ? "L" : layer.Position > 0.01f ? "R" : "C";
                 expanded.Add((layer, layer.Position, side, 0, false));
             }
-            else if (layer.LayerType == DecalRoadLayerType.TreadMarks)
+            else if (layer.LayerType == DecalRoadLayerType.TreadMarks && layer.IsLaneWidth)
             {
-                // Tread marks: one DecalRoad per lane, centered in each lane.
+                // Per-lane tread marks: one DecalRoad per lane, centered in each lane.
                 // Covers all lanes including center lane for odd counts (e.g. 3 lanes).
                 // isFlip = false for all (tire tracks are symmetric).
                 var centers = CalculateLaneCenterPositions(laneCount);
@@ -648,8 +648,9 @@ public class DecalRoadGenerator
                 }
                 // else: suppressed for <= 2 lanes or one-way roads
             }
-            else if (layer.LayerType == DecalRoadLayerType.TreadMarks)
+            else if (layer.LayerType == DecalRoadLayerType.TreadMarks && layer.IsLaneWidth)
             {
+                // Per-lane tread marks: one DecalRoad per lane, centered in each lane.
                 var centers = CalculateLaneCenterPositions(laneCount);
                 int leftNum = 0, rightNum = 0;
                 for (int i = 0; i < centers.Length; i++)
