@@ -124,7 +124,7 @@ public static class DecalRoadDefaultLayerSets
                      TextureLength = 10.0f, RenderPriority = 8,
                      FadeIn = 1.0f, FadeOut = 1.0f,
                      IsMirrored = true, InterruptAtJunctions = true,
-                     CurveOnly = true, CurveMinCurvature = 0.01f, CurveTransitionLength = 15.0f },
+                     },
             new() { Name = "EdgeBlend3", LayerType = DecalRoadLayerType.EdgeBlend,
                      Material = "m_road_asphalt_edge_grass", Width = 3.0f, Position = 1.35f,
                      TextureLength = 10.0f, RenderPriority = 9,
