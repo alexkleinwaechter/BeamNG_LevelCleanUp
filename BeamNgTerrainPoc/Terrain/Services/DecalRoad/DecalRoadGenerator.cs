@@ -340,6 +340,7 @@ public class DecalRoadGenerator
                     LanesRight = layer.LanesRight,
                     OneWay = layer.OneWay,
                     FlipDirection = layer.FlipDirection,
+                    GatedRoad = layer.GatedRoad,
                     OverObjects = layer.OverObjects,
                     ImprovedSpline = layer.ImprovedSpline,
                     Smoothness = layer.Smoothness,
@@ -559,7 +560,18 @@ public class DecalRoadGenerator
 
         foreach (var layer in layers)
         {
-            if (layer.LayerType == DecalRoadLayerType.TreadMarks)
+            if (layer.LayerType == DecalRoadLayerType.DirectionDivider)
+            {
+                // DirectionDivider only for multi-lane roads (>= 3 lanes) with lane markings enabled.
+                // For <= 2 lanes the IsPerLane dashed marking (or nothing) serves as center line.
+                var hasEnabledLaneMarking = layers.Any(l =>
+                    l.LayerType == DecalRoadLayerType.LaneMarking && l.IsEnabled);
+                if (laneCount < 3 || !hasEnabledLaneMarking) continue;
+
+                var side = layer.Position < -0.01f ? "L" : layer.Position > 0.01f ? "R" : "C";
+                expanded.Add((layer, layer.Position, side, 0, false));
+            }
+            else if (layer.LayerType == DecalRoadLayerType.TreadMarks)
             {
                 // Tread marks: one DecalRoad per lane, centered in each lane.
                 // Covers all lanes including center lane for odd counts (e.g. 3 lanes).
@@ -622,9 +634,13 @@ public class DecalRoadGenerator
         {
             if (layer.LayerType == DecalRoadLayerType.DirectionDivider)
             {
-                // DirectionDivider only renders when TotalLanes >= 3 (direction divider for multi-lane roads)
-                // For 2-lane roads, the IsPerLane dashed marking serves as the center line
-                if (laneInfo.TotalLanes >= 3 && !laneInfo.IsOneWay)
+                // DirectionDivider only renders when TotalLanes >= 3 and lane markings are present and enabled.
+                // For 2-lane roads, the IsPerLane dashed marking serves as the center line.
+                // When no LaneMarking layer exists or is enabled, suppress DirectionDivider
+                // (small roads with no lane markings should have no divider either).
+                var hasEnabledLaneMarking = layers.Any(l =>
+                    l.LayerType == DecalRoadLayerType.LaneMarking && l.IsEnabled);
+                if (laneInfo.TotalLanes >= 3 && !laneInfo.IsOneWay && hasEnabledLaneMarking)
                 {
                     var dirPos = CalculateDirectionBoundaryPosition(laneInfo);
                     var side = dirPos < -0.01f ? "L" : dirPos > 0.01f ? "R" : "C";

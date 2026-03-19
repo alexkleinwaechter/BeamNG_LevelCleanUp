@@ -28,6 +28,7 @@ public class GeneratedDecalRoad
     public int LanesRight { get; set; } = 1;
     public bool OneWay { get; set; }
     public bool FlipDirection { get; set; }
+    public bool GatedRoad { get; set; }
 
     // Rendering
     public bool OverObjects { get; init; }

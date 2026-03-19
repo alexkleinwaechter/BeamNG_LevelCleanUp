@@ -36,8 +36,8 @@ public static class DecalRoadDefaultLayerSets
             ["tertiary"] = CreateAsphaltRoadSet("Tertiary", 2),
             ["unclassified"] = CreateAsphaltRoadSet("Unclassified", 2),
             ["residential"] = CreateAsphaltRoadSet("Residential", 2),
-            ["service"] = CreateAsphaltRoadSet("Service", 1),
-            ["track"] = CreateTrackSet("Track", 1),
+            ["service"] = CreateAsphaltRoadSet("Service", 2),
+            ["track"] = CreateTrackSet("Track", 2),
         };
     }
 
@@ -149,10 +149,17 @@ public static class DecalRoadDefaultLayerSets
                      Material = "m_road_edge_dirt", Width = 1.0f, Position = 1.1f,
                      TextureLength = 12.0f, FadeIn = 1.0f, FadeOut = 1.0f,
                      IsMirrored = true, RenderPriority = 9, InterruptAtJunctions = true },
-            new() { Name = "DirtVariation04", LayerType = DecalRoadLayerType.AIRoad,
+            new() { Name = "DirtVariation04", LayerType = DecalRoadLayerType.TreadMarks,
                      Material = "m_dirt_variation_04", Width = 0, Position = 0.0f,
                      TextureLength = 96.0f, FadeIn = 1.0f, FadeOut = 1.0f,
                      IsTrackWidth = true, RenderPriority = 10},
+            new() { Name = "AIRoad", LayerType = DecalRoadLayerType.AIRoad,
+                     Material = "road_invisible", Width = 0, Position = 0.0f,
+                     IsTrackWidth = true, RenderPriority = 1,
+                     FadeIn = 1.0f, FadeOut = 1.0f,
+                     InterruptAtJunctions = false,
+                     GatedRoad = true,
+                     Drivability = 1.0f, LanesLeft = lanes / 2, LanesRight = (lanes + 1) / 2 },                     
         ]
     };
 }

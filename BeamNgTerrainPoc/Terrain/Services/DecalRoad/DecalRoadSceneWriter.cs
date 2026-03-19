@@ -155,7 +155,7 @@ public class DecalRoadSceneWriter
             dict["lanesRight"] = dr.LanesRight;
             dict["oneWay"] = dr.OneWay;
             dict["flipDirection"] = dr.FlipDirection;
-            dict["gatedRoad"] = false;
+            dict["gatedRoad"] = dr.GatedRoad;
             dict["autoJunction"] = true;
             dict["useSubdivisions"] = true;
         }
