@@ -924,17 +924,12 @@ Class="my-0">
                                                                             Variant="Variant.Outlined"
                                                                             Min="10.0f" Max="100.0f" Step="5.0f"
                                                                             Format="F0"
-                                                                            Disabled="@(Material.AutoCalculateBlendDistance)"
-                                                                            HelperText="@(Material.AutoCalculateBlendDistance ? $"Auto: {Math.Clamp(Material.RoadWidthMeters * 3.0f + 5.0f, 15.0f, 60.0f):F0}m (from road width)" : "Minimum distance; auto-extends on steep terrain")"
+                                                                            HelperText="Minimum distance; auto-extends on steep terrain"
                                                                             Class="flex-grow-1"/>
                                                             <MudTooltip Text="Minimum blend distance from junction elevation back to path elevation. On steep terrain, the distance automatically increases to keep the ramp slope within the road's max slope limit (or 6° default).">
                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary"/>
                                                             </MudTooltip>
                                                         </div>
-                                                        <MudSwitch T="bool" @bind-Value="Material.AutoCalculateBlendDistance"
-                                                                   Label="Auto-calculate from road width"
-                                                                   Color="Color.Primary"
-                                                                   Size="Size.Small"/>
                                                     </MudItem>
                                                 </MudGrid>
                                             </MudPaper>

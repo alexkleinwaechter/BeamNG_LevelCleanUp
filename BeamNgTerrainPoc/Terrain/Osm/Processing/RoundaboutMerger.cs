@@ -166,31 +166,42 @@ public class RoundaboutMerger
     /// <param name="terrainSize">Terrain size in pixels.</param>
     /// <param name="metersPerPixel">Scale factor from pixels to meters.</param>
     /// <param name="interpolationType">Spline interpolation type (always uses SmoothInterpolated for roundabouts).</param>
+    /// <param name="skipRingCreationIds">Optional set of roundabout IDs whose ring splines were already created by another material.
+    /// Way IDs are still marked as processed (for exclusion) but no new ring spline is created.</param>
     /// <returns>Result containing splines and tracking information.</returns>
     public RoundaboutProcessingResult ProcessRoundabouts(
         List<OsmRoundabout> roundabouts,
         GeoBoundingBox bbox,
         int terrainSize,
         float metersPerPixel,
-        SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated)
+        SplineInterpolationType interpolationType = SplineInterpolationType.SmoothInterpolated,
+        HashSet<long>? skipRingCreationIds = null)
     {
         var result = new RoundaboutProcessingResult();
 
         if (roundabouts.Count == 0)
         {
-            TerrainLogger.Info("RoundaboutMerger: No roundabouts to process");
+            TerrainCreationLogger.Current?.Detail("RoundaboutMerger: No roundabouts to process");
             return result;
         }
 
-        TerrainLogger.Info($"RoundaboutMerger: Processing {roundabouts.Count} roundabout(s)");
+        TerrainCreationLogger.Current?.Detail($"RoundaboutMerger: Processing {roundabouts.Count} roundabout(s)");
 
         foreach (var roundabout in roundabouts)
         {
-            // Mark all roundabout ways as processed
+            // Mark all roundabout ways as processed (always — needed for way exclusion)
             foreach (var wayId in roundabout.WayIds)
             {
                 result.ProcessedFeatureIds.Add(wayId);
                 result.Statistics.TotalWaysProcessed++;
+            }
+
+            // Skip ring spline creation if this roundabout was already processed by another material
+            if (skipRingCreationIds != null && skipRingCreationIds.Contains(roundabout.Id))
+            {
+                TerrainCreationLogger.Current?.Detail($"  Skipping ring spline creation for roundabout {roundabout.Id} " +
+                    $"(already created by another material)");
+                continue;
             }
 
             // Convert roundabout ring to spline
@@ -205,7 +216,7 @@ public class RoundaboutMerger
                 result.Statistics.RoundaboutsProcessed++;
                 result.Statistics.TotalConnectionsProcessed += processedInfo.Connections.Count;
 
-                TerrainLogger.Detail($"  Created ring spline for roundabout {roundabout.Id} " +
+                TerrainCreationLogger.Current?.Detail($"  Created ring spline for roundabout {roundabout.Id} " +
                     $"(radius={processedInfo.RadiusMeters:F1}m, {processedInfo.Connections.Count} connections)");
             }
             else
@@ -215,9 +226,17 @@ public class RoundaboutMerger
             }
         }
 
-        TerrainLogger.Info($"RoundaboutMerger: Created {result.RoundaboutSplines.Count} roundabout ring spline(s)");
-        TerrainLogger.Info($"  Excluded {result.ProcessedFeatureIds.Count} way(s) from normal processing");
-        TerrainLogger.Info($"  Processed {result.Statistics.TotalConnectionsProcessed} connection(s)");
+        if (result.RoundaboutSplines.Count > 0)
+        {
+            TerrainLogger.Info($"RoundaboutMerger: {result.RoundaboutSplines.Count} ring spline(s), " +
+                $"{result.ProcessedFeatureIds.Count} way(s) excluded, " +
+                $"{result.Statistics.TotalConnectionsProcessed} connection(s)");
+        }
+        else
+        {
+            TerrainCreationLogger.Current?.Detail($"RoundaboutMerger: 0 ring splines (all skipped or failed), " +
+                $"{result.ProcessedFeatureIds.Count} way(s) excluded");
+        }
 
         return result;
     }
@@ -295,7 +314,7 @@ public class RoundaboutMerger
 
         if (croppedCoords.Count < 4)
         {
-            TerrainLogger.Detail($"Roundabout {roundabout.Id} outside terrain bounds after cropping");
+            TerrainCreationLogger.Current?.Detail($"Roundabout {roundabout.Id} outside terrain bounds after cropping");
             return null;
         }
 

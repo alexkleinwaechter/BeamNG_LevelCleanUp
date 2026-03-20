@@ -1135,7 +1135,8 @@ public class OsmGeometryProcessor
         float endpointJoinToleranceMeters = 1.0f,
         string? debugOutputPath = null,
         bool excludeBridges = false,
-        bool excludeTunnels = false)
+        bool excludeTunnels = false,
+        HashSet<long>? alreadyProcessedRoundaboutIds = null)
     {
         // Build a set of feature IDs that belong to this material
         // This is CRITICAL for ensuring roundabout splines are only created once
@@ -1232,8 +1233,16 @@ public class OsmGeometryProcessor
             bbox,
             terrainSize,
             metersPerPixel,
-            interpolationType);
-        
+            interpolationType,
+            skipRingCreationIds: alreadyProcessedRoundaboutIds);
+
+        // Mark these roundabouts as processed so subsequent materials skip ring creation
+        if (alreadyProcessedRoundaboutIds != null)
+        {
+            foreach (var r in detectedRoundabouts)
+                alreadyProcessedRoundaboutIds.Add(r.Id);
+        }
+
         var roundaboutSplines = roundaboutProcessingResult.RoundaboutSplines;
         
         // Step 4: Filter out roundabout ways AND deleted features from regular processing

@@ -31,6 +31,12 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 public class TerrainGenerationOrchestrator
 {
     /// <summary>
+    ///     Tracks which roundabout IDs have already had ring splines created,
+    ///     preventing duplicate ring splines when multiple materials reference the same roundabout.
+    /// </summary>
+    private HashSet<long> _processedRoundaboutIds = new();
+
+    /// <summary>
     ///     Executes the full terrain generation pipeline.
     /// </summary>
     public async Task<GenerationResult> ExecuteAsync(TerrainGenerationState state)
@@ -107,6 +113,9 @@ public class TerrainGenerationOrchestrator
                 // Cache for OSM query results
                 OsmQueryResult? osmQueryResult = null;
 
+                // Reset cross-material roundabout dedup tracking for this generation run
+                _processedRoundaboutIds = new HashSet<long>();
+
                 // Process each material
                 foreach (var mat in orderedMaterials)
                 {
@@ -117,7 +126,8 @@ public class TerrainGenerationOrchestrator
                         debugPath,
                         state,
                         osmQueryResult,
-                        newOsmResult => osmQueryResult = newOsmResult);
+                        newOsmResult => osmQueryResult = newOsmResult,
+                        _processedRoundaboutIds);
 
                     materialDefinitions.Add(new MaterialDefinition(
                         mat.InternalName,
@@ -718,7 +728,8 @@ public class TerrainGenerationOrchestrator
         string debugPath,
         TerrainGenerationState state,
         OsmQueryResult? osmQueryResult,
-        Action<OsmQueryResult> setOsmQueryResult)
+        Action<OsmQueryResult> setOsmQueryResult,
+        HashSet<long>? processedRoundaboutIds = null)
     {
         RoadSmoothingParameters? roadParams = null;
         string? layerImagePath = null;
@@ -728,7 +739,8 @@ public class TerrainGenerationOrchestrator
             effectiveBoundingBox != null)
         {
             (layerImagePath, roadParams, osmQueryResult) = await ProcessOsmMaterialAsync(
-                mat, effectiveBoundingBox, coordinateTransformer, debugPath, state, osmQueryResult);
+                mat, effectiveBoundingBox, coordinateTransformer, debugPath, state, osmQueryResult,
+                processedRoundaboutIds);
 
             if (osmQueryResult != null)
                 setOsmQueryResult(osmQueryResult);
@@ -756,7 +768,8 @@ public class TerrainGenerationOrchestrator
             GeoCoordinateTransformer? coordinateTransformer,
             string debugPath,
             TerrainGenerationState state,
-        OsmQueryResult? osmQueryResult)
+            OsmQueryResult? osmQueryResult,
+            HashSet<long>? processedRoundaboutIds = null)
     {
         // Fetch OSM data if not cached (uses chunked parallel queries for large areas)
         if (osmQueryResult == null)
@@ -778,7 +791,8 @@ public class TerrainGenerationOrchestrator
 
         if (mat.IsRoadMaterial || mat.EnableRoadPainting)
             (layerImagePath, roadParams) = await ProcessOsmRoadMaterialAsync(
-                mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state, osmQueryResult);
+                mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state, osmQueryResult,
+                processedRoundaboutIds);
         else
             layerImagePath = await ProcessOsmPolygonMaterialAsync(
                 mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state);
@@ -793,7 +807,8 @@ public class TerrainGenerationOrchestrator
         OsmGeometryProcessor processor,
         string debugPath,
         TerrainGenerationState state,
-        OsmQueryResult osmQueryResult)
+        OsmQueryResult osmQueryResult,
+        HashSet<long>? processedRoundaboutIds = null)
     {
         RoadSmoothingParameters? roadParams = null;
         string? layerImagePath = null;
@@ -852,7 +867,8 @@ public class TerrainGenerationOrchestrator
                     endpointJoinToleranceMeters: 1.0f,
                     debugOutputPath: roundaboutDebugPath,
                     excludeBridges: state.ExcludeBridgesFromTerrain,
-                    excludeTunnels: state.ExcludeTunnelsFromTerrain);
+                    excludeTunnels: state.ExcludeTunnelsFromTerrain,
+                    alreadyProcessedRoundaboutIds: processedRoundaboutIds);
                 
                 // Store roundabout info in road params for potential use in junction detection
                 if (detectedRoundabouts.Count > 0)

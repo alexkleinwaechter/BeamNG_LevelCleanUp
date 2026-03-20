@@ -49,48 +49,12 @@ public class JunctionHarmonizationParameters
     ///     Formula: max(this, elevDiff / tan(maxSlopeDeg)).
     ///     Typical values:
     ///     - 15-25m: Tight blending (urban roads)
-    ///     - 25-40m: Standard blending (DEFAULT)
-    ///     - 40-60m: Smooth blending (highways)
-    ///     Default: 30.0
+    ///     - 25-40m: Standard blending
+    ///     - 40-60m: Smooth blending (DEFAULT)
+    ///     - 60-100m: Very smooth blending (highways)
+    ///     Default: 50.0
     /// </summary>
-    public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
-
-    // ========================================
-    // AUTO-CALCULATION FROM ROAD WIDTH
-    // ========================================
-
-    /// <summary>
-    ///     When true, junction blend distance is automatically calculated from road width.
-    ///     Formula: clamp(RoadWidthMeters * BlendDistanceMultiplier + BlendDistanceOffset,
-    ///                    MinAutoBlendDistanceMeters, MaxAutoBlendDistanceMeters)
-    ///     The explicit JunctionBlendDistanceMeters value is ignored when this is true.
-    ///     Default: true (auto-calculate from road width)
-    /// </summary>
-    public bool AutoCalculateBlendDistance { get; set; } = true;
-
-    /// <summary>
-    ///     Multiplier for road width when auto-calculating blend distance.
-    ///     Default: 3.0 (derived from preset data regression)
-    /// </summary>
-    public float BlendDistanceMultiplier { get; set; } = 3.0f;
-
-    /// <summary>
-    ///     Offset added to (roadWidth * multiplier) when auto-calculating blend distance.
-    ///     Default: 5.0
-    /// </summary>
-    public float BlendDistanceOffset { get; set; } = 5.0f;
-
-    /// <summary>
-    ///     Minimum auto-calculated blend distance in meters.
-    ///     Default: 15.0
-    /// </summary>
-    public float MinAutoBlendDistanceMeters { get; set; } = 15.0f;
-
-    /// <summary>
-    ///     Maximum auto-calculated blend distance in meters.
-    ///     Default: 60.0
-    /// </summary>
-    public float MaxAutoBlendDistanceMeters { get; set; } = 60.0f;
+    public float JunctionBlendDistanceMeters { get; set; } = 50.0f;
 
     /// <summary>
     ///     Blend function type for junction transitions.
@@ -186,30 +150,23 @@ public class JunctionHarmonizationParameters
     // ========================================
 
     /// <summary>
-    ///     Gets the effective junction blend distance, considering auto-calculation.
-    ///     When AutoCalculateBlendDistance is true, computes from road width using the formula:
-    ///     clamp(roadWidthMeters * BlendDistanceMultiplier + BlendDistanceOffset,
-    ///            MinAutoBlendDistanceMeters, MaxAutoBlendDistanceMeters)
-    ///     When false, returns JunctionBlendDistanceMeters unchanged.
+    ///     Gets the effective junction blend distance.
+    ///     Returns JunctionBlendDistanceMeters directly.
     /// </summary>
-    /// <param name="roadWidthMeters">The road width to calculate from (from RoadSmoothingParameters.RoadWidthMeters).</param>
+    /// <param name="roadWidthMeters">Unused, kept for API compatibility.</param>
     public float GetEffectiveBlendDistance(float roadWidthMeters)
     {
-        if (!AutoCalculateBlendDistance)
-            return JunctionBlendDistanceMeters;
-
-        var calculated = roadWidthMeters * BlendDistanceMultiplier + BlendDistanceOffset;
-        return Math.Clamp(calculated, MinAutoBlendDistanceMeters, MaxAutoBlendDistanceMeters);
+        return JunctionBlendDistanceMeters;
     }
 
     /// <summary>
-    ///     Gets the effective roundabout blend distance, considering auto-calculation.
-    ///     Returns RoundaboutBlendDistanceMeters if explicitly set, otherwise GetEffectiveBlendDistance.
+    ///     Gets the effective roundabout blend distance.
+    ///     Returns RoundaboutBlendDistanceMeters if set, otherwise JunctionBlendDistanceMeters.
     /// </summary>
-    /// <param name="roadWidthMeters">The road width to calculate from.</param>
+    /// <param name="roadWidthMeters">Unused, kept for API compatibility.</param>
     public float GetEffectiveRoundaboutBlendDistance(float roadWidthMeters)
     {
-        return RoundaboutBlendDistanceMeters ?? GetEffectiveBlendDistance(roadWidthMeters);
+        return RoundaboutBlendDistanceMeters ?? JunctionBlendDistanceMeters;
     }
 
     // ========================================
@@ -282,18 +239,8 @@ public class JunctionHarmonizationParameters
         if (JunctionDetectionRadiusMeters <= 0)
             errors.Add("JunctionDetectionRadiusMeters must be greater than 0");
 
-        if (!AutoCalculateBlendDistance && JunctionBlendDistanceMeters <= 0)
+        if (JunctionBlendDistanceMeters <= 0)
             errors.Add("JunctionBlendDistanceMeters must be greater than 0");
-
-        if (AutoCalculateBlendDistance)
-        {
-            if (BlendDistanceMultiplier <= 0)
-                errors.Add("BlendDistanceMultiplier must be greater than 0 when auto-calculation is enabled");
-            if (MinAutoBlendDistanceMeters <= 0)
-                errors.Add("MinAutoBlendDistanceMeters must be greater than 0");
-            if (MaxAutoBlendDistanceMeters < MinAutoBlendDistanceMeters)
-                errors.Add("MaxAutoBlendDistanceMeters must be >= MinAutoBlendDistanceMeters");
-        }
 
         if (RoundaboutConnectionRadiusMeters <= 0)
             errors.Add("RoundaboutConnectionRadiusMeters must be greater than 0");

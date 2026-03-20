@@ -368,7 +368,6 @@ public class UnifiedJunctionProfileBlender
         var continuous = junction.GetContinuousRoads().ToList();
         if (continuous.Count == 0)
         {
-            // No ring found — fall back to multi-way
             ComputeMultiWayConstraints(junction, constraints);
             return;
         }
@@ -376,79 +375,180 @@ public class UnifiedJunctionProfileBlender
         var ringContributor = continuous.OrderByDescending(c => c.Spline.Priority).First();
         var ringCS = ringContributor.CrossSection;
 
-        // Find the closest ring CS to the junction position for more accurate local data
+        // Find the closest ring CS to the junction position for more accurate local data.
+        UnifiedCrossSection? ringCSPrev = null;
+        UnifiedCrossSection? ringCSNext = null;
         if (crossSectionsBySpline.TryGetValue(ringContributor.Spline.SplineId, out var ringSections))
         {
             var closestDist = float.MaxValue;
-            foreach (var cs in ringSections)
+            var closestIdx = -1;
+            for (var i = 0; i < ringSections.Count; i++)
             {
-                var dist = Vector2.Distance(cs.CenterPoint, junction.Position);
+                var dist = Vector2.Distance(ringSections[i].CenterPoint, junction.Position);
                 if (dist < closestDist)
                 {
                     closestDist = dist;
-                    ringCS = cs;
+                    closestIdx = i;
+                    ringCS = ringSections[i];
+                }
+            }
+
+            if (closestIdx > 0)
+                ringCSPrev = ringSections[closestIdx - 1];
+            if (closestIdx < ringSections.Count - 1)
+                ringCSNext = ringSections[closestIdx + 1];
+        }
+
+        // Interpolate ring elevation at the exact junction position between
+        // the nearest CS and its closest neighbor for sub-CS accuracy.
+        if (ringCSPrev != null || ringCSNext != null)
+        {
+            var junctionPos = junction.Position;
+            var distToNearest = Vector2.Distance(ringCS.CenterPoint, junctionPos);
+
+            UnifiedCrossSection? neighbor = null;
+            var neighborDist = float.MaxValue;
+
+            if (ringCSPrev != null)
+            {
+                var d = Vector2.Distance(ringCSPrev.CenterPoint, junctionPos);
+                if (d < neighborDist) { neighbor = ringCSPrev; neighborDist = d; }
+            }
+            if (ringCSNext != null)
+            {
+                var d = Vector2.Distance(ringCSNext.CenterPoint, junctionPos);
+                if (d < neighborDist) { neighbor = ringCSNext; neighborDist = d; }
+            }
+
+            if (neighbor != null && !float.IsNaN(neighbor.TargetElevation) && !float.IsNaN(ringCS.TargetElevation))
+            {
+                var totalDist = distToNearest + neighborDist;
+                if (totalDist > 0.01f)
+                {
+                    var t = distToNearest / totalDist;
+                    var interpolatedElev = ringCS.TargetElevation * (1f - t) + neighbor.TargetElevation * t;
+
+                    if (MathF.Abs(interpolatedElev - ringCS.TargetElevation) > 0.001f)
+                    {
+                        TerrainCreationLogger.Current?.Detail(
+                            $"  Ring CS interpolation: nearest={ringCS.TargetElevation:F3}m, " +
+                            $"neighbor={neighbor.TargetElevation:F3}m, interpolated={interpolatedElev:F3}m (t={t:F2})");
+
+                        // Create a local copy with interpolated elevation.
+                        // All { get; set; } properties from UnifiedCrossSection must be copied.
+                        ringCS = new UnifiedCrossSection
+                        {
+                            Index = ringCS.Index,
+                            OwnerSplineId = ringCS.OwnerSplineId,
+                            LocalIndex = ringCS.LocalIndex,
+                            CenterPoint = ringCS.CenterPoint,
+                            TangentDirection = ringCS.TangentDirection,
+                            NormalDirection = ringCS.NormalDirection,
+                            TargetElevation = interpolatedElev,
+                            BankAngleRadians = ringCS.BankAngleRadians,
+                            EffectiveRoadWidth = ringCS.EffectiveRoadWidth,
+                            EffectiveBlendRange = ringCS.EffectiveBlendRange,
+                            LeftEdgeElevation = ringCS.LeftEdgeElevation,
+                            RightEdgeElevation = ringCS.RightEdgeElevation,
+                            JunctionBankingBehavior = ringCS.JunctionBankingBehavior,
+                            Priority = ringCS.Priority,
+                            DistanceAlongSpline = ringCS.DistanceAlongSpline,
+                            OriginalTerrainElevation = ringCS.OriginalTerrainElevation,
+                            Curvature = ringCS.Curvature,
+                            JunctionIdwWeightModifier = ringCS.JunctionIdwWeightModifier,
+                            IsExcluded = ringCS.IsExcluded,
+                            IsFromOsmSource = ringCS.IsFromOsmSource,
+                            IsSplineStart = ringCS.IsSplineStart,
+                            IsSplineEnd = ringCS.IsSplineEnd,
+                            IsRoundaboutBlended = ringCS.IsRoundaboutBlended,
+                            BankedNormal3D = ringCS.BankedNormal3D,
+                            ConstrainedLeftEdgeElevation = ringCS.ConstrainedLeftEdgeElevation,
+                            ConstrainedRightEdgeElevation = ringCS.ConstrainedRightEdgeElevation,
+                            JunctionBankingFactor = ringCS.JunctionBankingFactor,
+                            DistanceToNearestJunction = ringCS.DistanceToNearestJunction,
+                            HigherPrioritySplineId = ringCS.HigherPrioritySplineId
+                        };
+                    }
                 }
             }
         }
 
-        // Calculate ring's local slope at the connection point
-        var ringSlope = 0f;
+        // Calculate ring's circumferential slope (along the ring tangent)
+        var circumferentialSlope = 0f;
         if (crossSectionsBySpline.TryGetValue(ringContributor.Spline.SplineId, out var ringAllSections))
         {
             var ringIndex = ringAllSections.FindIndex(cs => cs.Index == ringCS.Index);
             if (ringIndex >= 0)
-                ringSlope = CalculateSlopeAtIndex(ringAllSections, ringIndex);
+                circumferentialSlope = CalculateSlopeAtIndex(ringAllSections, ringIndex);
         }
 
-        if (float.IsNaN(ringSlope))
-            ringSlope = 0f;
+        if (float.IsNaN(circumferentialSlope))
+            circumferentialSlope = 0f;
 
         foreach (var terminating in junction.GetTerminatingRoads())
         {
             var terminatingCS = terminating.CrossSection;
             var halfWidth = terminatingCS.EffectiveRoadWidth / 2f;
+            var ringHalfWidth = ringCS.EffectiveRoadWidth / 2f;
 
-            // Project left and right edges onto ring surface
-            var leftPos = terminatingCS.CenterPoint - terminatingCS.NormalDirection * halfWidth;
-            var rightPos = terminatingCS.CenterPoint + terminatingCS.NormalDirection * halfWidth;
+            // === Edge-Anchored Constraint (matching T-junction pattern) ===
+            var awayDirection = terminating.IsSplineStart
+                ? terminatingCS.TangentDirection
+                : -terminatingCS.TangentDirection;
+            var edgeCenterPoint = terminatingCS.CenterPoint + awayDirection * ringHalfWidth;
 
-            var leftElev = JunctionSurfaceCalculator.GetPrimarySurfaceElevation(leftPos, ringCS, ringSlope);
-            var rightElev = JunctionSurfaceCalculator.GetPrimarySurfaceElevation(rightPos, ringCS, ringSlope);
+            var edgeCenterElev = JunctionSurfaceCalculator.GetPrimarySurfaceElevation(
+                edgeCenterPoint, ringCS, circumferentialSlope);
 
-            var centerElev = (leftElev + rightElev) / 2f;
-
-            var edgeDelta = (rightElev - leftElev) / 2f;
+            var edgeLeftPos = edgeCenterPoint - terminatingCS.NormalDirection * halfWidth;
+            var edgeRightPos = edgeCenterPoint + terminatingCS.NormalDirection * halfWidth;
+            var edgeLeftElev = JunctionSurfaceCalculator.GetPrimarySurfaceElevation(
+                edgeLeftPos, ringCS, circumferentialSlope);
+            var edgeRightElev = JunctionSurfaceCalculator.GetPrimarySurfaceElevation(
+                edgeRightPos, ringCS, circumferentialSlope);
+            var edgeDelta = (edgeRightElev - edgeLeftElev) / 2f;
             var sinBank = halfWidth > 0.01f ? Math.Clamp(edgeDelta / halfWidth, -1f, 1f) : 0f;
-            var junctionBankAngle = MathF.Asin(sinBank);
+            var edgeBankAngle = MathF.Asin(sinBank);
 
-            junction.HarmonizedElevation = centerElev;
+            junction.HarmonizedElevation = edgeCenterElev;
 
-            // Use roundabout-specific blend distance
+            // Radial slope: project ring surface gradient onto approach direction
+            var slopeAlongTangent = circumferentialSlope;
+            var bankingSlopePerMeter = ringCS.EffectiveRoadWidth > 0.01f
+                ? MathF.Sin(ringCS.BankAngleRadians)
+                : 0f;
+            var radialSlope =
+                slopeAlongTangent * Vector2.Dot(awayDirection, ringCS.TangentDirection) +
+                bankingSlopePerMeter * Vector2.Dot(awayDirection, ringCS.NormalDirection);
+
+            if (float.IsNaN(radialSlope))
+                radialSlope = 0f;
+
             var junctionParams = terminating.Spline.Parameters.JunctionHarmonizationParameters
                                  ?? new JunctionHarmonizationParameters();
             var blendDist = CalculateAdaptiveBlendDistance(
                 junctionParams.GetEffectiveRoundaboutBlendDistance(terminating.Spline.Parameters.RoadWidthMeters),
-                centerElev, terminatingCS.TargetElevation, terminating.Spline.Parameters);
+                edgeCenterElev, terminatingCS.TargetElevation, terminating.Spline.Parameters);
 
             var key = (terminating.Spline.SplineId, terminating.IsSplineStart);
             constraints.TryAdd(key, new JunctionEndpointConstraint
             {
-                Elevation = centerElev,
-                Slope = ringSlope,
-                BankAngleRadians = junctionBankAngle,
+                Elevation = edgeCenterElev,
+                Slope = radialSlope,
+                BankAngleRadians = edgeBankAngle,
                 IsSplineStart = terminating.IsSplineStart,
                 Junction = junction,
-                FlatZoneDistance = ringCS.EffectiveRoadWidth / 2f,
+                FlatZoneDistance = ringHalfWidth,
                 BlendDistanceMeters = blendDist,
                 PrimaryTangentDirection = ringCS.TangentDirection,
-                PrimaryBankAngleRadians = ringCS.BankAngleRadians
+                PrimaryBankAngleRadians = 0f
             });
 
             TerrainCreationLogger.Current?.Detail(
-                $"Roundabout Junction #{junction.JunctionId}: Spline {terminating.Spline.SplineId} constraint: " +
-                $"elev={centerElev:F2}m, slope={ringSlope:F4}, " +
-                $"bank={BankingCalculator.RadiansToDegrees(junctionBankAngle):F1}°, " +
-                $"flatZone={ringCS.EffectiveRoadWidth / 2f:F2}m, blendDist={blendDist:F1}m");
+                $"Roundabout Junction #{junction.JunctionId}: Spline {terminating.Spline.SplineId} EDGE constraint: " +
+                $"edgeElev={edgeCenterElev:F2}m, radialSlope={radialSlope:F4}, circumSlope={circumferentialSlope:F4}, " +
+                $"bank={BankingCalculator.RadiansToDegrees(edgeBankAngle):F1}°, " +
+                $"flatZone={ringHalfWidth:F2}m, blendDist={blendDist:F1}m");
         }
     }
 

@@ -59,10 +59,12 @@
       "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.4/skills/subagent-driven-development/**)",
       "Bash(gh pr:*)",
       "Read(//c/Users/aklei/.claude/projects/d--Source-beamng-mapping-pro/a69591c1-9e16-4978-b6ec-71e641b5dc5a/tool-results/**)",
-      "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.4/skills/writing-plans/**)"
+      "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.4/skills/writing-plans/**)",
+      "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/subagent-driven-development/**)"
     ],
     "additionalDirectories": [
-      "\\tmp"
+      "\\tmp",
+      "D:\\Source\\beamng_mapping_pro\\BeamNgTerrainPoc.Tests"
     ]
   }
 }

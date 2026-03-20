@@ -477,7 +477,6 @@ public partial class TerrainMaterialSettings
                     ["enableJunctionHarmonization"] = Material.EnableJunctionHarmonization,
                     ["junctionDetectionRadiusMeters"] = Material.JunctionDetectionRadiusMeters,
                     ["junctionBlendDistanceMeters"] = Material.JunctionBlendDistanceMeters,
-                    ["autoCalculateBlendDistance"] = Material.AutoCalculateBlendDistance,
                     ["blendFunctionType"] = Material.JunctionBlendFunction.ToString(),
                     ["enableJunctionIdwFiltering"] = Material.EnableJunctionIdwFiltering,
                     ["minTerminatingIdwWeight"] = Material.MinTerminatingIdwWeight,
@@ -636,9 +635,6 @@ public partial class TerrainMaterialSettings
                 if (junctionParams["junctionBlendDistanceMeters"] != null)
                     Material.JunctionBlendDistanceMeters =
                         junctionParams["junctionBlendDistanceMeters"]!.GetValue<float>();
-                if (junctionParams["autoCalculateBlendDistance"] != null)
-                    Material.AutoCalculateBlendDistance =
-                        junctionParams["autoCalculateBlendDistance"]!.GetValue<bool>();
                 if (junctionParams["blendFunctionType"] != null &&
                     Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(),
                         out var junctionBlendType))
@@ -828,8 +824,7 @@ public partial class TerrainMaterialSettings
 
         public bool EnableJunctionHarmonization { get; set; } = true;
         public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
-        public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
-        public bool AutoCalculateBlendDistance { get; set; } = true;
+        public float JunctionBlendDistanceMeters { get; set; } = 50.0f;
         public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.CubicHermiteC1;
 
         // IDW filtering for terrain blending near junctions
@@ -1034,7 +1029,6 @@ public partial class TerrainMaterialSettings
                 EnableJunctionHarmonization = preset.JunctionHarmonizationParameters.EnableJunctionHarmonization;
                 JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
                 JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
-                AutoCalculateBlendDistance = preset.JunctionHarmonizationParameters.AutoCalculateBlendDistance;
                 JunctionBlendFunction = preset.JunctionHarmonizationParameters.BlendFunctionType;
                 // IDW filtering
                 EnableJunctionIdwFiltering = preset.JunctionHarmonizationParameters.EnableJunctionIdwFiltering;
@@ -1145,7 +1139,6 @@ public partial class TerrainMaterialSettings
                 EnableJunctionHarmonization = EnableJunctionHarmonization,
                 JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
                 JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,
-                AutoCalculateBlendDistance = AutoCalculateBlendDistance,
                 BlendFunctionType = JunctionBlendFunction,
                 // IDW filtering
                 EnableJunctionIdwFiltering = EnableJunctionIdwFiltering,
