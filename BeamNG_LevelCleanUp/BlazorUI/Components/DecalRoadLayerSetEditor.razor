@@ -106,10 +106,15 @@
                 {
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Text">perLn</MudChip>
                 }
-                @if (layer.CurveOnly)
+                @if (layer.CurveConstraint == CurveConstraintMode.CurveOnly)
                 {
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
                              Color="Color.Warning">curve</MudChip>
+                }
+                @if (layer.CurveConstraint == CurveConstraintMode.ReplaceInCurve)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="Color.Warning">crv-repl</MudChip>
                 }
                 @if (layer.Randomize)
                 {
@@ -125,9 +130,9 @@
                      Size="Size.Small" />
         </div>
 
-        @* Expanded Property Grid *@
-        @if (isExpanded)
-        {
+        @* Expanded Property Grid — use display:none instead of @if to keep
+           MudNumericField components alive so they always show their bound values *@
+        <div style="@(isExpanded ? "" : "display:none")">
             <MudDivider />
             <div class="pa-3">
                 @* ───── IDENTITY & MATERIAL ───── *@
@@ -384,18 +389,103 @@
                 @* ───── GENERATION CONSTRAINTS ───── *@
                 <MudText Typo="Typo.overline" Color="Color.Primary" Class="mb-1">Generation Constraints</MudText>
                 <MudGrid Spacing="2">
-                    <MudItem xs="12" sm="4">
+                    <MudItem xs="12">
                         <div class="d-flex align-center gap-1">
-                            <MudCheckBox T="bool" @bind-Value="layer.CurveOnly"
-                                         Label="Curve Only" Color="Color.Warning"
+                            <MudCheckBox T="bool" Value="@(layer.CurveConstraint != CurveConstraintMode.None)"
+                                         ValueChanged="@(v => { layer.CurveConstraint = v ? CurveConstraintMode.CurveOnly : CurveConstraintMode.None; })"
+                                         Label="Curve Constraints" Color="Color.Warning"
                                          Dense="true" Disabled="@ReadOnly" />
-                            <MudTooltip Text="Only generate this layer in curved road sections. Straight segments are skipped.">
+                            <MudTooltip Text="Apply curve-based filtering to this layer. Controls how curves affect generation.">
                                 <MudIcon Icon="@Icons.Material.Filled.HelpOutline" Size="Size.Small" Color="Color.Default" Style="opacity:0.6" />
                             </MudTooltip>
                         </div>
                     </MudItem>
-                    @if (layer.CurveOnly)
+                    @if (layer.CurveConstraint != CurveConstraintMode.None)
                     {
+                        <MudItem xs="12">
+                            <MudRadioGroup T="CurveConstraintMode" @bind-Value="layer.CurveConstraint">
+                                <MudRadio T="CurveConstraintMode" Value="CurveConstraintMode.CurveOnly"
+                                          Color="Color.Warning" Dense="true" Disabled="@ReadOnly">
+                                    Curve Only
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Layer appears only in curves, hidden on straight sections
+                                    </MudText>
+                                </MudRadio>
+                                <MudRadio T="CurveConstraintMode" Value="CurveConstraintMode.ReplaceInCurve"
+                                          Color="Color.Warning" Dense="true" Disabled="@ReadOnly">
+                                    Replace in Curve
+                                </MudRadio>
+                            </MudRadioGroup>
+                        </MudItem>
+                        @if (layer.CurveConstraint == CurveConstraintMode.ReplaceInCurve)
+                        {
+                            <MudItem xs="12" sm="4">
+                                <div class="d-flex align-center gap-2">
+                                    <div class="flex-grow-1">
+                                        @if (AvailableMaterials.Count > 0)
+                                        {
+                                            <MudAutocomplete T="string" @bind-Value="layer.CurveReplacementMaterial"
+                                                             Label="Replacement Material"
+                                                             Variant="Variant.Outlined"
+                                                             SearchFunc="SearchMaterials"
+                                                             CoerceValue="false"
+                                                             Clearable="true"
+                                                             Dense="true"
+                                                             MaxItems="50"
+                                                             Disabled="@ReadOnly"
+                                                             AdornmentIcon="@Icons.Material.Filled.Search"
+                                                             Adornment="Adornment.Start">
+                                                <ItemTemplate>
+                                                    <div class="d-flex align-center gap-2">
+                                                        <MudText Typo="Typo.body2">@context</MudText>
+                                                        @{
+                                                            var badge = GetMaterialSourceBadge(context);
+                                                        }
+                                                        @if (!string.IsNullOrEmpty(badge))
+                                                        {
+                                                            <MudChip T="string" Size="Size.Small"
+                                                                     Variant="Variant.Outlined"
+                                                                     Color="@(badge == "game" ? Color.Info : Color.Success)">
+                                                                @badge
+                                                            </MudChip>
+                                                        }
+                                                    </div>
+                                                </ItemTemplate>
+                                            </MudAutocomplete>
+                                        }
+                                        else
+                                        {
+                                            <MudTextField @bind-Value="layer.CurveReplacementMaterial"
+                                                          Label="Replacement Material"
+                                                          Variant="Variant.Outlined"
+                                                          Disabled="@ReadOnly" />
+                                        }
+                                    </div>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Preview"
+                                                   Color="Color.Primary"
+                                                   Size="Size.Small"
+                                                   Disabled="@(string.IsNullOrEmpty(layer.CurveReplacementMaterial))"
+                                                   OnClick="() => PreviewMaterial(layer.CurveReplacementMaterial)"
+                                                   Title="Preview material in 3D viewer" />
+                                </div>
+                            </MudItem>
+                            <MudItem xs="6" sm="4">
+                                <MudNumericField T="float" @bind-Value="layer.CurveReplacementWidth"
+                                                 Label="Replacement Width (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="0.0f" Step="0.05f"
+                                                 HelperText="0 = same as main"
+                                                 Disabled="@ReadOnly" />
+                            </MudItem>
+                            <MudItem xs="6" sm="4">
+                                <MudNumericField T="float" @bind-Value="layer.CurveReplacementTextureLength"
+                                                 Label="Replacement Tex Length (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="0.0f" Step="1.0f"
+                                                 HelperText="0 = same as main"
+                                                 Disabled="@ReadOnly" />
+                            </MudItem>
+                        }
                         <MudItem xs="6" sm="4">
                             <div class="d-flex align-start gap-1">
                                 <MudNumericField T="float" @bind-Value="layer.CurveMinCurvature"
@@ -421,7 +511,7 @@
                             </div>
                         </MudItem>
                     }
-                    <MudItem xs="12" sm="@(layer.Randomize ? 12 : 4)">
+                    <MudItem xs="12">
                         <div class="d-flex align-center gap-1">
                             <MudCheckBox T="bool" @bind-Value="layer.Randomize"
                                          Label="Randomize" Color="Color.Warning"
@@ -555,7 +645,7 @@
                     </div>
                 }
             </div>
-        }
+        </div>
     </MudPaper>
 }
 

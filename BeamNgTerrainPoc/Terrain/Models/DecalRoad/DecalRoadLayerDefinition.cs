@@ -53,14 +53,32 @@ public class DecalRoadLayerDefinition
     public float Detail { get; set; } = 1.0f;
 
     // ========================================
-    // CURVE-ONLY CONSTRAINT
+    // CURVE CONSTRAINT
     // ========================================
 
     /// <summary>
-    /// When true, this layer is only generated in road sections where curvature
-    /// exceeds CurveMinCurvature. Straight sections are skipped.
+    /// Curve constraint mode. None = no constraint, CurveOnly = curves only,
+    /// ReplaceInCurve = swap material+width in curves.
     /// </summary>
-    public bool CurveOnly { get; set; }
+    public CurveConstraintMode CurveConstraint { get; set; } = CurveConstraintMode.None;
+
+    /// <summary>
+    /// Material to use in curve sections when CurveConstraint == ReplaceInCurve.
+    /// Empty = fall back to main material (degrades to None).
+    /// </summary>
+    public string CurveReplacementMaterial { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Width to use in curve sections when CurveConstraint == ReplaceInCurve.
+    /// 0 = use same width as main layer.
+    /// </summary>
+    public float CurveReplacementWidth { get; set; }
+
+    /// <summary>
+    /// Texture length for replacement material when CurveConstraint == ReplaceInCurve.
+    /// 0 = use same texture length as main layer.
+    /// </summary>
+    public float CurveReplacementTextureLength { get; set; }
 
     /// <summary>
     /// Minimum curvature threshold (1/radius in 1/meters) for curve detection.

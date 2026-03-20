@@ -383,3 +383,179 @@ public class DecalRoadLayerFilterCompositionTests
         Assert.NotEmpty(result);
     }
 }
+
+public class DecalRoadLayerFilterInvertRangesTests
+{
+    [Fact]
+    public void NoCurves_ReturnsFullRange()
+    {
+        var curveRanges = new List<(int Start, int End)>();
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 100);
+
+        Assert.Single(result);
+        Assert.Equal(0, result[0].Start);
+        Assert.Equal(100, result[0].End);
+    }
+
+    [Fact]
+    public void EntireRangeIsCurve_ReturnsEmpty()
+    {
+        var curveRanges = new List<(int Start, int End)> { (0, 100) };
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 100);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void SingleCurveInMiddle_ReturnsTwoStraightRanges()
+    {
+        var curveRanges = new List<(int Start, int End)> { (10, 20) };
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 100);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal((0, 9), result[0]);
+        Assert.Equal((21, 100), result[1]);
+    }
+
+    [Fact]
+    public void MultipleCurves_ReturnsInterleaved()
+    {
+        var curveRanges = new List<(int Start, int End)> { (10, 20), (40, 60) };
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 100);
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal((0, 9), result[0]);
+        Assert.Equal((21, 39), result[1]);
+        Assert.Equal((61, 100), result[2]);
+    }
+
+    [Fact]
+    public void CurveAtStart_ReturnsStraightAfter()
+    {
+        var curveRanges = new List<(int Start, int End)> { (0, 20) };
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 100);
+
+        Assert.Single(result);
+        Assert.Equal((21, 100), result[0]);
+    }
+
+    [Fact]
+    public void CurveAtEnd_ReturnsStraightBefore()
+    {
+        var curveRanges = new List<(int Start, int End)> { (80, 100) };
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 100);
+
+        Assert.Single(result);
+        Assert.Equal((0, 79), result[0]);
+    }
+
+    [Fact]
+    public void AdjacentCurves_NoZeroLengthStraights()
+    {
+        // Curves at (10,20) and (21,30) — adjacent, no gap
+        var curveRanges = new List<(int Start, int End)> { (10, 20), (21, 30) };
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 100);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal((0, 9), result[0]);
+        Assert.Equal((31, 100), result[1]);
+        // No zero-length segments
+        Assert.All(result, r => Assert.True(r.End > r.Start));
+    }
+
+    [Fact]
+    public void RespectsCustomFullRange()
+    {
+        var curveRanges = new List<(int Start, int End)> { (30, 40) };
+        var result = DecalRoadLayerFilter.InvertRanges(curveRanges, 20, 60);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal((20, 29), result[0]);
+        Assert.Equal((41, 60), result[1]);
+    }
+}
+
+public class DecalRoadLayerFilterReplaceInCurveTests
+{
+    private static (List<UnifiedCrossSection> Sections, List<float> Distances)
+        CreateSectionsWithCurve(int count, int curveStart, int curveEnd, float curvature = 0.02f)
+    {
+        var sections = new List<UnifiedCrossSection>();
+        var distances = new List<float>();
+        for (int i = 0; i < count; i++)
+        {
+            sections.Add(new UnifiedCrossSection
+            {
+                CenterPoint = new Vector2(i, 0),
+                NormalDirection = new Vector2(0, 1),
+                TangentDirection = new Vector2(1, 0),
+                Curvature = (i >= curveStart && i <= curveEnd) ? curvature : 0f
+            });
+            distances.Add(i);
+        }
+        return (sections, distances);
+    }
+
+    [Fact]
+    public void CurveFilter_ThenInvert_ProducesComplementaryRanges()
+    {
+        // 100m road with curve from index 30-50
+        var (sections, distances) = CreateSectionsWithCurve(100, 30, 50);
+
+        var curveRanges = DecalRoadLayerFilter.ApplyCurveFilter(
+            sections, distances, 0.01f, transitionLength: 5f,
+            rangeStart: 0, rangeEnd: 99);
+
+        var straightRanges = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 99);
+
+        // Verify no overlap between curve and straight ranges
+        foreach (var curve in curveRanges)
+        {
+            foreach (var straight in straightRanges)
+            {
+                bool overlaps = curve.Start <= straight.End && straight.Start <= curve.End;
+                Assert.False(overlaps,
+                    $"Curve ({curve.Start},{curve.End}) overlaps straight ({straight.Start},{straight.End})");
+            }
+        }
+
+        // Verify full coverage: all indices 0-99 are in exactly one range
+        var covered = new HashSet<int>();
+        foreach (var (s, e) in curveRanges)
+            for (int i = s; i <= e; i++) covered.Add(i);
+        foreach (var (s, e) in straightRanges)
+            for (int i = s; i <= e; i++) covered.Add(i);
+
+        for (int i = 0; i <= 99; i++)
+            Assert.Contains(i, covered);
+    }
+
+    [Fact]
+    public void NoCurves_InvertReturnsFullRange()
+    {
+        // All straight — no curvature
+        var curvatures = Enumerable.Repeat(0.005f, 50).ToArray();
+        var sections = new List<UnifiedCrossSection>();
+        var distances = new List<float>();
+        for (int i = 0; i < curvatures.Length; i++)
+        {
+            sections.Add(new UnifiedCrossSection
+            {
+                CenterPoint = new Vector2(i, 0),
+                NormalDirection = new Vector2(0, 1),
+                TangentDirection = new Vector2(1, 0),
+                Curvature = curvatures[i]
+            });
+            distances.Add(i);
+        }
+
+        var curveRanges = DecalRoadLayerFilter.ApplyCurveFilter(
+            sections, distances, 0.01f, 5f, 0, 49);
+
+        Assert.Empty(curveRanges);
+
+        var straightRanges = DecalRoadLayerFilter.InvertRanges(curveRanges, 0, 49);
+        Assert.Single(straightRanges);
+        Assert.Equal((0, 49), straightRanges[0]);
+    }
+}

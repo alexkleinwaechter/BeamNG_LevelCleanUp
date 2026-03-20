@@ -7,7 +7,10 @@
       "Bash(gh pr:*)",
       "Bash(where gh:*)",
       "Read(//c/Users/alexander.kleinwaech/AppData/Local/BeamNG_LevelCleanUp/**)",
-      "WebFetch(domain:mudblazor.com)"
+      "WebFetch(domain:mudblazor.com)",
+      "Bash(xargs grep:*)",
+      "Read(//c/Users/alexander.kleinwaech/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/brainstorming/**)",
+      "Bash(bash \"C:\\\\Users\\\\alexander.kleinwaech\\\\.claude\\\\plugins\\\\cache\\\\claude-plugins-official\\\\superpowers\\\\5.0.5\\\\skills\\\\brainstorming\\\\scripts\\\\start-server.sh\" --project-dir \"c:\\\\SourcesPrivate\\\\beamng_mapping_pro\")"
     ]
   },
   "enabledPlugins": {

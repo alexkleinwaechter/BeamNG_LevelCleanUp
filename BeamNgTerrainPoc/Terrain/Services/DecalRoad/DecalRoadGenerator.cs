@@ -15,6 +15,19 @@ namespace BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 public class DecalRoadGenerator
 {
     /// <summary>
+    /// A filtered sub-range tagged with material/width/textureLength overrides.
+    /// For None/CurveOnly: uses the layer's own values.
+    /// For ReplaceInCurve: straight segments use main values, curve segments use replacement values.
+    /// </summary>
+    internal record struct GenerationSegment(
+        int Start,
+        int End,
+        string Material,
+        float Width,
+        float TextureLength
+    );
+
+    /// <summary>
     /// Generate all DecalRoad objects for the given network.
     /// </summary>
     public static List<GeneratedDecalRoad> Generate(
@@ -144,10 +157,10 @@ public class DecalRoadGenerator
                         layer, sampledSections, csDistances,
                         rangeStart, rangeEnd - 1, settings, spline.SplineId);
 
-                    foreach (var (subStart, subEnd) in filteredRanges)
+                    foreach (var seg in filteredRanges)
                     {
-                        var subSections = sampledSections.GetRange(subStart, subEnd - subStart + 1);
-                        var subDist = csDistances[subStart];
+                        var subSections = sampledSections.GetRange(seg.Start, seg.End - seg.Start + 1);
+                        var subDist = csDistances[seg.Start];
                         var segInfo = ResolveLaneInfo(spline.LaneSegments!, subDist);
                         var segLaneCount = segInfo.TotalLanes;
 
@@ -157,7 +170,8 @@ public class DecalRoadGenerator
                             spline, roadWidth, splineName,
                             corridors, junctionZones, continuityLookup,
                             heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
-                            ref chunkIndex, results);
+                            ref chunkIndex, results,
+                            seg.Material, seg.Width, seg.TextureLength);
                     }
                 }
             }
@@ -168,16 +182,17 @@ public class DecalRoadGenerator
                     layer, sampledSections, csDistances,
                     0, sampledSections.Count - 1, settings, spline.SplineId);
 
-                foreach (var (subStart, subEnd) in filteredRanges)
+                foreach (var seg in filteredRanges)
                 {
-                    var subSections = sampledSections.GetRange(subStart, subEnd - subStart + 1);
+                    var subSections = sampledSections.GetRange(seg.Start, seg.End - seg.Start + 1);
                     GenerateForLayerRange(
                         layer, position, side, laneIndex, isFlipped,
                         subSections, baseLaneInfo, laneCount,
                         spline, roadWidth, splineName,
                         corridors, junctionZones, continuityLookup,
                         heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
-                        ref chunkIndex, results);
+                        ref chunkIndex, results,
+                        seg.Material, seg.Width, seg.TextureLength);
                 }
             }
         }
@@ -208,10 +223,10 @@ public class DecalRoadGenerator
                         layer, sampledSections, csDistances,
                         rangeStart, rangeEnd - 1, settings, spline.SplineId);
 
-                    foreach (var (subStart, subEnd) in filteredRanges)
+                    foreach (var seg in filteredRanges)
                     {
-                        var subSections = sampledSections.GetRange(subStart, subEnd - subStart + 1);
-                        var subDist = csDistances[subStart];
+                        var subSections = sampledSections.GetRange(seg.Start, seg.End - seg.Start + 1);
+                        var subDist = csDistances[seg.Start];
                         var subSegInfo = ResolveLaneInfo(spline.LaneSegments!, subDist);
                         var subLaneCount = subSegInfo.TotalLanes;
 
@@ -221,7 +236,8 @@ public class DecalRoadGenerator
                             spline, roadWidth, splineName,
                             corridors, junctionZones, continuityLookup,
                             heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
-                            ref chunkIndex, results);
+                            ref chunkIndex, results,
+                            seg.Material, seg.Width, seg.TextureLength);
                     }
                 }
             }
@@ -248,15 +264,22 @@ public class DecalRoadGenerator
         IReadOnlyDictionary<int, HashSet<int>>? continuityLookup,
         float[,] heightMap, float metersPerPixel, int terrainSizePixels,
         float terrainBaseHeight,
-        ref int chunkIndex, List<GeneratedDecalRoad> results)
+        ref int chunkIndex, List<GeneratedDecalRoad> results,
+        string? overrideMaterial = null,
+        float? overrideWidth = null,
+        float? overrideTextureLength = null)
     {
+        // Note: IsTrackWidth and IsLaneWidth take precedence over overrideWidth.
+        // These modes mean "fill the road/lane width" which is geometry-driven,
+        // not material-driven. The override only applies to fixed-width layers.
+        float baseWidth = overrideWidth ?? layer.Width;
         float nodeWidth;
         if (layer.IsTrackWidth)
             nodeWidth = roadWidth;
         else if (layer.IsLaneWidth)
             nodeWidth = roadWidth / Math.Max(1, segLaneCount);
         else
-            nodeWidth = layer.Width;
+            nodeWidth = baseWidth;
 
         // Calculate laterally offset nodes using cross-section normals
         var offsetNodes2D = new List<Vector2>(sections.Count);
@@ -329,8 +352,8 @@ public class DecalRoadGenerator
                 {
                     Name = name,
                     ParentGroupName = splineName,
-                    Material = layer.Material,
-                    TextureLength = layer.TextureLength,
+                    Material = overrideMaterial ?? layer.Material,
+                    TextureLength = overrideTextureLength ?? layer.TextureLength,
                     RenderPriority = layer.RenderPriority,
                     StartEndFade = [startFade, endFade],
                     DistanceFade = layer.DistanceFade,
@@ -366,10 +389,11 @@ public class DecalRoadGenerator
 
     /// <summary>
     /// Computes constraint-filtered sub-ranges for a layer within [rangeStart, rangeEnd].
-    /// Applies curve filter (if CurveOnly), then randomizer (if Randomize).
-    /// Returns the original range as-is when neither constraint is active.
+    /// Returns GenerationSegments tagged with the appropriate material/width/textureLength.
+    /// For ReplaceInCurve: returns interleaved straight (main) + curve (replacement) segments.
+    /// Randomizer applies only to straight segments when in ReplaceInCurve mode.
     /// </summary>
-    private static List<(int Start, int End)> ComputeFilteredRanges(
+    internal static List<GenerationSegment> ComputeFilteredRanges(
         DecalRoadLayerDefinition layer,
         IReadOnlyList<UnifiedCrossSection> sampledSections,
         IReadOnlyList<float> csDistances,
@@ -378,26 +402,99 @@ public class DecalRoadGenerator
         DecalRoadSettings settings,
         int splineId)
     {
-        var eligibleRanges = new List<(int Start, int End)> { (rangeStart, rangeEnd) };
-
-        if (layer.CurveOnly)
+        // Helper to wrap (int,int) ranges into GenerationSegments with given overrides
+        static List<GenerationSegment> Wrap(
+            List<(int Start, int End)> ranges, string material, float width, float textureLength)
         {
-            eligibleRanges = DecalRoadLayerFilter.ApplyCurveFilter(
-                sampledSections, csDistances, layer.CurveMinCurvature,
-                layer.CurveTransitionLength, rangeStart, rangeEnd);
+            return ranges.Select(r => new GenerationSegment(r.Start, r.End, material, width, textureLength)).ToList();
         }
 
-        if (layer.Randomize && eligibleRanges.Count > 0)
+        var mainMaterial = layer.Material;
+        var mainWidth = layer.Width;
+        var mainTextureLength = layer.TextureLength;
+
+        if (layer.CurveConstraint == CurveConstraintMode.None)
+        {
+            var eligibleRanges = new List<(int Start, int End)> { (rangeStart, rangeEnd) };
+            if (layer.Randomize && eligibleRanges.Count > 0)
+            {
+                int splineSeed = settings.RandomSeed ^ splineId;
+                eligibleRanges = DecalRoadLayerFilter.ApplyRandomizer(
+                    eligibleRanges, csDistances,
+                    layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
+                    layer.RandomMinGapLength, layer.RandomMaxGapLength,
+                    splineSeed);
+            }
+            return Wrap(eligibleRanges, mainMaterial, mainWidth, mainTextureLength);
+        }
+
+        // Both CurveOnly and ReplaceInCurve need curve ranges
+        var curveRanges = DecalRoadLayerFilter.ApplyCurveFilter(
+            sampledSections, csDistances, layer.CurveMinCurvature,
+            layer.CurveTransitionLength, rangeStart, rangeEnd);
+
+        if (layer.CurveConstraint == CurveConstraintMode.CurveOnly)
+        {
+            var eligibleRanges = curveRanges;
+            if (layer.Randomize && eligibleRanges.Count > 0)
+            {
+                int splineSeed = settings.RandomSeed ^ splineId;
+                eligibleRanges = DecalRoadLayerFilter.ApplyRandomizer(
+                    eligibleRanges, csDistances,
+                    layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
+                    layer.RandomMinGapLength, layer.RandomMaxGapLength,
+                    splineSeed);
+            }
+            return Wrap(eligibleRanges, mainMaterial, mainWidth, mainTextureLength);
+        }
+
+        // ReplaceInCurve mode
+        // Validate replacement material — fall back to None behavior if empty
+        if (string.IsNullOrEmpty(layer.CurveReplacementMaterial))
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[DecalRoad] ReplaceInCurve layer '{layer.Name}' has empty CurveReplacementMaterial — falling back to main material");
+
+            var fallbackRanges = new List<(int Start, int End)> { (rangeStart, rangeEnd) };
+            if (layer.Randomize)
+            {
+                int splineSeed = settings.RandomSeed ^ splineId;
+                fallbackRanges = DecalRoadLayerFilter.ApplyRandomizer(
+                    fallbackRanges, csDistances,
+                    layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
+                    layer.RandomMinGapLength, layer.RandomMaxGapLength,
+                    splineSeed);
+            }
+            return Wrap(fallbackRanges, mainMaterial, mainWidth, mainTextureLength);
+        }
+
+        var replacementMaterial = layer.CurveReplacementMaterial;
+        var replacementWidth = layer.CurveReplacementWidth > 0 ? layer.CurveReplacementWidth : mainWidth;
+        var replacementTextureLength = layer.CurveReplacementTextureLength > 0 ? layer.CurveReplacementTextureLength : mainTextureLength;
+
+        // Curve segments: replacement values, never randomized
+        var curveSegments = Wrap(curveRanges, replacementMaterial, replacementWidth, replacementTextureLength);
+
+        // Straight segments: main values, randomizer applies here
+        var straightRanges = DecalRoadLayerFilter.InvertRanges(curveRanges, rangeStart, rangeEnd);
+        if (layer.Randomize && straightRanges.Count > 0)
         {
             int splineSeed = settings.RandomSeed ^ splineId;
-            eligibleRanges = DecalRoadLayerFilter.ApplyRandomizer(
-                eligibleRanges, csDistances,
+            straightRanges = DecalRoadLayerFilter.ApplyRandomizer(
+                straightRanges, csDistances,
                 layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
                 layer.RandomMinGapLength, layer.RandomMaxGapLength,
                 splineSeed);
         }
+        var straightSegments = Wrap(straightRanges, mainMaterial, mainWidth, mainTextureLength);
 
-        return eligibleRanges;
+        // Merge and sort by Start
+        var allSegments = new List<GenerationSegment>(curveSegments.Count + straightSegments.Count);
+        allSegments.AddRange(curveSegments);
+        allSegments.AddRange(straightSegments);
+        allSegments.Sort((a, b) => a.Start.CompareTo(b.Start));
+
+        return allSegments;
     }
 
     /// <summary>

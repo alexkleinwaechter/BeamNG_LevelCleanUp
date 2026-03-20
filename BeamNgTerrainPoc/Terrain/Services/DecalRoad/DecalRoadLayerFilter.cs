@@ -152,6 +152,37 @@ public static class DecalRoadLayerFilter
     }
 
     /// <summary>
+    /// Inverts curve ranges to produce straight ranges within [fullStart, fullEnd].
+    /// Given curve ranges [(10,20), (40,60)] and full range (0,100):
+    /// Returns straight ranges [(0,9), (21,39), (61,100)].
+    /// Zero-length segments are excluded.
+    /// </summary>
+    public static List<(int Start, int End)> InvertRanges(
+        IReadOnlyList<(int Start, int End)> curveRanges,
+        int fullStart,
+        int fullEnd)
+    {
+        if (curveRanges.Count == 0)
+            return [(fullStart, fullEnd)];
+
+        var straights = new List<(int Start, int End)>();
+        int cursor = fullStart;
+
+        foreach (var (cStart, cEnd) in curveRanges)
+        {
+            if (cursor < cStart)
+                straights.Add((cursor, cStart - 1));
+            cursor = cEnd + 1;
+        }
+
+        if (cursor <= fullEnd)
+            straights.Add((cursor, fullEnd));
+
+        // Filter zero-length segments
+        return straights.Where(r => r.End > r.Start).ToList();
+    }
+
+    /// <summary>
     /// Merges overlapping or adjacent (int Start, int End) ranges.
     /// Input must be sorted by Start (our callers produce sorted output).
     /// </summary>
