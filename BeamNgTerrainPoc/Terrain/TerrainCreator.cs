@@ -8,6 +8,7 @@ using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Processing;
 using BeamNgTerrainPoc.Terrain.Services;
+using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Validation;
 using Grille.BeamNG;
 using SixLabors.ImageSharp;
@@ -356,6 +357,23 @@ public class TerrainCreator
             // Populate output properties for downstream use (re-generation)
             parameters.OutputNetwork = unifiedResult?.Network;
             parameters.OutputHeightMap = heightMap2D;
+
+            // Save DecalRoad network snapshot for standalone re-generation across sessions
+            if (unifiedResult?.Network != null)
+            {
+                try
+                {
+                    var levelDir = Path.GetDirectoryName(outputPath)!;
+                    DecalRoadNetworkSnapshotBuilder.SaveToLevel(
+                        unifiedResult.Network, levelDir);
+                    perfLog.Info($"Saved DecalRoad network snapshot to {levelDir}/MT_TerrainGeneration/decalroad_data/");
+                }
+                catch (Exception ex)
+                {
+                    perfLog.Warning($"Failed to save DecalRoad network snapshot: {ex.Message}");
+                    // Non-fatal — in-memory re-generation still works for current session
+                }
+            }
 
             // 4. Process material layers
             // IMPORTANT: If road smoothing was applied, the MaterialPainter has generated
