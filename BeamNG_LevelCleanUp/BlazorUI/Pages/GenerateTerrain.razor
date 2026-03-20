@@ -803,15 +803,21 @@
                             <MudButton Variant="Variant.Outlined"
                                        Color="Color.Secondary"
                                        StartIcon="@Icons.Material.Filled.Refresh"
-                                       Disabled="@(_state.CachedNetwork == null || _isGenerating)"
+                                       Disabled="@(!CanRegenerateDecalRoads() || _isGenerating)"
                                        OnClick="RegenerateDecalRoads">
                                 Re-generate DecalRoads
                             </MudButton>
                         </div>
-                        @if (_state.CachedNetwork == null)
+                        @if (!CanRegenerateDecalRoads())
                         {
                             <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-1">
                                 Generate terrain first to enable re-generation.
+                            </MudText>
+                        }
+                        else if (_state.CachedNetwork == null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-1">
+                                Will load road network from saved snapshot.
                             </MudText>
                         }
                     }
