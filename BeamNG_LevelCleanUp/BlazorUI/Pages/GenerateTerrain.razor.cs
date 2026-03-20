@@ -2491,9 +2491,16 @@ public partial class GenerateTerrain : IDisposable
         }
     }
 
+    private bool CanRegenerateDecalRoads()
+    {
+        // Available if in-memory cache exists OR snapshot file exists on disk
+        return _state.CachedNetwork != null ||
+               (!string.IsNullOrEmpty(_state.WorkingDirectory) &&
+                DecalRoadNetworkSnapshot.Exists(_state.WorkingDirectory));
+    }
+
     private async Task RegenerateDecalRoads()
     {
-        if (_state.CachedNetwork == null || _state.CachedHeightMap == null) return;
         _state.DecalRoadSettings ??= new DecalRoadSettings { Enabled = true };
 
         _isGenerating = true;
@@ -2503,13 +2510,44 @@ public partial class GenerateTerrain : IDisposable
         {
             await Task.Run(() =>
             {
+                var network = _state.CachedNetwork;
+                var heightMap = _state.CachedHeightMap;
+
+                // Fall back to loading from disk if in-memory cache is empty
+                if (network == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Loading road network from saved snapshot...");
+                    network = DecalRoadNetworkSnapshotLoader.LoadNetwork(_state.WorkingDirectory);
+                    if (network == null)
+                        throw new InvalidOperationException(
+                            "No road network available. Generate terrain first to create the network snapshot.");
+
+                    // Cache for subsequent re-generations in this session
+                    _state.CachedNetwork = network;
+                }
+
+                if (heightMap == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Loading heightmap from .ter file...");
+                    var terPath = _state.GetOutputPath();
+                    heightMap = DecalRoadNetworkSnapshotLoader.LoadHeightmap(terPath, _state.MaxHeight);
+                    if (heightMap == null)
+                        throw new InvalidOperationException(
+                            $"Terrain file not found at {terPath}. Generate terrain first.");
+
+                    // Cache for subsequent re-generations in this session
+                    _state.CachedHeightMap = heightMap;
+                }
+
                 var appDataDefaults = DecalRoadDefaultsManager.Load();
 
                 DecalRoadSceneWriter.CleanPrevious(_state.WorkingDirectory);
 
                 var decalRoads = DecalRoadGenerator.Generate(
-                    _state.CachedNetwork,
-                    _state.CachedHeightMap,
+                    network,
+                    heightMap,
                     _state.MetersPerPixel,
                     _state.TerrainSize,
                     _state.TerrainBaseHeight,
