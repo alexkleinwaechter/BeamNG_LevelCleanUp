@@ -66,7 +66,13 @@ public static class DecalRoadNetworkSnapshotLoader
         var splineById = new Dictionary<int, ParameterizedRoadSpline>();
         foreach (var ss in snapshot.Splines)
         {
-            var controlPoints = new List<Vector2> { ss.StartPoint, ss.EndPoint };
+            // Ensure start != end to avoid zero-length spline exception
+            // (e.g., roundabouts have identical start/end points)
+            var endPoint = ss.EndPoint;
+            if (Vector2.DistanceSquared(ss.StartPoint, endPoint) < 0.001f * 0.001f)
+                endPoint = ss.StartPoint + new Vector2(0.01f, 0);
+
+            var controlPoints = new List<Vector2> { ss.StartPoint, endPoint };
             var stubSpline = new RoadSpline(controlPoints, SplineInterpolationType.LinearControlPoints);
 
             List<LaneSegment>? laneSegments = null;
