@@ -187,29 +187,76 @@ public class RoadCorridorOverlapCheckerTests
         Assert.True(rightResult.IsOverlapping);
     }
 
-    [Fact]
-    public void CheckWithJunctionFilter_OnlyChecksNearbyCorridors()
+    /// <summary>
+    /// Creates a circular corridor (closed loop) centered at origin with given radius.
+    /// Sections are sampled every ~spacing degrees around the circle.
+    /// Normal points outward (radially away from center).
+    /// </summary>
+    private static RoadCorridor CreateCircularCorridor(
+        int splineId, float halfWidth, float radius = 30f, int sectionCount = 24)
     {
-        var corridors = new Dictionary<int, RoadCorridor>
+        var sections = new List<CorridorSection>();
+        for (int i = 0; i < sectionCount; i++)
         {
-            [1] = CreateStraightCorridor(1, 5f),
-            [2] = CreateStraightCorridor(2, 5f)
-        };
-
-        // Junction at (50, 0) with only spline 1 and 2 contributing
-        var zones = new List<JunctionInfluenceZone>
+            float angle = 2f * MathF.PI * i / sectionCount;
+            var center = new Vector2(MathF.Cos(angle) * radius, MathF.Sin(angle) * radius);
+            var normal = Vector2.Normalize(center); // Points outward
+            sections.Add(new CorridorSection(center, normal, i * (2f * MathF.PI * radius / sectionCount)));
+        }
+        return new RoadCorridor
         {
-            new(new Vector2(50, 0), 15f, 225f, new List<int> { 1, 2 })
+            SplineId = splineId,
+            RoadWidth = halfWidth * 2,
+            CorridorHalfWidth = halfWidth,
+            Sections = sections,
+            IsClosedLoop = true
         };
-
-        // Point at (50, 3) — near junction, inside corridor 2
-        var r1 = RoadCorridorOverlapChecker.CheckWithJunctionFilter(
-            new Vector2(50, 3), ownSplineId: 1, corridors, zones);
-        Assert.True(r1.IsOverlapping);
-
-        // Point at (200, 3) — far from junction, should NOT be checked
-        var r2 = RoadCorridorOverlapChecker.CheckWithJunctionFilter(
-            new Vector2(200, 3), ownSplineId: 1, corridors, zones);
-        Assert.False(r2.IsOverlapping);
     }
+
+    [Fact]
+    public void ClosedLoopCorridor_PointNearWrapSeam_ReturnsOverlapping()
+    {
+        // Circular corridor with radius=30m, halfWidth=5m, 24 sections
+        // Section 0 is at angle=0 (30,0), section 23 is at angle=345°
+        // A point between section 23 and section 0 should still be detected
+        var corridor = CreateCircularCorridor(splineId: 1, halfWidth: 5f, radius: 30f, sectionCount: 24);
+
+        // Point on the ring between section 23 and section 0 at angle ~352.5°
+        float testAngle = (23.5f / 24f) * 2f * MathF.PI;
+        var testPoint = new Vector2(MathF.Cos(testAngle) * 30f, MathF.Sin(testAngle) * 30f);
+
+        var result = RoadCorridorOverlapChecker.CheckPointAgainstCorridor(testPoint, corridor);
+        Assert.True(result.IsOverlapping);
+    }
+
+    [Fact]
+    public void ClosedLoopCorridor_PointInsideRing_ReturnsOverlapping()
+    {
+        var corridor = CreateCircularCorridor(splineId: 1, halfWidth: 5f, radius: 30f);
+
+        // Point at angle=90° (top), slightly inside the ring (radius=27m, inside 30±5)
+        var testPoint = new Vector2(0, 27f);
+        var result = RoadCorridorOverlapChecker.CheckPointAgainstCorridor(testPoint, corridor);
+        Assert.True(result.IsOverlapping);
+    }
+
+    [Fact]
+    public void ClosedLoopCorridor_PointFarOutside_ReturnsNotOverlapping()
+    {
+        var corridor = CreateCircularCorridor(splineId: 1, halfWidth: 5f, radius: 30f);
+
+        // Point at center of ring (0,0) — way outside the corridor (30 - 5 = 25m from closest section)
+        var result = RoadCorridorOverlapChecker.CheckPointAgainstCorridor(new Vector2(0, 0), corridor);
+        Assert.False(result.IsOverlapping);
+    }
+
+    [Fact]
+    public void NonClosedLoop_PointNearEnd_ReturnsNotOverlapping()
+    {
+        // Verify that non-closed-loop corridors still reject points past the end
+        var corridor = CreateStraightCorridor(splineId: 1, halfWidth: 5f, length: 100f);
+        var result = RoadCorridorOverlapChecker.CheckPointAgainstCorridor(new Vector2(110, 0), corridor);
+        Assert.False(result.IsOverlapping);
+    }
+
 }

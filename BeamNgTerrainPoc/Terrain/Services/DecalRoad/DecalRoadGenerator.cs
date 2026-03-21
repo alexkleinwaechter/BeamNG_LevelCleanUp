@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -6,29 +7,16 @@ using BeamNgTerrainPoc.Terrain.Utils;
 namespace BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 
 /// <summary>
-/// Generates DecalRoad objects from a UnifiedRoadNetwork.
-/// Uses cross-section data (same as MasterSplineExporter) for accurate centerline alignment,
-/// then applies lateral offsets, corridor-based junction suppression, and chunking.
-/// Two-pass architecture: Pass 1 builds road corridors, Pass 2 generates DecalRoads
-/// with per-node corridor overlap checking.
+///     Generates DecalRoad objects from a UnifiedRoadNetwork.
+///     Uses cross-section data (same as MasterSplineExporter) for accurate centerline alignment,
+///     then applies lateral offsets and post-process overlap detection.
+///     All roads are generated uninterrupted first, then a post-processor detects and resolves
+///     overlaps on the actual generated geometry, followed by chunking.
 /// </summary>
 public class DecalRoadGenerator
 {
     /// <summary>
-    /// A filtered sub-range tagged with material/width/textureLength overrides.
-    /// For None/CurveOnly: uses the layer's own values.
-    /// For ReplaceInCurve: straight segments use main values, curve segments use replacement values.
-    /// </summary>
-    internal record struct GenerationSegment(
-        int Start,
-        int End,
-        string Material,
-        float Width,
-        float TextureLength
-    );
-
-    /// <summary>
-    /// Generate all DecalRoad objects for the given network.
+    ///     Generate all DecalRoad objects for the given network.
     /// </summary>
     public static List<GeneratedDecalRoad> Generate(
         UnifiedRoadNetwork network,
@@ -40,26 +28,34 @@ public class DecalRoadGenerator
         IReadOnlyDictionary<string, DecalRoadLayerSet> appDataDefaults)
     {
         var results = new List<GeneratedDecalRoad>();
+        var splineSurfaces = new List<SplineSurfaceData>();
 
-        // Pass 1: Build road corridors for all eligible splines
-        var corridors = RoadCorridorBuilder.BuildCorridors(
-            network, settings, appDataDefaults, settings.NodeSpacingMeters);
-
-        // Build junction influence zones for proximity filter
-        var junctionZones = RoadCorridorOverlapChecker.BuildJunctionInfluenceZones(
-            network.Junctions, corridors);
-
-        // Build continuity lookup for Phase 2 centerline preservation
+        // Build continuity lookup for post-processor overlap exemptions
         var continuityLookup = BuildContinuityLookup(network.Junctions);
 
-        // Pass 2: Generate DecalRoads with corridor overlap checking
+        // Generate all DecalRoads uninterrupted (no corridor checking during generation)
         foreach (var spline in network.Splines)
         {
             if (spline.IsBridge || spline.IsTunnel)
                 continue;
 
-            var layerSet = DecalRoadLayerSetResolver.Resolve(
-                spline.OsmRoadType, spline.MaterialName, settings, appDataDefaults);
+            // Resolve layer set — roundabout splines use "roundabout" key
+            DecalRoadLayerSet? layerSet;
+            if (spline.IsRoundabout)
+            {
+                // Try "roundabout" key first, then fall back to regular cascade
+                layerSet = DecalRoadLayerSetResolver.Resolve(
+                    "roundabout", spline.MaterialName, settings, appDataDefaults);
+                // If no roundabout-specific set found, try the road's own OSM type
+                layerSet ??= DecalRoadLayerSetResolver.Resolve(
+                    spline.OsmRoadType, spline.MaterialName, settings, appDataDefaults);
+            }
+            else
+            {
+                layerSet = DecalRoadLayerSetResolver.Resolve(
+                    spline.OsmRoadType, spline.MaterialName, settings, appDataDefaults);
+            }
+
             if (layerSet == null || !layerSet.IsEnabled)
                 continue;
 
@@ -67,24 +63,83 @@ public class DecalRoadGenerator
             if (crossSections.Count < 2)
                 continue;
 
+            // Collect spline surface data for overlap detection footprint
+            var surfaceSections = SubSampleCrossSections(crossSections, settings.NodeSpacingMeters);
+            if (surfaceSections.Count >= 2)
+            {
+                var roadWidth = spline.Parameters.EffectiveMasterSplineWidthMeters;
+                //var roadWidth = spline.Parameters.RoadSurfaceWidthMeters ?? spline.Parameters.RoadWidthMeters;
+                splineSurfaces.Add(new SplineSurfaceData
+                {
+                    SplineId = spline.SplineId,
+                    SurfaceHalfWidth = roadWidth / 2f,
+                    CenterlinePoints = surfaceSections
+                        .Select(cs => BeamNgCoordinateTransformer.TerrainToWorld2D(
+                            cs.CenterPoint, terrainSizePixels, metersPerPixel))
+                        .ToList()
+                });
+            }
+
             var splineResults = GenerateForSpline(
                 spline, layerSet, crossSections,
-                corridors, junctionZones, continuityLookup,
                 heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                 settings.NodeSpacingMeters, settings);
             results.AddRange(splineResults);
         }
 
-        return results;
+        // Post-process: detect and resolve overlaps on actual generated geometry
+        results = DecalRoadOverlapPostProcessor.Process(results, splineSurfaces, continuityLookup);
+
+        // Chunk long roads into ≤100 nodes with shared boundary nodes
+        var chunkedResults = new List<GeneratedDecalRoad>(results.Count);
+        foreach (var road in results)
+        {
+            var chunks = ChunkNodes(road.Nodes);
+            for (var ci = 0; ci < chunks.Count; ci++)
+            {
+                var isFirst = ci == 0;
+                var isLast = ci == chunks.Count - 1;
+                chunkedResults.Add(new GeneratedDecalRoad
+                {
+                    Name = chunks.Count > 1 ? $"{road.Name}_{ci:D3}" : road.Name,
+                    ParentGroupName = road.ParentGroupName,
+                    Material = road.Material,
+                    TextureLength = road.TextureLength,
+                    RenderPriority = road.RenderPriority,
+                    StartEndFade =
+                    [
+                        isFirst ? road.StartEndFade[0] : 0f,
+                        isLast ? road.StartEndFade[1] : 0f
+                    ],
+                    DistanceFade = road.DistanceFade,
+                    Drivability = road.Drivability,
+                    Nodes = chunks[ci],
+                    IsAIRoad = road.IsAIRoad,
+                    AutoLanes = road.AutoLanes,
+                    LanesLeft = road.LanesLeft,
+                    LanesRight = road.LanesRight,
+                    OneWay = road.OneWay,
+                    FlipDirection = road.FlipDirection,
+                    GatedRoad = road.GatedRoad,
+                    SplineId = road.SplineId,
+                    InterruptAtJunctions = road.InterruptAtJunctions,
+                    IsRoundaboutRoad = road.IsRoundaboutRoad,
+                    PreserveContinuity = road.PreserveContinuity,
+                    OverObjects = road.OverObjects,
+                    ImprovedSpline = road.ImprovedSpline,
+                    Smoothness = road.Smoothness,
+                    Detail = road.Detail
+                });
+            }
+        }
+
+        return chunkedResults;
     }
 
     internal static List<GeneratedDecalRoad> GenerateForSpline(
         ParameterizedRoadSpline spline,
         DecalRoadLayerSet layerSet,
         IReadOnlyList<UnifiedCrossSection> crossSections,
-        IReadOnlyDictionary<int, RoadCorridor> corridors,
-        IReadOnlyList<JunctionInfluenceZone> junctionZones,
-        IReadOnlyDictionary<int, HashSet<int>>? continuityLookup,
         float[,] heightMap,
         float metersPerPixel,
         int terrainSizePixels,
@@ -109,13 +164,13 @@ public class DecalRoadGenerator
         if (sampledSections.Count > 0)
         {
             csDistances.Add(0f);
-            for (int i = 1; i < sampledSections.Count; i++)
+            for (var i = 1; i < sampledSections.Count; i++)
                 csDistances.Add(csDistances[i - 1] +
-                    Vector2.Distance(sampledSections[i - 1].CenterPoint, sampledSections[i].CenterPoint));
+                                Vector2.Distance(sampledSections[i - 1].CenterPoint, sampledSections[i].CenterPoint));
         }
 
         var laneChangeBoundaries = FindLaneChangeBoundaryIndices(spline.LaneSegments, csDistances);
-        bool hasLaneChanges = laneChangeBoundaries.Count > 0 && spline.LaneSegments != null;
+        var hasLaneChanges = laneChangeBoundaries.Count > 0 && spline.LaneSegments != null;
 
         // Pre-compute range boundaries for lane-dependent splitting
         List<int>? rangeStarts = null;
@@ -133,7 +188,7 @@ public class DecalRoadGenerator
 
         // Expand layers with lane-info awareness (DirectionDivider positioning, IsPerLane filtering)
         var expandedLayers = ExpandLayersWithLaneInfo(layerSet.Layers, laneCount, baseLaneInfo);
-        int chunkIndex = 0;
+        var chunkIndex = 0;
 
         // Phase A: All layers except IsPerLane+DirectionDivider when lane changes exist (those are handled in Phase B)
         foreach (var (layer, position, side, laneIndex, isFlipped) in expandedLayers)
@@ -146,7 +201,7 @@ public class DecalRoadGenerator
             if (IsLaneDependent(layer) && hasLaneChanges)
             {
                 // Split at boundaries (AI road only in this phase)
-                for (int r = 0; r < rangeStarts!.Count; r++)
+                for (var r = 0; r < rangeStarts!.Count; r++)
                 {
                     var rangeStart = rangeStarts[r];
                     var rangeEnd = rangeEnds![r];
@@ -168,7 +223,6 @@ public class DecalRoadGenerator
                             layer, position, side, laneIndex, isFlipped,
                             subSections, segInfo, segLaneCount,
                             spline, roadWidth, splineName,
-                            corridors, junctionZones, continuityLookup,
                             heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                             ref chunkIndex, results,
                             seg.Material, seg.Width, seg.TextureLength);
@@ -189,7 +243,6 @@ public class DecalRoadGenerator
                         layer, position, side, laneIndex, isFlipped,
                         subSections, baseLaneInfo, laneCount,
                         spline, roadWidth, splineName,
-                        corridors, junctionZones, continuityLookup,
                         heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                         ref chunkIndex, results,
                         seg.Material, seg.Width, seg.TextureLength);
@@ -203,7 +256,7 @@ public class DecalRoadGenerator
             var laneAwareLayers = layerSet.Layers
                 .Where(l => (l.IsPerLane || l.LayerType == DecalRoadLayerType.DirectionDivider) && l.IsEnabled)
                 .ToList();
-            for (int r = 0; r < rangeStarts!.Count; r++)
+            for (var r = 0; r < rangeStarts!.Count; r++)
             {
                 var rangeStart = rangeStarts[r];
                 var rangeEnd = rangeEnds![r];
@@ -234,7 +287,6 @@ public class DecalRoadGenerator
                             layer, position, side, laneIndex, isFlipped,
                             subSections, subSegInfo, subLaneCount,
                             spline, roadWidth, splineName,
-                            corridors, junctionZones, continuityLookup,
                             heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                             ref chunkIndex, results,
                             seg.Material, seg.Width, seg.TextureLength);
@@ -249,8 +301,8 @@ public class DecalRoadGenerator
     private static bool IsLaneDependent(DecalRoadLayerDefinition layer)
     {
         return layer.IsPerLane
-            || layer.LayerType == DecalRoadLayerType.AIRoad
-            || layer.LayerType == DecalRoadLayerType.DirectionDivider;
+               || layer.LayerType == DecalRoadLayerType.AIRoad
+               || layer.LayerType == DecalRoadLayerType.DirectionDivider;
     }
 
     private static void GenerateForLayerRange(
@@ -259,9 +311,6 @@ public class DecalRoadGenerator
         IReadOnlyList<UnifiedCrossSection> sections,
         OsmLaneInfo? segInfo, int segLaneCount,
         ParameterizedRoadSpline spline, float roadWidth, string splineName,
-        IReadOnlyDictionary<int, RoadCorridor> corridors,
-        IReadOnlyList<JunctionInfluenceZone> junctionZones,
-        IReadOnlyDictionary<int, HashSet<int>>? continuityLookup,
         float[,] heightMap, float metersPerPixel, int terrainSizePixels,
         float terrainBaseHeight,
         ref int chunkIndex, List<GeneratedDecalRoad> results,
@@ -272,7 +321,7 @@ public class DecalRoadGenerator
         // Note: IsTrackWidth and IsLaneWidth take precedence over overrideWidth.
         // These modes mean "fill the road/lane width" which is geometry-driven,
         // not material-driven. The override only applies to fixed-width layers.
-        float baseWidth = overrideWidth ?? layer.Width;
+        var baseWidth = overrideWidth ?? layer.Width;
         float nodeWidth;
         if (layer.IsTrackWidth)
             nodeWidth = roadWidth;
@@ -290,108 +339,99 @@ public class DecalRoadGenerator
             offsetNodes2D.Add(offsetPos);
         }
 
-        // Build segments using corridor overlap suppression
-        List<List<(Vector2 Pos, int SectionIndex)>> segments;
-        if (layer.InterruptAtJunctions)
+        // Convert all nodes to world coordinates with elevation from cross-sections
+        // (no corridor-based interruption — post-processor handles overlap detection)
+        var worldNodes = new List<float[]>(offsetNodes2D.Count);
+        for (var i = 0; i < offsetNodes2D.Count; i++)
         {
-            segments = BuildSegmentsWithCorridorCheck(
-                offsetNodes2D, spline.SplineId, corridors, junctionZones,
-                layer.LayerType, continuityLookup);
+            var pos = offsetNodes2D[i];
+            var cs = sections[i];
+
+            // Use TargetElevation from unified pipeline (smoothed/harmonized),
+            // matching MasterSplineExporter behavior exactly
+            float elevation;
+            if (!float.IsNaN(cs.TargetElevation) && cs.TargetElevation > -1000f)
+                elevation = cs.TargetElevation;
+            else
+                elevation = GetHeightMapElevation(heightMap, pos.X, pos.Y, metersPerPixel);
+
+            var worldPos = BeamNgCoordinateTransformer.TerrainToWorld(
+                pos.X, pos.Y, elevation + terrainBaseHeight,
+                terrainSizePixels, metersPerPixel);
+            worldNodes.Add([worldPos.X, worldPos.Y, worldPos.Z, nodeWidth]);
         }
-        else
+
+        // Reverse node order for flipped layers (right-side mirrored).
+        if (isFlipped)
+            worldNodes.Reverse();
+
+        chunkIndex++;
+        var name = $"{splineName}_{layer.Name}_{side}_{chunkIndex:D3}";
+
+        var startFade = isFlipped ? layer.FadeOut : layer.FadeIn;
+        var endFade = isFlipped ? layer.FadeIn : layer.FadeOut;
+
+        var road = new GeneratedDecalRoad
         {
-            // No interruption — single segment with all nodes
-            var allNodes = new List<(Vector2, int)>();
-            for (int i = 0; i < offsetNodes2D.Count; i++)
-                allNodes.Add((offsetNodes2D[i], i));
-            segments = [allNodes];
-        }
+            Name = name,
+            ParentGroupName = splineName,
+            Material = overrideMaterial ?? layer.Material,
+            TextureLength = overrideTextureLength ?? layer.TextureLength,
+            RenderPriority = layer.RenderPriority,
+            StartEndFade = [startFade, endFade],
+            DistanceFade = layer.DistanceFade,
+            Drivability = layer.Drivability,
+            IsAIRoad = layer.LayerType == DecalRoadLayerType.AIRoad,
+            LanesLeft = layer.LanesLeft,
+            LanesRight = layer.LanesRight,
+            OneWay = layer.OneWay,
+            FlipDirection = layer.FlipDirection,
+            GatedRoad = layer.GatedRoad,
+            OverObjects = layer.OverObjects,
+            ImprovedSpline = layer.ImprovedSpline,
+            Smoothness = layer.Smoothness,
+            Detail = layer.Detail,
+            Nodes = worldNodes,
+            SplineId = spline.SplineId,
+            InterruptAtJunctions = layer.InterruptAtJunctions,
+            IsRoundaboutRoad = spline.IsRoundabout,
+            PreserveContinuity = layer.LayerType == DecalRoadLayerType.DirectionDivider
+        };
 
-        // Process each segment
-        foreach (var segment in segments)
+        // Override AI road properties from lane segment data
+        if (layer.LayerType == DecalRoadLayerType.AIRoad && segInfo != null)
         {
-            // Convert to world coordinates with elevation from cross-sections
-            var worldNodesSegment = new List<float[]>(segment.Count);
-            foreach (var (pos, sectionIdx) in segment)
-            {
-                var cs = sections[sectionIdx];
-
-                // Use TargetElevation from unified pipeline (smoothed/harmonized),
-                // matching MasterSplineExporter behavior exactly
-                float elevation;
-                if (!float.IsNaN(cs.TargetElevation) && cs.TargetElevation > -1000f)
-                {
-                    elevation = cs.TargetElevation;
-                }
-                else
-                {
-                    elevation = GetHeightMapElevation(heightMap, pos.X, pos.Y, metersPerPixel);
-                }
-
-                var worldPos = BeamNgCoordinateTransformer.TerrainToWorld(
-                    pos.X, pos.Y, elevation + terrainBaseHeight,
-                    terrainSizePixels, metersPerPixel);
-                worldNodesSegment.Add([worldPos.X, worldPos.Y, worldPos.Z, nodeWidth]);
-            }
-
-            // Reverse node order for flipped layers (right-side mirrored).
-            if (isFlipped)
-                worldNodesSegment.Reverse();
-
-            // Chunk into ≤100 nodes with shared boundary nodes (overlap by 1)
-            var chunks = ChunkNodes(worldNodesSegment, maxNodesPerChunk: 100);
-            for (int ci = 0; ci < chunks.Count; ci++)
-            {
-                chunkIndex++;
-                var name = $"{splineName}_{layer.Name}_{side}_{chunkIndex:D3}";
-
-                var startFade = (ci == 0) ? (isFlipped ? layer.FadeOut : layer.FadeIn) : 0f;
-                var endFade = (ci == chunks.Count - 1) ? (isFlipped ? layer.FadeIn : layer.FadeOut) : 0f;
-
-                var road = new GeneratedDecalRoad
-                {
-                    Name = name,
-                    ParentGroupName = splineName,
-                    Material = overrideMaterial ?? layer.Material,
-                    TextureLength = overrideTextureLength ?? layer.TextureLength,
-                    RenderPriority = layer.RenderPriority,
-                    StartEndFade = [startFade, endFade],
-                    DistanceFade = layer.DistanceFade,
-                    Drivability = layer.Drivability,
-                    IsAIRoad = layer.LayerType == DecalRoadLayerType.AIRoad,
-                    LanesLeft = layer.LanesLeft,
-                    LanesRight = layer.LanesRight,
-                    OneWay = layer.OneWay,
-                    FlipDirection = layer.FlipDirection,
-                    GatedRoad = layer.GatedRoad,
-                    OverObjects = layer.OverObjects,
-                    ImprovedSpline = layer.ImprovedSpline,
-                    Smoothness = layer.Smoothness,
-                    Detail = layer.Detail,
-                    Nodes = chunks[ci]
-                };
-
-                // Override AI road properties from lane segment data
-                if (layer.LayerType == DecalRoadLayerType.AIRoad && segInfo != null)
-                {
-                    var (lanesRight, lanesLeft, oneWay, flipDirection) = DeriveAIRoadProperties(segInfo);
-                    road.LanesRight = lanesRight;
-                    road.LanesLeft = lanesLeft;
-                    road.OneWay = oneWay;
-                    road.FlipDirection = flipDirection;
-                    road.AutoLanes = false; // Disable auto-computation when we set lanes explicitly
-                }
-
-                results.Add(road);
-            }
+            var (lanesRight, lanesLeft, oneWay, flipDirection) = DeriveAIRoadProperties(segInfo);
+            road.LanesRight = lanesRight;
+            road.LanesLeft = lanesLeft;
+            road.OneWay = oneWay;
+            road.FlipDirection = flipDirection;
+            road.AutoLanes = false; // Disable auto-computation when we set lanes explicitly
         }
+
+        // Roundabout AI road: always one-way, use OSM lanes or default to 1
+        // Must run AFTER the segInfo override above (it overwrites those values)
+        if (layer.LayerType == DecalRoadLayerType.AIRoad && spline.IsRoundabout)
+        {
+            road.OneWay = true;
+            road.LanesLeft = 0;
+            // If we have lane info from OSM, use total lanes as right lanes
+            // Otherwise keep the layer default (1 lane)
+            if (segInfo != null)
+                road.LanesRight = segInfo.TotalLanes;
+            // Always disable auto-lane computation — we set lanes explicitly.
+            // Without this, BeamNG's auto-lane logic overrides OneWay and LanesLeft at runtime.
+            road.AutoLanes = false;
+        }
+
+        results.Add(road);
     }
 
     /// <summary>
-    /// Computes constraint-filtered sub-ranges for a layer within [rangeStart, rangeEnd].
-    /// Returns GenerationSegments tagged with the appropriate material/width/textureLength.
-    /// For ReplaceInCurve: returns interleaved straight (main) + curve (replacement) segments.
-    /// Randomizer applies only to straight segments when in ReplaceInCurve mode.
+    ///     Computes constraint-filtered sub-ranges for a layer within [rangeStart, rangeEnd].
+    ///     Returns GenerationSegments tagged with the appropriate material/width/textureLength.
+    ///     For ReplaceInCurve: returns interleaved straight (main) + curve (replacement) segments.
+    ///     Randomizer applies only to straight segments when in ReplaceInCurve mode.
     /// </summary>
     internal static List<GenerationSegment> ComputeFilteredRanges(
         DecalRoadLayerDefinition layer,
@@ -418,13 +458,14 @@ public class DecalRoadGenerator
             var eligibleRanges = new List<(int Start, int End)> { (rangeStart, rangeEnd) };
             if (layer.Randomize && eligibleRanges.Count > 0)
             {
-                int splineSeed = settings.RandomSeed ^ splineId;
+                var splineSeed = settings.RandomSeed ^ splineId;
                 eligibleRanges = DecalRoadLayerFilter.ApplyRandomizer(
                     eligibleRanges, csDistances,
                     layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
                     layer.RandomMinGapLength, layer.RandomMaxGapLength,
                     splineSeed);
             }
+
             return Wrap(eligibleRanges, mainMaterial, mainWidth, mainTextureLength);
         }
 
@@ -438,13 +479,14 @@ public class DecalRoadGenerator
             var eligibleRanges = curveRanges;
             if (layer.Randomize && eligibleRanges.Count > 0)
             {
-                int splineSeed = settings.RandomSeed ^ splineId;
+                var splineSeed = settings.RandomSeed ^ splineId;
                 eligibleRanges = DecalRoadLayerFilter.ApplyRandomizer(
                     eligibleRanges, csDistances,
                     layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
                     layer.RandomMinGapLength, layer.RandomMaxGapLength,
                     splineSeed);
             }
+
             return Wrap(eligibleRanges, mainMaterial, mainWidth, mainTextureLength);
         }
 
@@ -452,25 +494,28 @@ public class DecalRoadGenerator
         // Validate replacement material — fall back to None behavior if empty
         if (string.IsNullOrEmpty(layer.CurveReplacementMaterial))
         {
-            System.Diagnostics.Debug.WriteLine(
+            Debug.WriteLine(
                 $"[DecalRoad] ReplaceInCurve layer '{layer.Name}' has empty CurveReplacementMaterial — falling back to main material");
 
             var fallbackRanges = new List<(int Start, int End)> { (rangeStart, rangeEnd) };
             if (layer.Randomize)
             {
-                int splineSeed = settings.RandomSeed ^ splineId;
+                var splineSeed = settings.RandomSeed ^ splineId;
                 fallbackRanges = DecalRoadLayerFilter.ApplyRandomizer(
                     fallbackRanges, csDistances,
                     layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
                     layer.RandomMinGapLength, layer.RandomMaxGapLength,
                     splineSeed);
             }
+
             return Wrap(fallbackRanges, mainMaterial, mainWidth, mainTextureLength);
         }
 
         var replacementMaterial = layer.CurveReplacementMaterial;
         var replacementWidth = layer.CurveReplacementWidth > 0 ? layer.CurveReplacementWidth : mainWidth;
-        var replacementTextureLength = layer.CurveReplacementTextureLength > 0 ? layer.CurveReplacementTextureLength : mainTextureLength;
+        var replacementTextureLength = layer.CurveReplacementTextureLength > 0
+            ? layer.CurveReplacementTextureLength
+            : mainTextureLength;
 
         // Curve segments: replacement values, never randomized
         var curveSegments = Wrap(curveRanges, replacementMaterial, replacementWidth, replacementTextureLength);
@@ -479,13 +524,14 @@ public class DecalRoadGenerator
         var straightRanges = DecalRoadLayerFilter.InvertRanges(curveRanges, rangeStart, rangeEnd);
         if (layer.Randomize && straightRanges.Count > 0)
         {
-            int splineSeed = settings.RandomSeed ^ splineId;
+            var splineSeed = settings.RandomSeed ^ splineId;
             straightRanges = DecalRoadLayerFilter.ApplyRandomizer(
                 straightRanges, csDistances,
                 layer.RandomMinPatchLength, layer.RandomMaxPatchLength,
                 layer.RandomMinGapLength, layer.RandomMaxGapLength,
                 splineSeed);
         }
+
         var straightSegments = Wrap(straightRanges, mainMaterial, mainWidth, mainTextureLength);
 
         // Merge and sort by Start
@@ -498,9 +544,9 @@ public class DecalRoadGenerator
     }
 
     /// <summary>
-    /// Sub-samples cross-sections at the desired node spacing interval.
-    /// Matches MasterSplineExporter.SampleNodesFromUnifiedCrossSections step logic.
-    /// Always includes first and last cross-sections.
+    ///     Sub-samples cross-sections at the desired node spacing interval.
+    ///     Matches MasterSplineExporter.SampleNodesFromUnifiedCrossSections step logic.
+    ///     Always includes first and last cross-sections.
     /// </summary>
     internal static List<UnifiedCrossSection> SubSampleCrossSections(
         IReadOnlyList<UnifiedCrossSection> crossSections,
@@ -511,14 +557,14 @@ public class DecalRoadGenerator
 
         // Estimate total path length from cross-section positions
         float totalLength = 0;
-        for (int i = 1; i < crossSections.Count; i++)
+        for (var i = 1; i < crossSections.Count; i++)
             totalLength += Vector2.Distance(crossSections[i - 1].CenterPoint, crossSections[i].CenterPoint);
 
         var nodeCount = Math.Max(2, (int)Math.Ceiling(totalLength / nodeSpacingMeters) + 1);
         var step = Math.Max(1, crossSections.Count / nodeCount);
 
         var sampled = new List<UnifiedCrossSection>();
-        for (int i = 0; i < crossSections.Count; i += step)
+        for (var i = 0; i < crossSections.Count; i += step)
             sampled.Add(crossSections[i]);
 
         // Always include the last cross-section
@@ -529,24 +575,24 @@ public class DecalRoadGenerator
     }
 
     /// <summary>
-    /// Calculates lane boundary positions as normalized values in [-1, +1].
-    /// For N lanes, returns N-1 boundary positions.
+    ///     Calculates lane boundary positions as normalized values in [-1, +1].
+    ///     For N lanes, returns N-1 boundary positions.
     /// </summary>
     public static float[] CalculateLaneBoundaryPositions(int laneCount)
     {
         if (laneCount <= 1) return [];
 
         var positions = new float[laneCount - 1];
-        for (int i = 1; i < laneCount; i++)
+        for (var i = 1; i < laneCount; i++)
             positions[i - 1] = -1.0f + 2.0f * i / laneCount;
 
         return positions;
     }
 
     /// <summary>
-    /// Calculates the normalized position [-1, +1] of the direction boundary
-    /// (where opposing traffic meets) from OsmLaneInfo.
-    /// The boundary sits after LanesBackward lanes from the left edge.
+    ///     Calculates the normalized position [-1, +1] of the direction boundary
+    ///     (where opposing traffic meets) from OsmLaneInfo.
+    ///     The boundary sits after LanesBackward lanes from the left edge.
     /// </summary>
     public static float CalculateDirectionBoundaryPosition(OsmLaneInfo info)
     {
@@ -555,9 +601,9 @@ public class DecalRoadGenerator
     }
 
     /// <summary>
-    /// Calculates lane boundary positions excluding the direction boundary.
-    /// Used for IsPerLane layers when TotalLanes >= 3 to avoid overlapping
-    /// with the DirectionDivider layer at the direction boundary.
+    ///     Calculates lane boundary positions excluding the direction boundary.
+    ///     Used for IsPerLane layers when TotalLanes >= 3 to avoid overlapping
+    ///     with the DirectionDivider layer at the direction boundary.
     /// </summary>
     public static float[] CalculateLaneBoundaryPositionsExcludingDirectionBoundary(
         int laneCount, OsmLaneInfo? laneInfo)
@@ -572,54 +618,54 @@ public class DecalRoadGenerator
     }
 
     /// <summary>
-    /// Calculates lane center positions as normalized values in [-1, +1].
-    /// For N lanes, returns N positions (one per lane).
-    /// Matches BeamNG layerMgr.lua tread mark positioning:
-    ///   Left lane i:  ((-i * laneWidth) + laneWidth/2) / halfWidth
-    ///   Right lane i: ((i * laneWidth) - laneWidth/2) / halfWidth
-    /// Simplified: lane center[k] = -1.0 + (2*k + 1) / N  for k in 0..N-1
+    ///     Calculates lane center positions as normalized values in [-1, +1].
+    ///     For N lanes, returns N positions (one per lane).
+    ///     Matches BeamNG layerMgr.lua tread mark positioning:
+    ///     Left lane i:  ((-i * laneWidth) + laneWidth/2) / halfWidth
+    ///     Right lane i: ((i * laneWidth) - laneWidth/2) / halfWidth
+    ///     Simplified: lane center[k] = -1.0 + (2*k + 1) / N  for k in 0..N-1
     /// </summary>
     public static float[] CalculateLaneCenterPositions(int laneCount)
     {
         if (laneCount <= 0) return [];
 
         var positions = new float[laneCount];
-        for (int k = 0; k < laneCount; k++)
+        for (var k = 0; k < laneCount; k++)
             positions[k] = -1.0f + (2 * k + 1.0f) / laneCount;
 
         return positions;
     }
 
     /// <summary>
-    /// Splits a node list into chunks of at most maxNodesPerChunk.
-    /// Adjacent chunks share a boundary node (overlap by 1) to ensure
-    /// seamless spline continuity, matching BeamNG's chunking behavior.
-    /// Avoids tiny last chunks (less than minLastChunkNodes) by redistributing
-    /// nodes evenly — prevents fade values from making short chunks invisible.
+    ///     Splits a node list into chunks of at most maxNodesPerChunk.
+    ///     Adjacent chunks share a boundary node (overlap by 1) to ensure
+    ///     seamless spline continuity, matching BeamNG's chunking behavior.
+    ///     Avoids tiny last chunks (less than minLastChunkNodes) by redistributing
+    ///     nodes evenly — prevents fade values from making short chunks invisible.
     /// </summary>
-    public static List<List<float[]>> ChunkNodes(List<float[]> nodes, int maxNodesPerChunk = 100,
+    public static List<List<float[]>> ChunkNodes(List<float[]> nodes, int maxNodesPerChunk = 80,
         int minLastChunkNodes = 20)
     {
         if (nodes.Count <= maxNodesPerChunk)
             return [nodes];
 
         // Calculate how many chunks we need, accounting for overlap of 1
-        int stride = maxNodesPerChunk - 1;
-        int naiveChunkCount = (int)Math.Ceiling((double)(nodes.Count - 1) / stride);
+        var stride = maxNodesPerChunk - 1;
+        var naiveChunkCount = (int)Math.Ceiling((double)(nodes.Count - 1) / stride);
 
         // Check if the last chunk would be too small
-        int lastChunkSize = nodes.Count - (naiveChunkCount - 1) * stride;
+        var lastChunkSize = nodes.Count - (naiveChunkCount - 1) * stride;
         if (lastChunkSize < minLastChunkNodes && naiveChunkCount > 1)
         {
             // Redistribute: use equal-sized chunks that all fit within maxNodesPerChunk
             // Each chunk overlaps by 1, so total coverage = sum(chunkSize - 1) + 1 = nodes.Count
             // With N chunks: N * (chunkSize - 1) + 1 = nodes.Count
             // chunkSize = ceil((nodes.Count - 1) / N) + 1
-            int chunkSize = (int)Math.Ceiling((double)(nodes.Count - 1) / naiveChunkCount) + 1;
+            var chunkSize = (int)Math.Ceiling((double)(nodes.Count - 1) / naiveChunkCount) + 1;
             chunkSize = Math.Min(chunkSize, maxNodesPerChunk);
 
             var chunks = new List<List<float[]>>();
-            int i = 0;
+            var i = 0;
             while (i < nodes.Count)
             {
                 var count = Math.Min(chunkSize, nodes.Count - i);
@@ -627,28 +673,30 @@ public class DecalRoadGenerator
                 i += count - 1; // overlap by 1
                 if (i >= nodes.Count - 1) break;
             }
+
             return chunks;
         }
 
         // Standard chunking — last chunk is large enough
         {
             var chunks = new List<List<float[]>>();
-            int i = 0;
+            var i = 0;
             while (i < nodes.Count)
             {
                 var count = Math.Min(maxNodesPerChunk, nodes.Count - i);
                 chunks.Add(nodes.GetRange(i, count));
                 i += maxNodesPerChunk - 1;
             }
+
             return chunks;
         }
     }
 
     /// <summary>
-    /// Expands layers by mirroring and per-lane replication.
-    /// Returns tuples of (layer, normalizedPosition, sideLabel, laneIndex, isFlipped).
-    /// When IsFlipped is true, nodes must be reversed to flip texture UV along the spline,
-    /// matching BeamNG's layerMgr.lua isFlip behavior for right-side mirrored layers.
+    ///     Expands layers by mirroring and per-lane replication.
+    ///     Returns tuples of (layer, normalizedPosition, sideLabel, laneIndex, isFlipped).
+    ///     When IsFlipped is true, nodes must be reversed to flip texture UV along the spline,
+    ///     matching BeamNG's layerMgr.lua isFlip behavior for right-side mirrored layers.
     /// </summary>
     internal static List<(DecalRoadLayerDefinition Layer, float Position, string Side, int LaneIndex, bool IsFlipped)>
         ExpandLayers(IReadOnlyList<DecalRoadLayerDefinition> layers, int laneCount)
@@ -656,7 +704,6 @@ public class DecalRoadGenerator
         var expanded = new List<(DecalRoadLayerDefinition, float, string, int, bool)>();
 
         foreach (var layer in layers)
-        {
             if (layer.LayerType == DecalRoadLayerType.DirectionDivider)
             {
                 // DirectionDivider only for multi-lane roads (>= 3 lanes) with lane markings enabled.
@@ -675,7 +722,7 @@ public class DecalRoadGenerator
                 // isFlip = false for all (tire tracks are symmetric).
                 var centers = CalculateLaneCenterPositions(laneCount);
                 int leftNum = 0, rightNum = 0;
-                for (int i = 0; i < centers.Length; i++)
+                for (var i = 0; i < centers.Length; i++)
                 {
                     string side;
                     if (centers[i] < -0.01f)
@@ -691,10 +738,7 @@ public class DecalRoadGenerator
             {
                 // Replicate at each lane boundary
                 var boundaries = CalculateLaneBoundaryPositions(laneCount);
-                for (int i = 0; i < boundaries.Length; i++)
-                {
-                    expanded.Add((layer, boundaries[i], $"C{i + 1}", i, false));
-                }
+                for (var i = 0; i < boundaries.Length; i++) expanded.Add((layer, boundaries[i], $"C{i + 1}", i, false));
             }
             else if (layer.IsMirrored)
             {
@@ -708,16 +752,15 @@ public class DecalRoadGenerator
                 var side = layer.Position < -0.01f ? "L" : layer.Position > 0.01f ? "R" : "C";
                 expanded.Add((layer, layer.Position, side, 0, false));
             }
-        }
 
         return expanded;
     }
 
     /// <summary>
-    /// Expands layers with lane-info awareness:
-    /// - DirectionDivider: positioned at the direction boundary, suppressed when TotalLanes &lt;= 2
-    /// - IsPerLane: skips the direction boundary position when TotalLanes &gt;= 3
-    /// Falls back to standard ExpandLayers when laneInfo is null.
+    ///     Expands layers with lane-info awareness:
+    ///     - DirectionDivider: positioned at the direction boundary, suppressed when TotalLanes &lt;= 2
+    ///     - IsPerLane: skips the direction boundary position when TotalLanes &gt;= 3
+    ///     Falls back to standard ExpandLayers when laneInfo is null.
     /// </summary>
     internal static List<(DecalRoadLayerDefinition Layer, float Position, string Side, int LaneIndex, bool IsFlipped)>
         ExpandLayersWithLaneInfo(IReadOnlyList<DecalRoadLayerDefinition> layers, int laneCount, OsmLaneInfo? laneInfo)
@@ -728,7 +771,6 @@ public class DecalRoadGenerator
         var expanded = new List<(DecalRoadLayerDefinition, float, string, int, bool)>();
 
         foreach (var layer in layers)
-        {
             if (layer.LayerType == DecalRoadLayerType.DirectionDivider)
             {
                 // DirectionDivider only renders when TotalLanes >= 3 and lane markings are present and enabled.
@@ -750,7 +792,7 @@ public class DecalRoadGenerator
                 // Per-lane tread marks: one DecalRoad per lane, centered in each lane.
                 var centers = CalculateLaneCenterPositions(laneCount);
                 int leftNum = 0, rightNum = 0;
-                for (int i = 0; i < centers.Length; i++)
+                for (var i = 0; i < centers.Length; i++)
                 {
                     string side;
                     if (centers[i] < -0.01f)
@@ -768,10 +810,7 @@ public class DecalRoadGenerator
                 var boundaries = laneInfo.TotalLanes >= 3 && !laneInfo.IsOneWay
                     ? CalculateLaneBoundaryPositionsExcludingDirectionBoundary(laneCount, laneInfo)
                     : CalculateLaneBoundaryPositions(laneCount);
-                for (int i = 0; i < boundaries.Length; i++)
-                {
-                    expanded.Add((layer, boundaries[i], $"C{i + 1}", i, false));
-                }
+                for (var i = 0; i < boundaries.Length; i++) expanded.Add((layer, boundaries[i], $"C{i + 1}", i, false));
             }
             else if (layer.IsMirrored)
             {
@@ -783,71 +822,15 @@ public class DecalRoadGenerator
                 var side = layer.Position < -0.01f ? "L" : layer.Position > 0.01f ? "R" : "C";
                 expanded.Add((layer, layer.Position, side, 0, false));
             }
-        }
 
         return expanded;
     }
 
     /// <summary>
-    /// Builds continuous segments by suppressing nodes that fall inside another road's corridor.
-    /// Each node's actual 2D position (after lateral offset) is checked — this naturally
-    /// handles side-specific suppression without L/R classification.
-    /// </summary>
-    private static List<List<(Vector2 Pos, int SectionIndex)>> BuildSegmentsWithCorridorCheck(
-        IReadOnlyList<Vector2> offsetNodes,
-        int ownSplineId,
-        IReadOnlyDictionary<int, RoadCorridor> corridors,
-        IReadOnlyList<JunctionInfluenceZone> junctionZones,
-        DecalRoadLayerType layerType,
-        IReadOnlyDictionary<int, HashSet<int>>? continuityLookup,
-        int minSegmentNodes = 3)
-    {
-        var segments = new List<List<(Vector2, int)>>();
-        var current = new List<(Vector2, int)>();
-
-        // Phase 2: check if this spline is continuous somewhere
-        HashSet<int>? terminatorsWeCanIgnore = null;
-        if (layerType == DecalRoadLayerType.DirectionDivider && continuityLookup != null)
-            continuityLookup.TryGetValue(ownSplineId, out terminatorsWeCanIgnore);
-
-        for (int i = 0; i < offsetNodes.Count; i++)
-        {
-            var result = RoadCorridorOverlapChecker.CheckWithJunctionFilter(
-                offsetNodes[i], ownSplineId, corridors, junctionZones);
-
-            bool suppress = result.IsOverlapping;
-
-            // Phase 2: Continuous road centerline preservation
-            if (suppress && terminatorsWeCanIgnore != null &&
-                result.OverlappingSplineId.HasValue &&
-                terminatorsWeCanIgnore.Contains(result.OverlappingSplineId.Value))
-            {
-                suppress = false; // This spline is continuous, overlapping road terminates here
-            }
-
-            if (suppress)
-            {
-                if (current.Count >= minSegmentNodes)
-                    segments.Add(current);
-                current = [];
-            }
-            else
-            {
-                current.Add((offsetNodes[i], i));
-            }
-        }
-
-        if (current.Count >= minSegmentNodes)
-            segments.Add(current);
-
-        return segments;
-    }
-
-    /// <summary>
-    /// For Phase 2: lookup of which splines are continuous at which junctions.
-    /// Key = splineId, Value = set of splineIds that terminate at junctions where key is continuous.
-    /// If spline A is continuous at a junction where spline B terminates,
-    /// then ContinuityLookup[A] contains B.
+    ///     For Phase 2: lookup of which splines are continuous at which junctions.
+    ///     Key = splineId, Value = set of splineIds that terminate at junctions where key is continuous.
+    ///     If spline A is continuous at a junction where spline B terminates,
+    ///     then ContinuityLookup[A] contains B.
     /// </summary>
     private static Dictionary<int, HashSet<int>> BuildContinuityLookup(
         IReadOnlyList<NetworkJunction> junctions)
@@ -858,6 +841,10 @@ public class DecalRoadGenerator
         {
             if (junction.IsExcluded) continue;
             if (junction.Type == JunctionType.Endpoint) continue;
+
+            // Roundabout rings should NOT get continuity exemptions.
+            // Their markings should be suppressed where connecting roads' corridors overlap.
+            if (junction.Type == JunctionType.Roundabout) continue;
 
             var continuousIds = junction.GetContinuousRoads()
                 .Select(c => c.Spline.SplineId).ToHashSet();
@@ -872,6 +859,7 @@ public class DecalRoadGenerator
                     set = [];
                     lookup[contId] = set;
                 }
+
                 foreach (var termId in terminatingIds)
                     set.Add(termId);
             }
@@ -879,6 +867,7 @@ public class DecalRoadGenerator
 
         return lookup;
     }
+
 
     private static int GetLaneCount(ParameterizedRoadSpline spline, DecalRoadLayerSet layerSet)
     {
@@ -890,25 +879,23 @@ public class DecalRoadGenerator
     }
 
     /// <summary>
-    /// Returns the OsmLaneInfo active at the given distance along the spline.
-    /// Segments are assumed sorted ascending by StartDistance.
+    ///     Returns the OsmLaneInfo active at the given distance along the spline.
+    ///     Segments are assumed sorted ascending by StartDistance.
     /// </summary>
     public static OsmLaneInfo ResolveLaneInfo(
         IReadOnlyList<LaneSegment> segments, float distance)
     {
         // Walk backwards from end to find the last segment with StartDistance <= distance
-        for (int i = segments.Count - 1; i >= 0; i--)
-        {
+        for (var i = segments.Count - 1; i >= 0; i--)
             if (segments[i].StartDistance <= distance)
                 return segments[i].LaneInfo;
-        }
         return segments[0].LaneInfo;
     }
 
     /// <summary>
-    /// Derives BeamNG AI road properties from OsmLaneInfo.
-    /// lanesRight = forward direction, lanesLeft = backward direction.
-    /// LanesBothWays added to forward for AI pathfinding purposes.
+    ///     Derives BeamNG AI road properties from OsmLaneInfo.
+    ///     lanesRight = forward direction, lanesLeft = backward direction.
+    ///     LanesBothWays added to forward for AI pathfinding purposes.
     /// </summary>
     public static (int LanesRight, int LanesLeft, bool OneWay, bool FlipDirection)
         DeriveAIRoadProperties(OsmLaneInfo info)
@@ -922,8 +909,8 @@ public class DecalRoadGenerator
     }
 
     /// <summary>
-    /// Returns cross-section indices where lane configuration changes.
-    /// Used to split lane-dependent layers at lane-change boundaries.
+    ///     Returns cross-section indices where lane configuration changes.
+    ///     Used to split lane-dependent layers at lane-change boundaries.
     /// </summary>
     public static List<int> FindLaneChangeBoundaryIndices(
         IReadOnlyList<LaneSegment>? segments,
@@ -934,13 +921,13 @@ public class DecalRoadGenerator
 
         var boundaries = new List<int>();
         // For each segment boundary (skip first), find the nearest cross-section
-        for (int s = 1; s < segments.Count; s++)
+        for (var s = 1; s < segments.Count; s++)
         {
             var boundaryDist = segments[s].StartDistance;
             // Linear scan for nearest cross-section
-            int bestIdx = 0;
-            float bestDelta = float.MaxValue;
-            for (int i = 0; i < crossSectionDistances.Count; i++)
+            var bestIdx = 0;
+            var bestDelta = float.MaxValue;
+            for (var i = 0; i < crossSectionDistances.Count; i++)
             {
                 var delta = MathF.Abs(crossSectionDistances[i] - boundaryDist);
                 if (delta < bestDelta)
@@ -949,12 +936,11 @@ public class DecalRoadGenerator
                     bestIdx = i;
                 }
             }
+
             // Avoid duplicate boundaries and out-of-range
             if (bestIdx > 0 && bestIdx < crossSectionDistances.Count - 1)
-            {
                 if (boundaries.Count == 0 || boundaries[^1] != bestIdx)
                     boundaries.Add(bestIdx);
-            }
         }
 
         return boundaries;
@@ -976,4 +962,17 @@ public class DecalRoadGenerator
         pixelY = Math.Clamp(pixelY, 0, size - 1);
         return heightMap[pixelY, pixelX]; // [y, x] row-major
     }
+
+    /// <summary>
+    ///     A filtered sub-range tagged with material/width/textureLength overrides.
+    ///     For None/CurveOnly: uses the layer's own values.
+    ///     For ReplaceInCurve: straight segments use main values, curve segments use replacement values.
+    /// </summary>
+    internal record struct GenerationSegment(
+        int Start,
+        int End,
+        string Material,
+        float Width,
+        float TextureLength
+    );
 }

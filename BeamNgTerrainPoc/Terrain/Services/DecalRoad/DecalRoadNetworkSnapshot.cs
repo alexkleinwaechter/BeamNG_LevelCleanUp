@@ -10,7 +10,7 @@ namespace BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 /// </summary>
 public class DecalRoadNetworkSnapshot
 {
-    public const int FormatVersion = 1;
+    public const int FormatVersion = 2;
     public const string FileName = "network.bin";
     public const string SubFolder = "decalroad_data";
 
@@ -82,6 +82,7 @@ public class SplineSnapshot
     public Vector2 StartPoint { get; set; }
     public Vector2 EndPoint { get; set; }
     public float TotalLengthMeters { get; set; }
+    public bool IsRoundabout { get; set; }
     public List<LaneSegmentSnapshot>? LaneSegments { get; set; }
 
     public void WriteTo(BinaryWriter w)
@@ -101,6 +102,7 @@ public class SplineSnapshot
         w.Write(StartPoint.X); w.Write(StartPoint.Y);
         w.Write(EndPoint.X); w.Write(EndPoint.Y);
         w.Write(TotalLengthMeters);
+        w.Write(IsRoundabout);
 
         var hasLaneSegments = LaneSegments != null;
         w.Write(hasLaneSegments);
@@ -130,6 +132,7 @@ public class SplineSnapshot
         s.StartPoint = new Vector2(r.ReadSingle(), r.ReadSingle());
         s.EndPoint = new Vector2(r.ReadSingle(), r.ReadSingle());
         s.TotalLengthMeters = r.ReadSingle();
+        s.IsRoundabout = r.ReadBoolean();
 
         if (r.ReadBoolean())
         {

@@ -110,6 +110,7 @@ public static class DecalRoadNetworkSnapshotLoader
                 IsBridge = ss.IsBridge,
                 IsTunnel = ss.IsTunnel
             };
+            spline.IsRoundabout = ss.IsRoundabout;
             spline.Priority = ss.Priority;
 
             network.AddSpline(spline);

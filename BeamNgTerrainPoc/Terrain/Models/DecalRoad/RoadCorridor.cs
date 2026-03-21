@@ -23,4 +23,10 @@ public class RoadCorridor
     public required float RoadWidth { get; init; }
     public required float CorridorHalfWidth { get; init; }
     public required List<CorridorSection> Sections { get; init; }
+
+    /// <summary>
+    /// Whether this corridor forms a closed loop (e.g., roundabout ring).
+    /// When true, the overlap checker bridges the gap between the last and first sections.
+    /// </summary>
+    public bool IsClosedLoop { get; init; }
 }

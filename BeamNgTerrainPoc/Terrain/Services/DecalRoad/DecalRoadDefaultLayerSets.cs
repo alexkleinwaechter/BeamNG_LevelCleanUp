@@ -38,7 +38,8 @@ public static class DecalRoadDefaultLayerSets
             ["unclassified"] = CreateAsphaltRoadSet("Unclassified", 2),
             ["residential"] = CreateAsphaltRoadSet("Residential", 2),
             ["service"] = CreateAsphaltRoadSet("Service", 2),
-            ["track"] = CreateTrackSet("Track", 2)
+            ["track"] = CreateTrackSet("Track", 2),
+            ["roundabout"] = CreateRoundaboutSet("Roundabout", 1)
         };
     }
 
@@ -54,7 +55,7 @@ public static class DecalRoadDefaultLayerSets
             {
                 Name = "EdgeLine", LayerType = DecalRoadLayerType.EdgeLine,
                 Material = "m_line_white", Width = 0.25f, Position = 1.0f,
-                TextureLength = 10.0f, RenderPriority = 6,
+                TextureLength = 10.0f, RenderPriority = 10,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsMirrored = true, InterruptAtJunctions = true,
                 ImprovedSpline = true, Detail = 0.1f, Smoothness = 0.5f
@@ -63,7 +64,7 @@ public static class DecalRoadDefaultLayerSets
             {
                 Name = "DirectionDivider", LayerType = DecalRoadLayerType.DirectionDivider,
                 Material = "m_line_yellow_double", Width = 0.25f, Position = 0.0f,
-                TextureLength = 10.0f, RenderPriority = 6,
+                TextureLength = 10.0f, RenderPriority = 10,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 InterruptAtJunctions = true,
                 ImprovedSpline = true, Detail = 0.1f, Smoothness = 0.5f
@@ -72,7 +73,7 @@ public static class DecalRoadDefaultLayerSets
             {
                 Name = "LaneMarking", LayerType = DecalRoadLayerType.LaneMarking,
                 Material = "m_line_white_discontinue", Width = 0.2f,
-                TextureLength = 5.0f, RenderPriority = 6,
+                TextureLength = 5.0f, RenderPriority = 10,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsPerLane = true, InterruptAtJunctions = true,
                 CurveConstraint = CurveConstraintMode.ReplaceInCurve,
@@ -210,6 +211,107 @@ public static class DecalRoadDefaultLayerSets
             }
         };
         return new DecalRoadLayerSet { Name = name, DefaultLaneCount = lanes, Layers = layers };
+    }
+
+    private static DecalRoadLayerSet CreateRoundaboutSet(string name, int lanes)
+    {
+        var layers = new List<DecalRoadLayerDefinition>
+        {
+            new()
+            {
+                Name = "EdgeLine", LayerType = DecalRoadLayerType.EdgeLine,
+                Material = "m_line_white", Width = 0.25f, Position = 1.0f,
+                TextureLength = 10.0f, RenderPriority = 6,
+                FadeIn = 1.0f, FadeOut = 1.0f,
+                IsMirrored = true, InterruptAtJunctions = true,
+                ImprovedSpline = true, Detail = 0.1f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "EdgeBlend1", LayerType = DecalRoadLayerType.EdgeBlend,
+                Material = "m_road_asphalt_edge", Width = 1.0f, Position = 1.1f,
+                TextureLength = 10.0f, RenderPriority = 7,
+                FadeIn = 1.0f, FadeOut = 1.0f,
+                IsMirrored = true, InterruptAtJunctions = true,
+                ImprovedSpline = true, Detail = 0.2f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "EdgeBlend2", LayerType = DecalRoadLayerType.EdgeBlend,
+                Material = "m_road_edge_dirt", Width = 2.0f, Position = 1.25f,
+                TextureLength = 10.0f, RenderPriority = 8,
+                FadeIn = 1.0f, FadeOut = 1.0f,
+                IsMirrored = true, InterruptAtJunctions = true,
+                ImprovedSpline = true, Detail = 0.2f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "LightTreadMarks", LayerType = DecalRoadLayerType.TreadMarks,
+                Material = "m_tread_marks_clean", IsLaneWidth = true,
+                TextureLength = 5.0f, RenderPriority = 15,
+                FadeIn = 5.0f, FadeOut = 5.0f,
+                InterruptAtJunctions = false,
+                ImprovedSpline = true, Detail = 0.2f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "HeavyTreadMarks", LayerType = DecalRoadLayerType.TreadMarks,
+                Material = "road_rubber_double", IsLaneWidth = true,
+                TextureLength = 5.0f, RenderPriority = 15,
+                FadeIn = 10.0f, FadeOut = 10.0f,
+                InterruptAtJunctions = false,
+                CurveConstraint = CurveConstraintMode.CurveOnly, CurveMinCurvature = 0.05f,
+                CurveTransitionLength = 20,
+                ImprovedSpline = true, Detail = 0.2f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "Wear1", LayerType = DecalRoadLayerType.TreadMarks,
+                Material = "m_asphalt_damaged_01", IsLaneWidth = true,
+                TextureLength = 10.0f, RenderPriority = 20,
+                FadeIn = 5.0f, FadeOut = 5.0f,
+                InterruptAtJunctions = false,
+                ImprovedSpline = true, Detail = 0.2f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "Heavy wear in tighter curves", LayerType = DecalRoadLayerType.TreadMarks,
+                Material = "road_rubber_double", Width = 0, IsLaneWidth = true,
+                TextureLength = 25.0f, RenderPriority = 10,
+                FadeIn = 20.0f, FadeOut = 20.0f,
+                InterruptAtJunctions = false,
+                CurveConstraint = CurveConstraintMode.CurveOnly, CurveMinCurvature = 0.07f,
+                CurveTransitionLength = 15.0f,
+                ImprovedSpline = true, Detail = 0.2f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "Patches", LayerType = DecalRoadLayerType.TreadMarks,
+                Material = "road_patches1", IsLaneWidth = true,
+                TextureLength = 45.0f, RenderPriority = 11,
+                FadeIn = 10.0f, FadeOut = 10.0f,
+                InterruptAtJunctions = false,
+                Randomize = true, RandomMinPatchLength = 50.0f, RandomMaxPatchLength = 250.0f,
+                RandomMinGapLength = 200.0f, RandomMaxGapLength = 500.0f,
+                ImprovedSpline = true, Detail = 0.2f, Smoothness = 0.5f
+            },
+            new()
+            {
+                Name = "AIRoad", LayerType = DecalRoadLayerType.AIRoad,
+                Material = "road_invisible", Width = 0, Position = 0.0f,
+                IsTrackWidth = true, RenderPriority = 1,
+                FadeIn = 1.0f, FadeOut = 1.0f,
+                InterruptAtJunctions = false,
+                Drivability = 1.0f, LanesLeft = 0, LanesRight = lanes,
+                OneWay = true,
+                ImprovedSpline = false, Detail = 0.1f, Smoothness = 0.5f
+            }
+        };
+
+        return new DecalRoadLayerSet
+        {
+            Name = name, DefaultLaneCount = lanes, Layers = layers
+        };
     }
 
     private static DecalRoadLayerSet CreateTrackSet(string name, int lanes)

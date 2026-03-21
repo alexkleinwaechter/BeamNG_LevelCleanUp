@@ -28,8 +28,19 @@ public static class RoadCorridorBuilder
             if (spline.IsBridge || spline.IsTunnel)
                 continue;
 
-            var layerSet = DecalRoadLayerSetResolver.Resolve(
-                spline.OsmRoadType, spline.MaterialName, settings, appDataDefaults);
+            DecalRoadLayerSet? layerSet;
+            if (spline.IsRoundabout)
+            {
+                layerSet = DecalRoadLayerSetResolver.Resolve(
+                    "roundabout", spline.MaterialName, settings, appDataDefaults);
+                layerSet ??= DecalRoadLayerSetResolver.Resolve(
+                    spline.OsmRoadType, spline.MaterialName, settings, appDataDefaults);
+            }
+            else
+            {
+                layerSet = DecalRoadLayerSetResolver.Resolve(
+                    spline.OsmRoadType, spline.MaterialName, settings, appDataDefaults);
+            }
             if (layerSet == null || !layerSet.IsEnabled)
                 continue;
 
@@ -55,7 +66,8 @@ public static class RoadCorridorBuilder
                 SplineId = spline.SplineId,
                 RoadWidth = roadWidth,
                 CorridorHalfWidth = corridorHalfWidth,
-                Sections = sections
+                Sections = sections,
+                IsClosedLoop = spline.IsRoundabout
             };
         }
 

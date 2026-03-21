@@ -30,6 +30,12 @@ public class GeneratedDecalRoad
     public bool FlipDirection { get; set; }
     public bool GatedRoad { get; set; }
 
+    // Post-processor metadata
+    public int SplineId { get; init; }
+    public bool InterruptAtJunctions { get; init; }
+    public bool IsRoundaboutRoad { get; init; }
+    public bool PreserveContinuity { get; init; }
+
     // Rendering
     public bool OverObjects { get; init; }
 
