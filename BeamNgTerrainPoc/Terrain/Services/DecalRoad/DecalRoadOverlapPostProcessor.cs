@@ -31,9 +31,9 @@ public static class DecalRoadOverlapPostProcessor
 
         foreach (var road in allRoads)
         {
-            if (road.IsAIRoad || !road.InterruptAtJunctions)
+            if (road.IsAIRoad || road.JunctionConstraint == JunctionConstraintMode.None)
             {
-                // AI roads and non-interruptable roads pass through unchanged
+                // AI roads and non-constrained roads pass through unchanged
                 results.Add(road);
             }
             else if (road.IsRoundaboutRoad)
@@ -58,8 +58,9 @@ public static class DecalRoadOverlapPostProcessor
     }
 
     /// <summary>
-    /// Splits an open-ended interruptable road at overlap boundaries.
-    /// Contiguous runs of non-overlapping nodes with >= 3 nodes become fragments.
+    /// Splits an open-ended constrained road at overlap boundaries.
+    /// Interrupt mode: keeps only non-overlapping runs.
+    /// Replace mode: also emits overlapping runs with replacement material.
     /// </summary>
     private static List<GeneratedDecalRoad> SplitOpenRoad(
         GeneratedDecalRoad road,
@@ -69,23 +70,49 @@ public static class DecalRoadOverlapPostProcessor
         var nodes = road.Nodes;
         var isOverlapping = ComputeOverlapMask(road, index, continuityLookup);
 
-        // Collect contiguous runs of non-overlapping nodes
+        // If nothing overlaps, return original unchanged
+        if (!isOverlapping.Any(x => x))
+            return [road];
+
+        // Interrupt mode: only keep non-overlapping runs (existing behavior)
+        if (road.JunctionConstraint == JunctionConstraintMode.Interrupt)
+            return BuildFragments(road, nodes, isOverlapping, keepOverlapping: false);
+
+        // Replace mode: emit fragments for BOTH non-overlapping (original)
+        // and overlapping (replacement material) runs.
+        // If replacement material is empty, fall back to Interrupt behavior.
+        if (string.IsNullOrEmpty(road.JunctionReplacementMaterial))
+            return BuildFragments(road, nodes, isOverlapping, keepOverlapping: false);
+
+        var results = new List<GeneratedDecalRoad>();
+        results.AddRange(BuildFragments(road, nodes, isOverlapping, keepOverlapping: false));
+        results.AddRange(BuildReplacementFragments(road, nodes, isOverlapping));
+        return results;
+    }
+
+    /// <summary>
+    /// Builds road fragments from contiguous runs of nodes matching the desired overlap state.
+    /// When keepOverlapping=false, collects non-overlapping runs (original material).
+    /// When keepOverlapping=true, collects overlapping runs.
+    /// </summary>
+    private static List<GeneratedDecalRoad> BuildFragments(
+        GeneratedDecalRoad road, List<float[]> nodes, bool[] isOverlapping,
+        bool keepOverlapping)
+    {
         var fragments = new List<GeneratedDecalRoad>();
         int segIndex = 0;
         int i = 0;
 
         while (i < nodes.Count)
         {
-            // Skip overlapping nodes
-            if (isOverlapping[i])
+            if (isOverlapping[i] != keepOverlapping)
             {
                 i++;
                 continue;
             }
 
-            // Start of a non-overlapping run
             int start = i;
-            while (i < nodes.Count && !isOverlapping[i])
+            while (i < nodes.Count && isOverlapping[i] == keepOverlapping)
                 i++;
 
             int runLength = i - start;
@@ -110,7 +137,10 @@ public static class DecalRoadOverlapPostProcessor
                 Drivability = road.Drivability,
                 Nodes = fragmentNodes,
                 SplineId = road.SplineId,
-                InterruptAtJunctions = road.InterruptAtJunctions,
+                JunctionConstraint = road.JunctionConstraint,
+                JunctionReplacementMaterial = road.JunctionReplacementMaterial,
+                JunctionReplacementWidth = road.JunctionReplacementWidth,
+                JunctionReplacementTextureLength = road.JunctionReplacementTextureLength,
                 IsRoundaboutRoad = road.IsRoundaboutRoad,
                 PreserveContinuity = road.PreserveContinuity,
                 OverObjects = road.OverObjects,
@@ -121,12 +151,80 @@ public static class DecalRoadOverlapPostProcessor
             segIndex++;
         }
 
-        // If no splits needed, return original
-        return fragments.Count == 0
-            ? []
-            : fragments.Count == 1 && fragments[0].Nodes.Count == nodes.Count
-                ? [road]
-                : fragments;
+        return fragments;
+    }
+
+    /// <summary>
+    /// Builds replacement-material fragments from contiguous overlapping runs.
+    /// Uses the road's JunctionReplacement* values for material, width, and textureLength.
+    /// Only emits fragments for INTERIOR overlapping runs (non-overlapping nodes on both sides).
+    /// Runs touching the start or end of the road are terminating roads entering/exiting the
+    /// junction — those are still fully interrupted (discarded), not replaced.
+    /// </summary>
+    private static List<GeneratedDecalRoad> BuildReplacementFragments(
+        GeneratedDecalRoad road, List<float[]> nodes, bool[] isOverlapping)
+    {
+        var fragments = new List<GeneratedDecalRoad>();
+        int segIndex = 0;
+        int i = 0;
+
+        // Resolve replacement values (0 = keep original)
+        var replWidth = road.JunctionReplacementWidth > 0
+            ? road.JunctionReplacementWidth
+            : nodes[0][3]; // use first node's width as fallback
+
+        while (i < nodes.Count)
+        {
+            if (!isOverlapping[i])
+            {
+                i++;
+                continue;
+            }
+
+            int start = i;
+            while (i < nodes.Count && isOverlapping[i])
+                i++;
+
+            int runLength = i - start;
+            if (runLength < 3) continue;
+
+            // Skip runs at the start or end of the road — these are terminating roads
+            // entering/exiting the junction. Only interior overlapping runs (through-roads
+            // passing through the junction) get replacement material.
+            if (start == 0 || i == nodes.Count) continue;
+
+            // Clone nodes with replacement width
+            var fragmentNodes = new List<float[]>(runLength);
+            for (int n = start; n < start + runLength; n++)
+            {
+                var orig = nodes[n];
+                fragmentNodes.Add([orig[0], orig[1], orig[2], replWidth]);
+            }
+
+            fragments.Add(new GeneratedDecalRoad
+            {
+                Name = $"{road.Name}_jrepl{segIndex}",
+                ParentGroupName = road.ParentGroupName,
+                Material = road.JunctionReplacementMaterial,
+                TextureLength = road.JunctionReplacementTextureLength > 0
+                    ? road.JunctionReplacementTextureLength : road.TextureLength,
+                RenderPriority = road.RenderPriority,
+                StartEndFade = [0f, 0f],
+                DistanceFade = road.DistanceFade,
+                Drivability = road.Drivability,
+                Nodes = fragmentNodes,
+                SplineId = road.SplineId,
+                JunctionConstraint = JunctionConstraintMode.None, // replacement fragments are final
+                IsRoundaboutRoad = road.IsRoundaboutRoad,
+                OverObjects = road.OverObjects,
+                ImprovedSpline = road.ImprovedSpline,
+                Smoothness = road.Smoothness,
+                Detail = road.Detail,
+            });
+            segIndex++;
+        }
+
+        return fragments;
     }
 
     /// <summary>
@@ -141,9 +239,14 @@ public static class DecalRoadOverlapPostProcessor
         var nodes = road.Nodes;
         var isOverlapping = ComputeOverlapMask(road, index, continuityLookup);
 
-        // All overlapping → discard
+        // All overlapping → discard (or emit replacement fragments for Replace mode)
         if (isOverlapping.All(x => x))
+        {
+            if (road.JunctionConstraint == JunctionConstraintMode.Replace
+                && !string.IsNullOrEmpty(road.JunctionReplacementMaterial))
+                return BuildReplacementFragments(road, nodes, isOverlapping);
             return [];
+        }
 
         // None overlapping → keep as-is
         if (isOverlapping.All(x => !x))
@@ -192,7 +295,10 @@ public static class DecalRoadOverlapPostProcessor
                 Drivability = road.Drivability,
                 Nodes = runNodes,
                 SplineId = road.SplineId,
-                InterruptAtJunctions = road.InterruptAtJunctions,
+                JunctionConstraint = road.JunctionConstraint,
+                JunctionReplacementMaterial = road.JunctionReplacementMaterial,
+                JunctionReplacementWidth = road.JunctionReplacementWidth,
+                JunctionReplacementTextureLength = road.JunctionReplacementTextureLength,
                 IsRoundaboutRoad = road.IsRoundaboutRoad,
                 PreserveContinuity = road.PreserveContinuity,
                 OverObjects = road.OverObjects,
@@ -202,6 +308,11 @@ public static class DecalRoadOverlapPostProcessor
             });
             segIndex++;
         }
+
+        // For Replace mode, also emit replacement fragments for overlapping runs
+        if (road.JunctionConstraint == JunctionConstraintMode.Replace
+            && !string.IsNullOrEmpty(road.JunctionReplacementMaterial))
+            fragments.AddRange(BuildReplacementFragments(road, nodes, isOverlapping));
 
         return fragments;
     }

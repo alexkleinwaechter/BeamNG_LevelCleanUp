@@ -17,7 +17,23 @@ public class DecalRoadLayerDefinition
     public float FadeIn { get; set; } = 1.0f;
     public float FadeOut { get; set; } = 1.0f;
     public float[] DistanceFade { get; set; } = [1000f, 1500f];
-    public bool InterruptAtJunctions { get; set; } = true;
+    public JunctionConstraintMode JunctionConstraint { get; set; } = JunctionConstraintMode.Interrupt;
+
+    // Junction replacement fields (only used when JunctionConstraint == Replace)
+    public string JunctionReplacementMaterial { get; set; } = string.Empty;
+    public float JunctionReplacementWidth { get; set; }      // 0 = same as main
+    public float JunctionReplacementTextureLength { get; set; } // 0 = same as main
+
+    /// <summary>
+    /// Backwards-compat: deserializes old "interruptAtJunctions" bool from saved JSON.
+    /// Maps true → Interrupt, false → None. New serialization uses JunctionConstraint enum.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonInclude]
+    [System.Text.Json.Serialization.JsonPropertyName("interruptAtJunctions")]
+    public bool InterruptAtJunctionsCompat
+    {
+        set => JunctionConstraint = value ? JunctionConstraintMode.Interrupt : JunctionConstraintMode.None;
+    }
 
     // AI Road properties (only relevant for LayerType == AIRoad)
     public float Drivability { get; set; } = -1.0f; // -1.0 = non-drivable, 1.0 = AI drivable

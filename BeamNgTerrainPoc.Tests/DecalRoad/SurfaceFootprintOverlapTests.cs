@@ -100,7 +100,7 @@ public class SurfaceFootprintOverlapTests
     /// Creates a minimal GeneratedDecalRoad for testing.
     /// </summary>
     private static GeneratedDecalRoad CreateTestRoad(
-        string name, int splineId, bool interruptAtJunctions,
+        string name, int splineId, JunctionConstraintMode junctionConstraint,
         bool isAIRoad = false, bool isRoundaboutRoad = false,
         bool preserveContinuity = false,
         List<float[]>? nodes = null)
@@ -116,7 +116,7 @@ public class SurfaceFootprintOverlapTests
             Material = "test_material",
             Nodes = nodes,
             SplineId = splineId,
-            InterruptAtJunctions = interruptAtJunctions,
+            JunctionConstraint = junctionConstraint,
             IsAIRoad = isAIRoad,
             IsRoundaboutRoad = isRoundaboutRoad,
             PreserveContinuity = preserveContinuity
@@ -126,7 +126,7 @@ public class SurfaceFootprintOverlapTests
     [Fact]
     public void Process_AIRoadsPassThrough()
     {
-        var aiRoad = CreateTestRoad("ai", splineId: 1, interruptAtJunctions: false, isAIRoad: true);
+        var aiRoad = CreateTestRoad("ai", splineId: 1, junctionConstraint: JunctionConstraintMode.None, isAIRoad: true);
         var surfaces = new List<SplineSurfaceData>
         {
             CreateStraightSurface(splineId: 2, roadWidth: 7f)
@@ -142,7 +142,7 @@ public class SurfaceFootprintOverlapTests
     [Fact]
     public void Process_NonInterruptableRoadsPassThrough()
     {
-        var treadMarks = CreateTestRoad("tread", splineId: 1, interruptAtJunctions: false);
+        var treadMarks = CreateTestRoad("tread", splineId: 1, junctionConstraint: JunctionConstraintMode.None);
         var surfaces = new List<SplineSurfaceData>
         {
             CreateStraightSurface(splineId: 2, roadWidth: 7f)
@@ -166,7 +166,7 @@ public class SurfaceFootprintOverlapTests
             .ToList();
 
         var edgeLine = CreateTestRoad("edge", splineId: 2,
-            interruptAtJunctions: true, nodes: edgeLineNodes);
+            junctionConstraint: JunctionConstraintMode.Interrupt, nodes: edgeLineNodes);
 
         var surfaces = new List<SplineSurfaceData>
         {
@@ -189,7 +189,7 @@ public class SurfaceFootprintOverlapTests
     public void Process_InterruptableRoadNotSplitBySameSpline()
     {
         // Edge line and surface belong to the same spline — should NOT be split
-        var edgeLine = CreateTestRoad("edge", splineId: 1, interruptAtJunctions: true);
+        var edgeLine = CreateTestRoad("edge", splineId: 1, junctionConstraint: JunctionConstraintMode.Interrupt);
         var surfaces = new List<SplineSurfaceData>
         {
             CreateStraightSurface(splineId: 1, roadWidth: 10f)

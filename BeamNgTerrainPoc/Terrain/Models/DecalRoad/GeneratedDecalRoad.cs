@@ -32,7 +32,10 @@ public class GeneratedDecalRoad
 
     // Post-processor metadata
     public int SplineId { get; init; }
-    public bool InterruptAtJunctions { get; init; }
+    public JunctionConstraintMode JunctionConstraint { get; init; }
+    public string JunctionReplacementMaterial { get; init; } = string.Empty;
+    public float JunctionReplacementWidth { get; init; }
+    public float JunctionReplacementTextureLength { get; init; }
     public bool IsRoundaboutRoad { get; init; }
     public bool PreserveContinuity { get; init; }
 

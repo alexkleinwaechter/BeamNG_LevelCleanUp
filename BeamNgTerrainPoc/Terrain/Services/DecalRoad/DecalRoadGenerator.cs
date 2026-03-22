@@ -122,7 +122,10 @@ public class DecalRoadGenerator
                     FlipDirection = road.FlipDirection,
                     GatedRoad = road.GatedRoad,
                     SplineId = road.SplineId,
-                    InterruptAtJunctions = road.InterruptAtJunctions,
+                    JunctionConstraint = road.JunctionConstraint,
+                    JunctionReplacementMaterial = road.JunctionReplacementMaterial,
+                    JunctionReplacementWidth = road.JunctionReplacementWidth,
+                    JunctionReplacementTextureLength = road.JunctionReplacementTextureLength,
                     IsRoundaboutRoad = road.IsRoundaboutRoad,
                     PreserveContinuity = road.PreserveContinuity,
                     OverObjects = road.OverObjects,
@@ -393,7 +396,12 @@ public class DecalRoadGenerator
             Detail = layer.Detail,
             Nodes = worldNodes,
             SplineId = spline.SplineId,
-            InterruptAtJunctions = layer.InterruptAtJunctions,
+            JunctionConstraint = layer.JunctionConstraint,
+            JunctionReplacementMaterial = layer.JunctionReplacementMaterial,
+            JunctionReplacementWidth = layer.JunctionReplacementWidth > 0
+                ? layer.JunctionReplacementWidth : (overrideWidth ?? layer.Width),
+            JunctionReplacementTextureLength = layer.JunctionReplacementTextureLength > 0
+                ? layer.JunctionReplacementTextureLength : (overrideTextureLength ?? layer.TextureLength),
             IsRoundaboutRoad = spline.IsRoundabout,
             PreserveContinuity = layer.LayerType == DecalRoadLayerType.DirectionDivider
         };
