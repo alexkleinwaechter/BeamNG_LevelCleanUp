@@ -26,13 +26,6 @@ public partial class TerrainMaterialSettings
     {
         Custom,
 
-        // PNG presets (skeleton extraction from layer masks)
-        PngHighway,
-        PngRuralRoad,
-        PngMountainRoad,
-        PngDirtRoad,
-        PngRacingCircuit,
-
         // OSM presets (pre-built splines from vector data)
         OsmHighway,
         OsmRuralRoad,
@@ -697,12 +690,6 @@ public partial class TerrainMaterialSettings
     {
         return preset switch
         {
-            // PNG presets (skeleton extraction from layer masks)
-            RoadPresetType.PngHighway => RoadSmoothingPresets.PngHighway,
-            RoadPresetType.PngRuralRoad => RoadSmoothingPresets.PngRuralRoad,
-            RoadPresetType.PngMountainRoad => RoadSmoothingPresets.PngMountainRoad,
-            RoadPresetType.PngDirtRoad => RoadSmoothingPresets.PngDirtRoad,
-            RoadPresetType.PngRacingCircuit => RoadSmoothingPresets.PngRacingCircuit,
             // OSM presets (pre-built splines from vector data)
             RoadPresetType.OsmHighway => RoadSmoothingPresets.OsmHighway,
             RoadPresetType.OsmRuralRoad => RoadSmoothingPresets.OsmRuralRoad,
@@ -755,7 +742,7 @@ public partial class TerrainMaterialSettings
         /// </summary>
         public bool EnableRoadPainting { get; set; }
 
-        public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.PngHighway;
+        public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.OsmHighway;
 
         // ========================================
         // PRIMARY PARAMETERS (always visible)

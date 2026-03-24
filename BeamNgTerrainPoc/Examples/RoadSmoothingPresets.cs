@@ -1,15 +1,11 @@
 // Road Smoothing Parameter Presets
-// Organized into two categories:
-// - PNG presets: Optimized for skeleton extraction from layer masks (use SmoothInterpolated splines)
-// - OSM presets: Optimized for pre-built splines from vector data (use SmoothInterpolated + Chaikin densification)
+// OSM presets: Optimized for pre-built splines from vector data (use SmoothInterpolated + Chaikin densification)
 //
 // IMPORTANT PARAMETER RELATIONSHIPS:
 //
-// 1. PNG vs OSM differences:
-//    - Both pipelines use SmoothInterpolated splines (Akima/cubic interpolation)
+// 1. OSM pipeline:
+//    - Uses SmoothInterpolated splines (Akima/cubic interpolation)
 //    - OSM paths are pre-smoothed with Chaikin corner-cutting to densify sparse nodes
-//    - PNG benefits from lower DensifyMaxSpacingPixels (1.5f) for better path following
-//    - PNG needs SkeletonDilationRadius = 0 for clean skeleton
 //
 // 2. GlobalLevelingStrength vs TerrainAffectedRangeMeters:
 //    - GlobalLevelingStrength > 0.5 requires TerrainAffectedRangeMeters >= 15m
@@ -25,10 +21,9 @@ namespace BeamNgTerrainPoc.Examples;
 /// <summary>
 ///     Pre-configured road smoothing parameter presets for different road types.
 ///     PRESET CATEGORIES:
-///     - PNG presets: For skeleton extraction from layer masks (use SmoothInterpolated for smooth curves)
 ///     - OSM presets: For pre-built splines from OSM vector data (use SmoothInterpolated + Chaikin densification)
-///     ROAD TYPES (5 each for PNG and OSM):
-///     - Highway: Wide roads with aggressive smoothing (8-10m)
+///     ROAD TYPES (5 for OSM):
+///     - Highway: Wide roads with aggressive smoothing (10m)
 ///     - RuralRoad: General-purpose roads for mixed terrain (7m)
 ///     - MountainRoad: Narrow roads optimized for hairpins and steep terrain (6m)
 ///     - DirtRoad: Rustic unpaved roads with minimal smoothing (4-5m)
@@ -36,329 +31,6 @@ namespace BeamNgTerrainPoc.Examples;
 /// </summary>
 public static class RoadSmoothingPresets
 {
-    #region ========== PNG PRESETS (Skeleton Extraction from Layer Masks) ==========
-
-    /// <summary>
-    ///     PNG HIGHWAY: Professional highway-quality roads from PNG layer masks (8m surface, 16m corridor).
-    ///     Uses SmoothInterpolated splines to create smooth curves from skeleton extraction.
-    ///     Key features:
-    ///     - 8m painted surface for 2-lane highways
-    ///     - 16m elevation smoothing corridor for safe vehicle handling
-    ///     - Aggressive Butterworth smoothing (order 4, window 301)
-    ///     - SmoothInterpolated splines reduce jagged edges from skeleton
-    ///     - Low DensifyMaxSpacingPixels (1.5) for accurate path following
-    ///     Best for: Highway PNG masks, main roads from layer maps.
-    /// </summary>
-    public static RoadSmoothingParameters PngHighway => new()
-    {
-        // ROAD GEOMETRY - Wide highway with wider smoothing corridor
-        RoadWidthMeters = 20.0f,
-        RoadSurfaceWidthMeters = 10.0f,
-        TerrainAffectedRangeMeters = 12.0f,
-        CrossSectionIntervalMeters = 0.4f,
-
-        // SLOPE CONSTRAINTS
-        RoadMaxSlopeDegrees = 6.0f,
-        SideMaxSlopeDegrees = 35.0f,
-        BlendFunctionType = BlendFunctionType.Exponential,
-
-        // POST-PROCESSING
-        EnablePostProcessingSmoothing = true,
-        SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 7,
-        SmoothingSigma = 1.5f,
-        SmoothingMaskExtensionMeters = 1.5f,
-        SmoothingIterations = 1,
-
-        SplineParameters = new SplineRoadParameters
-        {
-            // PNG-SPECIFIC: Use SmoothInterpolated to reduce skeleton jaggedness
-            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-
-            // Skeleton extraction parameters
-            SkeletonDilationRadius = 0, // Clean skeleton for PNG
-            DensifyMaxSpacingPixels = 1.5f, // Better path following for PNG
-            SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 0f,
-            BridgeEndpointMaxDistancePixels = 40.0f,
-            // Spline fitting
-
-            // Elevation smoothing - aggressive for flat road surface
-            SmoothingWindowSize = 601,
-            UseButterworthFilter = true,
-            ButterworthFilterOrder = 4,
-            GlobalLevelingStrength = 0.0f,
-
-            PreferStraightThroughJunctions = false,
-            JunctionAngleThreshold = 90.0f
-        },
-
-        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
-        {
-            EnableJunctionHarmonization = true,
-            JunctionDetectionRadiusMeters = 5.0f,
-            JunctionBlendDistanceMeters = 50.0f,
-            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
-        }
-    };
-
-    /// <summary>
-    ///     PNG RURAL ROAD: General-purpose roads from PNG layer masks (7m surface, 12m corridor).
-    ///     Balanced settings for mixed terrain - good for countryside and suburban roads.
-    ///     Key features:
-    ///     - 7m painted surface (typical 2-lane rural road)
-    ///     - 12m elevation smoothing corridor for safety margin
-    ///     - Moderate smoothing window (201)
-    ///     - SmoothInterpolated for natural-looking curves
-    ///     Best for: General road PNG masks, mixed road networks.
-    /// </summary>
-    public static RoadSmoothingParameters PngRuralRoad => new()
-    {
-        // ROAD GEOMETRY
-        RoadWidthMeters = 9.0f,
-        RoadSurfaceWidthMeters = 7.0f,
-        TerrainAffectedRangeMeters = 10f,
-        CrossSectionIntervalMeters = 0.4f,
-
-        // SLOPE CONSTRAINTS
-        RoadMaxSlopeDegrees = 8.0f,
-        SideMaxSlopeDegrees = 35.0f,
-        BlendFunctionType = BlendFunctionType.Exponential,
-
-        // POST-PROCESSING
-        EnablePostProcessingSmoothing = true,
-        SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 7,
-        SmoothingSigma = 1.5f,
-        SmoothingMaskExtensionMeters = 2.0f,
-        SmoothingIterations = 1,
-
-        SplineParameters = new SplineRoadParameters
-        {
-            // PNG-SPECIFIC: Use SmoothInterpolated to reduce skeleton jaggedness
-            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-
-            // Skeleton extraction parameters
-            SkeletonDilationRadius = 0,
-            DensifyMaxSpacingPixels = 1.5f,
-            SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 0f,
-            BridgeEndpointMaxDistancePixels = 40.0f,
-            // Spline fitting - balanced
-
-            // Elevation smoothing - moderate
-            SmoothingWindowSize = 401,
-            UseButterworthFilter = true,
-            ButterworthFilterOrder = 4,
-            GlobalLevelingStrength = 0.0f,
-
-            PreferStraightThroughJunctions = false,
-            JunctionAngleThreshold = 90.0f
-        },
-
-        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
-        {
-            EnableJunctionHarmonization = true,
-            JunctionDetectionRadiusMeters = 5.0f,
-            JunctionBlendDistanceMeters = 50.0f,
-            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
-        }
-    };
-
-    /// <summary>
-    ///     PNG MOUNTAIN ROAD: Narrow roads for steep terrain from PNG masks (5m surface, 6m corridor).
-    ///     Optimized for tight hairpin turns and switchbacks.
-    ///     Key features:
-    ///     - Narrow 5m painted surface for authentic mountain passes
-    ///     - 6m elevation smoothing corridor (tight for steep terrain)
-    ///     - Small TerrainAffectedRangeMeters (4m) for steep terrain beside road
-    ///     - Tighter spline fitting (higher tension, lower continuity)
-    ///     - Smaller smoothing window (201) for responsive curves
-    ///     Best for: Mountain road PNG masks, winding cliff roads, hairpin turns.
-    /// </summary>
-    public static RoadSmoothingParameters PngMountainRoad => new()
-    {
-        // ROAD GEOMETRY - Narrow road with steep sides
-        RoadWidthMeters = 6.0f,
-        RoadSurfaceWidthMeters = 5.0f,
-        TerrainAffectedRangeMeters = 10.0f,
-        CrossSectionIntervalMeters = 0.3f,
-
-        // SLOPE CONSTRAINTS - Steep grades allowed
-        RoadMaxSlopeDegrees = 10.0f,
-        SideMaxSlopeDegrees = 50.0f,
-        BlendFunctionType = BlendFunctionType.Exponential,
-
-        // POST-PROCESSING - Minimal to preserve steep embankments
-        EnablePostProcessingSmoothing = true,
-        SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 5,
-        SmoothingSigma = 0.8f,
-        SmoothingMaskExtensionMeters = 1.0f,
-        SmoothingIterations = 1,
-
-        SplineParameters = new SplineRoadParameters
-        {
-            // PNG-SPECIFIC: Use SmoothInterpolated for smooth curves from skeleton
-            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-
-            // Skeleton extraction parameters
-            SkeletonDilationRadius = 0,
-            DensifyMaxSpacingPixels = 1.5f,
-            SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 0f,
-            BridgeEndpointMaxDistancePixels = 30.0f,
-            // TIGHT SPLINE FITTING for hairpins
-
-            // Elevation smoothing - responsive for curves
-            SmoothingWindowSize = 401,
-            UseButterworthFilter = true,
-            ButterworthFilterOrder = 4,
-            GlobalLevelingStrength = 0.0f,
-
-            PreferStraightThroughJunctions = false,
-            JunctionAngleThreshold = 90.0f
-        },
-
-        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
-        {
-            EnableJunctionHarmonization = true,
-            JunctionDetectionRadiusMeters = 5.0f,
-            JunctionBlendDistanceMeters = 50.0f,
-            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
-        }
-    };
-
-    /// <summary>
-    ///     PNG DIRT ROAD: Rustic unpaved roads from PNG masks (4m surface, 5m corridor).
-    ///     Minimal smoothing preserves natural terrain character.
-    ///     Key features:
-    ///     - Narrow 4m painted surface for rustic character
-    ///     - 5m elevation smoothing corridor
-    ///     - Box filter instead of Butterworth for organic feel
-    ///     - Small smoothing window (31) preserves bumps
-    ///     Best for: Trail PNG masks, forest paths, farm roads.
-    /// </summary>
-    public static RoadSmoothingParameters PngDirtRoad => new()
-    {
-        // ROAD GEOMETRY - Narrow dirt road
-        RoadWidthMeters = 5.0f,
-        RoadSurfaceWidthMeters = 4.0f,
-        TerrainAffectedRangeMeters = 3.0f,
-        CrossSectionIntervalMeters = 0.5f,
-
-        // SLOPE CONSTRAINTS - Relaxed for natural character
-        RoadMaxSlopeDegrees = 12.0f,
-        SideMaxSlopeDegrees = 45.0f,
-        BlendFunctionType = BlendFunctionType.Exponential,
-
-        // POST-PROCESSING - Very light
-        EnablePostProcessingSmoothing = true,
-        SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 3,
-        SmoothingSigma = 0.5f,
-        SmoothingMaskExtensionMeters = 1.0f,
-        SmoothingIterations = 1,
-
-        SplineParameters = new SplineRoadParameters
-        {
-            // PNG-SPECIFIC: Use SmoothInterpolated
-            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-
-            // Skeleton extraction parameters
-            SkeletonDilationRadius = 0,
-            DensifyMaxSpacingPixels = 1.5f,
-            SimplifyTolerancePixels = 0.75f,
-            MinPathLengthPixels = 0f,
-            BridgeEndpointMaxDistancePixels = 25.0f,
-            // Spline fitting - looser for natural character
-
-            // Box filter for organic feel
-            SmoothingWindowSize = 51,
-            UseButterworthFilter = false,
-            ButterworthFilterOrder = 2,
-            GlobalLevelingStrength = 0.0f,
-
-            PreferStraightThroughJunctions = false,
-            JunctionAngleThreshold = 90.0f
-        },
-
-        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
-        {
-            EnableJunctionHarmonization = true,
-            JunctionDetectionRadiusMeters = 5.0f,
-            JunctionBlendDistanceMeters = 50.0f,
-            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
-        }
-    };
-
-    /// <summary>
-    ///     PNG RACING CIRCUIT: Ultra-precise tracks from PNG masks (10m surface, 14m corridor).
-    ///     Optimized for tight hairpins and glass-smooth surface.
-    ///     Key features:
-    ///     - Wide 10m painted surface for racing
-    ///     - 14m elevation smoothing corridor for smooth transitions
-    ///     - Ultra-dense cross-section sampling (0.25m)
-    ///     - Very tight spline following (high tension, low continuity)
-    ///     - Heavy post-processing for glass-smooth surface
-    ///     Best for: Racing circuit PNG masks, karting tracks.
-    /// </summary>
-    public static RoadSmoothingParameters PngRacingCircuit => new()
-    {
-        // ROAD GEOMETRY - Wide racing surface
-        RoadWidthMeters = 30.0f,
-        RoadSurfaceWidthMeters = 15.0f,
-        TerrainAffectedRangeMeters = 20f,
-        CrossSectionIntervalMeters = 0.25f,
-
-        // SLOPE CONSTRAINTS - Racing standard
-        EnableMaxSlopeConstraint = true,
-        RoadMaxSlopeDegrees = 3.0f,
-        SideMaxSlopeDegrees = 25.0f,
-        BlendFunctionType = BlendFunctionType.Exponential,
-
-        // POST-PROCESSING - Heavy for glass-smooth surface
-        EnablePostProcessingSmoothing = true,
-        SmoothingType = PostProcessingSmoothingType.Gaussian,
-        SmoothingKernelSize = 9,
-        SmoothingSigma = 2.0f,
-        SmoothingMaskExtensionMeters = 1.0f,
-        SmoothingIterations = 2,
-
-        SplineParameters = new SplineRoadParameters
-        {
-            // PNG-SPECIFIC: Use SmoothInterpolated for smooth curves
-            SplineInterpolationType = SplineInterpolationType.SmoothInterpolated,
-
-            // Skeleton extraction parameters
-            SkeletonDilationRadius = 0,
-            DensifyMaxSpacingPixels = 1.5f,
-            SimplifyTolerancePixels = 0.5f,
-            MinPathLengthPixels = 0f,
-            BridgeEndpointMaxDistancePixels = 50.0f,
-            // HAIRPIN-OPTIMIZED SPLINE FITTING
-
-            // Elevation smoothing
-            SmoothingWindowSize = 601,
-            UseButterworthFilter = true,
-            ButterworthFilterOrder = 4,
-            GlobalLevelingStrength = 0.0f,
-
-            PreferStraightThroughJunctions = false,
-            JunctionAngleThreshold = 90.0f
-        },
-
-        JunctionHarmonizationParameters = new JunctionHarmonizationParameters
-        {
-            EnableJunctionHarmonization = true,
-            JunctionDetectionRadiusMeters = 5.0f,
-            JunctionBlendDistanceMeters = 60.0f,
-            BlendFunctionType = JunctionBlendFunctionType.CubicHermiteC1
-        }
-    };
-
-    #endregion
-
     #region ========== OSM PRESETS (Pre-built Splines from Vector Data) ==========
 
     /// <summary>
@@ -374,7 +46,7 @@ public static class RoadSmoothingPresets
     public static RoadSmoothingParameters OsmHighway => new()
     {
         // ROAD GEOMETRY - Wide highway with wider smoothing corridor
-        RoadWidthMeters = 20.0f,
+        RoadWidthMeters = 14.0f,
         RoadSurfaceWidthMeters = 10.0f,
         TerrainAffectedRangeMeters = 12.0f,
         CrossSectionIntervalMeters = 0.4f,
@@ -443,7 +115,7 @@ public static class RoadSmoothingPresets
 
         // SLOPE CONSTRAINTS
         RoadMaxSlopeDegrees = 8.0f,
-        SideMaxSlopeDegrees = 35.0f,
+        SideMaxSlopeDegrees = 50.0f,
         BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
@@ -499,12 +171,12 @@ public static class RoadSmoothingPresets
         // ROAD GEOMETRY - Narrow road with steep sides
         RoadWidthMeters = 6.0f,
         RoadSurfaceWidthMeters = 5.0f,
-        TerrainAffectedRangeMeters = 10.0f,
+        TerrainAffectedRangeMeters = 30.0f,
         CrossSectionIntervalMeters = 0.3f,
 
         // SLOPE CONSTRAINTS - Steep grades allowed
         RoadMaxSlopeDegrees = 10.0f,
-        SideMaxSlopeDegrees = 50.0f,
+        SideMaxSlopeDegrees = 70.0f,
         BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
@@ -560,12 +232,12 @@ public static class RoadSmoothingPresets
         // ROAD GEOMETRY - Narrow track
         RoadWidthMeters = 5.0f,
         RoadSurfaceWidthMeters = 4.0f,
-        TerrainAffectedRangeMeters = 3.0f,
+        TerrainAffectedRangeMeters = 10.0f,
         CrossSectionIntervalMeters = 0.5f,
 
         // SLOPE CONSTRAINTS - Relaxed for natural paths
         RoadMaxSlopeDegrees = 15.0f,
-        SideMaxSlopeDegrees = 50.0f,
+        SideMaxSlopeDegrees = 80.0f,
         BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
@@ -620,8 +292,8 @@ public static class RoadSmoothingPresets
     public static RoadSmoothingParameters OsmRacingCircuit => new()
     {
         // ROAD GEOMETRY - Wide racing surface
-        RoadWidthMeters = 30.0f,
-        RoadSurfaceWidthMeters = 15.0f,
+        RoadWidthMeters = 20.0f,
+        RoadSurfaceWidthMeters = 10.0f,
         TerrainAffectedRangeMeters = 20f,
         CrossSectionIntervalMeters = 0.25f,
 
