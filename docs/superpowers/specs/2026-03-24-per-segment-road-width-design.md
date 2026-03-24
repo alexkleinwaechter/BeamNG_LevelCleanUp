@@ -58,6 +58,14 @@ Add a static helper `TryParseWidth(string value, out float meters)` to `OsmLaneI
 
 **`Reversed()` method:** Must carry the new `WidthMeters` and `EstWidthMeters` fields through (width is direction-independent, so values are copied as-is).
 
+**Interaction with `LaneSegmentOps.AreLaneConfigsEqual`:** This method currently compares only `TotalLanes`, `LanesForward`, `LanesBackward`, and `IsOneWay` to consolidate adjacent segments. It must be updated to also compare `WidthMeters` and `EstWidthMeters`, otherwise width changes between merged ways (that have the same lane config but different width tags) would be silently lost during consolidation.
+
+**Width-only ways and `DecalRoadGenerator`:** When `TotalLanes = 0` (width-only way), lane-aware features in `DecalRoadGenerator` (direction dividers, per-lane markings, AI road lane counts) should treat this as if the layerset's `DefaultLaneCount` applies. The width profile builder reads the width tag values before any consolidation occurs, so width data is not lost. The `TotalLanes = 0` value only affects lane expansion logic, not width resolution.
+
+**`StartDistance` population:** The existing `PropagatePathLaneSegmentsToSpline()` in `OsmGeometryProcessor` already computes cumulative distances for all `LaneSegment` objects regardless of their content, so width-only segments get correct `StartDistance` values through the existing pipeline.
+
+**Unicode normalization:** `TryParseWidth` should normalize Unicode quote characters (U+2019 `'`, U+2032 `'`, U+2033 `"`) to ASCII equivalents before parsing, as OSM editors sometimes insert these.
+
 ### Road-Type Width Estimates
 
 When neither OSM width tags nor lane tags are available, the layerset's `DefaultLaneCount * DefaultLaneWidth` provides the fallback. The hardcoded defaults in `DecalRoadDefaultLayerSets` serve as road-type-based estimates:
@@ -99,10 +107,11 @@ public class WidthSegment
 
 public enum WidthSource
 {
-    OsmWidthTag,        // width=* or est_width=*
-    LaneCalculation,    // laneCount * laneWidth
-    LayerSetDefault,    // DefaultLaneCount * DefaultLaneWidth
-    ParameterFallback   // RoadSmoothingParameters
+    OsmWidthTagExact,     // width=* (measured value)
+    OsmWidthTagEstimated, // est_width=* (estimated value)
+    LaneCalculation,      // laneCount * laneWidth
+    LayerSetDefault,      // DefaultLaneCount * DefaultLaneWidth
+    ParameterFallback     // RoadSmoothingParameters
 }
 ```
 
@@ -155,8 +164,9 @@ For each `ParameterizedRoadSpline`:
 1. Resolve layerset via `DecalRoadLayerSetResolver.Resolve(osmRoadType, materialName, settings, appDataDefaults)`
 2. If no layerset found: leave `WidthProfile = null` → Priority 5 fallback
 3. If layerset found, resolve surface width per segment using the priority chain:
-   - **Check Priority 1-2 (OSM width tags):** If any `LaneSegment` has `LaneInfo.WidthMeters` or `LaneInfo.EstWidthMeters` set, use that as the surface width for the segment. Note: when a way has a `width=*` tag, all lane segments from that way share the same width value (width is per-way, not per-segment in OSM). Source: `OsmWidthTag`.
-   - **Check Priority 3 (lane calculation):** If no width tag but `LaneInfo.TotalLanes > 0`, use `Math.Max(laneInfo.TotalLanes, 1) * layerSet.DefaultLaneWidth`. Source: `LaneCalculation`.
+   - **Check Priority 1 (OSM `width=*`):** If `LaneInfo.WidthMeters` is set, use it directly. Source: `OsmWidthTagExact`. Note: when a way has a `width=*` tag, all lane segments from that way share the same width value (width is per-way in OSM).
+   - **Check Priority 2 (OSM `est_width=*`):** If `LaneInfo.EstWidthMeters` is set, use it directly. Source: `OsmWidthTagEstimated`.
+   - **Check Priority 3 (lane calculation):** If no width tag but `LaneInfo.TotalLanes > 0`, use `laneInfo.TotalLanes * layerSet.DefaultLaneWidth`. Source: `LaneCalculation`. (The `TotalLanes > 0` condition guarantees a positive value.)
    - **Check Priority 4 (layerset defaults):** If `LaneSegments` is null/empty or segment has neither width tags nor lane data, use `layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth`. Source: `LayerSetDefault`.
 4. For each segment: compute `SmoothingCorridorWidth = surfaceWidth + 2 * SmoothingCorridorMargin` and `MasterSplineWidth = surfaceWidth + 2 * MasterSplineMargin`
 5. Attach `RoadWidthProfile` to spline
@@ -199,7 +209,7 @@ var surfaceWidth = spline.WidthProfile?.GetWidthsAtDistance(distance).surface
 | MasterSplineExporter | `Terrain/Services/MasterSplineExporter.cs` | `EffectiveMasterSplineWidthMeters` | Query `WidthProfile` at each exported node for master spline width. Per-node width in JSON. Note: legacy single-material export paths (lines ~426, ~530) read from `RoadSmoothingParameters` directly — these need adaptation to accept width profile or pass through per-node widths. |
 | DecalRoadGenerator | `Terrain/Services/DecalRoad/DecalRoadGenerator.cs` | `EffectiveMasterSplineWidthMeters` | Query `WidthProfile` at sample points. Aligns with existing Phase B lane-segment splitting. |
 | RoadCorridorBuilder | `Terrain/Services/DecalRoad/RoadCorridorBuilder.cs` | `EffectiveMasterSplineWidthMeters` | Per-sample query. |
-| RoundaboutElevationHarmonizer | `Terrain/Algorithms/RoundaboutElevationHarmonizer.cs` | `parameters.RoadWidthMeters` | Query at junction point distance. Roundabouts typically have uniform lanes and may lack `LaneSegments` (created synthetically by `RoundaboutMerger`), so they fall through to Priority 2 (layerset defaults). |
+| RoundaboutElevationHarmonizer | `Terrain/Algorithms/RoundaboutElevationHarmonizer.cs` | `parameters.RoadWidthMeters` | Query at junction point distance. Roundabouts typically have uniform lanes and may lack `LaneSegments` (created synthetically by `RoundaboutMerger`), so they fall through to Priority 4 (layerset defaults). |
 | RoadDebugExporter | `Terrain/Services/RoadDebugExporter.cs` | `parameters.RoadWidthMeters` (multiple sites) | Update for accurate debug outlines. Lower priority. |
 | DecalRoadNetworkSnapshotBuilder | `Terrain/Services/DecalRoad/DecalRoadNetworkSnapshotBuilder.cs` | `spline.Parameters.RoadWidthMeters` | See Binary Snapshot section below. |
 | TerrainCreator | `Terrain/TerrainCreator.cs` | `material.RoadParameters.EffectiveRoadSurfaceWidthMeters` | Logging only — update for accurate width reporting. |
