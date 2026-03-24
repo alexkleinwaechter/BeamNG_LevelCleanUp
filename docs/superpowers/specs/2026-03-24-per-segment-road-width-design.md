@@ -11,21 +11,70 @@ Road width parameters (`RoadWidthMeters`, `RoadSurfaceWidthMeters`, `MasterSplin
 
 Derive road width dynamically from OSM lane counts and layerset-defined lane width, so that all pipeline consumers (elevation smoothing, material painting, master spline export, DecalRoad generation) use per-segment widths that reflect actual lane count changes.
 
-## Width Derivation Formula
+## Width Derivation
 
-For a given spline segment with `laneCount` lanes:
+### Road Surface Width Priority Chain (inspired by OSM2World)
 
-- **RoadSurfaceWidth** = `laneCount * DefaultLaneWidth` (from layerset)
+For a given spline segment, the road surface width is resolved using this priority chain:
+
+| Priority | Source | Condition | Surface Width |
+|----------|--------|-----------|---------------|
+| 1 (highest) | OSM `width=*` tag | Explicit width tag on the way | Parsed value directly (meters) |
+| 2 | OSM `est_width=*` tag | Estimated width tag on the way | Parsed value directly (meters) |
+| 3 | Lane count calculation | `LaneSegments` exist with `TotalLanes > 0` | `laneCount * DefaultLaneWidth` (from layerset) |
+| 4 | LayerSet defaults | Layerset resolved, no OSM lane/width data | `DefaultLaneCount * DefaultLaneWidth` |
+| 5 (lowest) | `RoadSmoothingParameters` | No layerset resolved | `EffectiveRoadSurfaceWidthMeters` (existing behavior) |
+
+### Derived Widths
+
+Once `RoadSurfaceWidth` is resolved from the chain above:
+
 - **SmoothingCorridorWidth** = `RoadSurfaceWidth + 2 * SmoothingCorridorMargin` (from layerset)
 - **MasterSplineWidth** = `RoadSurfaceWidth + 2 * MasterSplineMargin` (from layerset)
 
-## Priority Chain (Fallback Order)
+### OSM Width Tag Parsing
 
-| Priority | Source | When Used |
-|----------|--------|-----------|
-| 1 (highest) | Per-segment calculated | OSM `LaneSegments` exist on spline AND layerset resolved |
-| 2 | LayerSet defaults | No OSM lane data, but layerset resolved (`DefaultLaneCount * DefaultLaneWidth` + margins) |
-| 3 (lowest) | `RoadSmoothingParameters` | No layerset resolved (`EffectiveRoadSurfaceWidthMeters`, `RoadWidthMeters`, `EffectiveMasterSplineWidthMeters`) |
+Add `WidthMeters` and `EstWidthMeters` fields to `OsmLaneInfo`:
+
+```csharp
+public float? WidthMeters { get; set; }      // parsed from width=*
+public float? EstWidthMeters { get; set; }    // parsed from est_width=*
+```
+
+**Unit parsing** in `OsmLaneInfo.TryParse()` — parse the value string with unit support:
+
+| Format | Example | Interpretation |
+|--------|---------|----------------|
+| Bare number | `7.5` | Meters (assumed) |
+| Meters | `7.5 m` | 7.5 meters |
+| Kilometers | `0.008 km` | 8.0 meters |
+| Feet | `25'` or `25 ft` | 7.62 meters |
+| Feet+inches | `25'6"` or `25'6''` | 7.77 meters |
+| Miles | `0.005 mi` | 8.05 meters |
+
+Add a static helper `TryParseWidth(string value, out float meters)` to `OsmLaneInfo` that handles these formats. Invalid or unparseable values return `false` and the tag is ignored (fall through to next priority).
+
+**Parsing location:** In `OsmLaneInfo.TryParse()`, after lane tag parsing. Note: `TryParse()` currently returns `null` when no lane tags exist. With width tag support, it should return a non-null `OsmLaneInfo` even when only `width=*` or `est_width=*` is present (with `TotalLanes = 0` indicating no lane data). This allows width information to flow through even for ways without lane tags.
+
+**`Reversed()` method:** Must carry the new `WidthMeters` and `EstWidthMeters` fields through (width is direction-independent, so values are copied as-is).
+
+### Road-Type Width Estimates
+
+When neither OSM width tags nor lane tags are available, the layerset's `DefaultLaneCount * DefaultLaneWidth` provides the fallback. The hardcoded defaults in `DecalRoadDefaultLayerSets` serve as road-type-based estimates:
+
+| Road Type | DefaultLaneCount | DefaultLaneWidth | Effective Width |
+|-----------|-----------------|------------------|-----------------|
+| Motorway | 4 | 3.5m | 14.0m |
+| Trunk | 4 | 3.5m | 14.0m |
+| Primary | 2 | 3.5m | 7.0m |
+| Secondary | 2 | 3.5m | 7.0m |
+| Tertiary | 2 | 3.0m | 6.0m |
+| Residential | 2 | 3.0m | 6.0m |
+| Service | 2 | 2.75m | 5.5m |
+| Track | 1 | 2.5m | 2.5m |
+| Roundabout | 1 | 3.5m | 3.5m |
+
+These defaults can be customized per road type through the layerset editor.
 
 ## Approach: Pre-computed Width Segments
 
@@ -41,10 +90,19 @@ New class in `BeamNgTerrainPoc/Terrain/Models/RoadGeometry/`:
 public class WidthSegment
 {
     public float StartDistance { get; set; }           // meters along spline
-    public float RoadSurfaceWidth { get; set; }        // laneCount * laneWidth
+    public float RoadSurfaceWidth { get; set; }        // resolved from priority chain
     public float SmoothingCorridorWidth { get; set; }  // surfaceWidth + 2 * margin
     public float MasterSplineWidth { get; set; }       // surfaceWidth + 2 * masterMargin
     public int LaneCount { get; set; }                 // for reference/debugging
+    public WidthSource Source { get; set; }            // for debugging: how width was resolved
+}
+
+public enum WidthSource
+{
+    OsmWidthTag,        // width=* or est_width=*
+    LaneCalculation,    // laneCount * laneWidth
+    LayerSetDefault,    // DefaultLaneCount * DefaultLaneWidth
+    ParameterFallback   // RoadSmoothingParameters
 }
 ```
 
@@ -95,12 +153,15 @@ In `UnifiedRoadNetworkBuilder`, after `ParameterizedRoadSpline` creation and lan
 For each `ParameterizedRoadSpline`:
 
 1. Resolve layerset via `DecalRoadLayerSetResolver.Resolve(osmRoadType, materialName, settings, appDataDefaults)`
-2. If layerset found:
-   - If `spline.LaneSegments` is non-null and non-empty: create one `WidthSegment` per `LaneSegment` using `Math.Max(laneInfo.TotalLanes, 1) * layerSet.DefaultLaneWidth` (guard against malformed OSM data with `TotalLanes = 0`)
-   - If `LaneSegments` is null or empty: create single `WidthSegment` at distance 0 using `layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth`
-   - For each segment: apply margin formulas
-   - Attach `RoadWidthProfile` to spline
-3. If no layerset found: leave `WidthProfile = null`
+2. If no layerset found: leave `WidthProfile = null` → Priority 5 fallback
+3. If layerset found, resolve surface width per segment using the priority chain:
+   - **Check Priority 1-2 (OSM width tags):** If any `LaneSegment` has `LaneInfo.WidthMeters` or `LaneInfo.EstWidthMeters` set, use that as the surface width for the segment. Note: when a way has a `width=*` tag, all lane segments from that way share the same width value (width is per-way, not per-segment in OSM). Source: `OsmWidthTag`.
+   - **Check Priority 3 (lane calculation):** If no width tag but `LaneInfo.TotalLanes > 0`, use `Math.Max(laneInfo.TotalLanes, 1) * layerSet.DefaultLaneWidth`. Source: `LaneCalculation`.
+   - **Check Priority 4 (layerset defaults):** If `LaneSegments` is null/empty or segment has neither width tags nor lane data, use `layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth`. Source: `LayerSetDefault`.
+4. For each segment: compute `SmoothingCorridorWidth = surfaceWidth + 2 * SmoothingCorridorMargin` and `MasterSplineWidth = surfaceWidth + 2 * MasterSplineMargin`
+5. Attach `RoadWidthProfile` to spline
+
+**Mixed segments:** A single spline may have segments with different width sources (e.g., some segments from merged ways have `width=*` tags, others only have lane counts). Each segment resolves independently through the priority chain.
 
 ### Transition Zones
 
@@ -168,11 +229,20 @@ Add two fields in the header row, next to existing `DefaultLaneCount` and `Defau
 
 ### Default values in DecalRoadDefaultLayerSets
 
-| Road Type | SmoothingCorridorMargin | MasterSplineMargin |
-|-----------|------------------------|--------------------|
-| All asphalt types (motorway through service) | 2.0m | 0.0m |
-| Track | 1.0m | 0.0m |
-| Roundabout | 2.0m | 0.0m |
+Updated defaults to provide road-type-appropriate widths as fallback when no OSM data is available:
+
+| Road Type | DefaultLaneCount | DefaultLaneWidth | SmoothingCorridorMargin | MasterSplineMargin |
+|-----------|-----------------|------------------|------------------------|--------------------|
+| Motorway | 4 | 3.5m | 2.0m | 0.0m |
+| Trunk | 4 | 3.5m | 2.0m | 0.0m |
+| Primary | 2 | 3.5m | 2.0m | 0.0m |
+| Secondary | 2 | 3.5m | 2.0m | 0.0m |
+| Tertiary | 2 | 3.0m | 2.0m | 0.0m |
+| Residential | 2 | 3.0m | 2.0m | 0.0m |
+| Service | 2 | 2.75m | 1.5m | 0.0m |
+| Unclassified | 2 | 3.0m | 2.0m | 0.0m |
+| Track | 1 | 2.5m | 1.0m | 0.0m |
+| Roundabout | 1 | 3.5m | 2.0m | 0.0m |
 
 ## Binary Snapshot Format
 
@@ -191,5 +261,6 @@ If layerset resolution context is not available during snapshot load, fall back 
 ## Non-Goals
 
 - Varying `TerrainAffectedRangeMeters` or blending parameters per segment (stays global)
-- OSM `width=*` tag parsing (width derived from lane count only)
+- Per-lane width tags (e.g., individual lane widths summed) — we use total road width, not per-lane widths
+- Sidewalk/cycleway/kerb width parsing — only vehicle road surface width
 - Per-layer width overrides based on lane count (layers already have `IsTrackWidth`/`IsLaneWidth` mechanisms)
