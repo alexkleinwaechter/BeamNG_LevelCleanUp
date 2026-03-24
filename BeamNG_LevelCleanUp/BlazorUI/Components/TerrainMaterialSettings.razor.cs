@@ -435,6 +435,7 @@ public partial class TerrainMaterialSettings
                 ["roadMaxSlopeDegrees"] = Material.RoadMaxSlopeDegrees,
                 ["sideMaxSlopeDegrees"] = Material.SideMaxSlopeDegrees,
                 ["blendFunctionType"] = Material.BlendFunctionType.ToString(),
+                ["falloffExponent"] = Material.FalloffExponent,
                 ["crossSectionIntervalMeters"] = Material.CrossSectionIntervalMeters,
                 ["splineParameters"] = new JsonObject
                 {
@@ -532,6 +533,8 @@ public partial class TerrainMaterialSettings
             if (jsonNode["blendFunctionType"] != null &&
                 Enum.TryParse<BlendFunctionType>(jsonNode["blendFunctionType"]!.GetValue<string>(), out var blendType))
                 Material.BlendFunctionType = blendType;
+            if (jsonNode["falloffExponent"] != null)
+                Material.FalloffExponent = jsonNode["falloffExponent"]!.GetValue<float>();
             if (jsonNode["crossSectionIntervalMeters"] != null)
                 Material.CrossSectionIntervalMeters = jsonNode["crossSectionIntervalMeters"]!.GetValue<float>();
             // Import spline parameters
@@ -774,7 +777,8 @@ public partial class TerrainMaterialSettings
         // ========================================
         // ALGORITHM SETTINGS
         // ========================================
-        public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
+        public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Exponential;
+        public float FalloffExponent { get; set; } = 1.5f;
         public float CrossSectionIntervalMeters { get; set; } = 0.5f;
 
         // ========================================
@@ -993,6 +997,7 @@ public partial class TerrainMaterialSettings
 
             // Algorithm settings
             BlendFunctionType = preset.BlendFunctionType;
+            FalloffExponent = preset.FalloffExponent;
             CrossSectionIntervalMeters = preset.CrossSectionIntervalMeters;
             // Post-processing
             EnablePostProcessingSmoothing = preset.EnablePostProcessingSmoothing;
@@ -1089,6 +1094,7 @@ public partial class TerrainMaterialSettings
 
                 // Algorithm settings - disable blending for paint-only
                 BlendFunctionType = BlendFunctionType,
+                FalloffExponent = FalloffExponent,
                 CrossSectionIntervalMeters = CrossSectionIntervalMeters,
                 // Post-processing - disable for paint-only
                 EnablePostProcessingSmoothing = isPaintOnlyMode ? false : EnablePostProcessingSmoothing,

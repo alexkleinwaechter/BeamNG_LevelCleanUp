@@ -66,7 +66,7 @@ public class DecalRoadLayerDefinition
     /// Spline tessellation detail (0.1 = coarse, 1.0 = high detail).
     /// Controls segment subdivision for rendering. Lower = better performance, higher = smoother visuals.
     /// </summary>
-    public float Detail { get; set; } = 0.1f;
+    public float Detail { get; set; } = 0.5f;
 
     // ========================================
     // CURVE CONSTRAINT

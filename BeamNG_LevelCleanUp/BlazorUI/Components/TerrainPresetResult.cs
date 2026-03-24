@@ -278,7 +278,7 @@ public class RoadSmoothingSettings
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
     // Algorithm settings
-    public string BlendFunctionType { get; set; } = "CubicHermiteC1";
+    public string BlendFunctionType { get; set; } = "Exponential";
     public float CrossSectionIntervalMeters { get; set; } = 0.5f;
     // Spline parameters
     public SplineParametersSettings? SplineParameters { get; set; }

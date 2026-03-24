@@ -12,14 +12,16 @@ public static class BlendFunctions
     /// </summary>
     /// <param name="t">Transition parameter in range [0, 1]. 0 = road edge, 1 = blend zone edge</param>
     /// <param name="blendType">Type of blend function to apply</param>
+    /// <param name="falloffExponent">Exponent for Exponential type (default 1.5)</param>
     /// <returns>Blended value in range [0, 1]</returns>
-    public static float Apply(float t, BlendFunctionType blendType)
+    public static float Apply(float t, BlendFunctionType blendType, float falloffExponent = 1.5f)
     {
         return blendType switch
         {
             BlendFunctionType.Cosine => ApplyCosine(t),
             BlendFunctionType.Cubic => ApplyCubic(t),
             BlendFunctionType.Quintic => ApplyQuintic(t),
+            BlendFunctionType.Exponential => ApplyExponential(t, falloffExponent),
             _ => t // Linear
         };
     }
@@ -40,16 +42,27 @@ public static class BlendFunctions
 
     /// <summary>
     /// Cubic Hermite blend function (smoothstep).
-    /// f(t) = t² * (3 - 2t)
+    /// f(t) = tï¿½ * (3 - 2t)
     /// Very smooth with zero first derivative at endpoints.
     /// </summary>
     public static float ApplyCubic(float t) => t * t * (3f - 2f * t);
 
     /// <summary>
     /// Quintic blend function (smootherstep).
-    /// f(t) = t³ * (t * (6t - 15) + 10)
+    /// f(t) = tï¿½ * (t * (6t - 15) + 10)
     /// Extremely smooth with zero first and second derivatives at endpoints.
     /// Best quality but slightly more computation.
     /// </summary>
     public static float ApplyQuintic(float t) => t * t * t * (t * (t * 6f - 15f) + 10f);
+
+    /// <summary>
+    /// BeamNG-style exponential falloff: w = (1 - t)^exponent.
+    /// At t=0 (road edge): w=1 (full road elevation).
+    /// At t=1 (DOI boundary): w=0 (full terrain).
+    /// exponent=1.0: linear. exponent=1.5: natural (BeamNG default). exponent=3+: sharp shelf.
+    /// </summary>
+    public static float ApplyExponential(float t, float exponent = 1.5f)
+    {
+        return MathF.Pow(MathF.Max(0f, 1f - t), exponent);
+    }
 }

@@ -45,5 +45,5 @@ public class GeneratedDecalRoad
     // Spline behaviour
     public bool ImprovedSpline { get; init; } = true;
     public float Smoothness { get; init; } = 0.5f;
-    public float Detail { get; init; } = 0.1f;
+    public float Detail { get; init; } = 0.5f;
 }

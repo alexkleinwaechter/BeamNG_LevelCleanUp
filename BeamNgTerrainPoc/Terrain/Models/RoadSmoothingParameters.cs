@@ -143,11 +143,14 @@ public class RoadSmoothingParameters
     /// <summary>
     ///     Maximum slope for embankments/sides in degrees.
     ///     Controls how sharply terrain transitions from road edge to natural terrain.
+    ///     Only used for non-Exponential blend modes (Linear, Cosine, Cubic, Quintic).
+    ///     When Exponential is selected, FalloffExponent controls the transition instead.
+    ///     Also auto-extends DOI when elevation difference requires more distance.
     ///     Typical values:
     ///     - 20-25°: Gentle embankment (1:2.5 ratio)
     ///     - 30°: Standard embankment (1:1.7 ratio)
     ///     - 35-40°: Steep embankment (1:1.2 ratio)
-    ///     Default: 30.0
+    ///     Default: 45.0
     /// </summary>
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
@@ -157,9 +160,18 @@ public class RoadSmoothingParameters
 
     /// <summary>
     ///     Type of blend function to use for terrain transitions.
-    ///     Default: Cosine (smoothest)
+    ///     Default: Exponential (BeamNG-style falloff)
     /// </summary>
-    public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
+    public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Exponential;
+
+    /// <summary>
+    ///     Exponent for the exponential falloff blend function.
+    ///     Fully controls the terrain-to-road transition curve shape — no slope constraint is applied.
+    ///     The curve naturally reaches natural terrain at the DOI boundary.
+    ///     1.0 = linear, 1.5 = natural (BeamNG default), 3.0+ = sharp shelf near road with gentle far approach.
+    ///     Only used when BlendFunctionType is Exponential.
+    /// </summary>
+    public float FalloffExponent { get; set; } = 1.5f;
 
     // ========================================
     // POST-PROCESSING SMOOTHING (All Approaches)

@@ -7,36 +7,23 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
 /// <summary>
 /// Single-pass terrain blender for the unified road network.
-/// 
+///
 /// This is the main orchestrator that coordinates the blending pipeline:
-/// 1. Build road core mask from ALL splines (for EDT)
-/// 2. Build road core protection mask with ownership tracking
-/// 3. Compute single global EDT from combined mask
-/// 4. Build elevation map with per-pixel source spline tracking
-/// 5. Apply protected blending (road core pixels are never modified by blend zones)
-/// 
-/// Key improvements over per-material blending:
-/// - Single EDT computation for the entire road network (faster)
-/// - Road core pixels are PROTECTED - never modified by neighbor's blend zone
-/// - Per-spline blend ranges are respected
-/// - Overlapping blend zones use smooth interpolation between both splines
-/// 
-/// This eliminates the problem where sequential material processing would
-/// overwrite previously smoothed road surfaces.
-/// 
+/// 1. Build combined road mask with elevation from ALL splines
+/// 2. Compute EDT with nearest-source tracking
+/// 3. Single-pass blend using BeamNG-style exponential falloff
+///
 /// Implementation details are delegated to focused component classes in the
 /// BeamNgTerrainPoc.Terrain.Algorithms.Blending namespace:
-/// - DistanceFieldCalculator: Felzenszwalb &amp; Huttenlocher EDT algorithm
-/// - RoadMaskBuilder: Road core mask and protection mask with ownership
-/// - ElevationMapBuilder: Elevation map with per-pixel ownership tracking
-/// - ProtectedBlendingProcessor: Protected blending with priority rules
+/// - DistanceFieldCalculator: Felzenszwalb &amp; Huttenlocher EDT + JFA source tracking
+/// - RoadMaskBuilder: Combined road mask with banking-aware elevation
+/// - SinglePassBlender: BeamNG-style nearest-source blending
 /// - PostProcessingSmoother: Gaussian, Box, and Bilateral smoothing
 /// </summary>
 public class UnifiedTerrainBlender
 {
     private readonly RoadMaskBuilder _maskBuilder;
-    private readonly ElevationMapBuilder _elevationMapBuilder;
-    private readonly ProtectedBlendingProcessor _blendingProcessor;
+    private readonly SinglePassBlender _singlePassBlender;
     private readonly PostProcessingSmoother _postProcessingSmoother;
 
     /// <summary>
@@ -47,8 +34,7 @@ public class UnifiedTerrainBlender
     public UnifiedTerrainBlender()
     {
         _maskBuilder = new RoadMaskBuilder();
-        _elevationMapBuilder = new ElevationMapBuilder();
-        _blendingProcessor = new ProtectedBlendingProcessor();
+        _singlePassBlender = new SinglePassBlender();
         _postProcessingSmoother = new PostProcessingSmoother();
     }
 
@@ -65,14 +51,12 @@ public class UnifiedTerrainBlender
     }
 
     /// <summary>
-    /// Blends the unified road network with the terrain using a single-pass protected algorithm.
-    /// 
+    /// Blends the unified road network with the terrain using a single-pass approach.
+    ///
     /// Algorithm:
-    /// 1. Build COMBINED road core mask from ALL splines (for EDT)
-    /// 2. Build road core PROTECTION mask with ownership (filled polygons tracking which spline owns each pixel)
-    /// 3. Compute SINGLE global EDT from combined mask
-    /// 4. Build elevation map with per-pixel source spline tracking (respecting protection mask ownership)
-    /// 5. Apply protected blending (ANY road core pixel is NEVER modified by ANY blend zone)
+    /// 1. Build COMBINED road mask with elevation from ALL splines (filled polygons)
+    /// 2. Compute EDT with nearest-source tracking (distance + which road pixel is nearest)
+    /// 3. Single-pass blend: road pixels pinned, blend zone uses nearest-source elevation
     /// </summary>
     /// <param name="originalHeightMap">The original terrain heightmap.</param>
     /// <param name="network">The unified road network with harmonized elevations.</param>
@@ -99,57 +83,32 @@ public class UnifiedTerrainBlender
         TerrainLogger.Info($"  Network: {network.Splines.Count} splines, {network.CrossSections.Count} cross-sections");
         TerrainLogger.Info($"  Terrain: {width}x{height} pixels, {metersPerPixel}m/pixel");
 
-        // Step 1: Build COMBINED road core mask from ALL splines (for EDT)
-        TerrainCreationLogger.Current?.InfoFileOnly("Step 1: Building combined road core mask...");
+        // Step 1: Build combined road mask with elevations (ALL roads, single pass)
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 1: Building combined road mask with elevation...");
         var sw = Stopwatch.StartNew();
-        var combinedCoreMask = _maskBuilder.BuildCombinedRoadCoreMask(network, width, height, metersPerPixel);
-        perfLog?.Timing($"  BuildCombinedRoadCoreMask: {sw.ElapsedMilliseconds}ms");
+        var maskResult = _maskBuilder.BuildCombinedMaskWithElevation(network, width, height, metersPerPixel);
+        perfLog?.Timing($"  BuildCombinedMaskWithElevation: {sw.ElapsedMilliseconds}ms");
 
-        // Step 2: Build road core PROTECTION mask with ownership (tracks which spline owns each road core pixel)
-        TerrainCreationLogger.Current?.InfoFileOnly("Step 2: Building road core protection mask with ownership...");
+        // Step 2: Compute EDT with nearest-source tracking
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 2: Computing EDT with nearest-source tracking...");
         sw.Restart();
-        var protectionResult = _maskBuilder.BuildRoadCoreProtectionMaskWithOwnership(
-            network, width, height, metersPerPixel);
-        perfLog?.Timing($"  BuildRoadCoreProtectionMaskWithOwnership: {sw.ElapsedMilliseconds}ms");
+        var edtResult = DistanceFieldCalculator.ComputeDistanceFieldWithSources(maskResult.Mask, metersPerPixel);
+        _lastDistanceField = edtResult.Distances;
+        perfLog?.Timing($"  ComputeDistanceFieldWithSources: {sw.ElapsedMilliseconds}ms");
 
-        // Step 3: Compute SINGLE global EDT from combined mask
-        TerrainCreationLogger.Current?.InfoFileOnly("Step 3: Computing global distance field (EDT)...");
+        // Step 3: Single-pass blend
+        TerrainCreationLogger.Current?.InfoFileOnly("Step 3: Applying single-pass blend...");
         sw.Restart();
-        var distanceField = DistanceFieldCalculator.ComputeDistanceField(combinedCoreMask, metersPerPixel);
-        _lastDistanceField = distanceField;
-        perfLog?.Timing($"  ComputeDistanceField: {sw.ElapsedMilliseconds}ms");
-
-        // Step 4: Build elevation map with per-pixel source spline tracking (respecting core ownership)
-        // Pass the distance field for early rejection of pixels far from any road
-        TerrainCreationLogger.Current?.InfoFileOnly("Step 4: Building elevation map with ownership...");
-        sw.Restart();
-        var elevationResult = _elevationMapBuilder.BuildElevationMapWithOwnership(
-            network, width, height, metersPerPixel,
-            protectionResult.ProtectionMask,
-            protectionResult.OwnershipMap,
-            protectionResult.ElevationMap,
-            distanceField);
-        perfLog?.Timing($"  BuildElevationMapWithOwnership: {sw.ElapsedMilliseconds}ms");
-
-        // Step 5: Apply protected blending
-        TerrainCreationLogger.Current?.InfoFileOnly("Step 5: Applying protected blending...");
-        sw.Restart();
-        var (result, _) = _blendingProcessor.ApplyProtectedBlending(
-            originalHeightMap,
-            distanceField,
-            elevationResult.Elevations,
-            elevationResult.Owners,
-            elevationResult.MaxBlendRanges,
-            protectionResult.ProtectionMask,
-            network,
-            metersPerPixel);
-        perfLog?.Timing($"  ApplyProtectedBlending: {sw.ElapsedMilliseconds}ms");
+        var blendResult = _singlePassBlender.Blend(
+            originalHeightMap, maskResult.Mask, maskResult.ElevationMap,
+            maskResult.SplineOwnerMap, edtResult, network, metersPerPixel);
+        perfLog?.Timing($"  SinglePassBlend: {sw.ElapsedMilliseconds}ms");
 
         totalSw.Stop();
         perfLog?.Timing($"UnifiedTerrainBlender TOTAL: {totalSw.Elapsed.TotalSeconds:F2}s");
         TerrainLogger.Info("=== UNIFIED TERRAIN BLENDING COMPLETE ===");
 
-        return result;
+        return blendResult.HeightMap;
     }
 
     /// <summary>

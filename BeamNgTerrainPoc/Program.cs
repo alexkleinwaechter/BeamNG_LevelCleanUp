@@ -375,7 +375,7 @@ internal class Program
                 // ========================================
                 // BLENDING
                 // ========================================
-                BlendFunctionType = BlendFunctionType.Cosine,
+                BlendFunctionType = BlendFunctionType.Exponential,
 
                 // ========================================
                 // POST-PROCESSING SMOOTHING
@@ -453,7 +453,7 @@ internal class Program
                 // ========================================
                 // BLENDING
                 // ========================================
-                BlendFunctionType = BlendFunctionType.Cosine,
+                BlendFunctionType = BlendFunctionType.Exponential,
 
                 // ========================================
                 // POST-PROCESSING SMOOTHING
@@ -526,7 +526,7 @@ internal class Program
                 // ========================================
                 // BLENDING
                 // ========================================
-                BlendFunctionType = BlendFunctionType.Cosine,
+                BlendFunctionType = BlendFunctionType.Exponential,
 
                 // ========================================
                 // POST-PROCESSING SMOOTHING

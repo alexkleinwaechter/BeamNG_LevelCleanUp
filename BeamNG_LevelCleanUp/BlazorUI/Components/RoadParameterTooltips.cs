@@ -201,10 +201,17 @@ public static class RoadParameterTooltips
                                               """;
 
     public const string SideMaxSlopeDegrees = """
-                                              Default: 30.0 | Range: 15.0 to 60.0
-                                              Status: ACTIVELY USED
+                                              Default: 45.0 | Range: 0.0 to 90.0
+                                              Status: ACTIVELY USED (non-Exponential blend modes only)
 
-                                              Maximum embankment (road shoulder) slope. The transition zone from road edge to natural terrain.
+                                              Maximum embankment (road shoulder) slope angle.
+                                              Controls how sharply terrain transitions from road edge to natural terrain.
+
+                                              Only applies when blend function is Linear, Cosine, Cubic, or Quintic.
+                                              When Exponential is selected, FalloffExponent controls the transition instead.
+
+                                              Also auto-extends the blend zone (DOI) when the elevation difference
+                                              requires more distance to satisfy this slope limit.
 
                                               - 25 deg - Gentle embankment (1:2.5 ratio)
                                               - 30 deg - Standard embankment (1:1.7 ratio)
@@ -237,16 +244,37 @@ public static class RoadParameterTooltips
     // ========================================
 
     public const string BlendFunction = """
-                                        Default: Cosine
+                                        Default: Exponential
                                         Status: ACTIVELY USED
 
-                                        The "smoothing curve" used to blend the road into terrain:
+                                        The "smoothing curve" used to blend the road into terrain.
+                                        Each mode uses a different control parameter:
 
-                                        - Linear - Sharp, straight blend (like a ruler edge)
-                                        - Cosine - Smooth, natural blend (RECOMMENDED)
-                                        - Cubic - Very smooth (S-curve)
-                                        - Quintic - Extra smooth (even smoother S-curve)
+                                        Exponential (BeamNG-style):
+                                          Uses FalloffExponent to shape the curve. No slope constraint applied.
+                                          The curve naturally reaches terrain at the DOI boundary.
+
+                                        Linear / Cosine / Cubic / Quintic:
+                                          Uses Max Side Slope to constrain steepness and auto-extend DOI.
+                                          - Linear - Straight blend
+                                          - Cosine - Smooth, natural blend
+                                          - Cubic - Very smooth (S-curve)
+                                          - Quintic - Extra smooth (even smoother S-curve)
                                         """;
+
+    public const string FalloffExponentTooltip = """
+                                                  Default: 1.5 | Range: 0.5 to 5.0
+                                                  Status: ACTIVELY USED (Exponential blend only)
+
+                                                  Fully controls the terrain-to-road transition shape.
+                                                  No slope constraint is applied — the exponent alone shapes the curve.
+
+                                                  1.0 = linear falloff
+                                                  1.5 = natural concave curve (BeamNG default)
+                                                  3.0+ = sharp road shelf with gentle far approach
+
+                                                  The curve always reaches natural terrain at the DOI boundary.
+                                                  """;
 
     public const string CrossSectionIntervalMeters = """
                                                      Default: 0.5 | Range: 0.25 to 5.0

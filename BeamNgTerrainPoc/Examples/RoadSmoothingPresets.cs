@@ -60,7 +60,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS
         RoadMaxSlopeDegrees = 6.0f,
         SideMaxSlopeDegrees = 35.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
@@ -123,7 +123,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS
         RoadMaxSlopeDegrees = 8.0f,
         SideMaxSlopeDegrees = 35.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
@@ -187,7 +187,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS - Steep grades allowed
         RoadMaxSlopeDegrees = 10.0f,
         SideMaxSlopeDegrees = 50.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING - Minimal to preserve steep embankments
         EnablePostProcessingSmoothing = true,
@@ -250,7 +250,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS - Relaxed for natural character
         RoadMaxSlopeDegrees = 12.0f,
         SideMaxSlopeDegrees = 45.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING - Very light
         EnablePostProcessingSmoothing = true,
@@ -315,7 +315,7 @@ public static class RoadSmoothingPresets
         EnableMaxSlopeConstraint = true,
         RoadMaxSlopeDegrees = 3.0f,
         SideMaxSlopeDegrees = 25.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING - Heavy for glass-smooth surface
         EnablePostProcessingSmoothing = true,
@@ -382,7 +382,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS - Highway grade
         RoadMaxSlopeDegrees = 5.0f,
         SideMaxSlopeDegrees = 30.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
@@ -444,7 +444,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS
         RoadMaxSlopeDegrees = 8.0f,
         SideMaxSlopeDegrees = 35.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
@@ -505,7 +505,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS - Steep grades allowed
         RoadMaxSlopeDegrees = 10.0f,
         SideMaxSlopeDegrees = 50.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
@@ -566,7 +566,7 @@ public static class RoadSmoothingPresets
         // SLOPE CONSTRAINTS - Relaxed for natural paths
         RoadMaxSlopeDegrees = 15.0f,
         SideMaxSlopeDegrees = 50.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
@@ -629,7 +629,7 @@ public static class RoadSmoothingPresets
         EnableMaxSlopeConstraint = true,
         RoadMaxSlopeDegrees = 3.0f,
         SideMaxSlopeDegrees = 25.0f,
-        BlendFunctionType = BlendFunctionType.Cosine,
+        BlendFunctionType = BlendFunctionType.Exponential,
 
         // POST-PROCESSING
         EnablePostProcessingSmoothing = true,
