@@ -63,6 +63,7 @@ public class RoadWidthProfile
     // Linear interpolation within TransitionLengthMeters of segment boundaries
     // Transition centered on boundary (half before, half after)
     // No transition at spline start/end
+    // For closed-loop splines (roundabouts): clamp distance to [0, TotalLength]
 }
 ```
 
@@ -95,8 +96,8 @@ For each `ParameterizedRoadSpline`:
 
 1. Resolve layerset via `DecalRoadLayerSetResolver.Resolve(osmRoadType, materialName, settings, appDataDefaults)`
 2. If layerset found:
-   - If `spline.LaneSegments` is non-empty: create one `WidthSegment` per `LaneSegment` using `laneInfo.TotalLanes * layerSet.DefaultLaneWidth`
-   - If no lane segments: create single `WidthSegment` at distance 0 using `layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth`
+   - If `spline.LaneSegments` is non-null and non-empty: create one `WidthSegment` per `LaneSegment` using `Math.Max(laneInfo.TotalLanes, 1) * layerSet.DefaultLaneWidth` (guard against malformed OSM data with `TotalLanes = 0`)
+   - If `LaneSegments` is null or empty: create single `WidthSegment` at distance 0 using `layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth`
    - For each segment: apply margin formulas
    - Attach `RoadWidthProfile` to spline
 3. If no layerset found: leave `WidthProfile = null`
@@ -124,17 +125,27 @@ var surfaceWidth = spline.WidthProfile?.GetWidthsAtDistance(distance).surface
 
 | Consumer | File | Current Width | Change |
 |----------|------|---------------|--------|
+| **UnifiedCrossSection.FromSplineSample** | `Terrain/Models/RoadGeometry/UnifiedCrossSection.cs` | `ownerSpline.Parameters.RoadWidthMeters` | **Key bottleneck** — query `WidthProfile.GetWidthsAtDistance(sample.Distance).corridor` instead of global parameter. `EffectiveBlendRange` stays global (reads `TerrainAffectedRangeMeters`). |
 | MedialAxisRoadExtractor | `Terrain/Algorithms/MedialAxisRoadExtractor.cs` | `parameters.RoadWidthMeters` | Query `WidthProfile` at each sample distance for corridor width. `CrossSection.WidthMeters` becomes per-point. |
 | DistanceFieldTerrainBlender | `Terrain/Algorithms/DistanceFieldTerrainBlender.cs` | `parameters.RoadWidthMeters` | Use per-cross-section width from extractor (already varied). |
+| SinglePassBlender | `Terrain/Algorithms/Blending/SinglePassBlender.cs` | `s.Parameters.RoadWidthMeters / 2.0f` | Use per-cross-section width from extractor. |
+| PostProcessingSmoother | `Terrain/Algorithms/Blending/PostProcessingSmoother.cs` | `s.Parameters.RoadWidthMeters` | Use per-cross-section width for smoothing mask. |
+| UnifiedJunctionProfileBlender | `Terrain/Algorithms/UnifiedJunctionProfileBlender.cs` | `contributor.Spline.Parameters.RoadWidthMeters` (~8 call sites) | Query `WidthProfile` at junction endpoint distance for blend/taper distance calculations. |
+| BankingOrchestrator | `Terrain/Services/BankingOrchestrator.cs` | `spline.Parameters.RoadWidthMeters / 2.0f` | Query `WidthProfile` at each cross-section for edge elevation calculation. See Known Limitations. |
+| PriorityAwareJunctionBankingCalculator | `Terrain/Algorithms/Banking/PriorityAwareJunctionBankingCalculator.cs` | `s.Parameters.RoadWidthMeters` | Query `WidthProfile` at transition distance calculation. |
+| UnifiedRoadSmoother | `Terrain/Services/UnifiedRoadSmoother.cs` | `Parameters.RoadWidthMeters` (multiple sites) | Query `WidthProfile` at relevant distances. |
 | MaterialPainter | `Terrain/Services/MaterialPainter.cs` | `EffectiveRoadSurfaceWidthMeters` | Query `WidthProfile` at each paint sample for surface width. |
-| MasterSplineExporter | `Terrain/Services/MasterSplineExporter.cs` | `EffectiveMasterSplineWidthMeters` | Query `WidthProfile` at each exported node for master spline width. Per-node width in JSON. |
+| MasterSplineExporter | `Terrain/Services/MasterSplineExporter.cs` | `EffectiveMasterSplineWidthMeters` | Query `WidthProfile` at each exported node for master spline width. Per-node width in JSON. Note: legacy single-material export paths (lines ~426, ~530) read from `RoadSmoothingParameters` directly — these need adaptation to accept width profile or pass through per-node widths. |
 | DecalRoadGenerator | `Terrain/Services/DecalRoad/DecalRoadGenerator.cs` | `EffectiveMasterSplineWidthMeters` | Query `WidthProfile` at sample points. Aligns with existing Phase B lane-segment splitting. |
 | RoadCorridorBuilder | `Terrain/Services/DecalRoad/RoadCorridorBuilder.cs` | `EffectiveMasterSplineWidthMeters` | Per-sample query. |
-| RoundaboutElevationHarmonizer | `Terrain/Algorithms/RoundaboutElevationHarmonizer.cs` | `parameters.RoadWidthMeters` | Query at junction point distance. Roundabouts typically have uniform lanes. |
+| RoundaboutElevationHarmonizer | `Terrain/Algorithms/RoundaboutElevationHarmonizer.cs` | `parameters.RoadWidthMeters` | Query at junction point distance. Roundabouts typically have uniform lanes and may lack `LaneSegments` (created synthetically by `RoundaboutMerger`), so they fall through to Priority 2 (layerset defaults). |
+| RoadDebugExporter | `Terrain/Services/RoadDebugExporter.cs` | `parameters.RoadWidthMeters` (multiple sites) | Update for accurate debug outlines. Lower priority. |
+| DecalRoadNetworkSnapshotBuilder | `Terrain/Services/DecalRoad/DecalRoadNetworkSnapshotBuilder.cs` | `spline.Parameters.RoadWidthMeters` | See Binary Snapshot section below. |
+| TerrainCreator | `Terrain/TerrainCreator.cs` | `material.RoadParameters.EffectiveRoadSurfaceWidthMeters` | Logging only — update for accurate width reporting. |
 
 ### CrossSection Model
 
-`UnifiedCrossSection.EffectiveRoadWidth` becomes set per-cross-section during extraction, reflecting the width at that specific distance along the spline.
+`UnifiedCrossSection.EffectiveRoadWidth` becomes set per-cross-section during extraction via `FromSplineSample()`, reflecting the width at that specific distance along the spline. `EffectiveBlendRange` continues to use the global `TerrainAffectedRangeMeters` (not varied per segment).
 
 ## UI Changes
 
@@ -162,6 +173,20 @@ Add two fields in the header row, next to existing `DefaultLaneCount` and `Defau
 | All asphalt types (motorway through service) | 2.0m | 0.0m |
 | Track | 1.0m | 0.0m |
 | Roundabout | 2.0m | 0.0m |
+
+## Binary Snapshot Format
+
+`DecalRoadNetworkSnapshot` (versioned binary format, currently `FormatVersion = 2`) serializes width parameters per-spline and `LaneSegmentSnapshot` objects. Two options:
+
+**Chosen approach:** Reconstruct the `RoadWidthProfile` on snapshot load from the already-serialized `LaneSegmentSnapshot` data plus layerset resolution. This avoids a format version bump and keeps the snapshot lean. The margin values come from layerset resolution at load time (same as during initial construction).
+
+If layerset resolution context is not available during snapshot load, fall back to serialized `RoadWidthMeters`/`RoadSurfaceWidthMeters`/`MasterSplineWidthMeters` values (existing snapshot fields).
+
+## Known Limitations
+
+- **Banking discontinuity at width-change boundaries:** `BankingOrchestrator` computes edge elevations as `center +/- (halfWidth * sin(bankAngle))`. If width changes abruptly at a segment boundary (no transition or short transition), left and right edge elevations will have discontinuities even if center elevation is smooth. This produces visible terrain steps at road edges. Mitigation: the transition zone interpolation smooths this, but if transitions are deferred to a follow-up, banking artifacts at width-change points are expected.
+- **Junction taper distance:** `UnifiedJunctionProfileBlender` uses `RoadWidthMeters` to compute taper distances. If a lane-count change happens near a junction, the taper uses the width at the junction endpoint, which may not perfectly match the visual road width at every point in the taper zone.
+- **`SmoothingCorridorMargin` vs `RoadEdgeProtectionBufferMeters`:** These serve related but distinct purposes. `SmoothingCorridorMargin` defines the elevation smoothing corridor around the painted road surface. `RoadEdgeProtectionBufferMeters` (on `RoadSmoothingParameters`) prevents adjacent lower-priority roads from modifying the edge of a higher-priority road. Both remain independently configurable; users should be aware they interact when roads are close together.
 
 ## Non-Goals
 
