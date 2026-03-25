@@ -313,8 +313,11 @@ public class UnifiedJunctionProfileBlender
 
             var junctionParams = terminating.Spline.Parameters.JunctionHarmonizationParameters
                                  ?? new JunctionHarmonizationParameters();
+            var terminatingWidth = terminating.Spline.WidthProfile
+                    ?.GetWidthsAtDistance(terminating.CrossSection.DistanceAlongSpline).corridor
+                ?? terminating.Spline.Parameters.RoadWidthMeters;
             var blendDist = CalculateAdaptiveBlendDistance(
-                junctionParams.GetEffectiveBlendDistance(terminating.Spline.Parameters.RoadWidthMeters),
+                junctionParams.GetEffectiveBlendDistance(terminatingWidth),
                 edgeCenterElev, terminatingCS.TargetElevation, terminating.Spline.Parameters);
 
             var key = (terminating.Spline.SplineId, terminating.IsSplineStart);
@@ -526,8 +529,11 @@ public class UnifiedJunctionProfileBlender
 
             var junctionParams = terminating.Spline.Parameters.JunctionHarmonizationParameters
                                  ?? new JunctionHarmonizationParameters();
+            var terminatingRoundaboutWidth = terminating.Spline.WidthProfile
+                    ?.GetWidthsAtDistance(terminating.CrossSection.DistanceAlongSpline).corridor
+                ?? terminating.Spline.Parameters.RoadWidthMeters;
             var blendDist = CalculateAdaptiveBlendDistance(
-                junctionParams.GetEffectiveRoundaboutBlendDistance(terminating.Spline.Parameters.RoadWidthMeters),
+                junctionParams.GetEffectiveRoundaboutBlendDistance(terminatingRoundaboutWidth),
                 edgeCenterElev, terminatingCS.TargetElevation, terminating.Spline.Parameters);
 
             var key = (terminating.Spline.SplineId, terminating.IsSplineStart);
@@ -583,8 +589,11 @@ public class UnifiedJunctionProfileBlender
         {
             var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters
                                  ?? new JunctionHarmonizationParameters();
+            var contributorWidth = contributor.Spline.WidthProfile
+                    ?.GetWidthsAtDistance(contributor.CrossSection.DistanceAlongSpline).corridor
+                ?? contributor.Spline.Parameters.RoadWidthMeters;
             var blendDist = CalculateAdaptiveBlendDistance(
-                junctionParams.GetEffectiveBlendDistance(contributor.Spline.Parameters.RoadWidthMeters),
+                junctionParams.GetEffectiveBlendDistance(contributorWidth),
                 harmonizedElev, contributor.CrossSection.TargetElevation, contributor.Spline.Parameters);
 
             var key = (contributor.Spline.SplineId, contributor.IsSplineStart);
@@ -625,8 +634,11 @@ public class UnifiedJunctionProfileBlender
         {
             var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters
                                  ?? new JunctionHarmonizationParameters();
+            var endpointWidth = contributor.Spline.WidthProfile
+                    ?.GetWidthsAtDistance(contributor.CrossSection.DistanceAlongSpline).corridor
+                ?? contributor.Spline.Parameters.RoadWidthMeters;
             var blendDist = CalculateAdaptiveBlendDistance(
-                junctionParams.GetEffectiveBlendDistance(contributor.Spline.Parameters.RoadWidthMeters),
+                junctionParams.GetEffectiveBlendDistance(endpointWidth),
                 terrainElev, contributor.CrossSection.TargetElevation, contributor.Spline.Parameters);
 
             var key = (contributor.Spline.SplineId, contributor.IsSplineStart);
@@ -977,8 +989,10 @@ public class UnifiedJunctionProfileBlender
 
                 var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters
                                      ?? new JunctionHarmonizationParameters();
-                var blendDistance = junctionParams.GetEffectiveBlendDistance(
-                    contributor.Spline.Parameters.RoadWidthMeters);
+                var crossingWidth = contributor.Spline.WidthProfile
+                        ?.GetWidthsAtDistance(contributor.CrossSection.DistanceAlongSpline).corridor
+                    ?? contributor.Spline.Parameters.RoadWidthMeters;
+                var blendDistance = junctionParams.GetEffectiveBlendDistance(crossingWidth);
 
                 // Find crossing index in spline
                 var crossingIndex = splineSections.FindIndex(cs => cs.Index == contributor.CrossSection.Index);
@@ -1101,7 +1115,9 @@ public class UnifiedJunctionProfileBlender
             if (!crossSectionsBySpline.TryGetValue(contributor.Spline.SplineId, out var splineSections))
                 continue;
 
-            var roadWidth = contributor.Spline.Parameters.RoadWidthMeters;
+            var roadWidth = contributor.Spline.WidthProfile
+                    ?.GetWidthsAtDistance(contributor.CrossSection.DistanceAlongSpline).corridor
+                ?? contributor.Spline.Parameters.RoadWidthMeters;
             var taperDistance = Math.Clamp(roadWidth * 4f, 10f, 50f);
 
             var distances = CalculateDistancesFromEndpoint(splineSections, contributor.IsSplineStart);
@@ -1205,9 +1221,11 @@ public class UnifiedJunctionProfileBlender
                     continue;
 
                 var minWeight = junctionParams.MinTerminatingIdwWeight;
+                var idwWidth = contributor.Spline.WidthProfile
+                        ?.GetWidthsAtDistance(contributor.CrossSection.DistanceAlongSpline).corridor
+                    ?? contributor.Spline.Parameters.RoadWidthMeters;
                 var taperDistance = junctionParams.IdwFilterTaperDistanceMeters
-                                   ?? junctionParams.GetEffectiveBlendDistance(
-                                       contributor.Spline.Parameters.RoadWidthMeters);
+                                   ?? junctionParams.GetEffectiveBlendDistance(idwWidth);
 
                 if (taperDistance <= 0) continue;
 
@@ -1337,8 +1355,10 @@ public class UnifiedJunctionProfileBlender
 
                 // Compute zone distances matching BlendSplineProfile logic
                 var junctionParams = terminating.Spline.Parameters.GetJunctionHarmonizationParameters();
-                var blendDist = junctionParams.GetEffectiveBlendDistance(
-                    terminating.Spline.Parameters.RoadWidthMeters);
+                var snapWidth = terminating.Spline.WidthProfile
+                        ?.GetWidthsAtDistance(terminating.CrossSection.DistanceAlongSpline).corridor
+                    ?? terminating.Spline.Parameters.RoadWidthMeters;
+                var blendDist = junctionParams.GetEffectiveBlendDistance(snapWidth);
                 var transitionDist = MathF.Min(flatZone, blendDist * 0.25f);
                 var effectiveBlendDist = blendDist - transitionDist;
                 var totalExtent = flatZone + transitionDist + effectiveBlendDist;

@@ -48,7 +48,9 @@ public static class RoadCorridorBuilder
             if (crossSections.Count < 2)
                 continue;
 
-            var roadWidth = spline.Parameters.EffectiveMasterSplineWidthMeters;
+            // Use max width across all segments for corridor (conservative for overlap detection)
+            var roadWidth = spline.WidthProfile?.Segments.Max(s => s.MasterSplineWidth)
+                           ?? spline.Parameters.EffectiveMasterSplineWidthMeters;
             var laneCount = GetLaneCount(spline, layerSet);
 
             var corridorHalfWidth = CalculateCorridorHalfWidth(
@@ -130,9 +132,13 @@ public static class RoadCorridorBuilder
 
     private static int GetLaneCount(ParameterizedRoadSpline spline, DecalRoadLayerSet layerSet)
     {
-        // Use max lane count across all segments for corridor width
+        // Use max lane count across all segments for corridor width.
+        // TotalLanes=0 is a sentinel meaning "use layerset defaults", so filter it out.
         if (spline.LaneSegments != null && spline.LaneSegments.Count > 0)
-            return spline.LaneSegments.Max(s => s.LaneInfo.TotalLanes);
+        {
+            var maxLanes = spline.LaneSegments.Max(s => s.LaneInfo.TotalLanes);
+            if (maxLanes > 0) return maxLanes;
+        }
         return layerSet.DefaultLaneCount;
     }
 }

@@ -868,14 +868,15 @@ public class TerrainGenerationOrchestrator
                     debugOutputPath: roundaboutDebugPath,
                     excludeBridges: state.ExcludeBridgesFromTerrain,
                     excludeTunnels: state.ExcludeTunnelsFromTerrain,
-                    alreadyProcessedRoundaboutIds: processedRoundaboutIds);
-                
+                    alreadyProcessedRoundaboutIds: processedRoundaboutIds,
+                    disableSplineMerging: state.DisableSplineMerging);
+
                 // Store roundabout info in road params for potential use in junction detection
                 if (detectedRoundabouts.Count > 0)
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         $"Detected {detectedRoundabouts.Count} roundabout(s) with {roundaboutWayIds.Count} way segments");
-                    
+
                     // Store roundabout processing result for junction detection phase
                     roadParams.RoundaboutProcessingResult = roundaboutProcessingResult;
                 }
@@ -892,7 +893,8 @@ public class TerrainGenerationOrchestrator
                     minPathLengthMeters,
                     excludeBridges: state.ExcludeBridgesFromTerrain,
                     excludeTunnels: state.ExcludeTunnelsFromTerrain,
-                    routeRelations: osmQueryResult.RouteRelations);
+                    routeRelations: osmQueryResult.RouteRelations,
+                    disableSplineMerging: state.DisableSplineMerging);
             }
 
             // Log to file only - per-material detail

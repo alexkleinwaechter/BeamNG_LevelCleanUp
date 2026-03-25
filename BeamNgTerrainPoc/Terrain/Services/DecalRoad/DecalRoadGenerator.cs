@@ -67,12 +67,15 @@ public class DecalRoadGenerator
             var surfaceSections = SubSampleCrossSections(crossSections, settings.NodeSpacingMeters);
             if (surfaceSections.Count >= 2)
             {
-                var roadWidth = spline.Parameters.EffectiveMasterSplineWidthMeters;
-                //var roadWidth = spline.Parameters.RoadSurfaceWidthMeters ?? spline.Parameters.RoadWidthMeters;
+                var defaultWidth = spline.Parameters.EffectiveMasterSplineWidthMeters;
+                // Use max width across all segments for overlap detection footprint
+                // (conservative: ensures the widest section is fully covered)
+                var maxMasterSplineWidth = spline.WidthProfile?.Segments.Max(s => s.MasterSplineWidth)
+                                           ?? defaultWidth;
                 splineSurfaces.Add(new SplineSurfaceData
                 {
                     SplineId = spline.SplineId,
-                    SurfaceHalfWidth = roadWidth / 2f,
+                    SurfaceHalfWidth = maxMasterSplineWidth / 2f,
                     CenterlinePoints = surfaceSections
                         .Select(cs => BeamNgCoordinateTransformer.TerrainToWorld2D(
                             cs.CenterPoint, terrainSizePixels, metersPerPixel))
@@ -154,7 +157,10 @@ public class DecalRoadGenerator
         // Use master spline width for lateral offsets (cascade: MasterSplineWidth → RoadSurfaceWidth → RoadWidth)
         // MasterSplineWidth is intentionally narrower than RoadSurfaceWidth to account for material dither;
         // DecalRoad edge blends are designed to visually improve the dither area at road edges.
-        var roadWidth = spline.Parameters.EffectiveMasterSplineWidthMeters;
+        // When a WidthProfile is available, query at distance 0 as the representative width;
+        // per-section width variation is handled by the downstream per-node export paths.
+        var roadWidth = spline.WidthProfile?.GetWidthsAtDistance(0f).masterSpline
+                        ?? spline.Parameters.EffectiveMasterSplineWidthMeters;
         var laneCount = GetLaneCount(spline, layerSet);
         var splineName = GetSplineName(spline);
 
@@ -175,13 +181,18 @@ public class DecalRoadGenerator
         var laneChangeBoundaries = FindLaneChangeBoundaryIndices(spline.LaneSegments, csDistances);
         var hasLaneChanges = laneChangeBoundaries.Count > 0 && spline.LaneSegments != null;
 
-        // Pre-compute range boundaries for lane-dependent splitting
+        // Pre-compute range boundaries and segment indices for lane-dependent splitting.
+        // Each range maps directly to a LaneSegment index, avoiding distance-based resolution
+        // which suffers from polyline-vs-spline distance space mismatches.
         List<int>? rangeStarts = null;
         List<int>? rangeEnds = null;
+        List<int>? rangeSegmentIndices = null;
         if (hasLaneChanges)
         {
-            rangeStarts = [0, .. laneChangeBoundaries];
-            rangeEnds = [.. laneChangeBoundaries, sampledSections.Count];
+            rangeStarts = [0, .. laneChangeBoundaries.Select(b => b.CsIndex)];
+            rangeEnds = [.. laneChangeBoundaries.Select(b => b.CsIndex), sampledSections.Count];
+            // Range 0 uses segment 0; range R (R>=1) uses boundary[R-1].SegmentIndex
+            rangeSegmentIndices = [0, .. laneChangeBoundaries.Select(b => b.SegmentIndex)];
         }
 
         // Resolve base lane info for the initial expansion (first segment or null)
@@ -210,6 +221,12 @@ public class DecalRoadGenerator
                     var rangeEnd = rangeEnds![r];
                     if (rangeEnd - rangeStart < 2) continue;
 
+                    // Use direct segment index instead of distance-based resolution
+                    var segIdx = rangeSegmentIndices![r];
+                    var segInfo = spline.LaneSegments![segIdx].LaneInfo;
+                    // TotalLanes can be 0 when OSM has width= but no lanes= tag; use method-level default
+                    var segLaneCount = segInfo.TotalLanes > 0 ? segInfo.TotalLanes : laneCount;
+
                     // rangeEnd is exclusive (from rangeEnds), convert to inclusive for filter
                     var filteredRanges = ComputeFilteredRanges(
                         layer, sampledSections, csDistances,
@@ -218,9 +235,6 @@ public class DecalRoadGenerator
                     foreach (var seg in filteredRanges)
                     {
                         var subSections = sampledSections.GetRange(seg.Start, seg.End - seg.Start + 1);
-                        var subDist = csDistances[seg.Start];
-                        var segInfo = ResolveLaneInfo(spline.LaneSegments!, subDist);
-                        var segLaneCount = segInfo.TotalLanes;
 
                         GenerateForLayerRange(
                             layer, position, side, laneIndex, isFlipped,
@@ -265,10 +279,12 @@ public class DecalRoadGenerator
                 var rangeEnd = rangeEnds![r];
                 if (rangeEnd - rangeStart < 2) continue;
 
-                var rangeSections = sampledSections.GetRange(rangeStart, rangeEnd - rangeStart);
-                var rangeDist = csDistances[rangeStart];
-                var segInfo = ResolveLaneInfo(spline.LaneSegments!, rangeDist);
-                var segLaneCount = segInfo.TotalLanes;
+                // Use direct segment index instead of distance-based resolution
+                // to avoid polyline-vs-spline distance space mismatches
+                var segIdx = rangeSegmentIndices![r];
+                var segInfo = spline.LaneSegments![segIdx].LaneInfo;
+                // TotalLanes can be 0 when OSM has width= but no lanes= tag; use method-level default
+                var segLaneCount = segInfo.TotalLanes > 0 ? segInfo.TotalLanes : laneCount;
 
                 // Re-expand with segment-specific lane count and lane info
                 var segExpanded = ExpandLayersWithLaneInfo(laneAwareLayers, segLaneCount, segInfo);
@@ -282,13 +298,10 @@ public class DecalRoadGenerator
                     foreach (var seg in filteredRanges)
                     {
                         var subSections = sampledSections.GetRange(seg.Start, seg.End - seg.Start + 1);
-                        var subDist = csDistances[seg.Start];
-                        var subSegInfo = ResolveLaneInfo(spline.LaneSegments!, subDist);
-                        var subLaneCount = subSegInfo.TotalLanes;
 
                         GenerateForLayerRange(
                             layer, position, side, laneIndex, isFlipped,
-                            subSections, subSegInfo, subLaneCount,
+                            subSections, segInfo, segLaneCount,
                             spline, roadWidth, splineName,
                             heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                             ref chunkIndex, results,
@@ -325,21 +338,29 @@ public class DecalRoadGenerator
         // These modes mean "fill the road/lane width" which is geometry-driven,
         // not material-driven. The override only applies to fixed-width layers.
         var baseWidth = overrideWidth ?? layer.Width;
-        float nodeWidth;
-        if (layer.IsTrackWidth)
-            nodeWidth = roadWidth;
-        else if (layer.IsLaneWidth)
-            nodeWidth = roadWidth / Math.Max(1, segLaneCount);
-        else
-            nodeWidth = baseWidth;
 
-        // Calculate laterally offset nodes using cross-section normals
+        // Calculate laterally offset nodes and per-node widths using cross-section normals.
+        // When a WidthProfile is available, query per-section distance for varying road width;
+        // this enables DecalRoad overlays to widen/narrow with lane count changes.
         var offsetNodes2D = new List<Vector2>(sections.Count);
+        var nodeWidths = new List<float>(sections.Count);
         foreach (var cs in sections)
         {
-            var offset = position * 0.5f * roadWidth;
+            var sectionRoadWidth = spline.WidthProfile?.GetWidthsAtDistance(cs.DistanceAlongSpline).masterSpline
+                                   ?? roadWidth;
+
+            var offset = position * 0.5f * sectionRoadWidth;
             var offsetPos = cs.CenterPoint + cs.NormalDirection * offset;
             offsetNodes2D.Add(offsetPos);
+
+            float nodeWidth;
+            if (layer.IsTrackWidth)
+                nodeWidth = sectionRoadWidth;
+            else if (layer.IsLaneWidth)
+                nodeWidth = sectionRoadWidth / Math.Max(1, segLaneCount);
+            else
+                nodeWidth = baseWidth;
+            nodeWidths.Add(nodeWidth);
         }
 
         // Convert all nodes to world coordinates with elevation from cross-sections
@@ -361,7 +382,7 @@ public class DecalRoadGenerator
             var worldPos = BeamNgCoordinateTransformer.TerrainToWorld(
                 pos.X, pos.Y, elevation + terrainBaseHeight,
                 terrainSizePixels, metersPerPixel);
-            worldNodes.Add([worldPos.X, worldPos.Y, worldPos.Z, nodeWidth]);
+            worldNodes.Add([worldPos.X, worldPos.Y, worldPos.Z, nodeWidths[i]]);
         }
 
         // Reverse node order for flipped layers (right-side mirrored).
@@ -406,8 +427,11 @@ public class DecalRoadGenerator
             PreserveContinuity = layer.LayerType == DecalRoadLayerType.DirectionDivider
         };
 
-        // Override AI road properties from lane segment data
-        if (layer.LayerType == DecalRoadLayerType.AIRoad && segInfo != null)
+        // Override AI road properties from lane segment data.
+        // Only override when TotalLanes > 0 (explicit OSM lane tags exist).
+        // When TotalLanes is 0 (width-only OSM data, no lanes= tag), keep layer defaults
+        // so that LanesLeft/LanesRight come from the layer set rather than being zeroed out.
+        if (layer.LayerType == DecalRoadLayerType.AIRoad && segInfo is { TotalLanes: > 0 })
         {
             var (lanesRight, lanesLeft, oneWay, flipDirection) = DeriveAIRoadProperties(segInfo);
             road.LanesRight = lanesRight;
@@ -423,9 +447,9 @@ public class DecalRoadGenerator
         {
             road.OneWay = true;
             road.LanesLeft = 0;
-            // If we have lane info from OSM, use total lanes as right lanes
-            // Otherwise keep the layer default (1 lane)
-            if (segInfo != null)
+            // If we have lane info from OSM with explicit lanes, use total lanes as right lanes.
+            // TotalLanes can be 0 when OSM has width= but no lanes= tag — keep layer default.
+            if (segInfo != null && segInfo.TotalLanes > 0)
                 road.LanesRight = segInfo.TotalLanes;
             // Always disable auto-lane computation — we set lanes explicitly.
             // Without this, BeamNG's auto-lane logic overrides OneWay and LanesLeft at runtime.
@@ -879,9 +903,11 @@ public class DecalRoadGenerator
 
     private static int GetLaneCount(ParameterizedRoadSpline spline, DecalRoadLayerSet layerSet)
     {
-        // Use first lane segment's TotalLanes if available
-        if (spline.LaneSegments != null && spline.LaneSegments.Count > 0)
-            return spline.LaneSegments[0].LaneInfo.TotalLanes;
+        // Use first lane segment's TotalLanes if available and non-zero.
+        // TotalLanes can be 0 when OSM has a width= tag but no lanes= tag —
+        // in that case fall through to the layer set default.
+        if (spline.LaneSegments is { Count: > 0 } segs && segs[0].LaneInfo.TotalLanes > 0)
+            return segs[0].LaneInfo.TotalLanes;
 
         return layerSet.DefaultLaneCount;
     }
@@ -920,14 +946,20 @@ public class DecalRoadGenerator
     ///     Returns cross-section indices where lane configuration changes.
     ///     Used to split lane-dependent layers at lane-change boundaries.
     /// </summary>
-    public static List<int> FindLaneChangeBoundaryIndices(
+    /// <summary>
+    ///     Finds cross-section indices where lane configuration changes, along with
+    ///     the LaneSegment index that starts at each boundary.
+    ///     Returns (CsIndex, SegmentIndex) pairs so callers can look up lane info
+    ///     directly by segment index instead of error-prone distance-based resolution.
+    /// </summary>
+    public static List<(int CsIndex, int SegmentIndex)> FindLaneChangeBoundaryIndices(
         IReadOnlyList<LaneSegment>? segments,
         IReadOnlyList<float> crossSectionDistances)
     {
         if (segments == null || segments.Count <= 1)
             return [];
 
-        var boundaries = new List<int>();
+        var boundaries = new List<(int CsIndex, int SegmentIndex)>();
         // For each segment boundary (skip first), find the nearest cross-section
         for (var s = 1; s < segments.Count; s++)
         {
@@ -947,8 +979,8 @@ public class DecalRoadGenerator
 
             // Avoid duplicate boundaries and out-of-range
             if (bestIdx > 0 && bestIdx < crossSectionDistances.Count - 1)
-                if (boundaries.Count == 0 || boundaries[^1] != bestIdx)
-                    boundaries.Add(bestIdx);
+                if (boundaries.Count == 0 || boundaries[^1].CsIndex != bestIdx)
+                    boundaries.Add((bestIdx, s));
         }
 
         return boundaries;

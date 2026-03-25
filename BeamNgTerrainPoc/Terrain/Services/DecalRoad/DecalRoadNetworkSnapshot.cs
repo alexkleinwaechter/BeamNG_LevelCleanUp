@@ -10,7 +10,7 @@ namespace BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 /// </summary>
 public class DecalRoadNetworkSnapshot
 {
-    public const int FormatVersion = 2;
+    public const int FormatVersion = 3;
     public const string FileName = "network.bin";
     public const string SubFolder = "decalroad_data";
 
@@ -155,6 +155,8 @@ public class LaneSegmentSnapshot
     public int LanesBackward { get; set; }
     public int LanesBothWays { get; set; }
     public bool IsOneWay { get; set; }
+    public float? WidthMeters { get; set; }
+    public float? EstWidthMeters { get; set; }
 
     public void WriteTo(BinaryWriter w)
     {
@@ -165,11 +167,15 @@ public class LaneSegmentSnapshot
         w.Write(LanesBackward);
         w.Write(LanesBothWays);
         w.Write(IsOneWay);
+        w.Write(WidthMeters.HasValue);
+        if (WidthMeters.HasValue) w.Write(WidthMeters.Value);
+        w.Write(EstWidthMeters.HasValue);
+        if (EstWidthMeters.HasValue) w.Write(EstWidthMeters.Value);
     }
 
     public static LaneSegmentSnapshot ReadFrom(BinaryReader r)
     {
-        return new LaneSegmentSnapshot
+        var ls = new LaneSegmentSnapshot
         {
             StartPointIndex = r.ReadInt32(),
             StartDistance = r.ReadSingle(),
@@ -179,6 +185,9 @@ public class LaneSegmentSnapshot
             LanesBothWays = r.ReadInt32(),
             IsOneWay = r.ReadBoolean()
         };
+        ls.WidthMeters = r.ReadBoolean() ? r.ReadSingle() : null;
+        ls.EstWidthMeters = r.ReadBoolean() ? r.ReadSingle() : null;
+        return ls;
     }
 }
 

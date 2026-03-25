@@ -443,7 +443,9 @@ public class RoundaboutElevationHarmonizer
             // IMPORTANT: Use effective roundabout blend distance (supports auto-calculation from road width)
             var junctionParams = connectingSpline.Parameters.JunctionHarmonizationParameters
                                  ?? new JunctionHarmonizationParameters();
-            var roadWidth = connectingSpline.Parameters.RoadWidthMeters;
+            var junctionDistance = junction.IsConnectingRoadStart ? 0f : connectingSpline.TotalLengthMeters;
+            var roadWidth = connectingSpline.WidthProfile?.GetWidthsAtDistance(junctionDistance).corridor
+                ?? connectingSpline.Parameters.RoadWidthMeters;
             var blendDistance = junctionParams.GetEffectiveRoundaboutBlendDistance(roadWidth);
 
             // Calculate the total length of the connecting road

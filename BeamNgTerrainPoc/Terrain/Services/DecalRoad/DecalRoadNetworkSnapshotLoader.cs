@@ -12,7 +12,10 @@ namespace BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 /// </summary>
 public static class DecalRoadNetworkSnapshotLoader
 {
-    public static UnifiedRoadNetwork? LoadNetwork(string levelPath)
+    public static UnifiedRoadNetwork? LoadNetwork(
+        string levelPath,
+        DecalRoadSettings? decalRoadSettings = null,
+        IReadOnlyDictionary<string, DecalRoadLayerSet>? appDataDefaults = null)
     {
         var snapshotPath = DecalRoadNetworkSnapshot.GetSnapshotPath(levelPath);
         if (!File.Exists(snapshotPath))
@@ -25,7 +28,7 @@ public static class DecalRoadNetworkSnapshotLoader
             snapshot = DecalRoadNetworkSnapshot.ReadFrom(reader);
         }
 
-        return ReconstructNetwork(snapshot);
+        return ReconstructNetwork(snapshot, decalRoadSettings, appDataDefaults);
     }
 
     /// <summary>
@@ -58,8 +61,13 @@ public static class DecalRoadNetworkSnapshotLoader
     /// Reconstructs a UnifiedRoadNetwork from a snapshot.
     /// Splines get stub RoadSpline objects (2-point linear) since the generator
     /// only uses pre-computed cross-section data.
+    /// When <paramref name="decalRoadSettings"/> and <paramref name="appDataDefaults"/> are provided,
+    /// the RoadWidthProfile is also reconstructed from the serialized lane segment width data.
     /// </summary>
-    internal static UnifiedRoadNetwork ReconstructNetwork(DecalRoadNetworkSnapshot snapshot)
+    internal static UnifiedRoadNetwork ReconstructNetwork(
+        DecalRoadNetworkSnapshot snapshot,
+        DecalRoadSettings? decalRoadSettings = null,
+        IReadOnlyDictionary<string, DecalRoadLayerSet>? appDataDefaults = null)
     {
         var network = new UnifiedRoadNetwork();
 
@@ -88,7 +96,9 @@ public static class DecalRoadNetworkSnapshotLoader
                         LanesForward = ls.LanesForward,
                         LanesBackward = ls.LanesBackward,
                         LanesBothWays = ls.LanesBothWays,
-                        IsOneWay = ls.IsOneWay
+                        IsOneWay = ls.IsOneWay,
+                        WidthMeters = ls.WidthMeters,
+                        EstWidthMeters = ls.EstWidthMeters,
                     }
                 }).ToList();
             }
@@ -112,6 +122,14 @@ public static class DecalRoadNetworkSnapshotLoader
             };
             spline.IsRoundabout = ss.IsRoundabout;
             spline.Priority = ss.Priority;
+
+            // Reconstruct RoadWidthProfile when layerset resolution context is available
+            if (decalRoadSettings != null && appDataDefaults != null)
+            {
+                var layerSet = DecalRoadLayerSetResolver.Resolve(
+                    spline.OsmRoadType, spline.MaterialName, decalRoadSettings, appDataDefaults);
+                spline.WidthProfile = BuildWidthProfile(spline, layerSet);
+            }
 
             network.AddSpline(spline);
             splineById[ss.SplineId] = spline;
@@ -170,5 +188,74 @@ public static class DecalRoadNetworkSnapshotLoader
         }
 
         return network;
+    }
+
+    /// <summary>
+    /// Builds a RoadWidthProfile from the lane segments and layerset configuration.
+    /// Mirrors the logic in UnifiedRoadNetworkBuilder.BuildWidthProfile.
+    /// Returns null if no layerset is provided.
+    /// </summary>
+    private static RoadWidthProfile? BuildWidthProfile(
+        ParameterizedRoadSpline spline,
+        DecalRoadLayerSet? layerSet)
+    {
+        if (layerSet == null) return null;
+
+        var segments = new List<WidthSegment>();
+
+        if (layerSet.EnablePerSegmentWidth && spline.LaneSegments is { Count: > 0 })
+        {
+            foreach (var ls in spline.LaneSegments)
+            {
+                float surfaceWidth;
+                WidthSource source;
+
+                if (layerSet.UseOsmWidthTag && ls.LaneInfo.WidthMeters.HasValue)
+                {
+                    surfaceWidth = ls.LaneInfo.WidthMeters.Value;
+                    source = WidthSource.OsmWidthTagExact;
+                }
+                else if (layerSet.UseOsmWidthTag && ls.LaneInfo.EstWidthMeters.HasValue)
+                {
+                    surfaceWidth = ls.LaneInfo.EstWidthMeters.Value;
+                    source = WidthSource.OsmWidthTagEstimated;
+                }
+                else if (ls.LaneInfo.TotalLanes > 0)
+                {
+                    surfaceWidth = ls.LaneInfo.TotalLanes * layerSet.DefaultLaneWidth;
+                    source = WidthSource.LaneCalculation;
+                }
+                else
+                {
+                    surfaceWidth = layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth;
+                    source = WidthSource.LayerSetDefault;
+                }
+
+                segments.Add(new WidthSegment
+                {
+                    StartDistance = ls.StartDistance,
+                    RoadSurfaceWidth = surfaceWidth,
+                    SmoothingCorridorWidth = surfaceWidth + 2 * layerSet.SmoothingCorridorMargin,
+                    MasterSplineWidth = surfaceWidth + 2 * layerSet.MasterSplineMargin,
+                    LaneCount = ls.LaneInfo.TotalLanes,
+                    Source = source
+                });
+            }
+        }
+        else
+        {
+            var surfaceWidth = layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth;
+            segments.Add(new WidthSegment
+            {
+                StartDistance = 0f,
+                RoadSurfaceWidth = surfaceWidth,
+                SmoothingCorridorWidth = surfaceWidth + 2 * layerSet.SmoothingCorridorMargin,
+                MasterSplineWidth = surfaceWidth + 2 * layerSet.MasterSplineMargin,
+                LaneCount = layerSet.DefaultLaneCount,
+                Source = WidthSource.LayerSetDefault
+            });
+        }
+
+        return new RoadWidthProfile(segments);
     }
 }

@@ -112,8 +112,12 @@ public static class MasterSplineExporter
                 if (nodes.Count < 2)
                     continue;
 
-                // Use road surface width for the master spline
-                var roadWidth = paramSpline.Parameters.EffectiveMasterSplineWidthMeters;
+                var defaultWidth = paramSpline.Parameters.EffectiveMasterSplineWidthMeters;
+
+                // Build per-node widths from WidthProfile when available
+                var nodeWidths = BuildNodeWidthsFromCrossSections(
+                    crossSections, paramSpline.WidthProfile, defaultWidth,
+                    nodeDistanceMeters, nodes.Count);
 
                 // Create spline name: MaterialName_index (e.g., "Asphalt_001")
                 var splineName = $"{SanitizeName(materialName)}_{splineIndex:D3}";
@@ -137,7 +141,7 @@ public static class MasterSplineExporter
                     // Always use vertical normals - terrain banking is in the heightmap
                     Nmls = nodes.Select(_ => new SplineNormal { X = 0, Y = 0, Z = 1 }).ToList(),
 
-                    Widths = nodes.Select(_ => roadWidth).ToList()
+                    Widths = nodeWidths
                 };
 
                 masterSplines.Add(masterSpline);
@@ -200,7 +204,7 @@ public static class MasterSplineExporter
                 if (spline == null || spline.TotalLength < 1f)
                     continue;
 
-                var halfWidth = paramSpline.Parameters.EffectiveMasterSplineWidthMeters / 2.0f;
+                var defaultHalfWidth = paramSpline.Parameters.EffectiveMasterSplineWidthMeters / 2.0f;
 
                 // Create individual spline image
                 using var splineImage = new Image<L16>(terrainSizePixels, terrainSizePixels, new L16(0));
@@ -213,11 +217,19 @@ public static class MasterSplineExporter
                     var s1 = samples[i];
                     var s2 = samples[i + 1];
 
+                    // Query per-sample width from WidthProfile when available
+                    var halfWidth1 = paramSpline.WidthProfile != null
+                        ? paramSpline.WidthProfile.GetWidthsAtDistance(s1.Distance).masterSpline / 2.0f
+                        : defaultHalfWidth;
+                    var halfWidth2 = paramSpline.WidthProfile != null
+                        ? paramSpline.WidthProfile.GetWidthsAtDistance(s2.Distance).masterSpline / 2.0f
+                        : defaultHalfWidth;
+
                     // Get corners of road segment
-                    var left1 = s1.Position - s1.Normal * halfWidth;
-                    var right1 = s1.Position + s1.Normal * halfWidth;
-                    var left2 = s2.Position - s2.Normal * halfWidth;
-                    var right2 = s2.Position + s2.Normal * halfWidth;
+                    var left1 = s1.Position - s1.Normal * halfWidth1;
+                    var right1 = s1.Position + s1.Normal * halfWidth1;
+                    var left2 = s2.Position - s2.Normal * halfWidth2;
+                    var right2 = s2.Position + s2.Normal * halfWidth2;
 
                     // Convert to pixels
                     var l1x = (int)(left1.X / metersPerPixel);
@@ -341,6 +353,47 @@ public static class MasterSplineExporter
             });
 
         return nodes;
+    }
+
+    /// <summary>
+    ///     Builds per-node width list from cross-sections and an optional WidthProfile.
+    ///     Replicates the same sampling logic as SampleNodesFromUnifiedCrossSections
+    ///     to determine the distance for each node.
+    /// </summary>
+    private static List<float> BuildNodeWidthsFromCrossSections(
+        List<UnifiedCrossSection> crossSections,
+        RoadWidthProfile? widthProfile,
+        float defaultWidth,
+        float nodeDistanceMeters,
+        int nodeCount)
+    {
+        if (widthProfile == null)
+            return Enumerable.Repeat(defaultWidth, nodeCount).ToList();
+
+        var widths = new List<float>(nodeCount);
+
+        var totalLength = EstimatePathLengthFromUnified(crossSections);
+        var targetNodeCount = Math.Max(2, (int)Math.Ceiling(totalLength / nodeDistanceMeters) + 1);
+        var step = Math.Max(1, crossSections.Count / targetNodeCount);
+
+        for (var i = 0; i < crossSections.Count; i += step)
+        {
+            var distance = crossSections[i].DistanceAlongSpline;
+            widths.Add(widthProfile.GetWidthsAtDistance(distance).masterSpline);
+        }
+
+        // Always include the last cross-section (mirrors SampleNodesFromUnifiedCrossSections)
+        var lastDistance = crossSections[^1].DistanceAlongSpline;
+        if (widths.Count < nodeCount)
+            widths.Add(widthProfile.GetWidthsAtDistance(lastDistance).masterSpline);
+
+        // Ensure the count matches the node count exactly
+        while (widths.Count < nodeCount)
+            widths.Add(widthProfile.GetWidthsAtDistance(lastDistance).masterSpline);
+        if (widths.Count > nodeCount)
+            widths = widths.Take(nodeCount).ToList();
+
+        return widths;
     }
 
     /// <summary>

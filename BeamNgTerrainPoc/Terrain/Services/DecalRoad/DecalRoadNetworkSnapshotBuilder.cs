@@ -43,7 +43,9 @@ public static class DecalRoadNetworkSnapshotBuilder
                     LanesForward = ls.LaneInfo.LanesForward,
                     LanesBackward = ls.LaneInfo.LanesBackward,
                     LanesBothWays = ls.LaneInfo.LanesBothWays,
-                    IsOneWay = ls.LaneInfo.IsOneWay
+                    IsOneWay = ls.LaneInfo.IsOneWay,
+                    WidthMeters = ls.LaneInfo.WidthMeters,
+                    EstWidthMeters = ls.LaneInfo.EstWidthMeters,
                 }).ToList();
             }
 

@@ -61,6 +61,12 @@ public class TerrainGenerationState
     /// </summary>
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
+    /// <summary>
+    ///     When true, disables spline merging (each OSM way becomes a separate spline).
+    ///     For testing only — merging is needed for smooth road continuity.
+    /// </summary>
+    public bool DisableSplineMerging { get; set; } = false;
+
     // ========================================
     // DECALROAD SETTINGS
     // ========================================
@@ -376,7 +382,7 @@ public class TerrainGenerationState
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
         FlipMaterialProcessingOrder = false;
-        EnableDecalRoads = false;
+        EnableDecalRoads = true;
         DecalRoadSettings = null;
         CachedNetwork = null;
         CachedHeightMap = null;

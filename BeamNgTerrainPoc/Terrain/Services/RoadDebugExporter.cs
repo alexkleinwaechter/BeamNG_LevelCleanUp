@@ -165,7 +165,6 @@ public static class RoadDebugExporter
     {
         var width = geometry.Width;
         var height = geometry.Height;
-        var halfWidth = parameters.RoadWidthMeters / 2.0f;
 
         // Create output directory
         var baseDir = parameters.DebugOutputDirectory;
@@ -207,6 +206,7 @@ public static class RoadDebugExporter
             foreach (var cs in pathSections)
             {
                 var center = cs.CenterPoint;
+                var halfWidth = (cs.WidthMeters > 0 ? cs.WidthMeters : parameters.RoadWidthMeters) / 2.0f;
                 var left = center - cs.NormalDirection * halfWidth;
                 var right = center + cs.NormalDirection * halfWidth;
 
@@ -228,11 +228,13 @@ public static class RoadDebugExporter
                 var cs1 = pathSections[i];
                 var cs2 = pathSections[i + 1];
 
-                // Get the four corners of the road segment
-                var left1 = cs1.CenterPoint - cs1.NormalDirection * halfWidth;
-                var right1 = cs1.CenterPoint + cs1.NormalDirection * halfWidth;
-                var left2 = cs2.CenterPoint - cs2.NormalDirection * halfWidth;
-                var right2 = cs2.CenterPoint + cs2.NormalDirection * halfWidth;
+                // Get the four corners of the road segment using per-segment widths
+                var halfWidth1 = (cs1.WidthMeters > 0 ? cs1.WidthMeters : parameters.RoadWidthMeters) / 2.0f;
+                var halfWidth2 = (cs2.WidthMeters > 0 ? cs2.WidthMeters : parameters.RoadWidthMeters) / 2.0f;
+                var left1 = cs1.CenterPoint - cs1.NormalDirection * halfWidth1;
+                var right1 = cs1.CenterPoint + cs1.NormalDirection * halfWidth1;
+                var left2 = cs2.CenterPoint - cs2.NormalDirection * halfWidth2;
+                var right2 = cs2.CenterPoint + cs2.NormalDirection * halfWidth2;
 
                 // Draw filled quad
                 FillQuadL16(pathImage,
@@ -262,7 +264,7 @@ public static class RoadDebugExporter
 
         TerrainCreationLogger.Current?.Detail($"Exported {pathIndex} individual spline mask(s) + combined mask (16-bit grayscale)");
         TerrainCreationLogger.Current?.Detail(
-            $"  Road width: {parameters.RoadWidthMeters}m ({parameters.RoadWidthMeters / metersPerPixel:F1} pixels)");
+            $"  Default road width: {parameters.RoadWidthMeters}m ({parameters.RoadWidthMeters / metersPerPixel:F1} pixels) â€” per-segment widths used where available");
         TerrainCreationLogger.Current?.Detail($"  Combined mask: {combinedFilePath}");
     }
 
@@ -365,11 +367,12 @@ public static class RoadDebugExporter
         }
 
         // Draw road width (perpendicular segments) for a subset of cross-sections
+        // Uses per-segment width from cs.WidthMeters (set from WidthProfile if available, else RoadWidthMeters)
         var step = Math.Max(1, (int)(2.0f * parameters.CrossSectionIntervalMeters));
         foreach (var cs in geometry.CrossSections.Where(c => c.LocalIndex % step == 0))
         {
             var center = cs.CenterPoint;
-            var halfWidth = parameters.RoadWidthMeters / 2.0f;
+            var halfWidth = (cs.WidthMeters > 0 ? cs.WidthMeters : parameters.RoadWidthMeters) / 2.0f;
             var left = center - cs.NormalDirection * halfWidth;
             var right = center + cs.NormalDirection * halfWidth;
             var lx = (int)(left.X / metersPerPixel);
@@ -425,7 +428,8 @@ public static class RoadDebugExporter
             var color = GetColorForValue(normalizedElevation);
 
             var center = cs.CenterPoint;
-            var halfWidth = parameters.RoadWidthMeters / 2.0f;
+            // Use per-segment width from cs.WidthMeters (set from WidthProfile if available, else RoadWidthMeters)
+            var halfWidth = (cs.WidthMeters > 0 ? cs.WidthMeters : parameters.RoadWidthMeters) / 2.0f;
             var left = center - cs.NormalDirection * halfWidth;
             var right = center + cs.NormalDirection * halfWidth;
             var lx = (int)(left.X / metersPerPixel);
@@ -448,8 +452,8 @@ public static class RoadDebugExporter
     ///     Exports the smoothed heightmap as a grayscale image with road outlines overlaid.
     ///     Shows:
     ///     - Smoothed heightmap as grayscale background
-    ///     - Thin cyan outline at road edges (± roadWidth/2)
-    ///     - Thin magenta outline at terrain blending edges (± roadWidth/2 + terrainAffectedRange)
+    ///     - Thin cyan outline at road edges (ï¿½ roadWidth/2)
+    ///     - Thin magenta outline at terrain blending edges (ï¿½ roadWidth/2 + terrainAffectedRange)
     /// </summary>
     public static void ExportSmoothedHeightmapWithRoadOutlines(
         float[,] smoothedHeightMap,
@@ -522,9 +526,9 @@ public static class RoadDebugExporter
         TerrainCreationLogger.Current?.Detail($"Exported smoothed heightmap with outlines: {filePath}");
         TerrainCreationLogger.Current?.Detail($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");
         TerrainCreationLogger.Current?.Detail(
-            $"  Road edge outline (cyan): {roadEdgePixels:N0} pixels at ±{roadHalfWidth:F1}m from centerline");
+            $"  Road edge outline (cyan): {roadEdgePixels:N0} pixels at ï¿½{roadHalfWidth:F1}m from centerline");
         TerrainCreationLogger.Current?.Detail(
-            $"  Blend zone edge outline (magenta): {blendEdgePixels:N0} pixels at ±{blendZoneMaxDist:F1}m from centerline");
+            $"  Blend zone edge outline (magenta): {blendEdgePixels:N0} pixels at ï¿½{blendZoneMaxDist:F1}m from centerline");
     }
 
     #region Drawing Helpers
