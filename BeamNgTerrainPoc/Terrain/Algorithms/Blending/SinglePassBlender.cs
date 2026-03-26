@@ -87,7 +87,7 @@ public class SinglePassBlender
         var splineParams = network.Splines.ToDictionary(
             s => s.SplineId,
             s => (
-                HalfWidth: s.Parameters.RoadWidthMeters / 2.0f,
+                HalfWidth: (s.WidthProfile?.Segments[0].SmoothingCorridorWidth ?? s.Parameters.RoadWidthMeters) / 2.0f,
                 DOI: s.Parameters.TerrainAffectedRangeMeters,
                 FalloffExp: s.Parameters.FalloffExponent,
                 BlendFunction: s.Parameters.BlendFunctionType,

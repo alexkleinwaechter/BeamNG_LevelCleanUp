@@ -3,9 +3,11 @@ using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
+using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -48,7 +50,9 @@ public class UnifiedRoadNetworkBuilder
         float[,] heightMap,
         float metersPerPixel,
         int terrainSize,
-        bool flipMaterialProcessingOrder = true)
+        bool flipMaterialProcessingOrder = true,
+        DecalRoadSettings? decalRoadSettings = null,
+        IReadOnlyDictionary<string, DecalRoadLayerSet>? appDataDefaults = null)
     {
         var perfLog = TerrainCreationLogger.Current;
         var network = new UnifiedRoadNetwork();
@@ -112,6 +116,28 @@ public class UnifiedRoadNetworkBuilder
                         BridgeStructureType = spline.BridgeStructureType
                     };
 
+                    // Resolve layerset for width profile
+                    if (appDataDefaults != null)
+                    {
+                        var layerSet = DecalRoadLayerSetResolver.Resolve(
+                            paramSpline.OsmRoadType, paramSpline.MaterialName, decalRoadSettings, appDataDefaults);
+                        paramSpline.WidthProfile = BuildWidthProfile(paramSpline, layerSet);
+
+                        // Diagnostic: log splines with varying width segments
+                        if (paramSpline.WidthProfile?.Segments.Count > 1)
+                        {
+                            TerrainCreationLogger.Current?.Detail($"    WidthProfile: {paramSpline.WidthProfile.Segments.Count} segments, " +
+                                $"widths: {string.Join(" → ", paramSpline.WidthProfile.Segments.Select(s => $"{s.RoadSurfaceWidth:F1}m({s.Source})"))}");
+                        }
+                    }
+
+                    // Diagnostic: log splines with varying lane segments
+                    if (paramSpline.LaneSegments is { Count: > 1 })
+                    {
+                        TerrainCreationLogger.Current?.Detail($"    LaneSegments: {paramSpline.LaneSegments.Count} segments, " +
+                            $"lanes: {string.Join(" → ", paramSpline.LaneSegments.Select(s => $"{s.LaneInfo.TotalLanes}L@{s.StartDistance:F0}m"))}");
+                    }
+
                     // Calculate priority using the cascade:
                     // 1. OSM road type (if available)
                     // 2. Road width
@@ -152,6 +178,76 @@ public class UnifiedRoadNetworkBuilder
         }
 
         return network;
+    }
+
+    /// <summary>
+    /// Builds a width profile from OSM lane/width data for a given spline and layerset.
+    /// Returns null if no layerset is provided.
+    /// </summary>
+    private static RoadWidthProfile? BuildWidthProfile(
+        ParameterizedRoadSpline spline,
+        DecalRoadLayerSet? layerSet)
+    {
+        if (layerSet == null) return null;
+
+        var segments = new List<WidthSegment>();
+
+        // When per-segment width is disabled, use layerset defaults as a single uniform segment
+        if (layerSet.EnablePerSegmentWidth && spline.LaneSegments is { Count: > 0 })
+        {
+            foreach (var ls in spline.LaneSegments)
+            {
+                float surfaceWidth;
+                WidthSource source;
+
+                if (layerSet.UseOsmWidthTag && ls.LaneInfo.WidthMeters.HasValue)
+                {
+                    surfaceWidth = ls.LaneInfo.WidthMeters.Value;
+                    source = WidthSource.OsmWidthTagExact;
+                }
+                else if (layerSet.UseOsmWidthTag && ls.LaneInfo.EstWidthMeters.HasValue)
+                {
+                    surfaceWidth = ls.LaneInfo.EstWidthMeters.Value;
+                    source = WidthSource.OsmWidthTagEstimated;
+                }
+                else if (ls.LaneInfo.TotalLanes > 0)
+                {
+                    surfaceWidth = ls.LaneInfo.TotalLanes * layerSet.DefaultLaneWidth;
+                    source = WidthSource.LaneCalculation;
+                }
+                else
+                {
+                    surfaceWidth = layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth;
+                    source = WidthSource.LayerSetDefault;
+                }
+
+                segments.Add(new WidthSegment
+                {
+                    StartDistance = ls.StartDistance,
+                    RoadSurfaceWidth = surfaceWidth,
+                    SmoothingCorridorWidth = surfaceWidth + 2 * layerSet.SmoothingCorridorMargin,
+                    MasterSplineWidth = surfaceWidth + 2 * layerSet.MasterSplineMargin,
+                    LaneCount = ls.LaneInfo.TotalLanes,
+                    Source = source
+                });
+            }
+        }
+        else
+        {
+            // No lane segments — single uniform width from layerset defaults
+            var surfaceWidth = layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth;
+            segments.Add(new WidthSegment
+            {
+                StartDistance = 0f,
+                RoadSurfaceWidth = surfaceWidth,
+                SmoothingCorridorWidth = surfaceWidth + 2 * layerSet.SmoothingCorridorMargin,
+                MasterSplineWidth = surfaceWidth + 2 * layerSet.MasterSplineMargin,
+                LaneCount = layerSet.DefaultLaneCount,
+                Source = WidthSource.LayerSetDefault
+            });
+        }
+
+        return new RoadWidthProfile(segments);
     }
 
     /// <summary>

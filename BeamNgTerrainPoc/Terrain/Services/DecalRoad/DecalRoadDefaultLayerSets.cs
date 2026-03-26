@@ -28,18 +28,24 @@ public static class DecalRoadDefaultLayerSets
 {
     public static Dictionary<string, DecalRoadLayerSet> GetDefaults()
     {
+        // Link roads: slip roads, ramps, turning lanes — single lane, narrower than parent
         return new Dictionary<string, DecalRoadLayerSet>
         {
-            ["motorway"] = CreateAsphaltRoadSet("Motorway", 4),
-            ["trunk"] = CreateAsphaltRoadSet("Trunk", 4),
-            ["primary"] = CreateAsphaltRoadSet("Primary", 2),
-            ["secondary"] = CreateAsphaltRoadSet("Secondary", 2),
-            ["tertiary"] = CreateAsphaltRoadSet("Tertiary", 2),
-            ["unclassified"] = CreateAsphaltRoadSet("Unclassified", 2),
-            ["residential"] = CreateAsphaltRoadSet("Residential", 2),
-            ["service"] = CreateAsphaltRoadSet("Service", 2),
-            ["track"] = CreateTrackSet("Track", 2),
-            ["roundabout"] = CreateRoundaboutSet("Roundabout", 1)
+            ["motorway"] = CreateAsphaltRoadSet("Motorway", 4, 3.5f, 2.0f, 0.0f),
+            ["motorway_link"] = CreateAsphaltRoadSet("Motorway Link", 1, 3.5f, 1.5f, 0.0f),
+            ["trunk"] = CreateAsphaltRoadSet("Trunk", 4, 3.5f, 2.0f, 0.0f),
+            ["trunk_link"] = CreateAsphaltRoadSet("Trunk Link", 1, 3.5f, 1.5f, 0.0f),
+            ["primary"] = CreateAsphaltRoadSet("Primary", 2, 3.5f, 2.0f, 0.0f),
+            ["primary_link"] = CreateAsphaltRoadSet("Primary Link", 1, 3.25f, 1.5f, 0.0f),
+            ["secondary"] = CreateAsphaltRoadSet("Secondary", 2, 3.5f, 2.0f, 0.0f),
+            ["secondary_link"] = CreateAsphaltRoadSet("Secondary Link", 1, 3.0f, 1.5f, 0.0f),
+            ["tertiary"] = CreateAsphaltRoadSet("Tertiary", 2, 3.0f, 2.0f, 0.0f),
+            ["tertiary_link"] = CreateAsphaltRoadSet("Tertiary Link", 1, 3.0f, 1.0f, 0.0f),
+            ["unclassified"] = CreateAsphaltRoadSet("Unclassified", 2, 3.0f, 2.0f, 0.0f),
+            ["residential"] = CreateAsphaltRoadSet("Residential", 2, 3.0f, 2.0f, 0.0f),
+            ["service"] = CreateAsphaltRoadSet("Service", 2, 2.75f, 1.5f, 0.0f),
+            ["track"] = CreateTrackSet("Track", 1, 2.5f, 1.0f, 0.0f),
+            ["roundabout"] = CreateRoundaboutSet("Roundabout", 1, 3.5f, 2.0f, 0.0f)
         };
     }
 
@@ -47,7 +53,8 @@ public static class DecalRoadDefaultLayerSets
     ///     Creates the standard asphalt road layer set used by all paved road types.
     ///     Layers and priorities are based on the tuned Primary road defaults.
     /// </summary>
-    private static DecalRoadLayerSet CreateAsphaltRoadSet(string name, int lanes)
+    private static DecalRoadLayerSet CreateAsphaltRoadSet(string name, int lanes, float laneWidth = 3.5f,
+        float smoothingMargin = 2.0f, float splineMargin = 0.0f)
     {
         var layers = new List<DecalRoadLayerDefinition>
         {
@@ -210,10 +217,19 @@ public static class DecalRoadDefaultLayerSets
                 ImprovedSpline = false, Detail = 0.5f, Smoothness = 0.5f
             }
         };
-        return new DecalRoadLayerSet { Name = name, DefaultLaneCount = lanes, Layers = layers };
+        return new DecalRoadLayerSet
+        {
+            Name = name,
+            DefaultLaneCount = lanes,
+            DefaultLaneWidth = laneWidth,
+            SmoothingCorridorMargin = smoothingMargin,
+            MasterSplineMargin = splineMargin,
+            Layers = layers
+        };
     }
 
-    private static DecalRoadLayerSet CreateRoundaboutSet(string name, int lanes)
+    private static DecalRoadLayerSet CreateRoundaboutSet(string name, int lanes, float laneWidth = 3.5f,
+        float smoothingMargin = 2.0f, float splineMargin = 0.0f)
     {
         var layers = new List<DecalRoadLayerDefinition>
         {
@@ -373,16 +389,23 @@ public static class DecalRoadDefaultLayerSets
         {
             Name = name,
             DefaultLaneCount = lanes,
+            DefaultLaneWidth = laneWidth,
+            SmoothingCorridorMargin = smoothingMargin,
+            MasterSplineMargin = splineMargin,
             Layers = layers
         };
     }
 
-    private static DecalRoadLayerSet CreateTrackSet(string name, int lanes)
+    private static DecalRoadLayerSet CreateTrackSet(string name, int lanes, float laneWidth = 2.5f,
+        float smoothingMargin = 1.0f, float splineMargin = 0.0f)
     {
         return new DecalRoadLayerSet
         {
             Name = name,
             DefaultLaneCount = lanes,
+            DefaultLaneWidth = laneWidth,
+            SmoothingCorridorMargin = smoothingMargin,
+            MasterSplineMargin = splineMargin,
             Layers =
             [
                 new DecalRoadLayerDefinition

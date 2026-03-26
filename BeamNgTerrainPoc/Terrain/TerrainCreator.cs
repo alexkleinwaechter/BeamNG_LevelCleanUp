@@ -387,7 +387,7 @@ public class TerrainCreator
             if (unifiedResult?.MaterialLayers != null && unifiedResult.MaterialLayers.Count > 0)
             {
                 perfLog.Info($"Updating {unifiedResult.MaterialLayers.Count} road material layer maps from spline-based painting...");
-                await UpdateRoadMaterialLayersAsync(parameters.Materials, unifiedResult.MaterialLayers, debugBaseDir!, perfLog);
+                await UpdateRoadMaterialLayersAsync(parameters.Materials, unifiedResult.MaterialLayers, debugBaseDir!, perfLog, unifiedResult.Network);
             }
             
             var materialIndices = MaterialLayerProcessor.ProcessMaterialLayers(
@@ -658,13 +658,19 @@ public class TerrainCreator
             _unifiedRoadSmoother.ConfigureStructureElevationParameters(terrainParameters);
         }
 
+        var decalRoadSettings = terrainParameters?.DecalRoadSettings;
+        var appDataDefaults = terrainParameters?.DecalRoadAppDataDefaults
+            ?? Services.DecalRoad.DecalRoadDefaultLayerSets.GetDefaults();
+
         var unifiedResult = _unifiedRoadSmoother.SmoothAllRoads(
             heightMap2D,
             materials,
             metersPerPixel,
             size,
             enableCrossMaterialHarmonization,
-            flipMaterialProcessingOrder);
+            flipMaterialProcessingOrder,
+            decalRoadSettings,
+            appDataDefaults);
 
         if (unifiedResult == null)
             return (null, null);
@@ -947,7 +953,8 @@ public class TerrainCreator
         List<MaterialDefinition> materials,
         Dictionary<string, byte[,]> paintedLayers,
         string debugBaseDir,
-        TerrainCreationLogger log)
+        TerrainCreationLogger log,
+        UnifiedRoadNetwork? network = null)
     {
         foreach (var (materialName, layerData) in paintedLayers)
         {
@@ -991,7 +998,12 @@ public class TerrainCreator
 
                 var surfaceWidth = material.RoadParameters.EffectiveRoadSurfaceWidthMeters;
                 var corridorWidth = material.RoadParameters.RoadWidthMeters;
-                log.Info($"  {materialName}: Updated layer map (surface={surfaceWidth:F1}m, corridor={corridorWidth:F1}m)");
+                var materialSplines = network?.Splines.Where(s => s.MaterialName == materialName).ToList();
+                var widthProfile = materialSplines?.Select(s => s.WidthProfile).FirstOrDefault(p => p != null);
+                var widthProfileInfo = widthProfile != null
+                    ? $", widthProfile={widthProfile.Segments.Count} segment(s)"
+                    : ", widthProfile=none";
+                log.Info($"  {materialName}: Updated layer map (surface={surfaceWidth:F1}m, corridor={corridorWidth:F1}m{widthProfileInfo})");
                 
                 if (!string.IsNullOrEmpty(oldPath))
                     log.Detail($"    Old: {Path.GetFileName(oldPath)} -> New: {Path.GetFileName(layerPath)}");

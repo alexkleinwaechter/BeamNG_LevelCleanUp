@@ -126,6 +126,12 @@ public partial class GenerateTerrain : IDisposable
         set => _state.ExcludeTunnelsFromTerrain = value;
     }
 
+    private bool _disableSplineMerging
+    {
+        get => _state.DisableSplineMerging;
+        set => _state.DisableSplineMerging = value;
+    }
+
     private bool _enableDecalRoads
     {
         get => _state.EnableDecalRoads;

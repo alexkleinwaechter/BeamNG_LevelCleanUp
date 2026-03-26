@@ -155,6 +155,12 @@ public class RoadSpline
     public string? BridgeStructureType { get; set; }
 
     /// <summary>
+    ///     Pre-computed width profile derived from OSM lane/width data.
+    ///     Null if no width data is available (falls back to RoadSmoothingParameters.RoadWidthMeters).
+    /// </summary>
+    public RoadWidthProfile? WidthProfile { get; set; }
+
+    /// <summary>
     ///     Creates a smooth interpolated road spline (Akima/cubic).
     ///     Best for nice curved roads, highways, racing circuits.
     /// </summary>

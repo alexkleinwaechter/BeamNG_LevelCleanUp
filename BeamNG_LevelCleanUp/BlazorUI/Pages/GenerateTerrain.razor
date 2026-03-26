@@ -525,6 +525,20 @@
                             </MudText>
                         </MudItem>
 
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_disableSplineMerging"
+                                             Label="Disable Spline Merging"
+                                             Color="Color.Warning" />
+                                <MudTooltip Text="Testing only: disables merging of OSM ways into longer splines. Each OSM way becomes a separate spline. Useful for debugging incorrect merge results at complex junctions.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Keep each OSM way as separate spline
+                            </MudText>
+                        </MudItem>
+
                         @* Building Generation *@
                         <MudItem xs="12">
                             <MudDivider Class="my-2" />
@@ -670,6 +684,83 @@
                 </MudPaper>
             }
 
+            @* DecalRoad Generation Section *@
+            @if (_canFetchOsmData)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="1">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1" />
+                        Road Width, Lanes &amp; DecalRoad Definition
+                    </MudText>
+                    <MudCheckBox @bind-Value="_enableDecalRoads"
+                                 Label="Enable DecalRoad and AI-Road generation"
+                                 Color="Color.Primary" />
+                    @if (_enableDecalRoads)
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
+                            Defines road lane counts, widths, visual detail layers (edge lines, lane markings, edge blends)
+                            and AI road paths. Settings here apply globally via layer set defaults. Per-material overrides available below.
+                        </MudText>
+                        <MudGrid Spacing="2" Class="mb-3">
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadNodeSpacing()"
+                                                 ValueChanged="SetDecalRoadNodeSpacing"
+                                                 Label="Node Spacing (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="0.5f" Max="15.0f" Step="0.5f"
+                                                 HelperText="Distance between DecalRoad nodes" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadJunctionMargin()"
+                                                 ValueChanged="SetDecalRoadJunctionMargin"
+                                                 Label="Junction Margin (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="-5.0f" Max="20.0f" Step="0.5f"
+                                                 HelperText="Extra corridor margin at junctions" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="int"
+                                                 Value="@GetDecalRoadRandomSeed()"
+                                                 ValueChanged="SetDecalRoadRandomSeed"
+                                                 Label="Random Seed"
+                                                 Variant="Variant.Outlined"
+                                                 Step="1"
+                                                 HelperText="Seed for randomizer constraint" />
+                            </MudItem>
+                        </MudGrid>
+                        <div class="d-flex gap-2 align-center">
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Settings"
+                                       OnClick="OpenDefaultLayerSetsDialog">
+                                Edit Default Layer Sets
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Disabled="@(!CanRegenerateDecalRoads() || _isGenerating)"
+                                       OnClick="RegenerateDecalRoads">
+                                Re-generate DecalRoads
+                            </MudButton>
+                        </div>
+                        @if (!CanRegenerateDecalRoads())
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-1">
+                                Generate terrain first to enable re-generation.
+                            </MudText>
+                        }
+                        else if (_state.CachedNetwork == null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-1">
+                                Will load road network from saved snapshot.
+                            </MudText>
+                        }
+                    }
+                </MudPaper>
+            }
+
             @if (_terrainMaterials.Any())
             {
                 <!-- Materials Section with Drag-Drop -->
@@ -740,87 +831,6 @@
                             </MudPaper>
                         </ItemRenderer>
                     </MudDropContainer>
-                </MudPaper>
-
-                @* DecalRoad Generation Section *@
-                <MudPaper Class="pa-4 mt-4" Elevation="1">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1" />
-                        DecalRoad Generation
-                    </MudText>
-                    <MudCheckBox @bind-Value="_enableDecalRoads"
-                                 Label="Generate road markings and edge blends (DecalRoads)"
-                                 Color="Color.Primary"
-                                 Disabled="@(!_canFetchOsmData)" />
-                    @if (!_canFetchOsmData)
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            Requires GeoTIFF source with OSM data
-                        </MudText>
-                    }
-                    @if (_enableDecalRoads)
-                    {
-                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
-                            Generates visual road detail layers (edge lines, lane markings, edge blends)
-                            projected onto the terrain surface along road splines.
-                        </MudText>
-                        <MudGrid Spacing="2" Class="mb-3">
-                            <MudItem xs="12" sm="4">
-                                <MudNumericField T="float"
-                                                 Value="@GetDecalRoadNodeSpacing()"
-                                                 ValueChanged="SetDecalRoadNodeSpacing"
-                                                 Label="Node Spacing (m)"
-                                                 Variant="Variant.Outlined"
-                                                 Min="0.5f" Max="15.0f" Step="0.5f"
-                                                 HelperText="Distance between DecalRoad nodes" />
-                            </MudItem>
-                            <MudItem xs="12" sm="4">
-                                <MudNumericField T="float"
-                                                 Value="@GetDecalRoadJunctionMargin()"
-                                                 ValueChanged="SetDecalRoadJunctionMargin"
-                                                 Label="Junction Margin (m)"
-                                                 Variant="Variant.Outlined"
-                                                 Min="-5.0f" Max="20.0f" Step="0.5f"
-                                                 HelperText="Extra corridor margin at junctions" />
-                            </MudItem>
-                            <MudItem xs="12" sm="4">
-                                <MudNumericField T="int"
-                                                 Value="@GetDecalRoadRandomSeed()"
-                                                 ValueChanged="SetDecalRoadRandomSeed"
-                                                 Label="Random Seed"
-                                                 Variant="Variant.Outlined"
-                                                 Step="1"
-                                                 HelperText="Seed for randomizer constraint" />
-                            </MudItem>
-                        </MudGrid>
-                        <div class="d-flex gap-2 align-center">
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Settings"
-                                       OnClick="OpenDefaultLayerSetsDialog">
-                                Edit Default Layer Sets
-                            </MudButton>
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Secondary"
-                                       StartIcon="@Icons.Material.Filled.Refresh"
-                                       Disabled="@(!CanRegenerateDecalRoads() || _isGenerating)"
-                                       OnClick="RegenerateDecalRoads">
-                                Re-generate DecalRoads
-                            </MudButton>
-                        </div>
-                        @if (!CanRegenerateDecalRoads())
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-1">
-                                Generate terrain first to enable re-generation.
-                            </MudText>
-                        }
-                        else if (_state.CachedNetwork == null)
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-1">
-                                Will load road network from saved snapshot.
-                            </MudText>
-                        }
-                    }
                 </MudPaper>
 
                 <!-- Generate Button -->

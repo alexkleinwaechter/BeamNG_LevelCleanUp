@@ -4,6 +4,7 @@ using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using SixLabors.ImageSharp;
@@ -101,7 +102,9 @@ public class UnifiedRoadSmoother
         float metersPerPixel,
         int size,
         bool enableCrossMaterialHarmonization = true,
-        bool flipMaterialProcessingOrder = true)
+        bool flipMaterialProcessingOrder = true,
+        DecalRoadSettings? decalRoadSettings = null,
+        IReadOnlyDictionary<string, DecalRoadLayerSet>? appDataDefaults = null)
     {
         var perfLog = TerrainCreationLogger.Current;
         var totalSw = Stopwatch.StartNew();
@@ -124,7 +127,8 @@ public class UnifiedRoadSmoother
         TerrainLogger.Info("Phase 1: Building unified road network...");
         var sw = Stopwatch.StartNew();
         var network =
-            _networkBuilder.BuildNetwork(materials, heightMap, metersPerPixel, size, flipMaterialProcessingOrder);
+            _networkBuilder.BuildNetwork(materials, heightMap, metersPerPixel, size, flipMaterialProcessingOrder,
+                decalRoadSettings, appDataDefaults);
         perfLog?.Timing($"BuildNetwork: {sw.Elapsed.TotalSeconds:F2}s");
 
         if (network.Splines.Count == 0)
@@ -863,7 +867,11 @@ public class UnifiedRoadSmoother
 
                 // Get blend distance from the spline's junction harmonization parameters
                 var junctionParams = contributor.Spline.Parameters.JunctionHarmonizationParameters;
-                var blendDistance = junctionParams?.GetEffectiveBlendDistance(contributor.Spline.Parameters.RoadWidthMeters) ?? 30.0f;
+                // Use per-segment width at the endpoint if available, otherwise fall back to global width
+                var endpointDistance = contributor.IsSplineStart ? 0f : contributor.Spline.TotalLengthMeters;
+                var effectiveWidth = contributor.Spline.WidthProfile?.GetWidthsAtDistance(endpointDistance).corridor
+                    ?? contributor.Spline.Parameters.RoadWidthMeters;
+                var blendDistance = junctionParams?.GetEffectiveBlendDistance(effectiveWidth) ?? 30.0f;
 
                 var anchor = new EndpointAnchor
                 {
@@ -1175,7 +1183,7 @@ public class UnifiedRoadSmoother
             for (var i = 0; i < crossSections.Count; i += step)
             {
                 var cs = crossSections[i];
-                var halfWidth = paramSpline.Parameters.RoadWidthMeters / 2.0f;
+                var halfWidth = cs.EffectiveRoadWidth / 2.0f;
                 var left = cs.CenterPoint - cs.NormalDirection * halfWidth;
                 var right = cs.CenterPoint + cs.NormalDirection * halfWidth;
 
@@ -1230,12 +1238,12 @@ public class UnifiedRoadSmoother
         foreach (var paramSpline in materialSplines)
         {
             var crossSections = network.GetCrossSectionsForSpline(paramSpline.SplineId).ToList();
-            var halfWidth = paramSpline.Parameters.RoadWidthMeters / 2.0f;
 
             foreach (var cs in crossSections)
             {
                 if (float.IsNaN(cs.TargetElevation) || cs.TargetElevation <= -1000f) continue;
 
+                var halfWidth = cs.EffectiveRoadWidth / 2.0f;
                 var normalizedElevation = (cs.TargetElevation - minElev) / range;
                 var color = GetColorForElevation(normalizedElevation);
 
@@ -1330,7 +1338,9 @@ public class UnifiedRoadSmoother
         using var image = new Image<Rgba32>(width, height);
 
         // Get max road width and blend range for outline calculation
-        var maxHalfWidth = network.Splines.Max(s => s.Parameters.RoadWidthMeters) / 2.0f;
+        var maxHalfWidth = network.Splines.Max(s =>
+            s.WidthProfile?.Segments.Max(seg => seg.SmoothingCorridorWidth)
+            ?? s.Parameters.RoadWidthMeters) / 2.0f;
         var maxBlendRange = network.Splines.Max(s => s.Parameters.TerrainAffectedRangeMeters);
 
         // Draw heightmap with outlines

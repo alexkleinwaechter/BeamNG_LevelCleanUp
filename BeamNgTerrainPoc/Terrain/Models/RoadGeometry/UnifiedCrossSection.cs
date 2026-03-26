@@ -263,7 +263,8 @@ public class UnifiedCrossSection
             OwnerSplineId = ownerSpline.SplineId,
             Index = globalIndex,
             LocalIndex = localIndex,
-            EffectiveRoadWidth = ownerSpline.Parameters.RoadWidthMeters,
+            EffectiveRoadWidth = ownerSpline.WidthProfile?.GetWidthsAtDistance(sample.Distance).corridor
+                ?? ownerSpline.Parameters.RoadWidthMeters,
             EffectiveBlendRange = ownerSpline.Parameters.TerrainAffectedRangeMeters,
             Priority = ownerSpline.Priority,
             IsExcluded = false,

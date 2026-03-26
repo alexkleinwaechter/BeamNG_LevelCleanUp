@@ -84,12 +84,9 @@ public class MaterialPainter
                     continue;
                 }
 
-                // Use RoadSurfaceWidthMeters if set, otherwise RoadWidthMeters
-                var surfaceHalfWidth = paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters / 2.0f;
-
                 // Paint directly from the original spline with fine sampling for curve accuracy
                 paintedPixels += PaintSplineDirectly(
-                    layer, paramSpline.Spline, surfaceHalfWidth, metersPerPixel, width, height);
+                    layer, paramSpline, metersPerPixel, width, height);
             }
 
             TerrainLogger.Info($"    {materialName}: {paintedPixels:N0} pixels painted from {splines.Count} spline(s)");
@@ -103,18 +100,17 @@ public class MaterialPainter
     ///     Paints a road directly from its spline with fine sampling for accurate curve following.
     ///     This bypasses cross-sections and samples the spline at intervals fine enough to
     ///     accurately represent even tight curves.
+    ///     Per-segment surface width is queried from the spline's WidthProfile at each sample distance.
     /// </summary>
     /// <param name="layer">The layer mask to paint on.</param>
-    /// <param name="spline">The road spline to paint.</param>
-    /// <param name="halfWidth">Half the surface width in meters.</param>
+    /// <param name="paramSpline">The parameterized road spline (provides spline geometry and width profile).</param>
     /// <param name="metersPerPixel">Scale factor.</param>
     /// <param name="width">Layer width in pixels.</param>
     /// <param name="height">Layer height in pixels.</param>
     /// <returns>Number of pixels painted.</returns>
     private int PaintSplineDirectly(
         byte[,] layer,
-        RoadSpline spline,
-        float halfWidth,
+        ParameterizedRoadSpline paramSpline,
         float metersPerPixel,
         int width,
         int height)
@@ -126,32 +122,42 @@ public class MaterialPainter
         var sampleInterval = MathF.Min(MaxPaintingSampleIntervalMeters, pixelSizeInMeters * 0.5f);
 
         // Sample the spline at fine intervals
-        var samples = spline.SampleByDistance(sampleInterval);
+        var samples = paramSpline.Spline.SampleByDistance(sampleInterval);
 
         if (samples.Count < 2)
             return 0;
 
         var paintedPixels = 0;
 
-        // Paint quads between consecutive samples
+        // Paint quads between consecutive samples, using per-sample surface width
         for (var i = 0; i < samples.Count - 1; i++)
         {
             var s1 = samples[i];
             var s2 = samples[i + 1];
 
+            var surfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(s1.Distance).surface
+                ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
+            var surfaceHalfWidth = surfaceWidth / 2.0f;
+
             paintedPixels += PaintQuadBetweenSamples(
-                layer, s1, s2, halfWidth, metersPerPixel, width, height);
+                layer, s1, s2, surfaceHalfWidth, metersPerPixel, width, height);
         }
 
         // Paint end caps
         if (samples.Count > 0)
         {
+            var startSurfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(samples[0].Distance).surface
+                ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
             paintedPixels += PaintSampleCrossSection(
-                layer, samples[0], halfWidth, metersPerPixel, width, height);
+                layer, samples[0], startSurfaceWidth / 2.0f, metersPerPixel, width, height);
 
             if (samples.Count > 1)
+            {
+                var endSurfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(samples[^1].Distance).surface
+                    ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
                 paintedPixels += PaintSampleCrossSection(
-                    layer, samples[^1], halfWidth, metersPerPixel, width, height);
+                    layer, samples[^1], endSurfaceWidth / 2.0f, metersPerPixel, width, height);
+            }
         }
 
         return paintedPixels;
@@ -320,11 +326,9 @@ public class MaterialPainter
 
             foreach (var paramSpline in splines)
             {
-                var surfaceHalfWidth = paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters / 2.0f;
-
                 // Paint directly from the original spline with fine sampling for curve accuracy
                 PaintSplineDirectlyAntiAliased(
-                    layer, paramSpline.Spline, surfaceHalfWidth, metersPerPixel,
+                    layer, paramSpline, metersPerPixel,
                     width, height, antiAliasEdgeWidth);
             }
 
@@ -338,11 +342,11 @@ public class MaterialPainter
     /// <summary>
     ///     Paints a road directly from its spline with anti-aliased edges.
     ///     Uses fine sampling for accurate curve following.
+    ///     Per-segment surface width is queried from the spline's WidthProfile at each sample distance.
     /// </summary>
     private void PaintSplineDirectlyAntiAliased(
         byte[,] layer,
-        RoadSpline spline,
-        float halfWidth,
+        ParameterizedRoadSpline paramSpline,
         float metersPerPixel,
         int width,
         int height,
@@ -353,30 +357,40 @@ public class MaterialPainter
         var sampleInterval = MathF.Min(MaxPaintingSampleIntervalMeters, pixelSizeInMeters * 0.5f);
 
         // Sample the spline at fine intervals
-        var samples = spline.SampleByDistance(sampleInterval);
+        var samples = paramSpline.Spline.SampleByDistance(sampleInterval);
 
         if (samples.Count < 2)
             return;
 
-        // Paint anti-aliased quads between consecutive samples
+        // Paint anti-aliased quads between consecutive samples, using per-sample surface width
         for (var i = 0; i < samples.Count - 1; i++)
         {
             var s1 = samples[i];
             var s2 = samples[i + 1];
 
+            var surfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(s1.Distance).surface
+                ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
+            var surfaceHalfWidth = surfaceWidth / 2.0f;
+
             PaintQuadBetweenSamplesAntiAliased(
-                layer, s1, s2, halfWidth, metersPerPixel, width, height, antiAliasEdgeWidth);
+                layer, s1, s2, surfaceHalfWidth, metersPerPixel, width, height, antiAliasEdgeWidth);
         }
 
         // Paint anti-aliased end caps
         if (samples.Count > 0)
         {
+            var startSurfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(samples[0].Distance).surface
+                ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
             PaintSampleCrossSectionAntiAliased(
-                layer, samples[0], halfWidth, metersPerPixel, width, height, antiAliasEdgeWidth);
+                layer, samples[0], startSurfaceWidth / 2.0f, metersPerPixel, width, height, antiAliasEdgeWidth);
 
             if (samples.Count > 1)
+            {
+                var endSurfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(samples[^1].Distance).surface
+                    ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
                 PaintSampleCrossSectionAntiAliased(
-                    layer, samples[^1], halfWidth, metersPerPixel, width, height, antiAliasEdgeWidth);
+                    layer, samples[^1], endSurfaceWidth / 2.0f, metersPerPixel, width, height, antiAliasEdgeWidth);
+            }
         }
     }
 

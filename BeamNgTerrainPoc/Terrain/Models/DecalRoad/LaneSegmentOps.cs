@@ -88,6 +88,8 @@ public static class LaneSegmentOps
         return a.TotalLanes == b.TotalLanes
             && a.LanesForward == b.LanesForward
             && a.LanesBackward == b.LanesBackward
-            && a.IsOneWay == b.IsOneWay;
+            && a.IsOneWay == b.IsOneWay
+            && a.WidthMeters == b.WidthMeters
+            && a.EstWidthMeters == b.EstWidthMeters;
     }
 }

@@ -374,7 +374,8 @@ public class TerrainAnalysisOrchestrator
                     state.TerrainSize,
                     state.MetersPerPixel,
                     interpolationType,
-                    minPathLengthMeters);
+                    minPathLengthMeters,
+                    disableSplineMerging: state.DisableSplineMerging);
 
                 roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
                     state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);

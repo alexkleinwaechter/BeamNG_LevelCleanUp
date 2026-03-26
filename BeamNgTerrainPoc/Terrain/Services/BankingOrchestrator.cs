@@ -103,9 +103,9 @@ public class BankingOrchestrator
             }
 
             // Calculate edge elevations
-            var halfWidth = spline.Parameters.RoadWidthMeters / 2.0f;
             foreach (var cs in crossSections)
             {
+                var halfWidth = cs.EffectiveRoadWidth / 2.0f;
                 _edgeCalc.CalculateEdgeElevationsForCS(cs, halfWidth);
             }
 
@@ -136,8 +136,9 @@ public class BankingOrchestrator
             if (junctionParams == null)
                 continue;
 
-            var effectiveBlend = junctionParams.GetEffectiveBlendDistance(
-                spline.Parameters.RoadWidthMeters);
+            var splineWidth = spline.WidthProfile?.GetWidthsAtDistance(0f).corridor
+                ?? spline.Parameters.RoadWidthMeters;
+            var effectiveBlend = junctionParams.GetEffectiveBlendDistance(splineWidth);
             maxBlendDistance = MathF.Max(maxBlendDistance, effectiveBlend);
         }
 

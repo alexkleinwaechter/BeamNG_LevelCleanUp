@@ -63,6 +63,12 @@ public class ParameterizedRoadSpline
     public List<LaneSegment>? LaneSegments { get; init; }
 
     /// <summary>
+    ///     Pre-computed width profile derived from OSM lane/width data.
+    ///     Null if no layerset was resolved (falls back to RoadSmoothingParameters).
+    /// </summary>
+    public RoadWidthProfile? WidthProfile { get; set; }
+
+    /// <summary>
     ///     Optional display name for the road (e.g., from OSM name tag).
     ///     Used for debugging and BeamNG export.
     /// </summary>

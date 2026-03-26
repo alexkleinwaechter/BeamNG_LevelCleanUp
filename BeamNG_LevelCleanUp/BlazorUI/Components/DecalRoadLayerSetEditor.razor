@@ -35,6 +35,32 @@
                          Format="F1"
                          Disabled="@ReadOnly" />
     </MudItem>
+    <MudItem xs="12">
+        <MudCheckBox T="bool" @bind-Value="LayerSet.EnablePerSegmentWidth"
+                     Label="Enable per-segment width from OSM lane/width data"
+                     Disabled="@ReadOnly" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudCheckBox T="bool" @bind-Value="LayerSet.UseOsmWidthTag"
+                     Label="Use OSM road width tag if available"
+                     Disabled="@ReadOnly" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudNumericField T="float" @bind-Value="LayerSet.SmoothingCorridorMargin"
+                         Label="Smoothing Margin (m)"
+                         Variant="Variant.Outlined"
+                         Min="0.0f" Max="10.0f" Step="0.5f"
+                         Format="F1"
+                         Disabled="@ReadOnly" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudNumericField T="float" @bind-Value="LayerSet.MasterSplineMargin"
+                         Label="Spline Margin (m)"
+                         Variant="Variant.Outlined"
+                         Min="-5.0f" Max="10.0f" Step="0.5f"
+                         Format="F1"
+                         Disabled="@ReadOnly" />
+    </MudItem>
 </MudGrid>
 
 @* Layer List Header *@

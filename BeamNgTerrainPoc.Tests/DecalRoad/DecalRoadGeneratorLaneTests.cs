@@ -146,8 +146,9 @@ public class DecalRoadGeneratorLaneTests
             segments, distances);
 
         Assert.Single(boundaries);
-        // Boundary at cross-section index 40 (distance 200m)
-        Assert.Equal(40, boundaries[0]);
+        // Boundary at cross-section index 40 (distance 200m), segment index 1
+        Assert.Equal(40, boundaries[0].CsIndex);
+        Assert.Equal(1, boundaries[0].SegmentIndex);
     }
 
     // --- Integration-style tests ---
@@ -267,7 +268,9 @@ public class DecalRoadGeneratorLaneTests
         var boundaries = DecalRoadGenerator.FindLaneChangeBoundaryIndices(segments, distances);
 
         Assert.Equal(2, boundaries.Count);
-        Assert.Equal(20, boundaries[0]); // 100m / 5m = index 20
-        Assert.Equal(60, boundaries[1]); // 300m / 5m = index 60
+        Assert.Equal(20, boundaries[0].CsIndex); // 100m / 5m = index 20
+        Assert.Equal(1, boundaries[0].SegmentIndex);
+        Assert.Equal(60, boundaries[1].CsIndex); // 300m / 5m = index 60
+        Assert.Equal(2, boundaries[1].SegmentIndex);
     }
 }
