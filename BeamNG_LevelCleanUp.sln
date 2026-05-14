@@ -27,6 +27,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeamNG.Procedural3D", "Beam
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeamNgTerrainPoc.Tests", "BeamNgTerrainPoc.Tests\BeamNgTerrainPoc.Tests.csproj", "{37B58190-5F83-4950-90A3-78289F6221C0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "fbxtodae", "fbxtodae\fbxtodae.csproj", "{F8B7C2D1-1234-5678-9ABC-DEF012345678}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -145,6 +147,18 @@ Global
 		{37B58190-5F83-4950-90A3-78289F6221C0}.Release|x64.Build.0 = Release|Any CPU
 		{37B58190-5F83-4950-90A3-78289F6221C0}.Release|x86.ActiveCfg = Release|Any CPU
 		{37B58190-5F83-4950-90A3-78289F6221C0}.Release|x86.Build.0 = Release|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Debug|x64.Build.0 = Debug|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Debug|x86.Build.0 = Debug|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Release|x64.ActiveCfg = Release|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Release|x64.Build.0 = Release|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Release|x86.ActiveCfg = Release|Any CPU
+		{F8B7C2D1-1234-5678-9ABC-DEF012345678}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
