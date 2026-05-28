@@ -44,6 +44,13 @@ public class UnifiedRoadSmoother
     private readonly UnifiedJunctionProfileBlender _unifiedProfileBlender;
     private StructureElevationIntegrator _structureElevationIntegrator;
 
+    /// <summary>
+    ///     Cached elevation chain data, built once in Phase 2 iteration 0 and reused for re-smooth iterations.
+    ///     Null when chain-based smoothing is not active (legacy per-spline mode).
+    /// </summary>
+    private List<ElevationChain>? _cachedElevationChains;
+    private NetworkElevationGraph? _cachedElevationGraph;
+
     public UnifiedRoadSmoother()
     {
         _networkBuilder = new UnifiedRoadNetworkBuilder();
@@ -108,6 +115,10 @@ public class UnifiedRoadSmoother
     {
         var perfLog = TerrainCreationLogger.Current;
         var totalSw = Stopwatch.StartNew();
+
+        // Clear cached elevation chains from any previous run
+        _cachedElevationChains = null;
+        _cachedElevationGraph = null;
 
         var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
 
@@ -205,6 +216,21 @@ public class UnifiedRoadSmoother
             TerrainCreationLogger.Current?.InfoFileOnly(
                 $"  Early detection found {network.Junctions.Count} junction(s)");
             perfLog?.Timing($"EarlyJunctionDetection: {sw.Elapsed.TotalSeconds:F2}s");
+
+            // Phase 1.9: pin junction elevations before per-road smoothing.
+            // When EnablePhase19JunctionPinning is on, junction HarmonizedElevation is fixed
+            // here and consumed by Phase 2's endpoint anchor lookup. Otherwise no-op.
+            // Reads material-level params here; the iter-1 C1a check downstream reads
+            // spline-level params. In production (UnifiedRoadNetworkBuilder) they share
+            // the same object reference, so they agree by construction. Diagnostic
+            // snapshot loaders that omit junction params will see Phase 1.9 disabled.
+            var phase19Params = roadMaterials
+                .Select(m => m.RoadParameters?.JunctionHarmonizationParameters)
+                .FirstOrDefault(p => p != null);
+            if (phase19Params != null)
+            {
+                JunctionElevationPinner.PinNetwork(network, heightMap, metersPerPixel, phase19Params);
+            }
         }
 
         // === Iterative Junction Refinement Loop (WI-4) ===
@@ -545,11 +571,17 @@ public class UnifiedRoadSmoother
 
         // Second pass: Fallback detection for closed-loop splines that weren't matched
         // This catches roundabouts that exist in the network but weren't in RoundaboutProcessingResult
+        // IMPORTANT: Skip bridge/tunnel splines — short structures (7-20m) have start≈end positions
+        // that falsely trigger the closed-loop heuristic. Bridges are never roundabouts.
         var closedLoopTolerance = 15.0f; // meters
         foreach (var spline in network.Splines)
         {
             if (spline.IsRoundabout)
                 continue; // Already marked
+
+            // Bridges and tunnels are never roundabouts — skip them
+            if (spline.IsStructure)
+                continue;
 
             // Check if this is a closed loop
             var startEndDistance = Vector2.Distance(spline.StartPoint, spline.EndPoint);
@@ -719,7 +751,13 @@ public class UnifiedRoadSmoother
 
     /// <summary>
     ///     Calculates target elevations for all cross-sections in the network.
-    ///     Each spline uses its own parameters for elevation calculation.
+    ///     Uses network-chained elevation filtering: splines are chained through the junction graph
+    ///     into long elevation runs, filtered as continuous profiles, then written back to individual
+    ///     cross-sections. This prevents boundary artifacts at spline joints within chains.
+    ///
+    ///     Bridge/tunnel splines participate fully in elevation smoothing — their TargetElevation is
+    ///     computed for use in ramp generation. IsExcluded=true controls terrain painting (Phase 4)
+    ///     and DecalRoad generation, NOT elevation computation. The terrain under bridges remains untouched.
     /// </summary>
     private void CalculateNetworkElevations(
         UnifiedRoadNetwork network,
@@ -728,85 +766,159 @@ public class UnifiedRoadSmoother
         bool reSmoothFromExisting = false)
     {
         var totalCalculated = 0;
+        var elevationSmoother = _elevationCalculator as OptimizedElevationSmoother;
 
         // WI-6: Build endpoint anchor lookup from pre-detected junctions.
-        // Maps (splineId, isStart) → anchor elevation sampled at the junction center.
-        // This is the terrain elevation at the junction, which is the best estimate before
-        // harmonization runs. On re-smooth iterations, use the junction's harmonized elevation
-        // if available (from previous iteration's Phase 3).
-        var endpointAnchors = BuildEndpointAnchorLookup(network, heightMap, metersPerPixel, reSmoothFromExisting);
-        var elevationSmoother = _elevationCalculator as OptimizedElevationSmoother;
+        // Note: BuildEndpointAnchorLookup creates anchors only for JunctionType.Endpoint
+        // (dead-end) junctions — unless Phase 1.9 is active, in which case T/Y/X/Complex
+        // junctions are also processed (their non-continuous contributors get anchors).
+        // Chain-internal joints (degree-2 continuation nodes) are NOT Endpoint type, so
+        // they are skipped regardless — no additional chain-awareness needed.
+        // C1a: when any spline has Phase 1.9 pinning enabled, force useHarmonizedElevation=true
+        // on iteration 1 too — the pinned junction Z is already authoritative and must flow into
+        // the anchor lookup from the start, not after iteration 0 settles.
+        var phase19Enabled = network.Splines.Any(s =>
+            s.Parameters.JunctionHarmonizationParameters?.EnablePhase19JunctionPinning == true);
+        var useHarmonized = reSmoothFromExisting || phase19Enabled;
+        var endpointAnchors = BuildEndpointAnchorLookup(
+            network, heightMap, metersPerPixel, useHarmonized, allowNonEndpointJunctions: phase19Enabled);
 
         // Group cross-sections by spline for efficient processing
         var crossSectionsBySpline = network.CrossSections
             .GroupBy(cs => cs.OwnerSplineId)
             .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
 
-        foreach (var spline in network.Splines)
+        // Mark bridge/tunnel cross-sections as excluded (only on first iteration)
+        // but DO NOT skip elevation computation — TargetElevation is virtual data for ramp generation.
+        // IsExcluded=true means "don't modify terrain under bridges" — the heightmap stays at natural elevation.
+        if (!reSmoothFromExisting)
         {
-            if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
-                continue;
-
-            var parameters = spline.Parameters;
-
-            // Exclude bridge/tunnel structures from elevation smoothing if configured
-            if ((spline.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
-                (spline.IsTunnel && parameters.ExcludeTunnelsFromTerrain))
+            foreach (var spline in network.Splines)
             {
-                if (!reSmoothFromExisting)
+                var parameters = spline.Parameters;
+                if ((spline.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
+                    (spline.IsTunnel && parameters.ExcludeTunnelsFromTerrain))
                 {
-                    // Mark all cross-sections from this structure as excluded (only on first iteration)
-                    foreach (var cs in crossSections)
-                        cs.IsExcluded = true;
+                    if (crossSectionsBySpline.TryGetValue(spline.SplineId, out var cs))
+                    {
+                        foreach (var c in cs)
+                            c.IsExcluded = true;
 
-                    TerrainCreationLogger.Current?.Detail(
-                        $"Excluding {(spline.IsBridge ? "bridge" : "tunnel")} spline {spline.SplineId} " +
-                        $"from elevation smoothing ({crossSections.Count} cross-sections)");
+                        TerrainCreationLogger.Current?.Detail(
+                            $"Marked {(spline.IsBridge ? "bridge" : "tunnel")} spline {spline.SplineId} " +
+                            $"as excluded from terrain ({cs.Count} cross-sections) — elevation still computed for ramp matching");
+                    }
+                }
+            }
+        }
+
+        // Build elevation graph and chains (once, reused across iterations)
+        if (_cachedElevationChains == null)
+        {
+            _cachedElevationGraph = new NetworkElevationGraph();
+            _cachedElevationGraph.BuildFromNetwork(network);
+            _cachedElevationChains = _cachedElevationGraph.BuildElevationChains();
+        }
+
+        var crossSectionSpacing = network.Splines.FirstOrDefault()?.Parameters.CrossSectionIntervalMeters ?? 0.5f;
+
+        // Process each chain as one long profile
+        if (elevationSmoother != null)
+        {
+            foreach (var chain in _cachedElevationChains)
+            {
+                // Concatenate cross-sections from all splines in chain order (with dedup)
+                var chainCS = OptimizedElevationSmoother.ConcatenateChainCrossSections(
+                    chain, crossSectionsBySpline, crossSectionSpacing);
+
+                if (chainCS.Count == 0) continue;
+
+                // Use the highest-priority spline's parameters for the chain
+                var highestPriorityEdge = chain.Segments
+                    .OrderByDescending(s => s.Edge.Priority)
+                    .First().Edge;
+                var chainParams = network.GetParametersForSpline(highestPriorityEdge.SplineId)
+                    ?? new RoadSmoothingParameters();
+
+                if (reSmoothFromExisting)
+                {
+                    elevationSmoother.ReSmoothChainFromExistingElevations(chainCS, chainParams);
+                }
+                else
+                {
+                    elevationSmoother.CalculateChainElevations(chainCS, chainParams, heightMap, metersPerPixel);
                 }
 
-                continue;
+                // Propagate elevation to cross-sections that were deduped at chain joints
+                OptimizedElevationSmoother.PropagateToDeduped(chain);
+
+                totalCalculated += chainCS.Count;
             }
 
-            if (reSmoothFromExisting)
+            // Handle roundabout splines that were excluded from chaining — process per-spline
+            foreach (var spline in network.Splines.Where(s => s.IsRoundabout))
             {
-                // Re-smooth using existing TargetElevation values (iterative refinement)
-                _elevationCalculator.ReSmoothFromExistingElevations(crossSections, parameters);
-            }
-            else
-            {
-                // Sample raw terrain elevations BEFORE smoothing for OriginalTerrainElevation
-                var mapHeight = heightMap.GetLength(0);
-                var mapWidth = heightMap.GetLength(1);
-                for (var i = 0; i < crossSections.Count; i++)
+                if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
+                    continue;
+
+                if (reSmoothFromExisting)
                 {
-                    var px = (int)(crossSections[i].CenterPoint.X / metersPerPixel);
-                    var py = (int)(crossSections[i].CenterPoint.Y / metersPerPixel);
-                    px = Math.Clamp(px, 0, mapWidth - 1);
-                    py = Math.Clamp(py, 0, mapHeight - 1);
-                    crossSections[i].OriginalTerrainElevation = heightMap[py, px];
+                    _elevationCalculator.ReSmoothFromExistingElevations(crossSections, spline.Parameters);
+                }
+                else
+                {
+                    _elevationCalculator.CalculateTargetElevations(crossSections, spline.Parameters, heightMap,
+                        metersPerPixel);
                 }
 
-                // Calculate elevations directly on UnifiedCrossSections (no conversion roundtrip)
-                _elevationCalculator.CalculateTargetElevations(crossSections, parameters, heightMap, metersPerPixel);
+                totalCalculated += crossSections.Count;
             }
-
-            // WI-6: Apply endpoint anchoring after smoothing/re-smoothing.
-            // Biases spline endpoints toward the terrain elevation at junction centers,
-            // reducing the gap that Phase 3 harmonization must bridge.
-            if (elevationSmoother != null && endpointAnchors.Count > 0)
+        }
+        else
+        {
+            // Fallback: legacy per-spline processing (when not using OptimizedElevationSmoother)
+            foreach (var spline in network.Splines)
             {
+                if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
+                    continue;
+
+                if (reSmoothFromExisting)
+                    _elevationCalculator.ReSmoothFromExistingElevations(crossSections, spline.Parameters);
+                else
+                    _elevationCalculator.CalculateTargetElevations(crossSections, spline.Parameters, heightMap,
+                        metersPerPixel);
+
+                totalCalculated += crossSections.Count;
+            }
+        }
+
+        // WI-6: Apply endpoint anchoring after smoothing/re-smoothing.
+        // Biases spline endpoints toward the terrain elevation at junction centers,
+        // reducing the gap that Phase 3 harmonization must bridge.
+        if (elevationSmoother != null && endpointAnchors.Count > 0)
+        {
+            foreach (var spline in network.Splines)
+            {
+                if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
+                    continue;
+
                 endpointAnchors.TryGetValue((spline.SplineId, true), out var startAnchor);
                 endpointAnchors.TryGetValue((spline.SplineId, false), out var endAnchor);
 
                 if (startAnchor != null || endAnchor != null)
-                    elevationSmoother.ApplyEndpointAnchoring(crossSections, startAnchor, endAnchor);
+                    elevationSmoother.ApplyEndpointAnchoring(
+                        crossSections,
+                        startAnchor,
+                        endAnchor,
+                        enableMaxGradeClamp: spline.Parameters.JunctionHarmonizationParameters?.EnableMaxGradeClamp ?? false,
+                        osmRoadType: spline.OsmRoadType);
             }
-
-            totalCalculated += crossSections.Count;
         }
 
         var mode = reSmoothFromExisting ? "re-smoothed" : "calculated";
-        TerrainCreationLogger.Current?.Detail($"{mode.Substring(0, 1).ToUpperInvariant() + mode.Substring(1)} elevations for {totalCalculated} cross-sections");
+        TerrainCreationLogger.Current?.Detail(
+            $"{mode.Substring(0, 1).ToUpperInvariant() + mode.Substring(1)} elevations for {totalCalculated} cross-sections " +
+            $"({_cachedElevationChains?.Count ?? 0} chains)");
     }
 
     /// <summary>
@@ -819,7 +931,8 @@ public class UnifiedRoadSmoother
         UnifiedRoadNetwork network,
         float[,] heightMap,
         float metersPerPixel,
-        bool useHarmonizedElevation)
+        bool useHarmonizedElevation,
+        bool allowNonEndpointJunctions)
     {
         var anchors = new Dictionary<(int splineId, bool isStart), EndpointAnchor?>();
 
@@ -830,6 +943,10 @@ public class UnifiedRoadSmoother
         var mapWidth = heightMap.GetLength(1);
         var anchoredEndpoints = 0;
 
+        // Lazy-built only when W2 actually fires for a contributor — avoids the O(N) LINQ
+        // re-build per contributor and keeps flag-off iterations zero-allocation.
+        Dictionary<int, List<UnifiedCrossSection>>? csBySplineForW2 = null;
+
         foreach (var junction in network.Junctions)
         {
             if (junction.IsExcluded) continue;
@@ -838,7 +955,11 @@ public class UnifiedRoadSmoother
             // Multi-road junctions are handled by the rubberband blend envelope in Phase 3,
             // which smoothly interpolates between junction elevations and terrain-following.
             // Anchoring at multi-road junctions was the root cause of the "ditch" artifact.
-            if (junction.Type != JunctionType.Endpoint) continue;
+            // Phase 1.9 lifts this restriction: when allowNonEndpointJunctions is true, T/Y/X
+            // contributors that are themselves IsEndpoint get an anchor against the pinned Z.
+            // The inner IsEndpoint filter (~25 lines below) still excludes continuous contributors,
+            // so the ditch-artefact pathway (anchoring a through-road) remains blocked.
+            if (!allowNonEndpointJunctions && junction.Type != JunctionType.Endpoint) continue;
 
             // Sample terrain elevation at junction center
             float anchorElevation;
@@ -872,6 +993,44 @@ public class UnifiedRoadSmoother
                 var effectiveWidth = contributor.Spline.WidthProfile?.GetWidthsAtDistance(endpointDistance).corridor
                     ?? contributor.Spline.Parameters.RoadWidthMeters;
                 var blendDistance = junctionParams?.GetEffectiveBlendDistance(effectiveWidth) ?? 30.0f;
+
+                // W2 (Phase 1.9, AASHTO §4.1.5): when natural and pinned grades match within
+                // GradeSkipThresholdPercent on this leg, skip the Hermite ramp entirely — the
+                // seam is invisible and the ramp just adds noise. The two nearest cross-sections
+                // approximate the natural grade; anchorElevation vs the second CS gives the
+                // grade implied by the pin.
+                if (junctionParams?.EnableHermiteGradeSkip == true)
+                {
+                    csBySplineForW2 ??= network.CrossSections
+                        .GroupBy(cs => cs.OwnerSplineId)
+                        .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
+
+                    if (csBySplineForW2.TryGetValue(contributor.Spline.SplineId, out var contributorSections)
+                        && contributorSections.Count >= 2)
+                    {
+                        var first = contributor.IsSplineStart
+                            ? contributorSections[0]
+                            : contributorSections[^1];
+                        var second = contributor.IsSplineStart
+                            ? contributorSections[1]
+                            : contributorSections[^2];
+                        var dz = first.TargetElevation - second.TargetElevation;
+                        var dx = MathF.Abs(first.DistanceAlongSpline - second.DistanceAlongSpline);
+                        var naturalGradePct = dx > 0.01f ? dz / dx * 100f : 0f;
+                        var pinnedGradePct = dx > 0.01f
+                            ? (anchorElevation - second.TargetElevation) / dx * 100f
+                            : 0f;
+
+                        if (JunctionElevationPinner.ShouldSkipHermiteRamp(
+                                naturalGradePct, pinnedGradePct, junctionParams.GradeSkipThresholdPercent))
+                        {
+                            // Skipping the anchor here forfeits this junction's claim on the
+                            // endpoint. If the same endpoint participates in another junction
+                            // (rare), that later iteration may anchor it instead.
+                            continue;
+                        }
+                    }
+                }
 
                 var anchor = new EndpointAnchor
                 {
@@ -998,6 +1157,38 @@ public class UnifiedRoadSmoother
         }
     }
 
+    private void ExportJunctionPinningValidationIfRequested(
+        UnifiedRoadNetwork network,
+        float[,] smoothedHeightMap,
+        float[,] originalHeightMap,
+        float metersPerPixel,
+        List<MaterialDefinition> roadMaterials)
+    {
+        var materialWithJunctionDebug = roadMaterials.FirstOrDefault(m =>
+            m.RoadParameters?.JunctionHarmonizationParameters?.ExportJunctionDebugImage == true);
+
+        if (materialWithJunctionDebug == null) return;
+
+        try
+        {
+            var materialDebugDir = materialWithJunctionDebug.RoadParameters!.DebugOutputDirectory ?? ".";
+            var mainDebugDir = Path.GetDirectoryName(materialDebugDir);
+            if (string.IsNullOrEmpty(mainDebugDir)) mainDebugDir = materialDebugDir;
+
+            var stats = JunctionPinningValidationExporter.Export(
+                network, smoothedHeightMap, originalHeightMap, metersPerPixel, mainDebugDir);
+
+            TerrainCreationLogger.Current?.Detail(
+                $"W1 validation: n={stats.JunctionCount}, pinResMean={stats.PinResidualMean:F3}m, " +
+                $"pinResSigma={stats.PinResidualSigma:F3}m, pinResMaxAbs={stats.PinResidualMaxAbs:F3}m, " +
+                $"wTestOutliers={stats.WTestOutliersGt3}, redBandPixels={stats.RedBandPixelCount}");
+        }
+        catch (Exception ex)
+        {
+            TerrainLogger.Warning($"Failed to export W1 validation harness: {ex.Message}");
+        }
+    }
+
     /// <summary>
     ///     Exports debug images if requested by any material.
     ///     Also exports unified master splines JSON with all materials' splines combined.
@@ -1042,6 +1233,9 @@ public class UnifiedRoadSmoother
                 metersPerPixel,
                 terrainSize);
         }
+
+        ExportJunctionPinningValidationIfRequested(
+            network, smoothedHeightMap, originalHeightMap, metersPerPixel, roadMaterials);
 
         // Export unified smoothed heightmap with outlines to main folder
         var firstMaterial =
@@ -1197,6 +1391,14 @@ public class UnifiedRoadSmoother
         }
 
         image.SaveAsPng(outputPath);
+
+        DebugLegendExporter.ExportAlongside(outputPath,
+        [
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 255, 255, 255), "Control points (skeleton/OSM)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 255, 0, 255), "Spline centerline (interpolated)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 255, 0, 255), "Cross-section width indicators"),
+        ]);
+
         TerrainCreationLogger.Current?.Detail($"Exported spline debug image: {outputPath}");
     }
 
@@ -1259,6 +1461,14 @@ public class UnifiedRoadSmoother
         }
 
         image.SaveAsPng(outputPath);
+
+        DebugLegendExporter.ExportAlongside(outputPath,
+        [
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 0, 255, 255), $"Low elevation ({minElev:F1}m)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 255, 0, 255), "Mid elevation"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 0, 0, 255), $"High elevation ({maxElev:F1}m)"),
+        ]);
+
         TerrainCreationLogger.Current?.Detail($"Exported smoothed elevation debug image: {outputPath}");
         TerrainCreationLogger.Current?.Detail($"Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
     }
@@ -1373,6 +1583,14 @@ public class UnifiedRoadSmoother
 
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
         image.SaveAsPng(outputPath);
+
+        DebugLegendExporter.ExportAlongside(outputPath,
+        [
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 0, 0, 255), "Low terrain (black)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 255, 255, 255), "High terrain (white)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 255, 255, 255), "Road edge (cyan)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 0, 255, 255), "Blend zone edge (magenta)"),
+        ]);
 
         TerrainCreationLogger.Current?.Detail($"Exported smoothed heightmap with outlines: {outputPath}");
     }

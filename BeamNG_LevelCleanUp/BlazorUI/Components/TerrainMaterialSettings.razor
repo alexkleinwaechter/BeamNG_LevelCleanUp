@@ -938,11 +938,25 @@
                                                             <MudNumericField T="float" @bind-Value="Material.JunctionBlendDistanceMeters"
                                                                              Label="Min Blend Distance (m)"
                                                                              Variant="Variant.Outlined"
-                                                                             Min="10.0f" Max="100.0f" Step="5.0f"
+                                                                             Min="10.0f" Max="200.0f" Step="5.0f"
                                                                              Format="F0"
                                                                              HelperText="Minimum distance; auto-extends on steep terrain"
                                                                              Class="flex-grow-1" />
                                                             <MudTooltip Text="Minimum blend distance from junction elevation back to path elevation. On steep terrain, the distance automatically increases to keep the ramp slope within the road's max slope limit (or 6° default).">
+                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                                            </MudTooltip>
+                                                        </div>
+                                                    </MudItem>
+                                                    <MudItem xs="12" sm="6">
+                                                        <div class="d-flex align-start gap-1">
+                                                            <MudNumericField T="int?" @bind-Value="Material.DesignSpeedKmh"
+                                                                             Label="Design Speed (km/h)"
+                                                                             Variant="Variant.Outlined"
+                                                                             Min="10" Max="200" Step="10"
+                                                                             Clearable="true"
+                                                                             HelperText="AASHTO K-value cap (Phase B.1). Used only when OSM road type is unavailable (PNG pipeline). For OSM maps, the road type determines speed and this value is ignored. Leave empty for residential default (30 km/h)."
+                                                                             Class="flex-grow-1" />
+                                                            <MudTooltip Text="Material-level design speed for the AASHTO K-value cap. Applies only to PNG-pipeline splines (no OSM road type). Leave empty to use the residential default (30 km/h).">
                                                                 <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
                                                             </MudTooltip>
                                                         </div>
@@ -1082,7 +1096,7 @@
                                                             <MudNumericField T="float?" @bind-Value="Material.RoundaboutBlendDistanceMeters"
                                                                              Label="Blend Distance (m)"
                                                                              Variant="Variant.Outlined"
-                                                                             Min="10.0f" Max="60.0f" Step="5.0f"
+                                                                             Min="10.0f" Max="200.0f" Step="5.0f"
                                                                              Format="F0"
                                                                              Disabled="@(!Material.EnableRoundaboutDetection)"
                                                                              HelperText="Transition distance to ring elevation"

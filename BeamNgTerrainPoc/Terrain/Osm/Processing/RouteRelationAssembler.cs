@@ -237,6 +237,7 @@ internal static class RouteRelationAssembler
                 endNodeId: path2.EndNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            UnionWayIds(result, path1, path2);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 path1.LaneSegments, path2.LaneSegments, path1.Points.Count - 1);
             return result;
@@ -265,6 +266,7 @@ internal static class RouteRelationAssembler
                 endNodeId: path2.StartNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            UnionWayIds(result, path1, path2);
             var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 path1.LaneSegments, reversedSegs2, path1.Points.Count - 1);
@@ -293,6 +295,7 @@ internal static class RouteRelationAssembler
                 endNodeId: path1.EndNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            UnionWayIds(result, path1, path2);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 path2.LaneSegments, path1.LaneSegments, path2.Points.Count - 1);
             return result;
@@ -321,6 +324,7 @@ internal static class RouteRelationAssembler
                 endNodeId: path1.EndNodeId,
                 path1.OsmWayId, path1.Tags,
                 path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+            UnionWayIds(result, path1, path2);
             var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 reversedSegs2, path1.LaneSegments, path2.Points.Count - 1);
@@ -397,9 +401,19 @@ internal static class RouteRelationAssembler
             source.StructureType,
             source.Layer,
             source.BridgeStructureType);
+        clone.AllWayIds = new HashSet<long>(source.AllWayIds);
         clone.LaneSegments = source.LaneSegments
             .Select(s => new LaneSegment { StartPointIndex = s.StartPointIndex, LaneInfo = s.LaneInfo })
             .ToList();
         return clone;
+    }
+
+    /// <summary>
+    /// Unions AllWayIds from two paths into the result path.
+    /// </summary>
+    private static void UnionWayIds(PathWithMetadata result, PathWithMetadata path1, PathWithMetadata path2)
+    {
+        result.AllWayIds = new HashSet<long>(path1.AllWayIds);
+        result.AllWayIds.UnionWith(path2.AllWayIds);
     }
 }

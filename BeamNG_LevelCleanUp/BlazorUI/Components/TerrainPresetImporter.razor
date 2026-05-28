@@ -1088,6 +1088,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.JunctionHarmonization.JunctionDetectionRadiusMeters = junctionHarmonization["junctionDetectionRadiusMeters"]!.GetValue<float>();
                 if (junctionHarmonization["junctionBlendDistanceMeters"] != null)
                     settings.JunctionHarmonization.JunctionBlendDistanceMeters = junctionHarmonization["junctionBlendDistanceMeters"]!.GetValue<float>();
+                if (junctionHarmonization["designSpeedKmh"] != null)
+                    settings.JunctionHarmonization.DesignSpeedKmh = junctionHarmonization["designSpeedKmh"]!.GetValue<int>();
                 if (junctionHarmonization["blendFunctionType"] != null)
                     settings.JunctionHarmonization.BlendFunctionType = junctionHarmonization["blendFunctionType"]!.GetValue<string>();
                 // IDW filtering
@@ -1211,6 +1213,7 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.EnableJunctionHarmonization = settings.JunctionHarmonization.EnableJunctionHarmonization;
                 material.JunctionDetectionRadiusMeters = settings.JunctionHarmonization.JunctionDetectionRadiusMeters;
                 material.JunctionBlendDistanceMeters = settings.JunctionHarmonization.JunctionBlendDistanceMeters;
+                material.DesignSpeedKmh = settings.JunctionHarmonization.DesignSpeedKmh;
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
                 // Endpoint tapering is auto-computed from road width - old preset values silently ignored

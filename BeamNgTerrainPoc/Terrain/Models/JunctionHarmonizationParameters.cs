@@ -20,6 +20,209 @@ public class JunctionHarmonizationParameters
     public bool EnableJunctionHarmonization { get; set; } = true;
 
     // ========================================
+    // PHASE 1.9 — JUNCTION ELEVATION PINNING
+    // ========================================
+
+    /// <summary>
+    ///     W1 — primary pinning feature. When true, JunctionElevationPinner runs between
+    ///     Phase 1.8 (junction detection) and Phase 2 (network smoothing). It writes
+    ///     HarmonizedElevation for Endpoint/T/Y/X/Complex junctions so terminating
+    ///     roads ramp into a fixed Z and continuous roads slope across it untouched.
+    ///     Requires <see cref="EnableJunctionHarmonization" /> = true (otherwise junction
+    ///     detection itself doesn't run, leaving the pinner with nothing to act on).
+    ///     Default: true (opt-in until Steps 1-3 pass on validation maps).
+    ///     not for ui, no control needed
+    /// </summary>
+    public bool EnablePhase19JunctionPinning { get; set; } = true;
+
+    /// <summary>
+    ///     W2 — AASHTO §4.1.5 grade-skip rule (Wang 2011). When the natural Phase-2
+    ///     grade and the pinned-junction grade differ by ≤ GradeSkipThresholdPercent,
+    ///     the Hermite ramp is skipped on this leg (no kink possible, no benefit).
+    ///     Default: false. Permanent toggle even after Step 4.
+    ///     obsolete should be removed
+    /// </summary>
+    public bool EnableHermiteGradeSkip { get; set; } = false;
+
+    /// <summary>
+    ///     W2 threshold in percent. Default 0.5 % per AASHTO Green Book.
+    ///     obsolete should be removed with its code
+    /// </summary>
+    public float GradeSkipThresholdPercent { get; set; } = 0.5f;
+
+    /// <summary>
+    ///     W3 — AASHTO §4.1.5 class-dependent max-grade clamp (Wang 2011). After Hermite
+    ///     ramp samples are placed, clamp any segment grade that exceeds the class-keyed
+    ///     maximum (motorway 3 %, primary/secondary 5 %, residential/service 7 %, anything
+    ///     else 9 %). Belt-and-braces over R7 (slope kink in steep terrain).
+    ///     Default: false. Permanent toggle even after Step 4.
+    ///     obsolete should be removed with its code
+    /// </summary>
+    public bool EnableMaxGradeClamp { get; set; } = false;
+
+    /// <summary>
+    ///     Phase A — parabolic junction blend. When true, BlendSplineProfile uses a
+    ///     parabolic profile substitution inside each end's blend zone instead of the
+    ///     legacy h00-weighted additive delta correction. Eliminates the "up-then-down"
+    ///     overshoot at terminating-road junction endpoints on steep terrain (R7 kink).
+    ///     Two-end overlap (short splines) still uses the existing h00 combination.
+    ///     Known limitation: bumps at overlapping splines with significant elevation
+    ///     differences remain — caused by Step 5b mid-spline propagation overlay, not
+    ///     by the blend zone itself. Phase A.5 addresses overlap taper separately.
+    ///     Default: true (enabled after Phase A franco_same_prio validation).
+    /// </summary>
+    public bool EnableParabolicJunctionBlend { get; set; } = false;
+
+    /// <summary>
+    ///     Phase D — when true, BlendSplineProfileParabolic and
+    ///     BlendShortConnectorCompositional write Hermite-h00-blended
+    ///     BankAngleRadians through the blend zone, mirroring the legacy h00
+    ///     path's symmetric (elevation, bank) behavior. When false, the
+    ///     parabolic paths leave BankAngleRadians at its pre-blend (natural)
+    ///     value — historical pre-fix behavior which produces cross-slope
+    ///     wedge artefacts at primary-vs-terminating bank mismatches. Default
+    ///     true; the flag exists only as a regression escape hatch.
+    /// </summary>
+    public bool EnableParabolicBankBlend { get; set; } = true;
+
+    /// <summary>
+    ///     Phase A.5 — propagation/overlap taper. When true, propagated mid-spline
+    ///     influences applied in <see cref="UnifiedJunctionProfileBlender.ApplyUnifiedProfiles" />
+    ///     Step 5b are weight-tapered toward zero at any directly-anchored junction's
+    ///     anchor node whose blend zone they overlap. Eliminates the j126-style cliff
+    ///     where a propagated influence from a far-side junction overrides a
+    ///     parabolic-blended end zone. Taper is C¹ smoothstep on the geometric
+    ///     distance ratio; it never references terrain grade.
+    ///     Default: false (opt-in until validation on franco_same_prio passes).
+    /// </summary>
+    public bool EnablePropagationOverlapTaper { get; set; } = true;
+
+    /// <summary>
+    ///     Phase A.8.2 — surface-pass priority override. When true, Pass 1 of
+    ///     <see cref="BeamNgTerrainPoc.Terrain.Algorithms.Blending.RoadMaskBuilder" />
+    ///     resolves contested pixels (where two splines' painted-surface polygons
+    ///     geometrically overlap at a junction) by letting the strictly-higher-Priority
+    ///     spline take ownership, instead of the legacy width-first first-writer-wins.
+    ///     Pass 2 (corridor stamps) is unaffected and remains width-first.
+    ///     Fixes the T-junction surface-vs-surface bump where a wider terminating side
+    ///     road's pinned-up elevation contaminates a higher-priority through road.
+    ///     Default: false (opt-in until validation on franco_same_prio passes).
+    ///     not for ui, no control needed
+    /// </summary>
+    public bool EnableSurfacePriorityOverride { get; set; } = true;
+
+    /// <summary>
+    ///     Phase A.8 — painted-road-width protection. When true,
+    ///     <see cref="BeamNgTerrainPoc.Terrain.Algorithms.Blending.RoadMaskBuilder.BuildCombinedMaskWithElevation" />
+    ///     runs as a two-pass rasterizer: Pass 1 stamps each spline's painted-surface polygon
+    ///     only (no smoothing margin, no edge protection buffer), widest-surface-first; Pass 2
+    ///     extends with the corridor + edge buffer into pixels not yet claimed by Pass 1.
+    ///     Result: each spline's painted-surface pixels carry that spline's own banking-aware
+    ///     elevation even when a wider adjacent spline's corridor geometrically overlaps.
+    ///     Default: false (opt-in until franco_same_prio validation passes).
+    ///     not for ui, no control needed
+    /// </summary>
+    public bool EnableSurfaceWidthProtection { get; set; } = true;
+
+    /// <summary>
+    ///     Phase B.1 — AASHTO K-value cap on adaptive blend distance. When true,
+    ///     <see cref="UnifiedJunctionProfileBlender" /> computes the K-cap
+    ///     L_cap = K(speed, sag/crest) · |chordGrade − junctionGrade| × 100 and
+    ///     returns min(adaptiveSlopeBased, L_cap). K is a ceiling derived from
+    ///     stopping-sight-distance geometry for the spline's effective design
+    ///     speed (OSM road type when present, else material DesignSpeedKmh
+    ///     override, else residential default). Terrain grade always wins —
+    ///     the cap never extends L. Default: false (opt-in until validation).
+    /// </summary>
+    public bool EnableAashtoBlendDistanceCap { get; set; } = true;
+
+    /// <summary>
+    ///     Phase B.4 — dead-end terrain-slope match. When true,
+    ///     <c>ComputeEndpointConstraints</c> samples the natural terrain gradient
+    ///     at the endpoint position (projected onto the spline tangent) and uses
+    ///     it as the constraint slope instead of the hardcoded 0f. When true,
+    ///     Step 6 (<c>ApplyEndpointTapering</c>) is also skipped because the
+    ///     blender's parabolic/cubic path now produces the slope-matched profile
+    ///     directly — running the legacy taper would override and undo it.
+    ///     Eliminates the "flat platform → ramp" artefact at dead ends on
+    ///     sloped terrain. Default: false (opt-in).
+    /// </summary>
+    public bool EnableEndpointTerrainSlopeMatch { get; set; } = true;
+
+    /// <summary>
+    ///     Phase B.2 — short connector compositional blend. When true, the
+    ///     <c>startBlendDist + endBlendDist > roadLength</c> branch of
+    ///     <see cref="UnifiedJunctionProfileBlender" />.<c>BlendSplineProfileParabolic</c>
+    ///     replaces the legacy h00 fall-through with a per-end parabolic (or cubic
+    ///     when B.3 is on) profile blend, weighted by <see cref="OverlapTaper" />.
+    ///     Each end's profile dominates near its own anchor; the two compose
+    ///     smoothly in the overlap region. Default: false (opt-in).
+    /// </summary>
+    public bool EnableShortConnectorBlend { get; set; } = true;
+
+    /// <summary>
+    ///     Phase B.3 — blend-zone-end C1 continuity via 4-constraint cubic. When
+    ///     true, <c>BlendSplineProfileParabolic</c>'s single-end branches use
+    ///     <see cref="CubicJunctionProfile" />.Sample with mNaturalAtL read from
+    ///     the natural Phase-2 slope at d=L+ε. Eliminates the slope kink where
+    ///     the parabolic seam meets the natural profile. Guarded: when the
+    ///     sample point is inside another junction's claim (detected via
+    ///     <c>SplineClaimedZones.HasOtherClaimNear</c>), falls back to the
+    ///     3-constraint <see cref="ParabolicJunctionProfile" /> for that side so
+    ///     prior junction harmonization is preserved. Default: false (opt-in).
+    /// </summary>
+    public bool EnableBlendZoneEndC1 { get; set; } = false;
+
+    /// <summary>
+    ///     Phase C — stretch the blend distance L so the parabola's emergent slope at
+    ///     d=L matches the natural Phase-2 slope just past the blend zone. Solves
+    ///     L_target = 2·(zNaturalAtL − zJunction) / (mNaturalAtL + mJunction) per side,
+    ///     using the natural-at-L sample collected by <c>BlendSplineProfileParabolic</c>,
+    ///     then re-samples natural elevation at the stretched L so the parabola lands
+    ///     on the actual natural profile. Eliminates the slope-kink artefact that
+    ///     B.3 (rejected) attacked by curving harder in fixed L; instead extends
+    ///     length so the existing parabola eases into natural grade. Clamped by:
+    ///     L_current floor (never shorten), AASHTO K-cap ceiling (when B.1 on),
+    ///     and the opposite-end blend distance (hard geometric ceiling, never run
+    ///     into the other junction). Default: false (opt-in until validation).
+    /// </summary>
+    public bool EnableBlendDistanceStretchToMatchSlope { get; set; } = true;
+
+    /// <summary>
+    ///     Phase B diagnostics. When true, <see cref="UnifiedJunctionProfileBlender" />
+    ///     emits two CSVs into MT_TerrainGeneration at the end of ApplyUnifiedProfiles:
+    ///     <list type="bullet">
+    ///         <item>
+    ///             phase_b_short_connectors.csv — one row per spline that has
+    ///             both end constraints, with overlap_m = max(0, startBlendDist + endBlendDist − roadLength).
+    ///         </item>
+    ///         <item>
+    ///             phase_b_slope_mismatch.csv — one row per blend-zone end,
+    ///             comparing the parabolic-slope-at-L to the natural-grade-at-L+ε
+    ///             (used to characterise the B.3 symptom magnitude on real data).
+    ///         </item>
+    ///     </list>
+    ///     Side-effect-free; safe to run with any combination of B.1/B.2/B.3.
+    ///     Default: false.
+    /// </summary>
+    public bool EnablePhaseBDiagnostics { get; set; } = false;
+
+    // ========================================
+    // PHASE B.1 — DESIGN SPEED FOR K-VALUE CAP
+    // ========================================
+
+    /// <summary>
+    ///     Phase B.1 — material-level design speed override (km/h) used by the
+    ///     AASHTO K-value cap when the spline has NO OSM road type (PNG pipeline).
+    ///     When OSM data is present, the spline's <c>OsmRoadType</c> determines
+    ///     design speed and this value is IGNORED. Null = falls back to residential
+    ///     default (30 km/h). Set via the per-material editor in
+    ///     <c>TerrainMaterialSettings.razor</c>; round-tripped through preset
+    ///     export/import as <c>junctionHarmonization.designSpeedKmh</c>.
+    /// </summary>
+    public int? DesignSpeedKmh { get; set; }
+
+    // ========================================
     // JUNCTION DETECTION
     // ========================================
 
@@ -61,6 +264,31 @@ public class JunctionHarmonizationParameters
     ///     Default: CubicHermiteC1 (C1-continuous, matches slope at blend boundary)
     /// </summary>
     public JunctionBlendFunctionType BlendFunctionType { get; set; } = JunctionBlendFunctionType.CubicHermiteC1;
+
+    // ========================================
+    // MULTI-WAY JUNCTION BLENDING
+    // ========================================
+
+    /// <summary>
+    ///     Enable dominant road detection at multi-way junctions (Y, CrossRoads, Complex).
+    ///     When enabled, junctions where one road is significantly wider or higher priority
+    ///     are treated as multi-T-junctions: the dominant road passes through unmodified,
+    ///     other roads get edge-anchored constraints matching the dominant road's surface.
+    ///     When disabled, all multi-way junctions use the legacy priority-weighted average.
+    ///     Default: true
+    /// </summary>
+    public bool EnableMultiWayDominantRoadDetection { get; set; } = true;
+
+    /// <summary>
+    ///     Width ratio threshold for dominant road detection.
+    ///     A road is considered dominant if its width >= this ratio × the average width of other roads.
+    ///     Typical values:
+    ///     - 1.3: Aggressive (detects slight width differences)
+    ///     - 1.5: Standard (DEFAULT)
+    ///     - 2.0: Conservative (only very clear dominance)
+    ///     Default: 1.5
+    /// </summary>
+    public float DominantRoadWidthRatio { get; set; } = 1.5f;
 
     // ========================================
     // ROUNDABOUT SETTINGS
@@ -146,30 +374,6 @@ public class JunctionHarmonizationParameters
         RoundaboutBlendDistanceMeters ?? JunctionBlendDistanceMeters;
 
     // ========================================
-    // EFFECTIVE VALUE METHODS
-    // ========================================
-
-    /// <summary>
-    ///     Gets the effective junction blend distance.
-    ///     Returns JunctionBlendDistanceMeters directly.
-    /// </summary>
-    /// <param name="roadWidthMeters">Unused, kept for API compatibility.</param>
-    public float GetEffectiveBlendDistance(float roadWidthMeters)
-    {
-        return JunctionBlendDistanceMeters;
-    }
-
-    /// <summary>
-    ///     Gets the effective roundabout blend distance.
-    ///     Returns RoundaboutBlendDistanceMeters if set, otherwise JunctionBlendDistanceMeters.
-    /// </summary>
-    /// <param name="roadWidthMeters">Unused, kept for API compatibility.</param>
-    public float GetEffectiveRoundaboutBlendDistance(float roadWidthMeters)
-    {
-        return RoundaboutBlendDistanceMeters ?? JunctionBlendDistanceMeters;
-    }
-
-    // ========================================
     // IDW WEIGHT MODIFIER FOR TERRAIN BLENDING (WI-8)
     // ========================================
 
@@ -228,6 +432,30 @@ public class JunctionHarmonizationParameters
     ///     Default: true (always export debug images to MT_TerrainGeneration folder)
     /// </summary>
     public bool ExportRoundaboutDebugImage { get; set; } = true;
+
+    // ========================================
+    // EFFECTIVE VALUE METHODS
+    // ========================================
+
+    /// <summary>
+    ///     Gets the effective junction blend distance.
+    ///     Returns JunctionBlendDistanceMeters directly.
+    /// </summary>
+    /// <param name="roadWidthMeters">Unused, kept for API compatibility.</param>
+    public float GetEffectiveBlendDistance(float roadWidthMeters)
+    {
+        return JunctionBlendDistanceMeters;
+    }
+
+    /// <summary>
+    ///     Gets the effective roundabout blend distance.
+    ///     Returns RoundaboutBlendDistanceMeters if set, otherwise JunctionBlendDistanceMeters.
+    /// </summary>
+    /// <param name="roadWidthMeters">Unused, kept for API compatibility.</param>
+    public float GetEffectiveRoundaboutBlendDistance(float roadWidthMeters)
+    {
+        return RoundaboutBlendDistanceMeters ?? JunctionBlendDistanceMeters;
+    }
 
     /// <summary>
     ///     Validates the junction harmonization parameters.

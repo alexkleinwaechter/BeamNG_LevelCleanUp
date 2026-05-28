@@ -46,7 +46,14 @@ public enum JunctionType
     ///     The roundabout ring is continuous; the connecting road terminates
     ///     at the ring and forms a T-junction with it.
     /// </summary>
-    Roundabout
+    Roundabout,
+
+    /// <summary>
+    ///     Two splines share an OSM node but it's just a way boundary, not a real intersection.
+    ///     Deflection angle is small (&lt; 30°) and width ratio is within 2:1.
+    ///     No constraint is computed — elevation is handled by chain-based smoothing.
+    /// </summary>
+    Continuation
 }
 
 /// <summary>
@@ -134,6 +141,15 @@ public class NetworkJunction
     ///     allowing the original terrain elevation to be used at this location.
     /// </summary>
     public bool IsExcluded { get; set; }
+
+    /// <summary>
+    ///     True when JunctionElevationPinner (Phase 1.9) has written HarmonizedElevation
+    ///     for this junction. Distinguishes "pinned upstream, must be preserved across
+    ///     Phase-3 iterations" from "computed by the harmonizer/blender this iteration,
+    ///     may be refined on the next iteration." Used by the C2 guards in
+    ///     NetworkJunctionHarmonizer and the C3 guards in UnifiedJunctionProfileBlender.
+    /// </summary>
+    public bool IsPinned { get; set; }
 
     /// <summary>
     ///     Reason for exclusion (user-provided or auto-detected).

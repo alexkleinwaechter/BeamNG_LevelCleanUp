@@ -825,8 +825,15 @@ public class OsmGeometryProcessor
         }
 
         Console.WriteLine($"Separated paths: {structurePathsMeta.Count} protected structure paths (kept separate), {regularPathsMeta.Count} regular paths (will merge)");
+        TerrainCreationLogger.Current?.Detail($"Separated paths: {structurePathsMeta.Count} protected structure paths, {regularPathsMeta.Count} regular paths");
         if (!excludeBridges && !excludeTunnels)
             Console.WriteLine("  (Backward compatible mode: all structures treated as normal roads)");
+
+        // Diagnostic: log all bridge/tunnel paths and which collection they ended up in
+        foreach (var pm in structurePathsMeta.Where(p => p.IsBridge || p.IsTunnel))
+            TerrainCreationLogger.Current?.Detail($"  Structure path (protected): way={pm.OsmWayId} {(pm.IsBridge ? "BRIDGE" : "TUNNEL")} nodes={pm.StartNodeId}→{pm.EndNodeId} points={pm.Points.Count} length={CalculatePathLength(pm.Points):F1}m");
+        foreach (var pm in regularPathsMeta.Where(p => p.IsBridge || p.IsTunnel))
+            TerrainCreationLogger.Current?.Detail($"  Structure path (regular): way={pm.OsmWayId} {(pm.IsBridge ? "BRIDGE" : "TUNNEL")} nodes={pm.StartNodeId}→{pm.EndNodeId} points={pm.Points.Count} length={CalculatePathLength(pm.Points):F1}m");
 
         List<PathWithMetadata> connectedPaths;
         if (disableSplineMerging)
@@ -895,7 +902,9 @@ public class OsmGeometryProcessor
                     StructureType = pm.StructureType,
                     Layer = pm.Layer,
                     BridgeStructureType = pm.BridgeStructureType,
-                    OsmRoadType = pm.Tags.GetValueOrDefault("highway")
+                    OsmRoadType = pm.Tags.GetValueOrDefault("highway"),
+                    StartOsmNodeId = pm.StartNodeId,
+                    EndOsmNodeId = pm.EndNodeId,
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
                 splines.Add(spline);
@@ -938,14 +947,19 @@ public class OsmGeometryProcessor
             {
                 var spline = new RoadSpline(cleanPath, interpolationType)
                 {
-                    // Regular (merged) paths are NOT structures
-                    IsBridge = false,
-                    IsTunnel = false,
-                    StructureType = StructureType.None,
-                    Layer = 0,
-                    BridgeStructureType = null,
+                    // Preserve structure metadata from PathWithMetadata.
+                    // When excludeBridges/excludeTunnels is false, bridge/tunnel paths
+                    // end up here (not in structurePathsMeta) but must keep their identity
+                    // so downstream phases can handle them correctly.
+                    IsBridge = pm.IsBridge,
+                    IsTunnel = pm.IsTunnel,
+                    StructureType = pm.StructureType,
+                    Layer = pm.Layer,
+                    BridgeStructureType = pm.BridgeStructureType,
                     // Propagate OSM road type from preserved tags (survives merges)
-                    OsmRoadType = pm.Tags.GetValueOrDefault("highway")
+                    OsmRoadType = pm.Tags.GetValueOrDefault("highway"),
+                    StartOsmNodeId = pm.StartNodeId,
+                    EndOsmNodeId = pm.EndNodeId,
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
                 splines.Add(spline);

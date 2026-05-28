@@ -92,6 +92,17 @@ public class UnifiedCrossSection
     public float EffectiveRoadWidth { get; set; }
 
     /// <summary>
+    ///     Phase A.8 — the cross-section's *painted-surface* width (m), excluding the
+    ///     smoothing-corridor margin already baked into <see cref="EffectiveRoadWidth" />.
+    ///     Populated from <see cref="RoadWidthProfile.GetWidthsAtDistance" />.surface when a
+    ///     width profile exists; falls back to the spline's <see cref="RoadSmoothingParameters.RoadWidthMeters" />
+    ///     otherwise (in which case <c>SurfaceWidth == EffectiveRoadWidth</c>).
+    ///     Used by <see cref="BeamNgTerrainPoc.Terrain.Algorithms.Blending.RoadMaskBuilder" />'s
+    ///     surface-protection Pass 1 to rasterize the protected-surface polygon.
+    /// </summary>
+    public float SurfaceWidth { get; set; }
+
+    /// <summary>
     ///     Effective blend range for THIS cross-section in meters (from spline's params).
     ///     Cached from the owning spline's TerrainAffectedRangeMeters for fast access during blending.
     /// </summary>
@@ -240,6 +251,23 @@ public class UnifiedCrossSection
     /// </summary>
     public int? HigherPrioritySplineId { get; set; }
 
+    // ========================================
+    // ELEVATION CHAIN DIAGNOSTICS
+    // ========================================
+
+    /// <summary>
+    ///     ID of the elevation chain this cross-section belongs to during network-chained smoothing.
+    ///     -1 = not assigned to any chain (e.g., roundabout or excluded spline).
+    ///     Set by NetworkElevationGraph for debugging and 3D viewer color-coding.
+    /// </summary>
+    public int ChainId { get; set; } = -1;
+
+    /// <summary>
+    ///     Position of this cross-section within its elevation chain (0-based).
+    ///     Combined with ChainId, uniquely identifies a cross-section's role in chain-based smoothing.
+    /// </summary>
+    public int ChainIndex { get; set; } = -1;
+
     /// <summary>
     ///     Creates a UnifiedCrossSection from a SplineSample.
     /// </summary>
@@ -264,6 +292,8 @@ public class UnifiedCrossSection
             Index = globalIndex,
             LocalIndex = localIndex,
             EffectiveRoadWidth = ownerSpline.WidthProfile?.GetWidthsAtDistance(sample.Distance).corridor
+                ?? ownerSpline.Parameters.RoadWidthMeters,
+            SurfaceWidth = ownerSpline.WidthProfile?.GetWidthsAtDistance(sample.Distance).surface
                 ?? ownerSpline.Parameters.RoadWidthMeters,
             EffectiveBlendRange = ownerSpline.Parameters.TerrainAffectedRangeMeters,
             Priority = ownerSpline.Priority,
@@ -315,6 +345,7 @@ public class UnifiedCrossSection
             TangentDirection = cs.TangentDirection,
             TargetElevation = cs.TargetElevation,
             EffectiveRoadWidth = cs.WidthMeters,
+            SurfaceWidth = cs.WidthMeters,
             EffectiveBlendRange = blendRange,
             IsExcluded = cs.IsExcluded,
             Index = cs.Index,

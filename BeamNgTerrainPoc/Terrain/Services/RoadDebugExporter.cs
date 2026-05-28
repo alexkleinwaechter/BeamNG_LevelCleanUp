@@ -3,6 +3,7 @@ using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using static BeamNgTerrainPoc.Terrain.Services.DebugLegendExporter;
 
 namespace BeamNgTerrainPoc.Terrain.Services;
 
@@ -387,6 +388,15 @@ public static class RoadDebugExporter
         Directory.CreateDirectory(dir);
         var filePath = Path.Combine(dir, fileName);
         image.SaveAsPng(filePath);
+
+        DebugLegendExporter.ExportAlongside(filePath,
+        [
+            new LegendEntry(new Rgba32(32, 32, 32, 255), "Road mask (source layer)"),
+            new LegendEntry(new Rgba32(255, 255, 0, 255), "Spline centerline (interpolated)"),
+            new LegendEntry(new Rgba32(0, 255, 255, 255), "Control points (skeleton/OSM)"),
+            new LegendEntry(new Rgba32(0, 255, 0, 255), "Cross-section width indicators"),
+        ]);
+
         TerrainCreationLogger.Current?.Detail($"Exported spline debug image: {filePath}");
         TerrainCreationLogger.Current?.Detail($"  Splines drawn: {splinesDrawn} (yellow=interpolated path, cyan=control points)");
     }
@@ -444,6 +454,15 @@ public static class RoadDebugExporter
         Directory.CreateDirectory(dir);
         var filePath = Path.Combine(dir, "spline_smoothed_elevation_debug.png");
         image.SaveAsPng(filePath);
+
+        DebugLegendExporter.ExportAlongside(filePath,
+        [
+            new LegendEntry(new Rgba32(32, 32, 32, 255), "Road mask (source layer)"),
+            new LegendEntry(new Rgba32(0, 0, 255, 255), $"Low elevation ({minElev:F1}m)"),
+            new LegendEntry(new Rgba32(0, 255, 0, 255), "Mid elevation"),
+            new LegendEntry(new Rgba32(255, 0, 0, 255), $"High elevation ({maxElev:F1}m)"),
+        ]);
+
         TerrainCreationLogger.Current?.Detail($"Exported smoothed elevation debug image: {filePath}");
         TerrainCreationLogger.Current?.Detail($"  Elevation range: {minElev:F2}m (blue) to {maxElev:F2}m (red)");
     }
@@ -522,6 +541,14 @@ public static class RoadDebugExporter
         Directory.CreateDirectory(dir);
         var filePath = Path.Combine(dir, "smoothed_heightmap_with_road_outlines.png");
         image.SaveAsPng(filePath);
+
+        DebugLegendExporter.ExportAlongside(filePath,
+        [
+            new LegendEntry(new Rgba32(0, 0, 0, 255), $"Low terrain ({minHeight:F1}m)"),
+            new LegendEntry(new Rgba32(255, 255, 255, 255), $"High terrain ({maxHeight:F1}m)"),
+            new LegendEntry(new Rgba32(0, 255, 255, 255), "Road edge (cyan)"),
+            new LegendEntry(new Rgba32(255, 0, 255, 255), "Blend zone edge (magenta)"),
+        ]);
 
         TerrainCreationLogger.Current?.Detail($"Exported smoothed heightmap with outlines: {filePath}");
         TerrainCreationLogger.Current?.Detail($"  Height range: {minHeight:F2}m (black) to {maxHeight:F2}m (white)");

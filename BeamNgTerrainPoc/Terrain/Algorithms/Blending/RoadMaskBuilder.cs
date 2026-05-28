@@ -1,6 +1,7 @@
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
 namespace BeamNgTerrainPoc.Terrain.Algorithms.Blending;
@@ -115,122 +116,93 @@ public class RoadMaskBuilder
         // first. When a narrower side road's corridor extends into the wide road's
         // surface, those pixels are already claimed and won't be overwritten.
         var splineLookup = network.Splines.ToDictionary(s => s.SplineId);
+
+        // Phase A.8.2: per-owner overlap metadata for contested-pixel resolution.
+        // Priority encodes OSM-type + material-order; TotalLengthMeters is the
+        // length-tier tiebreaker (terminating side roads are typically shorter).
+        var metadataByOwnerId = network.Splines.ToDictionary(
+            s => s.SplineId,
+            s => new SplineOverlapMetadata(s.SplineId, s.Priority, s.TotalLengthMeters));
+
         var processingOrder = crossSectionsBySpline.Keys
             .Where(id => splineLookup.ContainsKey(id))
             .OrderByDescending(id => splineLookup[id].Parameters.RoadWidthMeters)
             .ThenByDescending(id => splineLookup[id].Priority)
             .ToList();
 
-        foreach (var splineId in processingOrder)
+        // Look up JunctionHarmonizationParameters from the first spline (matches the
+        // pattern used in UnifiedJunctionProfileBlender). All splines share the same
+        // parameters block in current code; A.8 only reads the new flag.
+        var jhParams = network.Splines.FirstOrDefault()?.Parameters.JunctionHarmonizationParameters
+                       ?? new JunctionHarmonizationParameters();
+
+        if (jhParams.EnableSurfaceWidthProtection)
         {
-            var sections = crossSectionsBySpline[splineId];
-            if (sections.Count < 2)
-                continue;
-
-            // Get margin from spline parameters
-            var margin = splineParams.TryGetValue(splineId, out var p)
-                ? p.RoadEdgeProtectionBufferMeters
-                : 2.0f;
-
-            // Process consecutive cross-section pairs
-            for (var i = 0; i < sections.Count - 1; i++)
+            // Pass 1: stamp each spline's painted-surface polygon (no margins).
+            foreach (var splineId in processingOrder)
             {
-                var cs1 = sections[i];
-                var cs2 = sections[i + 1];
+                var sections = crossSectionsBySpline[splineId];
+                if (sections.Count < 2) continue;
 
-                // Skip pairs with invalid elevations
-                if (!IsValidTargetElevation(cs1.TargetElevation) ||
-                    !IsValidTargetElevation(cs2.TargetElevation))
-                    continue;
+                var margin = splineParams.TryGetValue(splineId, out var p)
+                    ? p.RoadEdgeProtectionBufferMeters
+                    : 2.0f;
 
-                var halfWidth1 = cs1.EffectiveRoadWidth / 2.0f + margin;
-                var halfWidth2 = cs2.EffectiveRoadWidth / 2.0f + margin;
+                maskedPixels += RasterizeSplinePolygons(
+                    sections, splineId,
+                    splineMetadata: metadataByOwnerId[splineId],
+                    metadataByOwnerId: metadataByOwnerId,
+                    enableSurfacePriorityOverride: jhParams.EnableSurfacePriorityOverride,
+                    margin,
+                    useSurfaceWidthOnly: true,
+                    mask, elevation, splineOwner,
+                    width, height, metersPerPixel, intersections);
+            }
 
-                // Build polygon corners: left1, right1, right2, left2
-                var corners = new Vector2[4];
-                corners[0] = cs1.CenterPoint - cs1.NormalDirection * halfWidth1; // left1
-                corners[1] = cs1.CenterPoint + cs1.NormalDirection * halfWidth1; // right1
-                corners[2] = cs2.CenterPoint + cs2.NormalDirection * halfWidth2; // right2
-                corners[3] = cs2.CenterPoint - cs2.NormalDirection * halfWidth2; // left2
+            // Pass 2: extend with corridor + edge protection buffer. Pixels claimed
+            // by Pass 1 (mask != 0) are not overwritten — the first-writer-wins rule
+            // inside RasterizeSplinePolygons enforces this naturally.
+            foreach (var splineId in processingOrder)
+            {
+                var sections = crossSectionsBySpline[splineId];
+                if (sections.Count < 2) continue;
 
-                // Convert to pixel coordinates
-                var pixelCorners = new Vector2[4];
-                for (var c = 0; c < 4; c++)
-                    pixelCorners[c] = new Vector2(corners[c].X / metersPerPixel, corners[c].Y / metersPerPixel);
+                var margin = splineParams.TryGetValue(splineId, out var p)
+                    ? p.RoadEdgeProtectionBufferMeters
+                    : 2.0f;
 
-                // Find bounding box, clamp to image bounds
-                var minY = Math.Max(0, (int)MathF.Floor(pixelCorners.Min(c => c.Y)));
-                var maxY = Math.Min(height - 1, (int)MathF.Ceiling(pixelCorners.Max(c => c.Y)));
-                var minX = Math.Max(0, (int)MathF.Floor(pixelCorners.Min(c => c.X)));
-                var maxX = Math.Min(width - 1, (int)MathF.Ceiling(pixelCorners.Max(c => c.X)));
+                maskedPixels += RasterizeSplinePolygons(
+                    sections, splineId,
+                    splineMetadata: metadataByOwnerId[splineId],
+                    metadataByOwnerId: metadataByOwnerId,
+                    enableSurfacePriorityOverride: jhParams.EnableSurfacePriorityOverride,
+                    margin,
+                    useSurfaceWidthOnly: false,
+                    mask, elevation, splineOwner,
+                    width, height, metersPerPixel, intersections);
+            }
+        }
+        else
+        {
+            // Legacy single-pass: rasterize at corridor + edge buffer width, first-writer-wins.
+            foreach (var splineId in processingOrder)
+            {
+                var sections = crossSectionsBySpline[splineId];
+                if (sections.Count < 2) continue;
 
-                // Scanline fill the polygon
-                for (var y = minY; y <= maxY; y++)
-                {
-                    var scanY = y + 0.5f;
+                var margin = splineParams.TryGetValue(splineId, out var p)
+                    ? p.RoadEdgeProtectionBufferMeters
+                    : 2.0f;
 
-                    // Find X intersections with polygon edges
-                    var intersectionCount = 0;
-                    for (var e = 0; e < 4; e++)
-                    {
-                        var p1 = pixelCorners[e];
-                        var p2 = pixelCorners[(e + 1) % 4];
-
-                        // Check if edge crosses this scanline
-                        if ((p1.Y <= scanY && p2.Y > scanY) || (p2.Y <= scanY && p1.Y > scanY))
-                        {
-                            var t = (scanY - p1.Y) / (p2.Y - p1.Y);
-                            intersections[intersectionCount++] = p1.X + t * (p2.X - p1.X);
-                        }
-                    }
-
-                    if (intersectionCount < 2)
-                        continue;
-
-                    // Simple insertion sort for small count
-                    for (var si = 1; si < intersectionCount; si++)
-                    {
-                        var key = intersections[si];
-                        var sj = si - 1;
-                        while (sj >= 0 && intersections[sj] > key)
-                        {
-                            intersections[sj + 1] = intersections[sj];
-                            sj--;
-                        }
-                        intersections[sj + 1] = key;
-                    }
-
-                    // Fill between intersection pairs
-                    for (var pair = 0; pair + 1 < intersectionCount; pair += 2)
-                    {
-                        var xStart = Math.Max(minX, (int)MathF.Ceiling(intersections[pair]));
-                        var xEnd = Math.Min(maxX, (int)MathF.Floor(intersections[pair + 1]));
-
-                        for (var x = xStart; x <= xEnd; x++)
-                        {
-                            var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
-                            var pixelElevation = BankedTerrainHelper.GetBankedElevationForPixel(cs1, cs2, worldPos);
-
-                            if (mask[y, x] == 0)
-                            {
-                                // First hit — claim this pixel
-                                mask[y, x] = 255;
-                                elevation[y, x] = pixelElevation;
-                                splineOwner[y, x] = splineId;
-                                maskedPixels++;
-                            }
-                            else if (splineOwner[y, x] == splineId)
-                            {
-                                // Same spline overlap (e.g., adjacent segments) — update if lower
-                                if (pixelElevation < elevation[y, x])
-                                    elevation[y, x] = pixelElevation;
-                            }
-                            // else: different spline's corridor — do NOT overwrite.
-                            // This prevents Road B's wide corridor from destroying
-                            // Road A's surface elevation at overlap zones.
-                        }
-                    }
-                }
+                maskedPixels += RasterizeSplinePolygons(
+                    sections, splineId,
+                    splineMetadata: metadataByOwnerId[splineId],
+                    metadataByOwnerId: metadataByOwnerId,
+                    enableSurfacePriorityOverride: jhParams.EnableSurfacePriorityOverride,
+                    margin,
+                    useSurfaceWidthOnly: false,
+                    mask, elevation, splineOwner,
+                    width, height, metersPerPixel, intersections);
             }
         }
 
@@ -324,6 +296,138 @@ public class RoadMaskBuilder
             $"Built combined mask with elevation: {maskedPixels} road pixels across {crossSectionsBySpline.Count} splines");
 
         return new CombinedMaskResult(mask, elevation, splineOwner, maskedPixels);
+    }
+
+    /// <summary>
+    ///     Phase A.8 — rasterize a single spline's per-segment polygons into mask/elevation/owner.
+    ///     Used by both Pass 1 (surface) and Pass 2 (corridor) when EnableSurfaceWidthProtection is on.
+    ///     <paramref name="useSurfaceWidthOnly" /> = true → halfWidth = SurfaceWidth/2 (Pass 1).
+    ///     <paramref name="useSurfaceWidthOnly" /> = false → halfWidth = EffectiveRoadWidth/2 + margin (Pass 2).
+    /// </summary>
+    internal static int RasterizeSplinePolygons(
+        List<UnifiedCrossSection> sections,
+        int splineId,
+        SplineOverlapMetadata splineMetadata,
+        Dictionary<int, SplineOverlapMetadata> metadataByOwnerId,
+        bool enableSurfacePriorityOverride,
+        float margin,
+        bool useSurfaceWidthOnly,
+        byte[,] mask,
+        float[,] elevation,
+        int[,] splineOwner,
+        int width,
+        int height,
+        float metersPerPixel,
+        Span<float> intersections)
+    {
+        var maskedPixels = 0;
+
+        for (var i = 0; i < sections.Count - 1; i++)
+        {
+            var cs1 = sections[i];
+            var cs2 = sections[i + 1];
+
+            if (!IsValidTargetElevation(cs1.TargetElevation) ||
+                !IsValidTargetElevation(cs2.TargetElevation))
+                continue;
+
+            var halfWidth1 = useSurfaceWidthOnly
+                ? cs1.SurfaceWidth / 2.0f
+                : cs1.EffectiveRoadWidth / 2.0f + margin;
+            var halfWidth2 = useSurfaceWidthOnly
+                ? cs2.SurfaceWidth / 2.0f
+                : cs2.EffectiveRoadWidth / 2.0f + margin;
+
+            var corners = new Vector2[4];
+            corners[0] = cs1.CenterPoint - cs1.NormalDirection * halfWidth1;
+            corners[1] = cs1.CenterPoint + cs1.NormalDirection * halfWidth1;
+            corners[2] = cs2.CenterPoint + cs2.NormalDirection * halfWidth2;
+            corners[3] = cs2.CenterPoint - cs2.NormalDirection * halfWidth2;
+
+            var pixelCorners = new Vector2[4];
+            for (var c = 0; c < 4; c++)
+                pixelCorners[c] = new Vector2(corners[c].X / metersPerPixel, corners[c].Y / metersPerPixel);
+
+            var minY = Math.Max(0, (int)MathF.Floor(pixelCorners.Min(c => c.Y)));
+            var maxY = Math.Min(height - 1, (int)MathF.Ceiling(pixelCorners.Max(c => c.Y)));
+            var minX = Math.Max(0, (int)MathF.Floor(pixelCorners.Min(c => c.X)));
+            var maxX = Math.Min(width - 1, (int)MathF.Ceiling(pixelCorners.Max(c => c.X)));
+
+            for (var y = minY; y <= maxY; y++)
+            {
+                var scanY = y + 0.5f;
+                var intersectionCount = 0;
+                for (var e = 0; e < 4; e++)
+                {
+                    var p1 = pixelCorners[e];
+                    var p2 = pixelCorners[(e + 1) % 4];
+
+                    if ((p1.Y <= scanY && p2.Y > scanY) || (p2.Y <= scanY && p1.Y > scanY))
+                    {
+                        var t = (scanY - p1.Y) / (p2.Y - p1.Y);
+                        intersections[intersectionCount++] = p1.X + t * (p2.X - p1.X);
+                    }
+                }
+
+                if (intersectionCount < 2)
+                    continue;
+
+                for (var si = 1; si < intersectionCount; si++)
+                {
+                    var key = intersections[si];
+                    var sj = si - 1;
+                    while (sj >= 0 && intersections[sj] > key)
+                    {
+                        intersections[sj + 1] = intersections[sj];
+                        sj--;
+                    }
+                    intersections[sj + 1] = key;
+                }
+
+                for (var pair = 0; pair + 1 < intersectionCount; pair += 2)
+                {
+                    var xStart = Math.Max(minX, (int)MathF.Ceiling(intersections[pair]));
+                    var xEnd = Math.Min(maxX, (int)MathF.Floor(intersections[pair + 1]));
+
+                    for (var x = xStart; x <= xEnd; x++)
+                    {
+                        var worldPos = new Vector2(x * metersPerPixel, y * metersPerPixel);
+                        var pixelElevation = BankedTerrainHelper.GetBankedElevationForPixel(cs1, cs2, worldPos);
+
+                        if (mask[y, x] == 0)
+                        {
+                            mask[y, x] = 255;
+                            elevation[y, x] = pixelElevation;
+                            splineOwner[y, x] = splineId;
+                            maskedPixels++;
+                        }
+                        else
+                        {
+                            // Phase A.8.2: contested pixel — defer to ContestedPixelResolver.
+                            // Same-spline re-stamp keeps lower elevation (banking refinement).
+                            // Different-spline conflict: flag-off OR Pass-2 → keep existing; flag-on AND
+                            // Pass-1 → multi-key cascade (Priority → TotalLength → SplineId) decides.
+                            var existingOwnerId = splineOwner[y, x];
+                            var existingMeta = metadataByOwnerId.TryGetValue(existingOwnerId, out var em)
+                                ? em
+                                : new SplineOverlapMetadata(SplineId: existingOwnerId, Priority: 0, TotalLengthMeters: 0f);
+
+                            var outcome = ContestedPixelResolver.Resolve(
+                                existing: existingMeta, existingElev: elevation[y, x],
+                                candidate: splineMetadata, candidateElev: pixelElevation,
+                                useSurfaceWidthOnly,
+                                enableSurfacePriorityOverride);
+
+                            elevation[y, x] = outcome.NewElevation;
+                            if (outcome.TakeOwnership)
+                                splineOwner[y, x] = splineId;
+                        }
+                    }
+                }
+            }
+        }
+
+        return maskedPixels;
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -215,7 +216,9 @@ public class OptimizedElevationSmoother : IHeightCalculator
     public void ApplyEndpointAnchoring(
         List<UnifiedCrossSection> crossSections,
         EndpointAnchor? startAnchor,
-        EndpointAnchor? endAnchor)
+        EndpointAnchor? endAnchor,
+        bool enableMaxGradeClamp = false,
+        string? osmRoadType = null)
     {
         if (crossSections.Count == 0) return;
         if (!startAnchor.HasValue && !endAnchor.HasValue) return;
@@ -268,6 +271,40 @@ public class OptimizedElevationSmoother : IHeightCalculator
         if (anchored > 0)
             TerrainCreationLogger.Current?.Detail(
                 $"  Endpoint anchoring modified {anchored} cross-sections (spline {crossSections[0].OwnerSplineId})");
+
+        // W3 (Phase 1.9, AASHTO §4.1.5): cap any segment grade that exceeds the road class's
+        // maximum. Belt-and-braces over R7 (slope kink in steep terrain). Walks each adjacent
+        // pair after anchoring; if the segment grade exceeds the class cap, the downstream
+        // cross-section is pulled toward the upstream one by the cap magnitude.
+        //
+        // Cumulative-drift semantic: each clamped segment rebases off the *already-clamped*
+        // prev.TargetElevation, so on a run of N consecutive over-cap segments the absolute
+        // Z drift downstream grows linearly. This is intentional — the goal is a strict flat
+        // cap on segment grade, not magnitude attenuation. The clamp's downstream effect is
+        // then re-anchored at the next junction or absorbed by Phase 4 re-smoothing.
+        if (enableMaxGradeClamp)
+        {
+            var cap = JunctionElevationPinner.GetMaxGradePercent(osmRoadType);
+            var clamped = 0;
+            for (var i = 1; i < crossSections.Count; i++)
+            {
+                var prev = crossSections[i - 1];
+                var curr = crossSections[i];
+                if (float.IsNaN(prev.TargetElevation) || float.IsNaN(curr.TargetElevation)) continue;
+                var dx = MathF.Abs(curr.DistanceAlongSpline - prev.DistanceAlongSpline);
+                if (dx < 0.01f) continue;
+                var dz = curr.TargetElevation - prev.TargetElevation;
+                var gradePct = dz / dx * 100f;
+                if (MathF.Abs(gradePct) <= cap) continue;
+                var clampedGrade = JunctionElevationPinner.ClampGradePercent(gradePct, cap);
+                curr.TargetElevation = prev.TargetElevation + clampedGrade / 100f * dx;
+                clamped++;
+            }
+            if (clamped > 0)
+                TerrainCreationLogger.Current?.Detail(
+                    $"  W3 max-grade clamp: capped {clamped} segment(s) at {cap:F1}% " +
+                    $"(spline {crossSections[0].OwnerSplineId}, class={osmRoadType ?? "unknown"})");
+        }
     }
 
     /// <summary>
@@ -643,5 +680,187 @@ public class OptimizedElevationSmoother : IHeightCalculator
         }
 
         return result;
+    }
+
+    // ========================================
+    // CHAIN-AWARE ELEVATION FILTERING
+    // ========================================
+
+    /// <summary>
+    ///     Calculates target elevations for a chain of concatenated cross-sections.
+    ///     Samples terrain, applies smoothing filter, global leveling, and slope constraint
+    ///     on the full chain profile — preventing boundary artifacts at spline joints.
+    /// </summary>
+    /// <param name="chainCrossSections">Concatenated cross-sections from all splines in chain order (already deduped).</param>
+    /// <param name="parameters">Smoothing parameters (from the highest-priority spline in the chain).</param>
+    /// <param name="heightMap">Terrain heightmap for sampling.</param>
+    /// <param name="metersPerPixel">Heightmap resolution.</param>
+    public void CalculateChainElevations(
+        List<UnifiedCrossSection> chainCrossSections,
+        RoadSmoothingParameters parameters,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        if (chainCrossSections.Count == 0) return;
+
+        var splineParams = parameters?.GetSplineParameters();
+        var windowSize = splineParams?.SmoothingWindowSize ?? 301;
+        var useButterworthFilter = splineParams?.UseButterworthFilter ?? false;
+        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 4;
+        var crossSectionSpacing = parameters?.CrossSectionIntervalMeters ?? 0.5f;
+        var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
+        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 6.0f;
+
+        var mapHeight = heightMap.GetLength(0);
+        var mapWidth = heightMap.GetLength(1);
+
+        // Step 1: Sample terrain elevations for the entire chain
+        var rawElevations = new float[chainCrossSections.Count];
+        for (var i = 0; i < chainCrossSections.Count; i++)
+        {
+            var cs = chainCrossSections[i];
+            var px = Math.Clamp((int)(cs.CenterPoint.X / metersPerPixel), 0, mapWidth - 1);
+            var py = Math.Clamp((int)(cs.CenterPoint.Y / metersPerPixel), 0, mapHeight - 1);
+
+            var sampledElevation = heightMap[py, px];
+            if (float.IsNaN(sampledElevation) || float.IsInfinity(sampledElevation) ||
+                sampledElevation < -1000.0f)
+            {
+                sampledElevation = i > 0 && !float.IsNaN(rawElevations[i - 1])
+                    ? rawElevations[i - 1]
+                    : SampleValidNeighborElevation(heightMap, px, py);
+            }
+
+            rawElevations[i] = sampledElevation;
+            cs.OriginalTerrainElevation = sampledElevation;
+        }
+
+        // Step 2: Apply smoothing filter on the full chain
+        var smoothed = useButterworthFilter
+            ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
+            : BoxFilterPrefixSum(rawElevations, windowSize);
+
+        // Step 3: Enforce max slope constraint on the full chain (no kinks at spline joints)
+        if (enableMaxSlopeConstraint)
+            EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
+
+        // Step 4: Assign final elevations
+        for (var i = 0; i < chainCrossSections.Count; i++)
+            chainCrossSections[i].TargetElevation = smoothed[i];
+    }
+
+    /// <summary>
+    ///     Re-smooths a chain of cross-sections using existing TargetElevation values as input.
+    ///     Used in iterative junction refinement (iterations 1+). Must operate on chains
+    ///     to avoid reintroducing boundary artifacts that chain-based smoothing eliminated.
+    /// </summary>
+    /// <param name="chainCrossSections">Concatenated cross-sections from all splines in chain order (already deduped).</param>
+    /// <param name="parameters">Smoothing parameters.</param>
+    public void ReSmoothChainFromExistingElevations(
+        List<UnifiedCrossSection> chainCrossSections,
+        RoadSmoothingParameters parameters)
+    {
+        if (chainCrossSections.Count == 0) return;
+
+        var splineParams = parameters?.GetSplineParameters();
+        var windowSize = splineParams?.SmoothingWindowSize ?? 301;
+        var useButterworthFilter = splineParams?.UseButterworthFilter ?? false;
+        var butterworthOrder = splineParams?.ButterworthFilterOrder ?? 4;
+        var crossSectionSpacing = parameters?.CrossSectionIntervalMeters ?? 0.5f;
+        var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
+        var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 6.0f;
+
+        // Use existing TargetElevation as raw input
+        var rawElevations = new float[chainCrossSections.Count];
+        for (var i = 0; i < chainCrossSections.Count; i++)
+            rawElevations[i] = chainCrossSections[i].TargetElevation;
+
+        // Apply smoothing filter on the full chain
+        var smoothed = useButterworthFilter
+            ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
+            : BoxFilterPrefixSum(rawElevations, windowSize);
+
+        // Enforce max slope constraint on the full chain
+        if (enableMaxSlopeConstraint)
+            EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
+
+        // Assign final elevations
+        for (var i = 0; i < chainCrossSections.Count; i++)
+            chainCrossSections[i].TargetElevation = smoothed[i];
+    }
+
+    /// <summary>
+    ///     Concatenates cross-sections from a chain's segments in traversal order,
+    ///     with deduplication at segment joints to avoid duplicate samples.
+    ///     Deduped cross-sections are tracked and will have their elevation copied
+    ///     from the kept neighbor after chain filtering completes.
+    /// </summary>
+    /// <param name="chain">The elevation chain.</param>
+    /// <param name="crossSectionsBySpline">Cross-sections grouped by spline ID, ordered by LocalIndex.</param>
+    /// <param name="crossSectionSpacing">Nominal spacing between cross-sections for dedup threshold.</param>
+    /// <returns>Concatenated cross-sections in chain traversal order.</returns>
+    public static List<UnifiedCrossSection> ConcatenateChainCrossSections(
+        ElevationChain chain,
+        Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
+        float crossSectionSpacing)
+    {
+        var result = new List<UnifiedCrossSection>();
+        var dedupPairs = new List<(UnifiedCrossSection skipped, UnifiedCrossSection kept)>();
+        var dedupThreshold = crossSectionSpacing / 2f;
+        var chainIndex = 0;
+
+        foreach (var (edge, traverseReversed) in chain.Segments)
+        {
+            if (!crossSectionsBySpline.TryGetValue(edge.SplineId, out var splineCS))
+                continue;
+
+            // Get cross-sections in traversal order
+            IEnumerable<UnifiedCrossSection> ordered = traverseReversed
+                ? splineCS.AsEnumerable().Reverse()
+                : splineCS;
+
+            foreach (var cs in ordered)
+            {
+                // Dedup: skip if co-located with last appended CS
+                if (result.Count > 0)
+                {
+                    var last = result[^1];
+                    var dist = Vector2.Distance(last.CenterPoint, cs.CenterPoint);
+                    if (dist < dedupThreshold)
+                    {
+                        // Track the skipped CS so we can copy elevation from its neighbor later
+                        dedupPairs.Add((cs, last));
+                        cs.ChainId = chain.ChainId;
+                        cs.ChainIndex = -1; // Mark as deduped
+                        continue;
+                    }
+                }
+
+                cs.ChainId = chain.ChainId;
+                cs.ChainIndex = chainIndex++;
+                result.Add(cs);
+            }
+        }
+
+        // Store dedup pairs for post-processing (accessed via PropagateToDeduped)
+        chain.DedupPairs = dedupPairs;
+
+        return result;
+    }
+
+    /// <summary>
+    ///     After chain elevation filtering, propagates TargetElevation to cross-sections
+    ///     that were deduped during concatenation. Must be called after CalculateChainElevations
+    ///     or ReSmoothChainFromExistingElevations.
+    /// </summary>
+    public static void PropagateToDeduped(ElevationChain chain)
+    {
+        if (chain.DedupPairs == null) return;
+
+        foreach (var (skipped, kept) in chain.DedupPairs)
+        {
+            skipped.TargetElevation = kept.TargetElevation;
+            skipped.OriginalTerrainElevation = kept.OriginalTerrainElevation;
+        }
     }
 }

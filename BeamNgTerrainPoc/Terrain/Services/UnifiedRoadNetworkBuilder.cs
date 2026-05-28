@@ -26,9 +26,12 @@ public class UnifiedRoadNetworkBuilder
 
     /// <summary>
     /// Minimum cross-sections required per path to be included in the network.
-    /// Paths with fewer cross-sections are considered noise/fragments and skipped.
+    /// Keep this low (2) so that short OSM segments (bridges, culverts, short links)
+    /// are not silently dropped — they chain with adjacent splines for elevation smoothing.
+    /// The previous value of 10 was designed for PNG skeleton noise filtering but also
+    /// removed valid short OSM ways, breaking topology at bridge boundaries.
     /// </summary>
-    private const int MinCrossSectionsPerPath = 10;
+    private const int MinCrossSectionsPerPath = 2;
 
     public UnifiedRoadNetworkBuilder()
     {
@@ -113,7 +116,9 @@ public class UnifiedRoadNetworkBuilder
                         IsTunnel = spline.IsTunnel,
                         StructureType = spline.StructureType,
                         Layer = spline.Layer,
-                        BridgeStructureType = spline.BridgeStructureType
+                        BridgeStructureType = spline.BridgeStructureType,
+                        StartOsmNodeId = spline.StartOsmNodeId,
+                        EndOsmNodeId = spline.EndOsmNodeId,
                     };
 
                     // Resolve layerset for width profile
@@ -145,6 +150,20 @@ public class UnifiedRoadNetworkBuilder
                     paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
 
                     network.AddSpline(paramSpline);
+
+                    // Diagnostic: log spline endpoint positions for debugging topology connectivity
+                    if (paramSpline.IsStructure || paramSpline.StartOsmNodeId != null || paramSpline.EndOsmNodeId != null)
+                    {
+                        var startPt = paramSpline.StartPoint;
+                        var endPt = paramSpline.EndPoint;
+                        var structLabel = paramSpline.IsBridge ? " [BRIDGE]" : paramSpline.IsTunnel ? " [TUNNEL]" : "";
+                        TerrainCreationLogger.Current?.Detail(
+                            $"    Spline {paramSpline.SplineId}{structLabel}: " +
+                            $"start=({startPt.X:F2},{startPt.Y:F2}) node={paramSpline.StartOsmNodeId}, " +
+                            $"end=({endPt.X:F2},{endPt.Y:F2}) node={paramSpline.EndOsmNodeId}, " +
+                            $"length={paramSpline.Spline.TotalLength:F1}m, points={paramSpline.Spline.ControlPoints.Count}");
+                    }
+
                     splineIdCounter++;
                 }
 
@@ -263,8 +282,23 @@ public class UnifiedRoadNetworkBuilder
         // Check for pre-built splines first (from OSM)
         if (parameters.UsePreBuiltSplines)
         {
-            TerrainLogger.Info($"    Using {parameters.PreBuiltSplines!.Count} pre-built splines from OSM");
-            return FilterShortSplines(parameters.PreBuiltSplines!, parameters.CrossSectionIntervalMeters);
+            var preBuilt = parameters.PreBuiltSplines!;
+            var bridgeCount = preBuilt.Count(s => s.IsBridge);
+            var tunnelCount = preBuilt.Count(s => s.IsTunnel);
+            TerrainCreationLogger.Current?.Detail($"    Using {preBuilt.Count} pre-built splines from OSM ({bridgeCount} bridges, {tunnelCount} tunnels)");
+
+            // Log all bridge/tunnel splines BEFORE filtering
+            foreach (var s in preBuilt.Where(s => s.IsBridge || s.IsTunnel))
+            {
+                var label = s.IsBridge ? "BRIDGE" : "TUNNEL";
+                var estCS = (int)(s.TotalLength / parameters.CrossSectionIntervalMeters);
+                TerrainCreationLogger.Current?.Detail(
+                    $"    Pre-filter {label}: nodes={s.StartOsmNodeId}→{s.EndOsmNodeId}, " +
+                    $"length={s.TotalLength:F1}m, points={s.ControlPoints.Count}, " +
+                    $"estCS={estCS} (min={MinCrossSectionsPerPath})");
+            }
+
+            return FilterShortSplines(preBuilt, parameters.CrossSectionIntervalMeters);
         }
 
         // Fall back to extracting from layer image
@@ -539,13 +573,24 @@ public class UnifiedRoadNetworkBuilder
     /// </summary>
     private List<RoadSpline> FilterShortSplines(List<RoadSpline> splines, float crossSectionInterval)
     {
-        return splines
-            .Where(s =>
+        var filtered = new List<RoadSpline>();
+        foreach (var s in splines)
+        {
+            var estimatedCrossSections = (int)(s.TotalLength / crossSectionInterval);
+            if (estimatedCrossSections >= MinCrossSectionsPerPath)
             {
-                var estimatedCrossSections = (int)(s.TotalLength / crossSectionInterval);
-                return estimatedCrossSections >= MinCrossSectionsPerPath;
-            })
-            .ToList();
+                filtered.Add(s);
+            }
+            else
+            {
+                var structLabel = s.IsBridge ? " [BRIDGE]" : s.IsTunnel ? " [TUNNEL]" : "";
+                TerrainCreationLogger.Current?.Detail(
+                    $"    FilterShortSplines: DROPPED{structLabel} spline " +
+                    $"(length={s.TotalLength:F1}m, estCS={estimatedCrossSections}, min={MinCrossSectionsPerPath}, " +
+                    $"interval={crossSectionInterval:F2}m, nodes={s.StartOsmNodeId}→{s.EndOsmNodeId})");
+            }
+        }
+        return filtered;
     }
 
     /// <summary>

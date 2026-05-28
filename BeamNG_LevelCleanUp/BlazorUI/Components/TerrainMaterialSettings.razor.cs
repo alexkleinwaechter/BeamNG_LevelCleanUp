@@ -818,6 +818,12 @@ public partial class TerrainMaterialSettings
         public float JunctionBlendDistanceMeters { get; set; } = 50.0f;
         public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.CubicHermiteC1;
 
+        /// <summary>
+        ///     Phase B.1 — design speed override for the K-value cap. See
+        ///     <see cref="JunctionHarmonizationParameters.DesignSpeedKmh" />.
+        /// </summary>
+        public int? DesignSpeedKmh { get; set; }
+
         // IDW filtering for terrain blending near junctions
         public bool EnableJunctionIdwFiltering { get; set; } = true;
         public float MinTerminatingIdwWeight { get; set; } = 0.1f;
@@ -1036,6 +1042,8 @@ public partial class TerrainMaterialSettings
                 ForceUniformRoundaboutElevation =
                     preset.JunctionHarmonizationParameters.ForceUniformRoundaboutElevation;
                 RoundaboutBlendDistanceMeters = preset.JunctionHarmonizationParameters.RoundaboutBlendDistanceMeters;
+                if (preset.JunctionHarmonizationParameters.DesignSpeedKmh != null)
+                    DesignSpeedKmh = preset.JunctionHarmonizationParameters.DesignSpeedKmh;
                 // Debug properties are always enabled - no need to copy from preset
             }
         }
@@ -1144,6 +1152,7 @@ public partial class TerrainMaterialSettings
                 RoundaboutOverlapToleranceMeters = RoundaboutOverlapToleranceMeters,
                 ForceUniformRoundaboutElevation = ForceUniformRoundaboutElevation,
                 RoundaboutBlendDistanceMeters = RoundaboutBlendDistanceMeters,
+                DesignSpeedKmh = DesignSpeedKmh,
                 ExportJunctionDebugImage = true,
                 ExportRoundaboutDebugImage = true
             };

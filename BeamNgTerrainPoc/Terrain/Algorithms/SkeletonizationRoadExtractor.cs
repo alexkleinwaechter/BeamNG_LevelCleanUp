@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -728,6 +729,17 @@ public class SkeletonizationRoadExtractor
         Directory.CreateDirectory(dir);
         var fp = Path.Combine(dir, "skeleton_debug.png");
         img.SaveAsPng(fp);
+
+        DebugLegendExporter.ExportAlongside(fp,
+        [
+            new DebugLegendExporter.LegendEntry(new Rgba32(25, 25, 25, 255), "Road mask"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(60, 60, 60, 255), "Skeleton pixels"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 0, 0, 255), "Path 1"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 255, 0, 255), "Path 2"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 128, 255, 255), "Path 3"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 128, 0, 255), "Path 4+  (colors cycle)"),
+        ]);
+
         TerrainLogger.Info($"Exported skeleton debug image: {fp}");
     }
 }

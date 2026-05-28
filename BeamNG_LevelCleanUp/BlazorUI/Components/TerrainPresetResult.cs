@@ -357,6 +357,12 @@ public class JunctionHarmonizationSettings
     public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
     public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
     public string BlendFunctionType { get; set; } = "CubicHermiteC1";
+
+    /// <summary>
+    ///     Phase B.1 — design speed override (km/h) for the AASHTO K-value cap.
+    ///     Round-trips through preset JSON as <c>junctionHarmonization.designSpeedKmh</c>.
+    /// </summary>
+    public int? DesignSpeedKmh { get; set; }
     public bool EnableEndpointTaper { get; set; } = true;
     public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
     public float EndpointTerrainBlendStrength { get; set; } = 1f;

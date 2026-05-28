@@ -123,6 +123,18 @@ public class ParameterizedRoadSpline
     public int Layer { get; set; } = 0;
 
     /// <summary>
+    ///     OSM node ID of the spline's start point, or null if not from OSM / cropped at boundary.
+    ///     Propagated from RoadSpline during network building.
+    /// </summary>
+    public long? StartOsmNodeId { get; set; }
+
+    /// <summary>
+    ///     OSM node ID of the spline's end point, or null if not from OSM / cropped at boundary.
+    ///     Propagated from RoadSpline during network building.
+    /// </summary>
+    public long? EndOsmNodeId { get; set; }
+
+    /// <summary>
     ///     Bridge structure type (beam, arch, suspension, etc.) for DAE generation.
     ///     Null if not a bridge or type not specified.
     /// </summary>

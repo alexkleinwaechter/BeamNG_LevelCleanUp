@@ -25,7 +25,10 @@ public static class RoadCorridorBuilder
 
         foreach (var spline in network.Splines)
         {
-            if (spline.IsBridge || spline.IsTunnel)
+            // Skip structures only when exclusion is enabled — when disabled, bridges/tunnels
+            // get DecalRoad surfaces like regular roads (flat terrain representation)
+            if ((spline.IsBridge && spline.Parameters.ExcludeBridgesFromTerrain) ||
+                (spline.IsTunnel && spline.Parameters.ExcludeTunnelsFromTerrain))
                 continue;
 
             DecalRoadLayerSet? layerSet;

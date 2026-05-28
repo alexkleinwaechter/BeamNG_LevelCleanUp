@@ -699,6 +699,19 @@ public class MaterialPainter
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
         image.SaveAsPng(outputPath);
 
+        // Build dynamic legend from actual material names and their colors
+        var legendEntries = new List<DebugLegendExporter.LegendEntry>();
+        var legendColorIndex = 0;
+        foreach (var materialName in layers.Keys)
+        {
+            var c = colors[legendColorIndex % colors.Length];
+            legendEntries.Add(new DebugLegendExporter.LegendEntry(
+                new Rgba32(c.R, c.G, c.B, 255), materialName));
+            legendColorIndex++;
+        }
+
+        DebugLegendExporter.ExportAlongside(outputPath, legendEntries);
+
         TerrainLogger.Info($"  Exported material debug image: {outputPath}");
     }
 

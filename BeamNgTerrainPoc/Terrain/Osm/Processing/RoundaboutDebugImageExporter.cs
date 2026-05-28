@@ -3,6 +3,7 @@ using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
+using BeamNgTerrainPoc.Terrain.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -134,7 +135,18 @@ public class RoundaboutDebugImageExporter
             Directory.CreateDirectory(directory);
         
         image.SaveAsPng(outputPath);
-        
+
+        DebugLegendExporter.ExportAlongside(outputPath,
+        [
+            new DebugLegendExporter.LegendEntry(new Rgba32(128, 128, 128, 255), "Original roads (pre-trim)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 60, 60, 255), "Trimmed/deleted portions"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 255, 255, 255), "Connecting roads (post-trim)"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 255, 0, 255), "Roundabout rings"),
+            new DebugLegendExporter.LegendEntry(new Rgba32(0, 255, 0, 200), "Connection points",
+                DebugLegendExporter.LegendSwatchStyle.Circle),
+            new DebugLegendExporter.LegendEntry(new Rgba32(255, 128, 0, 255), "Roundabout centers (+)"),
+        ]);
+
         TerrainLogger.Info($"RoundaboutDebugImageExporter: Saved debug image to {outputPath}");
         TerrainLogger.Info($"  - {roundabouts.Count} roundabout ring(s) (yellow)");
         TerrainLogger.Info($"  - {roundabouts.Sum(r => r.Connections.Count)} connection point(s) (green circles)");

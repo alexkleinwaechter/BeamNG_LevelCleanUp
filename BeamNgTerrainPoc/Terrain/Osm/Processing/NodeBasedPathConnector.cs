@@ -231,15 +231,14 @@ internal static class NodeBasedPathConnector
                     var nodeId2 = isStart2 ? p2.StartNodeId : p2.EndNodeId;
                     var outgoingNext = isStart2 ? startLookforward[id2] : endLookback[id2];
 
-                    var relationBonus = 0f;
-                    if (wayToRelations != null &&
-                        ShareRouteRelation(p1.OsmWayId, p2.OsmWayId, wayToRelations))
-                        relationBonus = RelationBoost;
+                    var sharesRelation = wayToRelations != null &&
+                        ShareRouteRelation(p1, p2, wayToRelations);
 
                     ScoreEndpoint(id1, id2, p1, p2, type,
                         p1.EndNodeId, nodeId2,
                         endLookback[id1], p1.Points[^1], outgoingNext,
-                        type == MergeType.EndToEnd, nodeValence, toleranceSq, relationBonus,
+                        type == MergeType.EndToEnd, nodeValence, toleranceSq,
+                        sharesRelation, wayToRelations,
                         ref best, ref bestScore);
                 }
             }
@@ -263,15 +262,14 @@ internal static class NodeBasedPathConnector
                     var nodeId2 = isStart2 ? p2.StartNodeId : p2.EndNodeId;
                     var incomingPrev = isStart2 ? startLookforward[id2] : endLookback[id2];
 
-                    var relationBonus = 0f;
-                    if (wayToRelations != null &&
-                        ShareRouteRelation(p1.OsmWayId, p2.OsmWayId, wayToRelations))
-                        relationBonus = RelationBoost;
+                    var sharesRelation = wayToRelations != null &&
+                        ShareRouteRelation(p1, p2, wayToRelations);
 
                     ScoreEndpoint(id1, id2, p1, p2, type,
                         p1.StartNodeId, nodeId2,
                         incomingPrev, p1.Points[0], startLookforward[id1],
-                        type == MergeType.StartToStart, nodeValence, toleranceSq, relationBonus,
+                        type == MergeType.StartToStart, nodeValence, toleranceSq,
+                        sharesRelation, wayToRelations,
                         ref best, ref bestScore);
                 }
             }
@@ -282,6 +280,11 @@ internal static class NodeBasedPathConnector
 
     /// <summary>
     ///     Scores a single endpoint combination and updates the best candidate if this one is better.
+    ///     At junction nodes (valence >= 3), applies relation-protected blocking:
+    ///     - Both paths have relations but don't share one → blocked
+    ///     - One path has relations, other doesn't → blocked
+    ///     - Neither has relations → allowed (orphan angle-based merge)
+    ///     - Both share a relation → allowed (relation-mandated merge)
     /// </summary>
     private static void ScoreEndpoint(
         int i, int j,
@@ -292,7 +295,8 @@ internal static class NodeBasedPathConnector
         bool requiresReversal,
         Dictionary<long, int> nodeValence,
         float toleranceSq,
-        float relationBonus,
+        bool sharesRelation,
+        Dictionary<long, HashSet<long>>? wayToRelations,
         ref MergeCandidate? best,
         ref float bestScore)
     {
@@ -320,6 +324,23 @@ internal static class NodeBasedPathConnector
 
         var isJunction = isSharedNode && IsJunctionNode(nodeId1!.Value, nodeValence);
 
+        // Relation-protected junction blocking: at junction nodes where multiple roads meet,
+        // use route relation membership to prevent topologically wrong merges.
+        // Only angle-based merging between orphan ways (no relation on either side) is allowed.
+        if (isJunction && wayToRelations is { Count: > 0 })
+        {
+            var p1HasRelation = HasRouteRelation(p1, wayToRelations);
+            var p2HasRelation = HasRouteRelation(p2, wayToRelations);
+
+            if (p1HasRelation || p2HasRelation)
+            {
+                // At least one path has a relation — require shared relation to merge
+                if (!sharesRelation)
+                    return; // No shared relation → block
+            }
+            // else: both orphan → allow angle-based merge at junction
+        }
+
         // Compute deflection angle as dot product (higher = straighter)
         var dot = ComputeDotProduct(incomingPrev, connectionPoint, outgoingNext);
         if (float.IsNaN(dot))
@@ -333,7 +354,7 @@ internal static class NodeBasedPathConnector
         // Compute score
         var score = dot
                     + (isSharedNode ? SharedNodeBoost : 0f)
-                    + relationBonus
+                    + (sharesRelation ? RelationBoost : 0f)
                     - (requiresReversal ? ReversalPenalty : 0f);
 
         if (score > bestScore)
@@ -482,6 +503,7 @@ internal static class NodeBasedPathConnector
             path2.EndNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+        UnionWayIds(result, path1, path2);
         result.LaneSegments = LaneSegmentOps.MergeSegments(
             path1.LaneSegments, path2.LaneSegments, path1.Points.Count - 1);
         return result;
@@ -499,6 +521,7 @@ internal static class NodeBasedPathConnector
             path2.StartNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+        UnionWayIds(result, path1, path2);
         var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
         result.LaneSegments = LaneSegmentOps.MergeSegments(
             path1.LaneSegments, reversedSegs2, path1.Points.Count - 1);
@@ -516,6 +539,7 @@ internal static class NodeBasedPathConnector
             path1.EndNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+        UnionWayIds(result, path1, path2);
         result.LaneSegments = LaneSegmentOps.MergeSegments(
             path2.LaneSegments, path1.LaneSegments, path2.Points.Count - 1);
         return result;
@@ -533,6 +557,7 @@ internal static class NodeBasedPathConnector
             path1.EndNodeId,
             path1.OsmWayId, path1.Tags,
             path1.IsBridge, path1.IsTunnel, path1.StructureType, path1.Layer, path1.BridgeStructureType);
+        UnionWayIds(result, path1, path2);
         var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
         result.LaneSegments = LaneSegmentOps.MergeSegments(
             reversedSegs2, path1.LaneSegments, path2.Points.Count - 1);
@@ -585,17 +610,54 @@ internal static class NodeBasedPathConnector
     }
 
     /// <summary>
-    ///     Returns true if both way IDs share at least one route relation.
+    ///     Returns true if both paths share at least one route relation,
+    ///     checking ALL constituent way IDs (not just the merge-base OsmWayId).
     /// </summary>
     private static bool ShareRouteRelation(
-        long wayId1, long wayId2,
+        PathWithMetadata p1, PathWithMetadata p2,
         Dictionary<long, HashSet<long>> wayToRelations)
     {
-        if (!wayToRelations.TryGetValue(wayId1, out var relations1))
-            return false;
-        if (!wayToRelations.TryGetValue(wayId2, out var relations2))
+        var relations1 = GetPathRelationIds(p1, wayToRelations);
+        var relations2 = GetPathRelationIds(p2, wayToRelations);
+        if (relations1 == null || relations2 == null)
             return false;
         return relations1.Overlaps(relations2);
+    }
+
+    /// <summary>
+    ///     Returns true if the path belongs to at least one route relation
+    ///     (checking all constituent way IDs).
+    /// </summary>
+    private static bool HasRouteRelation(
+        PathWithMetadata path,
+        Dictionary<long, HashSet<long>> wayToRelations)
+    {
+        foreach (var wayId in path.AllWayIds)
+        {
+            if (wayToRelations.ContainsKey(wayId))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    ///     Returns the union of all route relation IDs for all way IDs in a path,
+    ///     or null if the path has no relation membership.
+    /// </summary>
+    private static HashSet<long>? GetPathRelationIds(
+        PathWithMetadata path,
+        Dictionary<long, HashSet<long>> wayToRelations)
+    {
+        HashSet<long>? result = null;
+        foreach (var wayId in path.AllWayIds)
+        {
+            if (wayToRelations.TryGetValue(wayId, out var relationIds))
+            {
+                result ??= new HashSet<long>();
+                result.UnionWith(relationIds);
+            }
+        }
+        return result;
     }
 
     // ========================================================================================
@@ -671,10 +733,20 @@ internal static class NodeBasedPathConnector
             source.StructureType,
             source.Layer,
             source.BridgeStructureType);
+        clone.AllWayIds = new HashSet<long>(source.AllWayIds);
         clone.LaneSegments = source.LaneSegments
             .Select(s => new LaneSegment { StartPointIndex = s.StartPointIndex, LaneInfo = s.LaneInfo })
             .ToList();
         return clone;
+    }
+
+    /// <summary>
+    /// Unions AllWayIds from two paths into the result path.
+    /// </summary>
+    private static void UnionWayIds(PathWithMetadata result, PathWithMetadata path1, PathWithMetadata path2)
+    {
+        result.AllWayIds = new HashSet<long>(path1.AllWayIds);
+        result.AllWayIds.UnionWith(path2.AllWayIds);
     }
 
     private enum MergeType

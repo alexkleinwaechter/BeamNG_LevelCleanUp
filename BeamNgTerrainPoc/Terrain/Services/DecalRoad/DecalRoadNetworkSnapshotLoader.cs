@@ -146,6 +146,7 @@ public static class DecalRoadNetworkSnapshotLoader
                 LocalIndex = css.LocalIndex,
                 DistanceAlongSpline = css.DistanceAlongSpline,
                 EffectiveRoadWidth = css.EffectiveRoadWidth,
+                SurfaceWidth = css.EffectiveRoadWidth, // A.8: snapshot loader fallback — old snapshots have no surface width persisted
                 Curvature = css.Curvature,
                 IsExcluded = css.IsExcluded,
                 IsSplineStart = css.IsSplineStart,
