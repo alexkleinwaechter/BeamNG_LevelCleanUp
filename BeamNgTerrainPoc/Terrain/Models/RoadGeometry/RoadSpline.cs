@@ -122,6 +122,13 @@ public class RoadSpline
     public long? EndOsmNodeId { get; set; }
 
     /// <summary>
+    ///     OSM way ID(s) this spline was built from. A single spline may merge several OSM ways,
+    ///     so this is a set. Set during spline creation from PathWithMetadata.AllWayIds.
+    ///     Empty if not from OSM. Used for debugging / cross-referencing back to OSM.
+    /// </summary>
+    public HashSet<long> OsmWayIds { get; set; } = [];
+
+    /// <summary>
     ///     Per-segment lane configuration from OSM tags.
     ///     Null if no lane data was parsed. StartDistance is populated during spline creation.
     /// </summary>

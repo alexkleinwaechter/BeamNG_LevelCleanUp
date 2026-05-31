@@ -119,6 +119,7 @@ public class UnifiedRoadNetworkBuilder
                         BridgeStructureType = spline.BridgeStructureType,
                         StartOsmNodeId = spline.StartOsmNodeId,
                         EndOsmNodeId = spline.EndOsmNodeId,
+                        OsmWayIds = new HashSet<long>(spline.OsmWayIds),
                     };
 
                     // Resolve layerset for width profile

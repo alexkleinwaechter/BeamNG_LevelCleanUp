@@ -55,44 +55,6 @@ public static class JunctionElevationPinner
             $"Phase 1.9: pinned {pinned} junction elevation(s) out of {network.Junctions.Count}");
     }
 
-    /// <summary>
-    ///     W3 — AASHTO §4.1.5 class-keyed max grade in percent. Motorway and trunk are
-    ///     capped at 3 %, primary/secondary at 5 %, tertiary/residential/living_street/
-    ///     unclassified at 7 %, anything else (service/track/null/unknown) at 9 %.
-    /// </summary>
-    public static float GetMaxGradePercent(string? osmRoadType)
-    {
-        if (string.IsNullOrEmpty(osmRoadType)) return 9.0f;
-        return osmRoadType switch
-        {
-            "motorway" or "motorway_link" or "trunk" or "trunk_link" => 3.0f,
-            "primary" or "primary_link" or "secondary" or "secondary_link" => 5.0f,
-            "tertiary" or "tertiary_link" or "unclassified" or "residential" or "living_street" => 7.0f,
-            _ => 9.0f
-        };
-    }
-
-    /// <summary>
-    ///     Clamps a signed grade percentage to a magnitude cap, preserving sign.
-    ///     +5 % clamped to 3 % → +3 %; −5 % clamped to 3 % → −3 %.
-    /// </summary>
-    public static float ClampGradePercent(float input, float cap)
-    {
-        if (cap <= 0f) return input;
-        return MathF.Sign(input) * MathF.Min(MathF.Abs(input), cap);
-    }
-
-    /// <summary>
-    ///     W2 — AASHTO §4.1.5 grade-skip rule. When the natural Phase-2 grade and the pinned
-    ///     grade at a junction leg differ by ≤ <paramref name="thresholdPct"/>, the Hermite
-    ///     ramp on that leg adds noise without benefit (the seam is invisible). Returns true
-    ///     when the ramp should be skipped.
-    /// </summary>
-    public static bool ShouldSkipHermiteRamp(float naturalGradePct, float pinnedGradePct, float thresholdPct)
-    {
-        return MathF.Abs(naturalGradePct - pinnedGradePct) <= thresholdPct;
-    }
-
     private static float SampleHeightmapBilinear(
         float[,] heightMap, float worldX, float worldY, float metersPerPixel, int mapWidth, int mapHeight)
     {

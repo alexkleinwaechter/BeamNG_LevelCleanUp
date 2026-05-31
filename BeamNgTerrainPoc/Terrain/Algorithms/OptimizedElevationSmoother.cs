@@ -216,9 +216,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
     public void ApplyEndpointAnchoring(
         List<UnifiedCrossSection> crossSections,
         EndpointAnchor? startAnchor,
-        EndpointAnchor? endAnchor,
-        bool enableMaxGradeClamp = false,
-        string? osmRoadType = null)
+        EndpointAnchor? endAnchor)
     {
         if (crossSections.Count == 0) return;
         if (!startAnchor.HasValue && !endAnchor.HasValue) return;
@@ -271,40 +269,6 @@ public class OptimizedElevationSmoother : IHeightCalculator
         if (anchored > 0)
             TerrainCreationLogger.Current?.Detail(
                 $"  Endpoint anchoring modified {anchored} cross-sections (spline {crossSections[0].OwnerSplineId})");
-
-        // W3 (Phase 1.9, AASHTO §4.1.5): cap any segment grade that exceeds the road class's
-        // maximum. Belt-and-braces over R7 (slope kink in steep terrain). Walks each adjacent
-        // pair after anchoring; if the segment grade exceeds the class cap, the downstream
-        // cross-section is pulled toward the upstream one by the cap magnitude.
-        //
-        // Cumulative-drift semantic: each clamped segment rebases off the *already-clamped*
-        // prev.TargetElevation, so on a run of N consecutive over-cap segments the absolute
-        // Z drift downstream grows linearly. This is intentional — the goal is a strict flat
-        // cap on segment grade, not magnitude attenuation. The clamp's downstream effect is
-        // then re-anchored at the next junction or absorbed by Phase 4 re-smoothing.
-        if (enableMaxGradeClamp)
-        {
-            var cap = JunctionElevationPinner.GetMaxGradePercent(osmRoadType);
-            var clamped = 0;
-            for (var i = 1; i < crossSections.Count; i++)
-            {
-                var prev = crossSections[i - 1];
-                var curr = crossSections[i];
-                if (float.IsNaN(prev.TargetElevation) || float.IsNaN(curr.TargetElevation)) continue;
-                var dx = MathF.Abs(curr.DistanceAlongSpline - prev.DistanceAlongSpline);
-                if (dx < 0.01f) continue;
-                var dz = curr.TargetElevation - prev.TargetElevation;
-                var gradePct = dz / dx * 100f;
-                if (MathF.Abs(gradePct) <= cap) continue;
-                var clampedGrade = JunctionElevationPinner.ClampGradePercent(gradePct, cap);
-                curr.TargetElevation = prev.TargetElevation + clampedGrade / 100f * dx;
-                clamped++;
-            }
-            if (clamped > 0)
-                TerrainCreationLogger.Current?.Detail(
-                    $"  W3 max-grade clamp: capped {clamped} segment(s) at {cap:F1}% " +
-                    $"(spline {crossSections[0].OwnerSplineId}, class={osmRoadType ?? "unknown"})");
-        }
     }
 
     /// <summary>

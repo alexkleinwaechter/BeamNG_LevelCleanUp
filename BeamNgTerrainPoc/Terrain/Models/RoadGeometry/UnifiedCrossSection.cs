@@ -230,21 +230,6 @@ public class UnifiedCrossSection
     /// </summary>
     public float DistanceToNearestJunction { get; set; } = float.MaxValue;
 
-    // ========================================
-    // JUNCTION IDW WEIGHT MODIFIER (WI-8)
-    // ========================================
-
-    /// <summary>
-    ///     Modifier applied to IDW weight during terrain blending (Phase 4).
-    ///     1.0 = full weight (default, far from junctions or on continuous roads).
-    ///     Values &lt; 1.0 reduce this cross-section's influence in blend zone interpolation.
-    ///     For terminating roads near junctions, tapers from 1.0 (at taper boundary)
-    ///     toward MinTerminatingIdwWeight (at junction endpoint), so the continuous
-    ///     road's elevation profile dominates the junction area.
-    ///     Pre-computed after Phase 3 junction harmonization for O(1) access in hot loops.
-    /// </summary>
-    public float JunctionIdwWeightModifier { get; set; } = 1.0f;
-
     /// <summary>
     ///     Spline ID of the higher-priority road at the nearest junction.
     ///     Only set when JunctionBankingBehavior == AdaptToHigherPriority.

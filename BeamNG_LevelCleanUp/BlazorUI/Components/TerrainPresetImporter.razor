@@ -1088,23 +1088,19 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.JunctionHarmonization.JunctionDetectionRadiusMeters = junctionHarmonization["junctionDetectionRadiusMeters"]!.GetValue<float>();
                 if (junctionHarmonization["junctionBlendDistanceMeters"] != null)
                     settings.JunctionHarmonization.JunctionBlendDistanceMeters = junctionHarmonization["junctionBlendDistanceMeters"]!.GetValue<float>();
-                if (junctionHarmonization["designSpeedKmh"] != null)
-                    settings.JunctionHarmonization.DesignSpeedKmh = junctionHarmonization["designSpeedKmh"]!.GetValue<int>();
                 if (junctionHarmonization["blendFunctionType"] != null)
                     settings.JunctionHarmonization.BlendFunctionType = junctionHarmonization["blendFunctionType"]!.GetValue<string>();
-                // IDW filtering
-                if (junctionHarmonization["enableJunctionIdwFiltering"] != null)
-                    settings.JunctionHarmonization.EnableJunctionIdwFiltering = junctionHarmonization["enableJunctionIdwFiltering"]!.GetValue<bool>();
-                if (junctionHarmonization["minTerminatingIdwWeight"] != null)
-                    settings.JunctionHarmonization.MinTerminatingIdwWeight = junctionHarmonization["minTerminatingIdwWeight"]!.GetValue<float>();
-                if (junctionHarmonization["idwFilterTaperDistanceMeters"] != null)
-                    settings.JunctionHarmonization.IdwFilterTaperDistanceMeters = junctionHarmonization["idwFilterTaperDistanceMeters"]!.GetValue<float?>();
                 if (junctionHarmonization["enableEndpointTaper"] != null)
                     settings.JunctionHarmonization.EnableEndpointTaper = junctionHarmonization["enableEndpointTaper"]!.GetValue<bool>();
                 if (junctionHarmonization["endpointTaperDistanceMeters"] != null)
                     settings.JunctionHarmonization.EndpointTaperDistanceMeters = junctionHarmonization["endpointTaperDistanceMeters"]!.GetValue<float>();
                 if (junctionHarmonization["endpointTerrainBlendStrength"] != null)
                     settings.JunctionHarmonization.EndpointTerrainBlendStrength = junctionHarmonization["endpointTerrainBlendStrength"]!.GetValue<float>();
+                // No-blend tuning (Side-Road Transitions)
+                if (junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"] != null)
+                    settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier = junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"]!.GetValue<float>();
+                if (junctionHarmonization["connectorGradeRampLengthMeters"] != null)
+                    settings.JunctionHarmonization.ConnectorGradeRampLengthMeters = junctionHarmonization["connectorGradeRampLengthMeters"]!.GetValue<float>();
                 // Roundabout settings
                 if (junctionHarmonization["enableRoundaboutDetection"] != null)
                     settings.JunctionHarmonization.EnableRoundaboutDetection = junctionHarmonization["enableRoundaboutDetection"]!.GetValue<bool>();
@@ -1116,8 +1112,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters = junctionHarmonization["roundaboutOverlapToleranceMeters"]!.GetValue<float>();
                 if (junctionHarmonization["forceUniformRoundaboutElevation"] != null)
                     settings.JunctionHarmonization.ForceUniformRoundaboutElevation = junctionHarmonization["forceUniformRoundaboutElevation"]!.GetValue<bool>();
-                if (junctionHarmonization["roundaboutBlendDistanceMeters"] != null)
-                    settings.JunctionHarmonization.RoundaboutBlendDistanceMeters = junctionHarmonization["roundaboutBlendDistanceMeters"]!.GetValue<float?>();
+                if (junctionHarmonization["enableTiltedRoundaboutPlane"] != null)
+                    settings.JunctionHarmonization.EnableTiltedRoundaboutPlane = junctionHarmonization["enableTiltedRoundaboutPlane"]!.GetValue<bool>();
+                if (junctionHarmonization["roundaboutMaxPlaneTiltDegrees"] != null)
+                    settings.JunctionHarmonization.RoundaboutMaxPlaneTiltDegrees = junctionHarmonization["roundaboutMaxPlaneTiltDegrees"]!.GetValue<float>();
             }
 
             return settings;
@@ -1213,21 +1211,20 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 material.EnableJunctionHarmonization = settings.JunctionHarmonization.EnableJunctionHarmonization;
                 material.JunctionDetectionRadiusMeters = settings.JunctionHarmonization.JunctionDetectionRadiusMeters;
                 material.JunctionBlendDistanceMeters = settings.JunctionHarmonization.JunctionBlendDistanceMeters;
-                material.DesignSpeedKmh = settings.JunctionHarmonization.DesignSpeedKmh;
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
                 // Endpoint tapering is auto-computed from road width - old preset values silently ignored
-                // IDW filtering
-                material.EnableJunctionIdwFiltering = settings.JunctionHarmonization.EnableJunctionIdwFiltering;
-                material.MinTerminatingIdwWeight = settings.JunctionHarmonization.MinTerminatingIdwWeight;
-                material.IdwFilterTaperDistanceMeters = settings.JunctionHarmonization.IdwFilterTaperDistanceMeters;
+                // No-blend tuning (Side-Road Transitions)
+                material.BankingRunoffSurfaceWidthMultiplier = settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier;
+                material.ConnectorGradeRampLengthMeters = settings.JunctionHarmonization.ConnectorGradeRampLengthMeters;
                 // Roundabout settings
                 material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
                 material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;
                 material.RoundaboutConnectionRadiusMeters = settings.JunctionHarmonization.RoundaboutConnectionRadiusMeters;
                 material.RoundaboutOverlapToleranceMeters = settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters;
                 material.ForceUniformRoundaboutElevation = settings.JunctionHarmonization.ForceUniformRoundaboutElevation;
-                material.RoundaboutBlendDistanceMeters = settings.JunctionHarmonization.RoundaboutBlendDistanceMeters;
+                material.EnableTiltedRoundaboutPlane = settings.JunctionHarmonization.EnableTiltedRoundaboutPlane;
+                material.RoundaboutMaxPlaneTiltDegrees = settings.JunctionHarmonization.RoundaboutMaxPlaneTiltDegrees;
             }
         }
     }

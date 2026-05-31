@@ -655,19 +655,18 @@
                 ["enableJunctionHarmonization"] = mat.EnableJunctionHarmonization,
                 ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
                 ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,
-                ["designSpeedKmh"] = mat.DesignSpeedKmh,
                 ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
-                // IDW filtering
-                ["enableJunctionIdwFiltering"] = mat.EnableJunctionIdwFiltering,
-                ["minTerminatingIdwWeight"] = mat.MinTerminatingIdwWeight,
-                ["idwFilterTaperDistanceMeters"] = mat.IdwFilterTaperDistanceMeters,
+                // No-blend tuning (Side-Road Transitions)
+                ["bankingRunoffSurfaceWidthMultiplier"] = mat.BankingRunoffSurfaceWidthMultiplier,
+                ["connectorGradeRampLengthMeters"] = mat.ConnectorGradeRampLengthMeters,
                 // Roundabout settings
                 ["enableRoundaboutDetection"] = mat.EnableRoundaboutDetection,
                 ["enableRoundaboutRoadTrimming"] = mat.EnableRoundaboutRoadTrimming,
                 ["roundaboutConnectionRadiusMeters"] = mat.RoundaboutConnectionRadiusMeters,
                 ["roundaboutOverlapToleranceMeters"] = mat.RoundaboutOverlapToleranceMeters,
                 ["forceUniformRoundaboutElevation"] = mat.ForceUniformRoundaboutElevation,
-                ["roundaboutBlendDistanceMeters"] = mat.RoundaboutBlendDistanceMeters
+                ["enableTiltedRoundaboutPlane"] = mat.EnableTiltedRoundaboutPlane,
+                ["roundaboutMaxPlaneTiltDegrees"] = mat.RoundaboutMaxPlaneTiltDegrees
             }
         };
     }

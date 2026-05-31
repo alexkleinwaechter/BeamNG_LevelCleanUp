@@ -357,20 +357,13 @@ public class JunctionHarmonizationSettings
     public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
     public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
     public string BlendFunctionType { get; set; } = "CubicHermiteC1";
-
-    /// <summary>
-    ///     Phase B.1 — design speed override (km/h) for the AASHTO K-value cap.
-    ///     Round-trips through preset JSON as <c>junctionHarmonization.designSpeedKmh</c>.
-    /// </summary>
-    public int? DesignSpeedKmh { get; set; }
     public bool EnableEndpointTaper { get; set; } = true;
     public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
     public float EndpointTerrainBlendStrength { get; set; } = 1f;
 
-    // IDW filtering
-    public bool EnableJunctionIdwFiltering { get; set; } = true;
-    public float MinTerminatingIdwWeight { get; set; } = 0.1f;
-    public float? IdwFilterTaperDistanceMeters { get; set; } = null;
+    // No-blend tuning (Side-Road Transitions)
+    public float BankingRunoffSurfaceWidthMultiplier { get; set; } = 3.0f;
+    public float ConnectorGradeRampLengthMeters { get; set; } = 6.0f;
 
     // Roundabout settings
     public bool EnableRoundaboutDetection { get; set; } = true;
@@ -378,7 +371,12 @@ public class JunctionHarmonizationSettings
     public float RoundaboutConnectionRadiusMeters { get; set; } = 10.0f;
     public float RoundaboutOverlapToleranceMeters { get; set; } = 2.0f;
     public bool ForceUniformRoundaboutElevation { get; set; } = true;
-    public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
+
+    /// <summary>When true, tilt the roundabout ring plane to follow terrain (opt-in).</summary>
+    public bool EnableTiltedRoundaboutPlane { get; set; }
+
+    /// <summary>Maximum roundabout ring tilt, in degrees (UI unit; converted to a gradient downstream).</summary>
+    public float RoundaboutMaxPlaneTiltDegrees { get; set; } = 6.0f;
 }
 
 /// <summary>

@@ -113,54 +113,6 @@ public class JunctionElevationPinnerTests
         Assert.Equal(17.0f, tJunction!.HarmonizedElevation, 3);
     }
 
-    [Theory]
-    [InlineData("motorway", 3.0f)]
-    [InlineData("motorway_link", 3.0f)]
-    [InlineData("trunk", 3.0f)]
-    [InlineData("trunk_link", 3.0f)]
-    [InlineData("primary", 5.0f)]
-    [InlineData("primary_link", 5.0f)]
-    [InlineData("secondary", 5.0f)]
-    [InlineData("secondary_link", 5.0f)]
-    [InlineData("tertiary", 7.0f)]
-    [InlineData("tertiary_link", 7.0f)]
-    [InlineData("residential", 7.0f)]
-    [InlineData("service", 9.0f)]
-    [InlineData("track", 9.0f)]
-    [InlineData(null, 9.0f)]
-    [InlineData("", 9.0f)]
-    [InlineData("nonsense", 9.0f)]
-    [InlineData("Motorway", 9.0f)] // case-sensitive: OSM highway= values are lowercase by Wiki convention
-    public void GetMaxGradePercent_ByOsmHighwayClass(string? osmRoadType, float expected)
-    {
-        Assert.Equal(expected, JunctionElevationPinner.GetMaxGradePercent(osmRoadType), 3);
-    }
-
-    [Theory]
-    [InlineData(2.9f, 3.0f, 2.9f)]   // under cap → unchanged
-    [InlineData(3.0f, 3.0f, 3.0f)]   // at cap → unchanged
-    [InlineData(5.0f, 3.0f, 3.0f)]   // over cap → clamp
-    [InlineData(-5.0f, 3.0f, -3.0f)] // negative grade preserved
-    [InlineData(5.0f, 0f, 5.0f)]     // cap<=0 → defensive passthrough (input returned unchanged)
-    public void ClampGradePercent_ToAbsoluteCap(float input, float cap, float expected)
-    {
-        Assert.Equal(expected, JunctionElevationPinner.ClampGradePercent(input, cap), 3);
-    }
-
-    [Theory]
-    [InlineData(0.0f, 0.0f, 0.5f, true)]    // identical grades → skip
-    [InlineData(0.4f, 0.0f, 0.5f, true)]    // within threshold → skip
-    [InlineData(0.5f, 0.0f, 0.5f, true)]    // exactly at threshold → skip (≤)
-    [InlineData(0.51f, 0.0f, 0.5f, false)]  // past threshold → keep ramp
-    [InlineData(-0.4f, 0.0f, 0.5f, true)]   // sign-agnostic
-    [InlineData(0.0f, 0.6f, 0.5f, false)]
-    public void ShouldSkipHermiteRamp_AppliesAashtoGradeThreshold(
-        float naturalGradePct, float pinnedGradePct, float thresholdPct, bool expectSkip)
-    {
-        Assert.Equal(expectSkip,
-            JunctionElevationPinner.ShouldSkipHermiteRamp(naturalGradePct, pinnedGradePct, thresholdPct));
-    }
-
     [Fact]
     public void PinNetwork_FlagOn_MidSplineCrossingStaysNaN()
     {

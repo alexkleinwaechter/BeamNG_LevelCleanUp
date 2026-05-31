@@ -35,8 +35,8 @@ public class ElevationNode
 public class ElevationEdge
 {
     public int SplineId { get; init; }
-    public ElevationNode StartNode { get; init; } = null!;
-    public ElevationNode EndNode { get; init; } = null!;
+    public ElevationNode StartNode { get; set; } = null!;
+    public ElevationNode EndNode { get; set; } = null!;
     public int Priority { get; init; }
     public float Length { get; init; }
     public int CrossSectionCount { get; init; }
@@ -104,7 +104,7 @@ public class NetworkElevationGraph
     ///     Builds the elevation graph from an existing road network with detected junctions.
     /// </summary>
     /// <param name="network">Network with junctions already detected (Phase 1.8).</param>
-    public void BuildFromNetwork(UnifiedRoadNetwork network)
+    public void BuildFromNetwork(UnifiedRoadNetwork network, bool bridgeMissingContinuationConnectors = false)
     {
         _nodes.Clear();
         _edges.Clear();
@@ -222,9 +222,88 @@ public class NetworkElevationGraph
             endNode.ConnectedEdges.Add(edge);
         }
 
+        if (bridgeMissingContinuationConnectors)
+            BridgeMissingContinuationConnectors(network);
+
         TerrainCreationLogger.Current?.Detail(
             $"Elevation graph: {_nodes.Count} nodes ({_nodes.Count(n => n.IsSynthetic)} synthetic), " +
             $"{_edges.Count} edges");
+    }
+
+    /// <summary>
+    ///     Bridges tiny continuation connector splines that have no graph edge because their entire
+    ///     surface was consumed by neighbouring junction zones. This does not synthesize elevation
+    ///     samples; it only makes the two real neighbour edges share one graph node so the chain low-pass
+    ///     sees them as one continuous profile.
+    /// </summary>
+    private void BridgeMissingContinuationConnectors(UnifiedRoadNetwork network)
+    {
+        var connectors = network.Junctions
+            .Where(j => j.Type == JunctionType.Continuation)
+            .SelectMany(j => j.Contributors
+                .Where(c => c.IsEndpoint)
+                .Select(c => new { Junction = j, Contributor = c }))
+            .GroupBy(x => x.Contributor.Spline.SplineId)
+            .Where(g => _edgeBySplineId.GetValueOrDefault(g.Key) == null)
+            .Where(g => g.Select(x => x.Junction).Distinct().Count() == 2)
+            .ToList();
+
+        var bridged = 0;
+        foreach (var connector in connectors)
+        {
+            var endpoints = new List<(NetworkJunction Junction, ElevationEdge Edge, ElevationNode Node)>();
+            foreach (var junctionGroup in connector.GroupBy(x => x.Junction))
+            {
+                var realContributors = junctionGroup.Key.Contributors
+                    .Where(c => c.IsEndpoint && c.Spline.SplineId != connector.Key)
+                    .Select(c => new { Contributor = c, Edge = _edgeBySplineId.GetValueOrDefault(c.Spline.SplineId) })
+                    .Where(x => x.Edge != null)
+                    .ToList();
+
+                if (realContributors.Count != 1)
+                    continue;
+
+                var realContributor = realContributors[0];
+                var edge = realContributor.Edge!;
+                var node = GetEndpointNode(edge, realContributor.Contributor);
+                endpoints.Add((junctionGroup.Key, edge, node));
+            }
+
+            if (endpoints.Count != 2 || endpoints[0].Node == endpoints[1].Node)
+                continue;
+
+            MergeNodes(endpoints[0].Node, endpoints[1].Node);
+            bridged++;
+
+            TerrainCreationLogger.Current?.Detail(
+                $"[NO-BLEND CHAIN-BRIDGE] connector spline={connector.Key} " +
+                $"junctions=J#{endpoints[0].Junction.JunctionId}/J#{endpoints[1].Junction.JunctionId} " +
+                $"edges={endpoints[0].Edge.SplineId}/{endpoints[1].Edge.SplineId}");
+        }
+
+        if (bridged > 0)
+            TerrainCreationLogger.Current?.Detail(
+                $"[NO-BLEND CHAIN-BRIDGE] bridged {bridged} missing continuation connector(s)");
+    }
+
+    private static ElevationNode GetEndpointNode(ElevationEdge edge, JunctionContributor contributor) =>
+        contributor.IsSplineStart ? edge.StartNode : edge.EndNode;
+
+    private void MergeNodes(ElevationNode keep, ElevationNode remove)
+    {
+        foreach (var edge in remove.ConnectedEdges.ToList())
+        {
+            if (edge.StartNode == remove)
+                edge.StartNode = keep;
+            if (edge.EndNode == remove)
+                edge.EndNode = keep;
+
+            if (!keep.ConnectedEdges.Contains(edge))
+                keep.ConnectedEdges.Add(edge);
+        }
+
+        remove.ConnectedEdges.Clear();
+        _nodes.Remove(remove);
     }
 
     /// <summary>

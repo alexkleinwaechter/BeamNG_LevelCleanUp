@@ -827,6 +827,7 @@ public class TerrainGenerationOrchestrator
             // Build road params early to access junction harmonization settings
             roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
                 state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
+            roadParams.EnableContinuationConnectorElevationBridging = state.DisableSplineMerging;
 
             // Check if roundabout detection is enabled
             var junctionParams = roadParams.JunctionHarmonizationParameters;

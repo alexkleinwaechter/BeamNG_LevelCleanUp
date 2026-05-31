@@ -40,7 +40,7 @@ public class RoundaboutElevationHarmonizer
         List<RoundaboutJunctionInfo> roundaboutJunctionInfos,
         float[,] heightMap,
         float metersPerPixel,
-        bool skipConnectingRoadBlending = false)
+        bool useTiltedPlane = false)
     {
         TerrainLogger.SuppressDetailedLogging = true;
         var result = new RoundaboutHarmonizationResult();
@@ -73,63 +73,61 @@ public class RoundaboutElevationHarmonizer
                 continue;
             }
 
-            // Step 1: Calculate the harmonized elevation for this roundabout ring
-            var ringElevation = CalculateRoundaboutElevation(
-                roundaboutInfo,
-                ringCrossSections,
-                heightMap,
-                metersPerPixel,
-                mapWidth,
-                mapHeight,
-                network);
-
-            if (float.IsNaN(ringElevation))
-            {
-                TerrainLogger.Warning($"  Roundabout {ringSplineId}: Could not calculate ring elevation");
-                continue;
-            }
-
-            // Store the harmonized elevation
-            roundaboutInfo.HarmonizedElevation = ringElevation;
-            result.RoundaboutElevations[ringSplineId] = ringElevation;
-
-            // Step 2: Apply uniform elevation to all ring cross-sections
+            // Step 1+2: derive the ring elevation profile.
+            //   No-blend path (useTiltedPlane): fit a single ≤6%-clamped tilted plane to terrain under
+            //   the ring → drivable disk that follows the hillside (smaller embankment).
+            //   Legacy path: uniform horizontal disk (CalculateRoundaboutElevation + ApplyUniformRingElevation).
+            float ringElevation;
+            int ringModified;
             var maxElevChange = result.MaxElevationChange;
-            var ringModified = ApplyUniformRingElevation(
-                ringCrossSections,
-                ringElevation,
-                roundaboutInfo,
-                network,
-                ref maxElevChange);
-            result.MaxElevationChange = maxElevChange;
-
-            result.RingCrossSectionsModified += ringModified;
-
-            TerrainLogger.Detail($"  Roundabout {ringSplineId}: elevation={ringElevation:F2}m, " +
-                                 $"{ringModified} ring cross-sections modified");
-
-            // Step 3: Blend connecting roads toward the roundabout elevation
-            // When skipConnectingRoadBlending is true, the unified Hermite C1 pipeline (Phase 3)
-            // handles connecting road blending with three-zone model + surface matching.
-            if (!skipConnectingRoadBlending)
+            if (useTiltedPlane)
             {
-                var connectingBlended = BlendConnectingRoads(
-                    roundaboutInfo,
-                    crossSectionsBySpline,
-                    network,
-                    ref maxElevChange);
-                result.MaxElevationChange = maxElevChange;
-
-                result.ConnectingRoadCrossSectionsBlended += connectingBlended;
-
-                TerrainLogger.Detail(
-                    $"  Roundabout {ringSplineId}: {connectingBlended} connecting road cross-sections blended");
+                var mapH = heightMap.GetLength(0);
+                var mapW = heightMap.GetLength(1);
+                var maxTilt = network.GetSplineById(ringSplineId)?.Parameters
+                                  .JunctionHarmonizationParameters?.RoundaboutMaxPlaneTilt
+                              ?? 0.06f;
+                var preTilt = ApplyTiltedRingPlane(
+                    ringCrossSections,
+                    p =>
+                    {
+                        var px = (int)(p.X / metersPerPixel);
+                        var py = (int)(p.Y / metersPerPixel);
+                        if (px < 0 || px >= mapW || py < 0 || py >= mapH) return float.NaN;
+                        return heightMap[py, px];
+                    },
+                    maxTilt);
+                ringElevation = ringCrossSections.Count > 0
+                    ? ringCrossSections.Average(cs => cs.TargetElevation)
+                    : float.NaN;
+                ringModified = ringCrossSections.Count;
+                TerrainCreationLogger.Current?.Detail(
+                    $"  [NO-BLEND RAB PLANE] roundabout {ringSplineId}: tilted plane, " +
+                    $"preClampTilt={preTilt * 100f:F1}% cap={maxTilt * 100f:F1}% meanZ={ringElevation:F2}");
             }
             else
             {
-                TerrainLogger.Detail(
-                    $"  Roundabout {ringSplineId}: Connecting road blending deferred to unified Hermite pipeline");
+                ringElevation = CalculateRoundaboutElevation(
+                    roundaboutInfo, ringCrossSections, heightMap, metersPerPixel, mapWidth, mapHeight, network);
+                if (float.IsNaN(ringElevation))
+                {
+                    TerrainLogger.Warning($"  Roundabout {ringSplineId}: Could not calculate ring elevation");
+                    continue;
+                }
+
+                ringModified = ApplyUniformRingElevation(
+                    ringCrossSections, ringElevation, roundaboutInfo, network, ref maxElevChange);
             }
+
+            roundaboutInfo.HarmonizedElevation = ringElevation;
+            result.RoundaboutElevations[ringSplineId] = ringElevation;
+            result.MaxElevationChange = maxElevChange;
+            result.RingCrossSectionsModified += ringModified;
+
+            // Connecting-road blending is handled downstream by the no-blend affine ThroughRoad
+            // pipeline (UnifiedRoadSmoother §3/§4); the harmonizer only sets the ring elevation.
+            TerrainLogger.Detail(
+                $"  Roundabout {ringSplineId}: connecting-road blending deferred to the affine pipeline");
 
             result.RoundaboutsProcessed++;
 
@@ -252,6 +250,49 @@ public class RoundaboutElevationHarmonizer
     }
 
     /// <summary>
+    ///     No-blend path: fit a single tilted plane to terrain under the ring (clamped to
+    ///     <paramref name="maxTilt" />) and write it to every ring cross-section, so the ring follows the
+    ///     hillside as a drivable disk instead of a forced-uniform horizontal disk. Returns the pre-clamp
+    ///     tilt (for diagnostics). Pure except for writing the cross-sections' TargetElevation.
+    /// </summary>
+    internal static float ApplyTiltedRingPlane(
+        List<UnifiedCrossSection> ringCrossSections,
+        Func<Vector2, float> sampleTerrain,
+        float maxTilt)
+    {
+        var points = new List<(Vector2, float)>(ringCrossSections.Count);
+        foreach (var cs in ringCrossSections)
+            points.Add((cs.CenterPoint, sampleTerrain(cs.CenterPoint)));
+
+        var (a, b, c, preTilt) = RoundaboutPlaneFit.FitClamped(points, maxTilt);
+
+        // Civil placement: FitClamped pivots the plane through the terrain MEAN (minimizes cut/fill RMS).
+        // For a roundabout we instead minimize the WORST-CASE cut/fill so the embankment never exceeds half
+        // the residual range — center the plane on the midrange of the RESIDUALS (terrain minus the clamped
+        // tilt), i.e. shift so the deepest cut equals the highest fill. On terrain steeper than the 6% cap
+        // this gives the smallest possible embankment for a drivable ring while keeping entry/exit grades
+        // gentle (the ring stays between the highest and lowest approach). Pure vertical shift, tilt intact.
+        var minR = float.MaxValue;
+        var maxR = float.MinValue;
+        var anyR = false;
+        foreach (var (xy, z) in points)
+        {
+            if (float.IsNaN(z) || float.IsInfinity(z)) continue;
+            var r = z - RoundaboutPlaneFit.Evaluate(a, b, c, xy);
+            if (r < minR) minR = r;
+            if (r > maxR) maxR = r;
+            anyR = true;
+        }
+
+        if (anyR)
+            c += (minR + maxR) / 2f;
+
+        foreach (var cs in ringCrossSections)
+            cs.TargetElevation = RoundaboutPlaneFit.Evaluate(a, b, c, cs.CenterPoint);
+        return preTilt;
+    }
+
+    /// <summary>
     ///     Applies uniform elevation to all ring cross-sections.
     ///     When ForceUniformRoundaboutElevation is false on ALL connecting roads, preserves the original
     ///     calculated elevation for the ring (allows gradual changes around the ring).
@@ -368,207 +409,6 @@ public class RoundaboutElevationHarmonizer
             return fallbackElevation;
 
         return closestCs.TargetElevation;
-    }
-
-    /// <summary>
-    ///     Blends connecting roads toward the roundabout elevation.
-    ///     When ForceUniformRoundaboutElevation is true (on the CONNECTING road's parameters):
-    ///     The connecting road blends toward the uniform harmonized ring elevation.
-    ///     When ForceUniformRoundaboutElevation is false (on the CONNECTING road's parameters):
-    ///     The connecting road blends toward the local ring elevation at its specific
-    ///     connection point. This allows roads to naturally meet the roundabout at their
-    ///     own terrain-following elevation, avoiding artificial bumps or dips.
-    ///     NOTE: The ForceUniformRoundaboutElevation setting is read from EACH CONNECTING ROAD's
-    ///     parameters, not from the roundabout ring's parameters. This allows different road
-    ///     materials to have different blending behaviors at the same roundabout.
-    ///     IMPORTANT: The blend zone is limited to at most half the road length to avoid
-    ///     affecting the other end of the road (which may have its own junction).
-    /// </summary>
-    private int BlendConnectingRoads(
-        RoundaboutJunctionInfo roundaboutInfo,
-        Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
-        UnifiedRoadNetwork network,
-        ref float maxElevationChange)
-    {
-        var blendedCount = 0;
-        var perfLog = TerrainCreationLogger.Current;
-
-        // Get the ring cross-sections for per-connection-point elevation lookup
-        crossSectionsBySpline.TryGetValue(roundaboutInfo.RoundaboutSplineId, out var ringCrossSections);
-
-        foreach (var junction in roundaboutInfo.Junctions)
-        {
-            var connectingSplineId = junction.ConnectingRoadSplineId;
-
-            if (!crossSectionsBySpline.TryGetValue(connectingSplineId, out var connectingCrossSections))
-                continue;
-
-            var connectingSpline = network.GetSplineById(connectingSplineId);
-            if (connectingSpline == null)
-                continue;
-
-            // Get ForceUniformRoundaboutElevation from the CONNECTING ROAD's parameters
-            // This allows each road material to control its own blending behavior
-            var connectingJunctionParams = connectingSpline.Parameters.JunctionHarmonizationParameters
-                                           ?? new JunctionHarmonizationParameters();
-            var forceUniform = connectingJunctionParams.ForceUniformRoundaboutElevation;
-
-            // Determine the target elevation for this specific connection:
-            // - If ForceUniformRoundaboutElevation is true: use the global harmonized elevation
-            // - If false: use the per-junction target elevation (local ring elevation at connection point)
-            float targetElevation;
-            if (forceUniform)
-            {
-                // Use uniform ring elevation (existing behavior)
-                targetElevation = roundaboutInfo.HarmonizedElevation;
-            }
-            else
-            {
-                // Use the per-junction target elevation which was calculated in ApplyUniformRingElevation
-                // This is the local ring elevation at the specific connection point
-                targetElevation = junction.TargetElevation;
-
-                // If the junction target elevation was not set, fall back to looking it up directly
-                if (float.IsNaN(targetElevation) && ringCrossSections != null)
-                    targetElevation = GetRingElevationAtConnectionPoint(
-                        junction.ConnectionPointMeters,
-                        ringCrossSections,
-                        roundaboutInfo.HarmonizedElevation);
-            }
-
-            if (float.IsNaN(targetElevation))
-                continue;
-
-            // Get blend distance from spline parameters or use global
-            // IMPORTANT: Use effective roundabout blend distance (supports auto-calculation from road width)
-            var junctionParams = connectingSpline.Parameters.JunctionHarmonizationParameters
-                                 ?? new JunctionHarmonizationParameters();
-            var junctionDistance = junction.IsConnectingRoadStart ? 0f : connectingSpline.TotalLengthMeters;
-            var roadWidth = connectingSpline.WidthProfile?.GetWidthsAtDistance(junctionDistance).corridor
-                ?? connectingSpline.Parameters.RoadWidthMeters;
-            var blendDistance = junctionParams.GetEffectiveRoundaboutBlendDistance(roadWidth);
-
-            // Calculate the total length of the connecting road
-            var isSplineStart = junction.IsConnectingRoadStart;
-            var distances = CalculateDistancesFromEndpoint(connectingCrossSections, isSplineStart);
-
-            // Get the road length (max distance from the roundabout end)
-            var roadLength = distances.Length > 0 ? distances.Max() : 0f;
-
-            // IMPORTANT: Limit blend distance to at most 75% of the road length.
-            // This prevents the roundabout blending from completely dominating the road,
-            // while still allowing a generous blend zone. The previous 50% cap was too
-            // restrictive and caused visible bumps on shorter connecting roads.
-            // The remaining 25% at the far end is available for the other junction's blending.
-            var effectiveBlendDistance = MathF.Min(blendDistance, roadLength * 0.75f);
-
-            // If the road is very short, skip blending entirely to avoid issues
-            if (effectiveBlendDistance < 5.0f)
-            {
-                perfLog?.Detail($"    Skipping blend for spline {connectingSplineId}: " +
-                                $"road too short (length={roadLength:F1}m, effectiveBlend would be {effectiveBlendDistance:F1}m)");
-                continue;
-            }
-
-            // Get blend function type
-            var blendFunctionType = junctionParams.BlendFunctionType;
-
-            perfLog?.Detail($"    Blending spline {connectingSplineId}: " +
-                            $"isStart={isSplineStart}, blendDistance={blendDistance:F1}m -> effective={effectiveBlendDistance:F1}m, " +
-                            $"roadLength={roadLength:F1}m, targetElevation={targetElevation:F2}m, " +
-                            $"forceUniform={forceUniform} (from connecting road), crossSections={connectingCrossSections.Count}");
-
-            // Collect blend info for logging (to show the ones CLOSEST to the roundabout)
-            var blendLog =
-                new List<(int idx, float dist, float t, float blend, float orig, float newElev, float delta)>();
-
-            // Apply blend
-            var splineBlendedCount = 0;
-            for (var i = 0; i < connectingCrossSections.Count; i++)
-            {
-                var dist = distances[i];
-                if (dist >= effectiveBlendDistance)
-                    continue; // Outside blend zone
-
-                var cs = connectingCrossSections[i];
-                if (float.IsNaN(cs.TargetElevation))
-                    continue;
-
-                var originalElevation = cs.TargetElevation;
-
-                // Calculate blend factor using configured function
-                // t=0 at roundabout connection -> blend=0 -> use targetElevation
-                // t=1 at effectiveBlendDistance away -> blend=1 -> use originalElevation
-                var t = dist / effectiveBlendDistance;
-                var blend = ApplyBlendFunction(t, blendFunctionType);
-
-                // Blend between target elevation (ring at connection point) and original road elevation
-                var newElevation = targetElevation * (1.0f - blend) + originalElevation * blend;
-
-                var elevationChange = MathF.Abs(newElevation - originalElevation);
-                if (elevationChange > 0.001f)
-                {
-                    maxElevationChange = MathF.Max(maxElevationChange, elevationChange);
-                    cs.TargetElevation = newElevation;
-                    cs.IsRoundaboutBlended = true;
-                    blendedCount++;
-                    splineBlendedCount++;
-
-                    // Store for logging (we'll show the ones closest to the roundabout)
-                    blendLog.Add((i, dist, t, blend, originalElevation, newElevation, elevationChange));
-                }
-            }
-
-            // Log the cross-sections CLOSEST to the roundabout (smallest distance)
-            var closestBlends = blendLog.OrderBy(b => b.dist).Take(3).ToList();
-            foreach (var b in closestBlends)
-                perfLog?.Detail($"      CS[{b.idx}]: dist={b.dist:F1}m, t={b.t:F3}, blend={b.blend:F3}, " +
-                                $"orig={b.orig:F2}m -> new={b.newElev:F2}m (delta={b.delta:F3}m)");
-
-            perfLog?.Detail($"    Spline {connectingSplineId}: blended {splineBlendedCount} cross-sections");
-        }
-
-        return blendedCount;
-    }
-
-    /// <summary>
-    ///     Calculates cumulative distances from a spline endpoint.
-    /// </summary>
-    private float[] CalculateDistancesFromEndpoint(List<UnifiedCrossSection> sections, bool fromStart)
-    {
-        var distances = new float[sections.Count];
-
-        if (fromStart)
-        {
-            distances[0] = 0;
-            for (var i = 1; i < sections.Count; i++)
-                distances[i] = distances[i - 1] +
-                               Vector2.Distance(sections[i].CenterPoint, sections[i - 1].CenterPoint);
-        }
-        else
-        {
-            distances[sections.Count - 1] = 0;
-            for (var i = sections.Count - 2; i >= 0; i--)
-                distances[i] = distances[i + 1] +
-                               Vector2.Distance(sections[i].CenterPoint, sections[i + 1].CenterPoint);
-        }
-
-        return distances;
-    }
-
-    /// <summary>
-    ///     Applies the configured blend function.
-    /// </summary>
-    private float ApplyBlendFunction(float t, JunctionBlendFunctionType functionType)
-    {
-        return functionType switch
-        {
-            JunctionBlendFunctionType.Linear => t,
-            JunctionBlendFunctionType.Cosine => 0.5f - 0.5f * MathF.Cos(MathF.PI * t),
-            JunctionBlendFunctionType.Cubic => t * t * (3.0f - 2.0f * t),
-            JunctionBlendFunctionType.Quintic => t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f),
-            _ => t
-        };
     }
 
     /// <summary>

@@ -379,6 +379,7 @@ public class TerrainAnalysisOrchestrator
 
                 roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
                     state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
+                roadParams.EnableContinuationConnectorElevationBridging = state.DisableSplineMerging;
                 roadParams.PreBuiltSplines = splines;
 
                 // Stamp OSM highway type onto splines that don't have it (merged paths lose metadata)

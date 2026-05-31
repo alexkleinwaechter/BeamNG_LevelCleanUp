@@ -905,6 +905,7 @@ public class OsmGeometryProcessor
                     OsmRoadType = pm.Tags.GetValueOrDefault("highway"),
                     StartOsmNodeId = pm.StartNodeId,
                     EndOsmNodeId = pm.EndNodeId,
+                    OsmWayIds = new HashSet<long>(pm.AllWayIds),
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
                 splines.Add(spline);
@@ -960,6 +961,7 @@ public class OsmGeometryProcessor
                     OsmRoadType = pm.Tags.GetValueOrDefault("highway"),
                     StartOsmNodeId = pm.StartNodeId,
                     EndOsmNodeId = pm.EndNodeId,
+                    OsmWayIds = new HashSet<long>(pm.AllWayIds),
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
                 splines.Add(spline);

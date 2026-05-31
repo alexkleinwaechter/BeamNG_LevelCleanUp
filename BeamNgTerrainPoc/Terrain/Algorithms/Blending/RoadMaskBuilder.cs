@@ -138,22 +138,21 @@ public class RoadMaskBuilder
 
         if (jhParams.EnableSurfaceWidthProtection)
         {
-            // Pass 1: stamp each spline's painted-surface polygon (no margins).
+            // Pass 1: stamp each spline's painted-surface polygon at SurfaceWidth/2 + a small
+            // surface-protection margin (closes convex chord-slivers so they don't read as a bite
+            // out of an elevated road edge — see SurfaceProtectionMarginMeters).
+            var surfaceMargin = MathF.Max(0f, jhParams.SurfaceProtectionMarginMeters);
             foreach (var splineId in processingOrder)
             {
                 var sections = crossSectionsBySpline[splineId];
                 if (sections.Count < 2) continue;
-
-                var margin = splineParams.TryGetValue(splineId, out var p)
-                    ? p.RoadEdgeProtectionBufferMeters
-                    : 2.0f;
 
                 maskedPixels += RasterizeSplinePolygons(
                     sections, splineId,
                     splineMetadata: metadataByOwnerId[splineId],
                     metadataByOwnerId: metadataByOwnerId,
                     enableSurfacePriorityOverride: jhParams.EnableSurfacePriorityOverride,
-                    margin,
+                    surfaceMargin,
                     useSurfaceWidthOnly: true,
                     mask, elevation, splineOwner,
                     width, height, metersPerPixel, intersections);
@@ -216,7 +215,14 @@ public class RoadMaskBuilder
         // Fix: at each junction, fill a circular area using the max road width of all
         // contributing roads, pinned to the junction's harmonized elevation.
         var junctionPixelsFilled = 0;
-        foreach (var junction in network.Junctions.Where(j => !j.IsExcluded && j.Contributors.Count >= 2))
+        foreach (var junction in network.Junctions.Where(j =>
+                     (!j.IsExcluded
+                      // Roundabout parent junctions are IsExcluded by the harmonizer, but on the no-blend
+                      // path §3 pins a valid HarmonizedElevation (the local ring Z). Fill their connector-
+                      // mouth gaps too — otherwise the skipped fill leaves a hard cliff at every ring↔
+                      // connector seam. Legacy path never sets it (NaN) → roundabout fill stays skipped.
+                      || (j.Type == JunctionType.Roundabout && !float.IsNaN(j.HarmonizedElevation)))
+                     && j.Contributors.Count >= 2))
         {
             // Use the max half-width + margin across all contributors
             var maxHalfWidth = 0f;
@@ -331,11 +337,15 @@ public class RoadMaskBuilder
                 !IsValidTargetElevation(cs2.TargetElevation))
                 continue;
 
+            // Pass 1 (surface): SurfaceWidth/2 + a small protection margin so chord-slivers on the
+            // convex edge of curved/junction segments stay in the flat protected zone instead of
+            // dipping into Pass 2's smoothing corridor (the "bite" out of an elevated road's edge).
+            // Pass 2 (corridor): EffectiveRoadWidth/2 + the edge-protection buffer.
             var halfWidth1 = useSurfaceWidthOnly
-                ? cs1.SurfaceWidth / 2.0f
+                ? cs1.SurfaceWidth / 2.0f + margin
                 : cs1.EffectiveRoadWidth / 2.0f + margin;
             var halfWidth2 = useSurfaceWidthOnly
-                ? cs2.SurfaceWidth / 2.0f
+                ? cs2.SurfaceWidth / 2.0f + margin
                 : cs2.EffectiveRoadWidth / 2.0f + margin;
 
             var corners = new Vector2[4];

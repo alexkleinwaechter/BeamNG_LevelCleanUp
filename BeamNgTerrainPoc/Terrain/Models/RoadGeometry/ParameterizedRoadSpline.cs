@@ -135,6 +135,13 @@ public class ParameterizedRoadSpline
     public long? EndOsmNodeId { get; set; }
 
     /// <summary>
+    ///     OSM way ID(s) this spline was built from (a spline may merge several ways).
+    ///     Propagated from RoadSpline during network building. Empty if not from OSM.
+    ///     Used for debugging / cross-referencing back to OSM.
+    /// </summary>
+    public HashSet<long> OsmWayIds { get; set; } = [];
+
+    /// <summary>
     ///     Bridge structure type (beam, arch, suspension, etc.) for DAE generation.
     ///     Null if not a bridge or type not specified.
     /// </summary>

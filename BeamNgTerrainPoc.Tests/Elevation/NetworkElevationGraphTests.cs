@@ -193,4 +193,110 @@ public class NetworkElevationGraphTests
         Assert.True(chains.All(c => c.Segments.Count <= 2),
             "No chain should contain all 3 segments at an ambiguous junction");
     }
+
+    [Fact]
+    public void MissingContinuationConnector_DefaultOff_DoesNotBridgeNeighbourChains()
+    {
+        var network = BuildNetworkWithMissingContinuationConnector();
+        var graph = new NetworkElevationGraph();
+
+        graph.BuildFromNetwork(network);
+        var chains = graph.BuildElevationChains();
+
+        Assert.Null(graph.GetEdgeForSpline(43));
+        Assert.Equal(2, chains.Count);
+        Assert.All(chains, c => Assert.Single(c.Segments));
+    }
+
+    [Fact]
+    public void MissingContinuationConnector_OptIn_BridgesNeighbourChains()
+    {
+        var network = BuildNetworkWithMissingContinuationConnector();
+        var graph = new NetworkElevationGraph();
+
+        graph.BuildFromNetwork(network, bridgeMissingContinuationConnectors: true);
+        var chains = graph.BuildElevationChains();
+
+        Assert.Null(graph.GetEdgeForSpline(43));
+        var chain = Assert.Single(chains);
+        Assert.Equal([39, 44], chain.Segments.Select(s => s.Edge.SplineId).Order().ToArray());
+    }
+
+    private static UnifiedRoadNetwork BuildNetworkWithMissingContinuationConnector()
+    {
+        var left = RoadNetworkTestHelpers.CreateParameterizedSpline(
+            39, new(0, 0), new(100, 0), "primary", 80, startOsmNodeId: 1, endOsmNodeId: 1438648138);
+        var connector = RoadNetworkTestHelpers.CreateParameterizedSpline(
+            43, new(100, 0), new(110, 0), "primary", 80, startOsmNodeId: 1438648138, endOsmNodeId: 1438648135);
+        var right = RoadNetworkTestHelpers.CreateParameterizedSpline(
+            44, new(110, 0), new(250, 0), "primary", 80, startOsmNodeId: 1438648135, endOsmNodeId: 2);
+
+        var network = new UnifiedRoadNetwork();
+        var leftCrossSections = RoadNetworkTestHelpers.AddSplineWithCrossSections(network, left);
+        var rightCrossSections = RoadNetworkTestHelpers.AddSplineWithCrossSections(network, right);
+        network.AddSpline(connector);
+
+        var connectorStart = CreateEndpointCrossSection(connector, isStart: true, globalIndex: 10_000);
+        var connectorEnd = CreateEndpointCrossSection(connector, isStart: false, globalIndex: 10_001);
+
+        var first = new NetworkJunction
+        {
+            JunctionId = 72,
+            Type = JunctionType.Continuation,
+            Position = new Vector2(100, 0)
+        };
+        first.Contributors.Add(new JunctionContributor
+        {
+            Spline = left,
+            CrossSection = leftCrossSections.Last(),
+            IsSplineEnd = true
+        });
+        first.Contributors.Add(new JunctionContributor
+        {
+            Spline = connector,
+            CrossSection = connectorStart,
+            IsSplineStart = true
+        });
+
+        var second = new NetworkJunction
+        {
+            JunctionId = 77,
+            Type = JunctionType.Continuation,
+            Position = new Vector2(110, 0)
+        };
+        second.Contributors.Add(new JunctionContributor
+        {
+            Spline = connector,
+            CrossSection = connectorEnd,
+            IsSplineEnd = true
+        });
+        second.Contributors.Add(new JunctionContributor
+        {
+            Spline = right,
+            CrossSection = rightCrossSections.First(),
+            IsSplineStart = true
+        });
+
+        network.Junctions.Add(first);
+        network.Junctions.Add(second);
+
+        return network;
+    }
+
+    private static UnifiedCrossSection CreateEndpointCrossSection(
+        ParameterizedRoadSpline spline, bool isStart, int globalIndex)
+    {
+        var distance = isStart ? 0 : spline.TotalLengthMeters;
+        var sample = new SplineSample
+        {
+            Position = spline.Spline.GetPointAtDistance(distance),
+            Tangent = spline.Spline.GetTangentAtDistance(distance),
+            Normal = spline.Spline.GetNormalAtDistance(distance),
+            Distance = distance
+        };
+        var crossSection = UnifiedCrossSection.FromSplineSample(sample, spline, globalIndex, isStart ? 0 : 1);
+        crossSection.IsSplineStart = isStart;
+        crossSection.IsSplineEnd = !isStart;
+        return crossSection;
+    }
 }

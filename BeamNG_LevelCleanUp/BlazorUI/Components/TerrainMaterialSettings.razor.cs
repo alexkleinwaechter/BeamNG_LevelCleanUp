@@ -472,9 +472,17 @@ public partial class TerrainMaterialSettings
                     ["junctionDetectionRadiusMeters"] = Material.JunctionDetectionRadiusMeters,
                     ["junctionBlendDistanceMeters"] = Material.JunctionBlendDistanceMeters,
                     ["blendFunctionType"] = Material.JunctionBlendFunction.ToString(),
-                    ["enableJunctionIdwFiltering"] = Material.EnableJunctionIdwFiltering,
-                    ["minTerminatingIdwWeight"] = Material.MinTerminatingIdwWeight,
-                    ["idwFilterTaperDistanceMeters"] = Material.IdwFilterTaperDistanceMeters
+                    // No-blend tuning (Side-Road Transitions)
+                    ["bankingRunoffSurfaceWidthMultiplier"] = Material.BankingRunoffSurfaceWidthMultiplier,
+                    ["connectorGradeRampLengthMeters"] = Material.ConnectorGradeRampLengthMeters,
+                    // Roundabout settings
+                    ["enableRoundaboutDetection"] = Material.EnableRoundaboutDetection,
+                    ["enableRoundaboutRoadTrimming"] = Material.EnableRoundaboutRoadTrimming,
+                    ["roundaboutConnectionRadiusMeters"] = Material.RoundaboutConnectionRadiusMeters,
+                    ["roundaboutOverlapToleranceMeters"] = Material.RoundaboutOverlapToleranceMeters,
+                    ["forceUniformRoundaboutElevation"] = Material.ForceUniformRoundaboutElevation,
+                    ["enableTiltedRoundaboutPlane"] = Material.EnableTiltedRoundaboutPlane,
+                    ["roundaboutMaxPlaneTiltDegrees"] = Material.RoundaboutMaxPlaneTiltDegrees
                 }
             };
 
@@ -635,16 +643,35 @@ public partial class TerrainMaterialSettings
                     Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(),
                         out var junctionBlendType))
                     Material.JunctionBlendFunction = junctionBlendType;
-                // IDW filtering
-                if (junctionParams["enableJunctionIdwFiltering"] != null)
-                    Material.EnableJunctionIdwFiltering =
-                        junctionParams["enableJunctionIdwFiltering"]!.GetValue<bool>();
-                if (junctionParams["minTerminatingIdwWeight"] != null)
-                    Material.MinTerminatingIdwWeight =
-                        junctionParams["minTerminatingIdwWeight"]!.GetValue<float>();
-                if (junctionParams["idwFilterTaperDistanceMeters"] != null)
-                    Material.IdwFilterTaperDistanceMeters =
-                        junctionParams["idwFilterTaperDistanceMeters"]!.GetValue<float>();
+                // No-blend tuning (Side-Road Transitions)
+                if (junctionParams["bankingRunoffSurfaceWidthMultiplier"] != null)
+                    Material.BankingRunoffSurfaceWidthMultiplier =
+                        junctionParams["bankingRunoffSurfaceWidthMultiplier"]!.GetValue<float>();
+                if (junctionParams["connectorGradeRampLengthMeters"] != null)
+                    Material.ConnectorGradeRampLengthMeters =
+                        junctionParams["connectorGradeRampLengthMeters"]!.GetValue<float>();
+                // Roundabout settings
+                if (junctionParams["enableRoundaboutDetection"] != null)
+                    Material.EnableRoundaboutDetection =
+                        junctionParams["enableRoundaboutDetection"]!.GetValue<bool>();
+                if (junctionParams["enableRoundaboutRoadTrimming"] != null)
+                    Material.EnableRoundaboutRoadTrimming =
+                        junctionParams["enableRoundaboutRoadTrimming"]!.GetValue<bool>();
+                if (junctionParams["roundaboutConnectionRadiusMeters"] != null)
+                    Material.RoundaboutConnectionRadiusMeters =
+                        junctionParams["roundaboutConnectionRadiusMeters"]!.GetValue<float>();
+                if (junctionParams["roundaboutOverlapToleranceMeters"] != null)
+                    Material.RoundaboutOverlapToleranceMeters =
+                        junctionParams["roundaboutOverlapToleranceMeters"]!.GetValue<float>();
+                if (junctionParams["forceUniformRoundaboutElevation"] != null)
+                    Material.ForceUniformRoundaboutElevation =
+                        junctionParams["forceUniformRoundaboutElevation"]!.GetValue<bool>();
+                if (junctionParams["enableTiltedRoundaboutPlane"] != null)
+                    Material.EnableTiltedRoundaboutPlane =
+                        junctionParams["enableTiltedRoundaboutPlane"]!.GetValue<bool>();
+                if (junctionParams["roundaboutMaxPlaneTiltDegrees"] != null)
+                    Material.RoundaboutMaxPlaneTiltDegrees =
+                        junctionParams["roundaboutMaxPlaneTiltDegrees"]!.GetValue<float>();
                 // Note: enableEndpointTaper, endpointTaperDistanceMeters, endpointTerrainBlendStrength
                 // are no longer configurable (auto-computed from road width). Old configs silently ignored.
             }
@@ -818,16 +845,23 @@ public partial class TerrainMaterialSettings
         public float JunctionBlendDistanceMeters { get; set; } = 50.0f;
         public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.CubicHermiteC1;
 
-        /// <summary>
-        ///     Phase B.1 — design speed override for the K-value cap. See
-        ///     <see cref="JunctionHarmonizationParameters.DesignSpeedKmh" />.
-        /// </summary>
-        public int? DesignSpeedKmh { get; set; }
+        // ----------------------------------------
+        // NO-BLEND TUNING (affine ThroughRoad path)
+        // ----------------------------------------
 
-        // IDW filtering for terrain blending near junctions
-        public bool EnableJunctionIdwFiltering { get; set; } = true;
-        public float MinTerminatingIdwWeight { get; set; } = 0.1f;
-        public float? IdwFilterTaperDistanceMeters { get; set; } = null;
+        /// <summary>
+        ///     Banking runoff zone width as a multiple of the terminating road's painted surface width.
+        ///     Larger = gentler superelevation runoff. Maps to
+        ///     <see cref="JunctionHarmonizationParameters.BankingRunoffSurfaceWidthMultiplier" />.
+        /// </summary>
+        public float BankingRunoffSurfaceWidthMultiplier { get; set; } = 3.0f;
+
+        /// <summary>
+        ///     Length (m) of the connector grade ramp that eases a steep connector to the through road's
+        ///     surface at the seam. 0 = disabled. Maps to
+        ///     <see cref="JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters" />.
+        /// </summary>
+        public float ConnectorGradeRampLengthMeters { get; set; } = 6.0f;
 
         // ========================================
         // ROUNDABOUT SETTINGS
@@ -859,10 +893,19 @@ public partial class TerrainMaterialSettings
         public bool ForceUniformRoundaboutElevation { get; set; } = true;
 
         /// <summary>
-        ///     Distance over which to blend connecting road elevation toward the roundabout ring.
-        ///     If null, uses JunctionBlendDistanceMeters.
+        ///     When true, tilt the roundabout ring plane to follow the terrain (opt-in). Default false
+        ///     keeps a flat ring. Maps to
+        ///     <see cref="JunctionHarmonizationParameters.EnableTiltedRoundaboutPlane" />.
         /// </summary>
-        public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
+        public bool EnableTiltedRoundaboutPlane { get; set; }
+
+        /// <summary>
+        ///     Maximum tilt of the terrain-following roundabout ring plane, in degrees. Only used when
+        ///     <see cref="EnableTiltedRoundaboutPlane" /> is set. Converted to a gradient (rise/run) via
+        ///     <c>tan</c> when mapped to the gradient-based
+        ///     <see cref="JunctionHarmonizationParameters.RoundaboutMaxPlaneTilt" />.
+        /// </summary>
+        public float RoundaboutMaxPlaneTiltDegrees { get; set; } = 6.0f;
 
         // ========================================
         // ROAD BANKING (SUPERELEVATION)
@@ -1028,10 +1071,11 @@ public partial class TerrainMaterialSettings
                 JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
                 JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
                 JunctionBlendFunction = preset.JunctionHarmonizationParameters.BlendFunctionType;
-                // IDW filtering
-                EnableJunctionIdwFiltering = preset.JunctionHarmonizationParameters.EnableJunctionIdwFiltering;
-                MinTerminatingIdwWeight = preset.JunctionHarmonizationParameters.MinTerminatingIdwWeight;
-                IdwFilterTaperDistanceMeters = preset.JunctionHarmonizationParameters.IdwFilterTaperDistanceMeters;
+                // No-blend tuning (Side-Road Transitions)
+                BankingRunoffSurfaceWidthMultiplier =
+                    preset.JunctionHarmonizationParameters.BankingRunoffSurfaceWidthMultiplier;
+                ConnectorGradeRampLengthMeters =
+                    preset.JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters;
                 // Roundabout settings
                 EnableRoundaboutDetection = preset.JunctionHarmonizationParameters.EnableRoundaboutDetection;
                 EnableRoundaboutRoadTrimming = preset.JunctionHarmonizationParameters.EnableRoundaboutRoadTrimming;
@@ -1041,9 +1085,11 @@ public partial class TerrainMaterialSettings
                     preset.JunctionHarmonizationParameters.RoundaboutOverlapToleranceMeters;
                 ForceUniformRoundaboutElevation =
                     preset.JunctionHarmonizationParameters.ForceUniformRoundaboutElevation;
-                RoundaboutBlendDistanceMeters = preset.JunctionHarmonizationParameters.RoundaboutBlendDistanceMeters;
-                if (preset.JunctionHarmonizationParameters.DesignSpeedKmh != null)
-                    DesignSpeedKmh = preset.JunctionHarmonizationParameters.DesignSpeedKmh;
+                EnableTiltedRoundaboutPlane =
+                    preset.JunctionHarmonizationParameters.EnableTiltedRoundaboutPlane;
+                // Spine stores the tilt cap as a gradient (rise/run); the UI works in degrees.
+                RoundaboutMaxPlaneTiltDegrees = MathF.Atan(
+                    preset.JunctionHarmonizationParameters.RoundaboutMaxPlaneTilt) * (180f / MathF.PI);
                 // Debug properties are always enabled - no need to copy from preset
             }
         }
@@ -1138,21 +1184,25 @@ public partial class TerrainMaterialSettings
             result.JunctionHarmonizationParameters = new JunctionHarmonizationParameters
             {
                 EnableJunctionHarmonization = EnableJunctionHarmonization,
+                // No-blend path: both junction blend flags stay false (their defaults), so the
+                // implicit affine ThroughRoad junction leveling runs — "junction follows the main
+                // road" (terminating roads snap to the through road's Z; the through road keeps its
+                // profile). There is no longer a separate flag or target-mode for it.
                 JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
                 JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,
                 BlendFunctionType = JunctionBlendFunction,
-                // IDW filtering
-                EnableJunctionIdwFiltering = EnableJunctionIdwFiltering,
-                MinTerminatingIdwWeight = MinTerminatingIdwWeight,
-                IdwFilterTaperDistanceMeters = IdwFilterTaperDistanceMeters,
+                // No-blend tuning (affine ThroughRoad path)
+                BankingRunoffSurfaceWidthMultiplier = BankingRunoffSurfaceWidthMultiplier,
+                ConnectorGradeRampLengthMeters = ConnectorGradeRampLengthMeters,
                 // Roundabout settings
                 EnableRoundaboutDetection = EnableRoundaboutDetection,
                 EnableRoundaboutRoadTrimming = EnableRoundaboutRoadTrimming,
                 RoundaboutConnectionRadiusMeters = RoundaboutConnectionRadiusMeters,
                 RoundaboutOverlapToleranceMeters = RoundaboutOverlapToleranceMeters,
                 ForceUniformRoundaboutElevation = ForceUniformRoundaboutElevation,
-                RoundaboutBlendDistanceMeters = RoundaboutBlendDistanceMeters,
-                DesignSpeedKmh = DesignSpeedKmh,
+                EnableTiltedRoundaboutPlane = EnableTiltedRoundaboutPlane,
+                // UI is in degrees; the algorithm caps on a gradient (rise/run = tan of the angle).
+                RoundaboutMaxPlaneTilt = MathF.Tan(RoundaboutMaxPlaneTiltDegrees * (MathF.PI / 180f)),
                 ExportJunctionDebugImage = true,
                 ExportRoundaboutDebugImage = true
             };

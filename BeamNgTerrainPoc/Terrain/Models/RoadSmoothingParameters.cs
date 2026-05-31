@@ -259,6 +259,13 @@ public class RoadSmoothingParameters
     /// </summary>
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
+    /// <summary>
+    ///     When true, continuation connector splines that have no elevation edge because they have no
+    ///     per-spline cross-sections can bridge their two neighbouring road edges in the elevation
+    ///     graph. Enabled by default for no-blend terrain generation.
+    /// </summary>
+    public bool EnableContinuationConnectorElevationBridging { get; set; } = true;
+
     // ========================================
     // PRE-BUILT SPLINES (OSM Integration)
     // ========================================
