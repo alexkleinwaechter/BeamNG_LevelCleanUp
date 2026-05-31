@@ -1,0 +1,418 @@
+@page "/BasecolorManager"
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.LogicBasecolorManager
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Objects.MtSettings
+@using MudBlazor
+
+<ErrorBoundary>
+    <ChildContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                <MudText Typo="Typo.h4">Basecolor Manager</MudText>
+                <MudSpacer />
+                <MudTooltip Text="Open Basecolor Manager guide">
+                    <MudIconButton Icon="@Icons.Material.Filled.Help" Color="Color.Primary" Variant="Variant.Outlined"
+                                   OnClick="OpenBasecolorManagerHelpDialog" />
+                </MudTooltip>
+            </MudStack>
+
+            <MudExpansionPanels>
+                <MudExpansionPanel Text="Select Unpacked Level Folder" Expanded="@(!HasLevel)">
+                    <FileSelectComponent OnFileSelected="OnFolderSelected"
+                                         SelectFolder="true"
+                                         Description="Select the unpacked level folder containing info.json">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            @if (HasBusyMessage)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4" />
+                <MudText Typo="Typo.body2" Class="mt-2">@_busyMessage</MudText>
+            }
+
+            @if (HasLevel)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-4 mb-3">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="flex-grow-1">
+                        @_levelName · Current mode: @_settings.CurrentMode · Terrain size: @_terrainSize
+                    </MudAlert>
+                    <MudButton OnClick="ResetPage" Color="Color.Warning" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" Disabled="@IsBusy">
+                        Reset
+                    </MudButton>
+                </MudStack>
+
+                <MudTabs Rounded="true" Elevation="0" PanelClass="pt-4">
+                    <MudTabPanel Text="Paint Mode" Icon="@Icons.Material.Filled.Brush">
+                        <MudStack Spacing="3">
+                            <MudStack Row="true" AlignItems="AlignItems.Center">
+                                <MudTextField T="string" ValueChanged="OnSearch" Immediate="true" DebounceInterval="250"
+                                              Placeholder="Search materials" Adornment="Adornment.Start"
+                                              AdornmentIcon="@Icons.Material.Filled.Search" Class="mt-0" />
+                                <MudSpacer />
+                                <MudButton OnClick="SaveSettings" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Save" Disabled="@IsBusy">
+                                    @if (IsOperation(OperationSaveSettings))
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    }
+                                    Save Settings
+                                </MudButton>
+                                <MudButton OnClick="ActivatePaintMode" Color="Color.Primary" Variant="Variant.Filled"
+                                           StartIcon="@Icons.Material.Filled.Brush" Disabled="@(!CanApply())">
+                                    @if (IsOperation(OperationPaintMode))
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    }
+                                    @(_settings.CurrentMode == BasecolorMode.PaintMode ? "Regenerate Paint Mode" : "Activate Paint Mode")
+                                </MudButton>
+                            </MudStack>
+
+                            <MudTable T="CopyAsset" Items="@FilterMaterials(_paintMaterials)" Dense="true" Hover="true" Bordered="true">
+                                <HeaderContent>
+                                    <MudTh>Terrain Material</MudTh>
+                                    <MudTh>Base Color</MudTh>
+                                    <MudTh>Roughness</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Terrain Material">
+                                        <MudText Typo="Typo.body2">@context.TerrainMaterialName</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TerrainMaterialInternalName</MudText>
+                                    </MudTd>
+                                    <MudTd DataLabel="Base Color" @onclick:stopPropagation>
+                                        <div style="display:flex;align-items:center;gap:8px;min-width:220px;">
+                                            <div style="width:32px;height:32px;background-color:@context.BaseColorHex;border:1px solid #ccc;border-radius:4px;"></div>
+                                            <MudColorPicker Text="@context.BaseColorHex"
+                                                            TextChanged="@((string value) => OnMaterialColorChanged(context, value))"
+                                                            Placeholder="Select Color"
+                                                            ShowAlpha="false"
+                                                            ColorPickerMode="ColorPickerMode.RGB"
+                                                            PickerVariant="PickerVariant.Dialog"
+                                                            ColorPickerView="ColorPickerView.Spectrum"
+                                                            ShowToolbar="true" />
+                                        </div>
+                                    </MudTd>
+                                    <MudTd DataLabel="Roughness" @onclick:stopPropagation>
+                                        @RoughnessEditor(context)
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </MudStack>
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="BaseColor Mode" Icon="@Icons.Material.Filled.Palette">
+                        <MudGrid Spacing="3">
+                            <MudItem xs="12" md="8">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                                    <MudTextField T="string" ValueChanged="OnSearch" Immediate="true" DebounceInterval="250"
+                                                  Placeholder="Search materials" Adornment="Adornment.Start"
+                                                  AdornmentIcon="@Icons.Material.Filled.Search" Class="mt-0" />
+                                    <MudSpacer />
+                                    <MudButton OnClick="RefreshPreview" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" Disabled="@IsBusy">
+                                        @if (IsOperation(OperationPreview))
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                        }
+                                        Preview
+                                    </MudButton>
+                                    <MudButton OnClick="SaveSettings" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Save" Disabled="@IsBusy">
+                                        @if (IsOperation(OperationSaveSettings))
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                        }
+                                        Save Settings
+                                    </MudButton>
+                                    <MudButton OnClick="ActivateBaseColorMode" Color="Color.Primary" Variant="Variant.Filled"
+                                               StartIcon="@Icons.Material.Filled.Palette" Disabled="@(!CanApply())">
+                                        @if (IsOperation(OperationBaseColorMode))
+                                        {
+                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                        }
+                                        @(_settings.CurrentMode == BasecolorMode.BaseColorMode ? "Regenerate BaseColor Mode" : "Activate BaseColor Mode")
+                                    </MudButton>
+                                </MudStack>
+
+                                <MudPaper Outlined="true" Class="pa-3 mb-3">
+                                    <MudGrid Spacing="2">
+                                        <MudItem xs="12" md="5">
+                                            <FileSelectComponent OnFileSelected="OnOverlayImageSelected"
+                                                                 FileFilter="Image files (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp|All files (*.*)|*.*"
+                                                                 Description="Select basecolor overlay image"
+                                                                 Disabled="@IsBusy">
+                                            </FileSelectComponent>
+                                            @if (!string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedImagePath))
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@System.IO.Path.GetFileName(_settings.BasecolorModeSettings.OverlaySettings.SelectedImagePath)</MudText>
+                                            }
+                                        </MudItem>
+                                        @if (HasGeoReference)
+                                        {
+                                            <MudItem xs="12" md="5">
+                                                <MudSelect T="string" Value="_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider"
+                                                           ValueChanged="OnTileProviderChanged" Label="Tile Overlay" Dense="true" Variant="Variant.Outlined">
+                                                    @foreach (var provider in MapTileOverlayService.Providers)
+                                                    {
+                                                        <MudSelectItem Value="@provider.Name">@provider.Name</MudSelectItem>
+                                                    }
+                                                </MudSelect>
+                                                @if (!string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath))
+                                                {
+                                                    <MudCheckBox T="bool" @bind-Value="_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider" Label="Use tile overlay" Dense="true" />
+                                                }
+                                            </MudItem>
+                                            <MudItem xs="12" md="2">
+                                                <MudButton OnClick="FetchSelectedTileOverlay" Color="Color.Secondary" Variant="Variant.Outlined"
+                                                           StartIcon="@Icons.Material.Filled.Download" Disabled="@(!CanFetchTileOverlay)">
+                                                    @if (IsOperation(OperationFetchTile))
+                                                    {
+                                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                    }
+                                                    Fetch
+                                                </MudButton>
+                                            </MudItem>
+                                        }
+                                        <MudItem xs="12">
+                                            <MudSlider T="int" Value="GlobalOverlayBlendPercent" ValueChanged="OnGlobalOverlayBlendChanged" Min="0" Max="100" Step="1" Color="Color.Primary" Disabled="@IsBusy">
+                                                Global Overlay Blend: @GlobalOverlayBlendPercent%
+                                            </MudSlider>
+                                        </MudItem>
+                                    </MudGrid>
+                                </MudPaper>
+
+                                <MudExpansionPanels MultiExpansion="true">
+                                    <MudExpansionPanel Text="@($"Terrain Materials ({_basecolorMaterials.Count})")" Expanded="true">
+                                        <MudTable T="CopyAsset" Items="@FilterMaterials(_basecolorMaterials)" Dense="true" Hover="true" Bordered="true">
+                                            <HeaderContent>
+                                                <MudTh>Terrain Material</MudTh>
+                                                <MudTh>Base Color</MudTh>
+                                                <MudTh>Overlay Blend</MudTh>
+                                                <MudTh>Roughness</MudTh>
+                                            </HeaderContent>
+                                            <RowTemplate>
+                                                <MudTd DataLabel="Terrain Material">
+                                                    <MudText Typo="Typo.body2">@context.TerrainMaterialName</MudText>
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TerrainMaterialInternalName</MudText>
+                                                </MudTd>
+                                                <MudTd DataLabel="Base Color" @onclick:stopPropagation>
+                                                    <div style="display:flex;align-items:center;gap:8px;min-width:220px;">
+                                                        <div style="width:32px;height:32px;background-color:@context.BaseColorHex;border:1px solid #ccc;border-radius:4px;"></div>
+                                                        <MudColorPicker Text="@context.BaseColorHex"
+                                                                        TextChanged="@((string value) => OnMaterialColorChanged(context, value))"
+                                                                        Placeholder="Select Color"
+                                                                        ShowAlpha="false"
+                                                                        ColorPickerMode="ColorPickerMode.RGB"
+                                                                        PickerVariant="PickerVariant.Dialog"
+                                                                        ColorPickerView="ColorPickerView.Spectrum"
+                                                                        ShowToolbar="true" />
+                                                    </div>
+                                                </MudTd>
+                                                <MudTd DataLabel="Overlay Blend" @onclick:stopPropagation>
+                                                    <div style="min-width:180px;">
+                                                        <MudSlider T="int" Value="@GetMaterialOverlayBlendPercent(context)" ValueChanged="@((int value) => OnMaterialOverlayBlendChanged(context, value))" Min="0" Max="100" Step="1" Color="Color.Primary">
+                                                            @GetMaterialOverlayBlendPercent(context)%
+                                                        </MudSlider>
+                                                    </div>
+                                                </MudTd>
+                                                <MudTd DataLabel="Roughness" @onclick:stopPropagation>
+                                                    @RoughnessEditor(context)
+                                                </MudTd>
+                                            </RowTemplate>
+                                        </MudTable>
+                                    </MudExpansionPanel>
+
+                                    <MudExpansionPanel Text="@($"OSM Layer Overrides ({_settings.BasecolorModeSettings.OsmLayerBlendExceptions.Count})")" Expanded="true">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                                            <MudSpacer />
+                                            <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Outlined"
+                                                           OnClick="AddOsmLayerException" Disabled="@IsBusy" />
+                                        </MudStack>
+
+                                        @if (!_settings.BasecolorModeSettings.OsmLayerBlendExceptions.Any())
+                                        {
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary">No OSM layer overrides.</MudText>
+                                        }
+
+                                        @foreach (var exception in _settings.BasecolorModeSettings.OsmLayerBlendExceptions)
+                                        {
+                                            <MudPaper Outlined="true" Class="pa-3 mb-3">
+                                                <MudStack Spacing="2">
+                                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                        <MudText Typo="Typo.subtitle2">@GetOsmLayerExceptionDisplayName(exception)</MudText>
+                                                        <MudSpacer />
+                                                        <MudCheckBox T="bool" Value="@exception.Enabled" ValueChanged="@((bool value) => OnOsmLayerExceptionEnabledChanged(exception, value))" Label="Enabled" Dense="true" Disabled="@IsBusy" />
+                                                        <MudTooltip Text="Remove override">
+                                                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Variant="Variant.Text"
+                                                                           OnClick="@(() => RemoveOsmLayerException(exception))" Disabled="@IsBusy" />
+                                                        </MudTooltip>
+                                                    </MudStack>
+
+                                                    <MudGrid Spacing="3">
+                                                        <MudItem xs="12" md="5">
+                                                            <MudStack Spacing="1">
+                                                                <MudText Typo="Typo.caption" Color="Color.Secondary">Mask PNG</MudText>
+                                                                <MudSelect T="string" Value="@exception.ImagePath" ValueChanged="@((string value) => OnOsmLayerExceptionPathChanged(exception, value))" Dense="true" Variant="Variant.Outlined" Disabled="@IsBusy">
+                                                                    @foreach (var path in GetOsmLayerMaskChoices(exception))
+                                                                    {
+                                                                        <MudSelectItem Value="@path">@GetOsmLayerMaskDisplayName(path)</MudSelectItem>
+                                                                    }
+                                                                </MudSelect>
+                                                                <FileSelectComponent OnFileSelected="@((string path) => OnOsmLayerExceptionFileSelected(exception, path))"
+                                                                                     FileFilter="PNG masks (*.png)|*.png|All files (*.*)|*.*"
+                                                                                     Description="Select PNG mask"
+                                                                                     Disabled="@IsBusy">
+                                                                </FileSelectComponent>
+                                                                @if (!string.IsNullOrWhiteSpace(exception.ImagePath))
+                                                                {
+                                                                    <MudText Typo="Typo.caption" Color="@(File.Exists(exception.ImagePath) ? Color.Secondary : Color.Error)" Style="word-break:break-all;">@exception.ImagePath</MudText>
+                                                                }
+                                                            </MudStack>
+                                                        </MudItem>
+
+                                                        <MudItem xs="12" md="7">
+                                                            <MudStack Spacing="3">
+                                                                <div>
+                                                                    <MudStack Spacing="1">
+                                                                        <MudText Typo="Typo.subtitle2">Overlay inside white mask</MudText>
+                                                                        <MudSlider T="int" Value="@GetOsmLayerExceptionMultiplierPercent(exception)" ValueChanged="@((int value) => OnOsmLayerExceptionMultiplierChanged(exception, value))" Min="0" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@IsBusy">
+                                                                            @GetOsmLayerExceptionMultiplierPercent(exception)% overlay kept
+                                                                        </MudSlider>
+                                                                    </MudStack>
+                                                                </div>
+
+                                                                <div style="border-top:1px solid rgba(128,128,128,.24);padding-top:8px;">
+                                                                    <MudStack Spacing="1">
+                                                                        <MudCheckBox T="bool" Value="@exception.OverrideBaseColor" ValueChanged="@((bool value) => OnOsmLayerExceptionOverrideBaseColorChanged(exception, value))" Label="Override color in white mask" Dense="true" Disabled="@IsBusy" />
+                                                                        <div style="display:flex;align-items:center;gap:8px;min-width:180px;">
+                                                                            <div style="width:28px;height:28px;background-color:@exception.BaseColorHex;border:1px solid #ccc;border-radius:4px;"></div>
+                                                                            <MudColorPicker Text="@exception.BaseColorHex"
+                                                                                            TextChanged="@((string value) => OnOsmLayerExceptionBaseColorChanged(exception, value))"
+                                                                                            Placeholder="Layer color"
+                                                                                            ShowAlpha="false"
+                                                                                            ColorPickerMode="ColorPickerMode.RGB"
+                                                                                            PickerVariant="PickerVariant.Dialog"
+                                                                                            ColorPickerView="ColorPickerView.Spectrum"
+                                                                                            ShowToolbar="true"
+                                                                                            Disabled="@(!exception.OverrideBaseColor || IsBusy)" />
+                                                                        </div>
+                                                                        <MudSlider T="int" Value="@GetOsmLayerExceptionBaseColorStrengthPercent(exception)" ValueChanged="@((int value) => OnOsmLayerExceptionBaseColorStrengthChanged(exception, value))" Min="0" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@(!exception.OverrideBaseColor || IsBusy)">
+                                                                            Color strength: @GetOsmLayerExceptionBaseColorStrengthPercent(exception)%
+                                                                        </MudSlider>
+                                                                    </MudStack>
+                                                                </div>
+
+                                                                <div style="border-top:1px solid rgba(128,128,128,.24);padding-top:8px;">
+                                                                    <MudStack Spacing="1">
+                                                                        <MudCheckBox T="bool" Value="@exception.OverrideRoughness" ValueChanged="@((bool value) => OnOsmLayerExceptionOverrideRoughnessChanged(exception, value))" Label="Override roughness in white mask" Dense="true" Disabled="@IsBusy" />
+                                                                        <MudSlider T="int" Value="@exception.RoughnessValue" ValueChanged="@((int value) => OnOsmLayerExceptionRoughnessValueChanged(exception, value))" Min="0" Max="255" Step="1" Color="Color.Primary" Immediate="false" Disabled="@(!exception.OverrideRoughness || IsBusy)">
+                                                                            Roughness value: @exception.RoughnessValue
+                                                                        </MudSlider>
+                                                                        <MudSlider T="int" Value="@GetOsmLayerExceptionRoughnessStrengthPercent(exception)" ValueChanged="@((int value) => OnOsmLayerExceptionRoughnessStrengthChanged(exception, value))" Min="0" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@(!exception.OverrideRoughness || IsBusy)">
+                                                                            Roughness strength: @GetOsmLayerExceptionRoughnessStrengthPercent(exception)%
+                                                                        </MudSlider>
+                                                                    </MudStack>
+                                                                </div>
+                                                            </MudStack>
+                                                        </MudItem>
+                                                    </MudGrid>
+                                                </MudStack>
+                                            </MudPaper>
+                                        }
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            </MudItem>
+
+                            <MudItem xs="12" md="4">
+                                <MudPaper Outlined="true" Class="pa-3" Style="position:sticky;top:16px;">
+                                    <MudText Typo="Typo.subtitle1" Class="mb-2">Merged Preview</MudText>
+                                    @if (!string.IsNullOrWhiteSpace(_previewDataUri))
+                                    {
+                                        <img src="@_previewDataUri" style="width:100%;aspect-ratio:1/1;object-fit:contain;border:1px solid rgba(0,0,0,.18);" />
+                                    }
+                                    <MudText Typo="Typo.body2" Class="mt-3">Merged size: @_terrainSize x @_terrainSize</MudText>
+                                    <MudCheckBox T="bool" @bind-Value="_settings.BasecolorModeSettings.GenerateHeight" Label="Generate Height" Dense="true" />
+                                    <MudSlider T="double" @bind-Value="_settings.BasecolorModeSettings.NormalStrength" Min="0" Max="4" Step="0.1" Color="Color.Primary">
+                                        Normal Strength: @_settings.BasecolorModeSettings.NormalStrength.ToString("0.0")
+                                    </MudSlider>
+                                    <MudSlider T="int" @bind-Value="_settings.BasecolorModeSettings.AoRadius" Min="1" Max="8" Step="1" Color="Color.Primary">
+                                        AO Radius: @_settings.BasecolorModeSettings.AoRadius
+                                    </MudSlider>
+                                    <MudSlider T="double" @bind-Value="_settings.BasecolorModeSettings.AoIntensity" Min="0" Max="4" Step="0.1" Color="Color.Primary">
+                                        AO Intensity: @_settings.BasecolorModeSettings.AoIntensity.ToString("0.0")
+                                    </MudSlider>
+                                </MudPaper>
+                            </MudItem>
+                        </MudGrid>
+                    </MudTabPanel>
+                </MudTabs>
+            }
+
+            <MudDrawer @bind-Open="@_openDrawer" Width="@_drawerWidth" Height="@_drawerHeight" Anchor="@_anchor" Elevation="1" Variant="DrawerVariant.Temporary">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                    @foreach (var item in (_showErrorLog ? _errors : _showWarningLog ? _warnings : _messages))
+                    {
+                        <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudText Typo="Typo.body1">@item</MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudDrawer>
+
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-4">
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))" Size="Size.Small">Errors</MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))" Size="Size.Small">Warnings</MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))" Size="Size.Small">Messages</MudButton>
+                }
+                <MudSpacer />
+                @if (HasLevel)
+                {
+                    <MudButton OnClick="OpenLevelFolder" Variant="Variant.Text" Color="Color.Primary" StartIcon="@Icons.Material.Filled.FolderOpen" Size="Size.Small">
+                        Open Level Folder
+                    </MudButton>
+                }
+            </MudStack>
+        </MudContainer>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent />
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    private RenderFragment RoughnessEditor(CopyAsset asset) => @<div style="display:flex;flex-direction:column;gap:4px;min-width:200px;">
+        <MudSelect T="TerrainRoughnessPreset" Value="asset.RoughnessPreset" ValueChanged="@((TerrainRoughnessPreset value) => OnRoughnessPresetChanged(asset, value))" Label="Preset" Dense="true" Variant="Variant.Outlined">
+            @if (asset.HasCalculatedRoughness)
+            {
+                <MudSelectItem Value="TerrainRoughnessPreset.Calculated">Calculated (@asset.CalculatedRoughnessValue)</MudSelectItem>
+            }
+            <MudSelectItem Value="TerrainRoughnessPreset.WetAsphalt">Wet Asphalt</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.Asphalt">Asphalt</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.WetSurface">Wet Surface</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.Concrete">Concrete</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.Rock">Rock</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.DirtRoad">Dirt Road</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.Grass">Grass</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.Forest">Forest</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.Mud">Mud</MudSelectItem>
+            <MudSelectItem Value="TerrainRoughnessPreset.Custom">Custom</MudSelectItem>
+        </MudSelect>
+        @if (asset.RoughnessPreset == TerrainRoughnessPreset.Custom)
+        {
+            <MudSlider T="int" Value="asset.RoughnessValue" ValueChanged="@((int value) => OnRoughnessValueChanged(asset, value))" Min="0" Max="255" Step="1" Color="Color.Primary">
+                Roughness: @asset.RoughnessValue
+            </MudSlider>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Value: @asset.GetRoughnessValue()</MudText>
+        }
+    </div>;
+}

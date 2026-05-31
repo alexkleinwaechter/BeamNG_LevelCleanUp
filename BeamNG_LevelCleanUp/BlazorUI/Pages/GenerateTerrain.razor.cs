@@ -6,6 +6,7 @@ using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Objects.MtSettings;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
@@ -2342,6 +2343,8 @@ public partial class GenerateTerrain : IDisposable
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
 
+                SaveGeoReferenceSettingsAfterGeneration();
+
                 generationSucceeded = true;
                 finalSuccessMessage = $"Terrain generated successfully: {GetOutputPath()}";
 
@@ -2401,6 +2404,95 @@ public partial class GenerateTerrain : IDisposable
             _terrainGenerationSnackbar = null;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private void SaveGeoReferenceSettingsAfterGeneration()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_state.WorkingDirectory) || !Directory.Exists(_state.WorkingDirectory))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Terrain generation succeeded, but georeference metadata could not be saved because the level folder was not available.");
+                return;
+            }
+
+            var wgs84Bounds = _state.EffectiveBoundingBox;
+            if (wgs84Bounds == null || !wgs84Bounds.IsValidWgs84)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Terrain generation succeeded, but no usable WGS84 elevation bounds were available for MT_settings.json.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_state.GeoTiffProjectionName) &&
+                string.IsNullOrWhiteSpace(_state.GeoTiffProjectionWkt))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Terrain generation succeeded, but no usable elevation projection was available for MT_settings.json.");
+                return;
+            }
+
+            var settings = MtSettings.Load(_state.WorkingDirectory) ?? new MtSettings();
+            settings.GeoReferenceSettings = BuildGeoReferenceSettings(wgs84Bounds);
+            settings.Save(_state.WorkingDirectory);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "Saved terrain georeference metadata to MT_settings.json.");
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Terrain generation succeeded, but georeference metadata could not be saved: {ex.Message}");
+        }
+    }
+
+    private MtGeoReferenceSettings BuildGeoReferenceSettings(GeoBoundingBox wgs84Bounds)
+    {
+        var nativeBounds = _state.GeoTiffNativeBoundingBox;
+        var sourcePaths = GetSourceElevationPaths();
+
+        return new MtGeoReferenceSettings
+        {
+            HasGeoReference = true,
+            HeightmapSourceType = _state.HeightmapSourceType.ToString(),
+            ProjectionName = _state.GeoTiffProjectionName ?? string.Empty,
+            ProjectionWkt = _state.GeoTiffProjectionWkt ?? string.Empty,
+            SourceElevationPath = sourcePaths.FirstOrDefault() ?? string.Empty,
+            SourceElevationPaths = sourcePaths,
+            TerrainMinLongitude = wgs84Bounds.MinLongitude,
+            TerrainMinLatitude = wgs84Bounds.MinLatitude,
+            TerrainMaxLongitude = wgs84Bounds.MaxLongitude,
+            TerrainMaxLatitude = wgs84Bounds.MaxLatitude,
+            TerrainCenterLongitude = wgs84Bounds.Center.Longitude,
+            TerrainCenterLatitude = wgs84Bounds.Center.Latitude,
+            SourceNativeMinX = nativeBounds?.MinLongitude ?? 0,
+            SourceNativeMinY = nativeBounds?.MinLatitude ?? 0,
+            SourceNativeMaxX = nativeBounds?.MaxLongitude ?? 0,
+            SourceNativeMaxY = nativeBounds?.MaxLatitude ?? 0,
+            SourceGeoTransform = _state.GeoTiffGeoTransform?.ToArray() ?? [],
+            TerrainMetersPerPixel = _state.MetersPerPixel,
+            TerrainSize = _state.TerrainSize,
+            SavedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    private List<string> GetSourceElevationPaths()
+    {
+        return _state.HeightmapSourceType switch
+        {
+            HeightmapSourceType.GeoTiffFile when !string.IsNullOrWhiteSpace(_state.GeoTiffPath) =>
+                [_state.GeoTiffPath],
+            HeightmapSourceType.GeoTiffDirectory when !string.IsNullOrWhiteSpace(_state.GeoTiffDirectory) =>
+                [_state.GeoTiffDirectory],
+            HeightmapSourceType.XyzFile when _state.XyzFilePaths is { Length: > 0 } =>
+                _state.XyzFilePaths.Where(path => !string.IsNullOrWhiteSpace(path)).ToList(),
+            HeightmapSourceType.XyzFile when !string.IsNullOrWhiteSpace(_state.XyzPath) =>
+                [_state.XyzPath],
+            HeightmapSourceType.Png when !string.IsNullOrWhiteSpace(_state.HeightmapPath) =>
+                [_state.HeightmapPath],
+            _ => []
+        };
     }
 
     private async Task ResetPage()
