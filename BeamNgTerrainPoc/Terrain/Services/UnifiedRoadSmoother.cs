@@ -57,7 +57,7 @@ public class UnifiedRoadSmoother
     // roundabout connector seams, connector grade welds). Kept off in production: the no-blend work
     // (§2 absolute-depth, connector ramp, roundabout tilt) is still being validated, so these traces
     // are worth keeping rather than deleting. When false the JIT can dead-strip the gated blocks.
-    private const bool EmitNoBlendDiagnostics = true;
+    private const bool EmitNoBlendDiagnostics = false;
 
     // NO-BLEND DIAGNOSTIC support: snapshot of each cross-section's pure chain low-pass elevation,
     // captured right before the per-spline affine/anchoring correction. Lets the pre-Phase-4 dump
