@@ -7,6 +7,8 @@
 		<RootNamespace>Grille.BeamNG</RootNamespace>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+		<AssemblyVersion>$(BeamNgMappingVersion)</AssemblyVersion>
+		<FileVersion>$(BeamNgMappingVersion)</FileVersion>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">

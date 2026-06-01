@@ -195,6 +195,13 @@ public class TerrainGenerationState
     public string? OsmBlockedReason { get; set; }
     public GeoTiffValidationResult? GeoTiffValidationResult { get; set; }
 
+    /// <summary>
+    ///     Cached OSM query result from the current page session.
+    ///     Reused when generating again with the same or smaller effective bounding box.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public OsmQueryResult? CachedOsmQueryResult { get; set; }
+
     // ========================================
     // TERRAIN MATERIALS
     // ========================================
@@ -405,6 +412,7 @@ public class TerrainGenerationState
         CanFetchOsmData = false;
         OsmBlockedReason = null;
         GeoTiffValidationResult = null;
+        CachedOsmQueryResult = null;
 
         ClearGeoMetadata();
     }

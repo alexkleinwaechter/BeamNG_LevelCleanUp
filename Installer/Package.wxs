@@ -22,9 +22,9 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
     <SummaryInformation Description="BeamNG.drive Map Building Tools with GeoTIFF Support" 
                         Manufacturer="Alex Kleinwaechter" />
     
-    <!-- Always remove any previously installed version, regardless of version number -->
+    <!-- Remove the previous product before copying files so same-version DLLs cannot be left behind. -->
     <Upgrade Id="E9D4C8B2-1A5F-4C7E-B8D9-3E6F2A8C5D1B">
-      <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Maximum="65535.65535.65535" IncludeMaximum="yes" Property="PREVIOUSFOUND" />
+      <UpgradeVersion Minimum="0.0.0" IncludeMinimum="yes" Maximum="255.255.65535" IncludeMaximum="yes" Property="PREVIOUSFOUND" />
     </Upgrade>
     
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
@@ -53,12 +53,27 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
                   DllEntry="WixShellExec"
                   Impersonate="yes" />
     
-    <!-- Custom action to remove AppData folders on uninstall using PowerShell -->
-    <!-- This removes both BeamNG_LevelCleanUp and BeamNG_LevelCleanUp.WebView2 folders from LocalAppData -->
+    <!-- Preserve per-user settings during upgrades, including upgrades from older MSIs whose uninstall cleanup was too aggressive. -->
+    <CustomAction Id="BackupAppDataFolders"
+          Directory="INSTALLFOLDER"
+          ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$backup = Join-Path $env:TEMP 'BeamNG_LevelCleanUp_AppDataBackup'; Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Path $backup -Force | Out-Null; $folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $src = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $src) { Copy-Item $src (Join-Path $backup $f) -Recurse -Force -ErrorAction SilentlyContinue } }&quot;"
+          Execute="immediate"
+          Impersonate="yes"
+          Return="ignore" />
+
+    <CustomAction Id="RestoreAppDataFolders"
+          Directory="INSTALLFOLDER"
+          ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$backup = Join-Path $env:TEMP 'BeamNG_LevelCleanUp_AppDataBackup'; if (Test-Path $backup) { $folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $src = Join-Path $backup $f; if (Test-Path $src) { $dest = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $dest) { Copy-Item (Join-Path $src '*') $dest -Recurse -Force -ErrorAction SilentlyContinue } else { Copy-Item $src $dest -Recurse -Force -ErrorAction SilentlyContinue } } }; Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue }&quot;"
+          Execute="immediate"
+                  Impersonate="yes"
+          Return="ignore" />
+
+    <!-- On a real uninstall, ask before deleting user settings and WebView cache. Silent/basic-UI uninstalls keep data. -->
     <SetProperty Id="RemoveAppDataFolders" 
-                 Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $path = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $path) { Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue } }&quot;"
+           Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -Sta -ExecutionPolicy Bypass -Command &quot;Add-Type -AssemblyName System.Windows.Forms; $result = [System.Windows.Forms.MessageBox]::Show('Do you want to delete BeamNG Mapping Tools user settings and WebView cache from LocalAppData?', 'BeamNG Mapping Tools Uninstall', [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning, [System.Windows.Forms.MessageBoxDefaultButton]::Button2); if ($result -eq [System.Windows.Forms.DialogResult]::Yes) { $folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $path = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $path) { Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue } } }&quot;"
                  Before="RemoveAppDataFolders"
-                 Sequence="execute" />
+           Sequence="execute"
+           Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND UILevel &gt;= 5" />
     
     <CustomAction Id="RemoveAppDataFolders"
                   BinaryRef="Wix4UtilCA_X64"
@@ -68,8 +83,10 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
                   Return="ignore" />
     
     <InstallExecuteSequence>
-      <RemoveExistingProducts After="InstallFinalize" />
-      <Custom Action="RemoveAppDataFolders" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="BackupAppDataFolders" After="InstallValidate" Condition="PREVIOUSFOUND" />
+      <RemoveExistingProducts After="BackupAppDataFolders" />
+      <Custom Action="RestoreAppDataFolders" After="RemoveExistingProducts" Condition="PREVIOUSFOUND" />
+      <Custom Action="RemoveAppDataFolders" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND UILevel &gt;= 5" />
     </InstallExecuteSequence>
     
     <Feature Id="MainApplication" Title="BeamNG Mapping Tools" Level="1">

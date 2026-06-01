@@ -5,6 +5,8 @@
     <PlatformTarget>x64</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyVersion>$(BeamNgMappingVersion)</AssemblyVersion>
+    <FileVersion>$(BeamNgMappingVersion)</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

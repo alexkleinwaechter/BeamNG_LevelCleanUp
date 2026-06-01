@@ -43,6 +43,11 @@ REM Step 3: Publish the main application
 echo.
 echo [3/4] Publishing application...
 echo        Target: win-x64, Self-contained, NO SingleFile (required for GDAL)
+set "PUBLISH_DIR=BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
+if exist "%PUBLISH_DIR%" (
+    echo        Cleaning previous publish output...
+    rmdir /s /q "%PUBLISH_DIR%"
+)
 dotnet publish BeamNG_LevelCleanUp\BeamNG_LevelCleanUp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false
 if errorlevel 1 (
     echo ERROR: Publish failed
@@ -51,7 +56,6 @@ if errorlevel 1 (
 )
 
 REM Verify publish output contains GDAL files (flattened into publish root by RID-specific publish)
-set "PUBLISH_DIR=BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
 if exist "%PUBLISH_DIR%\gdal.dll" (
     if exist "%PUBLISH_DIR%\proj.db" (
         echo GDAL native libraries and proj.db found in publish folder.
@@ -98,7 +102,7 @@ echo ============================================
 echo.
 echo Output files:
 echo   Application: BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\
-echo   Installer:   Installer\bin\Release\net9.0\win-x64\en-us\BeamNG_LevelCleanUp_Setup.msi
+echo   Installer:   Installer\bin\Release\BeamNG_LevelCleanUp_Setup.msi
 echo.
 echo The MSI installer includes:
 echo   - BeamNG Tools for Mapbuilders application
