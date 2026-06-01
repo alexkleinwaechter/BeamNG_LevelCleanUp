@@ -86,7 +86,7 @@ public class RoadSmoothingParameters
     ///     - 20-30m: Wide highway or when using high GlobalLevelingStrength
     ///     Default: 12.0
     /// </summary>
-    public float TerrainAffectedRangeMeters { get; set; } = 12.0f;
+    public float TerrainAffectedRangeMeters { get; set; } = 6.0f;
 
     /// <summary>
     ///     Buffer distance (in meters) beyond the road edge that is protected
@@ -117,13 +117,6 @@ public class RoadSmoothingParameters
     /// </summary>
     public float CrossSectionIntervalMeters { get; set; } = 0.5f;
 
-    /// <summary>
-    ///     Window size for longitudinal smoothing in meters.
-    ///     Affects how smooth the road is along its length direction.
-    ///     Default: 20.0
-    /// </summary>
-    public float LongitudinalSmoothingWindowMeters { get; set; } = 20.0f;
-
     // ========================================
     // SLOPE CONSTRAINTS (All Approaches)
     // ========================================
@@ -145,18 +138,21 @@ public class RoadSmoothingParameters
     ///     - 8-10°: Mountain road (steep but driveable)
     ///     Default: 4.0
     /// </summary>
-    public float RoadMaxSlopeDegrees { get; set; } = 4.0f;
+    public float RoadMaxSlopeDegrees { get; set; } = 6.0f;
 
     /// <summary>
     ///     Maximum slope for embankments/sides in degrees.
     ///     Controls how sharply terrain transitions from road edge to natural terrain.
+    ///     Only used for non-Exponential blend modes (Linear, Cosine, Cubic, Quintic).
+    ///     When Exponential is selected, FalloffExponent controls the transition instead.
+    ///     Also auto-extends DOI when elevation difference requires more distance.
     ///     Typical values:
     ///     - 20-25°: Gentle embankment (1:2.5 ratio)
     ///     - 30°: Standard embankment (1:1.7 ratio)
     ///     - 35-40°: Steep embankment (1:1.2 ratio)
-    ///     Default: 30.0
+    ///     Default: 45.0
     /// </summary>
-    public float SideMaxSlopeDegrees { get; set; } = 30.0f;
+    public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
     // ========================================
     // BLENDING (All Approaches)
@@ -164,15 +160,18 @@ public class RoadSmoothingParameters
 
     /// <summary>
     ///     Type of blend function to use for terrain transitions.
-    ///     Default: Cosine (smoothest)
+    ///     Default: Exponential (BeamNG-style falloff)
     /// </summary>
-    public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
+    public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Exponential;
 
     /// <summary>
-    ///     If false, skip terrain blending (debug mode: only extract geometry/elevations).
-    ///     Default: true
+    ///     Exponent for the exponential falloff blend function.
+    ///     Fully controls the terrain-to-road transition curve shape — no slope constraint is applied.
+    ///     The curve naturally reaches natural terrain at the DOI boundary.
+    ///     1.0 = linear, 1.5 = natural (BeamNG default), 3.0+ = sharp shelf near road with gentle far approach.
+    ///     Only used when BlendFunctionType is Exponential.
     /// </summary>
-    public bool EnableTerrainBlending { get; set; } = true;
+    public float FalloffExponent { get; set; } = 1.5f;
 
     // ========================================
     // POST-PROCESSING SMOOTHING (All Approaches)
@@ -184,7 +183,7 @@ public class RoadSmoothingParameters
     ///     This addresses the visible interval-based staircase effect that can occur after blending.
     ///     Default: false (disabled for backward compatibility)
     /// </summary>
-    public bool EnablePostProcessingSmoothing { get; set; } = false;
+    public bool EnablePostProcessingSmoothing { get; set; } = true;
 
     /// <summary>
     ///     Type of smoothing filter to apply in post-processing.
@@ -259,6 +258,13 @@ public class RoadSmoothingParameters
     ///     Default: true (tunnels are excluded)
     /// </summary>
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+
+    /// <summary>
+    ///     When true, continuation connector splines that have no elevation edge because they have no
+    ///     per-spline cross-sections can bridge their two neighbouring road edges in the elevation
+    ///     graph. Enabled by default for no-blend terrain generation.
+    /// </summary>
+    public bool EnableContinuationConnectorElevationBridging { get; set; } = true;
 
     // ========================================
     // PRE-BUILT SPLINES (OSM Integration)
@@ -390,9 +396,6 @@ public class RoadSmoothingParameters
 
         if (CrossSectionIntervalMeters <= 0)
             errors.Add("CrossSectionIntervalMeters must be greater than 0");
-
-        if (LongitudinalSmoothingWindowMeters <= 0)
-            errors.Add("LongitudinalSmoothingWindowMeters must be greater than 0");
 
         // Validate post-processing smoothing parameters
         if (EnablePostProcessingSmoothing)

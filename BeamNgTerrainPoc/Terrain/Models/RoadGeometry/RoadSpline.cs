@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using MathNet.Numerics.Interpolation;
 
@@ -99,6 +100,41 @@ public class RoadSpline
     public float TotalLength { get; }
 
     // ========================================
+    // OSM METADATA
+    // ========================================
+
+    /// <summary>
+    ///     OSM highway type (e.g. "primary", "residential") if this spline originated from OSM data.
+    ///     Set during spline creation in the orchestrator.
+    /// </summary>
+    public string? OsmRoadType { get; set; }
+
+    /// <summary>
+    ///     OSM node ID of the spline's start point, or null if not from OSM / cropped at boundary.
+    ///     Set during spline creation from PathWithMetadata.StartNodeId.
+    /// </summary>
+    public long? StartOsmNodeId { get; set; }
+
+    /// <summary>
+    ///     OSM node ID of the spline's end point, or null if not from OSM / cropped at boundary.
+    ///     Set during spline creation from PathWithMetadata.EndNodeId.
+    /// </summary>
+    public long? EndOsmNodeId { get; set; }
+
+    /// <summary>
+    ///     OSM way ID(s) this spline was built from. A single spline may merge several OSM ways,
+    ///     so this is a set. Set during spline creation from PathWithMetadata.AllWayIds.
+    ///     Empty if not from OSM. Used for debugging / cross-referencing back to OSM.
+    /// </summary>
+    public HashSet<long> OsmWayIds { get; set; } = [];
+
+    /// <summary>
+    ///     Per-segment lane configuration from OSM tags.
+    ///     Null if no lane data was parsed. StartDistance is populated during spline creation.
+    /// </summary>
+    public List<LaneSegment>? LaneSegments { get; set; }
+
+    // ========================================
     // STRUCTURE METADATA (Bridge/Tunnel)
     // ========================================
 
@@ -136,6 +172,12 @@ public class RoadSpline
     ///     Set during spline creation from OsmFeature.BridgeStructureType.
     /// </summary>
     public string? BridgeStructureType { get; set; }
+
+    /// <summary>
+    ///     Pre-computed width profile derived from OSM lane/width data.
+    ///     Null if no width data is available (falls back to RoadSmoothingParameters.RoadWidthMeters).
+    /// </summary>
+    public RoadWidthProfile? WidthProfile { get; set; }
 
     /// <summary>
     ///     Creates a smooth interpolated road spline (Akima/cubic).

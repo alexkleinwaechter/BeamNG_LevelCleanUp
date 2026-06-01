@@ -98,7 +98,8 @@ public class MedialAxisRoadExtractor : IRoadExtractor
                         CenterPoint = sample.Position,
                         TangentDirection = sample.Tangent,
                         NormalDirection = sample.Normal,
-                        WidthMeters = parameters.RoadWidthMeters,
+                        WidthMeters = pathSpline.WidthProfile?.GetWidthsAtDistance(sample.Distance).corridor
+                            ?? parameters.RoadWidthMeters,
                         IsExcluded = false
                     });
                 totalCrossSections += splineSamples.Count;
@@ -177,7 +178,8 @@ public class MedialAxisRoadExtractor : IRoadExtractor
                         CenterPoint = sample.Position,
                         TangentDirection = sample.Tangent,
                         NormalDirection = sample.Normal,
-                        WidthMeters = parameters.RoadWidthMeters,
+                        WidthMeters = spline.WidthProfile?.GetWidthsAtDistance(sample.Distance).corridor
+                            ?? parameters.RoadWidthMeters,
                         IsExcluded = false
                     });
 

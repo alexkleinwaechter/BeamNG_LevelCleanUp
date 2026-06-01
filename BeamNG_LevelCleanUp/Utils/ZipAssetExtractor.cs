@@ -113,6 +113,9 @@ public static class ZipAssetExtractor
         // First, try the original path as-is
         yield return path;
 
+        // Try with .link suffix (BeamNG stores many assets as .link references)
+        yield return path + ".link";
+
         // If this is an image file, try other extensions
         if (HasImageExtension(path))
         {
@@ -123,9 +126,45 @@ public static class ZipAssetExtractor
                 if (!variation.Equals(path, StringComparison.OrdinalIgnoreCase))
                 {
                     yield return variation;
+                    // Also try .link version of alternate extension
+                    yield return variation + ".link";
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves a .link entry found inside a ZIP archive.
+    /// Link files contain JSON with a "path" property pointing to the real asset.
+    /// Example: {"path":"/assets/materials/decalroad/treadmark/texture.png","type":"file"}
+    /// </summary>
+    private static MemoryStream? ResolveLinkEntry(ZipArchiveEntry linkEntry)
+    {
+        try
+        {
+            string linkJson;
+            using (var stream = linkEntry.Open())
+            using (var reader = new StreamReader(stream))
+            {
+                linkJson = reader.ReadToEnd();
+            }
+
+            var doc = System.Text.Json.JsonDocument.Parse(linkJson);
+            if (doc.RootElement.TryGetProperty("path", out var pathProp))
+            {
+                var targetPath = pathProp.GetString();
+                if (!string.IsNullOrEmpty(targetPath))
+                {
+                    // Follow the link — recursively resolve via ExtractAsset
+                    return ExtractAsset(targetPath.TrimStart('/'));
+                }
+            }
+        }
+        catch
+        {
+            // Link resolution failed
+        }
+        return null;
     }
 
     /// <summary>
@@ -165,6 +204,14 @@ public static class ZipAssetExtractor
 
                 if (entry != null)
                 {
+                    // If this is a .link file, follow the reference chain
+                    if (entry.FullName.EndsWith(".link", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var resolved = ResolveLinkEntry(entry);
+                        if (resolved != null) return resolved;
+                        continue; // Try next variation
+                    }
+
                     // Found it! Extract to memory stream
                     var memoryStream = new MemoryStream();
                     using (var entryStream = entry.Open())

@@ -1,0 +1,100 @@
+<h2>DecalRoad Generation — Architecture Overview</h2>
+<p class="subtitle">Three approaches for the core generation engine. Click to select your preferred approach.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Spline-First Architecture (Recommended)</h3>
+      <p><strong>Core idea:</strong> Generate DecalRoads directly from ParameterizedRoadSpline objects, using cross-section data for elevation and width.</p>
+      <div style="background:#1a1a2e;padding:12px;border-radius:6px;margin:8px 0;font-family:monospace;font-size:12px;line-height:1.6;color:#e0e0e0;">
+        UnifiedRoadNetwork (splines + junctions)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        <span style="color:#4fc3f7;">DecalRoadLayerSetResolver</span> — picks layer set per spline<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ cascade: OSM type override → material fallback → defaults<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        <span style="color:#4fc3f7;">DecalRoadGenerator</span> — for each spline × each layer:<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ 1. Sample centerline nodes<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ 2. Apply lateral offset (position × width × binormal)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ 3. Look up Z from heightmap<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ 4. Transform to BeamNG world coords<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ 5. Chunk into ≤100-node segments<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        <span style="color:#4fc3f7;">JunctionInterrupter</span> (Phase 1) — cuts markings at junction zones<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        <span style="color:#81c784;">DecalRoadSceneWriter</span> — writes NDJSON to items.level.json
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Reuses existing spline sampling from MasterSplineExporter</li>
+          <li>Natural per-spline iteration matches layer set override system</li>
+          <li>Junction interruption is simple: check distance to junction centers</li>
+          <li>Each spline retains its OSM road type for layer set resolution</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Edge markings at junctions won't follow merged contours (Phase 1 limitation)</li>
+          <li>Overlapping splines generate overlapping DecalRoads (render priority resolves visually)</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Network-First Architecture</h3>
+      <p><strong>Core idea:</strong> Compute a unified road surface mesh/boundary first, then derive DecalRoads from the network topology.</p>
+      <div style="background:#1a1a2e;padding:12px;border-radius:6px;margin:8px 0;font-family:monospace;font-size:12px;line-height:1.6;color:#e0e0e0;">
+        UnifiedRoadNetwork<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        <span style="color:#ffb74d;">RoadSurfaceBuilder</span> — compute merged road polygons<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ union all road strips, compute outer contour<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        <span style="color:#ffb74d;">ContourExtractor</span> — extract edge contour polylines<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        Edge DecalRoads from contours + Inner markings from splines<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+        DecalRoadSceneWriter
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Perfect junction edges from day one</li>
+          <li>No overlapping edge markings at junctions</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Requires computational geometry library (polygon union, contour tracing)</li>
+          <li>Loses per-spline identity at edges — harder to apply per-type layer sets</li>
+          <li>Much more complex, harder to debug, longer to implement</li>
+          <li>Still needs spline-based approach for inner lane markings</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hybrid: Spline-First + Contour Phase 2</h3>
+      <p><strong>Core idea:</strong> Start with Approach A (spline-first) for everything. Plan the architecture so contour-based edges can be swapped in later for Phase 2.</p>
+      <div style="background:#1a1a2e;padding:12px;border-radius:6px;margin:8px 0;font-family:monospace;font-size:12px;line-height:1.6;color:#e0e0e0;">
+        Phase 1: Approach A (spline-first, junction interruption)<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓ <span style="color:#aaa;">ships first, works well for most roads</span><br>
+        Phase 2: Add ContourEdgeGenerator as alternative edge source<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ Plugs into same DecalRoadSceneWriter<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;│ Only replaces edge layer generation at junctions<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;↓ <span style="color:#aaa;">inner markings still spline-based</span>
+      </div>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Ships fast with Approach A</li>
+          <li>Architecture supports Phase 2 contour upgrade</li>
+          <li>Inner markings stay simple (spline-based) forever</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Phase 1 junction edges are basic (interruption only)</li>
+          <li>Need to design interfaces that accommodate both approaches</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</div>

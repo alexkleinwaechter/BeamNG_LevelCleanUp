@@ -3,9 +3,11 @@ using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
+using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -24,9 +26,12 @@ public class UnifiedRoadNetworkBuilder
 
     /// <summary>
     /// Minimum cross-sections required per path to be included in the network.
-    /// Paths with fewer cross-sections are considered noise/fragments and skipped.
+    /// Keep this low (2) so that short OSM segments (bridges, culverts, short links)
+    /// are not silently dropped — they chain with adjacent splines for elevation smoothing.
+    /// The previous value of 10 was designed for PNG skeleton noise filtering but also
+    /// removed valid short OSM ways, breaking topology at bridge boundaries.
     /// </summary>
-    private const int MinCrossSectionsPerPath = 10;
+    private const int MinCrossSectionsPerPath = 2;
 
     public UnifiedRoadNetworkBuilder()
     {
@@ -48,7 +53,9 @@ public class UnifiedRoadNetworkBuilder
         float[,] heightMap,
         float metersPerPixel,
         int terrainSize,
-        bool flipMaterialProcessingOrder = true)
+        bool flipMaterialProcessingOrder = true,
+        DecalRoadSettings? decalRoadSettings = null,
+        IReadOnlyDictionary<string, DecalRoadLayerSet>? appDataDefaults = null)
     {
         var perfLog = TerrainCreationLogger.Current;
         var network = new UnifiedRoadNetwork();
@@ -94,30 +101,48 @@ public class UnifiedRoadNetworkBuilder
                 // Convert to ParameterizedRoadSpline and add to network
                 foreach (var spline in splines)
                 {
-                    // Determine OSM road type if available
-                    string? osmRoadType = null;
-                    string? displayName = null;
-
-                    // For OSM-based materials, we could extract road type from the spline
-                    // This would require additional metadata to be passed through
-                    // For now, we use width-based priority as fallback
-
                     var paramSpline = new ParameterizedRoadSpline
                     {
                         Spline = spline,
                         Parameters = parameters,
                         MaterialName = material.MaterialName,
                         SplineId = splineIdCounter,
-                        OsmRoadType = osmRoadType,
-                        DisplayName = displayName,
+                        OsmRoadType = spline.OsmRoadType,
+                        LaneSegments = spline.LaneSegments,
+                        DisplayName = spline.OsmRoadType != null ? $"{material.MaterialName}_{spline.OsmRoadType}" : null,
 
                         // Copy structure flags from RoadSpline (which got them from OsmFeature)
                         IsBridge = spline.IsBridge,
                         IsTunnel = spline.IsTunnel,
                         StructureType = spline.StructureType,
                         Layer = spline.Layer,
-                        BridgeStructureType = spline.BridgeStructureType
+                        BridgeStructureType = spline.BridgeStructureType,
+                        StartOsmNodeId = spline.StartOsmNodeId,
+                        EndOsmNodeId = spline.EndOsmNodeId,
+                        OsmWayIds = new HashSet<long>(spline.OsmWayIds),
                     };
+
+                    // Resolve layerset for width profile
+                    if (appDataDefaults != null)
+                    {
+                        var layerSet = DecalRoadLayerSetResolver.Resolve(
+                            paramSpline.OsmRoadType, paramSpline.MaterialName, decalRoadSettings, appDataDefaults);
+                        paramSpline.WidthProfile = BuildWidthProfile(paramSpline, layerSet);
+
+                        // Diagnostic: log splines with varying width segments
+                        if (paramSpline.WidthProfile?.Segments.Count > 1)
+                        {
+                            TerrainCreationLogger.Current?.Detail($"    WidthProfile: {paramSpline.WidthProfile.Segments.Count} segments, " +
+                                $"widths: {string.Join(" → ", paramSpline.WidthProfile.Segments.Select(s => $"{s.RoadSurfaceWidth:F1}m({s.Source})"))}");
+                        }
+                    }
+
+                    // Diagnostic: log splines with varying lane segments
+                    if (paramSpline.LaneSegments is { Count: > 1 })
+                    {
+                        TerrainCreationLogger.Current?.Detail($"    LaneSegments: {paramSpline.LaneSegments.Count} segments, " +
+                            $"lanes: {string.Join(" → ", paramSpline.LaneSegments.Select(s => $"{s.LaneInfo.TotalLanes}L@{s.StartDistance:F0}m"))}");
+                    }
 
                     // Calculate priority using the cascade:
                     // 1. OSM road type (if available)
@@ -126,6 +151,20 @@ public class UnifiedRoadNetworkBuilder
                     paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
 
                     network.AddSpline(paramSpline);
+
+                    // Diagnostic: log spline endpoint positions for debugging topology connectivity
+                    if (paramSpline.IsStructure || paramSpline.StartOsmNodeId != null || paramSpline.EndOsmNodeId != null)
+                    {
+                        var startPt = paramSpline.StartPoint;
+                        var endPt = paramSpline.EndPoint;
+                        var structLabel = paramSpline.IsBridge ? " [BRIDGE]" : paramSpline.IsTunnel ? " [TUNNEL]" : "";
+                        TerrainCreationLogger.Current?.Detail(
+                            $"    Spline {paramSpline.SplineId}{structLabel}: " +
+                            $"start=({startPt.X:F2},{startPt.Y:F2}) node={paramSpline.StartOsmNodeId}, " +
+                            $"end=({endPt.X:F2},{endPt.Y:F2}) node={paramSpline.EndOsmNodeId}, " +
+                            $"length={paramSpline.Spline.TotalLength:F1}m, points={paramSpline.Spline.ControlPoints.Count}");
+                    }
+
                     splineIdCounter++;
                 }
 
@@ -162,100 +201,73 @@ public class UnifiedRoadNetworkBuilder
     }
 
     /// <summary>
-    /// Builds a unified road network with OSM road type information preserved.
-    /// Use this overload when you have OSM feature metadata to preserve road classifications.
+    /// Builds a width profile from OSM lane/width data for a given spline and layerset.
+    /// Returns null if no layerset is provided.
     /// </summary>
-    /// <param name="materials">List of material definitions.</param>
-    /// <param name="osmRoadTypes">Dictionary mapping material name to list of OSM road types for each spline.</param>
-    /// <param name="heightMap">The terrain heightmap.</param>
-    /// <param name="metersPerPixel">Scale factor.</param>
-    /// <param name="terrainSize">Terrain size in pixels.</param>
-    /// <returns>A unified road network with OSM road type priorities.</returns>
-    public UnifiedRoadNetwork BuildNetworkWithOsmMetadata(
-        List<MaterialDefinition> materials,
-        Dictionary<string, List<string?>> osmRoadTypes,
-        float[,] heightMap,
-        float metersPerPixel,
-        int terrainSize)
+    private static RoadWidthProfile? BuildWidthProfile(
+        ParameterizedRoadSpline spline,
+        DecalRoadLayerSet? layerSet)
     {
-        var network = new UnifiedRoadNetwork();
-        var splineIdCounter = 0;
+        if (layerSet == null) return null;
 
-        var roadMaterials = materials.Where(m => m.RoadParameters != null).ToList();
+        var segments = new List<WidthSegment>();
 
-        if (roadMaterials.Count == 0)
+        // When per-segment width is disabled, use layerset defaults as a single uniform segment
+        if (layerSet.EnablePerSegmentWidth && spline.LaneSegments is { Count: > 0 })
         {
-            return network;
-        }
-
-        TerrainLogger.Info($"UnifiedRoadNetworkBuilder: Building network with OSM metadata from {roadMaterials.Count} material(s)");
-
-        for (var materialIndex = 0; materialIndex < roadMaterials.Count; materialIndex++)
-        {
-            var material = roadMaterials[materialIndex];
-            var parameters = material.RoadParameters!;
-
-            try
+            foreach (var ls in spline.LaneSegments)
             {
-                var splines = ExtractSplinesFromMaterial(material, parameters, metersPerPixel, terrainSize);
+                float surfaceWidth;
+                WidthSource source;
 
-                // Get OSM road types for this material if available
-                var roadTypesForMaterial = osmRoadTypes.GetValueOrDefault(material.MaterialName);
-
-                for (var splineIndex = 0; splineIndex < splines.Count; splineIndex++)
+                if (layerSet.UseOsmWidthTag && ls.LaneInfo.WidthMeters.HasValue)
                 {
-                    var spline = splines[splineIndex];
-
-                    // Get OSM road type if available
-                    string? osmRoadType = null;
-                    if (roadTypesForMaterial != null && splineIndex < roadTypesForMaterial.Count)
-                    {
-                        osmRoadType = roadTypesForMaterial[splineIndex];
-                    }
-
-                    var paramSpline = new ParameterizedRoadSpline
-                    {
-                        Spline = spline,
-                        Parameters = parameters,
-                        MaterialName = material.MaterialName,
-                        SplineId = splineIdCounter,
-                        OsmRoadType = osmRoadType,
-
-                        // Copy structure flags from RoadSpline (which got them from OsmFeature)
-                        IsBridge = spline.IsBridge,
-                        IsTunnel = spline.IsTunnel,
-                        StructureType = spline.StructureType,
-                        Layer = spline.Layer,
-                        BridgeStructureType = spline.BridgeStructureType
-                    };
-
-                    paramSpline.Priority = paramSpline.CalculateEffectivePriority(materialIndex);
-
-                    network.AddSpline(paramSpline);
-                    splineIdCounter++;
+                    surfaceWidth = ls.LaneInfo.WidthMeters.Value;
+                    source = WidthSource.OsmWidthTagExact;
                 }
+                else if (layerSet.UseOsmWidthTag && ls.LaneInfo.EstWidthMeters.HasValue)
+                {
+                    surfaceWidth = ls.LaneInfo.EstWidthMeters.Value;
+                    source = WidthSource.OsmWidthTagEstimated;
+                }
+                else if (ls.LaneInfo.TotalLanes > 0)
+                {
+                    surfaceWidth = ls.LaneInfo.TotalLanes * layerSet.DefaultLaneWidth;
+                    source = WidthSource.LaneCalculation;
+                }
+                else
+                {
+                    surfaceWidth = layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth;
+                    source = WidthSource.LayerSetDefault;
+                }
+
+                segments.Add(new WidthSegment
+                {
+                    StartDistance = ls.StartDistance,
+                    RoadSurfaceWidth = surfaceWidth,
+                    SmoothingCorridorWidth = surfaceWidth + 2 * layerSet.SmoothingCorridorMargin,
+                    MasterSplineWidth = surfaceWidth + 2 * layerSet.MasterSplineMargin,
+                    LaneCount = ls.LaneInfo.TotalLanes,
+                    Source = source
+                });
             }
-            catch (Exception ex)
+        }
+        else
+        {
+            // No lane segments — single uniform width from layerset defaults
+            var surfaceWidth = layerSet.DefaultLaneCount * layerSet.DefaultLaneWidth;
+            segments.Add(new WidthSegment
             {
-                TerrainLogger.Error($"Error processing material '{material.MaterialName}': {ex.Message}");
-            }
+                StartDistance = 0f,
+                RoadSurfaceWidth = surfaceWidth,
+                SmoothingCorridorWidth = surfaceWidth + 2 * layerSet.SmoothingCorridorMargin,
+                MasterSplineWidth = surfaceWidth + 2 * layerSet.MasterSplineMargin,
+                LaneCount = layerSet.DefaultLaneCount,
+                Source = WidthSource.LayerSetDefault
+            });
         }
 
-        if (network.Splines.Count > 0)
-        {
-            GenerateCrossSections(network, metersPerPixel);
-        }
-
-        // Log structure statistics
-        var bridgeCount = network.Splines.Count(s => s.IsBridge);
-        var tunnelCount = network.Splines.Count(s => s.IsTunnel);
-
-        if (bridgeCount > 0 || tunnelCount > 0)
-        {
-            TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
-        }
-
-        return network;
+        return new RoadWidthProfile(segments);
     }
 
     /// <summary>
@@ -271,8 +283,23 @@ public class UnifiedRoadNetworkBuilder
         // Check for pre-built splines first (from OSM)
         if (parameters.UsePreBuiltSplines)
         {
-            TerrainLogger.Info($"    Using {parameters.PreBuiltSplines!.Count} pre-built splines from OSM");
-            return FilterShortSplines(parameters.PreBuiltSplines!, parameters.CrossSectionIntervalMeters);
+            var preBuilt = parameters.PreBuiltSplines!;
+            var bridgeCount = preBuilt.Count(s => s.IsBridge);
+            var tunnelCount = preBuilt.Count(s => s.IsTunnel);
+            TerrainCreationLogger.Current?.Detail($"    Using {preBuilt.Count} pre-built splines from OSM ({bridgeCount} bridges, {tunnelCount} tunnels)");
+
+            // Log all bridge/tunnel splines BEFORE filtering
+            foreach (var s in preBuilt.Where(s => s.IsBridge || s.IsTunnel))
+            {
+                var label = s.IsBridge ? "BRIDGE" : "TUNNEL";
+                var estCS = (int)(s.TotalLength / parameters.CrossSectionIntervalMeters);
+                TerrainCreationLogger.Current?.Detail(
+                    $"    Pre-filter {label}: nodes={s.StartOsmNodeId}→{s.EndOsmNodeId}, " +
+                    $"length={s.TotalLength:F1}m, points={s.ControlPoints.Count}, " +
+                    $"estCS={estCS} (min={MinCrossSectionsPerPath})");
+            }
+
+            return FilterShortSplines(preBuilt, parameters.CrossSectionIntervalMeters);
         }
 
         // Fall back to extracting from layer image
@@ -416,7 +443,7 @@ public class UnifiedRoadNetworkBuilder
         if (simplified.Count >= 4 && splineParams.SplineInterpolationType == SplineInterpolationType.SmoothInterpolated)
         {
             // One iteration of Chaikin smoothing on the control points
-            simplified = ChaikinSmooth(simplified, 1);
+            simplified = PathSmoothing.ChaikinSmooth(simplified, 1);
         }
 
         return simplified;
@@ -541,66 +568,30 @@ public class UnifiedRoadNetworkBuilder
         return result;
     }
 
-    /// <summary>
-    /// Chaikin corner-cutting smoothing algorithm.
-    /// Creates smoother control points by iteratively cutting corners.
-    /// </summary>
-    private static List<Vector2> ChaikinSmooth(List<Vector2> points, int iterations)
-    {
-        if (points.Count < 3 || iterations <= 0)
-            return points;
-
-        var result = new List<Vector2>(points);
-
-        for (int iter = 0; iter < iterations; iter++)
-        {
-            var smoothed = new List<Vector2>();
-
-            // Keep the first point
-            smoothed.Add(result[0]);
-
-            // Apply corner cutting to intermediate segments
-            for (int i = 0; i < result.Count - 1; i++)
-            {
-                var p0 = result[i];
-                var p1 = result[i + 1];
-
-                // Create two new points at 1/4 and 3/4 along the segment
-                var q = new Vector2(
-                    0.75f * p0.X + 0.25f * p1.X,
-                    0.75f * p0.Y + 0.25f * p1.Y);
-                var r = new Vector2(
-                    0.25f * p0.X + 0.75f * p1.X,
-                    0.25f * p0.Y + 0.75f * p1.Y);
-
-                // Don't duplicate start/end points
-                if (i > 0)
-                    smoothed.Add(q);
-                if (i < result.Count - 2)
-                    smoothed.Add(r);
-            }
-
-            // Keep the last point
-            smoothed.Add(result[^1]);
-
-            result = smoothed;
-        }
-
-        return result;
-    }
 
     /// <summary>
     /// Filters out splines that are too short to generate meaningful cross-sections.
     /// </summary>
     private List<RoadSpline> FilterShortSplines(List<RoadSpline> splines, float crossSectionInterval)
     {
-        return splines
-            .Where(s =>
+        var filtered = new List<RoadSpline>();
+        foreach (var s in splines)
+        {
+            var estimatedCrossSections = (int)(s.TotalLength / crossSectionInterval);
+            if (estimatedCrossSections >= MinCrossSectionsPerPath)
             {
-                var estimatedCrossSections = (int)(s.TotalLength / crossSectionInterval);
-                return estimatedCrossSections >= MinCrossSectionsPerPath;
-            })
-            .ToList();
+                filtered.Add(s);
+            }
+            else
+            {
+                var structLabel = s.IsBridge ? " [BRIDGE]" : s.IsTunnel ? " [TUNNEL]" : "";
+                TerrainCreationLogger.Current?.Detail(
+                    $"    FilterShortSplines: DROPPED{structLabel} spline " +
+                    $"(length={s.TotalLength:F1}m, estCS={estimatedCrossSections}, min={MinCrossSectionsPerPath}, " +
+                    $"interval={crossSectionInterval:F2}m, nodes={s.StartOsmNodeId}→{s.EndOsmNodeId})");
+            }
+        }
+        return filtered;
     }
 
     /// <summary>

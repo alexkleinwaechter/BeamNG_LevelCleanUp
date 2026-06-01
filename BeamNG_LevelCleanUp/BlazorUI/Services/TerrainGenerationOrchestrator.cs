@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime;
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
@@ -8,11 +9,13 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Building;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
+using BeamNG_LevelCleanUp.Utils;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -27,6 +30,12 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 /// </summary>
 public class TerrainGenerationOrchestrator
 {
+    /// <summary>
+    ///     Tracks which roundabout IDs have already had ring splines created,
+    ///     preventing duplicate ring splines when multiple materials reference the same roundabout.
+    /// </summary>
+    private HashSet<long> _processedRoundaboutIds = new();
+
     /// <summary>
     ///     Executes the full terrain generation pipeline.
     /// </summary>
@@ -68,6 +77,20 @@ public class TerrainGenerationOrchestrator
 
         try
         {
+            // Pre-validate elevation data before starting the heavy generation pipeline.
+            // This catches corrupted/missing tiles early with a clear error message,
+            // preventing long-running generation that produces garbage output.
+            var preValidation = await PreValidateElevationDataAsync(state);
+            if (!preValidation.IsValid)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                    $"Terrain generation aborted: {preValidation.ErrorMessage}");
+                return new GenerationResult { Success = false, ErrorMessage = preValidation.ErrorMessage };
+            }
+
+            if (preValidation.WarningMessage != null)
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, preValidation.WarningMessage);
+
             // Run the heavy computation on a background thread to keep the UI responsive
             // This allows Windows to properly handle ALT-TAB and taskbar clicks during generation
             var result = await Task.Run(async () =>
@@ -90,6 +113,9 @@ public class TerrainGenerationOrchestrator
                 // Cache for OSM query results
                 OsmQueryResult? osmQueryResult = null;
 
+                // Reset cross-material roundabout dedup tracking for this generation run
+                _processedRoundaboutIds = new HashSet<long>();
+
                 // Process each material
                 foreach (var mat in orderedMaterials)
                 {
@@ -100,7 +126,8 @@ public class TerrainGenerationOrchestrator
                         debugPath,
                         state,
                         osmQueryResult,
-                        newOsmResult => osmQueryResult = newOsmResult);
+                        newOsmResult => osmQueryResult = newOsmResult,
+                        _processedRoundaboutIds);
 
                     materialDefinitions.Add(new MaterialDefinition(
                         mat.InternalName,
@@ -117,7 +144,7 @@ public class TerrainGenerationOrchestrator
                     debugPath);
 
                 // Build terrain creation parameters
-                var parameters = BuildTerrainParameters(state, materialDefinitions, analysisState);
+                var parameters = await BuildTerrainParametersAsync(state, materialDefinitions, analysisState);
 
                 // Execute terrain creation
                 var outputPath = state.GetOutputPath();
@@ -150,6 +177,23 @@ public class TerrainGenerationOrchestrator
 
             // Update state with auto-calculated values
             UpdateStateFromParameters(state, terrainParameters);
+
+            // Cache network and heightmap for standalone DecalRoad re-generation
+            if (terrainParameters != null)
+            {
+                state.CachedNetwork = terrainParameters.OutputNetwork;
+                state.CachedHeightMap = terrainParameters.OutputHeightMap;
+            }
+
+            // Fire-and-forget memory cleanup — runs in background so UI gets result immediately.
+            // OSM memory cache can hold 100-200MB+ of deserialized query results per run.
+            // LOH compaction returns fragmented large arrays to the OS.
+            _ = Task.Run(() =>
+            {
+                OsmQueryCache.Shared.ClearMemoryCache();
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(2, GCCollectionMode.Forced, blocking: false, compacting: true);
+            });
 
             return new GenerationResult
             {
@@ -410,6 +454,167 @@ public class TerrainGenerationOrchestrator
         }
     }
 
+    /// <summary>
+    ///     Pre-validates elevation data before starting the heavy generation pipeline.
+    ///     Quickly reads the GeoTIFF to check for corrupted/missing data.
+    /// </summary>
+    private static async Task<(bool IsValid, string? ErrorMessage, string? WarningMessage)>
+        PreValidateElevationDataAsync(TerrainGenerationState state)
+    {
+        // Only validate GeoTIFF sources (PNG heightmaps are user-created and always valid)
+        if (state.HeightmapSourceType == HeightmapSourceType.Png)
+            return (true, null, null);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info, "Pre-validating elevation data...");
+
+        try
+        {
+            // Determine the GeoTIFF file to validate
+            string? geoTiffPath = null;
+
+            if (state.HeightmapSourceType == HeightmapSourceType.GeoTiffFile)
+                geoTiffPath = state.GeoTiffPath;
+            else if (state.HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory &&
+                     !string.IsNullOrEmpty(state.CachedCombinedGeoTiffPath) &&
+                     File.Exists(state.CachedCombinedGeoTiffPath))
+                geoTiffPath = state.CachedCombinedGeoTiffPath;
+
+            if (string.IsNullOrEmpty(geoTiffPath) || !File.Exists(geoTiffPath))
+            {
+                // For directory without cached combined file, validation happens during generation
+                PubSubChannel.SendMessage(PubSubMessageType.Info, "Elevation pre-validation: skipped (tiles will be validated during generation)");
+                return (true, null, null);
+            }
+
+            // Quick read: open the GeoTIFF and sample elevation data
+            return await Task.Run(() =>
+            {
+                GeoTiffReader.InitializeGdal();
+
+                using var dataset = OSGeo.GDAL.Gdal.Open(geoTiffPath, OSGeo.GDAL.Access.GA_ReadOnly);
+                if (dataset == null)
+                    return (false, $"Cannot open GeoTIFF file: {Path.GetFileName(geoTiffPath)}", (string?)null);
+
+                var width = dataset.RasterXSize;
+                var height = dataset.RasterYSize;
+
+                if (width == 0 || height == 0)
+                    return (false, $"GeoTIFF has zero dimensions ({width}x{height})", (string?)null);
+
+                var band = dataset.GetRasterBand(1);
+                band.GetNoDataValue(out var nodataValue, out var hasNodata);
+                var useNodata = hasNodata != 0;
+
+                // Determine the region to validate (crop or full)
+                var readX = 0;
+                var readY = 0;
+                var readW = width;
+                var readH = height;
+
+                if (state.CropResult is { NeedsCropping: true })
+                {
+                    readX = state.CropResult.OffsetX;
+                    readY = state.CropResult.OffsetY;
+                    readW = Math.Min(state.CropResult.CropWidth, width - readX);
+                    readH = Math.Min(state.CropResult.CropHeight, height - readY);
+                }
+
+                // Read all elevation values in the region
+                var buffer = new double[readW * readH];
+                band.ReadRaster(readX, readY, readW, readH, buffer, readW, readH, 0, 0);
+
+                var totalPixels = buffer.Length;
+                var nodataCount = 0;
+                var zeroCount = 0; // Exactly 0.0 elevation (potential missing tile indicator)
+                var validNonZeroCount = 0;
+                var minElevation = double.MaxValue;
+                var maxElevation = double.MinValue;
+
+                foreach (var val in buffer)
+                {
+                    if (useNodata && Math.Abs(val - nodataValue) < 0.001)
+                    {
+                        nodataCount++;
+                        continue;
+                    }
+
+                    if (val < -1000000 || val > 1000000)
+                    {
+                        nodataCount++;
+                        continue;
+                    }
+
+                    if (Math.Abs(val) < 0.001)
+                        zeroCount++;
+                    else
+                        validNonZeroCount++;
+
+                    if (val < minElevation) minElevation = val;
+                    if (val > maxElevation) maxElevation = val;
+                }
+
+                var validCount = zeroCount + validNonZeroCount;
+                var nodataPct = (double)nodataCount / totalPixels * 100;
+                var zeroPct = validCount > 0 ? (double)zeroCount / totalPixels * 100 : 0;
+
+                if (validCount == 0)
+                    return (false,
+                        $"GeoTIFF has NO valid elevation data in the selected region " +
+                        $"({nodataCount:N0} pixels are nodata/invalid out of {totalPixels:N0} total). " +
+                        "All tiles in this area may be corrupted or missing.",
+                        (string?)null);
+
+                // Detect missing tiles disguised as zero elevation:
+                // If we have valid non-zero elevation data AND a large percentage of exactly-zero pixels,
+                // the zeros are likely from missing/corrupted tiles that defaulted to 0 during combination.
+                // A real coastline area might have ~5-10% near-zero pixels, but >30% exact zeros
+                // combined with valid data at 50m+ is almost certainly tile corruption.
+                string? warning = null;
+
+                if (zeroCount > 0 && validNonZeroCount > 0 && maxElevation > 10)
+                {
+                    if (zeroPct > 70)
+                    {
+                        return (false,
+                            $"GeoTIFF has {zeroPct:F0}% zero-elevation pixels ({zeroCount:N0}/{totalPixels:N0}) " +
+                            $"while valid data ranges from {minElevation:F0}m to {maxElevation:F0}m. " +
+                            "This strongly indicates missing or corrupted GeoTIFF tiles. " +
+                            "The terrain would be mostly at sea level with small islands of real elevation. " +
+                            "Please check your tile coverage and re-download missing tiles.",
+                            (string?)null);
+                    }
+
+                    if (zeroPct > 30)
+                    {
+                        warning = $"WARNING: {zeroPct:F0}% of pixels are exactly zero elevation " +
+                                  $"({zeroCount:N0}/{totalPixels:N0}), while valid data ranges " +
+                                  $"{minElevation:F0}m to {maxElevation:F0}m. " +
+                                  "This may indicate missing GeoTIFF tiles. " +
+                                  "Generation will proceed but large areas will be at 0m elevation.";
+                    }
+                }
+
+                if (nodataPct > 30 && warning == null)
+                    warning = $"GeoTIFF has {nodataPct:F0}% nodata pixels in the selected region " +
+                              $"({nodataCount:N0}/{totalPixels:N0}). " +
+                              "Some tiles may be corrupted.";
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Elevation pre-validation: {validNonZeroCount:N0} valid, {zeroCount:N0} zero-elevation, " +
+                    $"{nodataCount:N0} nodata ({minElevation:F0}m to {maxElevation:F0}m)");
+
+                return (true, (string?)null, warning);
+            });
+        }
+        catch (Exception ex)
+        {
+            // Don't block generation for validation errors — just warn
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Elevation pre-validation failed: {ex.Message}. Proceeding with generation.");
+            return (true, null, null);
+        }
+    }
+
     private static GeoBoundingBox? GetEffectiveBoundingBox(TerrainGenerationState state)
     {
         if (state.CropResult is { NeedsCropping: true, CroppedBoundingBox: not null })
@@ -523,7 +728,8 @@ public class TerrainGenerationOrchestrator
         string debugPath,
         TerrainGenerationState state,
         OsmQueryResult? osmQueryResult,
-        Action<OsmQueryResult> setOsmQueryResult)
+        Action<OsmQueryResult> setOsmQueryResult,
+        HashSet<long>? processedRoundaboutIds = null)
     {
         RoadSmoothingParameters? roadParams = null;
         string? layerImagePath = null;
@@ -533,7 +739,8 @@ public class TerrainGenerationOrchestrator
             effectiveBoundingBox != null)
         {
             (layerImagePath, roadParams, osmQueryResult) = await ProcessOsmMaterialAsync(
-                mat, effectiveBoundingBox, coordinateTransformer, debugPath, state, osmQueryResult);
+                mat, effectiveBoundingBox, coordinateTransformer, debugPath, state, osmQueryResult,
+                processedRoundaboutIds);
 
             if (osmQueryResult != null)
                 setOsmQueryResult(osmQueryResult);
@@ -561,7 +768,8 @@ public class TerrainGenerationOrchestrator
             GeoCoordinateTransformer? coordinateTransformer,
             string debugPath,
             TerrainGenerationState state,
-        OsmQueryResult? osmQueryResult)
+            OsmQueryResult? osmQueryResult,
+            HashSet<long>? processedRoundaboutIds = null)
     {
         // Fetch OSM data if not cached (uses chunked parallel queries for large areas)
         if (osmQueryResult == null)
@@ -583,7 +791,8 @@ public class TerrainGenerationOrchestrator
 
         if (mat.IsRoadMaterial || mat.EnableRoadPainting)
             (layerImagePath, roadParams) = await ProcessOsmRoadMaterialAsync(
-                mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state, osmQueryResult);
+                mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state, osmQueryResult,
+                processedRoundaboutIds);
         else
             layerImagePath = await ProcessOsmPolygonMaterialAsync(
                 mat, fullFeatures, effectiveBoundingBox, processor, debugPath, state);
@@ -598,7 +807,8 @@ public class TerrainGenerationOrchestrator
         OsmGeometryProcessor processor,
         string debugPath,
         TerrainGenerationState state,
-        OsmQueryResult osmQueryResult)
+        OsmQueryResult osmQueryResult,
+        HashSet<long>? processedRoundaboutIds = null)
     {
         RoadSmoothingParameters? roadParams = null;
         string? layerImagePath = null;
@@ -617,6 +827,7 @@ public class TerrainGenerationOrchestrator
             // Build road params early to access junction harmonization settings
             roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
                 state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
+            roadParams.EnableContinuationConnectorElevationBridging = state.DisableSplineMerging;
 
             // Check if roundabout detection is enabled
             var junctionParams = roadParams.JunctionHarmonizationParameters;
@@ -657,14 +868,16 @@ public class TerrainGenerationOrchestrator
                     endpointJoinToleranceMeters: 1.0f,
                     debugOutputPath: roundaboutDebugPath,
                     excludeBridges: state.ExcludeBridgesFromTerrain,
-                    excludeTunnels: state.ExcludeTunnelsFromTerrain);
-                
+                    excludeTunnels: state.ExcludeTunnelsFromTerrain,
+                    alreadyProcessedRoundaboutIds: processedRoundaboutIds,
+                    disableSplineMerging: state.DisableSplineMerging);
+
                 // Store roundabout info in road params for potential use in junction detection
                 if (detectedRoundabouts.Count > 0)
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         $"Detected {detectedRoundabouts.Count} roundabout(s) with {roundaboutWayIds.Count} way segments");
-                    
+
                     // Store roundabout processing result for junction detection phase
                     roadParams.RoundaboutProcessingResult = roundaboutProcessingResult;
                 }
@@ -681,7 +894,8 @@ public class TerrainGenerationOrchestrator
                     minPathLengthMeters,
                     excludeBridges: state.ExcludeBridgesFromTerrain,
                     excludeTunnels: state.ExcludeTunnelsFromTerrain,
-                    routeRelations: osmQueryResult.RouteRelations);
+                    routeRelations: osmQueryResult.RouteRelations,
+                    disableSplineMerging: state.DisableSplineMerging);
             }
 
             // Log to file only - per-material detail
@@ -693,6 +907,18 @@ public class TerrainGenerationOrchestrator
             processor.ExportOsmSplineDebugImage(splines, state.TerrainSize, state.MetersPerPixel, osmDebugPath);
 
             roadParams.PreBuiltSplines = splines;
+
+            // Stamp OSM highway type onto splines that don't have it yet (merged regular paths lose metadata)
+            var dominantHighwayType = lineFeatures
+                .Select(f => f.Tags.GetValueOrDefault("highway"))
+                .Where(h => h != null)
+                .GroupBy(h => h)
+                .MaxBy(g => g.Count())?.Key;
+            if (dominantHighwayType != null)
+            {
+                foreach (var s in splines.Where(s => s.OsmRoadType == null))
+                    s.OsmRoadType = dominantHighwayType;
+            }
 
             // Rasterize layer map FROM THE SPLINES (not from OSM line features)
             // This ensures the layer map matches the interpolated spline path used for elevation smoothing
@@ -742,7 +968,7 @@ public class TerrainGenerationOrchestrator
         return layerImagePath;
     }
 
-    private static TerrainCreationParameters BuildTerrainParameters(
+    private static async Task<TerrainCreationParameters> BuildTerrainParametersAsync(
         TerrainGenerationState state,
         List<MaterialDefinition> materialDefinitions,
         TerrainAnalysisState? analysisState = null)
@@ -759,7 +985,13 @@ public class TerrainGenerationOrchestrator
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
             ExcludeBridgesFromTerrain = state.ExcludeBridgesFromTerrain,
             ExcludeTunnelsFromTerrain = state.ExcludeTunnelsFromTerrain,
-            AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0
+            AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0,
+            DecalRoadSettings = state.EnableDecalRoads
+                ? state.DecalRoadSettings ?? new DecalRoadSettings { Enabled = true }
+                : null,
+            DecalRoadAppDataDefaults = state.EnableDecalRoads
+                ? DecalRoadDefaultsManager.Load()
+                : null,
         };
 
         // Pass pre-analyzed network if available
@@ -794,35 +1026,133 @@ public class TerrainGenerationOrchestrator
                     parameters.GeoTiffPath = state.CachedCombinedGeoTiffPath;
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         "Using cached combined GeoTIFF (skipping tile re-combination)");
+                    ApplyCropSettings(state, parameters);
+                }
+                else if (state.CropResult is { NeedsCropping: true } &&
+                         !string.IsNullOrEmpty(state.GeoTiffDirectory) &&
+                         Directory.Exists(state.GeoTiffDirectory))
+                {
+                    // No cached combined file, but we have crop settings:
+                    // Create a direct-cropped file from tiles (only reads overlapping tiles)
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Creating cropped GeoTIFF directly from tiles (skipping full combination)...");
+                    var service = new GeoTiffMetadataService();
+                    var filterResult = FilterOverlappingTiles(state);
+                    if (filterResult != null)
+                    {
+                        var (files, offsetX, offsetY) = filterResult.Value;
+                        var croppedPath = await service.CombineAndCropDirectAsync(
+                            files,
+                            offsetX, offsetY,
+                            state.CropResult.CropWidth, state.CropResult.CropHeight);
+                        parameters.GeoTiffPath = croppedPath;
+                    }
+                    else
+                    {
+                        var croppedPath = await service.CombineAndCropDirectAsync(
+                            state.GeoTiffDirectory,
+                            state.CropResult.OffsetX, state.CropResult.OffsetY,
+                            state.CropResult.CropWidth, state.CropResult.CropHeight);
+                        parameters.GeoTiffPath = croppedPath;
+                    }
+                    // Crop already applied — don't pass crop offsets again
                 }
                 else
                 {
                     parameters.GeoTiffDirectory = state.GeoTiffDirectory;
                     PubSubChannel.SendMessage(PubSubMessageType.Info,
                         "No cached combined GeoTIFF - will combine tiles during generation");
+                    ApplyCropSettings(state, parameters);
                 }
 
-                ApplyCropSettings(state, parameters);
                 break;
 
             case HeightmapSourceType.XyzFile:
                 if (state.XyzFilePaths is { Length: > 1 })
                 {
-                    parameters.XyzFilePaths = state.XyzFilePaths;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Using {state.XyzFilePaths.Length} XYZ tiles — will combine during generation");
+                    var xyzFilterResult = FilterOverlappingTiles(state);
+                    if (xyzFilterResult != null)
+                    {
+                        parameters.XyzFilePaths = xyzFilterResult.Value.Files;
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Using {xyzFilterResult.Value.Files.Length}/{state.XyzFilePaths.Length} XYZ tiles (filtered to crop region)");
+                        // Use adjusted offsets relative to the filtered tiles' combined extent
+                        ApplyCropSettingsWithAdjustedOffsets(xyzFilterResult.Value, state, parameters);
+                    }
+                    else
+                    {
+                        parameters.XyzFilePaths = state.XyzFilePaths;
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Using {state.XyzFilePaths.Length} XYZ tiles — will combine during generation");
+                        ApplyCropSettings(state, parameters);
+                    }
                 }
                 else
                 {
                     parameters.XyzPath = state.XyzPath;
+                    ApplyCropSettings(state, parameters);
                 }
 
                 parameters.XyzEpsgCode = state.XyzEpsgCode;
-                ApplyCropSettings(state, parameters);
                 break;
         }
 
         return parameters;
+    }
+
+    private static (string[] Files, int OffsetX, int OffsetY)? FilterOverlappingTiles(TerrainGenerationState state)
+    {
+        if (state.TileBoundsInfo == null || state.GeoTiffGeoTransform == null ||
+            state.CropResult is not { NeedsCropping: true })
+            return null;
+
+        var gt = state.GeoTiffGeoTransform;
+        var crop = state.CropResult;
+        var pixelSizeX = gt[1];
+        var pixelSizeY = Math.Abs(gt[5]);
+
+        var cropMinX = gt[0] + crop.OffsetX * pixelSizeX;
+        var cropMaxX = gt[0] + (crop.OffsetX + crop.CropWidth) * pixelSizeX;
+        var cropMaxY = gt[3] - crop.OffsetY * pixelSizeY;
+        var cropMinY = gt[3] - (crop.OffsetY + crop.CropHeight) * pixelSizeY;
+
+        var filtered = XyzFastScanner.FilterTilesByBbox(
+            state.TileBoundsInfo, cropMinX, cropMinY, cropMaxX, cropMaxY);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Tile filtering: {filtered.Length}/{state.TileBoundsInfo.Count} tiles overlap crop region");
+
+        if (filtered.Length == 0)
+            return (filtered, 0, 0);
+
+        var filteredBounds = state.TileBoundsInfo
+            .Where(t => filtered.Contains(t.FilePath));
+        var filteredMinX = filteredBounds.Min(t => t.MinX);
+        var filteredMaxY = filteredBounds.Max(t => t.MaxY);
+
+        var adjustedOffsetX = (int)Math.Round((cropMinX - filteredMinX) / pixelSizeX);
+        var adjustedOffsetY = (int)Math.Round((filteredMaxY - cropMaxY) / pixelSizeY);
+
+        return (filtered, adjustedOffsetX, adjustedOffsetY);
+    }
+
+    private static void ApplyCropSettingsWithAdjustedOffsets(
+        (string[] Files, int OffsetX, int OffsetY) filterResult,
+        TerrainGenerationState state,
+        TerrainCreationParameters parameters)
+    {
+        if (state.CropResult is not { NeedsCropping: true })
+            return;
+
+        parameters.CropGeoTiff = true;
+        parameters.CropOffsetX = filterResult.OffsetX;
+        parameters.CropOffsetY = filterResult.OffsetY;
+        parameters.CropWidth = state.CropResult.CropWidth;
+        parameters.CropHeight = state.CropResult.CropHeight;
+
+        Console.WriteLine(
+            $"Applying filtered crop: offset ({filterResult.OffsetX}, {filterResult.OffsetY}), " +
+            $"size {state.CropResult.CropWidth}x{state.CropResult.CropHeight} (adjusted for filtered tiles)");
     }
 
     private static void ApplyCropSettings(TerrainGenerationState state, TerrainCreationParameters parameters)

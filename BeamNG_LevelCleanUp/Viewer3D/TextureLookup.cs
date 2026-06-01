@@ -78,20 +78,23 @@ public class TextureLookup
 
             foreach (var file in material.MaterialFiles)
             {
-                if (file.File == null)
-                    continue;
+                // Determine the texture path — filesystem file or game asset path
+                var texturePath = file.File?.FullName;
+                if (texturePath == null && !string.IsNullOrEmpty(file.OriginalJsonPath))
+                {
+                    // Game asset — use the JSON path for resolution via ZipAssetExtractor
+                    texturePath = file.OriginalJsonPath;
+                }
+                if (texturePath == null) continue;
 
-                var fullPath = file.File.FullName;
-                var canResolve = file.File.Exists || LinkFileResolver.CanResolve(fullPath);
+                if (!CanResolveTexturePath(texturePath)) continue;
 
-                if (!canResolve) continue;
-
-                textureDict[file.MapType ?? "Unknown"] = fullPath;
+                textureDict[file.MapType ?? "Unknown"] = texturePath;
 
                 // Track color map specifically
                 if (IsColorMap(file.MapType))
                 {
-                    colorMapPath = fullPath;
+                    colorMapPath = texturePath;
                 }
             }
 
@@ -231,6 +234,29 @@ public class TextureLookup
             (!string.IsNullOrEmpty(m.MapTo) && 
              (nodeName.Contains(m.MapTo, StringComparison.OrdinalIgnoreCase) ||
               m.MapTo.Contains(nodeName, StringComparison.OrdinalIgnoreCase))));
+    }
+
+    private static bool CanResolveTexturePath(string path)
+    {
+        // Direct file on disk
+        if (File.Exists(path)) return true;
+
+        // .link file resolution
+        if (LinkFileResolver.CanResolve(path)) return true;
+
+        // BeamNG virtual paths (/levels/..., /assets/..., /art/...) — resolve via ZipAssetExtractor
+        if (path.StartsWith("/levels/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/art/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("levels/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("assets/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("art/", StringComparison.OrdinalIgnoreCase))
+        {
+            using var stream = ZipAssetExtractor.ExtractAsset(path.TrimStart('/'));
+            return stream != null;
+        }
+
+        return false;
     }
 
     /// <summary>

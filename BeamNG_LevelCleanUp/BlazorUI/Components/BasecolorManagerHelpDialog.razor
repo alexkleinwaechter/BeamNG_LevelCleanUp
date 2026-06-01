@@ -1,0 +1,240 @@
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Help" Class="mr-2" />
+            Basecolor Manager Guide
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <div style="max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 8px;">
+            <MudText Typo="Typo.body1" Class="mb-3">
+                The Basecolor Manager helps you switch your terrain between two useful states.
+                Paint Mode makes terrain materials easy to paint in BeamNG.
+                BaseColor Mode builds one finished color image for the whole terrain.
+            </MudText>
+
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+                The selected map folder is changed directly. Make a backup if you want to keep the old files.
+            </MudAlert>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.CompareArrows" Size="Size.Small" Class="mr-1" />
+                The Two Modes
+            </MudText>
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Mode</th>
+                        <th>What it does</th>
+                        <th>Use it when</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Paint Mode</strong></td>
+                        <td>Gives each material its own simple base textures.</td>
+                        <td>You want to paint terrain materials in BeamNG.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>BaseColor Mode</strong></td>
+                        <td>Builds one shared <code>MT_basecolor.png</code> from the terrain material areas.</td>
+                        <td>You want the map to look finished.</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Paint Mode writes small placeholder textures. BaseColor Mode writes terrain-sized merged textures.
+                Both modes use the colors and roughness values saved in this tool.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Save" Size="Size.Small" Class="mr-1" />
+                What Gets Saved
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Settings are saved in <code>MT_settings.json</code> inside the selected map folder.
+                The file stores the current mode, material colors, roughness, overlay settings, and OSM layer overrides.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                It does not store image bytes. It stores file paths for selected images and masks.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Preview" Size="Size.Small" Class="mr-1" />
+                Preview And Regenerate
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                The preview shows the merged base color image. It does not show normal, roughness, AO, or height maps.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Some changes refresh the preview automatically. If the image does not update after a color or blend change, use the Preview button.
+            </MudText>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Preview only updates what you see in the tool. Regenerate writes the files used by BeamNG.
+            </MudAlert>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Layers" Size="Size.Small" Class="mr-1" />
+                Overlay Image And Tile Overlay
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                In BaseColor Mode, an image or fetched tile overlay can be mixed into <code>MT_basecolor.png</code>.
+                The overlay affects only the base color image. It does not change normal, AO, roughness, or height.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                The global overlay slider is a master setter for the material overlay sliders.
+                The real blend comes from each material row.
+            </MudText>
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Blend</th>
+                        <th>Meaning</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>0%</td>
+                        <td>Keep the generated material color.</td>
+                    </tr>
+                    <tr>
+                        <td>50%</td>
+                        <td>Mix the material color and overlay image.</td>
+                    </tr>
+                    <tr>
+                        <td>100%</td>
+                        <td>Use the overlay image strongly for that material.</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Tile download is available only for terrain generated by this app from geodata, because that generation step saves georeference settings.
+                Fetched images are cached in <code>MT_Tiles</code> inside the map folder.
+            </MudText>
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                Map tile providers can have license rules. Check the rules before sharing a map that contains downloaded imagery.
+            </MudAlert>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Map" Size="Size.Small" Class="mr-1" />
+                OSM Layer Overrides
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                OSM Layer Overrides use black and white PNG masks. White areas are affected. Black areas are not affected.
+                Masks are usually found in <code>MT_TerrainGeneration\osm_layer</code> inside the map folder.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                The tool lists found PNG masks, but it does not add them automatically. Add only the masks you want to use.
+            </MudText>
+
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Overlay control</MudText>
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>Overlay slider</th>
+                        <th>Meaning in white mask areas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>0%</td>
+                        <td>No overlay. The material color stays visible.</td>
+                    </tr>
+                    <tr>
+                        <td>50%</td>
+                        <td>Half of the material overlay strength.</td>
+                    </tr>
+                    <tr>
+                        <td>100%</td>
+                        <td>No reduction. Same as normal.</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Optional color override</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                Turn on Color to tint the white mask area toward one chosen color.
+                Color strength controls how much of that color is applied.
+                This is useful for water, fields, beaches, or other areas that should not follow the terrain material color.
+            </MudText>
+
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Optional roughness override</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                Turn on Roughness to change roughness inside the white mask area.
+                Value sets the target roughness from 0 to 255. Strength controls how much it replaces the normal material roughness.
+            </MudText>
+
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                If masks overlap, the strongest overlay reduction wins. Color and roughness overrides blend by their mask amount and strength.
+            </MudAlert>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                Missing mask files are ignored with a warning. OSM overrides only change output when the row is enabled and the PNG path exists.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Small" Class="mr-1" />
+                Generated Files
+            </MudText>
+            <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Meaning</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>MT_basecolor.png</code></td>
+                        <td>The visible merged color image.</td>
+                    </tr>
+                    <tr>
+                        <td><code>MT_basecolor_nm.png</code></td>
+                        <td>Normal map from terrain height.</td>
+                    </tr>
+                    <tr>
+                        <td><code>MT_basecolor_ao.png</code></td>
+                        <td>Ambient occlusion from terrain height.</td>
+                    </tr>
+                    <tr>
+                        <td><code>MT_basecolor_r.png</code></td>
+                        <td>Roughness from material settings and enabled roughness overrides.</td>
+                    </tr>
+                    <tr>
+                        <td><code>MT_basecolor_h.png</code></td>
+                        <td>Height image, if enabled.</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.body2">
+                Holes in the terrain stay transparent.
+            </MudText>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Close">Got it!</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private void Close()
+    {
+        MudDialog.Close();
+    }
+}

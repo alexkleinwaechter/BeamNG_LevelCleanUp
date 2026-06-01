@@ -72,17 +72,19 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Publish completed." -ForegroundColor Green
 
 # Verify the publish output contains GDAL files
+# Note: dotnet publish -r win-x64 flattens native DLLs into the publish root (not runtimes\)
 $publishDir = "BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
-$runtimesDir = Join-Path $publishDir "runtimes"
-if (Test-Path $runtimesDir) {
-    $gdalDlls = Get-ChildItem -Path $runtimesDir -Recurse -Filter "gdal*.dll" -ErrorAction SilentlyContinue
-    if ($gdalDlls.Count -gt 0) {
-        Write-Host "Found $($gdalDlls.Count) GDAL DLLs in runtimes folder" -ForegroundColor Green
-    } else {
-        Write-Host "WARNING: No GDAL DLLs found in runtimes folder!" -ForegroundColor Yellow
-    }
+$gdalDlls = Get-ChildItem -Path $publishDir -Filter "gdal*.dll" -ErrorAction SilentlyContinue
+$projDb = Test-Path (Join-Path $publishDir "proj.db")
+if ($gdalDlls.Count -gt 0 -and $projDb) {
+    Write-Host "Found $($gdalDlls.Count) GDAL DLLs and proj.db in publish folder" -ForegroundColor Green
 } else {
-    Write-Host "WARNING: runtimes folder not found in publish output" -ForegroundColor Yellow
+    if ($gdalDlls.Count -eq 0) {
+        Write-Host "WARNING: No GDAL DLLs found in publish folder!" -ForegroundColor Yellow
+    }
+    if (-not $projDb) {
+        Write-Host "WARNING: proj.db not found in publish folder!" -ForegroundColor Yellow
+    }
 }
 
 # Step 4: Build the MSI installer

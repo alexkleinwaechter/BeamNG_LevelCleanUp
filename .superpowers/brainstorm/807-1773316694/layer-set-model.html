@@ -1,0 +1,118 @@
+<h2>DecalRoad Layer Set — Data Model</h2>
+<p class="subtitle">The core definition that describes what DecalRoad layers to generate for a road. Review the structure and let me know if it covers your needs.</p>
+
+<div class="section">
+  <h3>DecalRoadLayerDefinition (single layer)</h3>
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;font-family:monospace;font-size:13px;line-height:1.8;color:#e0e0e0;">
+    <span style="color:#4fc3f7;">DecalRoadLayerDefinition</span> {<br>
+    &nbsp;&nbsp;<span style="color:#aaa;">// Identity</span><br>
+    &nbsp;&nbsp;Name: <span style="color:#81c784;">string</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// "Center Line", "Left Edge", "Right Edge Blend"</span><br>
+    &nbsp;&nbsp;LayerType: <span style="color:#81c784;">enum</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// CenterLine, LaneMarking, EdgeLine, EdgeBlend, TreadMarks, Custom</span><br>
+    &nbsp;&nbsp;IsEnabled: <span style="color:#81c784;">bool</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// toggle on/off without deleting</span><br>
+    <br>
+    &nbsp;&nbsp;<span style="color:#aaa;">// BeamNG DecalRoad properties</span><br>
+    &nbsp;&nbsp;Material: <span style="color:#81c784;">string</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// "m_line_white_discontinue", "m_road_asphalt_edge"</span><br>
+    &nbsp;&nbsp;Width: <span style="color:#81c784;">float</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// meters (0.2m for line, 2.0m for edge blend)</span><br>
+    &nbsp;&nbsp;TextureLength: <span style="color:#81c784;">float</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// texture repeat distance (default 10.0m)</span><br>
+    &nbsp;&nbsp;RenderPriority: <span style="color:#81c784;">int</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// draw order (higher = on top, default 10)</span><br>
+    <br>
+    &nbsp;&nbsp;<span style="color:#aaa;">// Lateral positioning (like BeamNG road spline layers)</span><br>
+    &nbsp;&nbsp;Position: <span style="color:#81c784;">float</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// -1.0 = left edge, 0.0 = center, +1.0 = right edge</span><br>
+    &nbsp;&nbsp;IsTrackWidth: <span style="color:#81c784;">bool</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// if true, width scales with road width</span><br>
+    &nbsp;&nbsp;IsMirrored: <span style="color:#81c784;">bool</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// auto-generate symmetric layer on opposite side</span><br>
+    <br>
+    &nbsp;&nbsp;<span style="color:#aaa;">// Lane-aware positioning (for lane markings)</span><br>
+    &nbsp;&nbsp;IsPerLane: <span style="color:#81c784;">bool</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// if true, replicate between each lane</span><br>
+    <br>
+    &nbsp;&nbsp;<span style="color:#aaa;">// Fade/distance</span><br>
+    &nbsp;&nbsp;FadeIn: <span style="color:#81c784;">float</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// fade at road start (meters)</span><br>
+    &nbsp;&nbsp;FadeOut: <span style="color:#81c784;">float</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// fade at road end (meters)</span><br>
+    &nbsp;&nbsp;DistanceFade: <span style="color:#81c784;">float[2]</span> &nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// [start, end] camera distance fade</span><br>
+    <br>
+    &nbsp;&nbsp;<span style="color:#aaa;">// Junction behavior</span><br>
+    &nbsp;&nbsp;InterruptAtJunctions: <span style="color:#81c784;">bool</span> <span style="color:#aaa;">// cut this layer at junction zones (default: true for edges)</span><br>
+    }
+  </div>
+</div>
+
+<div class="section">
+  <h3>DecalRoadLayerSet (collection of layers for a road type)</h3>
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;font-family:monospace;font-size:13px;line-height:1.8;color:#e0e0e0;">
+    <span style="color:#4fc3f7;">DecalRoadLayerSet</span> {<br>
+    &nbsp;&nbsp;Name: <span style="color:#81c784;">string</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// "Highway Default", "Residential Road", "Dirt Track"</span><br>
+    &nbsp;&nbsp;IsEnabled: <span style="color:#81c784;">bool</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// master toggle for entire set</span><br>
+    &nbsp;&nbsp;DefaultLaneCount: <span style="color:#81c784;">int</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#aaa;">// fallback when OSM lanes tag missing (e.g., 2)</span><br>
+    &nbsp;&nbsp;DefaultLaneWidth: <span style="color:#81c784;">float</span> &nbsp;&nbsp;<span style="color:#aaa;">// standard lane width assumption (default 3.5m)</span><br>
+    &nbsp;&nbsp;Layers: <span style="color:#81c784;">List&lt;DecalRoadLayerDefinition&gt;</span><br>
+    }
+  </div>
+</div>
+
+<div class="section">
+  <h3>Override Resolution Cascade</h3>
+  <div style="background:#0d1117;padding:16px;border-radius:8px;font-family:monospace;font-size:13px;line-height:1.8;color:#e0e0e0;">
+    For each <span style="color:#ffb74d;">ParameterizedRoadSpline</span>:<br>
+    <br>
+    &nbsp;&nbsp;1. Check <span style="color:#4fc3f7;">spline.OsmRoadType</span> (e.g., "primary")<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Look up in <span style="color:#81c784;">project preset's OsmLayerSets</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ If found: <b>USE IT</b> ✓<br>
+    <br>
+    &nbsp;&nbsp;2. Else: check <span style="color:#4fc3f7;">spline.MaterialName</span> (e.g., "Asphalt")<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Look up in <span style="color:#81c784;">project preset's MaterialLayerSets</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ If found: <b>USE IT</b> ✓<br>
+    <br>
+    &nbsp;&nbsp;3. Else: check <span style="color:#4fc3f7;">spline.OsmRoadType</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ Look up in <span style="color:#81c784;">AppData global defaults</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ If found: <b>USE IT</b> ✓<br>
+    <br>
+    &nbsp;&nbsp;4. Else: <span style="color:#ef5350;">No DecalRoads generated</span> for this spline
+  </div>
+</div>
+
+<div class="section">
+  <h3>Example: "primary" road with default layer set</h3>
+  <div style="background:#1a1a2e;padding:16px;border-radius:8px;font-size:13px;line-height:1.6;color:#e0e0e0;">
+    <table style="width:100%;border-collapse:collapse;color:#e0e0e0;">
+      <tr style="border-bottom:1px solid #333;">
+        <th style="text-align:left;padding:4px 8px;color:#4fc3f7;">Layer</th>
+        <th style="text-align:left;padding:4px 8px;color:#4fc3f7;">Material</th>
+        <th style="text-align:right;padding:4px 8px;color:#4fc3f7;">Width</th>
+        <th style="text-align:right;padding:4px 8px;color:#4fc3f7;">Position</th>
+        <th style="text-align:center;padding:4px 8px;color:#4fc3f7;">Mirror</th>
+        <th style="text-align:center;padding:4px 8px;color:#4fc3f7;">PerLane</th>
+      </tr>
+      <tr style="border-bottom:1px solid #222;">
+        <td style="padding:4px 8px;">Lane Marking</td>
+        <td style="padding:4px 8px;color:#81c784;">m_line_white_discontinue</td>
+        <td style="text-align:right;padding:4px 8px;">0.2m</td>
+        <td style="text-align:right;padding:4px 8px;">0.0</td>
+        <td style="text-align:center;padding:4px 8px;">—</td>
+        <td style="text-align:center;padding:4px 8px;">✓</td>
+      </tr>
+      <tr style="border-bottom:1px solid #222;">
+        <td style="padding:4px 8px;">Edge Line</td>
+        <td style="padding:4px 8px;color:#81c784;">m_line_white</td>
+        <td style="text-align:right;padding:4px 8px;">0.25m</td>
+        <td style="text-align:right;padding:4px 8px;">±1.0</td>
+        <td style="text-align:center;padding:4px 8px;">✓</td>
+        <td style="text-align:center;padding:4px 8px;">—</td>
+      </tr>
+      <tr style="border-bottom:1px solid #222;">
+        <td style="padding:4px 8px;">Edge Blend 1</td>
+        <td style="padding:4px 8px;color:#81c784;">m_road_asphalt_edge</td>
+        <td style="text-align:right;padding:4px 8px;">1.0m</td>
+        <td style="text-align:right;padding:4px 8px;">±1.1</td>
+        <td style="text-align:center;padding:4px 8px;">✓</td>
+        <td style="text-align:center;padding:4px 8px;">—</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;">Edge Blend 2</td>
+        <td style="padding:4px 8px;color:#81c784;">m_road_edge_dirt</td>
+        <td style="text-align:right;padding:4px 8px;">2.0m</td>
+        <td style="text-align:right;padding:4px 8px;">±1.25</td>
+        <td style="text-align:center;padding:4px 8px;">✓</td>
+        <td style="text-align:center;padding:4px 8px;">—</td>
+      </tr>
+    </table>
+  </div>
+</div>

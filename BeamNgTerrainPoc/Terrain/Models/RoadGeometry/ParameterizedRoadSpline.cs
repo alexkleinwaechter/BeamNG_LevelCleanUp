@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -56,6 +57,18 @@ public class ParameterizedRoadSpline
     public string? OsmRoadType { get; init; }
 
     /// <summary>
+    ///     Per-segment lane configuration from OSM tags.
+    ///     Null if no lane data was parsed.
+    /// </summary>
+    public List<LaneSegment>? LaneSegments { get; init; }
+
+    /// <summary>
+    ///     Pre-computed width profile derived from OSM lane/width data.
+    ///     Null if no layerset was resolved (falls back to RoadSmoothingParameters).
+    /// </summary>
+    public RoadWidthProfile? WidthProfile { get; set; }
+
+    /// <summary>
     ///     Optional display name for the road (e.g., from OSM name tag).
     ///     Used for debugging and BeamNG export.
     /// </summary>
@@ -108,6 +121,25 @@ public class ParameterizedRoadSpline
     ///     Used for multi-level crossings and DAE placement.
     /// </summary>
     public int Layer { get; set; } = 0;
+
+    /// <summary>
+    ///     OSM node ID of the spline's start point, or null if not from OSM / cropped at boundary.
+    ///     Propagated from RoadSpline during network building.
+    /// </summary>
+    public long? StartOsmNodeId { get; set; }
+
+    /// <summary>
+    ///     OSM node ID of the spline's end point, or null if not from OSM / cropped at boundary.
+    ///     Propagated from RoadSpline during network building.
+    /// </summary>
+    public long? EndOsmNodeId { get; set; }
+
+    /// <summary>
+    ///     OSM way ID(s) this spline was built from (a spline may merge several ways).
+    ///     Propagated from RoadSpline during network building. Empty if not from OSM.
+    ///     Used for debugging / cross-referencing back to OSM.
+    /// </summary>
+    public HashSet<long> OsmWayIds { get; set; } = [];
 
     /// <summary>
     ///     Bridge structure type (beam, arch, suspension, etc.) for DAE generation.

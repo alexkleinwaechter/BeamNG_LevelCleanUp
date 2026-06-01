@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -322,6 +323,22 @@ public class TerrainCreationParameters
     public float StructureConnectionToleranceMeters { get; set; } = 15.0f;
 
     // ========================================
+    // DECALROAD GENERATION
+    // ========================================
+
+    /// <summary>
+    ///     DecalRoad generation settings. When null or Enabled=false, no DecalRoads are generated.
+    /// </summary>
+    public DecalRoadSettings? DecalRoadSettings { get; set; }
+
+    /// <summary>
+    ///     AppData default layer sets, resolved by the orchestrator (which has access to the
+    ///     BeamNG_LevelCleanUp project's DecalRoadDefaultsManager). Falls back to hardcoded
+    ///     defaults if null.
+    /// </summary>
+    public Dictionary<string, DecalRoadLayerSet>? DecalRoadAppDataDefaults { get; set; }
+
+    // ========================================
     // OUTPUT PROPERTIES (populated after terrain generation)
     // ========================================
 
@@ -332,6 +349,20 @@ public class TerrainCreationParameters
     ///     This is an OUTPUT property - do not set manually.
     /// </summary>
     public SpawnPointData? ExtractedSpawnPoint { get; set; }
+
+    /// <summary>
+    ///     The unified road network produced during road smoothing.
+    ///     Populated as an output after terrain generation for downstream use (DecalRoad re-generation).
+    ///     This is an OUTPUT property - do not set manually.
+    /// </summary>
+    public UnifiedRoadNetwork? OutputNetwork { get; set; }
+
+    /// <summary>
+    ///     The final heightmap produced during terrain generation (float[y,x] row-major).
+    ///     Populated as an output for downstream use (DecalRoad re-generation).
+    ///     This is an OUTPUT property - do not set manually.
+    /// </summary>
+    public float[,]? OutputHeightMap { get; set; }
 
     // ========================================
     // PRE-ANALYZED NETWORK (for Analyze Settings feature)

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
@@ -54,6 +55,21 @@ internal class PathWithMetadata
     public int Layer { get; init; }
     public string? BridgeStructureType { get; init; }
 
+    /// <summary>
+    /// All original OSM way IDs that have been merged into this path.
+    /// Initialized with just {OsmWayId} for single-way paths.
+    /// Unioned during merges so that route relation membership checks
+    /// remain accurate even after Tier 0 or Tier 1-3 merges combine multiple ways.
+    /// </summary>
+    public HashSet<long> AllWayIds { get; set; }
+
+    /// <summary>
+    /// Per-segment lane configuration parsed from OSM tags.
+    /// Empty list means no lane data available (use defaults at generation time).
+    /// Segments survive merges via LaneSegmentOps.
+    /// </summary>
+    public List<LaneSegment> LaneSegments { get; set; } = [];
+
     public PathWithMetadata(
         List<Vector2> points,
         long? startNodeId,
@@ -76,5 +92,6 @@ internal class PathWithMetadata
         StructureType = structureType;
         Layer = layer;
         BridgeStructureType = bridgeStructureType;
+        AllWayIds = new HashSet<long> { osmWayId };
     }
 }

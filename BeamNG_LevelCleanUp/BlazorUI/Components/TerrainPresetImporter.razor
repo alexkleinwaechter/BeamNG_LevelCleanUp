@@ -1,8 +1,11 @@
+@using System.Text.Json
+@using System.Text.Json.Serialization
 @using System.Text.RegularExpressions
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
 @using BeamNgTerrainPoc.Terrain.Models
+@using BeamNgTerrainPoc.Terrain.Models.DecalRoad
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 @using SplineInterpolationType = BeamNgTerrainPoc.Terrain.Models.SplineInterpolationType
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
@@ -764,6 +767,26 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.NativePixelSizeMeters = geoTiffMetadata["nativePixelSizeMeters"]!.GetValue<float>();
             }
 
+            // Import DecalRoad settings (v3.0+) — gracefully handle missing section
+            var decalRoadNode = appSettings["decalRoadSettings"];
+            if (decalRoadNode != null)
+            {
+                try
+                {
+                    var drJsonOptions = new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+                    };
+                    result.DecalRoadSettings = decalRoadNode.Deserialize<DecalRoadSettings>(drJsonOptions);
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Could not parse DecalRoad settings from preset: {ex.Message}");
+                }
+            }
+
             // Import per-material layer source settings including road smoothing
             var materialSettings = appSettings["materialSettings"]?.AsObject();
             if (materialSettings != null)
@@ -971,9 +994,6 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 settings.BlendFunctionType = roadSmoothing["blendFunctionType"]!.GetValue<string>();
             if (roadSmoothing["crossSectionIntervalMeters"] != null)
                 settings.CrossSectionIntervalMeters = roadSmoothing["crossSectionIntervalMeters"]!.GetValue<float>();
-            if (roadSmoothing["enableTerrainBlending"] != null)
-                settings.EnableTerrainBlending = roadSmoothing["enableTerrainBlending"]!.GetValue<bool>();
-
             // Spline parameters
             var splineParams = roadSmoothing["splineParameters"];
             if (splineParams != null)
@@ -981,14 +1001,6 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 settings.SplineParameters = new SplineParametersSettings();
                 if (splineParams["splineInterpolationType"] != null)
                     settings.SplineParameters.SplineInterpolationType = splineParams["splineInterpolationType"]!.GetValue<string>();
-                if (splineParams["tension"] != null)
-                    settings.SplineParameters.Tension = splineParams["tension"]!.GetValue<float>();
-                if (splineParams["continuity"] != null)
-                    settings.SplineParameters.Continuity = splineParams["continuity"]!.GetValue<float>();
-                if (splineParams["bias"] != null)
-                    settings.SplineParameters.Bias = splineParams["bias"]!.GetValue<float>();
-                if (splineParams["useGraphOrdering"] != null)
-                    settings.SplineParameters.UseGraphOrdering = splineParams["useGraphOrdering"]!.GetValue<bool>();
                 if (splineParams["preferStraightThroughJunctions"] != null)
                     settings.SplineParameters.PreferStraightThroughJunctions = splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
                 if (splineParams["densifyMaxSpacingPixels"] != null)
@@ -1001,8 +1013,6 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.SplineParameters.MinPathLengthPixels = splineParams["minPathLengthPixels"]!.GetValue<float>();
                 if (splineParams["junctionAngleThreshold"] != null)
                     settings.SplineParameters.JunctionAngleThreshold = splineParams["junctionAngleThreshold"]!.GetValue<float>();
-                if (splineParams["orderingNeighborRadiusPixels"] != null)
-                    settings.SplineParameters.OrderingNeighborRadiusPixels = splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
                 if (splineParams["skeletonDilationRadius"] != null)
                     settings.SplineParameters.SkeletonDilationRadius = splineParams["skeletonDilationRadius"]!.GetValue<int>();
                 if (splineParams["smoothingWindowSize"] != null)
@@ -1080,19 +1090,17 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.JunctionHarmonization.JunctionBlendDistanceMeters = junctionHarmonization["junctionBlendDistanceMeters"]!.GetValue<float>();
                 if (junctionHarmonization["blendFunctionType"] != null)
                     settings.JunctionHarmonization.BlendFunctionType = junctionHarmonization["blendFunctionType"]!.GetValue<string>();
-                // IDW filtering
-                if (junctionHarmonization["enableJunctionIdwFiltering"] != null)
-                    settings.JunctionHarmonization.EnableJunctionIdwFiltering = junctionHarmonization["enableJunctionIdwFiltering"]!.GetValue<bool>();
-                if (junctionHarmonization["minTerminatingIdwWeight"] != null)
-                    settings.JunctionHarmonization.MinTerminatingIdwWeight = junctionHarmonization["minTerminatingIdwWeight"]!.GetValue<float>();
-                if (junctionHarmonization["idwFilterTaperDistanceMeters"] != null)
-                    settings.JunctionHarmonization.IdwFilterTaperDistanceMeters = junctionHarmonization["idwFilterTaperDistanceMeters"]!.GetValue<float?>();
                 if (junctionHarmonization["enableEndpointTaper"] != null)
                     settings.JunctionHarmonization.EnableEndpointTaper = junctionHarmonization["enableEndpointTaper"]!.GetValue<bool>();
                 if (junctionHarmonization["endpointTaperDistanceMeters"] != null)
                     settings.JunctionHarmonization.EndpointTaperDistanceMeters = junctionHarmonization["endpointTaperDistanceMeters"]!.GetValue<float>();
                 if (junctionHarmonization["endpointTerrainBlendStrength"] != null)
                     settings.JunctionHarmonization.EndpointTerrainBlendStrength = junctionHarmonization["endpointTerrainBlendStrength"]!.GetValue<float>();
+                // No-blend tuning (Side-Road Transitions)
+                if (junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"] != null)
+                    settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier = junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"]!.GetValue<float>();
+                if (junctionHarmonization["connectorGradeRampLengthMeters"] != null)
+                    settings.JunctionHarmonization.ConnectorGradeRampLengthMeters = junctionHarmonization["connectorGradeRampLengthMeters"]!.GetValue<float>();
                 // Roundabout settings
                 if (junctionHarmonization["enableRoundaboutDetection"] != null)
                     settings.JunctionHarmonization.EnableRoundaboutDetection = junctionHarmonization["enableRoundaboutDetection"]!.GetValue<bool>();
@@ -1104,8 +1112,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters = junctionHarmonization["roundaboutOverlapToleranceMeters"]!.GetValue<float>();
                 if (junctionHarmonization["forceUniformRoundaboutElevation"] != null)
                     settings.JunctionHarmonization.ForceUniformRoundaboutElevation = junctionHarmonization["forceUniformRoundaboutElevation"]!.GetValue<bool>();
-                if (junctionHarmonization["roundaboutBlendDistanceMeters"] != null)
-                    settings.JunctionHarmonization.RoundaboutBlendDistanceMeters = junctionHarmonization["roundaboutBlendDistanceMeters"]!.GetValue<float?>();
+                if (junctionHarmonization["enableTiltedRoundaboutPlane"] != null)
+                    settings.JunctionHarmonization.EnableTiltedRoundaboutPlane = junctionHarmonization["enableTiltedRoundaboutPlane"]!.GetValue<bool>();
+                if (junctionHarmonization["roundaboutMaxPlaneTiltDegrees"] != null)
+                    settings.JunctionHarmonization.RoundaboutMaxPlaneTiltDegrees = junctionHarmonization["roundaboutMaxPlaneTiltDegrees"]!.GetValue<float>();
             }
 
             return settings;
@@ -1145,24 +1155,17 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             if (Enum.TryParse<BlendFunctionType>(settings.BlendFunctionType, out var blendType))
                 material.BlendFunctionType = blendType;
             material.CrossSectionIntervalMeters = settings.CrossSectionIntervalMeters;
-            material.EnableTerrainBlending = settings.EnableTerrainBlending;
-
             // Spline parameters
             if (settings.SplineParameters != null)
             {
                 if (Enum.TryParse<SplineInterpolationType>(settings.SplineParameters.SplineInterpolationType, out var interpType))
                     material.SplineInterpolationType = interpType;
-                material.SplineTension = settings.SplineParameters.Tension;
-                material.SplineContinuity = settings.SplineParameters.Continuity;
-                material.SplineBias = settings.SplineParameters.Bias;
-                material.UseGraphOrdering = settings.SplineParameters.UseGraphOrdering;
                 material.PreferStraightThroughJunctions = settings.SplineParameters.PreferStraightThroughJunctions;
                 material.DensifyMaxSpacingPixels = settings.SplineParameters.DensifyMaxSpacingPixels;
                 material.SimplifyTolerancePixels = settings.SplineParameters.SimplifyTolerancePixels;
                 material.BridgeEndpointMaxDistancePixels = settings.SplineParameters.BridgeEndpointMaxDistancePixels;
                 material.MinPathLengthPixels = settings.SplineParameters.MinPathLengthPixels;
                 material.JunctionAngleThreshold = settings.SplineParameters.JunctionAngleThreshold;
-                material.OrderingNeighborRadiusPixels = settings.SplineParameters.OrderingNeighborRadiusPixels;
                 material.SkeletonDilationRadius = settings.SplineParameters.SkeletonDilationRadius;
                 material.SplineSmoothingWindowSize = settings.SplineParameters.SmoothingWindowSize;
                 material.SplineUseButterworthFilter = settings.SplineParameters.UseButterworthFilter;
@@ -1211,17 +1214,17 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
                 // Endpoint tapering is auto-computed from road width - old preset values silently ignored
-                // IDW filtering
-                material.EnableJunctionIdwFiltering = settings.JunctionHarmonization.EnableJunctionIdwFiltering;
-                material.MinTerminatingIdwWeight = settings.JunctionHarmonization.MinTerminatingIdwWeight;
-                material.IdwFilterTaperDistanceMeters = settings.JunctionHarmonization.IdwFilterTaperDistanceMeters;
+                // No-blend tuning (Side-Road Transitions)
+                material.BankingRunoffSurfaceWidthMultiplier = settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier;
+                material.ConnectorGradeRampLengthMeters = settings.JunctionHarmonization.ConnectorGradeRampLengthMeters;
                 // Roundabout settings
                 material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
                 material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;
                 material.RoundaboutConnectionRadiusMeters = settings.JunctionHarmonization.RoundaboutConnectionRadiusMeters;
                 material.RoundaboutOverlapToleranceMeters = settings.JunctionHarmonization.RoundaboutOverlapToleranceMeters;
                 material.ForceUniformRoundaboutElevation = settings.JunctionHarmonization.ForceUniformRoundaboutElevation;
-                material.RoundaboutBlendDistanceMeters = settings.JunctionHarmonization.RoundaboutBlendDistanceMeters;
+                material.EnableTiltedRoundaboutPlane = settings.JunctionHarmonization.EnableTiltedRoundaboutPlane;
+                material.RoundaboutMaxPlaneTiltDegrees = settings.JunctionHarmonization.RoundaboutMaxPlaneTiltDegrees;
             }
         }
     }

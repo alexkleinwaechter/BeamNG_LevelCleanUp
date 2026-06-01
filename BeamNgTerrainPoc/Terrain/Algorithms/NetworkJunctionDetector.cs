@@ -35,7 +35,8 @@ public class NetworkJunctionDetector
     /// <param name="network">The unified road network containing all splines and cross-sections.</param>
     /// <returns>List of detected network junctions.</returns>
     public List<NetworkJunction> DetectJunctions(
-        UnifiedRoadNetwork network)
+        UnifiedRoadNetwork network,
+        float? detectionRadiusOverride = null)
     {
         TerrainLogger.SuppressDetailedLogging = true;
         var perfLog = TerrainCreationLogger.Current;
@@ -57,7 +58,7 @@ public class NetworkJunctionDetector
 
         // Step 3: Cluster endpoints into junctions
         // Detection radius is per-material (from JunctionHarmonizationParameters), default 5m
-        const float defaultDetectionRadius = 5.0f;
+        var defaultDetectionRadius = detectionRadiusOverride ?? 5.0f;
         var junctions = ClusterEndpointsIntoJunctions(endpoints, network, defaultDetectionRadius);
         perfLog?.Timing($"Clustered into {junctions.Count} potential junctions");
 
@@ -97,7 +98,8 @@ public class NetworkJunctionDetector
                                                     $"{junctionsByType.GetValueOrDefault(JunctionType.Complex)} Complex, " +
                                                     $"{junctionsByType.GetValueOrDefault(JunctionType.Endpoint)} Isolated, " +
                                                     $"{junctionsByType.GetValueOrDefault(JunctionType.MidSplineCrossing)} MidCrossing, " +
-                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.Roundabout)} Roundabout");
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.Roundabout)} Roundabout, " +
+                                                    $"{junctionsByType.GetValueOrDefault(JunctionType.Continuation)} Continuation");
 
         var crossMaterialCount = junctions.Count(j => j.IsCrossMaterial);
         if (crossMaterialCount > 0)
@@ -248,6 +250,47 @@ public class NetworkJunctionDetector
         var rank = new int[endpoints.Count];
         for (var i = 0; i < endpoints.Count; i++)
             parent[i] = i;
+
+        // ── Topology pre-union: group endpoints sharing the same OSM node ID ──
+        // This ensures shared OSM nodes form junctions regardless of detection radius.
+        // Endpoints without node IDs (PNG pipeline, cropped boundaries) are skipped
+        // and handled by the spatial fallback below.
+        var osmNodeToEndpointIndices = new Dictionary<long, List<int>>();
+        for (var i = 0; i < endpoints.Count; i++)
+        {
+            var ep = endpoints[i];
+            var spline = network.GetSplineById(ep.OwnerSplineId);
+            if (spline == null) continue;
+
+            long? nodeId = ep.IsSplineStart ? spline.StartOsmNodeId
+                         : ep.IsSplineEnd   ? spline.EndOsmNodeId
+                         : null;
+
+            if (nodeId == null) continue;
+
+            if (!osmNodeToEndpointIndices.TryGetValue(nodeId.Value, out var list))
+            {
+                list = [];
+                osmNodeToEndpointIndices[nodeId.Value] = list;
+            }
+            list.Add(i);
+        }
+
+        // Pre-union all endpoints sharing the same OSM node
+        var topologyUnionCount = 0;
+        foreach (var (_, indices) in osmNodeToEndpointIndices)
+        {
+            if (indices.Count < 2) continue;
+            var first = indices[0];
+            for (var k = 1; k < indices.Count; k++)
+            {
+                Union(parent, rank, first, indices[k]);
+                topologyUnionCount++;
+            }
+        }
+
+        if (topologyUnionCount > 0)
+            TerrainLogger.Info($"  Topology pre-union: {topologyUnionCount} endpoint pair(s) connected via shared OSM node IDs ({osmNodeToEndpointIndices.Count} unique nodes)");
 
         // For each endpoint, query nearby cells and union with neighbors within detection radius
         for (var i = 0; i < endpoints.Count; i++)
@@ -481,12 +524,22 @@ public class NetworkJunctionDetector
                 .Count();
 
             if (uniqueSplineIds == 1 && junction.Contributors.Count == 1)
+            {
                 // Single endpoint, no connection to other roads
                 junction.Type = JunctionType.Endpoint;
+            }
             else if (junction.Contributors.Any(c => c.IsContinuous))
+            {
                 // At least one contributor passes through (not an endpoint) = T-junction
                 junction.Type = JunctionType.TJunction;
+            }
+            else if (uniqueSplineIds == 2 && IsDegree2Continuation(junction))
+            {
+                // Two splines meet at near-straight angle with similar width = OSM way boundary
+                junction.Type = JunctionType.Continuation;
+            }
             else
+            {
                 // All contributors are endpoints
                 junction.Type = uniqueSplineIds switch
                 {
@@ -494,7 +547,55 @@ public class NetworkJunctionDetector
                     3 or 4 => JunctionType.CrossRoads,
                     _ => JunctionType.Complex
                 };
+            }
         }
+    }
+
+    /// <summary>
+    ///     Checks if a degree-2 junction is a simple continuation (OSM way boundary)
+    ///     rather than a real Y-junction. Uses the same heuristics as
+    ///     NetworkElevationGraph.FindBestContinuation: deflection angle &lt; 30°
+    ///     and width ratio within 2:1.
+    /// </summary>
+    private static bool IsDegree2Continuation(NetworkJunction junction)
+    {
+        var endpoints = junction.Contributors.Where(c => c.IsEndpoint).ToList();
+        if (endpoints.Count != 2) return false;
+
+        var a = endpoints[0];
+        var b = endpoints[1];
+
+        // Width ratio check (same as NetworkElevationGraph.IsCompatibleForChaining)
+        var widthA = a.Spline.WidthProfile
+                ?.GetWidthsAtDistance(a.CrossSection.DistanceAlongSpline).corridor
+            ?? a.Spline.Parameters.RoadWidthMeters;
+        var widthB = b.Spline.WidthProfile
+                ?.GetWidthsAtDistance(b.CrossSection.DistanceAlongSpline).corridor
+            ?? b.Spline.Parameters.RoadWidthMeters;
+
+        if (widthA > 0 && widthB > 0)
+        {
+            var ratio = widthA > widthB ? widthA / widthB : widthB / widthA;
+            if (ratio > 2.0f) return false;
+        }
+
+        // Deflection angle check: the two splines should point in roughly the same direction.
+        // Get tangent directions pointing AWAY from the junction for each spline.
+        var tangentA = a.IsSplineStart
+            ? -a.CrossSection.TangentDirection   // start endpoint: tangent points into spline, negate for "away"
+            : a.CrossSection.TangentDirection;    // end endpoint: tangent points away from spline
+        var tangentB = b.IsSplineStart
+            ? -b.CrossSection.TangentDirection
+            : b.CrossSection.TangentDirection;
+
+        // For a continuation, the two "away" tangents should point in OPPOSITE directions
+        // (one road goes left, the other goes right from the junction).
+        // So we check the angle between tangentA and -tangentB (should be < 30°).
+        var dot = Vector2.Dot(tangentA, -tangentB);
+        dot = Math.Clamp(dot, -1f, 1f);
+        var deflectionDegrees = MathF.Acos(dot) * 180f / MathF.PI;
+
+        return deflectionDegrees < 30f;
     }
 
     /// <summary>

@@ -91,7 +91,7 @@ public class PostProcessingSmoother
                 s.Parameters.SmoothingKernelSize,
                 s.Parameters.SmoothingSigma,
                 s.Parameters.SmoothingIterations,
-                s.Parameters.RoadWidthMeters,
+                s.WidthProfile?.Segments.Max(seg => seg.SmoothingCorridorWidth) ?? s.Parameters.RoadWidthMeters,
                 s.Parameters.SmoothingMaskExtensionMeters))
             .ToList();
         
@@ -505,8 +505,8 @@ public class PostProcessingSmoother
     /// Only smooths pixels within the mask.
     /// 
     /// Uses a separable two-pass approach (horizontal then vertical) which reduces
-    /// the per-pixel work from O(K²) to O(2K). For kernel size 7 this is 3.5× fewer
-    /// operations; for kernel size 15 it is 7.5× fewer.
+    /// the per-pixel work from O(Kï¿½) to O(2K). For kernel size 7 this is 3.5ï¿½ fewer
+    /// operations; for kernel size 15 it is 7.5ï¿½ fewer.
     /// </summary>
     private static void ApplyGaussianSmoothing(float[,] heightMap, bool[,] mask, int kernelSize, float sigma)
     {

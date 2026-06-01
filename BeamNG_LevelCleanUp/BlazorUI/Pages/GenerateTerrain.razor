@@ -16,6 +16,7 @@
 @inject IDialogService DialogService
 @inject NavigationManager Navigation
 
+<CascadingValue Value="@EffectiveBoundingBox" Name="EffectiveBoundingBox">
 <ErrorBoundary>
     <ChildContent>
         <div class="content @(WizardMode ? "wizard-content" : "")">
@@ -123,6 +124,7 @@
                                        GeoTiffOriginalHeight="@_geoTiffOriginalHeight"
                                        GeoTiffProjectionName="@_geoTiffProjectionName"
                                        NativePixelSizeMeters="@GetNativePixelSizeAverage()"
+                                       DecalRoadSettings="@_state.DecalRoadSettings"
                                        OnRequestMaterialReorder="HandleMaterialReorderRequest"
                                        Class="mt-4" />
 
@@ -400,6 +402,30 @@
                                                     SelectedAnchorChanged="OnCropAnchorChanged"
                                                     OriginalBoundingBox="@_geoBoundingBox"
                                                     CropResultChanged="OnCropResultChanged" />
+                                @if (_cropResult is { NeedsCropping: true })
+                                {
+                                    <div class="d-flex align-center gap-2 mt-2">
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Warning"
+                                                   StartIcon="@Icons.Material.Filled.ContentCut"
+                                                   OnClick="ReduceGeoTiffToCropAsync"
+                                                   Disabled="@(_isGenerating || _isReducingGeoTiff)"
+                                                   Size="Size.Small">
+                                            @if (_isReducingGeoTiff)
+                                            {
+                                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                <span>Reducing...</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Reduce GeoTIFF to Selection</span>
+                                            }
+                                        </MudButton>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            Creates a smaller GeoTIFF from the selected region only. Re-import files to expand.
+                                        </MudText>
+                                    </div>
+                                }
                             </MudItem>
                         }
 
@@ -496,6 +522,20 @@
                             </div>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
                                 Don't modify terrain over tunnels
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_disableSplineMerging"
+                                             Label="Disable Spline Merging"
+                                             Color="Color.Warning" />
+                                <MudTooltip Text="Testing only: disables merging of OSM ways into longer splines. Each OSM way becomes a separate spline. Useful for debugging incorrect merge results at complex junctions.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Keep each OSM way as separate spline
                             </MudText>
                         </MudItem>
 
@@ -644,6 +684,83 @@
                 </MudPaper>
             }
 
+            @* DecalRoad Generation Section *@
+            @if (_canFetchOsmData)
+            {
+                <MudPaper Class="pa-4 mt-4" Elevation="1">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1" />
+                        Road Width, Lanes &amp; DecalRoad Definition
+                    </MudText>
+                    <MudCheckBox @bind-Value="_enableDecalRoads"
+                                 Label="Enable DecalRoad and AI-Road generation"
+                                 Color="Color.Primary" />
+                    @if (_enableDecalRoads)
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
+                            Defines road lane counts, widths, visual detail layers (edge lines, lane markings, edge blends)
+                            and AI road paths. Settings here apply globally via layer set defaults. Per-material overrides available below.
+                        </MudText>
+                        <MudGrid Spacing="2" Class="mb-3">
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadNodeSpacing()"
+                                                 ValueChanged="SetDecalRoadNodeSpacing"
+                                                 Label="Node Spacing (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="0.5f" Max="15.0f" Step="0.5f"
+                                                 HelperText="Distance between DecalRoad nodes" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadJunctionMargin()"
+                                                 ValueChanged="SetDecalRoadJunctionMargin"
+                                                 Label="Junction Margin (m)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="-5.0f" Max="20.0f" Step="0.5f"
+                                                 HelperText="Extra corridor margin at junctions" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="int"
+                                                 Value="@GetDecalRoadRandomSeed()"
+                                                 ValueChanged="SetDecalRoadRandomSeed"
+                                                 Label="Random Seed"
+                                                 Variant="Variant.Outlined"
+                                                 Step="1"
+                                                 HelperText="Seed for randomizer constraint" />
+                            </MudItem>
+                        </MudGrid>
+                        <div class="d-flex gap-2 align-center">
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Settings"
+                                       OnClick="OpenDefaultLayerSetsDialog">
+                                Edit Default Layer Sets
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Disabled="@(!CanRegenerateDecalRoads() || _isGenerating)"
+                                       OnClick="RegenerateDecalRoads">
+                                Re-generate DecalRoads
+                            </MudButton>
+                        </div>
+                        @if (!CanRegenerateDecalRoads())
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-1">
+                                Generate terrain first to enable re-generation.
+                            </MudText>
+                        }
+                        else if (_state.CachedNetwork == null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-1">
+                                Will load road network from saved snapshot.
+                            </MudText>
+                        }
+                    }
+                </MudPaper>
+            }
+
             @if (_terrainMaterials.Any())
             {
                 <!-- Materials Section with Drag-Drop -->
@@ -689,7 +806,8 @@
                                         <TerrainMaterialSettings Material="@context"
                                                                  OnMaterialChanged="OnMaterialSettingsChanged"
                                                                  GeoBoundingBox="@EffectiveBoundingBox"
-                                                                 TerrainSize="@_terrainSize" />
+                                                                 TerrainSize="@_terrainSize"
+                                                                 DecalRoadSettings="@(_enableDecalRoads ? _state.DecalRoadSettings : null)" />
                                     </div>
                                     <MudMenu Icon="@Icons.Material.Filled.MoreVert"
                                              Size="Size.Small"
@@ -799,9 +917,10 @@
                 <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
                     @{
                         var list = (_showErrorLog ? _errors : _showWarningLog ? _warnings : _messages).ToList();
+                        var index = 0;
                         @foreach (var item in list)
                         {
-                            <MudListItem T="string" @key="@item.GetHashCode()" Style="border-bottom:1px solid grey">
+                            <MudListItem T="string" @key="@($"{(_showErrorLog ? "e" : _showWarningLog ? "w" : "m")}_{index++}")" Style="border-bottom:1px solid grey">
                                 <MudText Typo="Typo.h6">@item</MudText>
                             </MudListItem>
                         }
@@ -871,6 +990,7 @@
         <CustomErrorContent />
     </ErrorContent>
 </ErrorBoundary>
+</CascadingValue>
 
 @code {
     // State variables

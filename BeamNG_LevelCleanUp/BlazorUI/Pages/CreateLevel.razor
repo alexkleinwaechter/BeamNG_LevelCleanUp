@@ -70,21 +70,6 @@
                 </MudExpansionPanels>
 
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
-                    <MudSelect T="int"
-                              @bind-Value="_wizardState.TerrainSize"
-                              Label="Terrain Size"
-                              HelperText="Size of the terrain in meters (power of 2)"
-                              Variant="Variant.Outlined"
-                              Class="mb-4">
-                        <MudSelectItem Value="256">256 x 256</MudSelectItem>
-                        <MudSelectItem Value="512">512 x 512</MudSelectItem>
-                        <MudSelectItem Value="1024">1024 x 1024</MudSelectItem>
-                        <MudSelectItem Value="2048">2048 x 2048 (Default)</MudSelectItem>
-                        <MudSelectItem Value="4096">4096 x 4096</MudSelectItem>
-                        <MudSelectItem Value="8192">8192 x 8192</MudSelectItem>
-                        <MudSelectItem Value="16384">16384 x 16384</MudSelectItem>
-                    </MudSelect>
-
                     <MudButton OnClick="@InitializeNewLevel"
                               Color="Color.Primary"
                               Variant="Variant.Filled"

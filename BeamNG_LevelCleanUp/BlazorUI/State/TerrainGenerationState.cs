@@ -1,5 +1,7 @@
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings;
 
@@ -59,6 +61,42 @@ public class TerrainGenerationState
     /// </summary>
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
+    /// <summary>
+    ///     When true, disables spline merging (each OSM way becomes a separate spline).
+    ///     For testing only — merging is needed for smooth road continuity.
+    /// </summary>
+    public bool DisableSplineMerging { get; set; } = false;
+
+    // ========================================
+    // DECALROAD SETTINGS
+    // ========================================
+
+    /// <summary>
+    ///     Enable DecalRoad generation during terrain creation.
+    /// </summary>
+    public bool EnableDecalRoads { get; set; } = true;
+
+    /// <summary>
+    ///     DecalRoad generation settings (node spacing, junction margin, layer sets).
+    ///     Populated from preset or defaults.
+    /// </summary>
+    public DecalRoadSettings? DecalRoadSettings { get; set; }
+
+    /// <summary>
+    ///     Cached UnifiedRoadNetwork from last terrain generation.
+    ///     Used for standalone DecalRoad re-generation.
+    ///     Lost when navigating away from page.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public UnifiedRoadNetwork? CachedNetwork { get; set; }
+
+    /// <summary>
+    ///     Cached heightmap from last terrain generation.
+    ///     Used for standalone DecalRoad re-generation.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public float[,]? CachedHeightMap { get; set; }
+
     // ========================================
     // BUILDING GENERATION
     // ========================================
@@ -116,6 +154,12 @@ public class TerrainGenerationState
     public string[]? XyzFilePaths { get; set; }
     public int XyzEpsgCode { get; set; } = 25832;
     public int? XyzDetectedEpsg { get; set; }
+
+    /// <summary>
+    ///     Per-tile bounding boxes for filtering tiles before combine operations.
+    ///     Populated during GeoTIFF/XYZ metadata import.
+    /// </summary>
+    public List<TileBoundsInfo>? TileBoundsInfo { get; set; }
 
     // ========================================
     // GEOTIFF METADATA
@@ -282,6 +326,7 @@ public class TerrainGenerationState
         GeoTiffOriginalHeight = 0;
         GeoTiffMinElevation = null;
         GeoTiffMaxElevation = null;
+        TileBoundsInfo = null;
 
         CleanupCachedCombinedGeoTiff();
     }
@@ -337,6 +382,10 @@ public class TerrainGenerationState
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
         FlipMaterialProcessingOrder = false;
+        EnableDecalRoads = true;
+        DecalRoadSettings = null;
+        CachedNetwork = null;
+        CachedHeightMap = null;
         EnableBuildings = false;
         EnableBuildingClustering = false;
         BuildingClusterCellSize = 128f;

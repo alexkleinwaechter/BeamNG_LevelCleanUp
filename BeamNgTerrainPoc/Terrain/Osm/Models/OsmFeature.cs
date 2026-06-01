@@ -183,10 +183,15 @@ public class OsmFeature
     /// Roundabout segments need special handling as they are often split into
     /// multiple ways at connecting road intersections.
     /// </summary>
-    public bool IsRoundabout => 
-        Tags.TryGetValue("junction", out var junction) && 
+    public bool IsRoundabout =>
+        Tags.TryGetValue("junction", out var junction) &&
         junction.Equals("roundabout", StringComparison.OrdinalIgnoreCase);
-    
+
+    /// <summary>
+    /// Lane count parsed from OSM "lanes" tag. Returns null if tag is missing or unparseable.
+    /// </summary>
+    public int? Lanes => Tags.TryGetValue("lanes", out var val) && int.TryParse(val, out var n) ? n : null;
+
     // ========================================
     // STRUCTURE METADATA (Bridge/Tunnel)
     // ========================================

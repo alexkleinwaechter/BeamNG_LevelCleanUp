@@ -39,7 +39,36 @@
       "Bash(find /d/Source_Heroes/beamng_mapping_pro/BeamNgTerrainPoc -name \"*.cs\" -type f ! -path \"*/obj/*\" -exec grep -l \"JunctionBankingAdapter\\\\|AdaptElevationsToHigherPriorityBanking\" {} ;)",
       "Bash(xargs grep -l \"ApplyJunctionAwareBankingAdjustments\\\\|FinalizeBankingAfterHarmonization\")",
       "Bash(xargs grep -l \"CubicHermiteC1\\\\|rubberband\\\\|Rubberband\")",
-      "Bash(xargs grep -l \"JunctionSurfaceCalculator\\\\|ApplyEdgeConstraints\")"
+      "Bash(xargs grep -l \"JunctionSurfaceCalculator\\\\|ApplyEdgeConstraints\")",
+      "Read(//tmp/**)",
+      "Bash(while read:*)",
+      "Bash(do find:*)",
+      "Bash(done)",
+      "Bash(dotnet publish:*)",
+      "Read(//c/Users/aklei/AppData/Local/Temp/claude/d--Source-beamng-mapping-pro/40da9f76-7d5b-4c5a-9bf2-e66889237d70/tasks/**)",
+      "Bash(dumpbin /imports d:Sourcebeamng_mapping_proBeamNG_LevelCleanUpbinReleasenet9.0-windows10.0.17763.0win-x64publishgdal.dll)",
+      "Bash(where dumpbin:*)",
+      "Read(//c/Program Files/Microsoft Visual Studio/**)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio/**)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Enterprise/SDK/ScopeCppSDK/vc15/VC/bin/dumpbin.exe\" /imports \"d:\\\\Source\\\\beamng_mapping_pro\\\\BeamNG_LevelCleanUp\\\\bin\\\\Release\\\\net9.0-windows10.0.17763.0\\\\win-x64\\\\publish\\\\gdal.dll\")",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Enterprise/SDK/ScopeCppSDK/vc15/VC/bin/dumpbin.exe\" //imports \"D:\\\\Source\\\\beamng_mapping_pro\\\\BeamNG_LevelCleanUp\\\\bin\\\\Release\\\\net9.0-windows10.0.17763.0\\\\win-x64\\\\publish\\\\gdal.dll\")",
+      "Read(//c/Windows/System32/**)",
+      "Read(//c/Windows/**)",
+      "Bash(dotnet package:*)",
+      "Bash(nuget list:*)",
+      "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.4/skills/subagent-driven-development/**)",
+      "Bash(gh pr:*)",
+      "Read(//c/Users/aklei/.claude/projects/d--Source-beamng-mapping-pro/a69591c1-9e16-4978-b6ec-71e641b5dc5a/tool-results/**)",
+      "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.4/skills/writing-plans/**)",
+      "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/subagent-driven-development/**)",
+      "Bash(cd /d \"D:\\\\Source\\\\beamng_mapping_pro\")",
+      "Read(//c/Users/aklei/.claude/plans/**)",
+      "Bash(wc -l /d/Source/beamng_mapping_pro/BeamNgTerrainPoc.Tests/DecalRoad/*.cs)"
+    ],
+    "additionalDirectories": [
+      "\\tmp",
+      "D:\\Source\\beamng_mapping_pro\\BeamNgTerrainPoc.Tests",
+      "c:\\Users\\aklei\\.claude\\plans"
     ]
   }
 }

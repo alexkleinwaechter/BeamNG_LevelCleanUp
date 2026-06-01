@@ -81,4 +81,17 @@ public record JunctionEndpointConstraint
     ///     between junction and terrain-following profile requires a gentler ramp.
     /// </summary>
     public float BlendDistanceMeters { get; init; } = 30f;
+
+    /// <summary>
+    ///     Whether this constraint was propagated from a neighboring short spline
+    ///     rather than computed directly at this spline's own junction.
+    ///     Propagated constraints have lower priority than direct constraints.
+    /// </summary>
+    public bool IsPropagated { get; init; }
+
+    /// <summary>
+    ///     SplineId of the short segment this constraint was propagated through.
+    ///     Only set when IsPropagated is true. Used for diagnostics/logging.
+    /// </summary>
+    public int? PropagatedThroughSplineId { get; init; }
 }

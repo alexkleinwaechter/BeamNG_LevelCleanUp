@@ -76,6 +76,11 @@ public class CopyAsset
     public int CalculatedRoughnessValue { get; set; } = -1;
 
     /// <summary>
+    ///     Blend factor for overlay imagery in BaseColor Mode, 0 keeps the material color and 1 uses the overlay fully.
+    /// </summary>
+    public double BaseColorOverlayBlend { get; set; }
+
+    /// <summary>
     ///     Returns true if a calculated roughness value was successfully extracted from the source terrain.
     /// </summary>
     [JsonIgnore]

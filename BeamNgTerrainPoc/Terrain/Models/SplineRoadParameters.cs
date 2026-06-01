@@ -34,13 +34,6 @@ public class SplineRoadParameters
     // ========================================
 
     /// <summary>
-    ///     Use graph-based ordering instead of greedy nearest neighbor for skeleton paths.
-    ///     Graph-based is more robust for complex skeletons.
-    ///     Default: true
-    /// </summary>
-    public bool UseGraphOrdering { get; set; } = true;
-
-    /// <summary>
     ///     Maximum spacing (pixels) after densification. Larger gaps will be filled with intermediate points.
     ///     Higher values = fewer control points = less sensitivity to skeleton noise = fewer spikes.
     ///     Lower values = more control points = follows skeleton more closely = may amplify noise.
@@ -49,17 +42,11 @@ public class SplineRoadParameters
     public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
 
     /// <summary>
-    ///     Maximum neighbor link distance (pixels) when building adjacency graph.
-    ///     Default: 2.5
-    /// </summary>
-    public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
-
-    /// <summary>
     ///     Maximum distance (pixels) to bridge gaps between skeleton endpoints.
     ///     Helps connect nearly-touching road segments.
     ///     Default: 30.0
     /// </summary>
-    public float BridgeEndpointMaxDistancePixels { get; set; } = 30.0f;
+    public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
 
     /// <summary>
     ///     Tolerance for path simplification (in pixels). Lower values preserve more detail.
@@ -86,7 +73,7 @@ public class SplineRoadParameters
     ///     Only used when PreferStraightThroughJunctions is true.
     ///     Default: 45.0
     /// </summary>
-    public float JunctionAngleThreshold { get; set; } = 45.0f;
+    public float JunctionAngleThreshold { get; set; } = 90.0f;
 
     /// <summary>
     ///     Minimum path length (in pixels) to keep. Shorter paths are filtered out.
@@ -111,37 +98,6 @@ public class SplineRoadParameters
     public int SkeletonDilationRadius { get; set; } = 1;
 
     // ========================================
-    // SPLINE CURVE FITTING
-    // ========================================
-
-    /// <summary>
-    ///     Spline tension parameter (0-1). Controls how tightly spline follows control points.
-    ///     0 = very loose, smooth (may deviate from path)
-    ///     0.5 = balanced
-    ///     1 = very tight (follows path closely but may be less smooth)
-    ///     Default: 0.3
-    /// </summary>
-    public float SplineTension { get; set; } = 0.3f;
-
-    /// <summary>
-    ///     Spline continuity parameter (-1 to 1). Controls corner sharpness.
-    ///     -1 = sharp corners
-    ///     0 = balanced
-    ///     1 = very smooth corners
-    ///     Default: 0.5
-    /// </summary>
-    public float SplineContinuity { get; set; } = 0.5f;
-
-    /// <summary>
-    ///     Spline bias parameter (-1 to 1). Controls curve direction bias.
-    ///     -1 = bias toward previous point
-    ///     0 = neutral (symmetric)
-    ///     1 = bias toward next point
-    ///     Default: 0.0
-    /// </summary>
-    public float SplineBias { get; set; } = 0.0f;
-
-    // ========================================
     // ELEVATION SMOOTHING
     // ========================================
 
@@ -151,7 +107,7 @@ public class SplineRoadParameters
     ///     Recommend: 101-301 for highway quality, 51-101 for local roads.
     ///     Default: 101
     /// </summary>
-    public int SmoothingWindowSize { get; set; } = 101;
+    public int SmoothingWindowSize { get; set; } = 301;
 
     /// <summary>
     ///     Use Butterworth low-pass filter instead of Gaussian for elevation smoothing.
@@ -169,7 +125,7 @@ public class SplineRoadParameters
     ///     5-6 = maximum flatness (may introduce slight ringing)
     ///     Default: 3
     /// </summary>
-    public int ButterworthFilterOrder { get; set; } = 3;
+    public int ButterworthFilterOrder { get; set; } = 4;
 
     /// <summary>
     ///     Strength of global road network leveling (0-1).
@@ -225,9 +181,6 @@ public class SplineRoadParameters
         if (DensifyMaxSpacingPixels <= 0)
             errors.Add("DensifyMaxSpacingPixels must be greater than 0");
 
-        if (OrderingNeighborRadiusPixels < 1f)
-            errors.Add("OrderingNeighborRadiusPixels must be at least 1");
-
         if (BridgeEndpointMaxDistancePixels < 0)
             errors.Add("BridgeEndpointMaxDistancePixels must be >= 0");
 
@@ -239,15 +192,6 @@ public class SplineRoadParameters
 
         if (SimplifyTolerancePixels < 0)
             errors.Add("SimplifyTolerancePixels must be >= 0");
-
-        if (SplineTension < 0 || SplineTension > 1)
-            errors.Add("SplineTension must be between 0 and 1");
-
-        if (SplineContinuity < -1 || SplineContinuity > 1)
-            errors.Add("SplineContinuity must be between -1 and 1");
-
-        if (SplineBias < -1 || SplineBias > 1)
-            errors.Add("SplineBias must be between -1 and 1");
 
         if (SmoothingWindowSize < 1)
             errors.Add("SmoothingWindowSize must be at least 1");

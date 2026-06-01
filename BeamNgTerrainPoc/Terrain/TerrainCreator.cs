@@ -8,6 +8,7 @@ using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Processing;
 using BeamNgTerrainPoc.Terrain.Services;
+using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Validation;
 using Grille.BeamNG;
 using SixLabors.ImageSharp;
@@ -165,6 +166,63 @@ public class TerrainCreator
                 return false;
             }
 
+            // 2b. Validate elevation parameters before processing (GeoTIFF/XYZ only)
+            // For PNG sources, MaxHeight is user-set and 0 just means flat terrain — that's valid.
+            if (isGeoTiffSource && parameters.MaxHeight <= 0)
+            {
+                perfLog.Error(
+                    $"CRITICAL: MaxHeight is {parameters.MaxHeight}m — GeoTIFF elevation data is invalid. " +
+                    "Tiles may be corrupted, missing, or the crop region has no valid elevation data. " +
+                    "Aborting terrain generation.");
+                return false;
+            }
+
+            // 2c. Validate heightmap image data for corruption (GeoTIFF/XYZ only)
+            if (isGeoTiffSource)
+            {
+                var imgWidth = heightmapImage.Width;
+                var imgHeight = heightmapImage.Height;
+                var totalPixels = imgWidth * imgHeight;
+                var zeroPixels = 0;
+                var maxPixelValue = (ushort)0;
+
+                heightmapImage.ProcessPixelRows(accessor =>
+                {
+                    for (var row = 0; row < imgHeight; row++)
+                    {
+                        var span = accessor.GetRowSpan(row);
+                        for (var col = 0; col < imgWidth; col++)
+                        {
+                            var val = span[col].PackedValue;
+                            if (val == 0) Interlocked.Increment(ref zeroPixels);
+                            if (val > maxPixelValue) maxPixelValue = val;
+                        }
+                    }
+                });
+
+                var zeroPct = (double)zeroPixels / totalPixels * 100;
+                if (maxPixelValue == 0)
+                {
+                    perfLog.Error(
+                        "CRITICAL: Heightmap image is completely black (all pixels = 0). " +
+                        "The GeoTIFF source has no valid elevation data in this region. " +
+                        "Tiles may be corrupted, missing, or the crop region falls outside tile coverage. " +
+                        "Aborting terrain generation.");
+                    return false;
+                }
+
+                if (zeroPct > 50)
+                {
+                    perfLog.Warning(
+                        $"WARNING: Heightmap has {zeroPct:F0}% zero-value pixels ({zeroPixels}/{totalPixels}). " +
+                        "Large areas of the terrain will be at minimum elevation. " +
+                        "This may indicate missing or corrupted GeoTIFF tiles in parts of the selection.");
+                }
+
+                perfLog.Info(
+                    $"Heightmap validation: {zeroPct:F1}% zero pixels, max pixel value: {maxPixelValue}/65535");
+            }
+
             // 3. Process heightmap
             perfLog.LogSection("Heightmap Processing");
             sw.Restart();
@@ -251,6 +309,72 @@ public class TerrainCreator
                 perfLog.Timing($"Spawn point extraction: {sw.ElapsedMilliseconds}ms");
             }
 
+            // 3c. Generate DecalRoads (requires unified network and heightmap)
+            perfLog.Info($"DecalRoad check: unifiedResult null={unifiedResult == null}, " +
+                         $"Network null={unifiedResult?.Network == null}, " +
+                         $"Splines={unifiedResult?.Network?.Splines?.Count ?? 0}, " +
+                         $"Settings null={parameters.DecalRoadSettings == null}, " +
+                         $"Enabled={parameters.DecalRoadSettings?.Enabled}");
+            if (unifiedResult?.Network != null &&
+                parameters.DecalRoadSettings is { Enabled: true })
+            {
+                perfLog.LogSection("DecalRoad Generation");
+                sw.Restart();
+
+                var appDataDefaults = parameters.DecalRoadAppDataDefaults
+                    ?? Services.DecalRoad.DecalRoadDefaultLayerSets.GetDefaults();
+
+                var decalRoads = Services.DecalRoad.DecalRoadGenerator.Generate(
+                    unifiedResult.Network,
+                    heightMap2D,
+                    parameters.MetersPerPixel,
+                    parameters.Size,
+                    parameters.TerrainBaseHeight,
+                    parameters.DecalRoadSettings,
+                    appDataDefaults);
+
+                perfLog.Info($"DecalRoadGenerator.Generate returned {decalRoads.Count} roads");
+                if (decalRoads.Count > 0)
+                {
+                    var levelDir = Path.GetDirectoryName(outputPath)!;
+
+                    // Clean previous DecalRoads to avoid duplicates on re-generation
+                    Services.DecalRoad.DecalRoadSceneWriter.CleanPrevious(levelDir);
+
+                    perfLog.Info($"Writing DecalRoads to: {levelDir}");
+                    var writer = new Services.DecalRoad.DecalRoadSceneWriter();
+                    var written = writer.WriteAll(decalRoads, levelDir);
+                    perfLog.Info($"Generated {written} DecalRoad objects");
+                }
+                else
+                {
+                    perfLog.Info("DecalRoadGenerator returned 0 roads — check layer set resolution and spline data");
+                }
+
+                perfLog.Timing($"DecalRoad generation: {sw.ElapsedMilliseconds}ms");
+            }
+
+            // Populate output properties for downstream use (re-generation)
+            parameters.OutputNetwork = unifiedResult?.Network;
+            parameters.OutputHeightMap = heightMap2D;
+
+            // Save DecalRoad network snapshot for standalone re-generation across sessions
+            if (unifiedResult?.Network != null)
+            {
+                try
+                {
+                    var levelDir = Path.GetDirectoryName(outputPath)!;
+                    DecalRoadNetworkSnapshotBuilder.SaveToLevel(
+                        unifiedResult.Network, levelDir);
+                    perfLog.Info($"Saved DecalRoad network snapshot to {levelDir}/MT_TerrainGeneration/decalroad_data/");
+                }
+                catch (Exception ex)
+                {
+                    perfLog.Warning($"Failed to save DecalRoad network snapshot: {ex.Message}");
+                    // Non-fatal — in-memory re-generation still works for current session
+                }
+            }
+
             // 4. Process material layers
             // IMPORTANT: If road smoothing was applied, the MaterialPainter has generated
             // correct layer maps using RoadSurfaceWidthMeters. We need to save these and
@@ -263,7 +387,7 @@ public class TerrainCreator
             if (unifiedResult?.MaterialLayers != null && unifiedResult.MaterialLayers.Count > 0)
             {
                 perfLog.Info($"Updating {unifiedResult.MaterialLayers.Count} road material layer maps from spline-based painting...");
-                await UpdateRoadMaterialLayersAsync(parameters.Materials, unifiedResult.MaterialLayers, debugBaseDir!, perfLog);
+                await UpdateRoadMaterialLayersAsync(parameters.Materials, unifiedResult.MaterialLayers, debugBaseDir!, perfLog, unifiedResult.Network);
             }
             
             var materialIndices = MaterialLayerProcessor.ProcessMaterialLayers(
@@ -284,7 +408,7 @@ public class TerrainCreator
             // 6. Fill terrain data with spike prevention
             perfLog.LogSection("Terrain Data Assembly");
             sw.Restart();
-            perfLog.Info("Filling terrain data...");
+            perfLog.Info($"Filling terrain data ({parameters.Size}x{parameters.Size} = {(long)parameters.Size * parameters.Size:N0} pixels)...");
             
             // PRE-SAVE SPIKE PREVENTION: Scan and fix height values before writing
             // Strategy differs by source:
@@ -303,6 +427,7 @@ public class TerrainCreator
             if (isGeoTiffSource)
             {
                 var maxThreshold = parameters.MaxHeight * 0.95f;
+                perfLog.Info("  Computing median height for spike detection...");
                 medianHeight = QuickSelect.FilteredMedian(
                     heightMap2D,
                     h => !float.IsNaN(h) && !float.IsInfinity(h) && h >= 0 && h < maxThreshold,
@@ -388,6 +513,7 @@ public class TerrainCreator
             }
             
             perfLog.Timing($"Fill terrain data array: {sw.ElapsedMilliseconds}ms");
+            perfLog.Info($"Terrain data filled: {sw.ElapsedMilliseconds}ms, {spikeFixCount} spike fixes");
             
             // Report pre-save fixes
             if (spikeFixCount > 0)
@@ -414,6 +540,7 @@ public class TerrainCreator
             // Save synchronously (the Save method is synchronous)
             await Task.Run(() => terrain.Save(outputPath, parameters.MaxHeight));
             perfLog.Timing($"terrain.Save: {sw.Elapsed.TotalSeconds:F2}s");
+            perfLog.Info($"Terrain file written: {sw.Elapsed.TotalSeconds:F2}s");
 
             // 7b. Validate terrain for spikes (informational only - spikes should already be fixed)
             perfLog.LogSection("Spike Validation");
@@ -531,13 +658,19 @@ public class TerrainCreator
             _unifiedRoadSmoother.ConfigureStructureElevationParameters(terrainParameters);
         }
 
+        var decalRoadSettings = terrainParameters?.DecalRoadSettings;
+        var appDataDefaults = terrainParameters?.DecalRoadAppDataDefaults
+            ?? Services.DecalRoad.DecalRoadDefaultLayerSets.GetDefaults();
+
         var unifiedResult = _unifiedRoadSmoother.SmoothAllRoads(
             heightMap2D,
             materials,
             metersPerPixel,
             size,
             enableCrossMaterialHarmonization,
-            flipMaterialProcessingOrder);
+            flipMaterialProcessingOrder,
+            decalRoadSettings,
+            appDataDefaults);
 
         if (unifiedResult == null)
             return (null, null);
@@ -820,7 +953,8 @@ public class TerrainCreator
         List<MaterialDefinition> materials,
         Dictionary<string, byte[,]> paintedLayers,
         string debugBaseDir,
-        TerrainCreationLogger log)
+        TerrainCreationLogger log,
+        UnifiedRoadNetwork? network = null)
     {
         foreach (var (materialName, layerData) in paintedLayers)
         {
@@ -864,7 +998,12 @@ public class TerrainCreator
 
                 var surfaceWidth = material.RoadParameters.EffectiveRoadSurfaceWidthMeters;
                 var corridorWidth = material.RoadParameters.RoadWidthMeters;
-                log.Info($"  {materialName}: Updated layer map (surface={surfaceWidth:F1}m, corridor={corridorWidth:F1}m)");
+                var materialSplines = network?.Splines.Where(s => s.MaterialName == materialName).ToList();
+                var widthProfile = materialSplines?.Select(s => s.WidthProfile).FirstOrDefault(p => p != null);
+                var widthProfileInfo = widthProfile != null
+                    ? $", widthProfile={widthProfile.Segments.Count} segment(s)"
+                    : ", widthProfile=none";
+                log.Info($"  {materialName}: Updated layer map (surface={surfaceWidth:F1}m, corridor={corridorWidth:F1}m{widthProfileInfo})");
                 
                 if (!string.IsNullOrEmpty(oldPath))
                     log.Detail($"    Old: {Path.GetFileName(oldPath)} -> New: {Path.GetFileName(layerPath)}");

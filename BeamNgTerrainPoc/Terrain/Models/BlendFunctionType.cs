@@ -23,5 +23,11 @@ public enum BlendFunctionType
     /// <summary>
     /// Quintic interpolation (extra smooth)
     /// </summary>
-    Quintic
+    Quintic,
+
+    /// <summary>
+    /// Exponential falloff (BeamNG-style): w = (1 - t)^exponent.
+    /// At t=0 (road edge): w=1. At t=1 (DOI boundary): w=0.
+    /// </summary>
+    Exponential
 }

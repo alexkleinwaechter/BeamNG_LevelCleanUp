@@ -68,8 +68,8 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
                   Return="ignore" />
     
     <InstallExecuteSequence>
-      <RemoveExistingProducts After="InstallInitialize" />
-      <Custom Action="RemoveAppDataFolders" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+      <RemoveExistingProducts After="InstallFinalize" />
+      <Custom Action="RemoveAppDataFolders" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
     
     <Feature Id="MainApplication" Title="BeamNG Mapping Tools" Level="1">

@@ -1,8 +1,10 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
+using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Examples;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
@@ -24,13 +26,6 @@ public partial class TerrainMaterialSettings
     {
         Custom,
 
-        // PNG presets (skeleton extraction from layer masks)
-        PngHighway,
-        PngRuralRoad,
-        PngMountainRoad,
-        PngDirtRoad,
-        PngRacingCircuit,
-
         // OSM presets (pre-built splines from vector data)
         OsmHighway,
         OsmRuralRoad,
@@ -43,10 +38,26 @@ public partial class TerrainMaterialSettings
     [Parameter] public EventCallback<TerrainMaterialItemExtended> OnMaterialChanged { get; set; }
     [Parameter] public GeoBoundingBox? GeoBoundingBox { get; set; }
     [Parameter] public int TerrainSize { get; set; } = 2048;
+    [Parameter] public DecalRoadSettings? DecalRoadSettings { get; set; }
+    [Parameter] public EventCallback<DecalRoadSettings> DecalRoadSettingsChanged { get; set; }
+
+    /// <summary>
+    ///     Cascading effective bounding box from GenerateTerrain page.
+    ///     Always reflects the current crop region. Used as primary source
+    ///     because MudDropContainer's ItemRenderer may not re-pass parameters
+    ///     when the crop changes.
+    /// </summary>
+    [CascadingParameter(Name = "EffectiveBoundingBox")]
+    private GeoBoundingBox? CascadingBoundingBox { get; set; }
 
     [Inject] private IDialogService DialogService { get; set; } = null!;
 
-    private bool HasGeoBoundingBox => GeoBoundingBox != null;
+    /// <summary>
+    ///     The actual bounding box to use — prefers cascading (always fresh) over parameter.
+    /// </summary>
+    private GeoBoundingBox? ActiveBoundingBox => CascadingBoundingBox ?? GeoBoundingBox;
+
+    private bool HasGeoBoundingBox => ActiveBoundingBox != null;
 
     /// <summary>
     ///     Returns true when this road material has OSM features mode selected as its layer source.
@@ -304,13 +315,13 @@ public partial class TerrainMaterialSettings
 
     private async Task OpenOsmFeatureSelector()
     {
-        if (GeoBoundingBox == null)
+        if (ActiveBoundingBox == null)
             return;
 
         var parameters = new DialogParameters<OsmFeatureSelectorDialog>
         {
             { x => x.MaterialName, Material.InternalName },
-            { x => x.BoundingBox, GeoBoundingBox },
+            { x => x.BoundingBox, ActiveBoundingBox },
             { x => x.TerrainSize, TerrainSize },
             { x => x.IsRoadMaterial, Material.IsRoadMaterial },
             { x => x.ExistingSelections, Material.SelectedOsmFeatures }
@@ -417,22 +428,17 @@ public partial class TerrainMaterialSettings
                 ["roadMaxSlopeDegrees"] = Material.RoadMaxSlopeDegrees,
                 ["sideMaxSlopeDegrees"] = Material.SideMaxSlopeDegrees,
                 ["blendFunctionType"] = Material.BlendFunctionType.ToString(),
+                ["falloffExponent"] = Material.FalloffExponent,
                 ["crossSectionIntervalMeters"] = Material.CrossSectionIntervalMeters,
-                ["enableTerrainBlending"] = Material.EnableTerrainBlending,
                 ["splineParameters"] = new JsonObject
                 {
                     ["splineInterpolationType"] = Material.SplineInterpolationType.ToString(),
-                    ["tension"] = Material.SplineTension,
-                    ["continuity"] = Material.SplineContinuity,
-                    ["bias"] = Material.SplineBias,
-                    ["useGraphOrdering"] = Material.UseGraphOrdering,
                     ["preferStraightThroughJunctions"] = Material.PreferStraightThroughJunctions,
                     ["densifyMaxSpacingPixels"] = Material.DensifyMaxSpacingPixels,
                     ["simplifyTolerancePixels"] = Material.SimplifyTolerancePixels,
                     ["bridgeEndpointMaxDistancePixels"] = Material.BridgeEndpointMaxDistancePixels,
                     ["minPathLengthPixels"] = Material.MinPathLengthPixels,
                     ["junctionAngleThreshold"] = Material.JunctionAngleThreshold,
-                    ["orderingNeighborRadiusPixels"] = Material.OrderingNeighborRadiusPixels,
                     ["skeletonDilationRadius"] = Material.SkeletonDilationRadius,
                     ["smoothingWindowSize"] = Material.SplineSmoothingWindowSize,
                     ["useButterworthFilter"] = Material.SplineUseButterworthFilter,
@@ -465,11 +471,18 @@ public partial class TerrainMaterialSettings
                     ["enableJunctionHarmonization"] = Material.EnableJunctionHarmonization,
                     ["junctionDetectionRadiusMeters"] = Material.JunctionDetectionRadiusMeters,
                     ["junctionBlendDistanceMeters"] = Material.JunctionBlendDistanceMeters,
-                    ["autoCalculateBlendDistance"] = Material.AutoCalculateBlendDistance,
                     ["blendFunctionType"] = Material.JunctionBlendFunction.ToString(),
-                    ["enableJunctionIdwFiltering"] = Material.EnableJunctionIdwFiltering,
-                    ["minTerminatingIdwWeight"] = Material.MinTerminatingIdwWeight,
-                    ["idwFilterTaperDistanceMeters"] = Material.IdwFilterTaperDistanceMeters
+                    // No-blend tuning (Side-Road Transitions)
+                    ["bankingRunoffSurfaceWidthMultiplier"] = Material.BankingRunoffSurfaceWidthMultiplier,
+                    ["connectorGradeRampLengthMeters"] = Material.ConnectorGradeRampLengthMeters,
+                    // Roundabout settings
+                    ["enableRoundaboutDetection"] = Material.EnableRoundaboutDetection,
+                    ["enableRoundaboutRoadTrimming"] = Material.EnableRoundaboutRoadTrimming,
+                    ["roundaboutConnectionRadiusMeters"] = Material.RoundaboutConnectionRadiusMeters,
+                    ["roundaboutOverlapToleranceMeters"] = Material.RoundaboutOverlapToleranceMeters,
+                    ["forceUniformRoundaboutElevation"] = Material.ForceUniformRoundaboutElevation,
+                    ["enableTiltedRoundaboutPlane"] = Material.EnableTiltedRoundaboutPlane,
+                    ["roundaboutMaxPlaneTiltDegrees"] = Material.RoundaboutMaxPlaneTiltDegrees
                 }
             };
 
@@ -521,11 +534,10 @@ public partial class TerrainMaterialSettings
             if (jsonNode["blendFunctionType"] != null &&
                 Enum.TryParse<BlendFunctionType>(jsonNode["blendFunctionType"]!.GetValue<string>(), out var blendType))
                 Material.BlendFunctionType = blendType;
+            if (jsonNode["falloffExponent"] != null)
+                Material.FalloffExponent = jsonNode["falloffExponent"]!.GetValue<float>();
             if (jsonNode["crossSectionIntervalMeters"] != null)
                 Material.CrossSectionIntervalMeters = jsonNode["crossSectionIntervalMeters"]!.GetValue<float>();
-            if (jsonNode["enableTerrainBlending"] != null)
-                Material.EnableTerrainBlending = jsonNode["enableTerrainBlending"]!.GetValue<bool>();
-
             // Import spline parameters
             var splineParams = jsonNode["splineParameters"];
             if (splineParams != null)
@@ -534,14 +546,6 @@ public partial class TerrainMaterialSettings
                     Enum.TryParse<SplineInterpolationType>(splineParams["splineInterpolationType"]!.GetValue<string>(),
                         out var interpType))
                     Material.SplineInterpolationType = interpType;
-                if (splineParams["tension"] != null)
-                    Material.SplineTension = splineParams["tension"]!.GetValue<float>();
-                if (splineParams["continuity"] != null)
-                    Material.SplineContinuity = splineParams["continuity"]!.GetValue<float>();
-                if (splineParams["bias"] != null)
-                    Material.SplineBias = splineParams["bias"]!.GetValue<float>();
-                if (splineParams["useGraphOrdering"] != null)
-                    Material.UseGraphOrdering = splineParams["useGraphOrdering"]!.GetValue<bool>();
                 if (splineParams["preferStraightThroughJunctions"] != null)
                     Material.PreferStraightThroughJunctions =
                         splineParams["preferStraightThroughJunctions"]!.GetValue<bool>();
@@ -556,9 +560,6 @@ public partial class TerrainMaterialSettings
                     Material.MinPathLengthPixels = splineParams["minPathLengthPixels"]!.GetValue<float>();
                 if (splineParams["junctionAngleThreshold"] != null)
                     Material.JunctionAngleThreshold = splineParams["junctionAngleThreshold"]!.GetValue<float>();
-                if (splineParams["orderingNeighborRadiusPixels"] != null)
-                    Material.OrderingNeighborRadiusPixels =
-                        splineParams["orderingNeighborRadiusPixels"]!.GetValue<float>();
                 if (splineParams["skeletonDilationRadius"] != null)
                     Material.SkeletonDilationRadius = splineParams["skeletonDilationRadius"]!.GetValue<int>();
                 if (splineParams["smoothingWindowSize"] != null)
@@ -638,23 +639,39 @@ public partial class TerrainMaterialSettings
                 if (junctionParams["junctionBlendDistanceMeters"] != null)
                     Material.JunctionBlendDistanceMeters =
                         junctionParams["junctionBlendDistanceMeters"]!.GetValue<float>();
-                if (junctionParams["autoCalculateBlendDistance"] != null)
-                    Material.AutoCalculateBlendDistance =
-                        junctionParams["autoCalculateBlendDistance"]!.GetValue<bool>();
                 if (junctionParams["blendFunctionType"] != null &&
                     Enum.TryParse<JunctionBlendFunctionType>(junctionParams["blendFunctionType"]!.GetValue<string>(),
                         out var junctionBlendType))
                     Material.JunctionBlendFunction = junctionBlendType;
-                // IDW filtering
-                if (junctionParams["enableJunctionIdwFiltering"] != null)
-                    Material.EnableJunctionIdwFiltering =
-                        junctionParams["enableJunctionIdwFiltering"]!.GetValue<bool>();
-                if (junctionParams["minTerminatingIdwWeight"] != null)
-                    Material.MinTerminatingIdwWeight =
-                        junctionParams["minTerminatingIdwWeight"]!.GetValue<float>();
-                if (junctionParams["idwFilterTaperDistanceMeters"] != null)
-                    Material.IdwFilterTaperDistanceMeters =
-                        junctionParams["idwFilterTaperDistanceMeters"]!.GetValue<float>();
+                // No-blend tuning (Side-Road Transitions)
+                if (junctionParams["bankingRunoffSurfaceWidthMultiplier"] != null)
+                    Material.BankingRunoffSurfaceWidthMultiplier =
+                        junctionParams["bankingRunoffSurfaceWidthMultiplier"]!.GetValue<float>();
+                if (junctionParams["connectorGradeRampLengthMeters"] != null)
+                    Material.ConnectorGradeRampLengthMeters =
+                        junctionParams["connectorGradeRampLengthMeters"]!.GetValue<float>();
+                // Roundabout settings
+                if (junctionParams["enableRoundaboutDetection"] != null)
+                    Material.EnableRoundaboutDetection =
+                        junctionParams["enableRoundaboutDetection"]!.GetValue<bool>();
+                if (junctionParams["enableRoundaboutRoadTrimming"] != null)
+                    Material.EnableRoundaboutRoadTrimming =
+                        junctionParams["enableRoundaboutRoadTrimming"]!.GetValue<bool>();
+                if (junctionParams["roundaboutConnectionRadiusMeters"] != null)
+                    Material.RoundaboutConnectionRadiusMeters =
+                        junctionParams["roundaboutConnectionRadiusMeters"]!.GetValue<float>();
+                if (junctionParams["roundaboutOverlapToleranceMeters"] != null)
+                    Material.RoundaboutOverlapToleranceMeters =
+                        junctionParams["roundaboutOverlapToleranceMeters"]!.GetValue<float>();
+                if (junctionParams["forceUniformRoundaboutElevation"] != null)
+                    Material.ForceUniformRoundaboutElevation =
+                        junctionParams["forceUniformRoundaboutElevation"]!.GetValue<bool>();
+                if (junctionParams["enableTiltedRoundaboutPlane"] != null)
+                    Material.EnableTiltedRoundaboutPlane =
+                        junctionParams["enableTiltedRoundaboutPlane"]!.GetValue<bool>();
+                if (junctionParams["roundaboutMaxPlaneTiltDegrees"] != null)
+                    Material.RoundaboutMaxPlaneTiltDegrees =
+                        junctionParams["roundaboutMaxPlaneTiltDegrees"]!.GetValue<float>();
                 // Note: enableEndpointTaper, endpointTaperDistanceMeters, endpointTerrainBlendStrength
                 // are no longer configurable (auto-computed from road width). Old configs silently ignored.
             }
@@ -700,12 +717,6 @@ public partial class TerrainMaterialSettings
     {
         return preset switch
         {
-            // PNG presets (skeleton extraction from layer masks)
-            RoadPresetType.PngHighway => RoadSmoothingPresets.PngHighway,
-            RoadPresetType.PngRuralRoad => RoadSmoothingPresets.PngRuralRoad,
-            RoadPresetType.PngMountainRoad => RoadSmoothingPresets.PngMountainRoad,
-            RoadPresetType.PngDirtRoad => RoadSmoothingPresets.PngDirtRoad,
-            RoadPresetType.PngRacingCircuit => RoadSmoothingPresets.PngRacingCircuit,
             // OSM presets (pre-built splines from vector data)
             RoadPresetType.OsmHighway => RoadSmoothingPresets.OsmHighway,
             RoadPresetType.OsmRuralRoad => RoadSmoothingPresets.OsmRuralRoad,
@@ -758,7 +769,7 @@ public partial class TerrainMaterialSettings
         /// </summary>
         public bool EnableRoadPainting { get; set; }
 
-        public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.PngHighway;
+        public RoadPresetType SelectedPreset { get; set; } = RoadPresetType.OsmHighway;
 
         // ========================================
         // PRIMARY PARAMETERS (always visible)
@@ -780,9 +791,9 @@ public partial class TerrainMaterialSettings
         // ========================================
         // ALGORITHM SETTINGS
         // ========================================
-        public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Cosine;
+        public BlendFunctionType BlendFunctionType { get; set; } = BlendFunctionType.Exponential;
+        public float FalloffExponent { get; set; } = 1.5f;
         public float CrossSectionIntervalMeters { get; set; } = 0.5f;
-        public bool EnableTerrainBlending { get; set; } = true;
 
         // ========================================
         // SPLINE PARAMETERS
@@ -791,20 +802,13 @@ public partial class TerrainMaterialSettings
         public SplineInterpolationType SplineInterpolationType { get; set; } =
             SplineInterpolationType.SmoothInterpolated;
 
-        // Curve fitting
-        public float SplineTension { get; set; } = 0.2f;
-        public float SplineContinuity { get; set; } = 0.7f;
-        public float SplineBias { get; set; }
-
         // Path extraction
-        public bool UseGraphOrdering { get; set; } = true;
         public bool PreferStraightThroughJunctions { get; set; }
         public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
         public float SimplifyTolerancePixels { get; set; } = 0.5f;
         public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
         public float MinPathLengthPixels { get; set; }
         public float JunctionAngleThreshold { get; set; } = 90.0f;
-        public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
         public int SkeletonDilationRadius { get; set; }
 
         // Elevation smoothing (Spline)
@@ -838,14 +842,26 @@ public partial class TerrainMaterialSettings
 
         public bool EnableJunctionHarmonization { get; set; } = true;
         public float JunctionDetectionRadiusMeters { get; set; } = 5.0f;
-        public float JunctionBlendDistanceMeters { get; set; } = 30.0f;
-        public bool AutoCalculateBlendDistance { get; set; } = true;
+        public float JunctionBlendDistanceMeters { get; set; } = 50.0f;
         public JunctionBlendFunctionType JunctionBlendFunction { get; set; } = JunctionBlendFunctionType.CubicHermiteC1;
 
-        // IDW filtering for terrain blending near junctions
-        public bool EnableJunctionIdwFiltering { get; set; } = true;
-        public float MinTerminatingIdwWeight { get; set; } = 0.1f;
-        public float? IdwFilterTaperDistanceMeters { get; set; } = null;
+        // ----------------------------------------
+        // NO-BLEND TUNING (affine ThroughRoad path)
+        // ----------------------------------------
+
+        /// <summary>
+        ///     Banking runoff zone width as a multiple of the terminating road's painted surface width.
+        ///     Larger = gentler superelevation runoff. Maps to
+        ///     <see cref="JunctionHarmonizationParameters.BankingRunoffSurfaceWidthMultiplier" />.
+        /// </summary>
+        public float BankingRunoffSurfaceWidthMultiplier { get; set; } = 3.0f;
+
+        /// <summary>
+        ///     Length (m) of the connector grade ramp that eases a steep connector to the through road's
+        ///     surface at the seam. 0 = disabled. Maps to
+        ///     <see cref="JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters" />.
+        /// </summary>
+        public float ConnectorGradeRampLengthMeters { get; set; } = 6.0f;
 
         // ========================================
         // ROUNDABOUT SETTINGS
@@ -877,10 +893,19 @@ public partial class TerrainMaterialSettings
         public bool ForceUniformRoundaboutElevation { get; set; } = true;
 
         /// <summary>
-        ///     Distance over which to blend connecting road elevation toward the roundabout ring.
-        ///     If null, uses JunctionBlendDistanceMeters.
+        ///     When true, tilt the roundabout ring plane to follow the terrain (opt-in). Default false
+        ///     keeps a flat ring. Maps to
+        ///     <see cref="JunctionHarmonizationParameters.EnableTiltedRoundaboutPlane" />.
         /// </summary>
-        public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
+        public bool EnableTiltedRoundaboutPlane { get; set; }
+
+        /// <summary>
+        ///     Maximum tilt of the terrain-following roundabout ring plane, in degrees. Only used when
+        ///     <see cref="EnableTiltedRoundaboutPlane" /> is set. Converted to a gradient (rise/run) via
+        ///     <c>tan</c> when mapped to the gradient-based
+        ///     <see cref="JunctionHarmonizationParameters.RoundaboutMaxPlaneTilt" />.
+        /// </summary>
+        public float RoundaboutMaxPlaneTiltDegrees { get; set; } = 6.0f;
 
         // ========================================
         // ROAD BANKING (SUPERELEVATION)
@@ -1008,9 +1033,8 @@ public partial class TerrainMaterialSettings
 
             // Algorithm settings
             BlendFunctionType = preset.BlendFunctionType;
+            FalloffExponent = preset.FalloffExponent;
             CrossSectionIntervalMeters = preset.CrossSectionIntervalMeters;
-            EnableTerrainBlending = preset.EnableTerrainBlending;
-
             // Post-processing
             EnablePostProcessingSmoothing = preset.EnablePostProcessingSmoothing;
             SmoothingType = preset.SmoothingType;
@@ -1023,17 +1047,12 @@ public partial class TerrainMaterialSettings
             if (preset.SplineParameters != null)
             {
                 SplineInterpolationType = preset.SplineParameters.SplineInterpolationType;
-                SplineTension = preset.SplineParameters.SplineTension;
-                SplineContinuity = preset.SplineParameters.SplineContinuity;
-                SplineBias = preset.SplineParameters.SplineBias;
-                UseGraphOrdering = preset.SplineParameters.UseGraphOrdering;
                 PreferStraightThroughJunctions = preset.SplineParameters.PreferStraightThroughJunctions;
                 DensifyMaxSpacingPixels = preset.SplineParameters.DensifyMaxSpacingPixels;
                 SimplifyTolerancePixels = preset.SplineParameters.SimplifyTolerancePixels;
                 BridgeEndpointMaxDistancePixels = preset.SplineParameters.BridgeEndpointMaxDistancePixels;
                 MinPathLengthPixels = preset.SplineParameters.MinPathLengthPixels;
                 JunctionAngleThreshold = preset.SplineParameters.JunctionAngleThreshold;
-                OrderingNeighborRadiusPixels = preset.SplineParameters.OrderingNeighborRadiusPixels;
                 SkeletonDilationRadius = preset.SplineParameters.SkeletonDilationRadius;
                 SplineSmoothingWindowSize = preset.SplineParameters.SmoothingWindowSize;
                 SplineUseButterworthFilter = preset.SplineParameters.UseButterworthFilter;
@@ -1051,12 +1070,12 @@ public partial class TerrainMaterialSettings
                 EnableJunctionHarmonization = preset.JunctionHarmonizationParameters.EnableJunctionHarmonization;
                 JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
                 JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
-                AutoCalculateBlendDistance = preset.JunctionHarmonizationParameters.AutoCalculateBlendDistance;
                 JunctionBlendFunction = preset.JunctionHarmonizationParameters.BlendFunctionType;
-                // IDW filtering
-                EnableJunctionIdwFiltering = preset.JunctionHarmonizationParameters.EnableJunctionIdwFiltering;
-                MinTerminatingIdwWeight = preset.JunctionHarmonizationParameters.MinTerminatingIdwWeight;
-                IdwFilterTaperDistanceMeters = preset.JunctionHarmonizationParameters.IdwFilterTaperDistanceMeters;
+                // No-blend tuning (Side-Road Transitions)
+                BankingRunoffSurfaceWidthMultiplier =
+                    preset.JunctionHarmonizationParameters.BankingRunoffSurfaceWidthMultiplier;
+                ConnectorGradeRampLengthMeters =
+                    preset.JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters;
                 // Roundabout settings
                 EnableRoundaboutDetection = preset.JunctionHarmonizationParameters.EnableRoundaboutDetection;
                 EnableRoundaboutRoadTrimming = preset.JunctionHarmonizationParameters.EnableRoundaboutRoadTrimming;
@@ -1066,7 +1085,11 @@ public partial class TerrainMaterialSettings
                     preset.JunctionHarmonizationParameters.RoundaboutOverlapToleranceMeters;
                 ForceUniformRoundaboutElevation =
                     preset.JunctionHarmonizationParameters.ForceUniformRoundaboutElevation;
-                RoundaboutBlendDistanceMeters = preset.JunctionHarmonizationParameters.RoundaboutBlendDistanceMeters;
+                EnableTiltedRoundaboutPlane =
+                    preset.JunctionHarmonizationParameters.EnableTiltedRoundaboutPlane;
+                // Spine stores the tilt cap as a gradient (rise/run); the UI works in degrees.
+                RoundaboutMaxPlaneTiltDegrees = MathF.Atan(
+                    preset.JunctionHarmonizationParameters.RoundaboutMaxPlaneTilt) * (180f / MathF.PI);
                 // Debug properties are always enabled - no need to copy from preset
             }
         }
@@ -1112,9 +1135,8 @@ public partial class TerrainMaterialSettings
 
                 // Algorithm settings - disable blending for paint-only
                 BlendFunctionType = BlendFunctionType,
+                FalloffExponent = FalloffExponent,
                 CrossSectionIntervalMeters = CrossSectionIntervalMeters,
-                EnableTerrainBlending = isPaintOnlyMode ? false : EnableTerrainBlending,
-
                 // Post-processing - disable for paint-only
                 EnablePostProcessingSmoothing = isPaintOnlyMode ? false : EnablePostProcessingSmoothing,
                 SmoothingType = SmoothingType,
@@ -1140,17 +1162,12 @@ public partial class TerrainMaterialSettings
             result.SplineParameters = new SplineRoadParameters
             {
                 SplineInterpolationType = SplineInterpolationType,
-                SplineTension = SplineTension,
-                SplineContinuity = SplineContinuity,
-                SplineBias = SplineBias,
-                UseGraphOrdering = UseGraphOrdering,
                 PreferStraightThroughJunctions = PreferStraightThroughJunctions,
                 DensifyMaxSpacingPixels = DensifyMaxSpacingPixels,
                 SimplifyTolerancePixels = SimplifyTolerancePixels,
                 BridgeEndpointMaxDistancePixels = BridgeEndpointMaxDistancePixels,
                 MinPathLengthPixels = MinPathLengthPixels,
                 JunctionAngleThreshold = JunctionAngleThreshold,
-                OrderingNeighborRadiusPixels = OrderingNeighborRadiusPixels,
                 SkeletonDilationRadius = SkeletonDilationRadius,
                 SmoothingWindowSize = SplineSmoothingWindowSize,
                 UseButterworthFilter = SplineUseButterworthFilter,
@@ -1167,21 +1184,25 @@ public partial class TerrainMaterialSettings
             result.JunctionHarmonizationParameters = new JunctionHarmonizationParameters
             {
                 EnableJunctionHarmonization = EnableJunctionHarmonization,
+                // No-blend path: both junction blend flags stay false (their defaults), so the
+                // implicit affine ThroughRoad junction leveling runs — "junction follows the main
+                // road" (terminating roads snap to the through road's Z; the through road keeps its
+                // profile). There is no longer a separate flag or target-mode for it.
                 JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
                 JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,
-                AutoCalculateBlendDistance = AutoCalculateBlendDistance,
                 BlendFunctionType = JunctionBlendFunction,
-                // IDW filtering
-                EnableJunctionIdwFiltering = EnableJunctionIdwFiltering,
-                MinTerminatingIdwWeight = MinTerminatingIdwWeight,
-                IdwFilterTaperDistanceMeters = IdwFilterTaperDistanceMeters,
+                // No-blend tuning (affine ThroughRoad path)
+                BankingRunoffSurfaceWidthMultiplier = BankingRunoffSurfaceWidthMultiplier,
+                ConnectorGradeRampLengthMeters = ConnectorGradeRampLengthMeters,
                 // Roundabout settings
                 EnableRoundaboutDetection = EnableRoundaboutDetection,
                 EnableRoundaboutRoadTrimming = EnableRoundaboutRoadTrimming,
                 RoundaboutConnectionRadiusMeters = RoundaboutConnectionRadiusMeters,
                 RoundaboutOverlapToleranceMeters = RoundaboutOverlapToleranceMeters,
                 ForceUniformRoundaboutElevation = ForceUniformRoundaboutElevation,
-                RoundaboutBlendDistanceMeters = RoundaboutBlendDistanceMeters,
+                EnableTiltedRoundaboutPlane = EnableTiltedRoundaboutPlane,
+                // UI is in degrees; the algorithm caps on a gradient (rise/run = tan of the angle).
+                RoundaboutMaxPlaneTilt = MathF.Tan(RoundaboutMaxPlaneTiltDegrees * (MathF.PI / 180f)),
                 ExportJunctionDebugImage = true,
                 ExportRoundaboutDebugImage = true
             };
@@ -1210,4 +1231,96 @@ public partial class TerrainMaterialSettings
             return string.IsNullOrWhiteSpace(sanitized) ? "unknown_material" : sanitized;
         }
     }
+
+    #region DecalRoad Layer Override
+
+    private bool IsUsingDecalRoadDefaults()
+    {
+        return DecalRoadSettings?.MaterialLayerSets
+            .ContainsKey(Material.InternalName) != true;
+    }
+
+    private void OnUseDecalRoadDefaultsChanged(bool useDefaults)
+    {
+        if (DecalRoadSettings == null) return;
+
+        if (useDefaults)
+        {
+            // Remove custom override — revert to cascade resolution
+            DecalRoadSettings.MaterialLayerSets.Remove(Material.InternalName);
+        }
+        else
+        {
+            // Create custom override by deep-copying a resolved default
+            var defaults = DecalRoadDefaultsManager.Load();
+            DecalRoadLayerSet? startingSet = null;
+            if (defaults.TryGetValue(Material.InternalName, out var byName))
+                startingSet = byName;
+            else if (defaults.TryGetValue("primary", out var primary))
+                startingSet = primary;
+            else if (defaults.Count > 0)
+                startingSet = defaults.Values.First();
+
+            startingSet ??= new DecalRoadLayerSet
+            {
+                Name = Material.InternalName,
+                IsEnabled = true,
+                DefaultLaneCount = 2,
+                DefaultLaneWidth = 3.5f,
+                Layers = []
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(startingSet, _decalRoadJsonOptions);
+            var copy = System.Text.Json.JsonSerializer.Deserialize<DecalRoadLayerSet>(json, _decalRoadJsonOptions)!;
+            copy.Name = Material.InternalName;
+            DecalRoadSettings.MaterialLayerSets[Material.InternalName] = copy;
+        }
+    }
+
+    private DecalRoadLayerSet? GetCustomLayerSet()
+    {
+        if (DecalRoadSettings?.MaterialLayerSets
+            .TryGetValue(Material.InternalName, out var set) == true)
+            return set;
+        return null;
+    }
+
+    private async Task OpenDecalRoadLayerSetDialog()
+    {
+        var customSet = GetCustomLayerSet();
+        if (customSet == null) return;
+
+        var options = new MudBlazor.DialogOptions
+        {
+            FullScreen = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        var parameters = new DialogParameters
+        {
+            { nameof(DecalRoadLayerSetEditorDialog.SingleLayerSet), customSet },
+            { nameof(DecalRoadLayerSetEditorDialog.SingleLayerSetTitle), Material.InternalName }
+        };
+
+        var dialog = await DialogService.ShowAsync<DecalRoadLayerSetEditorDialog>(
+            $"DecalRoad Layers — {Material.InternalName}", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: DecalRoadLayerSet editedSet })
+        {
+            DecalRoadSettings!.MaterialLayerSets[Material.InternalName] = editedSet;
+            if (DecalRoadSettingsChanged.HasDelegate)
+                await DecalRoadSettingsChanged.InvokeAsync(DecalRoadSettings);
+        }
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions _decalRoadJsonOptions = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(
+            System.Text.Json.JsonNamingPolicy.CamelCase) }
+    };
+
+    #endregion
 }

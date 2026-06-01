@@ -3,6 +3,7 @@ using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -220,6 +221,11 @@ public class NetworkJunctionHarmonizer
                 continue;
             }
 
+            // Phase 1.9 (C2): per-type handlers can have side effects beyond writing
+            // HarmonizedElevation (e.g. ComputeTJunctionElevation writes edge constraints on
+            // terminating cross-sections). So instead of skipping the whole handler when a
+            // pin exists, we let the handler run and NaN-guard the HarmonizedElevation writes
+            // inside each handler. This preserves the pin while keeping all side effects.
             switch (junction.Type)
             {
                 case JunctionType.Endpoint:
@@ -245,6 +251,10 @@ public class NetworkJunctionHarmonizer
                     else
                         ComputeMultiWayJunctionElevation(junction);
                     break;
+
+                case JunctionType.Continuation:
+                    // No harmonized elevation — chain-based smoothing handles these.
+                    break;
             }
         }
     }
@@ -269,8 +279,10 @@ public class NetworkJunctionHarmonizer
         px = Math.Clamp(px, 0, mapWidth - 1);
         py = Math.Clamp(py, 0, mapHeight - 1);
 
-        // Isolated endpoints always blend fully to terrain
-        junction.HarmonizedElevation = heightMap[py, px];
+        // Isolated endpoints always blend fully to terrain — unless Phase 1.9 already pinned
+        // this junction, in which case preserve that authoritative value.
+        if (!junction.IsPinned)
+            junction.HarmonizedElevation = heightMap[py, px];
     }
 
     /// <summary>
@@ -376,24 +388,29 @@ public class NetworkJunctionHarmonizer
 
         var deltaE = MathF.Abs(E_c - E_t);
 
-        if (deltaE < SmallElevationDifferenceMeters)
+        // Phase 1.9 (C2): only write HarmonizedElevation if not already pinned. Edge-constraint
+        // side effects below (ApplyEdgeConstraints) MUST still run regardless of pin state.
+        if (!junction.IsPinned)
         {
-            // Small difference - use priority-weighted average
-            var continuousPriority = continuous.Sum(c => (float)c.Spline.Priority);
-            var terminatingPrioritySum = terminating.Sum(t => (float)t.Spline.Priority);
-            var totalPriority = continuousPriority + terminatingPrioritySum;
+            if (deltaE < SmallElevationDifferenceMeters)
+            {
+                // Small difference - use priority-weighted average
+                var continuousPriority = continuous.Sum(c => (float)c.Spline.Priority);
+                var terminatingPrioritySum = terminating.Sum(t => (float)t.Spline.Priority);
+                var totalPriority = continuousPriority + terminatingPrioritySum;
 
-            if (totalPriority > 0)
-                junction.HarmonizedElevation =
-                    (E_c * continuousPriority + E_t * terminatingPrioritySum) / totalPriority;
+                if (totalPriority > 0)
+                    junction.HarmonizedElevation =
+                        (E_c * continuousPriority + E_t * terminatingPrioritySum) / totalPriority;
+                else
+                    junction.HarmonizedElevation = E_c;
+            }
             else
+            {
+                // Significant difference - continuous road wins
+                // The gradient ramp on terminating roads is applied during propagation
                 junction.HarmonizedElevation = E_c;
-        }
-        else
-        {
-            // Significant difference - continuous road wins
-            // The gradient ramp on terminating roads is applied during propagation
-            junction.HarmonizedElevation = E_c;
+            }
         }
 
         // PHASE 3: Set edge constraints on terminating roads
@@ -857,6 +874,7 @@ public class NetworkJunctionHarmonizer
                 JunctionType.Complex => 6,
                 JunctionType.CrossRoads => 5,
                 JunctionType.Roundabout => 7,
+                JunctionType.Continuation => 4,
                 _ => 4
             };
 
@@ -867,6 +885,7 @@ public class NetworkJunctionHarmonizer
                 JunctionType.Complex => new Rgba32(255, 0, 255, 200),
                 JunctionType.Roundabout => new Rgba32(0, 255, 255, 200),
                 JunctionType.MidSplineCrossing => new Rgba32(255, 255, 0, 200),
+                JunctionType.Continuation => new Rgba32(180, 180, 180, 220),
                 _ => new Rgba32(0, 255, 0, 200)
             };
 
@@ -880,6 +899,9 @@ public class NetworkJunctionHarmonizer
         // Save image
         Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? ".");
         image.SaveAsPng(outputPath);
+
+        // Export legend alongside the debug image
+        DebugLegendExporter.ExportAlongside(outputPath, BuildJunctionLegendEntries(maxChange));
 
         TerrainLogger.Detail($"  Exported junction debug image: {outputPath}");
     }
@@ -954,6 +976,27 @@ public class NetworkJunctionHarmonizer
             if (px >= 0 && px < img.Width && py >= 0 && py < img.Height)
                 img[px, py] = color;
         }
+    }
+
+    private static List<DebugLegendExporter.LegendEntry> BuildJunctionLegendEntries(float maxElevationChange)
+    {
+        return
+        [
+            new(new Rgba32(80, 80, 80, 255), "Unchanged elevation"),
+            new(new Rgba32(80, 80, 255, 255), $"Lowered (max {maxElevationChange:F1}m)"),
+            new(new Rgba32(255, 80, 80, 255), $"Raised (max {maxElevationChange:F1}m)"),
+            new(default, "", DebugLegendExporter.LegendSwatchStyle.Spacer),
+            new(new Rgba32(0, 255, 0, 200), "Endpoint", DebugLegendExporter.LegendSwatchStyle.Circle),
+            new(new Rgba32(255, 165, 0, 200), "T-Junction", DebugLegendExporter.LegendSwatchStyle.Circle),
+            new(new Rgba32(255, 0, 0, 200), "CrossRoads", DebugLegendExporter.LegendSwatchStyle.Circle),
+            new(new Rgba32(255, 0, 255, 200), "Complex", DebugLegendExporter.LegendSwatchStyle.Circle),
+            new(new Rgba32(0, 255, 255, 200), "Roundabout", DebugLegendExporter.LegendSwatchStyle.Circle),
+            new(new Rgba32(255, 255, 0, 200), "MidSplineCrossing", DebugLegendExporter.LegendSwatchStyle.Circle),
+            new(new Rgba32(180, 180, 180, 220), "Continuation", DebugLegendExporter.LegendSwatchStyle.Circle),
+            new(default, "", DebugLegendExporter.LegendSwatchStyle.Spacer),
+            new(new Rgba32(255, 255, 255, 200), "White outline = cross-material",
+                DebugLegendExporter.LegendSwatchStyle.CircleWithOutline),
+        ];
     }
 
     #endregion

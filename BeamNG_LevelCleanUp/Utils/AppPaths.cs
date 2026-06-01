@@ -64,6 +64,12 @@ public static class AppPaths
     public static string StyleLocalesFolder => Path.Combine(AppDataFolder, "osm2world-style-locales");
 
     /// <summary>
+    /// Path to the DecalRoad defaults JSON file (user-editable layer set presets per OSM road type).
+    /// C:\Users\{username}\AppData\Local\BeamNG_LevelCleanUp\decalroad-defaults.json
+    /// </summary>
+    public static string DecalRoadDefaultsPath => Path.Combine(SettingsFolder, "decalroad-defaults.json");
+
+    /// <summary>
     /// Ensures all required directories exist.
     /// Call this at application startup.
     /// </summary>

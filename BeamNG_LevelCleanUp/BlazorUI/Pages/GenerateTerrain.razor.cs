@@ -6,10 +6,13 @@ using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Objects.MtSettings;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
+using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using MudBlazor.Utilities;
@@ -66,6 +69,7 @@ public partial class GenerateTerrain : IDisposable
 
     // Analysis state
     private bool _isAnalyzing;
+    private bool _isReducingGeoTiff;
     private bool _openDrawer;
 
     // Pending crop settings from preset import (applied after GeoTIFF metadata is loaded)
@@ -121,6 +125,22 @@ public partial class GenerateTerrain : IDisposable
     {
         get => _state.ExcludeTunnelsFromTerrain;
         set => _state.ExcludeTunnelsFromTerrain = value;
+    }
+
+    private bool _disableSplineMerging
+    {
+        get => _state.DisableSplineMerging;
+        set => _state.DisableSplineMerging = value;
+    }
+
+    private bool _enableDecalRoads
+    {
+        get => _state.EnableDecalRoads;
+        set
+        {
+            _state.EnableDecalRoads = value;
+            if (value) EnsureDecalRoadSettings();
+        }
     }
 
     private bool _enableBuildings
@@ -350,6 +370,17 @@ public partial class GenerateTerrain : IDisposable
         get => _state.GeoTiffValidationResult;
         set => _state.GeoTiffValidationResult = value;
     }
+
+    // Per-tile bounding boxes for filtering tiles before combine operations
+    private List<TileBoundsInfo>? _tileBoundsInfo
+    {
+        get => _state.TileBoundsInfo;
+        set => _state.TileBoundsInfo = value;
+    }
+
+    // Tracks which XYZ files were used to build the cached combined GeoTIFF,
+    // so we can invalidate the cache when the filtered tile set changes.
+    private string[]? _cachedFilteredXyzFiles;
 
     private int _xyzEpsgCode
     {
@@ -690,7 +721,8 @@ public partial class GenerateTerrain : IDisposable
                         }
 
                         // Show snackbar and update UI on the main thread (unless suppressed)
-                        if (!_suppressSnackbars)
+                        // Error snackbars are never suppressed - they must always be visible to the user
+                        if (!_suppressSnackbars || msg.MessageType == PubSubMessageType.Error)
                             await InvokeAsync(() =>
                             {
                                 switch (msg.MessageType)
@@ -702,7 +734,8 @@ public partial class GenerateTerrain : IDisposable
                                         Snackbar.Add(msg.Message, Severity.Warning);
                                         break;
                                     case PubSubMessageType.Error:
-                                        Snackbar.Add(msg.Message, Severity.Error);
+                                        Snackbar.Add(msg.Message, Severity.Error,
+                                            config => config.VisibleStateDuration = int.MaxValue);
                                         break;
                                 }
                             });
@@ -894,6 +927,7 @@ public partial class GenerateTerrain : IDisposable
             _canFetchOsmData = result.CanFetchOsmData;
             _osmBlockedReason = result.OsmBlockedReason;
             _geoTiffValidationResult = result.ValidationResult;
+            _tileBoundsInfo = result.TileBounds;
 
             // Only update terrain size from GeoTIFF if no existing terrain.json was loaded
             if (result.SuggestedTerrainSize.HasValue && !_hasExistingTerrainSettings)
@@ -1372,9 +1406,163 @@ public partial class GenerateTerrain : IDisposable
             await InvokeAsync(StateHasChanged);
         }
 
-        // IMPORTANT: Refresh the drop container to ensure child TerrainMaterialSettings 
+        // IMPORTANT: Refresh the drop container to ensure child TerrainMaterialSettings
         // components receive the updated EffectiveBoundingBox for OSM queries
         _dropContainer?.Refresh();
+    }
+
+    /// <summary>
+    ///     Reduces the GeoTIFF to the current crop selection, creating a smaller file.
+    ///     After reduction, the source type switches to GeoTiffFile and crop offsets reset to zero.
+    /// </summary>
+    private async Task ReduceGeoTiffToCropAsync()
+    {
+        if (_cropResult is not { NeedsCropping: true })
+            return;
+
+        _isReducingGeoTiff = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string croppedPath;
+
+            if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
+            {
+                // Single file: crop directly
+                if (string.IsNullOrEmpty(_geoTiffPath) || !File.Exists(_geoTiffPath))
+                    return;
+                croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
+                    _geoTiffPath,
+                    _cropResult.OffsetX, _cropResult.OffsetY,
+                    _cropResult.CropWidth, _cropResult.CropHeight);
+            }
+            else if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
+            {
+                // Directory of tiles: combine-and-crop in one pass (skips non-overlapping tiles)
+                if (string.IsNullOrEmpty(_geoTiffDirectory) || !Directory.Exists(_geoTiffDirectory))
+                    return;
+
+                // Filter to only overlapping tiles if bounds are available
+                var filteredTiles = FilterOverlappingTiles(_cropResult);
+                if (filteredTiles != null)
+                    croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
+                        filteredTiles.Value.Files,
+                        filteredTiles.Value.OffsetX, filteredTiles.Value.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+                else
+                    croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
+                        _geoTiffDirectory,
+                        _cropResult.OffsetX, _cropResult.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+            }
+            else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
+            {
+                if (_state.XyzFilePaths is { Length: > 1 })
+                {
+                    // Multi-XYZ: filter to overlapping tiles, then combine and crop
+                    var filteredXyz = FilterOverlappingTiles(_cropResult);
+                    if (filteredXyz != null)
+                        croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
+                            filteredXyz.Value.Files, _xyzEpsgCode,
+                            filteredXyz.Value.OffsetX, filteredXyz.Value.OffsetY,
+                            _cropResult.CropWidth, _cropResult.CropHeight);
+                    else
+                        croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
+                            _state.XyzFilePaths, _xyzEpsgCode,
+                            _cropResult.OffsetX, _cropResult.OffsetY,
+                            _cropResult.CropWidth, _cropResult.CropHeight);
+                }
+                else if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
+                         File.Exists(_cachedCombinedGeoTiffPath))
+                {
+                    // Single XYZ already converted: crop the cached file
+                    croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
+                        _cachedCombinedGeoTiffPath,
+                        _cropResult.OffsetX, _cropResult.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+                }
+                else if (!string.IsNullOrEmpty(_state.XyzPath))
+                {
+                    // Single XYZ, no cached GeoTIFF — combine-and-crop directly
+                    croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
+                        new[] { _state.XyzPath }, _xyzEpsgCode,
+                        _cropResult.OffsetX, _cropResult.OffsetY,
+                        _cropResult.CropWidth, _cropResult.CropHeight);
+                }
+                else
+                {
+                    return;
+                }
+            }
+            else
+            {
+                return;
+            }
+
+            // Cleanup old temp combined file if it's different from the source and from the cropped file
+            if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
+                _cachedCombinedGeoTiffPath != _geoTiffPath &&
+                _cachedCombinedGeoTiffPath != croppedPath)
+            {
+                try
+                {
+                    if (File.Exists(_cachedCombinedGeoTiffPath))
+                        File.Delete(_cachedCombinedGeoTiffPath);
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+
+            // Switch to GeoTiffFile source type (simplifies entire downstream chain)
+            _heightmapSourceType = HeightmapSourceType.GeoTiffFile;
+            _geoTiffPath = croppedPath;
+            _cachedCombinedGeoTiffPath = croppedPath;
+            _geoTiffDirectory = null;
+            _state.XyzPath = null;
+            _state.XyzFilePaths = null;
+            _tileBoundsInfo = null;
+            _cachedFilteredXyzFiles = null;
+
+            // Reset crop result - the file IS the crop now
+            _cropResult = null;
+
+            // Update the elevation import result to reflect single-file state
+            if (_elevationImportResult != null)
+            {
+                _elevationImportResult = new ElevationImportResult
+                {
+                    SourceType = ElevationSourceType.GeoTiffSingle,
+                    FileCount = 1,
+                    FileNames = [Path.GetFileName(croppedPath)],
+                    FilePaths = [croppedPath],
+                    FormatLabel = "GeoTIFF (reduced)",
+                    ResolvedGeoTiffPath = croppedPath,
+                    ResolvedGeoTiffDirectory = null,
+                    NeedsEpsgCode = false
+                };
+            }
+
+            // Re-read metadata from the cropped file (updates bbox, dimensions, elevation, etc.)
+            await ReadGeoTiffMetadata(syncMetersPerPixel: false);
+
+            Snackbar.Add(
+                $"GeoTIFF reduced to {_geoTiffOriginalWidth}x{_geoTiffOriginalHeight}px",
+                Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to reduce GeoTIFF: {ex.Message}", Severity.Error);
+            PubSubChannel.SendMessage(PubSubMessageType.Error,
+                $"GeoTIFF reduction failed: {ex.Message}");
+        }
+        finally
+        {
+            _isReducingGeoTiff = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     /// <summary>
@@ -1390,61 +1578,104 @@ public partial class GenerateTerrain : IDisposable
 
         try
         {
-            string? geoTiffPathToRead = null;
+            (double? croppedMin, double? croppedMax) elevationRange;
 
             if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
             {
                 if (string.IsNullOrEmpty(_geoTiffPath) || !File.Exists(_geoTiffPath))
                     return;
-                geoTiffPathToRead = _geoTiffPath;
+                elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
+                    _geoTiffPath,
+                    cropResult.OffsetX, cropResult.OffsetY,
+                    cropResult.CropWidth, cropResult.CropHeight);
             }
             else if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
             {
                 if (string.IsNullOrEmpty(_geoTiffDirectory) || !Directory.Exists(_geoTiffDirectory))
                     return;
 
-                // Use cached combined file to avoid re-combining on every crop change
-                if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) || !File.Exists(_cachedCombinedGeoTiffPath))
-                    _cachedCombinedGeoTiffPath = await _geoTiffService.CombineGeoTiffTilesAsync(_geoTiffDirectory);
-                geoTiffPathToRead = _cachedCombinedGeoTiffPath;
+                // Filter to only overlapping tiles if bounds are available
+                var filteredTiles = FilterOverlappingTiles(cropResult);
+                if (filteredTiles != null)
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeFromTilesAsync(
+                        filteredTiles.Value.Files,
+                        filteredTiles.Value.OffsetX, filteredTiles.Value.OffsetY,
+                        cropResult.CropWidth, cropResult.CropHeight);
+                else
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeFromTilesAsync(
+                        _geoTiffDirectory,
+                        cropResult.OffsetX, cropResult.OffsetY,
+                        cropResult.CropWidth, cropResult.CropHeight);
             }
             else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
             {
                 if (_state.XyzFilePaths is { Length: > 1 })
                 {
-                    // Multi-XYZ tiles: use cached combined file (same pattern as GeoTIFF directory)
+                    // Multi-XYZ tiles: filter to overlapping tiles, then combine
+                    var filteredXyz = FilterOverlappingTiles(cropResult);
+                    var xyzFiles = filteredXyz?.Files ?? _state.XyzFilePaths;
+
+                    // Invalidate cache when filtered tile set changes (different crop region
+                    // may overlap different tiles, making the cached combined file stale)
+                    if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
+                        File.Exists(_cachedCombinedGeoTiffPath) &&
+                        _cachedFilteredXyzFiles != null &&
+                        !xyzFiles.SequenceEqual(_cachedFilteredXyzFiles))
+                    {
+                        _state.CleanupCachedCombinedGeoTiff();
+                    }
+
                     if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
                         !File.Exists(_cachedCombinedGeoTiffPath))
+                    {
                         _cachedCombinedGeoTiffPath =
                             await _geoTiffService.CombineXyzTilesAsync(
-                                _state.XyzFilePaths, _xyzEpsgCode);
-                    geoTiffPathToRead = _cachedCombinedGeoTiffPath;
+                                xyzFiles, _xyzEpsgCode);
+                        _cachedFilteredXyzFiles = xyzFiles;
+                    }
+
+                    // Use adjusted offsets for filtered tiles, original offsets for full set
+                    var elOffX = filteredXyz?.OffsetX ?? cropResult.OffsetX;
+                    var elOffY = filteredXyz?.OffsetY ?? cropResult.OffsetY;
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
+                        _cachedCombinedGeoTiffPath,
+                        elOffX, elOffY,
+                        cropResult.CropWidth, cropResult.CropHeight);
                 }
                 else
                 {
-                    if (string.IsNullOrEmpty(_state.XyzPath) || !File.Exists(_state.XyzPath))
+                    // Single XYZ: lazy-create cached GeoTIFF on first crop adjustment
+                    if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
+                        !File.Exists(_cachedCombinedGeoTiffPath))
+                    {
+                        if (!string.IsNullOrEmpty(_state.XyzPath))
+                            _cachedCombinedGeoTiffPath =
+                                await _geoTiffService.CombineXyzTilesAsync(
+                                    new[] { _state.XyzPath }, _xyzEpsgCode);
+                    }
+                    if (string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) ||
+                        !File.Exists(_cachedCombinedGeoTiffPath))
                         return;
-                    geoTiffPathToRead = _state.XyzPath;
+                    elevationRange = await _geoTiffService.GetCroppedElevationRangeAsync(
+                        _cachedCombinedGeoTiffPath,
+                        cropResult.OffsetX, cropResult.OffsetY,
+                        cropResult.CropWidth, cropResult.CropHeight);
                 }
             }
-
-            if (string.IsNullOrEmpty(geoTiffPathToRead) || !File.Exists(geoTiffPathToRead))
+            else
+            {
                 return;
+            }
 
-            var (croppedMin, croppedMax) = await _geoTiffService.GetCroppedElevationRangeAsync(
-                geoTiffPathToRead,
-                cropResult.OffsetX,
-                cropResult.OffsetY,
-                cropResult.CropWidth,
-                cropResult.CropHeight);
+            var (croppedMin, croppedMax) = elevationRange;
 
             if (croppedMin.HasValue && croppedMax.HasValue)
             {
                 cropResult.CroppedMinElevation = croppedMin.Value;
                 cropResult.CroppedMaxElevation = croppedMax.Value;
 
-                var elevationRange = croppedMax.Value - croppedMin.Value;
-                _maxHeight = (float)elevationRange;
+                var elevRange = croppedMax.Value - croppedMin.Value;
+                _maxHeight = (float)elevRange;
                 _terrainBaseHeight = (float)croppedMin.Value;
 
                 Console.WriteLine(
@@ -1469,6 +1700,49 @@ public partial class GenerateTerrain : IDisposable
             await InvokeAsync(() => { Snackbar.Clear(); });
             _suppressSnackbars = false;
         }
+    }
+
+    /// <summary>
+    ///     Filters tile bounds to only those overlapping the current crop region.
+    ///     Converts crop pixel offsets to native CRS coordinates using the GeoTransform.
+    ///     Returns adjusted offsets relative to the filtered tiles' combined extent,
+    ///     because CombineAndCropDirect computes its origin from the tiles it receives.
+    /// </summary>
+    private (string[] Files, int OffsetX, int OffsetY)? FilterOverlappingTiles(CropResult crop)
+    {
+        if (_tileBoundsInfo == null || _geoTiffGeoTransform == null)
+            return null;
+
+        var gt = _geoTiffGeoTransform;
+        var pixelSizeX = gt[1];           // positive
+        var pixelSizeY = Math.Abs(gt[5]); // make positive
+
+        // Crop region in native CRS coordinates
+        var cropMinX = gt[0] + crop.OffsetX * pixelSizeX;
+        var cropMaxX = gt[0] + (crop.OffsetX + crop.CropWidth) * pixelSizeX;
+        var cropMaxY = gt[3] - crop.OffsetY * pixelSizeY;       // gt[3] is top, Y goes down
+        var cropMinY = gt[3] - (crop.OffsetY + crop.CropHeight) * pixelSizeY;
+
+        var filtered = XyzFastScanner.FilterTilesByBbox(
+            _tileBoundsInfo, cropMinX, cropMinY, cropMaxX, cropMaxY);
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Tile filtering: {filtered.Length}/{_tileBoundsInfo.Count} tiles overlap crop region");
+
+        if (filtered.Length == 0)
+            return (filtered, 0, 0);
+
+        // Compute the filtered tiles' combined extent (what CombineAndCropDirect will see)
+        var filteredBounds = _tileBoundsInfo
+            .Where(t => filtered.Contains(t.FilePath));
+        var filteredMinX = filteredBounds.Min(t => t.MinX);
+        var filteredMaxY = filteredBounds.Max(t => t.MaxY);
+
+        // Adjust offsets: shift from full mosaic origin to filtered tiles' origin
+        var adjustedOffsetX = (int)Math.Round((cropMinX - filteredMinX) / pixelSizeX);
+        var adjustedOffsetY = (int)Math.Round((filteredMaxY - cropMaxY) / pixelSizeY);
+
+        return (filtered, adjustedOffsetX, adjustedOffsetY);
     }
 
     private string GetHeightmapSourceDescription()
@@ -1722,6 +1996,13 @@ public partial class GenerateTerrain : IDisposable
             if (result.SelectedBuildingFeatures?.Any() == true)
                 _state.SelectedBuildingFeatures = result.SelectedBuildingFeatures
                     .Select(r => r.ToSelection()).ToList();
+
+            // Apply DecalRoad settings from preset
+            if (result.DecalRoadSettings != null)
+            {
+                _state.DecalRoadSettings = result.DecalRoadSettings;
+                _state.EnableDecalRoads = result.DecalRoadSettings.Enabled;
+            }
 
             // Apply GeoTIFF metadata from preset (as fallback if GeoTIFF couldn't be loaded)
             if (!geoTiffLoaded)
@@ -2062,6 +2343,8 @@ public partial class GenerateTerrain : IDisposable
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
 
+                SaveGeoReferenceSettingsAfterGeneration();
+
                 generationSucceeded = true;
                 finalSuccessMessage = $"Terrain generated successfully: {GetOutputPath()}";
 
@@ -2074,12 +2357,12 @@ public partial class GenerateTerrain : IDisposable
             }
             else
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
-                });
+                // Don't call ShowException here — the orchestrator already sent the error
+                // via PubSub (with "Terrain generation aborted:" prefix), which the PubSub
+                // consumer adds to _errors. Calling ShowException would create a duplicate
+                // error entry with slightly different text, bypassing the dedup check.
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
-                    ShowException(new Exception(result.ErrorMessage));
+                    Console.WriteLine($"Terrain generation failed: {result.ErrorMessage}");
             }
         }
         catch (Exception ex)
@@ -2094,7 +2377,8 @@ public partial class GenerateTerrain : IDisposable
             // In wizard mode, snackbars are already cleared before the completion dialog
             if (!(_terrainGeneratedInWizard && WizardMode))
             {
-                // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+                // Suppress new info/warning snackbars from PubSub consumer, clear all existing ones,
+                // then show final message and re-add any error snackbars so users see what went wrong
                 _suppressSnackbars = true;
                 await InvokeAsync(() =>
                 {
@@ -2102,6 +2386,17 @@ public partial class GenerateTerrain : IDisposable
 
                     if (generationSucceeded && finalSuccessMessage != null)
                         Snackbar.Add(finalSuccessMessage, Severity.Success);
+
+                    // Re-add error snackbars so the user can see what went wrong
+                    // Error messages are critical and must not be silently swallowed
+                    if (!generationSucceeded)
+                    {
+                        foreach (var error in _errors.ToList())
+                        {
+                            Snackbar.Add(error, Severity.Error,
+                                config => config.VisibleStateDuration = int.MaxValue);
+                        }
+                    }
                 });
                 _suppressSnackbars = false;
             }
@@ -2109,6 +2404,95 @@ public partial class GenerateTerrain : IDisposable
             _terrainGenerationSnackbar = null;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private void SaveGeoReferenceSettingsAfterGeneration()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_state.WorkingDirectory) || !Directory.Exists(_state.WorkingDirectory))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Terrain generation succeeded, but georeference metadata could not be saved because the level folder was not available.");
+                return;
+            }
+
+            var wgs84Bounds = _state.EffectiveBoundingBox;
+            if (wgs84Bounds == null || !wgs84Bounds.IsValidWgs84)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Terrain generation succeeded, but no usable WGS84 elevation bounds were available for MT_settings.json.");
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_state.GeoTiffProjectionName) &&
+                string.IsNullOrWhiteSpace(_state.GeoTiffProjectionWkt))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Terrain generation succeeded, but no usable elevation projection was available for MT_settings.json.");
+                return;
+            }
+
+            var settings = MtSettings.Load(_state.WorkingDirectory) ?? new MtSettings();
+            settings.GeoReferenceSettings = BuildGeoReferenceSettings(wgs84Bounds);
+            settings.Save(_state.WorkingDirectory);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                "Saved terrain georeference metadata to MT_settings.json.");
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Terrain generation succeeded, but georeference metadata could not be saved: {ex.Message}");
+        }
+    }
+
+    private MtGeoReferenceSettings BuildGeoReferenceSettings(GeoBoundingBox wgs84Bounds)
+    {
+        var nativeBounds = _state.GeoTiffNativeBoundingBox;
+        var sourcePaths = GetSourceElevationPaths();
+
+        return new MtGeoReferenceSettings
+        {
+            HasGeoReference = true,
+            HeightmapSourceType = _state.HeightmapSourceType.ToString(),
+            ProjectionName = _state.GeoTiffProjectionName ?? string.Empty,
+            ProjectionWkt = _state.GeoTiffProjectionWkt ?? string.Empty,
+            SourceElevationPath = sourcePaths.FirstOrDefault() ?? string.Empty,
+            SourceElevationPaths = sourcePaths,
+            TerrainMinLongitude = wgs84Bounds.MinLongitude,
+            TerrainMinLatitude = wgs84Bounds.MinLatitude,
+            TerrainMaxLongitude = wgs84Bounds.MaxLongitude,
+            TerrainMaxLatitude = wgs84Bounds.MaxLatitude,
+            TerrainCenterLongitude = wgs84Bounds.Center.Longitude,
+            TerrainCenterLatitude = wgs84Bounds.Center.Latitude,
+            SourceNativeMinX = nativeBounds?.MinLongitude ?? 0,
+            SourceNativeMinY = nativeBounds?.MinLatitude ?? 0,
+            SourceNativeMaxX = nativeBounds?.MaxLongitude ?? 0,
+            SourceNativeMaxY = nativeBounds?.MaxLatitude ?? 0,
+            SourceGeoTransform = _state.GeoTiffGeoTransform?.ToArray() ?? [],
+            TerrainMetersPerPixel = _state.MetersPerPixel,
+            TerrainSize = _state.TerrainSize,
+            SavedAtUtc = DateTime.UtcNow
+        };
+    }
+
+    private List<string> GetSourceElevationPaths()
+    {
+        return _state.HeightmapSourceType switch
+        {
+            HeightmapSourceType.GeoTiffFile when !string.IsNullOrWhiteSpace(_state.GeoTiffPath) =>
+                [_state.GeoTiffPath],
+            HeightmapSourceType.GeoTiffDirectory when !string.IsNullOrWhiteSpace(_state.GeoTiffDirectory) =>
+                [_state.GeoTiffDirectory],
+            HeightmapSourceType.XyzFile when _state.XyzFilePaths is { Length: > 0 } =>
+                _state.XyzFilePaths.Where(path => !string.IsNullOrWhiteSpace(path)).ToList(),
+            HeightmapSourceType.XyzFile when !string.IsNullOrWhiteSpace(_state.XyzPath) =>
+                [_state.XyzPath],
+            HeightmapSourceType.Png when !string.IsNullOrWhiteSpace(_state.HeightmapPath) =>
+                [_state.HeightmapPath],
+            _ => []
+        };
     }
 
     private async Task ResetPage()
@@ -2129,6 +2513,174 @@ public partial class GenerateTerrain : IDisposable
 
         StateHasChanged();
         Snackbar.Add("Page reset. You can now select a different folder.", Severity.Info);
+    }
+
+    private void EnsureDecalRoadSettings()
+    {
+        _state.DecalRoadSettings ??= new DecalRoadSettings
+        {
+            Enabled = true,
+            NodeSpacingMeters = 2.0f,
+            JunctionExclusionMarginMeters = 0.0f
+        };
+    }
+
+    private float GetDecalRoadNodeSpacing()
+    {
+        EnsureDecalRoadSettings();
+        return _state.DecalRoadSettings!.NodeSpacingMeters;
+    }
+
+    private void SetDecalRoadNodeSpacing(float value)
+    {
+        EnsureDecalRoadSettings();
+        _state.DecalRoadSettings!.NodeSpacingMeters = value;
+    }
+
+    private float GetDecalRoadJunctionMargin()
+    {
+        EnsureDecalRoadSettings();
+        return _state.DecalRoadSettings!.JunctionExclusionMarginMeters;
+    }
+
+    private void SetDecalRoadJunctionMargin(float value)
+    {
+        EnsureDecalRoadSettings();
+        _state.DecalRoadSettings!.JunctionExclusionMarginMeters = value;
+    }
+
+    private int GetDecalRoadRandomSeed()
+    {
+        EnsureDecalRoadSettings();
+        return _state.DecalRoadSettings!.RandomSeed;
+    }
+
+    private void SetDecalRoadRandomSeed(int value)
+    {
+        EnsureDecalRoadSettings();
+        _state.DecalRoadSettings!.RandomSeed = value;
+    }
+
+    private async Task OpenDefaultLayerSetsDialog()
+    {
+        var currentDefaults = DecalRoadDefaultsManager.Load();
+
+        var options = new MudBlazor.DialogOptions
+        {
+            FullScreen = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        var parameters = new DialogParameters
+        {
+            { nameof(DecalRoadLayerSetEditorDialog.DefaultLayerSets), currentDefaults },
+            { nameof(DecalRoadLayerSetEditorDialog.LevelPath), _state.WorkingDirectory }
+        };
+
+        var dialog = await DialogService.ShowAsync<DecalRoadLayerSetEditorDialog>(
+            "DecalRoad Default Layer Sets", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: Dictionary<string, DecalRoadLayerSet> editedDefaults })
+        {
+            DecalRoadDefaultsManager.Save(editedDefaults);
+            Snackbar.Add("Default layer sets saved", Severity.Success);
+        }
+    }
+
+    private bool CanRegenerateDecalRoads()
+    {
+        // Available if in-memory cache exists OR snapshot file exists on disk
+        return _state.CachedNetwork != null ||
+               (!string.IsNullOrEmpty(_state.WorkingDirectory) &&
+                DecalRoadNetworkSnapshot.Exists(_state.WorkingDirectory));
+    }
+
+    private async Task RegenerateDecalRoads()
+    {
+        _state.DecalRoadSettings ??= new DecalRoadSettings { Enabled = true };
+
+        _isGenerating = true;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                var network = _state.CachedNetwork;
+                var heightMap = _state.CachedHeightMap;
+
+                // Fall back to loading from disk if in-memory cache is empty
+                if (network == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Loading road network from saved snapshot...");
+                    network = DecalRoadNetworkSnapshotLoader.LoadNetwork(_state.WorkingDirectory);
+                    if (network == null)
+                        throw new InvalidOperationException(
+                            "No road network available. Generate terrain first to create the network snapshot.");
+
+                    // Cache for subsequent re-generations in this session
+                    _state.CachedNetwork = network;
+                }
+
+                if (heightMap == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Info,
+                        "Loading heightmap from .ter file...");
+                    var terPath = _state.GetOutputPath();
+                    heightMap = DecalRoadNetworkSnapshotLoader.LoadHeightmap(terPath, _state.MaxHeight);
+                    if (heightMap == null)
+                        throw new InvalidOperationException(
+                            $"Terrain file not found at {terPath}. Generate terrain first.");
+
+                    // Cache for subsequent re-generations in this session
+                    _state.CachedHeightMap = heightMap;
+                }
+
+                var appDataDefaults = DecalRoadDefaultsManager.Load();
+
+                DecalRoadSceneWriter.CleanPrevious(_state.WorkingDirectory);
+
+                var decalRoads = DecalRoadGenerator.Generate(
+                    network,
+                    heightMap,
+                    _state.MetersPerPixel,
+                    _state.TerrainSize,
+                    _state.TerrainBaseHeight,
+                    _state.DecalRoadSettings,
+                    appDataDefaults);
+
+                if (decalRoads.Count > 0)
+                {
+                    var writer = new DecalRoadSceneWriter();
+                    writer.WriteAll(decalRoads, _state.WorkingDirectory);
+                }
+
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Re-generated {decalRoads.Count} DecalRoad objects");
+            });
+
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add("DecalRoads re-generated successfully", Severity.Success);
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            await InvokeAsync(() =>
+            {
+                Snackbar.Add($"DecalRoad generation failed: {ex.Message}", Severity.Error);
+            });
+        }
+        finally
+        {
+            _isGenerating = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void OpenWorkingDirectory()
@@ -2395,12 +2947,11 @@ public partial class GenerateTerrain : IDisposable
             }
             else
             {
-                await InvokeAsync(() =>
-                {
-                    Snackbar.Add("Terrain generation failed. Check errors for details.", Severity.Error);
-                });
+                // Don't call ShowException here — the orchestrator already sent the error
+                // via PubSub, which the PubSub consumer adds to _errors. Calling ShowException
+                // would create a duplicate error entry with slightly different text.
                 if (!string.IsNullOrEmpty(result.ErrorMessage))
-                    ShowException(new Exception(result.ErrorMessage));
+                    Console.WriteLine($"Terrain generation (with analysis) failed: {result.ErrorMessage}");
             }
         }
         catch (Exception ex)
@@ -2412,7 +2963,8 @@ public partial class GenerateTerrain : IDisposable
         {
             _isGenerating = false;
 
-            // Suppress new snackbars from PubSub consumer, clear all existing ones, then show final message
+            // Suppress new info/warning snackbars from PubSub consumer, clear all existing ones,
+            // then show final message and re-add any error snackbars so users see what went wrong
             _suppressSnackbars = true;
             await InvokeAsync(() =>
             {
@@ -2420,6 +2972,16 @@ public partial class GenerateTerrain : IDisposable
 
                 if (generationSucceeded && finalSuccessMessage != null)
                     Snackbar.Add(finalSuccessMessage, Severity.Success);
+
+                // Re-add error snackbars so the user can see what went wrong
+                if (!generationSucceeded)
+                {
+                    foreach (var error in _errors.ToList())
+                    {
+                        Snackbar.Add(error, Severity.Error,
+                            config => config.VisibleStateDuration = int.MaxValue);
+                    }
+                }
             });
             _suppressSnackbars = false;
 

@@ -1,10 +1,12 @@
 @using System.Text.Json
 @using System.Text.Json.Nodes
+@using System.Text.Json.Serialization
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
 @using BeamNgTerrainPoc.Terrain.GeoTiff
 @using BeamNgTerrainPoc.Terrain.Models
+@using BeamNgTerrainPoc.Terrain.Models.DecalRoad
 @using BeamNgTerrainPoc.Terrain.Osm.Models
 @using static BeamNG_LevelCleanUp.BlazorUI.Components.TerrainMaterialSettings
 @inject ISnackbar Snackbar
@@ -83,6 +85,7 @@
     [Parameter] public int GeoTiffOriginalHeight { get; set; }
     [Parameter] public string? GeoTiffProjectionName { get; set; }
     [Parameter] public float NativePixelSizeMeters { get; set; }
+    [Parameter] public DecalRoadSettings? DecalRoadSettings { get; set; }
     [Parameter] public Func<bool>? OnRequestMaterialReorder { get; set; }
 
     public string? LastExportPath { get; private set; }
@@ -452,7 +455,7 @@
 
         var appSettings = new JsonObject
         {
-            ["version"] = "2.0",
+            ["version"] = "3.0",
             ["heightmapSource"] = BuildHeightmapSourceSettings(exportedGeoTiffFileName),
             ["terrainOptions"] = new JsonObject
             {
@@ -489,7 +492,18 @@
             materialSettings[mat.InternalName] = BuildMaterialSettings(mat, exportFolder);
         }
         appSettings["materialSettings"] = materialSettings;
-        
+
+        // DecalRoad settings
+        if (DecalRoadSettings != null)
+        {
+            var drJsonOptions = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+            };
+            appSettings["decalRoadSettings"] = JsonSerializer.SerializeToNode(DecalRoadSettings, drJsonOptions);
+        }
+
         return appSettings;
     }
 
@@ -598,21 +612,15 @@
             ["sideMaxSlopeDegrees"] = mat.SideMaxSlopeDegrees,
             ["blendFunctionType"] = mat.BlendFunctionType.ToString(),
             ["crossSectionIntervalMeters"] = mat.CrossSectionIntervalMeters,
-            ["enableTerrainBlending"] = mat.EnableTerrainBlending,
             ["splineParameters"] = new JsonObject
             {
                 ["splineInterpolationType"] = mat.SplineInterpolationType.ToString(),
-                ["tension"] = mat.SplineTension,
-                ["continuity"] = mat.SplineContinuity,
-                ["bias"] = mat.SplineBias,
-                ["useGraphOrdering"] = mat.UseGraphOrdering,
                 ["preferStraightThroughJunctions"] = mat.PreferStraightThroughJunctions,
                 ["densifyMaxSpacingPixels"] = mat.DensifyMaxSpacingPixels,
                 ["simplifyTolerancePixels"] = mat.SimplifyTolerancePixels,
                 ["bridgeEndpointMaxDistancePixels"] = mat.BridgeEndpointMaxDistancePixels,
                 ["minPathLengthPixels"] = mat.MinPathLengthPixels,
                 ["junctionAngleThreshold"] = mat.JunctionAngleThreshold,
-                ["orderingNeighborRadiusPixels"] = mat.OrderingNeighborRadiusPixels,
                 ["skeletonDilationRadius"] = mat.SkeletonDilationRadius,
                 ["smoothingWindowSize"] = mat.SplineSmoothingWindowSize,
                 ["useButterworthFilter"] = mat.SplineUseButterworthFilter,
@@ -648,17 +656,17 @@
                 ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
                 ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,
                 ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
-                // IDW filtering
-                ["enableJunctionIdwFiltering"] = mat.EnableJunctionIdwFiltering,
-                ["minTerminatingIdwWeight"] = mat.MinTerminatingIdwWeight,
-                ["idwFilterTaperDistanceMeters"] = mat.IdwFilterTaperDistanceMeters,
+                // No-blend tuning (Side-Road Transitions)
+                ["bankingRunoffSurfaceWidthMultiplier"] = mat.BankingRunoffSurfaceWidthMultiplier,
+                ["connectorGradeRampLengthMeters"] = mat.ConnectorGradeRampLengthMeters,
                 // Roundabout settings
                 ["enableRoundaboutDetection"] = mat.EnableRoundaboutDetection,
                 ["enableRoundaboutRoadTrimming"] = mat.EnableRoundaboutRoadTrimming,
                 ["roundaboutConnectionRadiusMeters"] = mat.RoundaboutConnectionRadiusMeters,
                 ["roundaboutOverlapToleranceMeters"] = mat.RoundaboutOverlapToleranceMeters,
                 ["forceUniformRoundaboutElevation"] = mat.ForceUniformRoundaboutElevation,
-                ["roundaboutBlendDistanceMeters"] = mat.RoundaboutBlendDistanceMeters
+                ["enableTiltedRoundaboutPlane"] = mat.EnableTiltedRoundaboutPlane,
+                ["roundaboutMaxPlaneTiltDegrees"] = mat.RoundaboutMaxPlaneTiltDegrees
             }
         };
     }

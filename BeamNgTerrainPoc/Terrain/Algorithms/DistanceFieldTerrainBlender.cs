@@ -74,11 +74,18 @@ public class DistanceFieldTerrainBlender
         // Step 4: Apply analytical blending
         Console.WriteLine("Applying distance-based blending...");
         sw.Restart();
+        // Use max cross-section width for the global blend boundary,
+        // falling back to the global parameter if no per-section widths exist
+        var maxCsWidth = geometry.CrossSections
+            .Where(cs => !cs.IsExcluded && cs.WidthMeters > 0)
+            .Select(cs => cs.WidthMeters)
+            .DefaultIfEmpty(parameters.RoadWidthMeters)
+            .Max();
         ApplyDistanceBasedBlending(
             result,
             distanceField,
             elevationMap,
-            parameters.RoadWidthMeters / 2.0f,
+            maxCsWidth / 2.0f,
             parameters.TerrainAffectedRangeMeters,
             parameters.BlendFunctionType);
         perfLog?.Timing($"  ApplyDistanceBasedBlending: {sw.ElapsedMilliseconds}ms");
@@ -90,17 +97,18 @@ public class DistanceFieldTerrainBlender
     }
 
     /// <summary>
-    ///     Builds binary mask of road core (centerline ± half width).
+    ///     Builds binary mask of road core (centerline ï¿½ half width).
     /// </summary>
     private byte[,] BuildRoadCoreMask(RoadGeometry geometry, int width, int height, float metersPerPixel,
         float roadWidth)
     {
         var mask = new byte[height, width];
-        var halfWidth = roadWidth / 2.0f;
         var sectionsProcessed = 0;
 
         foreach (var cs in geometry.CrossSections.Where(s => !s.IsExcluded))
         {
+            // Use per-cross-section width if available, otherwise fall back to global width
+            var halfWidth = (cs.WidthMeters > 0 ? cs.WidthMeters : roadWidth) / 2.0f;
             // Rasterize cross-section line (left to right edge)
             var left = cs.CenterPoint - cs.NormalDirection * halfWidth;
             var right = cs.CenterPoint + cs.NormalDirection * halfWidth;
@@ -289,7 +297,7 @@ public class DistanceFieldTerrainBlender
             for (var x = 0; x < width; x++)
                 elevations[y, x] = float.NaN;
 
-        var maxDist = roadWidth / 2.0f + blendRange;
+        var globalMaxDist = roadWidth / 2.0f + blendRange;
 
         // Build spatial index (done once, shared across threads)
         var index = BuildSpatialIndex(geometry.CrossSections, metersPerPixel);
@@ -320,6 +328,8 @@ public class DistanceFieldTerrainBlender
                 if (nearest != null)
                 {
                     var dist = Vector2.Distance(worldPos, nearest.CenterPoint);
+                    // Use per-cross-section width if available, otherwise fall back to global width
+                    var maxDist = (nearest.WidthMeters > 0 ? nearest.WidthMeters : roadWidth) / 2.0f + blendRange;
                     if (dist <= maxDist)
                         // Double-check elevation validity (spatial index already filters, but be safe)
                         if (IsValidTargetElevation(nearest.TargetElevation))

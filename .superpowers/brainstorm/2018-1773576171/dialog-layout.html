@@ -1,0 +1,230 @@
+<h2>DecalRoad Layer Set Editor — Full-Screen Dialog</h2>
+<p class="subtitle">Two-pane layout: road type list on left, layer set editor on right. Click to select a preference.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Fixed Sidebar + Scrollable Editor</h3>
+      <p>Left sidebar is a narrow fixed list (~220px). Right pane scrolls independently with accordion layer cards. Dialog title bar has "Save" and "Reset to Defaults" actions.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">DecalRoad Default Layer Sets</div>
+        <div class="mockup-body" style="padding:0;font-size:12px;display:flex;min-height:350px">
+          <!-- Left sidebar -->
+          <div style="width:200px;border-right:1px solid #444;background:#1a1a2e;flex-shrink:0;padding:8px 0">
+            <div style="padding:6px 12px;font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px">Road Types</div>
+            <div style="padding:8px 16px;background:#2a3a4a;border-left:3px solid #4fc3f7;font-weight:500">Motorway</div>
+            <div style="padding:8px 16px;opacity:0.8">Trunk</div>
+            <div style="padding:8px 16px;opacity:0.8">Primary</div>
+            <div style="padding:8px 16px;opacity:0.8">Secondary</div>
+            <div style="padding:8px 16px;opacity:0.8">Tertiary</div>
+            <div style="padding:8px 16px;opacity:0.8">Unclassified</div>
+            <div style="padding:8px 16px;opacity:0.8">Residential</div>
+            <div style="padding:8px 16px;opacity:0.8">Service</div>
+            <div style="padding:8px 16px;opacity:0.8">Track</div>
+            <div style="padding:8px 16px;margin-top:8px;border-top:1px solid #333">
+              <span style="color:#4fc3f7;font-size:11px">+ Add Custom Type</span>
+            </div>
+          </div>
+          <!-- Right editor pane -->
+          <div style="flex:1;padding:16px;overflow-y:auto">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <div>
+                <span style="font-size:16px;font-weight:600">Motorway</span>
+                <span style="font-size:11px;color:#999;margin-left:8px">4 lanes default</span>
+              </div>
+              <div style="display:flex;gap:8px;font-size:11px">
+                <span style="color:#4caf50;cursor:pointer">☑ Enabled</span>
+                <span style="color:#ff9800;cursor:pointer">↻ Reset to Default</span>
+              </div>
+            </div>
+            <!-- Layer set header -->
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px">
+              <span style="color:#999">Default Lanes:</span>
+              <span style="background:#333;padding:2px 8px;border-radius:4px">4</span>
+              <span style="color:#999;margin-left:12px">Default Lane Width:</span>
+              <span style="background:#333;padding:2px 8px;border-radius:4px">3.5m</span>
+            </div>
+            <!-- Accordion layers -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px">
+              <span style="font-weight:500;font-size:13px">Layers (5)</span>
+              <span style="font-size:11px;color:#4fc3f7;cursor:pointer">+ Add Layer</span>
+            </div>
+            <!-- Collapsed layer -->
+            <div style="border:1px solid #444;border-radius:4px;margin-bottom:6px;padding:8px 12px;display:flex;align-items:center;gap:8px">
+              <span style="cursor:move;opacity:0.4">⋮⋮</span>
+              <span style="background:#2196f3;color:white;font-size:10px;padding:2px 6px;border-radius:10px">EdgeLine</span>
+              <span style="flex:1;font-weight:500">EdgeLine</span>
+              <span style="font-size:11px;color:#90caf9">m_line_white</span>
+              <span style="font-size:11px;color:#999">0.15m</span>
+              <span style="font-size:11px;color:#999">pos:1.0</span>
+              <span style="font-size:10px;color:#aaa">☑ mir</span>
+              <span style="font-size:10px;color:#aaa">☑ jnc</span>
+              <span style="color:#4caf50;font-size:14px">●</span>
+              <span style="opacity:0.4">▶</span>
+            </div>
+            <!-- Expanded layer -->
+            <div style="border:1px solid #4fc3f7;border-radius:4px;margin-bottom:6px;background:#1a2a3a">
+              <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #333">
+                <span style="cursor:move;opacity:0.4">⋮⋮</span>
+                <span style="background:#ff9800;color:white;font-size:10px;padding:2px 6px;border-radius:10px">LaneMark</span>
+                <span style="flex:1;font-weight:500">LaneMarking</span>
+                <span style="color:#4caf50;font-size:14px">●</span>
+                <span style="opacity:0.4">▼</span>
+              </div>
+              <div style="padding:12px;font-size:12px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Material</div>
+                    <div style="background:#333;padding:4px 8px;border-radius:4px;display:flex;justify-content:space-between">
+                      <span>m_line_white_discontinue</span>
+                      <span style="color:#4fc3f7;cursor:pointer">...</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Layer Type</div>
+                    <div style="background:#333;padding:4px 8px;border-radius:4px">LaneMarking ▾</div>
+                  </div>
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Width (m)</div>
+                    <div style="background:#333;padding:4px 8px;border-radius:4px">0.15</div>
+                  </div>
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Position (-1 to +1)</div>
+                    <div style="background:#333;padding:4px 8px;border-radius:4px">0.0</div>
+                  </div>
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Texture Length (m)</div>
+                    <div style="background:#333;padding:4px 8px;border-radius:4px">10.0</div>
+                  </div>
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Render Priority</div>
+                    <div style="background:#333;padding:4px 8px;border-radius:4px">10</div>
+                  </div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11px">
+                  <label>☐ Mirrored</label>
+                  <label>☑ Per Lane</label>
+                  <label>☐ Track Width</label>
+                  <label>☑ Interrupt @ Junctions</label>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Fade In / Out (m)</div>
+                    <div style="display:flex;gap:6px">
+                      <div style="background:#333;padding:4px 8px;border-radius:4px;flex:1">0.0</div>
+                      <div style="background:#333;padding:4px 8px;border-radius:4px;flex:1">0.0</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style="color:#999;font-size:10px;margin-bottom:2px">Distance Fade (m)</div>
+                    <div style="display:flex;gap:6px">
+                      <div style="background:#333;padding:4px 8px;border-radius:4px;flex:1">1000</div>
+                      <div style="background:#333;padding:4px 8px;border-radius:4px;flex:1">1500</div>
+                    </div>
+                  </div>
+                </div>
+                <div style="text-align:right;margin-top:10px">
+                  <span style="color:#f44336;font-size:11px;cursor:pointer">🗑 Delete Layer</span>
+                  <span style="color:#4fc3f7;font-size:11px;cursor:pointer;margin-left:12px">📋 Duplicate</span>
+                </div>
+              </div>
+            </div>
+            <!-- More collapsed layers -->
+            <div style="border:1px solid #444;border-radius:4px;margin-bottom:6px;padding:8px 12px;display:flex;align-items:center;gap:8px">
+              <span style="cursor:move;opacity:0.4">⋮⋮</span>
+              <span style="background:#4caf50;color:white;font-size:10px;padding:2px 6px;border-radius:10px">EdgeBlend</span>
+              <span style="flex:1;font-weight:500">EdgeBlend1</span>
+              <span style="font-size:11px;color:#90caf9">m_road_asphalt_edge</span>
+              <span style="font-size:11px;color:#999">1.5m</span>
+              <span style="font-size:11px;color:#999">pos:1.0</span>
+              <span style="font-size:10px;color:#aaa">☑ mir</span>
+              <span style="color:#4caf50;font-size:14px">●</span>
+              <span style="opacity:0.4">▶</span>
+            </div>
+            <div style="border:1px solid #444;border-radius:4px;margin-bottom:6px;padding:8px 12px;display:flex;align-items:center;gap:8px">
+              <span style="cursor:move;opacity:0.4">⋮⋮</span>
+              <span style="background:#4caf50;color:white;font-size:10px;padding:2px 6px;border-radius:10px">EdgeBlend</span>
+              <span style="flex:1;font-weight:500">EdgeBlend2</span>
+              <span style="font-size:11px;color:#90caf9">m_road_edge_dirt</span>
+              <span style="font-size:11px;color:#999">3.0m</span>
+              <span style="font-size:11px;color:#999">pos:1.2</span>
+              <span style="font-size:10px;color:#aaa">☑ mir</span>
+              <span style="color:#4caf50;font-size:14px">●</span>
+              <span style="opacity:0.4">▶</span>
+            </div>
+            <div style="border:1px solid #444;border-radius:4px;padding:8px 12px;display:flex;align-items:center;gap:8px;opacity:0.5">
+              <span style="cursor:move;opacity:0.4">⋮⋮</span>
+              <span style="background:#9e9e9e;color:white;font-size:10px;padding:2px 6px;border-radius:10px">AIRoad</span>
+              <span style="flex:1;font-weight:500">AIRoad</span>
+              <span style="font-size:11px;color:#90caf9">road_invisible</span>
+              <span style="font-size:11px;color:#999">trk</span>
+              <span style="color:#666;font-size:14px">●</span>
+              <span style="opacity:0.4">▶</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Wider Sidebar with Summary Info</h3>
+      <p>Same concept but the sidebar (~280px) shows layer count and enabled status per road type. Gives more overview at a glance. The sidebar could also show a "modified" indicator for types that differ from hardcoded defaults.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">DecalRoad Default Layer Sets</div>
+        <div class="mockup-body" style="padding:0;font-size:12px;display:flex;min-height:280px">
+          <!-- Wider sidebar -->
+          <div style="width:270px;border-right:1px solid #444;background:#1a1a2e;flex-shrink:0;padding:8px 0">
+            <div style="padding:6px 12px;font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px">Road Types</div>
+            <div style="padding:8px 14px;background:#2a3a4a;border-left:3px solid #4fc3f7;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-weight:500">Motorway</div>
+                <div style="font-size:10px;color:#999">5 layers · 4 lanes</div>
+              </div>
+              <span style="color:#4caf50;font-size:12px">●</span>
+            </div>
+            <div style="padding:8px 14px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div>Trunk</div>
+                <div style="font-size:10px;color:#999">5 layers · 4 lanes</div>
+              </div>
+              <span style="color:#4caf50;font-size:12px">●</span>
+            </div>
+            <div style="padding:8px 14px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div>Primary</div>
+                <div style="font-size:10px;color:#999">4 layers · 2 lanes</div>
+              </div>
+              <span style="color:#4caf50;font-size:12px">●</span>
+            </div>
+            <div style="padding:8px 14px;display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div>Residential <span style="color:#ff9800;font-size:9px">✎</span></div>
+                <div style="font-size:10px;color:#999">3 layers · 2 lanes</div>
+              </div>
+              <span style="color:#4caf50;font-size:12px">●</span>
+            </div>
+            <div style="padding:8px 14px;display:flex;justify-content:space-between;align-items:center;opacity:0.5">
+              <div>
+                <div>Track</div>
+                <div style="font-size:10px;color:#999">1 layer · 1 lane</div>
+              </div>
+              <span style="color:#666;font-size:12px">●</span>
+            </div>
+            <div style="padding:8px 14px;font-size:11px;color:#999">...</div>
+          </div>
+          <!-- Right editor (abbreviated) -->
+          <div style="flex:1;padding:16px;display:flex;align-items:center;justify-content:center;color:#666">
+            <div style="text-align:center">
+              <div style="font-size:14px">← Same layer editor as Option A</div>
+              <div style="font-size:11px;margin-top:4px">Sidebar just shows more context</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

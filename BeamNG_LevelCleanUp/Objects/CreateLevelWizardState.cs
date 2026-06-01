@@ -16,9 +16,22 @@ public class CreateLevelWizardState
     public string LevelName { get; set; }
 
     /// <summary>
-    ///     Planned terrain size (power of 2, e.g., 1024, 2048, 4096)
+    ///     Base-color texture size for terrain materials copied during the wizard.
+    ///     Deliberately capped low: copying many terrain materials at full terrain
+    ///     size yields one large base-color PNG per material and blows up VRAM.
+    ///     BeamNG requires all base-color textures to share dimensions, so a single
+    ///     small size for all of them is both valid and lightweight. The actual
+    ///     heightmap/terrain size is chosen later on the GenerateTerrain step.
     /// </summary>
-    public int TerrainSize { get; set; } = 2048; // Default to 2048
+    public const int WizardBaseColorTextureSize = 1024;
+
+    /// <summary>
+    ///     Terrain size for the wizard flow. Drives the base-color texture size for
+    ///     copied terrain materials (see <see cref="WizardBaseColorTextureSize" />)
+    ///     and seeds the default for the GenerateTerrain step's size selector.
+    ///     No longer user-selectable on the first wizard form.
+    /// </summary>
+    public int TerrainSize { get; set; } = WizardBaseColorTextureSize;
 
     /// <summary>
     ///     Full path to the source level directory
@@ -125,6 +138,7 @@ public class CreateLevelWizardState
         SourceLevelPath = null;
         SourceLevelName = null;
         TargetLevelRootPath = null;
+        TerrainSize = WizardBaseColorTextureSize;
         CurrentStep = 0;
         IsActive = false;
         CopiedMissionGroupAssets = new List<Asset>();

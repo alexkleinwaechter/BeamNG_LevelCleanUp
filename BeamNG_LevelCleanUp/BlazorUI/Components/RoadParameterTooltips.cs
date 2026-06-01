@@ -201,10 +201,17 @@ public static class RoadParameterTooltips
                                               """;
 
     public const string SideMaxSlopeDegrees = """
-                                              Default: 30.0 | Range: 15.0 to 60.0
-                                              Status: ACTIVELY USED
+                                              Default: 45.0 | Range: 0.0 to 90.0
+                                              Status: ACTIVELY USED (non-Exponential blend modes only)
 
-                                              Maximum embankment (road shoulder) slope. The transition zone from road edge to natural terrain.
+                                              Maximum embankment (road shoulder) slope angle.
+                                              Controls how sharply terrain transitions from road edge to natural terrain.
+
+                                              Only applies when blend function is Linear, Cosine, Cubic, or Quintic.
+                                              When Exponential is selected, FalloffExponent controls the transition instead.
+
+                                              Also auto-extends the blend zone (DOI) when the elevation difference
+                                              requires more distance to satisfy this slope limit.
 
                                               - 25 deg - Gentle embankment (1:2.5 ratio)
                                               - 30 deg - Standard embankment (1:1.7 ratio)
@@ -237,16 +244,37 @@ public static class RoadParameterTooltips
     // ========================================
 
     public const string BlendFunction = """
-                                        Default: Cosine
+                                        Default: Exponential
                                         Status: ACTIVELY USED
 
-                                        The "smoothing curve" used to blend the road into terrain:
+                                        The "smoothing curve" used to blend the road into terrain.
+                                        Each mode uses a different control parameter:
 
-                                        - Linear - Sharp, straight blend (like a ruler edge)
-                                        - Cosine - Smooth, natural blend (RECOMMENDED)
-                                        - Cubic - Very smooth (S-curve)
-                                        - Quintic - Extra smooth (even smoother S-curve)
+                                        Exponential (BeamNG-style):
+                                          Uses FalloffExponent to shape the curve. No slope constraint applied.
+                                          The curve naturally reaches terrain at the DOI boundary.
+
+                                        Linear / Cosine / Cubic / Quintic:
+                                          Uses Max Side Slope to constrain steepness and auto-extend DOI.
+                                          - Linear - Straight blend
+                                          - Cosine - Smooth, natural blend
+                                          - Cubic - Very smooth (S-curve)
+                                          - Quintic - Extra smooth (even smoother S-curve)
                                         """;
+
+    public const string FalloffExponentTooltip = """
+                                                  Default: 1.5 | Range: 0.5 to 5.0
+                                                  Status: ACTIVELY USED (Exponential blend only)
+
+                                                  Fully controls the terrain-to-road transition shape.
+                                                  No slope constraint is applied — the exponent alone shapes the curve.
+
+                                                  1.0 = linear falloff
+                                                  1.5 = natural concave curve (BeamNG default)
+                                                  3.0+ = sharp road shelf with gentle far approach
+
+                                                  The curve always reaches natural terrain at the DOI boundary.
+                                                  """;
 
     public const string CrossSectionIntervalMeters = """
                                                      Default: 0.5 | Range: 0.25 to 5.0
@@ -265,62 +293,6 @@ public static class RoadParameterTooltips
                                                      [!] Auto-adjusted if too high to prevent gaps.
                                                      """;
 
-    public const string EnableTerrainBlending = """
-                                                Default: true
-                                                Status: ACTIVELY USED
-
-                                                If enabled, the road will blend into terrain. If disabled, only extracts road geometry without modifying the heightmap (debug mode).
-                                                """;
-
-    // ========================================
-    // SPLINE: CURVE FITTING
-    // ========================================
-
-    public const string SplineTension = """
-                                        Default: 0.3 | Range: 0.0 to 1.0
-                                        Status: ACTIVELY USED
-
-                                        Controls how tightly the spline curve follows the skeleton points:
-
-                                        - 0.0 - Very loose (smooth but may cut corners)
-                                        - 0.5 - Balanced
-                                        - 1.0 - Very tight (follows closely but may be jagged)
-
-                                        Recommended by road type:
-                                        - 0.1-0.2 - Ultra-smooth highways
-                                        - 0.2-0.3 - General purpose (default)
-                                        - 0.5-0.55 - Hairpins, racing circuits with sharp turns
-                                        """;
-
-    public const string SplineContinuity = """
-                                           Default: 0.5 | Range: -1.0 to 1.0
-                                           Status: ACTIVELY USED
-
-                                           Controls corner smoothness:
-
-                                           - -1.0 - Sharp corners (allows kinks, direction changes)
-                                           - 0.0 - Balanced
-                                           - 1.0 - Very smooth corners (may miss sharp turns)
-
-                                           Recommended by road type:
-                                           - -0.5 to 0.0 - City streets, chicanes
-                                           - 0.0 to 0.2 - Hairpin turns, switchbacks
-                                           - 0.5 to 0.8 - Highways, gentle curves
-                                           """;
-
-    public const string SplineBias = """
-                                     Default: 0.0 | Range: -1.0 to 1.0
-                                     Status: ACTIVELY USED
-
-                                     Controls curve direction bias:
-
-                                     - -1.0 - Bias toward previous point
-                                     - 0.0 - Neutral, symmetric (RECOMMENDED)
-                                     - 1.0 - Bias toward next point
-
-                                     Keep at 0.0 unless you have a specific artistic reason.
-                                     """;
-
     // ========================================
     // SPLINE: PATH EXTRACTION
     // ========================================
@@ -338,15 +310,6 @@ public static class RoadParameterTooltips
 
                                                  [!] For tight hairpin turns, use 0 to avoid "tail" artifacts that mess up curves!
                                                  """;
-
-    public const string UseGraphOrdering = """
-                                           Default: true
-                                           Status: ACTIVELY USED
-
-                                           Use smart graph-based algorithm to order skeleton points. More robust for complex road networks than simple nearest-neighbor.
-
-                                           Recommendation: Always use true.
-                                           """;
 
     public const string DensifyMaxSpacingPixels = """
                                                   Default: 1.5 | Range: 0.5 to 5.0
@@ -392,17 +355,6 @@ public static class RoadParameterTooltips
                                               - 50.0 - Standard filtering
                                               - 100.0 - Aggressive filtering (only major roads)
                                               """;
-
-    public const string OrderingNeighborRadiusPixels = """
-                                                       Default: 2.5 | Range: 1.0 to 10.0
-                                                       Status: ACTIVELY USED
-
-                                                       Points within this distance are considered neighbors when building the ordering graph.
-
-                                                       - 1.5 - Tight (only immediate neighbors)
-                                                       - 2.5 - Balanced (default)
-                                                       - 5.0 - Wide (connects distant points, slower)
-                                                       """;
 
     // ========================================
     // SPLINE: JUNCTION HANDLING

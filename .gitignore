@@ -364,3 +364,9 @@ FodyWeavers.xsd
 /etsmaterialgen/Properties/launchSettings.json
 /examples_for_ai
 /nul
+
+# ChunkHound code-search index + config (contains embedding API key)
+.chunkhound.json
+.chunkhound/
+*.chunkhound.db
+*.chunkhound.db.wal

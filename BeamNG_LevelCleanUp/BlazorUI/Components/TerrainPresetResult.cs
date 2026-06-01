@@ -1,4 +1,5 @@
 using BeamNgTerrainPoc.Terrain.Models;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Components;
@@ -190,6 +191,13 @@ public class TerrainPresetResult
     /// </summary>
     public float? NativePixelSizeMeters { get; set; }
 
+    // ========== NEW: DecalRoad Settings ==========
+
+    /// <summary>
+    ///     DecalRoad generation settings (node spacing, junction margin, layer sets).
+    /// </summary>
+    public DecalRoadSettings? DecalRoadSettings { get; set; }
+
     // ========== NEW: Per-Material OSM Feature Selections ==========
 
     /// <summary>
@@ -270,10 +278,8 @@ public class RoadSmoothingSettings
     public float SideMaxSlopeDegrees { get; set; } = 45.0f;
 
     // Algorithm settings
-    public string BlendFunctionType { get; set; } = "CubicHermiteC1";
+    public string BlendFunctionType { get; set; } = "Exponential";
     public float CrossSectionIntervalMeters { get; set; } = 0.5f;
-    public bool EnableTerrainBlending { get; set; } = true;
-
     // Spline parameters
     public SplineParametersSettings? SplineParameters { get; set; }
 
@@ -290,17 +296,12 @@ public class RoadSmoothingSettings
 public class SplineParametersSettings
 {
     public string SplineInterpolationType { get; set; } = "SmoothInterpolated";
-    public float Tension { get; set; } = 0.2f;
-    public float Continuity { get; set; } = 0.7f;
-    public float Bias { get; set; }
-    public bool UseGraphOrdering { get; set; } = true;
     public bool PreferStraightThroughJunctions { get; set; }
     public float DensifyMaxSpacingPixels { get; set; } = 1.5f;
     public float SimplifyTolerancePixels { get; set; } = 0.5f;
     public float BridgeEndpointMaxDistancePixels { get; set; } = 40.0f;
     public float MinPathLengthPixels { get; set; } = 0f;
     public float JunctionAngleThreshold { get; set; } = 90.0f;
-    public float OrderingNeighborRadiusPixels { get; set; } = 2.5f;
     public int SkeletonDilationRadius { get; set; }
     public int SmoothingWindowSize { get; set; } = 301;
     public bool UseButterworthFilter { get; set; } = true;
@@ -360,10 +361,9 @@ public class JunctionHarmonizationSettings
     public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
     public float EndpointTerrainBlendStrength { get; set; } = 1f;
 
-    // IDW filtering
-    public bool EnableJunctionIdwFiltering { get; set; } = true;
-    public float MinTerminatingIdwWeight { get; set; } = 0.1f;
-    public float? IdwFilterTaperDistanceMeters { get; set; } = null;
+    // No-blend tuning (Side-Road Transitions)
+    public float BankingRunoffSurfaceWidthMultiplier { get; set; } = 3.0f;
+    public float ConnectorGradeRampLengthMeters { get; set; } = 6.0f;
 
     // Roundabout settings
     public bool EnableRoundaboutDetection { get; set; } = true;
@@ -371,7 +371,12 @@ public class JunctionHarmonizationSettings
     public float RoundaboutConnectionRadiusMeters { get; set; } = 10.0f;
     public float RoundaboutOverlapToleranceMeters { get; set; } = 2.0f;
     public bool ForceUniformRoundaboutElevation { get; set; } = true;
-    public float? RoundaboutBlendDistanceMeters { get; set; } = 50.0f;
+
+    /// <summary>When true, tilt the roundabout ring plane to follow terrain (opt-in).</summary>
+    public bool EnableTiltedRoundaboutPlane { get; set; }
+
+    /// <summary>Maximum roundabout ring tilt, in degrees (UI unit; converted to a gradient downstream).</summary>
+    public float RoundaboutMaxPlaneTiltDegrees { get; set; } = 6.0f;
 }
 
 /// <summary>

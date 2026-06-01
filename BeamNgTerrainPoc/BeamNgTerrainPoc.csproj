@@ -2,16 +2,22 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="BeamNgTerrainPoc.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- MaxRev GDAL packages for WiX installer compatibility -->
-    <PackageReference Include="MaxRev.Gdal.Core" Version="3.10.0.300" />
-    <PackageReference Include="MaxRev.Gdal.WindowsRuntime.Minimal" Version="3.10.0.300" />
+    <PackageReference Include="MaxRev.Gdal.Core" Version="3.12.2.472" />
+    <PackageReference Include="MaxRev.Gdal.WindowsRuntime.Minimal" Version="3.12.2.472" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
   </ItemGroup>
 

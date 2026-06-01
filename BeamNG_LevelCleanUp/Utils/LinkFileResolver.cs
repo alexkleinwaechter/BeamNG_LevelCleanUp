@@ -16,6 +16,20 @@ namespace BeamNG_LevelCleanUp.Utils;
 public static class LinkFileResolver
 {
     /// <summary>
+    /// Checks if a path is a BeamNG virtual game path (starts with /levels/, /assets/, /art/, etc.)
+    /// These paths are resolved from game content ZIP archives, not the filesystem.
+    /// </summary>
+    private static bool IsGameVirtualPath(string path)
+    {
+        return path.StartsWith("/levels/", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/art/", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("levels/", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("assets/", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("art/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// JSON structure for .link files
     /// </summary>
     private class LinkFileContent
@@ -89,6 +103,13 @@ public static class LinkFileResolver
         if (string.IsNullOrEmpty(filePath))
             return null;
 
+        // Handle BeamNG virtual paths (/levels/..., /assets/..., /art/...) by streaming from content ZIPs
+        if (IsGameVirtualPath(filePath))
+        {
+            var stream = ZipAssetExtractor.ExtractAsset(filePath.TrimStart('/'));
+            if (stream != null) return stream;
+        }
+
         if (IsLinkFile(filePath))
         {
             return ResolveToStream(filePath);
@@ -158,12 +179,19 @@ public static class LinkFileResolver
         if (string.IsNullOrEmpty(filePath))
             return false;
 
+        // BeamNG virtual paths (/levels/..., /assets/..., /art/...)
+        if (IsGameVirtualPath(filePath))
+        {
+            using var stream = ZipAssetExtractor.ExtractAsset(filePath.TrimStart('/'));
+            return stream != null;
+        }
+
         // For regular files, just check existence
         if (!IsLinkFile(filePath))
             return File.Exists(filePath);
 
         // For .link files, try to resolve
-        using var stream = ResolveToStream(filePath);
-        return stream != null;
+        using var stream2 = ResolveToStream(filePath);
+        return stream2 != null;
     }
 }

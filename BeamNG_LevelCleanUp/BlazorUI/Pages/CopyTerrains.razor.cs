@@ -6,6 +6,7 @@ using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNG_LevelCleanUp.Objects.MtSettings;
 using BeamNG_LevelCleanUp.Utils;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
@@ -680,6 +681,8 @@ public partial class CopyTerrains
             // Update wizard state (accumulate materials)
             UpdateWizardStateAfterCopy();
 
+            WriteWizardPaintModeSettings();
+
             // Set copy completed state (don't navigate away)
             _copyCompleted = true;
             _copiedMaterialsCount = copyCount;
@@ -711,6 +714,148 @@ public partial class CopyTerrains
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Copied {copiedMaterials.Count} terrain material(s) to {WizardState.LevelName}");
     }
+
+    private void WriteWizardPaintModeSettings()
+    {
+        if (!WizardMode || WizardState == null)
+            return;
+
+        try
+        {
+            var levelRoot = !string.IsNullOrWhiteSpace(WizardState.TargetLevelRootPath)
+                ? WizardState.TargetLevelRootPath
+                : ZipFileHandler.GetNamePath(_levelPath);
+
+            if (string.IsNullOrWhiteSpace(levelRoot) || !Directory.Exists(levelRoot))
+                return;
+
+            var copiedSettings = BuildWizardCopiedMaterialSettings(levelRoot);
+            if (!copiedSettings.Any())
+                return;
+
+            var settings = MtSettings.Load(levelRoot) ?? new MtSettings();
+            settings.CurrentMode = BasecolorMode.PaintMode;
+            settings.PaintModeSettings.Materials = MergeMaterialSettings(settings.PaintModeSettings.Materials, copiedSettings);
+            settings.BasecolorModeSettings.Materials = MergeMaterialSettings(settings.BasecolorModeSettings.Materials, copiedSettings);
+            settings.Save(levelRoot);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Saved Basecolor Manager Paint Mode settings for {copiedSettings.Count} copied terrain material(s).");
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Could not write Basecolor Manager settings for copied terrain materials: {ex.Message}");
+        }
+    }
+
+    private List<MtTerrainMaterialSetting> BuildWizardCopiedMaterialSettings(string levelRoot)
+    {
+        var materialIdentities = ReadTargetTerrainMaterialIdentities(levelRoot);
+        var settings = new List<MtTerrainMaterialSetting>();
+
+        foreach (var selectedItem in _selectedItems.Where(x => x.CopyAsset.CopyAssetType == CopyAssetType.Terrain))
+        {
+            var copyAsset = selectedItem.CopyAsset;
+            var targetKeys = GetCopiedTargetMaterialKeys(copyAsset);
+
+            foreach (var targetKey in targetKeys)
+            {
+                var identity = materialIdentities.FirstOrDefault(x =>
+                    MatchesMaterialIdentity(x.Key, targetKey) ||
+                    MatchesMaterialIdentity(x.Name, targetKey) ||
+                    MatchesMaterialIdentity(x.InternalName, targetKey));
+
+                var targetName = !string.IsNullOrWhiteSpace(identity.Name) ? identity.Name : targetKey;
+                var targetInternalName = !string.IsNullOrWhiteSpace(identity.InternalName) ? identity.InternalName : targetName;
+
+                settings.Add(new MtTerrainMaterialSetting
+                {
+                    Name = targetName,
+                    InternalName = targetInternalName,
+                    BaseColorHex = copyAsset.BaseColorHex,
+                    RoughnessPreset = copyAsset.RoughnessPreset,
+                    RoughnessValue = copyAsset.RoughnessValue,
+                    CalculatedRoughnessValue = copyAsset.CalculatedRoughnessValue
+                });
+            }
+        }
+
+        return settings;
+    }
+
+    private List<string> GetCopiedTargetMaterialKeys(CopyAsset copyAsset)
+    {
+        if (copyAsset.IsReplaceMode)
+            return copyAsset.ReplaceTargetMaterialNames
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        return copyAsset.Materials
+            .Select(material => GenerateCopiedTerrainMaterialName(material, _levelNameCopyFrom))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string GenerateCopiedTerrainMaterialName(MaterialJson material, string sourceLevelName)
+    {
+        var baseName = material.Name;
+        var materialNameParts = (material.Name ?? string.Empty).Split('-');
+        if (materialNameParts.Length > 1 && Guid.TryParse(string.Join("-", materialNameParts.Skip(1)), out _))
+            baseName = materialNameParts[0];
+
+        return $"{baseName}_{sourceLevelName}";
+    }
+
+    private static List<TargetTerrainMaterialIdentity> ReadTargetTerrainMaterialIdentities(string levelRoot)
+    {
+        var materialIdentities = new List<TargetTerrainMaterialIdentity>();
+        var materialsJsonPath = TerrainTextureHelper.FindTerrainMaterialsJsonPath(levelRoot);
+        if (string.IsNullOrWhiteSpace(materialsJsonPath) || !File.Exists(materialsJsonPath))
+            return materialIdentities;
+
+        var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(materialsJsonPath);
+        foreach (var property in jsonNode.AsObject())
+        {
+            if (property.Value?["class"]?.ToString() != "TerrainMaterial")
+                continue;
+
+            var name = property.Value["name"]?.ToString() ?? property.Key;
+            var internalName = property.Value["internalName"]?.ToString() ?? name;
+            materialIdentities.Add(new TargetTerrainMaterialIdentity(property.Key, name, internalName));
+        }
+
+        return materialIdentities;
+    }
+
+    private static List<MtTerrainMaterialSetting> MergeMaterialSettings(
+        List<MtTerrainMaterialSetting> existing,
+        List<MtTerrainMaterialSetting> copied)
+    {
+        var merged = existing?.ToList() ?? new List<MtTerrainMaterialSetting>();
+
+        foreach (var copiedSetting in copied)
+        {
+            var existingIndex = merged.FindIndex(x => MatchesMaterialIdentity(x.InternalName, copiedSetting.InternalName));
+            if (existingIndex >= 0)
+                merged[existingIndex] = copiedSetting;
+            else
+                merged.Add(copiedSetting);
+        }
+
+        return merged;
+    }
+
+    private static bool MatchesMaterialIdentity(string left, string right)
+    {
+        return !string.IsNullOrWhiteSpace(left) &&
+               !string.IsNullOrWhiteSpace(right) &&
+               left.Equals(right, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private record TargetTerrainMaterialIdentity(string Key, string Name, string InternalName);
 
     private void CancelWizard()
     {

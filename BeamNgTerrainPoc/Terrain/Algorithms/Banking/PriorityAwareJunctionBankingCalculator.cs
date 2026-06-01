@@ -165,7 +165,13 @@ public class PriorityAwareJunctionBankingCalculator
 
                 // For same-material junctions, use a small transition just to smooth
                 // the banking at the immediate junction point, but don't suppress it
-                var maxRoadWidth = highestPrioritySplines.Max(s => s.Parameters.RoadWidthMeters);
+                var maxRoadWidth = highestPrioritySplines.Max(s =>
+                {
+                    var c = contributors.FirstOrDefault(c => c.Spline.SplineId == s.SplineId);
+                    var dist = c?.CrossSection.DistanceAlongSpline ?? 0f;
+                    return s.WidthProfile?.GetWidthsAtDistance(dist).corridor
+                        ?? s.Parameters.RoadWidthMeters;
+                });
                 var smallTransitionDistance = MathF.Max(maxRoadWidth, 5.0f);
                 
                 ApplyBehaviorToNearbyCrossSections(
@@ -188,7 +194,13 @@ public class PriorityAwareJunctionBankingCalculator
         {
             // Use the maximum road width among participating roads as the transition distance
             // This ensures banking is only suppressed in the immediate junction area
-            var maxRoadWidth = highestPrioritySplines.Max(s => s.Parameters.RoadWidthMeters);
+            var maxRoadWidth = highestPrioritySplines.Max(s =>
+            {
+                var c = contributors.FirstOrDefault(c => c.Spline.SplineId == s.SplineId);
+                var dist = c?.CrossSection.DistanceAlongSpline ?? 0f;
+                return s.WidthProfile?.GetWidthsAtDistance(dist).corridor
+                    ?? s.Parameters.RoadWidthMeters;
+            });
             effectiveTransitionDistance = MathF.Max(maxRoadWidth * 1.5f, 10.0f);
             
             TerrainCreationLogger.Current?.Detail(

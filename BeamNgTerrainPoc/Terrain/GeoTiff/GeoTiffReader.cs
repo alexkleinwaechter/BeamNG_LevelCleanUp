@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using BeamNgTerrainPoc.Terrain.Logging;
 using MaxRev.Gdal.Core;
 using OSGeo.GDAL;
@@ -17,6 +18,9 @@ public class GeoTiffReader
     private static bool _gdalInitialized;
     private static readonly object _initLock = new();
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetDllDirectory(string lpPathName);
+
     /// <summary>
     ///     Initializes GDAL library. Called automatically on first use.
     ///     Uses MaxRev.Gdal.Core for automatic configuration of GDAL_DATA and PROJ_LIB paths.
@@ -29,6 +33,10 @@ public class GeoTiffReader
 
             try
             {
+                // Ensure the app directory is in the native DLL search path,
+                // preventing conflicts with other GDAL installations (QGIS, OSGeo4W, etc.)
+                SetDllDirectory(AppContext.BaseDirectory);
+
                 // MaxRev.Gdal.Core handles all environment variable setup (GDAL_DATA, PROJ_LIB)
                 GdalBase.ConfigureAll();
                 Gdal.AllRegister();
@@ -37,9 +45,62 @@ public class GeoTiffReader
             }
             catch (Exception ex)
             {
-                TerrainLogger.Error($"Failed to initialize GDAL: {ex.Message}");
+                var appDir = AppContext.BaseDirectory;
+                var diagnostics = new System.Text.StringBuilder();
+                diagnostics.AppendLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss UTC}] GDAL initialization failed. Diagnostics:");
+                diagnostics.AppendLine($"  App base directory: {appDir}");
+                diagnostics.AppendLine($"  OS: {Environment.OSVersion} ({(Environment.Is64BitProcess ? "64-bit" : "32-bit")} process)");
+                diagnostics.AppendLine($"  .NET: {Environment.Version}");
+                diagnostics.AppendLine($"  GDAL_DATA env: {Environment.GetEnvironmentVariable("GDAL_DATA") ?? "(not set)"}");
+                diagnostics.AppendLine($"  PROJ_LIB env: {Environment.GetEnvironmentVariable("PROJ_LIB") ?? "(not set)"}");
+
+                var criticalFiles = new[] { "gdal.dll", "gdal_wrap.dll", "proj_9.dll", "proj.db", "ogr_wrap.dll", "osr_wrap.dll" };
+                foreach (var file in criticalFiles)
+                {
+                    var filePath = Path.Combine(appDir, file);
+                    diagnostics.AppendLine($"  {file}: {(File.Exists(filePath) ? "FOUND" : "MISSING")}");
+                }
+
+                // Log full exception chain
+                var current = ex;
+                while (current != null)
+                {
+                    diagnostics.AppendLine($"  Exception: [{current.GetType().Name}] {current.Message}");
+                    current = current.InnerException;
+                }
+
+                var diagText = diagnostics.ToString();
+
+                // Write to TerrainCreationLogger (file-backed) if available
+                if (TerrainCreationLogger.Current != null)
+                {
+                    TerrainCreationLogger.Current.Error(diagText);
+                }
+                else
+                {
+                    // No logger session active yet — write directly to AppData as fallback
+                    try
+                    {
+                        var logDir = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                            "BeamNG_LevelCleanUp");
+                        Directory.CreateDirectory(logDir);
+                        var logPath = Path.Combine(logDir, "gdal_error.log");
+                        File.AppendAllText(logPath, diagText + Environment.NewLine);
+                    }
+                    catch
+                    {
+                        // Can't write log file either
+                    }
+                }
+
+                // Also send to TerrainLogger in case a UI handler is active
+                TerrainLogger.Error(diagText);
+
                 throw new InvalidOperationException(
-                    "GDAL initialization failed. Ensure GDAL native libraries are installed.", ex);
+                    $"GDAL initialization failed. Ensure GDAL native libraries are installed. " +
+                    $"Check error log in %LocalAppData%\\BeamNG_LevelCleanUp\\ | " +
+                    $"App dir: {appDir} | Error: {ex.Message}", ex);
             }
         }
     }
@@ -238,8 +299,10 @@ public class GeoTiffReader
         TerrainLogger.Info(
             $"Elevation range: {minElevation:F1}m to {maxElevation:F1}m (range: {maxElevation - minElevation:F1}m)");
 
-        // Convert to 16-bit heightmap image
+        // Convert to 16-bit heightmap image, then release the elevation array
+        // (can be 256MB+ for 16K x 16K terrains)
         var heightmapImage = ConvertToHeightmap(elevationData, width, height, minElevation, maxElevation);
+        elevationData = null!; // Allow GC to reclaim before resize allocates another large buffer
 
         // Resize if target size is specified and different from source
         if (targetSize.HasValue &&
@@ -380,8 +443,9 @@ public class GeoTiffReader
         TerrainLogger.Info(
             $"Cropped elevation range: {minElevation:F1}m to {maxElevation:F1}m (range: {maxElevation - minElevation:F1}m)");
 
-        // Convert to 16-bit heightmap image
+        // Convert to 16-bit heightmap image, then release the elevation array
         var heightmapImage = ConvertToHeightmap(elevationData, cropWidth, cropHeight, minElevation, maxElevation);
+        elevationData = null!; // Allow GC to reclaim before resize allocates another large buffer
 
         // Resize if target size is specified and different from cropped source
         if (targetSize.HasValue &&

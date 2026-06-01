@@ -42,6 +42,19 @@ dotnet build /p:EnableWindowsTargeting=true
 4. Build and verify deployment ZIP files
 5. Check proper cleanup of temporary files in `%LocalAppData%\BeamNG_LevelCleanUp\temp`
 
+## Code Search Tooling
+
+**ChunkHound** (semantic + regex code search) is installed and indexed for this repo. Use it together with
+ripgrep for tracing/navigation work:
+
+- MCP server `ChunkHound` is registered (tools surface after a session refresh). Config in the git-ignored
+  `.chunkhound.json` (voyage-code-3 1024-dim embeddings; `.chunkhound/` index dir also git-ignored).
+- Re-index after large changes: `chunkhound index` (one-shot; do **not** pipe its output to `head`/`tail` —
+  SIGPIPE aborts the embedding phase. It also holds a single-writer DuckDB lock, so search/MCP can't read
+  while indexing runs).
+- Use ChunkHound **semantic** search for concept discovery; use **ripgrep** (exact) for "is this flag/symbol
+  still used" questions.
+
 ## Solution Structure
 
 ```
