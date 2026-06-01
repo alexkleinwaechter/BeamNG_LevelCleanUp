@@ -59,6 +59,12 @@ Write-Host ""
 Write-Host "[3/4] Publishing application..." -ForegroundColor Yellow
 Write-Host "       Target: win-x64, Self-contained, NO SingleFile (required for GDAL)" -ForegroundColor Gray
 
+$publishDir = "BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
+if (Test-Path $publishDir) {
+    Write-Host "       Cleaning previous publish output..." -ForegroundColor Gray
+    Remove-Item $publishDir -Recurse -Force
+}
+
 dotnet publish BeamNG_LevelCleanUp\BeamNG_LevelCleanUp.csproj `
     -c Release `
     -r win-x64 `
@@ -73,7 +79,6 @@ Write-Host "Publish completed." -ForegroundColor Green
 
 # Verify the publish output contains GDAL files
 # Note: dotnet publish -r win-x64 flattens native DLLs into the publish root (not runtimes\)
-$publishDir = "BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
 $gdalDlls = Get-ChildItem -Path $publishDir -Filter "gdal*.dll" -ErrorAction SilentlyContinue
 $projDb = Test-Path (Join-Path $publishDir "proj.db")
 if ($gdalDlls.Count -gt 0 -and $projDb) {
@@ -129,7 +134,7 @@ Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Output files:" -ForegroundColor White
 Write-Host "  Application: $publishDir\" -ForegroundColor Gray
-Write-Host "  Installer:   Installer\bin\Release\net9.0\win-x64\en-us\BeamNG_LevelCleanUp_Setup.msi" -ForegroundColor Gray
+Write-Host "  Installer:   Installer\bin\Release\BeamNG_LevelCleanUp_Setup.msi" -ForegroundColor Gray
 Write-Host ""
 Write-Host "The MSI installer includes:" -ForegroundColor White
 Write-Host "  - BeamNG Tools for Mapbuilders application" -ForegroundColor Gray
@@ -138,7 +143,7 @@ Write-Host "  - Start Menu and Desktop shortcuts" -ForegroundColor Gray
 Write-Host ""
 
 # Show file size
-$msiPath = "Installer\bin\Release\net9.0\win-x64\en-us\BeamNG_LevelCleanUp_Setup.msi"
+$msiPath = "Installer\bin\Release\BeamNG_LevelCleanUp_Setup.msi"
 if (Test-Path $msiPath) {
     $msiSize = (Get-Item $msiPath).Length / 1MB
     Write-Host "Installer size: $([math]::Round($msiSize, 2)) MB" -ForegroundColor White

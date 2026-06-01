@@ -10,14 +10,13 @@
   <SuppressIces>all</SuppressIces>
 </PropertyGroup>
   
-  <!-- Read AssemblyVersion from the main project file before WiX preprocessing -->
+  <!-- Reuse the central product version before WiX preprocessing. -->
   <Target Name="ReadVersionFromMainProject" BeforeTargets="BeforeCompile">
-    <XmlPeek XmlInputPath="..\BeamNG_LevelCleanUp\BeamNG_LevelCleanUp.csproj"
-             Query="/Project/PropertyGroup/AssemblyVersion/text()">
-      <Output TaskParameter="Result" PropertyName="ProductVersion" />
-    </XmlPeek>
-    
-    <Message Text="Auto-detected version from BeamNG_LevelCleanUp.csproj: $(ProductVersion)" Importance="high" />
+    <PropertyGroup>
+      <ProductVersion>$(BeamNgMappingVersion)</ProductVersion>
+    </PropertyGroup>
+
+    <Message Text="Using product version: $(ProductVersion)" Importance="high" />
     
     <PropertyGroup>
       <DefineConstants>ProductVersion=$(ProductVersion)</DefineConstants>

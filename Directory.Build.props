@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <BeamNgMappingVersion>1.5.6.0</BeamNgMappingVersion>
+  </PropertyGroup>
+</Project>

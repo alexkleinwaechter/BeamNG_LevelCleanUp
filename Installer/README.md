@@ -51,7 +51,7 @@ build-installer.cmd
 ## Output
 
 After successful build:
-- **MSI Installer**: `Installer\BeamNG_LevelCleanUp_Setup.msi`
+- **MSI Installer**: `Installer\bin\Release\BeamNG_LevelCleanUp_Setup.msi`
 - **Published Application**: `BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\`
 
 ## Installation
