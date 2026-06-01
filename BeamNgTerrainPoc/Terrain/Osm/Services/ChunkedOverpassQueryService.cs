@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
@@ -11,8 +12,8 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Services;
 /// Each chunk is individually cached via <see cref="OsmQueryCache"/>.
 ///
 /// Terrain sizes are always powers of two (512, 1024, 2048, 4096, 8192, 16384m).
-/// Areas up to 4096m are queried as a single request. Larger areas are split into
-/// ~4096m chunks (e.g., 8192m → 2x2, 16384m → 4x4).
+/// Areas up to 2048m are queried as a single request. Larger areas are split into
+/// ~2048m chunks (e.g., 4096m → 2x2, 8192m → 4x4).
 /// </summary>
 public class ChunkedOverpassQueryService : IDisposable
 {
@@ -28,20 +29,25 @@ public class ChunkedOverpassQueryService : IDisposable
     private static readonly TimeSpan RequestSpacing = TimeSpan.FromMilliseconds(300);
 
     /// <summary>
-    /// Chunk size in meters. Matches the largest terrain size that works well
+    /// Chunk size in meters. Matches the largest Overpass query size that works well
     /// as a single Overpass request. Larger terrains get split into chunks of this size.
     /// </summary>
     private const double ChunkSizeMeters = 4096.0;
 
     /// <summary>
     /// Minimum bounding box dimension (in meters) to trigger chunking.
-    /// Areas up to 4096m (one terrain tile) go as a single request.
+    /// Areas up to 4096m are queried as a single request.
     /// </summary>
     private const double MinChunkingThresholdMeters = 4096.0;
 
     private readonly OverpassApiService _apiService;
     private readonly OsmQueryCache _cache;
     private readonly bool _ownsApiService;
+
+    /// <summary>
+    /// Coalesces concurrent cache misses for the same chunk across all service instances.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, Lazy<Task<OsmQueryResult>>> InFlightChunkQueries = new();
 
     /// <summary>
     /// Creates a new chunked query service using the shared cache and a new API service.
@@ -81,19 +87,19 @@ public class ChunkedOverpassQueryService : IDisposable
             return cached;
         }
 
-        // Only chunk if bbox exceeds 4096m on either axis
+        // Only chunk if bbox exceeds the configured chunk threshold on either axis
         var shouldChunk = bbox.ApproximateWidthMeters > MinChunkingThresholdMeters ||
                           bbox.ApproximateHeightMeters > MinChunkingThresholdMeters;
 
         if (!shouldChunk)
         {
-            // Fits in a single 4096m tile — single query, no chunking overhead
+            // Fits in a single chunk — single query, no chunking overhead
             TerrainLogger.Info(
                 $"Bbox {bbox.ApproximateWidthMeters:F0}m x {bbox.ApproximateHeightMeters:F0}m fits in single request");
             return await QuerySingleChunkAsync(bbox, cancellationToken);
         }
 
-        // Split into ~4096m chunks
+        // Split into configured-size chunks
         var chunks = bbox.SplitIntoChunks(ChunkSizeMeters);
         TerrainLogger.Info(
             $"Split {bbox.ApproximateWidthMeters:F0}m x {bbox.ApproximateHeightMeters:F0}m bbox " +
@@ -172,9 +178,35 @@ public class ChunkedOverpassQueryService : IDisposable
             return cached;
         }
 
-        // Cache miss — must query Overpass API
-        TerrainLogger.Info($"Chunk cache miss, querying Overpass API for bbox: {chunkBbox}");
-        var result = await _apiService.QueryAllFeaturesAsync(chunkBbox, cancellationToken);
+        var cacheKey = _cache.GetCacheKey(chunkBbox);
+        var newQuery = new Lazy<Task<OsmQueryResult>>(
+            () => QueryAndCacheSingleChunkAsync(chunkBbox),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+
+        var inFlightQuery = InFlightChunkQueries.GetOrAdd(cacheKey, newQuery);
+        if (ReferenceEquals(inFlightQuery, newQuery))
+        {
+            TerrainLogger.Info($"Chunk cache miss, querying Overpass API for bbox: {chunkBbox}");
+        }
+        else
+        {
+            TerrainLogger.Info($"OSM chunk request already in flight, waiting for cache key: {cacheKey}");
+        }
+
+        try
+        {
+            return await inFlightQuery.Value;
+        }
+        finally
+        {
+            if (inFlightQuery.IsValueCreated && inFlightQuery.Value.IsCompleted)
+                InFlightChunkQueries.TryRemove(cacheKey, out _);
+        }
+    }
+
+    private async Task<OsmQueryResult> QueryAndCacheSingleChunkAsync(GeoBoundingBox chunkBbox)
+    {
+        var result = await _apiService.QueryAllFeaturesAsync(chunkBbox, CancellationToken.None);
 
         // Cache the chunk result
         await _cache.SetAsync(chunkBbox, result);

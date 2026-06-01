@@ -33,6 +33,13 @@ public class OsmQueryCache
     private const string LegacyExtension = ".json";
 
     /// <summary>
+    /// Tolerance for matching requested bounding boxes against cached bounding boxes.
+    /// Covers tiny GeoTIFF/crop recalculation and filename rounding differences.
+    /// 0.0002° is roughly 22m latitude, less longitude depending on latitude.
+    /// </summary>
+    public const double BboxContainmentToleranceDegrees = 0.0002;
+
+    /// <summary>
     /// Shared singleton instance. Use this from all call sites to benefit from
     /// the in-memory cache tier across the entire application session.
     /// </summary>
@@ -209,7 +216,7 @@ public class OsmQueryCache
         foreach (var (_, cachedResult) in _memoryCache)
         {
             if (cachedResult.BoundingBox != null &&
-                cachedResult.BoundingBox.Contains(requestedBbox) &&
+                ContainsWithTolerance(cachedResult.BoundingBox, requestedBbox) &&
                 DateTime.UtcNow - cachedResult.QueryTime < _cacheExpiry)
             {
                 var filtered = FilterFeaturesToBbox(cachedResult, requestedBbox);
@@ -223,7 +230,7 @@ public class OsmQueryCache
 
         foreach (var entry in index)
         {
-            if (entry.BBox.Contains(requestedBbox) &&
+            if (ContainsWithTolerance(entry.BBox, requestedBbox) &&
                 DateTime.UtcNow - entry.LastWriteUtc <= _cacheExpiry)
             {
                 // Derive cache key from the indexed file's bbox for per-key locking
@@ -240,7 +247,7 @@ public class OsmQueryCache
                     var cachedResult = await ReadCompressedCacheFileAsync(entry.FilePath);
 
                     if (cachedResult?.BoundingBox != null &&
-                        cachedResult.BoundingBox.Contains(requestedBbox))
+                        ContainsWithTolerance(cachedResult.BoundingBox, requestedBbox))
                     {
                         var filtered = FilterFeaturesToBbox(cachedResult, requestedBbox);
                         TerrainLogger.Info($"OSM cache hit (disk, containing via index): filtered {filtered.Features.Count} features from larger cached region");
@@ -264,6 +271,20 @@ public class OsmQueryCache
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Checks whether one bounding box contains another, allowing small coordinate drift.
+    /// </summary>
+    public static bool ContainsWithTolerance(
+        GeoBoundingBox container,
+        GeoBoundingBox requested,
+        double toleranceDegrees = BboxContainmentToleranceDegrees)
+    {
+        return requested.MinLongitude >= container.MinLongitude - toleranceDegrees &&
+               requested.MaxLongitude <= container.MaxLongitude + toleranceDegrees &&
+               requested.MinLatitude >= container.MinLatitude - toleranceDegrees &&
+               requested.MaxLatitude <= container.MaxLatitude + toleranceDegrees;
     }
 
     /// <summary>
@@ -635,11 +656,10 @@ public class OsmQueryCache
     /// Expected format: osm_v3_{minLat:F4}_{minLon:F4}_{maxLat:F4}_{maxLon:F4}.json.gz
     /// </summary>
     /// <remarks>
-    /// The filename stores coordinates at F4 precision (4 decimal places). Standard rounding
-    /// can make the parsed bbox slightly smaller than the actual cached bbox (min rounds up,
-    /// max rounds down). To prevent false negatives in the containing-bbox index pre-filter,
-    /// we expand by half the F4 step (0.00005° ≈ 5.5m). False positives are harmless because
-    /// the full-precision Contains() check after file deserialization is the definitive gate.
+    /// The filename stores coordinates at F4 precision (4 decimal places), while regenerated
+    /// GeoTIFF/crop bounding boxes can differ by tiny amounts. To prevent false negatives in
+    /// the containing-bbox index pre-filter, expand by the same tolerance used for cache matching.
+    /// False positives are harmless because the deserialized bounding box is checked again.
     /// </remarks>
     private static GeoBoundingBox? ParseBboxFromFileName(string filePath)
     {
@@ -661,10 +681,11 @@ public class OsmQueryCache
             double.TryParse(parts[^2], CultureInfo.InvariantCulture, out var maxLat) &&
             double.TryParse(parts[^1], CultureInfo.InvariantCulture, out var maxLon))
         {
-            // Expand by half the F4 precision step to compensate for rounding.
-            // This ensures the index bbox is always >= the actual cached bbox.
-            const double halfStep = 0.00005;
-            return new GeoBoundingBox(minLon - halfStep, minLat - halfStep, maxLon + halfStep, maxLat + halfStep);
+            return new GeoBoundingBox(
+                minLon - BboxContainmentToleranceDegrees,
+                minLat - BboxContainmentToleranceDegrees,
+                maxLon + BboxContainmentToleranceDegrees,
+                maxLat + BboxContainmentToleranceDegrees);
         }
 
         return null;

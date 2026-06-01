@@ -111,7 +111,7 @@ public class TerrainGenerationOrchestrator
                 var transformerFactory = CreateCoordinateTransformerFactory(state, effectiveBoundingBox);
 
                 // Cache for OSM query results
-                OsmQueryResult? osmQueryResult = null;
+                var osmQueryResult = GetReusableOsmQueryResult(state, effectiveBoundingBox);
 
                 // Reset cross-material roundabout dedup tracking for this generation run
                 _processedRoundaboutIds = new HashSet<long>();
@@ -126,7 +126,11 @@ public class TerrainGenerationOrchestrator
                         debugPath,
                         state,
                         osmQueryResult,
-                        newOsmResult => osmQueryResult = newOsmResult,
+                        newOsmResult =>
+                        {
+                            osmQueryResult = newOsmResult;
+                            state.CachedOsmQueryResult = newOsmResult;
+                        },
                         _processedRoundaboutIds);
 
                     materialDefinitions.Add(new MaterialDefinition(
@@ -761,6 +765,22 @@ public class TerrainGenerationOrchestrator
         return (layerImagePath, roadParams);
     }
 
+    private static OsmQueryResult? GetReusableOsmQueryResult(
+        TerrainGenerationState state,
+        GeoBoundingBox? effectiveBoundingBox)
+    {
+        var cachedResult = state.CachedOsmQueryResult;
+        if (cachedResult?.BoundingBox == null || effectiveBoundingBox == null)
+            return null;
+
+        if (!OsmQueryCache.ContainsWithTolerance(cachedResult.BoundingBox, effectiveBoundingBox))
+            return null;
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Reusing cached OSM data from this session ({cachedResult.Features.Count} features)...");
+        return cachedResult;
+    }
+
     private async Task<(string? LayerImagePath, RoadSmoothingParameters? RoadParams, OsmQueryResult? OsmResult)>
         ProcessOsmMaterialAsync(
             TerrainMaterialSettings.TerrainMaterialItemExtended mat,
@@ -1302,6 +1322,7 @@ public class TerrainGenerationOrchestrator
                     "Fetching OSM data for layer export (chunked parallel queries)...");
                 using var chunkedService = new ChunkedOverpassQueryService();
                 osmQueryResult = await chunkedService.QueryAllFeaturesChunkedAsync(effectiveBoundingBox);
+                state.CachedOsmQueryResult = osmQueryResult;
             }
 
             if (osmQueryResult.Features.Count == 0)
