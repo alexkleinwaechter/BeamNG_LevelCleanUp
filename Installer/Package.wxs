@@ -54,31 +54,19 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
                   Impersonate="yes" />
     
     <!-- Preserve per-user settings during upgrades, including upgrades from older MSIs whose uninstall cleanup was too aggressive. -->
-    <SetProperty Id="BackupAppDataFolders"
-           Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$backup = Join-Path $env:TEMP 'BeamNG_LevelCleanUp_AppDataBackup'; Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Path $backup -Force | Out-Null; $folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $src = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $src) { Copy-Item $src (Join-Path $backup $f) -Recurse -Force -ErrorAction SilentlyContinue } }&quot;"
-           Before="BackupAppDataFolders"
-           Sequence="execute"
-           Condition="PREVIOUSFOUND" />
-
     <CustomAction Id="BackupAppDataFolders"
-            BinaryRef="Wix4UtilCA_X64"
-            DllEntry="WixQuietExec64"
-                  Execute="deferred"
-                  Impersonate="yes"
-            Return="ignore" />
-
-    <SetProperty Id="RestoreAppDataFolders"
-           Value="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$backup = Join-Path $env:TEMP 'BeamNG_LevelCleanUp_AppDataBackup'; if (Test-Path $backup) { $folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $src = Join-Path $backup $f; if (Test-Path $src) { $dest = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $dest) { Copy-Item (Join-Path $src '*') $dest -Recurse -Force -ErrorAction SilentlyContinue } else { Copy-Item $src $dest -Recurse -Force -ErrorAction SilentlyContinue } } }; Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue }&quot;"
-           Before="RestoreAppDataFolders"
-           Sequence="execute"
-           Condition="PREVIOUSFOUND" />
+          Directory="INSTALLFOLDER"
+          ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$backup = Join-Path $env:TEMP 'BeamNG_LevelCleanUp_AppDataBackup'; Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Path $backup -Force | Out-Null; $folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $src = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $src) { Copy-Item $src (Join-Path $backup $f) -Recurse -Force -ErrorAction SilentlyContinue } }&quot;"
+          Execute="immediate"
+          Impersonate="yes"
+          Return="ignore" />
 
     <CustomAction Id="RestoreAppDataFolders"
-            BinaryRef="Wix4UtilCA_X64"
-            DllEntry="WixQuietExec64"
-                  Execute="deferred"
+          Directory="INSTALLFOLDER"
+          ExeCommand="&quot;[SystemFolder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$backup = Join-Path $env:TEMP 'BeamNG_LevelCleanUp_AppDataBackup'; if (Test-Path $backup) { $folders = @('BeamNG_LevelCleanUp', 'BeamNG_LevelCleanUp.WebView2'); foreach ($f in $folders) { $src = Join-Path $backup $f; if (Test-Path $src) { $dest = Join-Path $env:LOCALAPPDATA $f; if (Test-Path $dest) { Copy-Item (Join-Path $src '*') $dest -Recurse -Force -ErrorAction SilentlyContinue } else { Copy-Item $src $dest -Recurse -Force -ErrorAction SilentlyContinue } } }; Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue }&quot;"
+          Execute="immediate"
                   Impersonate="yes"
-            Return="ignore" />
+          Return="ignore" />
 
     <!-- On a real uninstall, ask before deleting user settings and WebView cache. Silent/basic-UI uninstalls keep data. -->
     <SetProperty Id="RemoveAppDataFolders" 
@@ -95,8 +83,8 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
                   Return="ignore" />
     
     <InstallExecuteSequence>
-      <Custom Action="BackupAppDataFolders" Before="RemoveExistingProducts" Condition="PREVIOUSFOUND" />
-      <RemoveExistingProducts After="InstallExecute" />
+      <Custom Action="BackupAppDataFolders" After="InstallValidate" Condition="PREVIOUSFOUND" />
+      <RemoveExistingProducts After="BackupAppDataFolders" />
       <Custom Action="RestoreAppDataFolders" After="RemoveExistingProducts" Condition="PREVIOUSFOUND" />
       <Custom Action="RemoveAppDataFolders" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND UILevel &gt;= 5" />
     </InstallExecuteSequence>
