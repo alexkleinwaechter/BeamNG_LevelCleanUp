@@ -207,20 +207,27 @@ public class GeoBoundingBox
             // Create coordinate transformation
             var transform = new CoordinateTransformation(sourceSrs, targetSrs);
 
-            // Transform the four corners
-            double[] minXY = [projectedBbox.MinLongitude, projectedBbox.MinLatitude, 0];
-            double[] maxXY = [projectedBbox.MaxLongitude, projectedBbox.MaxLatitude, 0];
+            double[][] corners =
+            [
+                [projectedBbox.MinLongitude, projectedBbox.MinLatitude, 0],
+                [projectedBbox.MinLongitude, projectedBbox.MaxLatitude, 0],
+                [projectedBbox.MaxLongitude, projectedBbox.MinLatitude, 0],
+                [projectedBbox.MaxLongitude, projectedBbox.MaxLatitude, 0]
+            ];
 
-            transform.TransformPoint(minXY);
-            transform.TransformPoint(maxXY);
+            foreach (var corner in corners)
+                transform.TransformPoint(corner);
 
-            // Create transformed bounding box
-            // Note: After transformation, minXY[0] is longitude, minXY[1] is latitude
+            var minLongitude = corners.Min(corner => corner[0]);
+            var minLatitude = corners.Min(corner => corner[1]);
+            var maxLongitude = corners.Max(corner => corner[0]);
+            var maxLatitude = corners.Max(corner => corner[1]);
+
             var transformedBbox = new GeoBoundingBox(
-                minLongitude: minXY[0],
-                minLatitude: minXY[1],
-                maxLongitude: maxXY[0],
-                maxLatitude: maxXY[1]
+                minLongitude: minLongitude,
+                minLatitude: minLatitude,
+                maxLongitude: maxLongitude,
+                maxLatitude: maxLatitude
             );
 
             // Use Detail() for per-tile transformation messages to avoid UI spam during bulk operations

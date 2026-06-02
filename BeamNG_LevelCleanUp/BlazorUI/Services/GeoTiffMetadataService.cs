@@ -378,10 +378,10 @@ public class GeoTiffMetadataService
 
             // Compute adjusted geotransform: shift origin to crop start
             var croppedGeoTransform = new double[6];
-            croppedGeoTransform[0] = sourceGeoTransform[0] + offsetX * sourceGeoTransform[1]; // new origin X
+            croppedGeoTransform[0] = sourceGeoTransform[0] + offsetX * sourceGeoTransform[1] + offsetY * sourceGeoTransform[2]; // new origin X
             croppedGeoTransform[1] = sourceGeoTransform[1]; // pixel width (unchanged)
             croppedGeoTransform[2] = sourceGeoTransform[2]; // rotation X (unchanged)
-            croppedGeoTransform[3] = sourceGeoTransform[3] + offsetY * sourceGeoTransform[5]; // new origin Y
+            croppedGeoTransform[3] = sourceGeoTransform[3] + offsetX * sourceGeoTransform[4] + offsetY * sourceGeoTransform[5]; // new origin Y
             croppedGeoTransform[4] = sourceGeoTransform[4]; // rotation Y (unchanged)
             croppedGeoTransform[5] = sourceGeoTransform[5]; // pixel height (unchanged)
 

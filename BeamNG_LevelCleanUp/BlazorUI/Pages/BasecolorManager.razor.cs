@@ -423,6 +423,19 @@ public partial class BasecolorManager
         _settings.BasecolorModeSettings.OsmLayerBlendExceptions ??= new List<MtOsmLayerBlendException>();
         if (string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider))
             _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider = "Google Satelite Only";
+
+        var overlaySettings = _settings.BasecolorModeSettings.OverlaySettings;
+        if (overlaySettings.UseTileProvider && !string.IsNullOrWhiteSpace(overlaySettings.CachedTileImagePath))
+        {
+            var provider = MapTileOverlayService.Providers.FirstOrDefault(x =>
+                x.Name.Equals(overlaySettings.SelectedTileProvider, StringComparison.OrdinalIgnoreCase));
+            if (provider != null &&
+                !Path.GetFileName(overlaySettings.CachedTileImagePath).Equals(provider.FinalImageName, StringComparison.OrdinalIgnoreCase))
+            {
+                overlaySettings.CachedTileImagePath = string.Empty;
+                overlaySettings.UseTileProvider = false;
+            }
+        }
     }
 
     private void LoadAvailableOsmLayerMasks()

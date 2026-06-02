@@ -272,8 +272,10 @@ public class TerrainAnalysisOrchestrator
             Array.Copy(state.GeoTiffGeoTransform, croppedGeoTransform, 6);
 
             croppedGeoTransform[0] = state.GeoTiffGeoTransform[0] +
-                                     state.CropResult.OffsetX * state.GeoTiffGeoTransform[1];
+                                     state.CropResult.OffsetX * state.GeoTiffGeoTransform[1] +
+                                     state.CropResult.OffsetY * state.GeoTiffGeoTransform[2];
             croppedGeoTransform[3] = state.GeoTiffGeoTransform[3] +
+                                     state.CropResult.OffsetX * state.GeoTiffGeoTransform[4] +
                                      state.CropResult.OffsetY * state.GeoTiffGeoTransform[5];
 
             return new GeoCoordinateTransformer(

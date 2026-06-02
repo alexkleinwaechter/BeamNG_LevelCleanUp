@@ -115,6 +115,12 @@ public class MtGeoReferenceSettings
     [JsonPropertyName("SourceGeoTransform")]
     public double[] SourceGeoTransform { get; set; } = [];
 
+    [JsonPropertyName("SourceRasterWidth")]
+    public int SourceRasterWidth { get; set; }
+
+    [JsonPropertyName("SourceRasterHeight")]
+    public int SourceRasterHeight { get; set; }
+
     [JsonPropertyName("TerrainMetersPerPixel")]
     public double TerrainMetersPerPixel { get; set; }
 

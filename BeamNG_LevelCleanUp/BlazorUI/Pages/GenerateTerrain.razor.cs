@@ -2536,7 +2536,13 @@ public partial class GenerateTerrain : IDisposable
 
     private MtGeoReferenceSettings BuildGeoReferenceSettings(GeoBoundingBox wgs84Bounds)
     {
-        var nativeBounds = _state.GeoTiffNativeBoundingBox;
+        var sourceGeoTransform = GetEffectiveSourceGeoTransform();
+        var sourceRasterWidth = GetEffectiveSourceRasterWidth();
+        var sourceRasterHeight = GetEffectiveSourceRasterHeight();
+        var nativeBounds = sourceGeoTransform.Length == 6 && sourceRasterWidth > 0 && sourceRasterHeight > 0
+            ? CreateNativeBoundingBox(sourceGeoTransform, sourceRasterWidth, sourceRasterHeight)
+            : _state.GeoTiffNativeBoundingBox;
+        var effectiveWgs84Bounds = TryTransformNativeBoundsToWgs84(nativeBounds) ?? wgs84Bounds;
         var sourcePaths = GetSourceElevationPaths();
 
         return new MtGeoReferenceSettings
@@ -2547,21 +2553,89 @@ public partial class GenerateTerrain : IDisposable
             ProjectionWkt = _state.GeoTiffProjectionWkt ?? string.Empty,
             SourceElevationPath = sourcePaths.FirstOrDefault() ?? string.Empty,
             SourceElevationPaths = sourcePaths,
-            TerrainMinLongitude = wgs84Bounds.MinLongitude,
-            TerrainMinLatitude = wgs84Bounds.MinLatitude,
-            TerrainMaxLongitude = wgs84Bounds.MaxLongitude,
-            TerrainMaxLatitude = wgs84Bounds.MaxLatitude,
-            TerrainCenterLongitude = wgs84Bounds.Center.Longitude,
-            TerrainCenterLatitude = wgs84Bounds.Center.Latitude,
+            TerrainMinLongitude = effectiveWgs84Bounds.MinLongitude,
+            TerrainMinLatitude = effectiveWgs84Bounds.MinLatitude,
+            TerrainMaxLongitude = effectiveWgs84Bounds.MaxLongitude,
+            TerrainMaxLatitude = effectiveWgs84Bounds.MaxLatitude,
+            TerrainCenterLongitude = effectiveWgs84Bounds.Center.Longitude,
+            TerrainCenterLatitude = effectiveWgs84Bounds.Center.Latitude,
             SourceNativeMinX = nativeBounds?.MinLongitude ?? 0,
             SourceNativeMinY = nativeBounds?.MinLatitude ?? 0,
             SourceNativeMaxX = nativeBounds?.MaxLongitude ?? 0,
             SourceNativeMaxY = nativeBounds?.MaxLatitude ?? 0,
-            SourceGeoTransform = _state.GeoTiffGeoTransform?.ToArray() ?? [],
+            SourceGeoTransform = sourceGeoTransform,
+            SourceRasterWidth = sourceRasterWidth,
+            SourceRasterHeight = sourceRasterHeight,
             TerrainMetersPerPixel = _state.MetersPerPixel,
             TerrainSize = _state.TerrainSize,
             SavedAtUtc = DateTime.UtcNow
         };
+    }
+
+    private double[] GetEffectiveSourceGeoTransform()
+    {
+        if (_state.GeoTiffGeoTransform is not { Length: 6 } geoTransform)
+            return [];
+
+        var result = geoTransform.ToArray();
+        if (_state.CropResult is not { NeedsCropping: true } crop)
+            return result;
+
+        result[0] = geoTransform[0] + crop.OffsetX * geoTransform[1] + crop.OffsetY * geoTransform[2];
+        result[3] = geoTransform[3] + crop.OffsetX * geoTransform[4] + crop.OffsetY * geoTransform[5];
+        return result;
+    }
+
+    private int GetEffectiveSourceRasterWidth()
+    {
+        return _state.CropResult is { NeedsCropping: true } crop
+            ? crop.CropWidth
+            : _state.GeoTiffOriginalWidth;
+    }
+
+    private int GetEffectiveSourceRasterHeight()
+    {
+        return _state.CropResult is { NeedsCropping: true } crop
+            ? crop.CropHeight
+            : _state.GeoTiffOriginalHeight;
+    }
+
+    private GeoBoundingBox? TryTransformNativeBoundsToWgs84(GeoBoundingBox? nativeBounds)
+    {
+        if (nativeBounds == null)
+            return null;
+
+        var projectionWkt = _state.GeoTiffProjectionWkt;
+        if (string.IsNullOrWhiteSpace(projectionWkt))
+            return nativeBounds.IsValidWgs84 ? nativeBounds : null;
+
+        return GeoBoundingBox.IsWgs84Projection(projectionWkt)
+            ? nativeBounds
+            : GeoBoundingBox.TransformToWgs84(nativeBounds, projectionWkt);
+    }
+
+    private static GeoBoundingBox CreateNativeBoundingBox(double[] geoTransform, int width, int height)
+    {
+        var corners = new[]
+        {
+            PixelToNative(geoTransform, 0, 0),
+            PixelToNative(geoTransform, width, 0),
+            PixelToNative(geoTransform, 0, height),
+            PixelToNative(geoTransform, width, height)
+        };
+
+        return new GeoBoundingBox(
+            corners.Min(corner => corner.X),
+            corners.Min(corner => corner.Y),
+            corners.Max(corner => corner.X),
+            corners.Max(corner => corner.Y));
+    }
+
+    private static (double X, double Y) PixelToNative(double[] geoTransform, double pixelX, double pixelY)
+    {
+        return (
+            geoTransform[0] + pixelX * geoTransform[1] + pixelY * geoTransform[2],
+            geoTransform[3] + pixelX * geoTransform[4] + pixelY * geoTransform[5]);
     }
 
     private List<string> GetSourceElevationPaths()
