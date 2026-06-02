@@ -147,6 +147,11 @@ public class TerrainPresetResult
     /// </summary>
     public int? TerrainSize { get; set; }
 
+    /// <summary>
+    ///     Optional hydraulic erosion terrain post-processing settings.
+    /// </summary>
+    public HydraulicErosionSettings? HydraulicErosion { get; set; }
+
     // ========== NEW: Crop/Selection Settings (for GeoTIFF) ==========
 
     /// <summary>

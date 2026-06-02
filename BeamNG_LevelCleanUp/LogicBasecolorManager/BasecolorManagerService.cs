@@ -69,7 +69,7 @@ public class BasecolorManagerService
 
             var paintMaterials = settings.PaintModeSettings.Materials.Select(x => x.ToCopyAsset()).ToList();
             var basecolorMaterials = settings.BasecolorModeSettings.Materials.Select(x => x.ToCopyAsset()).ToList();
-            var previewDataUri = _mapBuilder.BuildPreviewDataUri(terrain, basecolorMaterials, CreateOverlayOptions(settings));
+            var previewDataUri = _mapBuilder.BuildPreviewDataUri(terrain, basecolorMaterials, CreateOverlayOptions(settings), CreateMaterialBorderBlendOptions(settings));
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 firstLoad
@@ -107,7 +107,17 @@ public class BasecolorManagerService
 
     public string BuildPreview(TerrainV9Binary terrain, IReadOnlyCollection<CopyAsset> materials, MtSettings settings)
     {
-        return _mapBuilder.BuildPreviewDataUri(terrain, materials, CreateOverlayOptions(settings));
+        return _mapBuilder.BuildPreviewDataUri(terrain, materials, CreateOverlayOptions(settings), CreateMaterialBorderBlendOptions(settings));
+    }
+
+    public string BuildLargePreview(TerrainV9Binary terrain, IReadOnlyCollection<CopyAsset> materials, MtSettings settings)
+    {
+        return _mapBuilder.BuildLargePreviewDataUri(terrain, materials, CreateOverlayOptions(settings), CreateMaterialBorderBlendOptions(settings));
+    }
+
+    public static int GetLargePreviewSize(int terrainSize)
+    {
+        return Math.Min(Math.Max(1, terrainSize), TerrainPbrMapBuilder.LargePreviewMaxSize);
     }
 
     public static BasecolorOverlayOptions? CreateOverlayOptions(MtSettings settings)
@@ -145,8 +155,22 @@ public class BasecolorManagerService
         }
 
         return hasOverlayImage || maskExceptions.Count > 0
-            ? new BasecolorOverlayOptions(hasOverlayImage ? imagePath : string.Empty, Math.Clamp(overlaySettings.GlobalBlend, 0.0, 1.0), maskExceptions)
+            ? new BasecolorOverlayOptions(
+                hasOverlayImage ? imagePath : string.Empty,
+                Math.Clamp(overlaySettings.GlobalBlend, 0.0, 1.0),
+                maskExceptions,
+                Math.Clamp(overlaySettings.Brightness, -1.0, 1.0),
+                Math.Clamp(overlaySettings.Contrast, -1.0, 1.0),
+                Math.Clamp(overlaySettings.Saturation, -1.0, 1.0))
             : null;
+    }
+
+    public static MaterialBorderBlendOptions CreateMaterialBorderBlendOptions(MtSettings settings)
+    {
+        var basecolorSettings = settings.BasecolorModeSettings;
+        return new MaterialBorderBlendOptions(
+            basecolorSettings.EnableMaterialBorderBlend,
+            Math.Clamp(basecolorSettings.MaterialBorderBlendRadius, 0.0, 5.0));
     }
 
     private static void EnsureModeMaterialLists(MtSettings settings, string levelPath, string materialsJsonPath, int terrainSize)
@@ -178,6 +202,7 @@ public class BasecolorManagerService
             settings.BasecolorModeSettings.AoRadius = 2;
         if (settings.BasecolorModeSettings.AoIntensity <= 0)
             settings.BasecolorModeSettings.AoIntensity = 1.0;
+        settings.BasecolorModeSettings.MaterialBorderBlendRadius = Math.Clamp(settings.BasecolorModeSettings.MaterialBorderBlendRadius, 0.0, 5.0);
     }
 
     private static MtTerrainMaterialSetting Clone(MtTerrainMaterialSetting setting)

@@ -21,10 +21,12 @@ namespace BeamNgTerrainPoc.Terrain;
 /// </summary>
 public class TerrainCreator
 {
+    private readonly HydraulicErosionProcessor _hydraulicErosionProcessor;
     private readonly UnifiedRoadSmoother _unifiedRoadSmoother;
 
     public TerrainCreator()
     {
+        _hydraulicErosionProcessor = new HydraulicErosionProcessor();
         _unifiedRoadSmoother = new UnifiedRoadSmoother();
     }
 
@@ -231,6 +233,41 @@ public class TerrainCreator
                 heightmapImage,
                 parameters.MaxHeight);
             perfLog.Timing($"HeightmapProcessor.ProcessHeightmap: {sw.ElapsedMilliseconds}ms");
+
+            if (parameters.HydraulicErosion is { Enabled: true } erosionSettings)
+            {
+                perfLog.LogSection("Hydraulic Erosion");
+                sw.Restart();
+                perfLog.Info(
+                    $"Applying hydraulic erosion: {erosionSettings.IterationCount:N0} iterations, " +
+                    $"radius {erosionSettings.ErosionRadius}, seed {erosionSettings.RandomSeed}");
+
+                var erodedHeights = _hydraulicErosionProcessor.Apply(
+                    heights,
+                    parameters.Size,
+                    parameters.MaxHeight,
+                    erosionSettings);
+
+                var changedSamples = 0;
+                var maxDelta = 0f;
+                for (var i = 0; i < heights.Length; i++)
+                {
+                    var delta = Math.Abs(erodedHeights[i] - heights[i]);
+                    if (delta <= 0.0001f)
+                        continue;
+
+                    changedSamples++;
+                    if (delta > maxDelta)
+                        maxDelta = delta;
+                }
+
+                heights = erodedHeights;
+
+                perfLog.Timing($"Hydraulic erosion completed: {sw.Elapsed.TotalSeconds:F2}s");
+                perfLog.Info(
+                    $"Hydraulic erosion modified {changedSamples:N0}/{heights.Length:N0} height samples " +
+                    $"(max delta: {maxDelta:F3}m)");
+            }
 
             // 3a. Apply road smoothing if road materials exist
             SmoothingResult? smoothingResult = null;

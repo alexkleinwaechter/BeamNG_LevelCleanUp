@@ -11,6 +11,7 @@ public class TerrainPbrMapBuilder
 {
     private const byte HoleMaterialIndex = 255;
     private const int PreviewMaxSize = 512;
+    public const int LargePreviewMaxSize = 1024;
 
     public TerrainPbrMapResult BuildMaps(
         TerrainV9Binary terrain,
@@ -20,7 +21,8 @@ public class TerrainPbrMapBuilder
         double normalStrength,
         int aoRadius,
         double aoIntensity,
-        BasecolorOverlayOptions? overlayOptions = null)
+        BasecolorOverlayOptions? overlayOptions = null,
+        MaterialBorderBlendOptions? borderBlendOptions = null)
     {
         Directory.CreateDirectory(terrainFolder);
 
@@ -32,19 +34,24 @@ public class TerrainPbrMapBuilder
         var roughnessPath = Path.Join(terrainFolder, "MT_basecolor_r.png");
         var heightPath = Path.Join(terrainFolder, "MT_basecolor_h.png");
 
-        WriteMergedBaseColor(terrain, materialLookup, baseColorPath, size, overlayOptions);
+        WriteMergedBaseColor(terrain, materialLookup, baseColorPath, size, overlayOptions, borderBlendOptions);
         WriteNormal(terrain, normalPath, size, normalStrength);
         WriteAo(terrain, aoPath, size, Math.Max(1, aoRadius), aoIntensity);
-        WriteRoughness(terrain, materialLookup, roughnessPath, size, overlayOptions);
+        WriteRoughness(terrain, materialLookup, roughnessPath, size, overlayOptions, borderBlendOptions);
         WriteHeight(terrain, heightPath, size, generateHeight);
 
         return new TerrainPbrMapResult(baseColorPath, normalPath, aoPath, roughnessPath, heightPath);
     }
 
-    public string BuildPreviewDataUri(TerrainV9Binary terrain, IReadOnlyCollection<CopyAsset> materials, BasecolorOverlayOptions? overlayOptions = null)
+    public string BuildPreviewDataUri(
+        TerrainV9Binary terrain,
+        IReadOnlyCollection<CopyAsset> materials,
+        BasecolorOverlayOptions? overlayOptions = null,
+        MaterialBorderBlendOptions? borderBlendOptions = null,
+        int? maxSize = PreviewMaxSize)
     {
         var size = checked((int)terrain.Size);
-        var previewSize = Math.Min(size, PreviewMaxSize);
+        var previewSize = maxSize.HasValue ? Math.Min(size, Math.Max(1, maxSize.Value)) : size;
         var step = Math.Max(1, size / previewSize);
         var materialLookup = CreateMaterialLookup(materials);
         using var overlay = LoadOverlayImage(overlayOptions, previewSize);
@@ -58,13 +65,29 @@ public class TerrainPbrMapBuilder
             {
                 var sourceX = Math.Min(size - 1, x * step);
                 var index = ToBeamNgTextureIndex(size, sourceX, sourceY);
-                image[x, y] = GetBlendedMaterialColor(terrain, materialLookup, index, overlay, maskSet, x, y, overlayOptions);
+                image[x, y] = GetBaseMaterialColor(terrain, materialLookup, index);
             }
         }
+
+        for (var y = 0; y < previewSize; y++)
+        for (var x = 0; x < previewSize; x++)
+        {
+            var sourceX = Math.Min(size - 1, x * step);
+            var sourceY = Math.Min(size - 1, y * step);
+            var index = ToBeamNgTextureIndex(size, sourceX, sourceY);
+            image[x, y] = ApplyBaseColorOverlays(terrain, materialLookup, index, image[x, y], overlay, maskSet, x, y, overlayOptions);
+        }
+
+        ApplyMaterialBorderBlend(image, step, borderBlendOptions);
 
         using var stream = new MemoryStream();
         image.SaveAsPng(stream);
         return $"data:image/png;base64,{Convert.ToBase64String(stream.ToArray())}";
+    }
+
+    public string BuildLargePreviewDataUri(TerrainV9Binary terrain, IReadOnlyCollection<CopyAsset> materials, BasecolorOverlayOptions? overlayOptions = null, MaterialBorderBlendOptions? borderBlendOptions = null)
+    {
+        return BuildPreviewDataUri(terrain, materials, overlayOptions, borderBlendOptions, LargePreviewMaxSize);
     }
 
     private static Dictionary<string, CopyAsset> CreateMaterialLookup(IReadOnlyCollection<CopyAsset> materials)
@@ -83,19 +106,40 @@ public class TerrainPbrMapBuilder
         return lookup;
     }
 
-    private static void WriteMergedBaseColor(TerrainV9Binary terrain, Dictionary<string, CopyAsset> materials, string path, int size, BasecolorOverlayOptions? overlayOptions)
+    private static void WriteMergedBaseColor(
+        TerrainV9Binary terrain,
+        Dictionary<string, CopyAsset> materials,
+        string path,
+        int size,
+        BasecolorOverlayOptions? overlayOptions,
+        MaterialBorderBlendOptions? borderBlendOptions)
     {
         using var overlay = LoadOverlayImage(overlayOptions, size);
         using var maskSet = LoadMaskSet(overlayOptions, size);
         using var image = new Image<Rgba32>(size, size);
         for (var y = 0; y < size; y++)
         for (var x = 0; x < size; x++)
-            image[x, y] = GetBlendedMaterialColor(terrain, materials, ToBeamNgTextureIndex(size, x, y), overlay, maskSet, x, y, overlayOptions);
+            image[x, y] = GetBaseMaterialColor(terrain, materials, ToBeamNgTextureIndex(size, x, y));
+
+        for (var y = 0; y < size; y++)
+        for (var x = 0; x < size; x++)
+        {
+            var index = ToBeamNgTextureIndex(size, x, y);
+            image[x, y] = ApplyBaseColorOverlays(terrain, materials, index, image[x, y], overlay, maskSet, x, y, overlayOptions);
+        }
+
+        ApplyMaterialBorderBlend(image, 1, borderBlendOptions);
 
         OverwritePng(image, path);
     }
 
-    private static void WriteRoughness(TerrainV9Binary terrain, Dictionary<string, CopyAsset> materials, string path, int size, BasecolorOverlayOptions? overlayOptions)
+    private static void WriteRoughness(
+        TerrainV9Binary terrain,
+        Dictionary<string, CopyAsset> materials,
+        string path,
+        int size,
+        BasecolorOverlayOptions? overlayOptions,
+        MaterialBorderBlendOptions? borderBlendOptions)
     {
         using var maskSet = LoadMaskSet(overlayOptions, size);
         using var image = new Image<L8>(size, size);
@@ -111,9 +155,24 @@ public class TerrainPbrMapBuilder
 
             var material = GetMaterial(terrain, materials, index);
             var roughness = material?.GetRoughnessValue() ?? 128;
-            roughness = (int)Math.Round(maskSet?.ApplyRoughness(roughness, x, y) ?? roughness);
             image[x, y] = new L8((byte)Math.Clamp(roughness, 0, 255));
         }
+
+        if (maskSet != null)
+        {
+            for (var y = 0; y < size; y++)
+            for (var x = 0; x < size; x++)
+            {
+                var index = ToBeamNgTextureIndex(size, x, y);
+                if (terrain.MaterialData[index] == HoleMaterialIndex)
+                    continue;
+
+                var roughness = maskSet.ApplyRoughness(image[x, y].PackedValue, x, y);
+                image[x, y] = new L8((byte)Math.Clamp(Math.Round(roughness), 0, 255));
+            }
+        }
+
+        ApplyRoughnessBorderBlend(image, 1, borderBlendOptions);
 
         OverwritePng(image, path);
     }
@@ -234,7 +293,7 @@ public class TerrainPbrMapBuilder
         return terrainY * size + terrainX;
     }
 
-    private static Rgba32 GetMaterialColor(TerrainV9Binary terrain, Dictionary<string, CopyAsset> materials, int index)
+    private static Rgba32 GetBaseMaterialColor(TerrainV9Binary terrain, Dictionary<string, CopyAsset> materials, int index)
     {
         if (terrain.MaterialData[index] == HoleMaterialIndex)
             return new Rgba32(0, 0, 0, 0);
@@ -243,10 +302,11 @@ public class TerrainPbrMapBuilder
         return ParseColor(material?.BaseColorHex ?? "#808080");
     }
 
-    private static Rgba32 GetBlendedMaterialColor(
+    private static Rgba32 ApplyBaseColorOverlays(
         TerrainV9Binary terrain,
         Dictionary<string, CopyAsset> materials,
         int index,
+        Rgba32 materialColor,
         Image<Rgba32>? overlay,
         MaskExceptionSet? maskSet,
         int x,
@@ -257,7 +317,6 @@ public class TerrainPbrMapBuilder
             return new Rgba32(0, 0, 0, 0);
 
         var material = GetMaterial(terrain, materials, index);
-        var materialColor = ParseColor(material?.BaseColorHex ?? "#808080");
         materialColor = maskSet?.ApplyBaseColor(materialColor, x, y) ?? materialColor;
         if (overlay == null || overlayOptions == null)
             return materialColor;
@@ -282,11 +341,86 @@ public class TerrainPbrMapBuilder
             return null;
 
         var image = SixLabors.ImageSharp.Image.Load<Rgba32>(overlayOptions.ImagePath);
-        if (image.Width == size && image.Height == size)
-            return image;
+        if (image.Width != size || image.Height != size)
+            image.Mutate(ctx => ctx.Resize(size, size));
 
-        image.Mutate(ctx => ctx.Resize(size, size));
+        ApplyOverlayAdjustments(image, overlayOptions);
         return image;
+    }
+
+    private static void ApplyOverlayAdjustments(Image<Rgba32> image, BasecolorOverlayOptions overlayOptions)
+    {
+        var brightness = Math.Clamp(overlayOptions.Brightness, -1.0, 1.0);
+        var contrastFactor = Math.Max(0.0, 1.0 + Math.Clamp(overlayOptions.Contrast, -1.0, 1.0));
+        var saturationFactor = Math.Max(0.0, 1.0 + Math.Clamp(overlayOptions.Saturation, -1.0, 1.0));
+
+        if (Math.Abs(brightness) < 0.0001 &&
+            Math.Abs(contrastFactor - 1.0) < 0.0001 &&
+            Math.Abs(saturationFactor - 1.0) < 0.0001)
+            return;
+
+        image.ProcessPixelRows(accessor =>
+        {
+            for (var y = 0; y < accessor.Height; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                for (var x = 0; x < row.Length; x++)
+                {
+                    var pixel = row[x];
+                    var red = pixel.R / 255.0;
+                    var green = pixel.G / 255.0;
+                    var blue = pixel.B / 255.0;
+
+                    red = (red - 0.5) * contrastFactor + 0.5 + brightness;
+                    green = (green - 0.5) * contrastFactor + 0.5 + brightness;
+                    blue = (blue - 0.5) * contrastFactor + 0.5 + brightness;
+
+                    var luma = red * 0.299 + green * 0.587 + blue * 0.114;
+                    red = luma + (red - luma) * saturationFactor;
+                    green = luma + (green - luma) * saturationFactor;
+                    blue = luma + (blue - luma) * saturationFactor;
+
+                    row[x] = new Rgba32(
+                        (byte)Math.Clamp(red * 255.0, 0, 255),
+                        (byte)Math.Clamp(green * 255.0, 0, 255),
+                        (byte)Math.Clamp(blue * 255.0, 0, 255),
+                        pixel.A);
+                }
+            }
+        });
+    }
+
+    private static void ApplyMaterialBorderBlend(
+        Image<Rgba32> image,
+        int step,
+        MaterialBorderBlendOptions? options)
+    {
+        if (!TryGetBorderBlendRadius(options, step, out var radius))
+            return;
+
+        image.Mutate(ctx => ctx.GaussianBlur((float)radius));
+    }
+
+    private static void ApplyRoughnessBorderBlend(
+        Image<L8> image,
+        int step,
+        MaterialBorderBlendOptions? options)
+    {
+        if (!TryGetBorderBlendRadius(options, step, out var radius))
+            return;
+
+        image.Mutate(ctx => ctx.GaussianBlur((float)radius));
+    }
+
+    private static bool TryGetBorderBlendRadius(MaterialBorderBlendOptions? options, int step, out double radius)
+    {
+        radius = 0;
+
+        if (options is not { Enabled: true } || options.Radius <= 0)
+            return false;
+
+        radius = Math.Clamp(options.Radius / Math.Max(1, step), 0.0, 5.0);
+        return radius > 0;
     }
 
     private static MaskExceptionSet? LoadMaskSet(BasecolorOverlayOptions? overlayOptions, int size)
@@ -369,6 +503,16 @@ public class TerrainPbrMapBuilder
         }
     }
 
+    private static Rgba32 LerpColor(Rgba32 from, Rgba32 to, double amount)
+    {
+        var blend = Math.Clamp(amount, 0.0, 1.0);
+        return new Rgba32(
+            (byte)Math.Clamp(from.R + (to.R - from.R) * blend, 0, 255),
+            (byte)Math.Clamp(from.G + (to.G - from.G) * blend, 0, 255),
+            (byte)Math.Clamp(from.B + (to.B - from.B) * blend, 0, 255),
+            from.A);
+    }
+
     private static void OverwritePng<TPixel>(Image<TPixel> image, string path)
         where TPixel : unmanaged, IPixel<TPixel>
     {
@@ -388,7 +532,14 @@ public record TerrainPbrMapResult(
 public sealed record BasecolorOverlayOptions(
     string ImagePath,
     double GlobalBlend,
-    IReadOnlyList<BasecolorMaskBlendExceptionOptions> MaskExceptions);
+    IReadOnlyList<BasecolorMaskBlendExceptionOptions> MaskExceptions,
+    double Brightness,
+    double Contrast,
+    double Saturation);
+
+public sealed record MaterialBorderBlendOptions(
+    bool Enabled,
+    double Radius);
 
 public sealed record BasecolorMaskBlendExceptionOptions(
     string Name,

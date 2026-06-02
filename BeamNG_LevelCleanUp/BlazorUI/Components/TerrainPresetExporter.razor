@@ -70,6 +70,7 @@
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
     [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
     [Parameter] public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+    [Parameter] public HydraulicErosionSettings HydraulicErosion { get; set; } = new();
     [Parameter] public bool EnableBuildings { get; set; }
     [Parameter] public bool EnableBuildingClustering { get; set; }
     [Parameter] public float BuildingClusterCellSize { get; set; } = 150f;
@@ -466,7 +467,8 @@
                 ["updateTerrainBlock"] = UpdateTerrainBlock,
                 ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization,
                 ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
-                ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain
+                ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain,
+                ["hydraulicErosion"] = BuildHydraulicErosionOptions()
             },
             ["buildingOptions"] = BuildBuildingOptions(),
             ["cropSettings"] = new JsonObject
@@ -506,6 +508,24 @@
 
         return appSettings;
     }
+
+    private JsonObject BuildHydraulicErosionOptions() => new()
+    {
+        ["enabled"] = HydraulicErosion.Enabled,
+        ["iterationCount"] = HydraulicErosion.IterationCount,
+        ["erosionRadius"] = HydraulicErosion.ErosionRadius,
+        ["inertia"] = HydraulicErosion.Inertia,
+        ["sedimentCapacityFactor"] = HydraulicErosion.SedimentCapacityFactor,
+        ["minSedimentCapacity"] = HydraulicErosion.MinSedimentCapacity,
+        ["erodeSpeed"] = HydraulicErosion.ErodeSpeed,
+        ["depositSpeed"] = HydraulicErosion.DepositSpeed,
+        ["evaporateSpeed"] = HydraulicErosion.EvaporateSpeed,
+        ["gravity"] = HydraulicErosion.Gravity,
+        ["maxDropletLifetime"] = HydraulicErosion.MaxDropletLifetime,
+        ["initialWaterVolume"] = HydraulicErosion.InitialWaterVolume,
+        ["initialSpeed"] = HydraulicErosion.InitialSpeed,
+        ["randomSeed"] = HydraulicErosion.RandomSeed
+    };
 
     private JsonObject BuildHeightmapSourceSettings(string? exportedGeoTiffFileName)
     {

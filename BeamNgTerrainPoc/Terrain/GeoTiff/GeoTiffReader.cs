@@ -361,12 +361,19 @@ public class GeoTiffReader
         // Calculate CROPPED bounding box (geographic coordinates for the cropped region)
         // geoTransform[0] = top-left X, geoTransform[3] = top-left Y
         // geoTransform[1] = pixel width, geoTransform[5] = pixel height (negative)
-        var croppedMinX = geoTransform[0] + cropOffsetX * geoTransform[1];
-        var croppedMaxY = geoTransform[3] + cropOffsetY * geoTransform[5]; // geoTransform[5] is negative
-        var croppedMaxX = croppedMinX + cropWidth * geoTransform[1];
-        var croppedMinY = croppedMaxY + cropHeight * geoTransform[5];
+        var cropCorners = new[]
+        {
+            PixelToNative(geoTransform, cropOffsetX, cropOffsetY),
+            PixelToNative(geoTransform, cropOffsetX + cropWidth, cropOffsetY),
+            PixelToNative(geoTransform, cropOffsetX, cropOffsetY + cropHeight),
+            PixelToNative(geoTransform, cropOffsetX + cropWidth, cropOffsetY + cropHeight)
+        };
 
-        var boundingBox = new GeoBoundingBox(croppedMinX, croppedMinY, croppedMaxX, croppedMaxY);
+        var boundingBox = new GeoBoundingBox(
+            cropCorners.Min(corner => corner.X),
+            cropCorners.Min(corner => corner.Y),
+            cropCorners.Max(corner => corner.X),
+            cropCorners.Max(corner => corner.Y));
         TerrainLogger.Detail($"Cropped bounding box: {boundingBox}");
 
         // Get projection (use override if provided)
@@ -524,6 +531,13 @@ public class GeoTiffReader
         }
 
         return heightmapImage;
+    }
+
+    private static (double X, double Y) PixelToNative(double[] geoTransform, double pixelX, double pixelY)
+    {
+        return (
+            geoTransform[0] + pixelX * geoTransform[1] + pixelY * geoTransform[2],
+            geoTransform[3] + pixelX * geoTransform[4] + pixelY * geoTransform[5]);
     }
 
     /// <summary>

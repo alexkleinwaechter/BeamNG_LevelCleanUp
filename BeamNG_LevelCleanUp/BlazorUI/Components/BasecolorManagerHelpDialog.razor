@@ -77,6 +77,9 @@
             <MudText Typo="Typo.body2" Class="mb-2">
                 Some changes refresh the preview automatically. If the image does not update after a color or blend change, use the Preview button.
             </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                The large preview opens a higher-detail image capped at 1024 pixels. Use the mouse wheel to zoom and drag with the left mouse button to pan.
+            </MudText>
             <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
                 Preview only updates what you see in the tool. Regenerate writes the files used by BeamNG.
             </MudAlert>
@@ -95,6 +98,13 @@
                 The global overlay slider is a master setter for the material overlay sliders.
                 The real blend comes from each material row.
             </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Overlay adjustments change brightness, contrast, and saturation before the image is mixed into the base color.
+                They do not change the selected image file or cached tile image.
+            </MudText>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Overlay adjustment values are saved in <code>MT_settings.json</code> with the other BaseColor Mode settings.
+            </MudAlert>
             <MudSimpleTable Dense="true" Hover="true" Class="mb-3" Elevation="0" Style="border: 1px solid var(--mud-palette-divider);">
                 <thead>
                     <tr>
@@ -123,6 +133,23 @@
             </MudText>
             <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
                 Map tile providers can have license rules. Check the rules before sharing a map that contains downloaded imagery.
+            </MudAlert>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.BlurOn" Size="Size.Small" Class="mr-1" />
+                Soft Material Borders
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Soften Material Borders applies a Gaussian blur to the generated BaseColor Mode texture, similar to the Photoshop blur radius control.
+                It affects only generated BaseColor Mode textures.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                Gaussian Blur Radius is measured in pixels and can be adjusted in 0.1 px steps.
+            </MudText>
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                This option does not edit the terrain material map in the <code>.ter</code> file. Terrain holes stay transparent.
             </MudAlert>
 
             <MudDivider Class="my-4" />

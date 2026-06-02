@@ -1,5 +1,6 @@
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
@@ -33,6 +34,7 @@ public class TerrainGenerationState
     public float TerrainBaseHeight { get; set; }
     public bool UpdateTerrainBlock { get; set; } = true;
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
+    public HydraulicErosionSettings HydraulicErosion { get; set; } = new();
 
     /// <summary>
     ///     When true, flips the material processing order for road network building.
@@ -388,6 +390,7 @@ public class TerrainGenerationState
         TerrainBaseHeight = 0.0f;
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
+        HydraulicErosion = new HydraulicErosionSettings();
         FlipMaterialProcessingOrder = false;
         EnableDecalRoads = true;
         DecalRoadSettings = null;

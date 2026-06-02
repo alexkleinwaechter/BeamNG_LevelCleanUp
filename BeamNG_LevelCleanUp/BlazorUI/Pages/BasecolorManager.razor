@@ -148,7 +148,7 @@
                                         </MudItem>
                                         @if (HasGeoReference)
                                         {
-                                            <MudItem xs="12" md="5">
+                                            <MudItem xs="12" md="4">
                                                 <MudSelect T="string" Value="_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider"
                                                            ValueChanged="OnTileProviderChanged" Label="Tile Overlay" Dense="true" Variant="Variant.Outlined">
                                                     @foreach (var provider in MapTileOverlayService.Providers)
@@ -158,25 +158,65 @@
                                                 </MudSelect>
                                                 @if (!string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath))
                                                 {
-                                                    <MudCheckBox T="bool" @bind-Value="_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider" Label="Use tile overlay" Dense="true" />
+                                                    <MudCheckBox T="bool" Value="_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider"
+                                                                 ValueChanged="OnUseTileProviderChanged"
+                                                                 Label="Use tile overlay" Dense="true" Disabled="@IsBusy" />
                                                 }
                                             </MudItem>
-                                            <MudItem xs="12" md="2">
-                                                <MudButton OnClick="FetchSelectedTileOverlay" Color="Color.Secondary" Variant="Variant.Outlined"
-                                                           StartIcon="@Icons.Material.Filled.Download" Disabled="@(!CanFetchTileOverlay)">
-                                                    @if (IsOperation(OperationFetchTile))
-                                                    {
-                                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                                                    }
-                                                    Fetch
-                                                </MudButton>
+                                            <MudItem xs="12" md="3">
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                                    <MudButton OnClick="FetchSelectedTileOverlay" Color="Color.Secondary" Variant="Variant.Outlined"
+                                                               StartIcon="@Icons.Material.Filled.Download" Disabled="@(!CanFetchTileOverlay)">
+                                                        @if (IsOperation(OperationFetchTile))
+                                                        {
+                                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                        }
+                                                        Fetch
+                                                    </MudButton>
+                                                    <MudButton OnClick="ClearSelectedTileOverlayCache" Color="Color.Warning" Variant="Variant.Outlined"
+                                                               StartIcon="@Icons.Material.Filled.DeleteSweep" Disabled="@(!CanClearTileOverlayCache)">
+                                                        @if (IsOperation(OperationClearTileCache))
+                                                        {
+                                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                        }
+                                                        Clear Cache
+                                                    </MudButton>
+                                                </MudStack>
                                             </MudItem>
                                         }
-                                        <MudItem xs="12">
-                                            <MudSlider T="int" Value="GlobalOverlayBlendPercent" ValueChanged="OnGlobalOverlayBlendChanged" Min="0" Max="100" Step="1" Color="Color.Primary" Disabled="@IsBusy">
-                                                Global Overlay Blend: @GlobalOverlayBlendPercent%
-                                            </MudSlider>
-                                        </MudItem>
+                                        @if (HasActiveBasecolorOverlay)
+                                        {
+                                            <MudItem xs="12">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-1">Overlay Adjustments</MudText>
+                                                <MudGrid Spacing="2">
+                                                    <MudItem xs="12" md="4">
+                                                        <MudSlider T="int" Value="OverlayBrightnessPercent" ValueChanged="OnOverlayBrightnessChanged" Min="-100" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@IsBusy">
+                                                            Brightness: @OverlayBrightnessPercent%
+                                                        </MudSlider>
+                                                    </MudItem>
+                                                    <MudItem xs="12" md="4">
+                                                        <MudSlider T="int" Value="OverlayContrastPercent" ValueChanged="OnOverlayContrastChanged" Min="-100" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@IsBusy">
+                                                            Contrast: @OverlayContrastPercent%
+                                                        </MudSlider>
+                                                    </MudItem>
+                                                    <MudItem xs="12" md="4">
+                                                        <MudSlider T="int" Value="OverlaySaturationPercent" ValueChanged="OnOverlaySaturationChanged" Min="-100" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@IsBusy">
+                                                            Saturation: @OverlaySaturationPercent%
+                                                        </MudSlider>
+                                                    </MudItem>
+                                                    <MudItem xs="12" md="3">
+                                                        <MudButton OnClick="ResetOverlayAdjustments" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.RestartAlt" Disabled="@IsBusy">
+                                                            Reset Adjustments
+                                                        </MudButton>
+                                                    </MudItem>
+                                                    <MudItem xs="12" md="9">
+                                                        <MudSlider T="int" Value="GlobalOverlayBlendPercent" ValueChanged="OnGlobalOverlayBlendChanged" Min="0" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@IsBusy">
+                                                            Global Overlay Blend: @GlobalOverlayBlendPercent%
+                                                        </MudSlider>
+                                                    </MudItem>
+                                                </MudGrid>
+                                            </MudItem>
+                                        }
                                     </MudGrid>
                                 </MudPaper>
 
@@ -186,7 +226,10 @@
                                             <HeaderContent>
                                                 <MudTh>Terrain Material</MudTh>
                                                 <MudTh>Base Color</MudTh>
-                                                <MudTh>Overlay Blend</MudTh>
+                                                @if (HasActiveBasecolorOverlay)
+                                                {
+                                                    <MudTh>Overlay Blend</MudTh>
+                                                }
                                                 <MudTh>Roughness</MudTh>
                                             </HeaderContent>
                                             <RowTemplate>
@@ -207,13 +250,16 @@
                                                                         ShowToolbar="true" />
                                                     </div>
                                                 </MudTd>
-                                                <MudTd DataLabel="Overlay Blend" @onclick:stopPropagation>
-                                                    <div style="min-width:180px;">
-                                                        <MudSlider T="int" Value="@GetMaterialOverlayBlendPercent(context)" ValueChanged="@((int value) => OnMaterialOverlayBlendChanged(context, value))" Min="0" Max="100" Step="1" Color="Color.Primary">
-                                                            @GetMaterialOverlayBlendPercent(context)%
-                                                        </MudSlider>
-                                                    </div>
-                                                </MudTd>
+                                                @if (HasActiveBasecolorOverlay)
+                                                {
+                                                    <MudTd DataLabel="Overlay Blend" @onclick:stopPropagation>
+                                                        <div style="min-width:180px;">
+                                                            <MudSlider T="int" Value="@GetMaterialOverlayBlendPercent(context)" ValueChanged="@((int value) => OnMaterialOverlayBlendChanged(context, value))" Min="0" Max="100" Step="1" Color="Color.Primary" Immediate="false" Disabled="@IsBusy">
+                                                                @GetMaterialOverlayBlendPercent(context)%
+                                                            </MudSlider>
+                                                        </div>
+                                                    </MudTd>
+                                                }
                                                 <MudTd DataLabel="Roughness" @onclick:stopPropagation>
                                                     @RoughnessEditor(context)
                                                 </MudTd>
@@ -324,12 +370,28 @@
 
                             <MudItem xs="12" md="4">
                                 <MudPaper Outlined="true" Class="pa-3" Style="position:sticky;top:16px;">
-                                    <MudText Typo="Typo.subtitle1" Class="mb-2">Merged Preview</MudText>
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                                        <MudText Typo="Typo.subtitle1">Merged Preview</MudText>
+                                        <MudSpacer />
+                                        <MudTooltip Text="Open large preview">
+                                            <MudIconButton Icon="@Icons.Material.Filled.OpenInFull"
+                                                           Size="Size.Small"
+                                                           Color="Color.Primary"
+                                                           Disabled="@(string.IsNullOrWhiteSpace(_previewDataUri))"
+                                                           OnClick="OpenMergedPreviewDialog" />
+                                        </MudTooltip>
+                                    </MudStack>
                                     @if (!string.IsNullOrWhiteSpace(_previewDataUri))
                                     {
                                         <img src="@_previewDataUri" style="width:100%;aspect-ratio:1/1;object-fit:contain;border:1px solid rgba(0,0,0,.18);" />
                                     }
                                     <MudText Typo="Typo.body2" Class="mt-3">Merged size: @_terrainSize x @_terrainSize</MudText>
+                                    <MudDivider Class="my-3" />
+                                    <MudCheckBox T="bool" Value="_settings.BasecolorModeSettings.EnableMaterialBorderBlend" ValueChanged="OnMaterialBorderBlendEnabledChanged" Label="Soften Material Borders" Dense="true" Disabled="@IsBusy" />
+                                    <MudSlider T="double" Value="_settings.BasecolorModeSettings.MaterialBorderBlendRadius" ValueChanged="OnMaterialBorderBlendRadiusChanged" Min="0" Max="5" Step="0.1" Color="Color.Primary" Immediate="false" Disabled="@(!_settings.BasecolorModeSettings.EnableMaterialBorderBlend || IsBusy)">
+                                        Gaussian Blur Radius: @_settings.BasecolorModeSettings.MaterialBorderBlendRadius.ToString("0.0") px
+                                    </MudSlider>
+                                    <MudDivider Class="my-3" />
                                     <MudCheckBox T="bool" @bind-Value="_settings.BasecolorModeSettings.GenerateHeight" Label="Generate Height" Dense="true" />
                                     <MudSlider T="double" @bind-Value="_settings.BasecolorModeSettings.NormalStrength" Min="0" Max="4" Step="0.1" Color="Color.Primary">
                                         Normal Strength: @_settings.BasecolorModeSettings.NormalStrength.ToString("0.0")

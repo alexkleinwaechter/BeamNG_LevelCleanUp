@@ -23,11 +23,12 @@ public class BaseColorModeApplier
         double normalStrength,
         int aoRadius,
         double aoIntensity,
-        BasecolorOverlayOptions? overlayOptions)
+        BasecolorOverlayOptions? overlayOptions,
+        MaterialBorderBlendOptions? borderBlendOptions)
     {
         var terrainFolder = Path.GetDirectoryName(materialsJsonPath) ?? Path.Join(levelPath, "art", "terrains");
         var terrainSize = checked((int)terrain.Size);
-        var maps = _mapBuilder.BuildMaps(terrain, materials, terrainFolder, generateHeight, normalStrength, aoRadius, aoIntensity, overlayOptions);
+        var maps = _mapBuilder.BuildMaps(terrain, materials, terrainFolder, generateHeight, normalStrength, aoRadius, aoIntensity, overlayOptions, borderBlendOptions);
         var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(materialsJsonPath);
 
         foreach (var property in jsonNode.AsObject().ToList())
