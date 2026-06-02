@@ -148,7 +148,7 @@
                                         </MudItem>
                                         @if (HasGeoReference)
                                         {
-                                            <MudItem xs="12" md="5">
+                                            <MudItem xs="12" md="4">
                                                 <MudSelect T="string" Value="_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider"
                                                            ValueChanged="OnTileProviderChanged" Label="Tile Overlay" Dense="true" Variant="Variant.Outlined">
                                                     @foreach (var provider in MapTileOverlayService.Providers)
@@ -158,18 +158,30 @@
                                                 </MudSelect>
                                                 @if (!string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath))
                                                 {
-                                                    <MudCheckBox T="bool" @bind-Value="_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider" Label="Use tile overlay" Dense="true" />
+                                                    <MudCheckBox T="bool" Value="_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider"
+                                                                 ValueChanged="OnUseTileProviderChanged"
+                                                                 Label="Use tile overlay" Dense="true" Disabled="@IsBusy" />
                                                 }
                                             </MudItem>
-                                            <MudItem xs="12" md="2">
-                                                <MudButton OnClick="FetchSelectedTileOverlay" Color="Color.Secondary" Variant="Variant.Outlined"
-                                                           StartIcon="@Icons.Material.Filled.Download" Disabled="@(!CanFetchTileOverlay)">
-                                                    @if (IsOperation(OperationFetchTile))
-                                                    {
-                                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                                                    }
-                                                    Fetch
-                                                </MudButton>
+                                            <MudItem xs="12" md="3">
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                                    <MudButton OnClick="FetchSelectedTileOverlay" Color="Color.Secondary" Variant="Variant.Outlined"
+                                                               StartIcon="@Icons.Material.Filled.Download" Disabled="@(!CanFetchTileOverlay)">
+                                                        @if (IsOperation(OperationFetchTile))
+                                                        {
+                                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                        }
+                                                        Fetch
+                                                    </MudButton>
+                                                    <MudButton OnClick="ClearSelectedTileOverlayCache" Color="Color.Warning" Variant="Variant.Outlined"
+                                                               StartIcon="@Icons.Material.Filled.DeleteSweep" Disabled="@(!CanClearTileOverlayCache)">
+                                                        @if (IsOperation(OperationClearTileCache))
+                                                        {
+                                                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                        }
+                                                        Clear Cache
+                                                    </MudButton>
+                                                </MudStack>
                                             </MudItem>
                                         }
                                         <MudItem xs="12">

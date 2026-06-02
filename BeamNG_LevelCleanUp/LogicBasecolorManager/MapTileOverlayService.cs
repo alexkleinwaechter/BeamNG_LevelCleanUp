@@ -25,10 +25,47 @@ public class MapTileOverlayService
         new("ArcGIS Satelite", "arcgis-satelite", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")
     ];
 
+    public bool HasOverlayCache(string levelPath, string providerName)
+    {
+        var provider = ResolveProvider(providerName);
+        var tileRoot = Path.Join(levelPath, "MT_Tiles");
+        var finalPath = Path.Join(tileRoot, provider.FinalImageName);
+        var cachePath = Path.Join(tileRoot, "cache", provider.Slug);
+        return File.Exists(finalPath) || Directory.Exists(cachePath);
+    }
+
+    public bool HasFinalOverlayImage(string levelPath, string providerName)
+    {
+        var provider = ResolveProvider(providerName);
+        return File.Exists(Path.Join(levelPath, "MT_Tiles", provider.FinalImageName));
+    }
+
+    public MapTileCacheClearResult ClearOverlayCache(string levelPath, string providerName)
+    {
+        var provider = ResolveProvider(providerName);
+        var tileRoot = Path.Join(levelPath, "MT_Tiles");
+        var finalPath = Path.Join(tileRoot, provider.FinalImageName);
+        var cachePath = Path.Join(tileRoot, "cache", provider.Slug);
+        var deletedItems = 0;
+
+        if (File.Exists(finalPath))
+        {
+            File.Delete(finalPath);
+            deletedItems++;
+        }
+
+        if (Directory.Exists(cachePath))
+        {
+            Directory.Delete(cachePath, true);
+            deletedItems++;
+        }
+
+        return new MapTileCacheClearResult(provider.Name, deletedItems);
+    }
+
     public async Task<string> EnsureOverlayImageAsync(string levelPath, MtGeoReferenceSettings geoReferenceSettings, string providerName, int outputSize)
     {
-        var provider = Providers.FirstOrDefault(x => x.Name.Equals(providerName, StringComparison.OrdinalIgnoreCase))
-                       ?? Providers.First(x => x.Name.Equals("Google Satelite Only", StringComparison.OrdinalIgnoreCase));
+        var provider = ResolveProvider(providerName);
 
         var tileRoot = Path.Join(levelPath, "MT_Tiles");
         Directory.CreateDirectory(tileRoot);
@@ -54,14 +91,30 @@ public class MapTileOverlayService
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Fetching {provider.Name} overlay at zoom {zoom} ({tileCount} tiles). Existing cached tiles are reused.");
 
+        var fallbackTileCount = 0;
         using var mosaic = new Image<Rgba32>((maxTileX - minTileX + 1) * TileSize, (maxTileY - minTileY + 1) * TileSize);
         for (var y = minTileY; y <= maxTileY; y++)
         for (var x = minTileX; x <= maxTileX; x++)
         {
             using var tile = await LoadTileAsync(tileRoot, provider, zoom, x, y);
+            if (tile.UsedFallback)
+                fallbackTileCount++;
+
             var destX = (x - minTileX) * TileSize;
             var destY = (y - minTileY) * TileSize;
-            mosaic.Mutate(ctx => ctx.DrawImage(tile, new SixLabors.ImageSharp.Point(destX, destY), 1f));
+            mosaic.Mutate(ctx => ctx.DrawImage(tile.Image, new SixLabors.ImageSharp.Point(destX, destY), 1f));
+        }
+
+        if (fallbackTileCount > 0)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"{provider.Name} did not return {fallbackTileCount} of {tileCount} tile(s). Transparent fallback was used for missing areas.");
+        }
+
+        if (fallbackTileCount == tileCount)
+        {
+            throw new InvalidOperationException(
+                $"{provider.Name} did not return any map tiles for this area. Check the georeference bounds, try another provider, or clear the cache and retry later.");
         }
 
         var west = LonLatToWorldPixel(geoReferenceSettings.TerrainMinLongitude, geoReferenceSettings.TerrainMaxLatitude, zoom);
@@ -92,30 +145,66 @@ public class MapTileOverlayService
                settings.TerrainCenterLatitude <= WebMercatorMaxLatitude;
     }
 
-    private static async Task<Image<Rgba32>> LoadTileAsync(string tileRoot, MapTileProvider provider, int z, int x, int y)
+    private static async Task<LoadedTile> LoadTileAsync(string tileRoot, MapTileProvider provider, int z, int x, int y)
     {
         var cacheFolder = Path.Join(tileRoot, "cache", provider.Slug, z.ToString(CultureInfo.InvariantCulture), x.ToString(CultureInfo.InvariantCulture));
         Directory.CreateDirectory(cacheFolder);
         var cachePath = Path.Join(cacheFolder, y.ToString(CultureInfo.InvariantCulture) + ".img");
 
-        byte[] bytes;
         if (File.Exists(cachePath))
         {
-            bytes = await File.ReadAllBytesAsync(cachePath);
-        }
-        else
-        {
-            var url = BuildTileUrl(provider.UrlTemplate, z, x, y);
-            bytes = await HttpClient.GetByteArrayAsync(url);
-            await File.WriteAllBytesAsync(cachePath, bytes);
+            try
+            {
+                return new LoadedTile(LoadTileImage(await File.ReadAllBytesAsync(cachePath)), false);
+            }
+            catch (Exception ex)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Cached tile {provider.Name}/{z}/{x}/{y} could not be read and will be fetched again: {ex.Message}");
+                File.Delete(cachePath);
+            }
         }
 
+        try
+        {
+            var url = BuildTileUrl(provider.UrlTemplate, z, x, y);
+            using var response = await HttpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+                return CreateFallbackTile();
+
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            await File.WriteAllBytesAsync(cachePath, bytes);
+            return new LoadedTile(LoadTileImage(bytes), false);
+        }
+        catch (HttpRequestException)
+        {
+            return CreateFallbackTile();
+        }
+        catch (TaskCanceledException)
+        {
+            return CreateFallbackTile();
+        }
+    }
+
+    private static Image<Rgba32> LoadTileImage(byte[] bytes)
+    {
         var image = SixLabors.ImageSharp.Image.Load<Rgba32>(bytes);
         if (image.Width == TileSize && image.Height == TileSize)
             return image;
 
         image.Mutate(ctx => ctx.Resize(TileSize, TileSize));
         return image;
+    }
+
+    private static LoadedTile CreateFallbackTile()
+    {
+        return new LoadedTile(new Image<Rgba32>(TileSize, TileSize), true);
+    }
+
+    private static MapTileProvider ResolveProvider(string providerName)
+    {
+        return Providers.FirstOrDefault(x => x.Name.Equals(providerName, StringComparison.OrdinalIgnoreCase))
+               ?? Providers.First(x => x.Name.Equals("Google Satelite Only", StringComparison.OrdinalIgnoreCase));
     }
 
     private static int ChooseZoom(double latitude, double terrainMetersPerPixel)
@@ -167,9 +256,33 @@ public class MapTileOverlayService
 
     private readonly record struct TileCoordinate(int X, int Y);
     private readonly record struct PixelCoordinate(double X, double Y);
+
+    private sealed class LoadedTile : IDisposable
+    {
+        public LoadedTile(Image<Rgba32> image, bool usedFallback)
+        {
+            Image = image;
+            UsedFallback = usedFallback;
+        }
+
+        public Image<Rgba32> Image { get; }
+        public bool UsedFallback { get; }
+
+        public void Dispose()
+        {
+            Image.Dispose();
+        }
+    }
 }
 
 public sealed record MapTileProvider(string Name, string Slug, string UrlTemplate)
 {
     public string FinalImageName => Slug + ".png";
+}
+
+public sealed record MapTileCacheClearResult(string ProviderName, int DeletedItems)
+{
+    public string Message => DeletedItems == 0
+        ? $"No cached {ProviderName} tile overlay files were found."
+        : $"Cleared cached {ProviderName} tile overlay files.";
 }

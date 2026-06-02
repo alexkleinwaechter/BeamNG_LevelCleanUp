@@ -19,6 +19,7 @@ public partial class BasecolorManager
     private const string OperationPaintMode = "paint-mode";
     private const string OperationBaseColorMode = "basecolor-mode";
     private const string OperationFetchTile = "fetch-tile";
+    private const string OperationClearTileCache = "clear-tile-cache";
 
     private readonly BasecolorManagerService _service = new();
     private readonly PaintModeApplier _paintModeApplier = new();
@@ -53,12 +54,18 @@ public partial class BasecolorManager
     [Inject]
     private IDialogService DialogService { get; set; } = null!;
 
+    [Inject]
+    private ISnackbar Snackbar { get; set; } = null!;
+
     private bool HasLevel => !string.IsNullOrWhiteSpace(_levelPath);
     private bool IsBusy => _isLoading || _isApplying;
     private bool HasBusyMessage => IsBusy && !string.IsNullOrWhiteSpace(_busyMessage);
     private bool HasGeoReference => MapTileOverlayService.HasUsableGeoReference(_settings.GeoReferenceSettings);
     private bool CanFetchTileOverlay => HasLevel && HasGeoReference && !IsBusy &&
                                         !string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider);
+    private bool CanClearTileOverlayCache => HasLevel && !IsBusy &&
+                                             !string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider) &&
+                                             _tileOverlayService.HasOverlayCache(_levelPath, _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider);
     private int GlobalOverlayBlendPercent => (int)Math.Round(Math.Clamp(_settings.BasecolorModeSettings.OverlaySettings.GlobalBlend, 0.0, 1.0) * 100.0);
 
     protected override void OnInitialized()
@@ -241,9 +248,22 @@ public partial class BasecolorManager
                 EnsureDefaultOverlayBlend();
                 await RefreshPreview();
             }
+            else if (_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider)
+            {
+                _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = string.Empty;
+                _settings.BasecolorModeSettings.OverlaySettings.UseTileProvider = false;
+                await RefreshPreview();
+            }
         }
 
         UpdateSettingsFromMaterialLists();
+    }
+
+    private async Task OnUseTileProviderChanged(bool useTileProvider)
+    {
+        _settings.BasecolorModeSettings.OverlaySettings.UseTileProvider = useTileProvider;
+        UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
     }
 
     private async Task FetchSelectedTileOverlay()
@@ -254,6 +274,7 @@ public partial class BasecolorManager
         await RunBusyOperation(OperationFetchTile, "Fetching tile overlay...", async () =>
         {
             var providerName = _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider;
+            var wasFinalImageCached = _tileOverlayService.HasFinalOverlayImage(_levelPath, providerName);
             var imagePath = await _tileOverlayService.EnsureOverlayImageAsync(_levelPath, _settings.GeoReferenceSettings, providerName, _terrainSize);
             _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = imagePath;
             _settings.BasecolorModeSettings.OverlaySettings.UseTileProvider = true;
@@ -261,6 +282,38 @@ public partial class BasecolorManager
             UpdateSettingsFromMaterialLists();
             if (_terrain != null)
                 _previewDataUri = await Task.Run(() => _service.BuildPreview(_terrain, _basecolorMaterials, _settings));
+
+            Snackbar.Add(
+                wasFinalImageCached
+                    ? $"Loaded {providerName} tile overlay from cache."
+                    : $"Fetched {providerName} tile overlay.",
+                wasFinalImageCached ? Severity.Info : Severity.Success);
+        });
+    }
+
+    private async Task ClearSelectedTileOverlayCache()
+    {
+        if (!CanClearTileOverlayCache)
+            return;
+
+        await RunBusyOperation(OperationClearTileCache, "Clearing tile overlay cache...", async () =>
+        {
+            var providerName = _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider;
+            var result = await Task.Run(() => _tileOverlayService.ClearOverlayCache(_levelPath, providerName));
+
+            if (!_tileOverlayService.HasFinalOverlayImage(_levelPath, providerName) &&
+                !File.Exists(_settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath))
+            {
+                _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = string.Empty;
+                _settings.BasecolorModeSettings.OverlaySettings.UseTileProvider = false;
+            }
+
+            UpdateSettingsFromMaterialLists();
+            if (_terrain != null)
+                _previewDataUri = await Task.Run(() => _service.BuildPreview(_terrain, _basecolorMaterials, _settings));
+
+            Snackbar.Add(result.Message, result.DeletedItems == 0 ? Severity.Info : Severity.Success);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, result.Message);
         });
     }
 
