@@ -109,6 +109,7 @@
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
                                        ExcludeBridgesFromTerrain="@_excludeBridgesFromTerrain"
                                        ExcludeTunnelsFromTerrain="@_excludeTunnelsFromTerrain"
+                                       HydraulicErosion="@_state.HydraulicErosion"
                                        EnableBuildings="@_enableBuildings"
                                        EnableBuildingClustering="@_enableBuildingClustering"
                                        BuildingClusterCellSize="@_buildingClusterCellSize"
@@ -480,6 +481,128 @@
                                              Min="-10000.0f" Max="10000.0f" Step="1.0f"
                                              HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Auto-calculated from GeoTIFF min elevation" : "Z position offset for terrain")" />
                         </MudItem>
+
+                        @* Hydraulic Erosion *@
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                <MudIcon Icon="@Icons.Material.Filled.WaterDrop" Size="Size.Small" Class="mr-1" />
+                                Hydraulic Erosion
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_enableHydraulicErosion"
+                                             Label="Enable Hydraulic Erosion"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Runs a droplet-based erosion pass after elevation import and before road smoothing.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Naturalize terrain before roads are smoothed
+                            </MudText>
+                        </MudItem>
+
+                        @if (_enableHydraulicErosion)
+                        {
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int"
+                                                 @bind-Value="_hydraulicErosionIterations"
+                                                 Label="Iterations"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1" Max="1000000" Step="1000"
+                                                 HelperText="More iterations increase detail and processing time" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int"
+                                                 @bind-Value="_hydraulicErosionRadius"
+                                                 Label="Erosion Radius"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1" Max="16" Step="1"
+                                                 HelperText="Brush radius in terrain pixels" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int"
+                                                 @bind-Value="_hydraulicErosionSeed"
+                                                 Label="Random Seed"
+                                                 Variant="Variant.Outlined"
+                                                 Step="1"
+                                                 HelperText="Same seed gives repeatable erosion" />
+                            </MudItem>
+
+                            <MudItem xs="12">
+                                <MudExpansionPanels Dense="true">
+                                    <MudExpansionPanel Text="Advanced Erosion Settings" Dense="true">
+                                        <MudGrid Spacing="3">
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInertia"
+                                                                 Label="Inertia" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Higher values keep droplets moving in the same direction longer" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionGravity"
+                                                                 Label="Gravity" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="20.0f" Step="0.25f"
+                                                                 HelperText="Controls how strongly downhill slopes accelerate droplets" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="int" @bind-Value="_hydraulicErosionDropletLifetime"
+                                                                 Label="Droplet Lifetime" Variant="Variant.Outlined"
+                                                                 Min="1" Max="200" Step="1"
+                                                                 HelperText="Maximum simulation steps for each water droplet" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionCapacityFactor"
+                                                                 Label="Capacity Factor" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="20.0f" Step="0.1f"
+                                                                 HelperText="Higher values let moving water carry more sediment" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionMinCapacity"
+                                                                 Label="Min Capacity" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.001f"
+                                                                 HelperText="Minimum sediment capacity on flat or slow terrain" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionErodeSpeed"
+                                                                 Label="Erode Speed" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Fraction of available sediment capacity eroded per step" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionDepositSpeed"
+                                                                 Label="Deposit Speed" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Fraction of excess sediment dropped per step" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionEvaporateSpeed"
+                                                                 Label="Evaporation" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Water loss per step; higher values shorten erosion paths" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInitialWater"
+                                                                 Label="Initial Water" Variant="Variant.Outlined"
+                                                                 Min="0.0001f" Max="10.0f" Step="0.1f"
+                                                                 HelperText="Starting water volume for each droplet" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInitialSpeed"
+                                                                 Label="Initial Speed" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="10.0f" Step="0.1f"
+                                                                 HelperText="Starting movement speed before slope acceleration" />
+                                            </MudItem>
+                                        </MudGrid>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            </MudItem>
+                        }
 
                         @* UpdateTerrainBlock: always true, UI removed *@
                         @* FlipMaterialProcessingOrder: always false, UI removed *@

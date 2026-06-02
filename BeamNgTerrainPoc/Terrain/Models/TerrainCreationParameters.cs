@@ -255,6 +255,16 @@ public class TerrainCreationParameters
     public bool ExcludeStructuresFromTerrain => ExcludeBridgesFromTerrain || ExcludeTunnelsFromTerrain;
 
     // ========================================
+    // HYDRAULIC EROSION
+    // ========================================
+
+    /// <summary>
+    ///     Optional hydraulic erosion pass applied after heightmap processing and before road smoothing.
+    ///     When null or disabled, terrain generation keeps the existing behavior.
+    /// </summary>
+    public HydraulicErosionSettings? HydraulicErosion { get; set; }
+
+    // ========================================
     // STRUCTURE ELEVATION PROFILE PARAMETERS
     // ========================================
 

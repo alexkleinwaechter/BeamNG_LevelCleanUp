@@ -179,6 +179,90 @@ public partial class GenerateTerrain : IDisposable
         set => _state.NullDetailPixelSize = value;
     }
 
+    private bool _enableHydraulicErosion
+    {
+        get => _state.HydraulicErosion.Enabled;
+        set => _state.HydraulicErosion.Enabled = value;
+    }
+
+    private int _hydraulicErosionIterations
+    {
+        get => _state.HydraulicErosion.IterationCount;
+        set => _state.HydraulicErosion.IterationCount = value;
+    }
+
+    private int _hydraulicErosionRadius
+    {
+        get => _state.HydraulicErosion.ErosionRadius;
+        set => _state.HydraulicErosion.ErosionRadius = value;
+    }
+
+    private int _hydraulicErosionSeed
+    {
+        get => _state.HydraulicErosion.RandomSeed;
+        set => _state.HydraulicErosion.RandomSeed = value;
+    }
+
+    private float _hydraulicErosionInertia
+    {
+        get => _state.HydraulicErosion.Inertia;
+        set => _state.HydraulicErosion.Inertia = value;
+    }
+
+    private float _hydraulicErosionGravity
+    {
+        get => _state.HydraulicErosion.Gravity;
+        set => _state.HydraulicErosion.Gravity = value;
+    }
+
+    private int _hydraulicErosionDropletLifetime
+    {
+        get => _state.HydraulicErosion.MaxDropletLifetime;
+        set => _state.HydraulicErosion.MaxDropletLifetime = value;
+    }
+
+    private float _hydraulicErosionErodeSpeed
+    {
+        get => _state.HydraulicErosion.ErodeSpeed;
+        set => _state.HydraulicErosion.ErodeSpeed = value;
+    }
+
+    private float _hydraulicErosionDepositSpeed
+    {
+        get => _state.HydraulicErosion.DepositSpeed;
+        set => _state.HydraulicErosion.DepositSpeed = value;
+    }
+
+    private float _hydraulicErosionEvaporateSpeed
+    {
+        get => _state.HydraulicErosion.EvaporateSpeed;
+        set => _state.HydraulicErosion.EvaporateSpeed = value;
+    }
+
+    private float _hydraulicErosionCapacityFactor
+    {
+        get => _state.HydraulicErosion.SedimentCapacityFactor;
+        set => _state.HydraulicErosion.SedimentCapacityFactor = value;
+    }
+
+    private float _hydraulicErosionMinCapacity
+    {
+        get => _state.HydraulicErosion.MinSedimentCapacity;
+        set => _state.HydraulicErosion.MinSedimentCapacity = value;
+    }
+
+    private float _hydraulicErosionInitialWater
+    {
+        get => _state.HydraulicErosion.InitialWaterVolume;
+        set => _state.HydraulicErosion.InitialWaterVolume = value;
+    }
+
+    private float _hydraulicErosionInitialSpeed
+    {
+        get => _state.HydraulicErosion.InitialSpeed;
+        set => _state.HydraulicErosion.InitialSpeed = value;
+    }
+
     private GeoBoundingBox? _geoBoundingBox
     {
         get => _state.GeoBoundingBox;
@@ -1980,6 +2064,9 @@ public partial class GenerateTerrain : IDisposable
 
             if (result.ExcludeTunnelsFromTerrain.HasValue)
                 _excludeTunnelsFromTerrain = result.ExcludeTunnelsFromTerrain.Value;
+
+            if (result.HydraulicErosion != null)
+                _state.HydraulicErosion = result.HydraulicErosion.Clone();
 
             if (result.EnableBuildings.HasValue)
                 _enableBuildings = result.EnableBuildings.Value;

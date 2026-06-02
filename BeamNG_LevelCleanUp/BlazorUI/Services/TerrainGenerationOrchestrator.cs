@@ -1005,6 +1005,7 @@ public class TerrainGenerationOrchestrator
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
             ExcludeBridgesFromTerrain = state.ExcludeBridgesFromTerrain,
             ExcludeTunnelsFromTerrain = state.ExcludeTunnelsFromTerrain,
+            HydraulicErosion = state.HydraulicErosion.Clone(),
             AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0,
             DecalRoadSettings = state.EnableDecalRoads
                 ? state.DecalRoadSettings ?? new DecalRoadSettings { Enabled = true }

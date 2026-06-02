@@ -687,6 +687,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.ExcludeBridgesFromTerrain = terrainOptions["excludeBridgesFromTerrain"]!.GetValue<bool>();
                 if (terrainOptions["excludeTunnelsFromTerrain"] != null)
                     result.ExcludeTunnelsFromTerrain = terrainOptions["excludeTunnelsFromTerrain"]!.GetValue<bool>();
+
+                var hydraulicErosion = terrainOptions["hydraulicErosion"];
+                if (hydraulicErosion != null)
+                    result.HydraulicErosion = ImportHydraulicErosionSettings(hydraulicErosion);
             }
 
             // Import building options (global)
@@ -938,6 +942,42 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
             PubSubChannel.SendMessage(PubSubMessageType.Warning,
                 $"Error importing app settings: {ex.Message}");
         }
+    }
+
+    private static HydraulicErosionSettings ImportHydraulicErosionSettings(System.Text.Json.Nodes.JsonNode node)
+    {
+        var settings = new HydraulicErosionSettings();
+
+        if (node["enabled"] != null)
+            settings.Enabled = node["enabled"]!.GetValue<bool>();
+        if (node["iterationCount"] != null)
+            settings.IterationCount = node["iterationCount"]!.GetValue<int>();
+        if (node["erosionRadius"] != null)
+            settings.ErosionRadius = node["erosionRadius"]!.GetValue<int>();
+        if (node["inertia"] != null)
+            settings.Inertia = node["inertia"]!.GetValue<float>();
+        if (node["sedimentCapacityFactor"] != null)
+            settings.SedimentCapacityFactor = node["sedimentCapacityFactor"]!.GetValue<float>();
+        if (node["minSedimentCapacity"] != null)
+            settings.MinSedimentCapacity = node["minSedimentCapacity"]!.GetValue<float>();
+        if (node["erodeSpeed"] != null)
+            settings.ErodeSpeed = node["erodeSpeed"]!.GetValue<float>();
+        if (node["depositSpeed"] != null)
+            settings.DepositSpeed = node["depositSpeed"]!.GetValue<float>();
+        if (node["evaporateSpeed"] != null)
+            settings.EvaporateSpeed = node["evaporateSpeed"]!.GetValue<float>();
+        if (node["gravity"] != null)
+            settings.Gravity = node["gravity"]!.GetValue<float>();
+        if (node["maxDropletLifetime"] != null)
+            settings.MaxDropletLifetime = node["maxDropletLifetime"]!.GetValue<int>();
+        if (node["initialWaterVolume"] != null)
+            settings.InitialWaterVolume = node["initialWaterVolume"]!.GetValue<float>();
+        if (node["initialSpeed"] != null)
+            settings.InitialSpeed = node["initialSpeed"]!.GetValue<float>();
+        if (node["randomSeed"] != null)
+            settings.RandomSeed = node["randomSeed"]!.GetValue<int>();
+
+        return settings;
     }
 
     /// <summary>
