@@ -66,8 +66,11 @@ public partial class BasecolorManager
     private bool CanClearTileOverlayCache => HasLevel && !IsBusy &&
                                              !string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider) &&
                                              _tileOverlayService.HasOverlayCache(_levelPath, _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider);
+    private bool HasActiveBasecolorOverlay => !string.IsNullOrWhiteSpace(GetActiveBasecolorOverlayPath()) && File.Exists(GetActiveBasecolorOverlayPath());
     private int GlobalOverlayBlendPercent => (int)Math.Round(Math.Clamp(_settings.BasecolorModeSettings.OverlaySettings.GlobalBlend, 0.0, 1.0) * 100.0);
-
+    private int OverlayBrightnessPercent => ToSignedPercent(_settings.BasecolorModeSettings.OverlaySettings.Brightness);
+    private int OverlayContrastPercent => ToSignedPercent(_settings.BasecolorModeSettings.OverlaySettings.Contrast);
+    private int OverlaySaturationPercent => ToSignedPercent(_settings.BasecolorModeSettings.OverlaySettings.Saturation);
     protected override void OnInitialized()
     {
         Task.Run(ReadPubSubMessages);
@@ -156,7 +159,8 @@ public partial class BasecolorManager
                     _settings.BasecolorModeSettings.NormalStrength,
                     _settings.BasecolorModeSettings.AoRadius,
                     _settings.BasecolorModeSettings.AoIntensity,
-                    BasecolorManagerService.CreateOverlayOptions(_settings));
+                    BasecolorManagerService.CreateOverlayOptions(_settings),
+                    BasecolorManagerService.CreateMaterialBorderBlendOptions(_settings));
                 _previewDataUri = _service.BuildPreview(_terrain, _basecolorMaterials, _settings);
             });
         });
@@ -317,7 +321,13 @@ public partial class BasecolorManager
         });
     }
 
-    private void OnGlobalOverlayBlendChanged(int value)
+    private async Task OnGlobalOverlayBlendChanged(int value)
+    {
+        ApplyGlobalOverlayBlend(value);
+        await RefreshPreview();
+    }
+
+    private void ApplyGlobalOverlayBlend(int value)
     {
         var blend = Math.Clamp(value, 0, 100) / 100.0;
         _settings.BasecolorModeSettings.OverlaySettings.GlobalBlend = blend;
@@ -326,10 +336,58 @@ public partial class BasecolorManager
         UpdateSettingsFromMaterialLists();
     }
 
-    private void OnMaterialOverlayBlendChanged(CopyAsset asset, int value)
+    private async Task OnOverlayBrightnessChanged(int value)
+    {
+        _settings.BasecolorModeSettings.OverlaySettings.Brightness = FromSignedPercent(value);
+        UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
+    }
+
+    private async Task OnOverlayContrastChanged(int value)
+    {
+        _settings.BasecolorModeSettings.OverlaySettings.Contrast = FromSignedPercent(value);
+        UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
+    }
+
+    private async Task OnOverlaySaturationChanged(int value)
+    {
+        _settings.BasecolorModeSettings.OverlaySettings.Saturation = FromSignedPercent(value);
+        UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
+    }
+
+    private async Task ResetOverlayAdjustments()
+    {
+        _settings.BasecolorModeSettings.OverlaySettings.Brightness = 0;
+        _settings.BasecolorModeSettings.OverlaySettings.Contrast = 0;
+        _settings.BasecolorModeSettings.OverlaySettings.Saturation = 0;
+        UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
+    }
+
+    private async Task OnMaterialBorderBlendEnabledChanged(bool enabled)
+    {
+        _settings.BasecolorModeSettings.EnableMaterialBorderBlend = enabled;
+        if (enabled && _settings.BasecolorModeSettings.MaterialBorderBlendRadius <= 0)
+            _settings.BasecolorModeSettings.MaterialBorderBlendRadius = 2.5;
+
+        UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
+    }
+
+    private async Task OnMaterialBorderBlendRadiusChanged(double value)
+    {
+        _settings.BasecolorModeSettings.MaterialBorderBlendRadius = Math.Round(Math.Clamp(value, 0.0, 5.0), 1);
+        UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
+    }
+
+    private async Task OnMaterialOverlayBlendChanged(CopyAsset asset, int value)
     {
         asset.BaseColorOverlayBlend = Math.Clamp(value, 0, 100) / 100.0;
         UpdateSettingsFromMaterialLists();
+        await RefreshPreview();
     }
 
     private void SyncMatchingMaterial(CopyAsset source)
@@ -553,7 +611,7 @@ public partial class BasecolorManager
         if (_settings.BasecolorModeSettings.OverlaySettings.GlobalBlend > 0 || _basecolorMaterials.Any(x => x.BaseColorOverlayBlend > 0))
             return;
 
-        OnGlobalOverlayBlendChanged(50);
+        ApplyGlobalOverlayBlend(50);
     }
 
     private static bool IsSameMaterial(CopyAsset source, CopyAsset target)
@@ -581,6 +639,24 @@ public partial class BasecolorManager
     private static int GetMaterialOverlayBlendPercent(CopyAsset asset)
     {
         return (int)Math.Round(Math.Clamp(asset.BaseColorOverlayBlend, 0.0, 1.0) * 100.0);
+    }
+
+    private string GetActiveBasecolorOverlayPath()
+    {
+        var overlaySettings = _settings.BasecolorModeSettings.OverlaySettings;
+        return overlaySettings.UseTileProvider
+            ? overlaySettings.CachedTileImagePath
+            : overlaySettings.SelectedImagePath;
+    }
+
+    private static int ToSignedPercent(double value)
+    {
+        return (int)Math.Round(Math.Clamp(value, -1.0, 1.0) * 100.0);
+    }
+
+    private static double FromSignedPercent(int value)
+    {
+        return Math.Clamp(value, -100, 100) / 100.0;
     }
 
     private static string NormalizeHexColor(string value)
@@ -657,6 +733,39 @@ public partial class BasecolorManager
         await DialogService.ShowAsync<BasecolorManagerHelpDialog>(
             "Basecolor Manager Guide",
             options);
+    }
+
+    private async Task OpenMergedPreviewDialog()
+    {
+        if (_terrain == null || string.IsNullOrWhiteSpace(_previewDataUri))
+            return;
+
+        await RunBusyOperation(OperationPreview, "Building large BaseColor preview...", async () =>
+        {
+            UpdateSettingsFromMaterialLists();
+            var largePreviewDataUri = await Task.Run(() => _service.BuildLargePreview(_terrain, _basecolorMaterials, _settings));
+
+            var parameters = new DialogParameters<BasecolorPreviewDialog>
+            {
+                { x => x.PreviewDataUri, largePreviewDataUri },
+                { x => x.PreviewSize, BasecolorManagerService.GetLargePreviewSize(_terrainSize) },
+                { x => x.TerrainSize, _terrainSize },
+                { x => x.CurrentMode, _settings.CurrentMode }
+            };
+
+            var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.ExtraExtraLarge,
+                FullWidth = true,
+                CloseButton = true,
+                CloseOnEscapeKey = true
+            };
+
+            await DialogService.ShowAsync<BasecolorPreviewDialog>(
+                "Merged BaseColor Preview",
+                parameters,
+                options);
+        });
     }
 
     private void ResetPage()

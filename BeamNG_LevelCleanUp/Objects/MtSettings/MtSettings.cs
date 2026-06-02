@@ -151,6 +151,12 @@ public class MtBasecolorModeSettings
     [JsonPropertyName("AoIntensity")]
     public double AoIntensity { get; set; } = 1.0;
 
+    [JsonPropertyName("EnableMaterialBorderBlend")]
+    public bool EnableMaterialBorderBlend { get; set; }
+
+    [JsonPropertyName("MaterialBorderBlendRadius")]
+    public double MaterialBorderBlendRadius { get; set; } = 2.5;
+
     [JsonPropertyName("OverlaySettings")]
     public MtBasecolorOverlaySettings OverlaySettings { get; set; } = new();
 
@@ -210,6 +216,15 @@ public class MtBasecolorOverlaySettings
 
     [JsonPropertyName("GlobalBlend")]
     public double GlobalBlend { get; set; }
+
+    [JsonPropertyName("Brightness")]
+    public double Brightness { get; set; }
+
+    [JsonPropertyName("Contrast")]
+    public double Contrast { get; set; }
+
+    [JsonPropertyName("Saturation")]
+    public double Saturation { get; set; }
 }
 
 public class MtTerrainMaterialSetting

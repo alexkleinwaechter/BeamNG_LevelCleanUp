@@ -1,0 +1,191 @@
+@using BeamNG_LevelCleanUp.Objects.MtSettings
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+
+<MudDialog Class="basecolor-preview-dialog" Style="height: calc(100vh - 48px); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden;">
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <MudIcon Icon="@Icons.Material.Filled.Image" />
+            <MudText Typo="Typo.h6">Merged BaseColor Preview</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        <div class="basecolor-preview-shell">
+            <div class="basecolor-preview-viewport"
+                 style="cursor: @ViewportCursor;"
+                 @onwheel="OnWheel"
+                 @onwheel:preventDefault="true"
+                 @onmousedown="OnMouseDown"
+                 @onmousemove="OnMouseMove"
+                 @onmouseup="OnMouseUp"
+                 @onmouseleave="OnMouseLeave">
+                @if (!string.IsNullOrWhiteSpace(PreviewDataUri))
+                {
+                    <img src="@PreviewDataUri" alt="Merged BaseColor preview" draggable="false" style="@ImageStyle" />
+                }
+            </div>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="basecolor-preview-toolbar">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Terrain size: @TerrainSize x @TerrainSize</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Preview: @PreviewSize x @PreviewSize</MudText>
+                <MudSpacer />
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudTooltip Text="Zoom out">
+                        <MudIconButton Icon="@Icons.Material.Filled.ZoomOut" Size="Size.Small" OnClick="ZoomOut" />
+                    </MudTooltip>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@ZoomPercent%</MudText>
+                    <MudTooltip Text="Zoom in">
+                        <MudIconButton Icon="@Icons.Material.Filled.ZoomIn" Size="Size.Small" OnClick="ZoomIn" />
+                    </MudTooltip>
+                    <MudTooltip Text="Reset view">
+                        <MudIconButton Icon="@Icons.Material.Filled.CenterFocusStrong" Size="Size.Small" OnClick="ResetView" />
+                    </MudTooltip>
+                </MudStack>
+                <MudSpacer />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Mode: @CurrentMode</MudText>
+            </MudStack>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .basecolor-preview-dialog .mud-dialog-title,
+    .basecolor-preview-dialog .mud-dialog-actions {
+        flex: 0 0 auto;
+    }
+
+    .basecolor-preview-dialog .mud-dialog-content {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .basecolor-preview-shell {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .basecolor-preview-viewport {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,.08);
+        overflow: hidden;
+        user-select: none;
+        touch-action: none;
+    }
+
+    .basecolor-preview-toolbar {
+        flex: 0 0 auto;
+        min-height: 40px;
+        padding-top: 8px;
+        overflow: hidden;
+    }
+</style>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public string PreviewDataUri { get; set; } = string.Empty;
+
+    [Parameter]
+    public int TerrainSize { get; set; }
+
+    [Parameter]
+    public int PreviewSize { get; set; }
+
+    [Parameter]
+    public BasecolorMode CurrentMode { get; set; }
+
+    private const double MinZoom = 0.1;
+    private const double MaxZoom = 16.0;
+    private double _zoom = 1.0;
+    private double _panX;
+    private double _panY;
+    private double _lastClientX;
+    private double _lastClientY;
+    private bool _isPanning;
+
+    private string PreviewSizePx => $"{Math.Max(1, PreviewSize > 0 ? PreviewSize : TerrainSize)}px";
+    private int ZoomPercent => (int)Math.Round(_zoom * 100.0);
+    private string ViewportCursor => _isPanning ? "grabbing" : "grab";
+    private string ImageStyle => string.Create(CultureInfo.InvariantCulture,
+        $"width: {PreviewSizePx}; height: {PreviewSizePx}; max-width: none; max-height: none; object-fit: contain; image-rendering: auto; border: 1px solid rgba(128,128,128,.35); transform: translate({_panX:0.##}px, {_panY:0.##}px) scale({_zoom:0.###}); transform-origin: center center;");
+
+    private void OnWheel(WheelEventArgs args)
+    {
+        var factor = args.DeltaY < 0 ? 1.15 : 1.0 / 1.15;
+        SetZoom(_zoom * factor);
+    }
+
+    private void OnMouseDown(MouseEventArgs args)
+    {
+        if (args.Button != 0)
+            return;
+
+        _isPanning = true;
+        _lastClientX = args.ClientX;
+        _lastClientY = args.ClientY;
+    }
+
+    private void OnMouseMove(MouseEventArgs args)
+    {
+        if (!_isPanning)
+            return;
+
+        _panX += args.ClientX - _lastClientX;
+        _panY += args.ClientY - _lastClientY;
+        _lastClientX = args.ClientX;
+        _lastClientY = args.ClientY;
+    }
+
+    private void OnMouseUp(MouseEventArgs args)
+    {
+        _isPanning = false;
+    }
+
+    private void OnMouseLeave(MouseEventArgs args)
+    {
+        _isPanning = false;
+    }
+
+    private void ZoomIn()
+    {
+        SetZoom(_zoom * 1.25);
+    }
+
+    private void ZoomOut()
+    {
+        SetZoom(_zoom / 1.25);
+    }
+
+    private void ResetView()
+    {
+        _zoom = 1.0;
+        _panX = 0;
+        _panY = 0;
+        _isPanning = false;
+    }
+
+    private void SetZoom(double value)
+    {
+        _zoom = Math.Clamp(value, MinZoom, MaxZoom);
+    }
+
+    private void Close()
+    {
+        MudDialog.Close();
+    }
+}
