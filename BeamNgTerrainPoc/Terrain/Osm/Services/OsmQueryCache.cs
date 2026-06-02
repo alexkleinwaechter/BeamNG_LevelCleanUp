@@ -102,7 +102,14 @@ public class OsmQueryCache
     public string GetCacheKey(GeoBoundingBox bbox)
     {
         // Use a consistent precision for cache keys, include version to invalidate old caches
-        return $"osm_v{CacheVersion}_{bbox.MinLatitude:F4}_{bbox.MinLongitude:F4}_{bbox.MaxLatitude:F4}_{bbox.MaxLongitude:F4}";
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "osm_v{0}_{1:F4}_{2:F4}_{3:F4}_{4:F4}",
+            CacheVersion,
+            bbox.MinLatitude,
+            bbox.MinLongitude,
+            bbox.MaxLatitude,
+            bbox.MaxLongitude);
     }
 
     /// <summary>
@@ -115,7 +122,8 @@ public class OsmQueryCache
 
     /// <summary>
     /// Tries to get a cached result for a bounding box.
-    /// First tries exact match, then checks if any cached bbox contains the requested one.
+    /// First tries exact match, then checks if any cached bbox contains the requested one,
+    /// then checks whether multiple cached bboxes together cover the requested one.
     /// </summary>
     /// <param name="bbox">The bounding box to look up.</param>
     /// <returns>Cached result if found and valid, null otherwise.</returns>
@@ -134,7 +142,14 @@ public class OsmQueryCache
         if (containingResult != null)
             return containingResult;
 
-        TerrainLogger.Info($"OSM cache miss: no exact or containing match for {cacheKey}");
+        // 3. Check if multiple cached bboxes together cover the requested bbox.
+        //    This handles large terrain runs that were cached as chunks, then later
+        //    queried as a smaller map crossing chunk boundaries.
+        var coveringResult = await GetFromCoveringCachesAsync(bbox);
+        if (coveringResult != null)
+            return coveringResult;
+
+        TerrainLogger.Info($"OSM cache miss: no exact, containing, or covering match for {cacheKey}");
         return null;
     }
 
@@ -204,6 +219,86 @@ public class OsmQueryCache
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Checks if multiple cached bounding boxes together cover the requested one.
+    /// This is useful when a previous large map was cached as chunk files and a later
+    /// smaller map falls across chunk boundaries, so no single chunk contains it.
+    /// </summary>
+    private async Task<OsmQueryResult?> GetFromCoveringCachesAsync(GeoBoundingBox requestedBbox)
+    {
+        var now = DateTime.UtcNow;
+        var candidates = new Dictionary<string, OsmQueryResult>();
+
+        foreach (var (cacheKey, cachedResult) in _memoryCache)
+        {
+            if (cachedResult.BoundingBox != null &&
+                IntersectsWithTolerance(cachedResult.BoundingBox, requestedBbox) &&
+                now - cachedResult.QueryTime < _cacheExpiry)
+            {
+                candidates[cacheKey] = cachedResult;
+            }
+        }
+
+        var index = GetOrBuildBboxIndex();
+        foreach (var entry in index)
+        {
+            if (!IntersectsWithTolerance(entry.BBox, requestedBbox) ||
+                now - entry.LastWriteUtc > _cacheExpiry)
+                continue;
+
+            var entryFileName = Path.GetFileNameWithoutExtension(
+                Path.GetFileNameWithoutExtension(entry.FilePath));
+
+            if (candidates.ContainsKey(entryFileName))
+                continue;
+
+            var entryLock = GetFileLock(entryFileName);
+            await entryLock.WaitAsync();
+            try
+            {
+                if (!File.Exists(entry.FilePath))
+                    continue;
+
+                var cachedResult = await ReadCompressedCacheFileAsync(entry.FilePath);
+                if (cachedResult?.BoundingBox == null ||
+                    !IntersectsWithTolerance(cachedResult.BoundingBox, requestedBbox))
+                    continue;
+
+                candidates[entryFileName] = cachedResult;
+            }
+            catch (Exception ex)
+            {
+                TerrainLogger.Warning($"Error reading covering cache file {Path.GetFileName(entry.FilePath)}: {ex.Message}");
+            }
+            finally
+            {
+                entryLock.Release();
+            }
+        }
+
+        if (candidates.Count < 2)
+            return null;
+
+        var candidateResults = candidates.Values.ToList();
+        if (!CoversBbox(candidateResults.Select(c => c.BoundingBox), requestedBbox))
+            return null;
+
+        var filteredResults = candidateResults
+            .Select(result => FilterFeaturesToBbox(result, requestedBbox))
+            .ToList();
+        var merged = OsmQueryResult.MergeChunks(filteredResults, requestedBbox);
+        merged.IsFromCache = true;
+        merged.QueryTime = filteredResults.Min(result => result.QueryTime);
+
+        _memoryCache[GetCacheKey(requestedBbox)] = merged;
+
+        TerrainLogger.Info(
+            $"OSM cache hit (covering set): merged {candidateResults.Count} cached regions into " +
+            $"{merged.Features.Count} features for requested bbox");
+
+        return merged;
     }
 
     /// <summary>
@@ -288,6 +383,77 @@ public class OsmQueryCache
     }
 
     /// <summary>
+    /// Checks whether two bounding boxes intersect, allowing small coordinate drift.
+    /// </summary>
+    private static bool IntersectsWithTolerance(
+        GeoBoundingBox first,
+        GeoBoundingBox second,
+        double toleranceDegrees = BboxContainmentToleranceDegrees)
+    {
+        return first.MinLongitude <= second.MaxLongitude + toleranceDegrees &&
+               first.MaxLongitude >= second.MinLongitude - toleranceDegrees &&
+               first.MinLatitude <= second.MaxLatitude + toleranceDegrees &&
+               first.MaxLatitude >= second.MinLatitude - toleranceDegrees;
+    }
+
+    /// <summary>
+    /// Checks whether the union of cached bounding boxes covers the requested bounding box.
+    /// The grid-cell test is exact for axis-aligned rectangles because cells are split at
+    /// every relevant cached/requested bbox edge.
+    /// </summary>
+    private static bool CoversBbox(IEnumerable<GeoBoundingBox> cachedBboxes, GeoBoundingBox requestedBbox)
+    {
+        var boxes = cachedBboxes.ToList();
+        if (boxes.Count == 0)
+            return false;
+
+        var xEdges = new SortedSet<double> { requestedBbox.MinLongitude, requestedBbox.MaxLongitude };
+        var yEdges = new SortedSet<double> { requestedBbox.MinLatitude, requestedBbox.MaxLatitude };
+
+        foreach (var box in boxes)
+        {
+            AddClampedEdge(xEdges, box.MinLongitude, requestedBbox.MinLongitude, requestedBbox.MaxLongitude);
+            AddClampedEdge(xEdges, box.MaxLongitude, requestedBbox.MinLongitude, requestedBbox.MaxLongitude);
+            AddClampedEdge(yEdges, box.MinLatitude, requestedBbox.MinLatitude, requestedBbox.MaxLatitude);
+            AddClampedEdge(yEdges, box.MaxLatitude, requestedBbox.MinLatitude, requestedBbox.MaxLatitude);
+        }
+
+        var xValues = xEdges.ToList();
+        var yValues = yEdges.ToList();
+        for (var xIndex = 0; xIndex < xValues.Count - 1; xIndex++)
+        {
+            var minLon = xValues[xIndex];
+            var maxLon = xValues[xIndex + 1];
+            if (maxLon - minLon <= double.Epsilon)
+                continue;
+
+            var sampleLon = (minLon + maxLon) / 2.0;
+            for (var yIndex = 0; yIndex < yValues.Count - 1; yIndex++)
+            {
+                var minLat = yValues[yIndex];
+                var maxLat = yValues[yIndex + 1];
+                if (maxLat - minLat <= double.Epsilon)
+                    continue;
+
+                var sampleLat = (minLat + maxLat) / 2.0;
+                var sample = new GeoBoundingBox(sampleLon, sampleLat, sampleLon, sampleLat);
+                if (!boxes.Any(box => ContainsWithTolerance(box, sample)))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void AddClampedEdge(SortedSet<double> edges, double value, double min, double max)
+    {
+        if (value <= min || value >= max)
+            return;
+
+        edges.Add(value);
+    }
+
+    /// <summary>
     /// Filters cached features to only those that intersect the requested bounding box.
     /// </summary>
     private static OsmQueryResult FilterFeaturesToBbox(OsmQueryResult cachedResult, GeoBoundingBox requestedBbox)
@@ -295,11 +461,19 @@ public class OsmQueryCache
         var filteredFeatures = cachedResult.Features
             .Where(f => FeatureIntersectsBbox(f, requestedBbox))
             .ToList();
+        var filteredWayIds = filteredFeatures
+            .Where(feature => feature.FeatureType == OsmFeatureType.Way)
+            .Select(feature => feature.Id)
+            .ToHashSet();
+        var filteredRouteRelations = cachedResult.RouteRelations
+            .Where(relation => relation.Members.Any(member => filteredWayIds.Contains(member.WayId)))
+            .ToList();
 
         return new OsmQueryResult
         {
             BoundingBox = requestedBbox,
             Features = filteredFeatures,
+            RouteRelations = filteredRouteRelations,
             QueryTime = cachedResult.QueryTime,
             IsFromCache = true,
             NodeCount = filteredFeatures.Count,
@@ -676,10 +850,10 @@ public class OsmQueryCache
         if (parts.Length < 6) return null;
 
         // Last 4 parts are the bbox coordinates: minLat, minLon, maxLat, maxLon
-        if (double.TryParse(parts[^4], CultureInfo.InvariantCulture, out var minLat) &&
-            double.TryParse(parts[^3], CultureInfo.InvariantCulture, out var minLon) &&
-            double.TryParse(parts[^2], CultureInfo.InvariantCulture, out var maxLat) &&
-            double.TryParse(parts[^1], CultureInfo.InvariantCulture, out var maxLon))
+        if (TryParseFileNameCoordinate(parts[^4], out var minLat) &&
+            TryParseFileNameCoordinate(parts[^3], out var minLon) &&
+            TryParseFileNameCoordinate(parts[^2], out var maxLat) &&
+            TryParseFileNameCoordinate(parts[^1], out var maxLon))
         {
             return new GeoBoundingBox(
                 minLon - BboxContainmentToleranceDegrees,
@@ -689,6 +863,19 @@ public class OsmQueryCache
         }
 
         return null;
+    }
+
+    private static bool TryParseFileNameCoordinate(string value, out double coordinate)
+    {
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out coordinate))
+            return true;
+
+        // Backward compatibility for cache files written before keys were culture-invariant.
+        return double.TryParse(
+            value.Replace(',', '.'),
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out coordinate);
     }
 
     #endregion
