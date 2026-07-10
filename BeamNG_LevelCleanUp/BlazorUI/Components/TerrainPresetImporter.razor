@@ -1,4 +1,5 @@
 @using System.Text.Json
+@using System.Text.Json.Nodes
 @using System.Text.Json.Serialization
 @using System.Text.RegularExpressions
 @using BeamNG_LevelCleanUp.Communication
@@ -687,6 +688,30 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.ExcludeBridgesFromTerrain = terrainOptions["excludeBridgesFromTerrain"]!.GetValue<bool>();
                 if (terrainOptions["excludeTunnelsFromTerrain"] != null)
                     result.ExcludeTunnelsFromTerrain = terrainOptions["excludeTunnelsFromTerrain"]!.GetValue<bool>();
+                if (terrainOptions["mergeStructuresIntoCorridor"] != null)
+                    result.MergeStructuresIntoCorridor = terrainOptions["mergeStructuresIntoCorridor"]!.GetValue<bool>();
+                if (terrainOptions["bridgeMaxSagBelowChordMeters"] != null)
+                    result.BridgeMaxSagBelowChordMeters = terrainOptions["bridgeMaxSagBelowChordMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckUndercutMeters"] != null)
+                    result.BridgeDeckUndercutMeters = terrainOptions["bridgeDeckUndercutMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckThicknessSpanRatio"] != null)
+                    result.BridgeDeckThicknessSpanRatio = terrainOptions["bridgeDeckThicknessSpanRatio"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckThicknessMinMeters"] != null)
+                    result.BridgeDeckThicknessMinMeters = terrainOptions["bridgeDeckThicknessMinMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckThicknessMaxMeters"] != null)
+                    result.BridgeDeckThicknessMaxMeters = terrainOptions["bridgeDeckThicknessMaxMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeParapetHeightMeters"] != null)
+                    result.BridgeParapetHeightMeters = terrainOptions["bridgeParapetHeightMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeAbutmentDepthMeters"] != null)
+                    result.BridgeAbutmentDepthMeters = terrainOptions["bridgeAbutmentDepthMeters"]!.GetValue<float>();
+
+                // Bridge Rule System V2 (plan doc 01): whole options object. Old presets without the
+                // key keep the all-flags-off defaults (byte-identical legacy behaviour). Case-insensitive
+                // because the node is routinely hand-edited to toggle flags — a default (case-sensitive)
+                // read silently ignores a camelCase key (doc 14: "enableDeckToDeckContinuity" no-op).
+                if (terrainOptions["bridgeRules"] is JsonObject bridgeRulesNode)
+                    result.BridgeRules = bridgeRulesNode.Deserialize<BridgeRuleSystemOptions>(
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
                 var hydraulicErosion = terrainOptions["hydraulicErosion"];
                 if (hydraulicErosion != null)

@@ -119,6 +119,7 @@ public static class DecalRoadNetworkSnapshotLoader
                 LaneSegments = laneSegments,
                 IsBridge = ss.IsBridge,
                 IsTunnel = ss.IsTunnel
+                // OsmTags: not persisted in the DecalRoad snapshot (D-6 is for live OSM generation); left null.
             };
             spline.IsRoundabout = ss.IsRoundabout;
             spline.Priority = ss.Priority;

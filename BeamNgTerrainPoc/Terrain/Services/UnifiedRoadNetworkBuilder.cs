@@ -109,6 +109,7 @@ public class UnifiedRoadNetworkBuilder
                         SplineId = splineIdCounter,
                         OsmRoadType = spline.OsmRoadType,
                         LaneSegments = spline.LaneSegments,
+                        StructureSegments = spline.StructureSegments,
                         DisplayName = spline.OsmRoadType != null ? $"{material.MaterialName}_{spline.OsmRoadType}" : null,
 
                         // Copy structure flags from RoadSpline (which got them from OsmFeature)
@@ -117,6 +118,7 @@ public class UnifiedRoadNetworkBuilder
                         StructureType = spline.StructureType,
                         Layer = spline.Layer,
                         BridgeStructureType = spline.BridgeStructureType,
+                        OsmTags = spline.OsmTags,
                         StartOsmNodeId = spline.StartOsmNodeId,
                         EndOsmNodeId = spline.EndOsmNodeId,
                         OsmWayIds = new HashSet<long>(spline.OsmWayIds),
@@ -182,6 +184,12 @@ public class UnifiedRoadNetworkBuilder
         if (network.Splines.Count > 0)
         {
             GenerateCrossSections(network, metersPerPixel);
+
+            // Repair any non-finite cross-section geometry from degenerate source splines BEFORE the
+            // network is consumed — junction detection, bridge footprints, painting and DecalRoads all
+            // assume finite positions. NaN centers previously produced bogus (NaN, NaN) grade-separated
+            // crossings and crashed the DecalRoad JSON scene writer (alexanderplatz, 2026-06-12).
+            RepairNonFiniteCrossSectionGeometry(network);
         }
 
         // Log network statistics
@@ -197,7 +205,136 @@ public class UnifiedRoadNetworkBuilder
             TerrainLogger.Info($"Structure detection: {bridgeCount} bridge spline(s), {tunnelCount} tunnel spline(s) marked for exclusion");
         }
 
+        // Doc 08 §5 D1: OSM way → spline mapping, one grep-able line per spline, so a user-reported
+        // way id (e.g. way 23464911) can be traced to its spline(s) in this log. File-only.
+        if (perfLog != null && network.Splines.Any(s => s.OsmWayIds.Count > 0))
+        {
+            perfLog.InfoFileOnly($"=== [WAY-MAP] OSM way -> spline mapping ({network.Splines.Count} splines) ===");
+            foreach (var s in network.Splines)
+            {
+                if (s.OsmWayIds.Count == 0) continue;
+                var structLabel = s.IsBridge ? " bridge" : s.IsTunnel ? " tunnel" : "";
+                var spans = s.StructureSegments is { Count: > 0 } ? $" structureSegs={s.StructureSegments.Count}" : "";
+                perfLog.InfoFileOnly(
+                    $"[WAY-MAP] spline={s.SplineId} type={s.OsmRoadType ?? "?"} prio={s.Priority} " +
+                    $"len={s.TotalLengthMeters:F0}m{structLabel}{spans} " +
+                    $"ways={string.Join(",", s.OsmWayIds.OrderBy(x => x))}");
+            }
+        }
+
         return network;
+    }
+
+    /// <summary>
+    /// Repairs cross-sections whose geometry came out non-finite (NaN/Infinity) from degenerate
+    /// source splines. Centers are re-interpolated between the nearest finite neighbours along the
+    /// same spline; tangents/normals are rebuilt from the repaired centerline. A spline with fewer
+    /// than two finite sections cannot be repaired — its sections are excluded instead.
+    /// Public for testability; called by <see cref="BuildNetwork"/> right after cross-section
+    /// generation, so every downstream consumer sees finite positions.
+    /// </summary>
+    public static void RepairNonFiniteCrossSectionGeometry(UnifiedRoadNetwork network)
+    {
+        var totalRepaired = 0;
+        var excludedSplineCount = 0;
+
+        foreach (var (splineId, sections) in network.GetCrossSectionsBySpline())
+        {
+            // Fast path: the overwhelmingly common all-finite spline costs one scan, no allocations.
+            var hasNonFinite = false;
+            foreach (var cs in sections)
+            {
+                if (!IsFinite(cs.CenterPoint) || !IsFinite(cs.TangentDirection) || !IsFinite(cs.NormalDirection))
+                {
+                    hasNonFinite = true;
+                    break;
+                }
+            }
+
+            if (!hasNonFinite) continue;
+
+            var finiteCount = sections.Count(cs => IsFinite(cs.CenterPoint));
+            if (finiteCount < 2)
+            {
+                // Nothing trustworthy to interpolate from — exclude the spline's sections entirely.
+                foreach (var cs in sections) cs.IsExcluded = true;
+                excludedSplineCount++;
+                TerrainCreationLogger.Current?.Warning(
+                    $"Spline {splineId}: {sections.Count - finiteCount} non-finite cross-section(s) and " +
+                    $"only {finiteCount} finite — spline excluded from terrain processing");
+                continue;
+            }
+
+            // prevFinite[i] / nextFinite[i] = index of the nearest section with a finite center
+            // at-or-before / at-or-after i (-1 = none). O(n) total.
+            var prevFinite = new int[sections.Count];
+            var nextFinite = new int[sections.Count];
+            var last = -1;
+            for (var i = 0; i < sections.Count; i++)
+            {
+                if (IsFinite(sections[i].CenterPoint)) last = i;
+                prevFinite[i] = last;
+            }
+
+            last = -1;
+            for (var i = sections.Count - 1; i >= 0; i--)
+            {
+                if (IsFinite(sections[i].CenterPoint)) last = i;
+                nextFinite[i] = last;
+            }
+
+            var repaired = 0;
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var cs = sections[i];
+                if (!IsFinite(cs.CenterPoint))
+                {
+                    var p = prevFinite[i];
+                    var n = nextFinite[i];
+                    if (p >= 0 && n >= 0)
+                    {
+                        // Index-fraction lerp — sections are sampled at a uniform interval, so this
+                        // tracks arc length closely enough for a repair of broken geometry.
+                        var t = (float)(i - p) / (n - p);
+                        cs.CenterPoint = Vector2.Lerp(sections[p].CenterPoint, sections[n].CenterPoint, t);
+                    }
+                    else
+                    {
+                        cs.CenterPoint = sections[p >= 0 ? p : n].CenterPoint;
+                    }
+
+                    repaired++;
+                }
+            }
+
+            // Rebuild non-finite tangents/normals from the (now finite) centerline.
+            for (var i = 0; i < sections.Count; i++)
+            {
+                var cs = sections[i];
+                if (IsFinite(cs.TangentDirection) && IsFinite(cs.NormalDirection)) continue;
+
+                var from = sections[Math.Max(0, i - 1)].CenterPoint;
+                var to = sections[Math.Min(sections.Count - 1, i + 1)].CenterPoint;
+                var dir = to - from;
+                var tangent = dir.LengthSquared() > 1e-12f ? Vector2.Normalize(dir) : new Vector2(1, 0);
+                cs.TangentDirection = tangent;
+                cs.NormalDirection = new Vector2(tangent.Y, -tangent.X);
+            }
+
+            totalRepaired += repaired;
+            TerrainCreationLogger.Current?.Warning(
+                $"Spline {splineId}: repaired {repaired} non-finite cross-section(s) " +
+                "(degenerate source geometry — centers re-interpolated from finite neighbours)");
+        }
+
+        if (totalRepaired > 0 || excludedSplineCount > 0)
+            TerrainCreationLogger.Current?.Warning(
+                $"Cross-section geometry repair: {totalRepaired} section(s) repaired, " +
+                $"{excludedSplineCount} unrepairable spline(s) excluded");
+
+        return;
+
+        static bool IsFinite(Vector2 v) => float.IsFinite(v.X) && float.IsFinite(v.Y);
     }
 
     /// <summary>

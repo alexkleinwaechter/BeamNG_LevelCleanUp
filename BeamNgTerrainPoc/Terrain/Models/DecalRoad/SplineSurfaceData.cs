@@ -17,8 +17,12 @@ public sealed class SplineSurfaceData
     public required float SurfaceHalfWidth { get; init; }
 
     /// <summary>
-    /// Sampled 2D centerline points along the spline, in BeamNG world coordinates.
+    /// Sampled centerline points along the spline, in BeamNG world coordinates.
     /// Same spacing as DecalRoad node generation (NodeSpacingMeters).
+    /// Z is the road surface elevation in the same frame as DecalRoad node Z
+    /// (TargetElevation + terrainBaseHeight), so overlap checks can require
+    /// vertical coplanarity — a bridge deck crossing above a road must not
+    /// count as overlapping the road below.
     /// </summary>
-    public required IReadOnlyList<Vector2> CenterlinePoints { get; init; }
+    public required IReadOnlyList<Vector3> CenterlinePoints { get; init; }
 }

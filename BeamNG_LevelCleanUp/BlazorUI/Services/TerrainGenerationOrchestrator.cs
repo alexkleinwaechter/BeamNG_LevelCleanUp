@@ -148,7 +148,8 @@ public class TerrainGenerationOrchestrator
                     debugPath);
 
                 // Build terrain creation parameters
-                var parameters = await BuildTerrainParametersAsync(state, materialDefinitions, analysisState);
+                var parameters = await BuildTerrainParametersAsync(state, materialDefinitions, analysisState,
+                    osmQueryResult, effectiveBoundingBox);
 
                 // Execute terrain creation
                 var outputPath = state.GetOutputPath();
@@ -850,7 +851,8 @@ public class TerrainGenerationOrchestrator
 
             // Build road params early to access junction harmonization settings
             roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
-                state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
+                state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain,
+                state.MergeStructuresIntoCorridor);
             roadParams.EnableContinuationConnectorElevationBridging = state.DisableSplineMerging;
 
             // Check if roundabout detection is enabled
@@ -894,7 +896,10 @@ public class TerrainGenerationOrchestrator
                     excludeBridges: state.ExcludeBridgesFromTerrain,
                     excludeTunnels: state.ExcludeTunnelsFromTerrain,
                     alreadyProcessedRoundaboutIds: processedRoundaboutIds,
-                    disableSplineMerging: state.DisableSplineMerging);
+                    disableSplineMerging: state.DisableSplineMerging,
+                    mergeStructuresIntoCorridor: state.MergeStructuresIntoCorridor,
+                    reprojectStructureStations: state.BridgeRules.EnableBridgeStationReprojection,
+                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation);
 
                 // Store roundabout info in road params for potential use in junction detection
                 if (detectedRoundabouts.Count > 0)
@@ -919,7 +924,10 @@ public class TerrainGenerationOrchestrator
                     excludeBridges: state.ExcludeBridgesFromTerrain,
                     excludeTunnels: state.ExcludeTunnelsFromTerrain,
                     routeRelations: osmQueryResult.RouteRelations,
-                    disableSplineMerging: state.DisableSplineMerging);
+                    disableSplineMerging: state.DisableSplineMerging,
+                    mergeStructuresIntoCorridor: state.MergeStructuresIntoCorridor,
+                    reprojectStructureStations: state.BridgeRules.EnableBridgeStationReprojection,
+                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation);
             }
 
             // Log to file only - per-material detail
@@ -995,7 +1003,9 @@ public class TerrainGenerationOrchestrator
     private static async Task<TerrainCreationParameters> BuildTerrainParametersAsync(
         TerrainGenerationState state,
         List<MaterialDefinition> materialDefinitions,
-        TerrainAnalysisState? analysisState = null)
+        TerrainAnalysisState? analysisState = null,
+        OsmQueryResult? osmQueryResult = null,
+        GeoBoundingBox? effectiveBoundingBox = null)
     {
         var parameters = new TerrainCreationParameters
         {
@@ -1009,6 +1019,15 @@ public class TerrainGenerationOrchestrator
             FlipMaterialProcessingOrder = state.FlipMaterialProcessingOrder,
             ExcludeBridgesFromTerrain = state.ExcludeBridgesFromTerrain,
             ExcludeTunnelsFromTerrain = state.ExcludeTunnelsFromTerrain,
+            MergeStructuresIntoCorridor = state.MergeStructuresIntoCorridor,
+            BridgeMaxSagBelowChordMeters = state.BridgeMaxSagBelowChordMeters,
+            BridgeDeckUndercutMeters = state.BridgeDeckUndercutMeters,
+            BridgeDeckThicknessSpanRatio = state.BridgeDeckThicknessSpanRatio,
+            BridgeDeckThicknessMinMeters = state.BridgeDeckThicknessMinMeters,
+            BridgeDeckThicknessMaxMeters = state.BridgeDeckThicknessMaxMeters,
+            BridgeParapetHeightMeters = state.BridgeParapetHeightMeters,
+            BridgeAbutmentDepthMeters = state.BridgeAbutmentDepthMeters,
+            BridgeRules = state.BridgeRules,
             HydraulicErosion = state.HydraulicErosion.Clone(),
             AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0,
             DecalRoadSettings = state.EnableDecalRoads
@@ -1018,6 +1037,26 @@ public class TerrainGenerationOrchestrator
                 ? DecalRoadDefaultsManager.Load()
                 : null,
         };
+
+        // Thread the SAME BridgeRuleSystemOptions instance onto every road material's smoothing params so the
+        // planner (smoother side) and the stamping passes (TerrainCreator side) read one config (V2 plan 0.2).
+        // Obstacle typing is unconditional (doc 17 §4a): whenever OSM features exist, build the terrain-local
+        // obstacle set ONCE (rail/water/un-generated roads — V2 plan 0.4) and share it the same way.
+        BridgeObstacleSet? bridgeObstacles = null;
+        if (osmQueryResult != null && effectiveBoundingBox != null)
+        {
+            bridgeObstacles = BridgeObstacleClassifier.BuildObstacleSet(
+                osmQueryResult, effectiveBoundingBox, state.TerrainSize, state.MetersPerPixel, state.BridgeRules);
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Bridge obstacle typing: {bridgeObstacles.Count} OSM obstacle feature(s) indexed");
+        }
+
+        foreach (var mat in materialDefinitions)
+            if (mat.RoadParameters != null)
+            {
+                mat.RoadParameters.BridgeRules = parameters.BridgeRules;
+                mat.RoadParameters.BridgeObstacles = bridgeObstacles;
+            }
 
         // Pass pre-analyzed network if available
         if (analysisState?.HasAnalysis == true && analysisState.Network != null)

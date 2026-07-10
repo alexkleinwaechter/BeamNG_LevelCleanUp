@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
@@ -380,7 +380,8 @@ public class OptimizedElevationSmoother : IHeightCalculator
     /// <param name="crossSectionSpacing">Distance between cross-sections in meters</param>
     /// <param name="maxSlopeDegrees">Maximum allowed slope in degrees</param>
     /// <returns>Number of elevations that were modified</returns>
-    private int EnforceMaxSlopeConstraint(float[] elevations, float crossSectionSpacing, float maxSlopeDegrees)
+    private int EnforceMaxSlopeConstraint(
+        float[] elevations, float crossSectionSpacing, float maxSlopeDegrees, bool[]? exempt = null)
     {
         var n = elevations.Length;
         if (n < 2) return 0;
@@ -402,6 +403,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
             // Forward pass: limit uphill slope
             for (var i = 1; i < n; i++)
             {
+                if (exempt != null && exempt[i]) continue; // bridge-deck pin + ramp neighbourhood (§7 step 4)
                 var maxAllowed = elevations[i - 1] + maxRise;
                 if (elevations[i] > maxAllowed)
                 {
@@ -414,6 +416,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
             // Backward pass: limit downhill slope (from the other direction)
             for (var i = n - 2; i >= 0; i--)
             {
+                if (exempt != null && exempt[i]) continue; // bridge-deck pin + ramp neighbourhood (§7 step 4)
                 var maxAllowed = elevations[i + 1] + maxRise;
                 if (elevations[i] > maxAllowed)
                 {
@@ -699,14 +702,42 @@ public class OptimizedElevationSmoother : IHeightCalculator
             cs.OriginalTerrainElevation = sampledElevation;
         }
 
+        // Step 1.5: bridge-deck pins (plan doc 14 §7, Phase C). Overwrite the raw terrain sample on pinned span
+        // sections with the planner's required deck Z so the filter input near the deck is the deck, not the
+        // river/terrain it was burying into.
+        var hasPins = ApplyPinsToRaw(chainCrossSections, rawElevations);
+
+        // Step 1.55 (Amendment 03 v3, "give the bridge cross-sections"): SOFT span shaping — replace the
+        // raw terrain under each soft-shaped span (the river!) with a chord anchored at the ACTUAL approach
+        // raws plus the planner's clearance humps. Nothing is hard-held: the filter solves the span like
+        // ordinary road, so both abutment seams are continuous by construction and the deck gets a natural
+        // vertical curve. Anchors re-read the current raw each call, so iterations converge onto the
+        // solved approaches.
+        ApplySoftShapingToRaw(chainCrossSections, rawElevations);
+
+        // Step 1.6 (Amendment 03 v2): soft approach ramps — feather the deck-end delta into the RAW input
+        // outside each pinned run, so the filter's output CLIMBS to the deck instead of stopping half-way
+        // (doc 16 §3b abutment step). The approaches stay un-held: the filter blends the ramp with the real
+        // road context, so estimate errors smooth out instead of being stamped (the render-#5 crumple).
+        if (hasPins && parameters?.BridgeRules?.EnableSparseDeckConstraints == true)
+            FeatherRawApproachRamps(chainCrossSections, rawElevations, crossSectionSpacing);
+
         // Step 2: Apply smoothing filter on the full chain
         var smoothed = useButterworthFilter
             ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
             : BoxFilterPrefixSum(rawElevations, windowSize);
 
-        // Step 3: Enforce max slope constraint on the full chain (no kinks at spline joints)
+        // Step 2.5: hard-hold the pin AFTER the filter — the box filter at a span edge is a symmetric blur, not
+        // a clean ramp, so without this the deck edge sags toward terrain and never reaches the pin (§7 step 1).
+        if (hasPins)
+            HardHoldPins(chainCrossSections, smoothed);
+
+        // Step 3: Enforce max slope constraint on the full chain (no kinks at spline joints). Exempt the pinned
+        // deck + its rising-ramp neighbourhood (§7 step 4) — clamping there would flatten the intentionally steep
+        // approach ramp and pull the deck down (consistent with the no-grade-clamp stance).
         if (enableMaxSlopeConstraint)
-            EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
+            EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees,
+                hasPins ? BuildPinExemptMask(chainCrossSections, windowSize) : null);
 
         // Step 4: Assign final elevations
         for (var i = 0; i < chainCrossSections.Count; i++)
@@ -739,18 +770,195 @@ public class OptimizedElevationSmoother : IHeightCalculator
         for (var i = 0; i < chainCrossSections.Count; i++)
             rawElevations[i] = chainCrossSections[i].TargetElevation;
 
+        // Re-apply bridge-deck pins each iteration (plan doc 14 §7 step 2) — without this the deck drifts back
+        // toward terrain a little on every re-smooth pass.
+        var hasPins = ApplyPinsToRaw(chainCrossSections, rawElevations);
+
+        // Amendment 03 v3: re-shape the soft spans each iteration — the chord re-anchors on the PREVIOUS
+        // iteration's solved approaches, so the deck converges flush while the humps keep the clearance.
+        ApplySoftShapingToRaw(chainCrossSections, rawElevations);
+
+        // Amendment 03 v2: re-feather the soft approach ramps each iteration. The raw base here is the
+        // PREVIOUS iteration's solved profile, so the ramp converges onto the real approach — flush seams.
+        if (hasPins && parameters?.BridgeRules?.EnableSparseDeckConstraints == true)
+            FeatherRawApproachRamps(chainCrossSections, rawElevations, crossSectionSpacing);
+
         // Apply smoothing filter on the full chain
         var smoothed = useButterworthFilter
             ? ButterworthLowPassFilter(rawElevations, windowSize, butterworthOrder)
             : BoxFilterPrefixSum(rawElevations, windowSize);
 
+        if (hasPins)
+            HardHoldPins(chainCrossSections, smoothed);
+
         // Enforce max slope constraint on the full chain
         if (enableMaxSlopeConstraint)
-            EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees);
+            EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees,
+                hasPins ? BuildPinExemptMask(chainCrossSections, windowSize) : null);
 
         // Assign final elevations
         for (var i = 0; i < chainCrossSections.Count; i++)
             chainCrossSections[i].TargetElevation = smoothed[i];
+    }
+
+    /// <summary>
+    /// Overwrites the raw filter input on bridge-deck-pinned sections (<see cref="UnifiedCrossSection.PinnedElevation"/>)
+    /// with their pinned Z. Returns true if any pin was applied (plan doc 14 §7, Phase C).
+    /// </summary>
+    private static bool ApplyPinsToRaw(List<UnifiedCrossSection> cs, float[] raw)
+    {
+        var any = false;
+        for (var i = 0; i < cs.Count; i++)
+            if (cs[i].PinnedElevation is { } p)
+            {
+                raw[i] = p;
+                any = true;
+            }
+
+        return any;
+    }
+
+    /// <summary>
+    /// Amendment 03 v3 ("give the bridge cross-sections"): rewrites the RAW filter input of each
+    /// contiguous <see cref="UnifiedCrossSection.SoftDeckRiseMeters"/> run as `boundary-anchored chord +
+    /// rise`. The chord runs between the raw values just OUTSIDE the run (the actual approaches —
+    /// iteration 0: terrain; iterations 1+: the previous SOLVED road), so the span's raw input is
+    /// continuous with the road on BOTH sides — the filter then produces a deck profile with natural
+    /// curvature and seam steps are impossible (nothing is hard-held). The rise is the planner's eased
+    /// per-crossing clearance hump, transported RELATIVE so estimate offsets cannot reach the road and a
+    /// hump that reaches the span end keeps its full value (the ramp then spills into the approach via
+    /// the filter window — the climb the deck needs). Iterations re-anchor and converge.
+    /// </summary>
+    internal static void ApplySoftShapingToRaw(List<UnifiedCrossSection> cs, float[] raw)
+    {
+        var n = cs.Count;
+        var i = 0;
+        while (i < n)
+        {
+            if (cs[i].SoftDeckRiseMeters is null)
+            {
+                i++;
+                continue;
+            }
+
+            var runStart = i;
+            while (i < n && cs[i].SoftDeckRiseMeters is not null) i++;
+            var runEnd = i - 1;
+
+            var zL = runStart > 0 ? raw[runStart - 1] : raw[runStart];
+            var zR = runEnd < n - 1 ? raw[runEnd + 1] : raw[runEnd];
+
+            var len = Math.Max(1, runEnd - runStart);
+            for (var k = runStart; k <= runEnd; k++)
+            {
+                var t = (float)(k - runStart) / len;
+                var boundaryChord = zL + (zR - zL) * t;
+                raw[k] = boundaryChord + MathF.Max(0f, cs[k].SoftDeckRiseMeters!.Value);
+            }
+        }
+    }
+
+    /// <summary>Soft approach ramps: slope used to size the feather length from the deck-end delta (5 %).</summary>
+    private const float ApproachRampSlope = 0.05f;
+
+    /// <summary>Soft approach ramps: minimum / maximum feather length (m).</summary>
+    private const float ApproachRampMinMeters = 30f;
+    private const float ApproachRampMaxMeters = 150f;
+
+    /// <summary>
+    /// Amendment 03 v2 (render #6: decks sank into under-roads): for each contiguous PINNED run in the
+    /// chain, eases the boundary delta (pin Z − raw approach) into the RAW filter input on the un-pinned
+    /// approach side, over a length sized by <see cref="ApproachRampSlope"/>. The approach sections are
+    /// NOT hard-held — the filter blends this soft ramp with the real road context, so the output climbs
+    /// to the deck end (the ramp the deck needs to arrive at clearance height) without stamping
+    /// planner-time estimates into the road (the render-#5 crumple). Stops at any other pinned section
+    /// (junction pins win) and never touches the pinned run itself. Idempotent per iteration: re-smooth
+    /// passes re-base the ramp on the previous solved profile, so it converges flush.
+    /// </summary>
+    internal static void FeatherRawApproachRamps(
+        List<UnifiedCrossSection> cs, float[] raw, float crossSectionSpacing)
+    {
+        var n = cs.Count;
+        var spacing = crossSectionSpacing > 0.01f ? crossSectionSpacing : 0.5f;
+
+        var i = 0;
+        while (i < n)
+        {
+            if (cs[i].PinnedElevation is null)
+            {
+                i++;
+                continue;
+            }
+
+            // Contiguous pinned run [runStart, runEnd].
+            var runStart = i;
+            while (i < n && cs[i].PinnedElevation is not null) i++;
+            var runEnd = i - 1;
+
+            FeatherOneSide(cs, raw, spacing, boundary: runStart, dir: -1);
+            FeatherOneSide(cs, raw, spacing, boundary: runEnd, dir: +1);
+        }
+    }
+
+    private static void FeatherOneSide(
+        List<UnifiedCrossSection> cs, float[] raw, float spacing, int boundary, int dir)
+    {
+        var n = cs.Count;
+        var neighbor = boundary + dir;
+        if (neighbor < 0 || neighbor >= n || cs[neighbor].PinnedElevation is not null)
+            return; // chain end, or an adjacent pinned run (junction/other span) — nothing to feather
+
+        var delta = raw[boundary] - raw[neighbor];
+        if (MathF.Abs(delta) <= 0.05f)
+            return; // already flush
+
+        var rampMeters = Math.Clamp(MathF.Abs(delta) / ApproachRampSlope,
+            ApproachRampMinMeters, ApproachRampMaxMeters);
+        var rampSamples = Math.Max(2, (int)(rampMeters / spacing));
+
+        for (var k = 1; k <= rampSamples; k++)
+        {
+            var idx = boundary + dir * k;
+            if (idx < 0 || idx >= n)
+                break;
+            if (cs[idx].PinnedElevation is not null)
+                break; // junction pin (or next span) — its hard-hold wins; stop the ramp here
+
+            var u = (float)k / rampSamples; // 0 at the abutment → 1 at the ramp end
+            var w = (1f - u) * (1f - u) * (1f + 2f * u); // smooth, zero slope at both ends
+            raw[idx] += delta * w;
+        }
+    }
+
+    /// <summary>Hard-holds pinned sections to their pin AFTER filtering, so the deck edge does not sag (§7 step 1/2).</summary>
+    private static void HardHoldPins(List<UnifiedCrossSection> cs, float[] smoothed)
+    {
+        for (var i = 0; i < cs.Count; i++)
+            if (cs[i].PinnedElevation is { } p)
+                smoothed[i] = p;
+    }
+
+    /// <summary>
+    /// Builds the slope-clamp exemption mask: the pinned deck sections plus a half-window neighbourhood on each
+    /// side (the rising approach ramp the box filter produces, ~±windowHalf), so the clamp never flattens the
+    /// ramp or pulls the deck down (plan doc 14 §7 step 4). Null when there are no pins.
+    /// </summary>
+    private static bool[]? BuildPinExemptMask(List<UnifiedCrossSection> cs, int windowSize)
+    {
+        var n = cs.Count;
+        var margin = Math.Max(1, windowSize / 2);
+        bool[]? mask = null;
+        for (var i = 0; i < n; i++)
+        {
+            // v3: soft-shaped spans carry intentional clearance grades too — exempt them like hard pins.
+            if (cs[i].PinnedElevation is null && cs[i].SoftDeckRiseMeters is null) continue;
+            mask ??= new bool[n];
+            var lo = Math.Max(0, i - margin);
+            var hi = Math.Min(n - 1, i + margin);
+            for (var k = lo; k <= hi; k++) mask[k] = true;
+        }
+
+        return mask;
     }
 
     /// <summary>

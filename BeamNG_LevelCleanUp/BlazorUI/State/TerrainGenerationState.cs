@@ -64,6 +64,60 @@ public class TerrainGenerationState
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
     /// <summary>
+    ///     When true, bridges/tunnels merge INTO the through-road corridor (remembering the bridge arc-range)
+    ///     so the corridor is smoothed as one road and the deck is built from that merged, smoothed sub-range —
+    ///     the "merged-corridor bridge" continuity fix (plan doc 11). When false, bridges stay separate splines
+    ///     (legacy). Default: true (the structural continuity fix is now the default; toggle off for legacy).
+    /// </summary>
+    public bool MergeStructuresIntoCorridor { get; set; } = true;
+
+    /// <summary>
+    ///     Max distance (meters) a bridge deck may bow below the endpoint chord before the vertical
+    ///     curve is blended toward the chord (the sag-vs-seam-kink lever). No grade clamping.
+    ///     Default: 1.0m.
+    /// </summary>
+    public float BridgeMaxSagBelowChordMeters { get; set; } = 1.0f;
+
+    /// <summary>
+    ///     How far (meters) terrain poking above a bridge deck is shaved below the deck surface
+    ///     (keeps the deck the visible driving surface, avoids z-fighting). Default: 0.05m.
+    /// </summary>
+    public float BridgeDeckUndercutMeters { get; set; } = 0.05f;
+
+    /// <summary>
+    ///     Bridge deck structural thickness as a fraction of the span (thickness = ratio × span), clamped
+    ///     to the Min/Max below. Drives both the excavator soffit and the 3D deck mesh. Default: 0.05.
+    /// </summary>
+    public float BridgeDeckThicknessSpanRatio { get; set; } = 0.05f;
+
+    /// <summary>
+    ///     Lower clamp (meters) for the span-ratio bridge deck thickness. Default: 0.45m.
+    /// </summary>
+    public float BridgeDeckThicknessMinMeters { get; set; } = 0.45f;
+
+    /// <summary>
+    ///     Upper clamp (meters) for the span-ratio bridge deck thickness. Default: 1.2m.
+    /// </summary>
+    public float BridgeDeckThicknessMaxMeters { get; set; } = 1.2f;
+
+    /// <summary>
+    ///     Parapet (side barrier) height (meters) on the 3D bridge deck mesh. 0 disables parapets. Default: 0.9m.
+    /// </summary>
+    public float BridgeParapetHeightMeters { get; set; } = 0.9f;
+
+    /// <summary>
+    ///     How far the solid bridge end-stamp/abutment block drops below the deck soffit, in meters. Default: 1.0m.
+    /// </summary>
+    public float BridgeAbutmentDepthMeters { get; set; } = 1.0f;
+
+    /// <summary>
+    ///     Bridge Rule System configuration (V2 plan doc 01). All rule flags default OFF (byte-identical).
+    ///     Engine-first: not yet bound to UI controls — the orchestrator threads this single instance onto
+    ///     TerrainCreationParameters and every road material's RoadSmoothingParameters.
+    /// </summary>
+    public BridgeRuleSystemOptions BridgeRules { get; set; } = new();
+
+    /// <summary>
     ///     When true, disables spline merging (each OSM way becomes a separate spline).
     ///     For testing only — merging is needed for smooth road continuity.
     /// </summary>
@@ -390,6 +444,17 @@ public class TerrainGenerationState
         TerrainBaseHeight = 0.0f;
         UpdateTerrainBlock = true;
         EnableCrossMaterialHarmonization = true;
+        ExcludeBridgesFromTerrain = false;
+        ExcludeTunnelsFromTerrain = false;
+        MergeStructuresIntoCorridor = true;
+        BridgeMaxSagBelowChordMeters = 1.0f;
+        BridgeDeckUndercutMeters = 0.05f;
+        BridgeDeckThicknessSpanRatio = 0.05f;
+        BridgeDeckThicknessMinMeters = 0.45f;
+        BridgeDeckThicknessMaxMeters = 1.2f;
+        BridgeParapetHeightMeters = 0.9f;
+        BridgeAbutmentDepthMeters = 1.0f;
+        BridgeRules = new BridgeRuleSystemOptions();
         HydraulicErosion = new HydraulicErosionSettings();
         FlipMaterialProcessingOrder = false;
         EnableDecalRoads = true;

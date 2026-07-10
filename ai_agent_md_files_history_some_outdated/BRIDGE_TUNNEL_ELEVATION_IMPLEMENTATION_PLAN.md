@@ -1,5 +1,30 @@
 # Structure Elevation Profiles Implementation Plan
 
+> ## ⚠️ STATUS (refined 2026-06-06): HISTORICAL — goals valid, implementation retired
+>
+> This is the *original* structure-elevation design. The classes it describes
+> (`StructureElevationProfile`, `StructureElevationCalculator`, `StructureElevationIntegrator`,
+> curve types Linear/Sag/Arch/SCurve) **were built but are dead / write-only**: verified in code on
+> 2026-06-06, `StructureElevationIntegrator.IntegrateStructureElevationsSelective`
+> (`StructureElevationIntegrator.cs:469-474`) **deliberately does not apply the profile** to
+> cross-sections, and `ParameterizedRoadSpline.ElevationProfile` is written once and **never read** by
+> any geometry-producing code. So this subsystem contributes **zero** to actual bridge/tunnel
+> elevation today.
+>
+> What actually drives bridge deck elevation right now: the Phase 2 **chain solve** low-pass-filters
+> the *terrain under the bridge* and assigns it to the excluded sections — i.e. the deck **follows
+> smoothed terrain and sags into the gap it should span**. That is the problem the forward plan fixes.
+>
+> **Forward plan (supersedes the implementation here):**
+> `ai_docs/2026-06-03_bridge_generation/05-bridge-elevation-and-continuity-plan.md` — a fresh
+> grade-line + cubic vertical-curve solver that overrides excluded-section elevation with G0+G1
+> continuity to the approaches. It **retires** the curve-type taxonomy below (§7 of that doc).
+>
+> **What remains valid in this doc:** the *goals* (an independent structural profile, entry/exit
+> elevations, tunnel below-terrain clearance) and the conceptual ASCII profiles. **The code blocks are
+> historical and illustrative — method names/signatures no longer all match the codebase and they are
+> not the path forward.** Read for intent, not for APIs.
+
 ## Overview
 
 This document outlines the implementation plan for calculating elevation profiles for bridge and tunnel structures. This is a **follow-on feature** to the core bridge/tunnel detection implemented in `BRIDGE_TUNNEL_IMPLEMENTATION_PLAN.md`.
@@ -18,14 +43,18 @@ This document outlines the implementation plan for calculating elevation profile
 
 ## Implementation Status
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 1 | ✅ DONE | Elevation Profile Data Model |
-| Phase 2 | ✅ DONE | Bridge Elevation Calculation |
-| Phase 3 | ✅ DONE | Tunnel Elevation Calculation |
-| Phase 4 | ✅ DONE | Terrain Sampling Along Structure Path |
-| Phase 5 | ✅ DONE | Integration with Cross-Section Generation |
-| Phase 6 | ✅ DONE | Configuration Parameters |
+> **Status legend correction (2026-06-06):** "DONE" below means *code was written*, **not** that it
+> affects output. Every phase computes correctly but the result is **never applied** — see the
+> Effect column.
+
+| Phase | Code | Effect on output | Description |
+|-------|------|------------------|-------------|
+| Phase 1 | ✅ written | ⚪ data model only | Elevation Profile Data Model |
+| Phase 2 | ✅ written | ❌ never applied | Bridge Elevation Calculation (curve math is sound but unused) |
+| Phase 3 | ✅ written | ❌ never applied | Tunnel Elevation Calculation |
+| Phase 4 | ✅ written | ♻️ reused | Terrain Sampling Along Structure Path (`SampleTerrainAlongStructure` still useful — clearance/tunnels) |
+| Phase 5 | ✅ written | ❌ no-op for excluded structures | "Integration": `IntegrateStructureElevationsSelective` stores the profile but **does not** modify cross-sections (`StructureElevationIntegrator.cs:469-474`) |
+| Phase 6 | ✅ written | ⚪ wired, unused | Configuration Parameters (passed to a calculator whose output is discarded) |
 
 ---
 

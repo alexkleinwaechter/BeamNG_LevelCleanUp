@@ -254,6 +254,86 @@ public class TerrainCreationParameters
     /// </summary>
     public bool ExcludeStructuresFromTerrain => ExcludeBridgesFromTerrain || ExcludeTunnelsFromTerrain;
 
+    /// <summary>
+    ///     When true, bridge/tunnel ways are merged INTO their through-road corridor (like any other way)
+    ///     instead of being held out as isolated splines, and the bridge sub-range is remembered as a
+    ///     <see cref="RoadGeometry.StructureSegment" /> arc-range. The corridor is then smoothed as one road so
+    ///     plan-view + elevation are continuous by construction; only the bridge sub-range is excluded from
+    ///     terrain stamping, and the deck is built from that merged, smoothed sub-range. This is the
+    ///     "merged-corridor bridge" refactor (plan doc 11) and the real fix for the plan-view kink / "short
+    ///     bridge stamped between roads" artifact. When false, bridges stay separate (legacy behaviour).
+    ///     Default: true (the structural continuity fix is now the default; toggle off for legacy).
+    /// </summary>
+    public bool MergeStructuresIntoCorridor { get; set; } = true;
+
+    /// <summary>
+    ///     Max distance (meters) the solved bridge deck may bow <b>below</b> the straight chord
+    ///     between its endpoints before the vertical curve is blended toward that chord. This is the
+    ///     U-vs-seam-kink lever for <see cref="BridgeProfileSolver" />: lower = flatter span + larger
+    ///     abutment kink; higher = more sag + smaller kink. No grade is clamped — only the curve family
+    ///     is blended. Maps to <c>BridgeProfileSolver.RefineSpans(maxSagBelowChordMeters)</c>.
+    ///     Default: 1.0m (matches <see cref="BridgeProfileSolver.DefaultMaxSagBelowChordMeters" />).
+    /// </summary>
+    public float BridgeMaxSagBelowChordMeters { get; set; } = 1.0f;
+
+    /// <summary>
+    ///     How far (meters) terrain that pokes above a bridge deck is shaved below the deck surface by
+    ///     <see cref="BridgeDeckExcavator" />. The deck stays the visible driving surface; a small
+    ///     undercut avoids z-fighting between the deck mesh and the terrain. Maps to
+    ///     <c>BridgeDeckExcavator.Excavate(undercutMeters)</c>.
+    ///     Default: 0.05m (matches <see cref="BridgeDeckExcavator.DefaultUndercutMeters" />).
+    /// </summary>
+    public float BridgeDeckUndercutMeters { get; set; } = 0.05f;
+
+    /// <summary>
+    ///     Bridge deck structural thickness as a fraction of the bridge span: thickness = ratio × span,
+    ///     then clamped to <see cref="BridgeDeckThicknessMinMeters" />..<see cref="BridgeDeckThicknessMaxMeters" />.
+    ///     Drives both the soffit the <see cref="BridgeDeckExcavator" /> daylights under and the 3D deck mesh.
+    ///     Default: 0.05 (matches <c>BridgeDeckProfile.DeckThicknessSpanRatio</c>).
+    /// </summary>
+    public float BridgeDeckThicknessSpanRatio { get; set; } = 0.05f;
+
+    /// <summary>
+    ///     Lower clamp (meters) for the span-ratio bridge deck thickness, so short spans still get a
+    ///     plausible structural depth. Maps to <c>BridgeDeckProfile.DeckThicknessMinMeters</c>.
+    ///     Default: 0.45m.
+    /// </summary>
+    public float BridgeDeckThicknessMinMeters { get; set; } = 0.45f;
+
+    /// <summary>
+    ///     Upper clamp (meters) for the span-ratio bridge deck thickness, so long spans don't grow an
+    ///     unrealistically deep deck. Maps to <c>BridgeDeckProfile.DeckThicknessMaxMeters</c>.
+    ///     Default: 1.2m.
+    /// </summary>
+    public float BridgeDeckThicknessMaxMeters { get; set; } = 1.2f;
+
+    /// <summary>
+    ///     Parapet (side barrier) height (meters) on the 3D bridge deck mesh. 0 disables parapets.
+    ///     Maps to <c>BridgeDeckProfile.ParapetHeightMeters</c>.
+    ///     Default: 0.9m.
+    /// </summary>
+    public float BridgeParapetHeightMeters { get; set; } = 0.9f;
+
+    /// <summary>
+    ///     How far the solid bridge end-stamp/abutment block drops below the deck soffit, in meters.
+    ///     Maps to BridgeDeckProfile.AbutmentDepthMeters.
+    /// </summary>
+    public float BridgeAbutmentDepthMeters { get; set; } = 1.0f;
+
+    /// <summary>
+    ///     Bridge Rule System configuration (V2 plan doc 01): obstacle-typed clearances, §3.5 priority
+    ///     raise/dip distribution, ramp feasibility, dip-as-pin, R8 stamping. Null = defaults (all rule
+    ///     flags OFF ⇒ byte-identical). The orchestrator threads the same instance onto each material's
+    ///     <see cref="RoadSmoothingParameters.BridgeRules" /> so planner and stamping passes agree.
+    /// </summary>
+    public BridgeRuleSystemOptions? BridgeRules { get; set; }
+
+    /// <summary>Gets or creates the BridgeRuleSystemOptions (auto-creates all-flags-off defaults if null).</summary>
+    public BridgeRuleSystemOptions GetBridgeRules()
+    {
+        return BridgeRules ??= new BridgeRuleSystemOptions();
+    }
+
     // ========================================
     // HYDRAULIC EROSION
     // ========================================

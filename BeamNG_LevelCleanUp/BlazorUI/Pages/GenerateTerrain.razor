@@ -109,6 +109,15 @@
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
                                        ExcludeBridgesFromTerrain="@_excludeBridgesFromTerrain"
                                        ExcludeTunnelsFromTerrain="@_excludeTunnelsFromTerrain"
+                                       MergeStructuresIntoCorridor="@_mergeStructuresIntoCorridor"
+                                       BridgeMaxSagBelowChordMeters="@_bridgeMaxSagBelowChordMeters"
+                                       BridgeDeckUndercutMeters="@_bridgeDeckUndercutMeters"
+                                       BridgeDeckThicknessSpanRatio="@_bridgeDeckThicknessSpanRatio"
+                                       BridgeDeckThicknessMinMeters="@_bridgeDeckThicknessMinMeters"
+                                       BridgeDeckThicknessMaxMeters="@_bridgeDeckThicknessMaxMeters"
+                                       BridgeParapetHeightMeters="@_bridgeParapetHeightMeters"
+                                       BridgeAbutmentDepthMeters="@_bridgeAbutmentDepthMeters"
+                                       BridgeRules="@_state.BridgeRules"
                                        HydraulicErosion="@_state.HydraulicErosion"
                                        EnableBuildings="@_enableBuildings"
                                        EnableBuildingClustering="@_enableBuildingClustering"
@@ -622,8 +631,11 @@
 
                         <MudItem xs="12" sm="6" md="3">
                             <div class="d-flex align-center gap-1">
-                                <MudCheckBox @bind-Value="_excludeBridgesFromTerrain"
+                                <MudCheckBox T="bool"
+                                             Value="_excludeBridgesFromTerrain"
+                                             ValueChanged="OnExcludeBridgesFromTerrainChanged"
                                              Label="Exclude Bridges"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
                                              Color="Color.Primary" />
                                 <MudTooltip Text="When enabled, roads tagged as bridges in OSM are excluded from terrain smoothing and material painting. This prevents bridge structures from modifying the terrain beneath them, as bridges should be elevated above the terrain on support structures.">
                                     <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
@@ -636,8 +648,11 @@
 
                         <MudItem xs="12" sm="6" md="3">
                             <div class="d-flex align-center gap-1">
-                                <MudCheckBox @bind-Value="_excludeTunnelsFromTerrain"
+                                <MudCheckBox T="bool"
+                                             Value="_excludeTunnelsFromTerrain"
+                                             ValueChanged="OnExcludeTunnelsFromTerrainChanged"
                                              Label="Exclude Tunnels"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
                                              Color="Color.Primary" />
                                 <MudTooltip Text="When enabled, roads tagged as tunnels in OSM are excluded from terrain smoothing and material painting. This prevents tunnel structures from modifying the terrain surface, as tunnels should pass through the terrain without surface modification.">
                                     <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
@@ -645,6 +660,603 @@
                             </div>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
                                 Don't modify terrain over tunnels
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             Value="_mergeStructuresIntoCorridor"
+                                             ValueChanged="OnMergeStructuresIntoCorridorChanged"
+                                             Label="Merge Bridges Into Corridor"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="When enabled, bridge/tunnel ways are merged into their through-road corridor instead of being held out as isolated splines. The corridor is smoothed as one road so the deck and the approach roads share one continuous centerline (no plan-view kink / 'stamped rectangle'), and only the bridge sub-range is excluded from terrain. Experimental continuity fix — see plan doc 11.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Continuous deck/road centerline (experimental)
+                            </MudText>
+                        </MudItem>
+
+                        @* Bridge Rule System V2 (plan ai_docs/2026-06-10_bridge_generation_V2/01) — each rule
+                           independently flag-gated; all OFF = legacy merged-corridor behaviour. *@
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">
+                                <MudIcon Icon="@Icons.Material.Filled.Rule" Size="Size.Small" Class="mr-1" />
+                                Bridge Rule System V2 (experimental)
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                Type-correct clearances (road/rail/water), priority-based raise/dip sharing, ramp
+                                feasibility and pre-smooth dip pins. Each rule is independently togglable; all off =
+                                current behaviour.
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableBridgeStationReprojection"
+                                             Label="Station Re-Projection"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Re-resolves each bridge span's start/end stations by projecting the bridge way's ORIGINAL endpoint coordinates onto the final merged spline, fixing the documented along-track drift from pre-Chaikin arc-length sums (the bridge sits on its OSM way again).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Fix span station drift (0.3a)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnablePriorityDistribution"
+                                             Label="Priority Distribution"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Shares the clearance deficit between raising the deck and dipping the lower road by road-class importance (motorway over residential: raise 20 %, dip 80 %). The more important road keeps its smooth profile. Link roads inherit their parent class so a motorway over its own exit ramp splits evenly.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">§3.5 raise/dip sharing (A3)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableRampFeasibility"
+                                             Label="Ramp Feasibility"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Clamps the raise/dip to what the available ramp lengths and cut-depth limits allow (per-class max slopes; junction-in-sag never dips), escalating to absolute slopes, then reduced road clearance (4.2 m) with a logged warning.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Slope/cut limits + escalation (A4)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableSpanSolveOrder"
+                                             Label="Span Solve Order"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Plans high-priority bridges first and carries their pinned decks into later (lower-priority) spans as fixed obstacles — a flyover over an already-raised bridge clears the RAISED deck. A pinned deck below is never dipped.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Priority order + deck carry (A5)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableEarlyElevationEstimate"
+                                             Label="Early Elevation Estimate"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="The bridge planner reads approach/obstacle heights from a smoothed centerline-DEM estimate instead of raw DEM samples (raw pre-smooth DEM reads the embankment banks and misclassifies crossings).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Smoothed planner inputs (A0)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnablePinnedDeckProfile"
+                                             Label="Pinned Deck Profile"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="The post-smooth span refinement KEEPS the planner-pinned deck instead of re-curving it from the approach anchors (the doc-16 'flyover sags to a chord' bug). The smoother-held deck plus its grown ramps are final.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Keep held deck post-smooth (A6.5)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableGradedDeck"
+                                             Label="Graded Deck"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Pins raised decks along the road's own grade (the chord between the two approach elevations), lifted only by the minimum the obstacles demand — instead of one horizontal level. A flat deck on a sloping road can never meet both approaches: one end pokes above the road, the other sits below it.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Deck follows the road grade</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableSparseDeckConstraints"
+                                             Label="Sparse Floor Constraints"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="The bridge gets real cross-sections in the road smoother — nothing is hard-held, so the abutment seams are continuous by construction and the deck has natural vertical curvature. The rule system's per-crossing clearance targets shape the filter input as soft eased humps (ends rise only where a crossing demands it); mid-span clearance is finalized as minimum-height FLOORS on the deck curve (overshoot is fine), and lower-road dip wells are pinned before smoothing so they solve continuously (no late re-carve kinks). Overrides Graded Deck pinning while on.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Deck = road + soft humps + floors (doc 03 v3)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableBridgeBridge"
+                                             Label="Bridge-over-Bridge Marker"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Logs bridge-over-bridge relationships ([BRIDGE-BRIDGE]) for diagnostics. Detection only — multi-level resolution is a later pass.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Detection marker only (0.5)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableNaturalProfileAnchor"
+                                             Label="Natural Profile Anchor"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="In-solver natural-profile anchor (doc 09): non-bridge roads hold their early-elevation (A0) profile and the affine junction leveling decays its correction over a class-slope run at ANY junction inflated above A0 — so bridge elevation cannot diffuse into side roads and build dams. Also replaces the post-solve approach-raise with a read-only clearance assertion (nothing post-solve writes road/deck Z). Validated on Manhattan (over-max pixels 115k→5.5k).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Side roads hold A0; no dam diffusion (doc 09)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableContiguousSpanConsolidation"
+                                             Label="Span Consolidation"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Joins perfectly contiguous same-type structure spans on a merged spline ACROSS OSM layer differences (doc 10) — one physical viaduct mapped as many ways alternating layer 3/0/… becomes ONE deck with two real abutments instead of a fake abutment pair per way boundary. Per-sub-range layers are kept so grade-separation still sees the right relative layer at each crossing.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">One viaduct = one deck (doc 10)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableBridgeToBridgeAbutmentSuppression"
+                                             Label="Abutment Suppression"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Suppresses abutment terraforming at span ends whose road continues onto ANOTHER bridge deck — ramp landing mid-span on a trunk, end-to-end spline handoffs of one physical structure (doc 13). Those ends no longer get the full ground-abutment package (overlap zone, tongue, excavator ceiling) stamped across the deck they merge into. Terrain-layer fix only.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">No abutment at bridge-to-bridge joins (doc 13)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableDeckToDeckContinuity"
+                                             Label="Deck-to-Deck Continuity"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Deck continuity at bridge→bridge merges (doc 14): treats the merge like a road T-junction with the trunk as the through road — the landed-on deck owns the junction Z, and the landing span's end is anchored to the trunk deck SURFACE (final solved Z + lateral bank offset, grade projected). Fixes the seam POINT (steps/kinks where a ramp meets a trunk deck). Meaningless without merged spans; pair with Contiguous Span Consolidation.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Seam POINT: no step at merge end (doc 14)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableSeamlessDeckOverlap"
+                                             Label="Seamless Deck Overlap"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Seamless intersecting decks (doc 15) — the AREA follow-up to Deck-to-Deck Continuity's seam-POINT fix. Conforms every landing-span section still overlapping the landed-on deck EXACTLY onto its surface (center + both edges sampled, coplanar by construction incl. bank, eased out past the overlap); opens parapet segments where an edge runs inside a conforming partner span (union roadway keeps parapets only on its outer boundary); skips the mesh end-stamp at continues-onto-deck ends. Consumed ONLY when Deck-to-Deck Continuity is also on.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Seam AREA: coplanar overlap + parapet openings (doc 15, needs doc 14)</MudText>
+                        </MudItem>
+
+                        @* Typed clearance budgets (§3.1/§3.2). These set each crossing's vertical budget:
+                           ClearanceFor(kind) + the structural deck depth. Obstacle typing is always on
+                           (doc 17 §4a); exposed so the budgets are tunable without preset JSON edits. *@
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.RoadClearanceMeters"
+                                                 Label="Road Clearance (m)"
+                                                 Min="2f" Max="8f" Step="0.1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Vertical clearance the deck soffit must keep over a ROAD passing under the bridge (EU standard 4.5 m + reserve). The crossing's full budget is this plus the structural deck depth. This is also the fallback clearance for any crossing the classifier cannot type.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Typed budget: road under deck (default 4.7)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.RailClearanceElectrifiedMeters"
+                                                 Label="Rail Clearance electr. (m)"
+                                                 Min="3f" Max="9f" Step="0.1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Clearance over an electrified rail line (catenary) when Obstacle Typing is on. Rail is never lowered — short budgets always raise the deck.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Catenary clearance (default 6.0)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.RailClearanceNonElectrifiedMeters"
+                                                 Label="Rail Clearance (m)"
+                                                 Min="3f" Max="9f" Step="0.1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Clearance over a non-electrified rail line (OSM electrified=no) when Obstacle Typing is on. Rail is never lowered.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Non-electrified rail (default 5.0)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.NavigableWaterClearanceMeters"
+                                                 Label="Navigable Water Clearance (m)"
+                                                 Min="1f" Max="12f" Step="0.25f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Clearance over navigable water (boat=yes, CEMT class, canal, or width at/above the navigable threshold) when Obstacle Typing is on. Water is never lowered.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Boats under the deck (default 5.25)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.WaterFreeboardMeters"
+                                                 Label="Water Freeboard (m)"
+                                                 Min="0f" Max="6f" Step="0.25f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Freeboard over non-navigable water (small streams, narrow rivers) when Obstacle Typing is on.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Streams under the deck (default 2.0)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.StructuralDepthMaxMeters"
+                                                 Label="Structural Depth Max (m)"
+                                                 Min="0.2f" Max="6.5f" Step="0.1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Upper clamp of the structural deck depth budgeted into every typed crossing (depth = span/20, clamped). Long spans hit this clamp, so it directly sets how much higher than the bare clearance a long bridge sits — e.g. a 285 m span budgets road clearance + this value. Keep aligned with the rendered deck mesh thickness (≤ ~2 m) or the deck floats above its visible soffit.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Deck depth clamp, long spans (default 2.0)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.AbutmentOverlapMeters"
+                                                 Label="Abutment Overlap (m)"
+                                                 Min="0f" Max="10f" Step="0.5f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="How far the terrain road surface continues ONTO each bridge span end, just below the deck, so the terrain-to-deck joint is gap-free (a butt joint at 1 m terrain resolution always leaves a lip or hole). 0 disables the overlap tongue. Sparse Floor Constraints mode only.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Gap-free terrain tongue under deck ends (default 3)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.AbutmentOverlapDropMeters"
+                                                 Label="Overlap Drop (m)"
+                                                 Min="-1f" Max="0.5f" Step="0.005f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="How far the overlap tongue sits below the deck driving surface, so the deck mesh stays the visible surface without z-fighting. The under-deck excavation keeps this ceiling inside the overlap zone.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Tongue depth below deck (default 0.03)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudSelect T="string"
+                                           @bind-Value="_underDeckMaterialName"
+                                           Label="Under-Deck Material"
+                                           Disabled="@(_isGenerating || _isAnalyzing)"
+                                           Clearable="true"
+                                           Variant="Variant.Text">
+                                    @foreach (var name in _underDeckMaterialOptions)
+                                    {
+                                        <MudSelectItem T="string" Value="@name">@name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudTooltip Text="Terrain material painted under each bridge deck footprint, so grass/groundcover billboards (which key off the terrain material) cannot grow through the deck. Only cells close under the deck are repainted — ravines and water under tall spans keep their natural material. Defaults to the first material containing 'dirt', else 'asphalt' (shortest name wins). Empty = no repaint.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Stops billboards poking through decks (doc 07)</MudText>
+                        </MudItem>
+
+                        @* Bridge piers (doc 19): supports for long spans, styled by OSM structure type.
+                           Placement never stands on roads/rail/buildings/lower decks (hard keep-out —
+                           piers slide or drop, the bay just grows). Fine knobs (slide range, gap merge,
+                           ground embed, cap dims) live on the preset JSON (bridgeRules). *@
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox T="bool"
+                                             @bind-Value="_state.BridgeRules.EnableBridgePiers"
+                                             Label="Bridge Piers"
+                                             Disabled="@(_isGenerating || _isAnalyzing)"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Generates intermediate pier supports (cap + octagonal columns) under bridge decks longer than the min span length (doc 19). Archetype follows the OSM tags: viaducts get a strict regular rhythm, trestles dense slender bents, suspension/cable-stayed/movable bridges get NO columns (pylons are a later feature). A pier NEVER stands on a road, railway, building, navigable waterway or a lower deck — it slides aside or is skipped. Piers stand on the final carved terrain and are drivable-into (collision).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Supports for long spans, OSM-styled (doc 19)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.MinSpanLengthForPiersMeters"
+                                                 Label="Min Span for Piers (m)"
+                                                 Min="10f" Max="100f" Step="5f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Spans shorter than this keep abutments only — a single clear span rarely needs a pier below ~35–40 m (corpus 09a §6).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Below this: abutments only (default 35)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.PierSpacingMeters"
+                                                 Label="Pier Spacing (m)"
+                                                 Min="10f" Max="80f" Step="5f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Nominal bay length between piers (multi-span overpasses pier every 20–40 m). Viaducts keep an exact rhythm at this spacing; obstacles make individual piers slide or skip (the bay grows — never a pier on the obstacle).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Nominal bay length (default 30)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.MinPierHeightMeters"
+                                                 Label="Min Pier Height (m)"
+                                                 Min="0.5f" Max="10f" Step="0.5f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="No pier where the deck soffit is closer than this to the ground — a low deck sits on its embankment, a stub pier there is clutter.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Embankment zones get no piers (default 2.5)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.PierClearanceMarginMeters"
+                                                 Label="Pier Keep-Out Margin (m)"
+                                                 Min="0f" Max="10f" Step="0.5f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Extra safety margin around every crossed obstacle (road, rail, building, lower deck) beyond the obstacle's own extent plus the pier footprint. Larger = piers keep more respectful distance but skip more often.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Distance beyond obstacle + footprint (default 3)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.PierColumnDiameterMeters"
+                                                 Label="Pier Column Diameter (m)"
+                                                 Min="0.4f" Max="4f" Step="0.1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Diameter of the octagonal pier columns (0.9–1.2 m round columns are the DOT standard). Decks wider than the twin threshold (preset: 10 m) get a two-column bent; trestles use slim 0.5 m bents regardless.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Column size; wide decks get twins (default 1.2)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_state.BridgeRules.MaxPierSlideMeters"
+                                                 Label="Max Pier Slide (m)"
+                                                 Min="0f" Max="30f" Step="1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="How far a pier may slide from its nominal station to clear an obstacle before it is skipped entirely (the keep-out is absolute, the spacing is not — a skipped pier just grows the bay).">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Slide search radius before skipping (default 12)</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_bridgeMaxSagBelowChordMeters"
+                                                 Label="Bridge Max Sag (m)"
+                                                 Min="0f" Max="10f" Step="0.25f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Max distance the bridge deck may bow below the straight line between its endpoints before the vertical curve is blended back toward that line. Lower = flatter span but a sharper kink where the deck meets the road; higher = more sag but a smoother seam. Grades are never clamped.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Sag vs. seam-kink lever (default 1.0)
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_bridgeDeckUndercutMeters"
+                                                 Label="Deck Undercut (m)"
+                                                 Min="0f" Max="2f" Step="0.05f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="How far terrain that pokes above a bridge deck is shaved below the deck surface. The deck stays the visible driving surface; a small undercut prevents z-fighting between the deck mesh and the terrain.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Terrain shave depth under deck (default 0.05)
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_bridgeDeckThicknessSpanRatio"
+                                                 Label="Bridge Deck Thickness Ratio"
+                                                 Min="0f" Max="0.5f" Step="0.01f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Bridge deck structural thickness as a fraction of the span (thickness = ratio × span), then clamped to the Min/Max below. Drives both the under-deck excavation and the 3D deck mesh.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Deck depth as fraction of span (default 0.05)
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_bridgeDeckThicknessMinMeters"
+                                                 Label="Bridge Deck Thickness Min (m)"
+                                                 Min="0f" Max="10f" Step="0.05f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Lower clamp for the span-ratio bridge deck thickness, so short spans still get a plausible structural depth.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Min deck thickness clamp (default 0.45)
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_bridgeDeckThicknessMaxMeters"
+                                                 Label="Bridge Deck Thickness Max (m)"
+                                                 Min="0f" Max="20f" Step="0.25f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Upper clamp for the span-ratio bridge deck thickness, so long spans don't grow an unrealistically deep deck.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Max deck thickness clamp (default 1.2)
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_bridgeParapetHeightMeters"
+                                                 Label="Bridge Parapet Height (m)"
+                                                 Min="0f" Max="3f" Step="0.1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="Parapet (side barrier) height on the 3D bridge deck mesh. Set to 0 to disable parapets.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Deck side barrier height (default 0.9)
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudNumericField T="float"
+                                                 @bind-Value="_bridgeAbutmentDepthMeters"
+                                                 Label="Bridge Abutment Depth (m)"
+                                                 Min="0f" Max="5f" Step="0.1f"
+                                                 Disabled="@(_isGenerating || _isAnalyzing)"
+                                                 Variant="Variant.Text" />
+                                <MudTooltip Text="How far the solid bridge end-stamp/abutment block drops below the deck soffit.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                End-stamp drop below soffit (default 1.0)
                             </MudText>
                         </MudItem>
 

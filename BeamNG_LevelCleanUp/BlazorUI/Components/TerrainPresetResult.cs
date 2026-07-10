@@ -108,6 +108,54 @@ public class TerrainPresetResult
     public bool? ExcludeTunnelsFromTerrain { get; set; }
 
     /// <summary>
+    ///     When true, bridges/tunnels merge into the through-road corridor (merged-corridor continuity fix).
+    /// </summary>
+    public bool? MergeStructuresIntoCorridor { get; set; }
+
+    /// <summary>
+    ///     Max distance (meters) a bridge deck may bow below the endpoint chord before the vertical
+    ///     curve is blended toward the chord (sag-vs-seam-kink lever).
+    /// </summary>
+    public float? BridgeMaxSagBelowChordMeters { get; set; }
+
+    /// <summary>
+    ///     How far (meters) terrain poking above a bridge deck is shaved below the deck surface.
+    /// </summary>
+    public float? BridgeDeckUndercutMeters { get; set; }
+
+    /// <summary>
+    ///     Bridge Rule System V2 options (plan doc 01): obstacle-typed clearances, §3.5 priority
+    ///     distribution, ramp feasibility, dip-as-pin, … Null when the preset predates the rule system
+    ///     (keeps all-flags-off defaults).
+    /// </summary>
+    public BridgeRuleSystemOptions? BridgeRules { get; set; }
+
+    /// <summary>
+    ///     Bridge deck structural thickness as a fraction of the span (clamped to Min/Max below).
+    /// </summary>
+    public float? BridgeDeckThicknessSpanRatio { get; set; }
+
+    /// <summary>
+    ///     Lower clamp (meters) for the span-ratio bridge deck thickness.
+    /// </summary>
+    public float? BridgeDeckThicknessMinMeters { get; set; }
+
+    /// <summary>
+    ///     Upper clamp (meters) for the span-ratio bridge deck thickness.
+    /// </summary>
+    public float? BridgeDeckThicknessMaxMeters { get; set; }
+
+    /// <summary>
+    ///     Parapet (side barrier) height (meters) on the 3D bridge deck mesh (0 disables parapets).
+    /// </summary>
+    public float? BridgeParapetHeightMeters { get; set; }
+
+    /// <summary>
+    ///     How far the solid bridge end-stamp/abutment block drops below the deck soffit, in meters.
+    /// </summary>
+    public float? BridgeAbutmentDepthMeters { get; set; }
+
+    /// <summary>
     ///     Whether to enable building generation.
     /// </summary>
     public bool? EnableBuildings { get; set; }

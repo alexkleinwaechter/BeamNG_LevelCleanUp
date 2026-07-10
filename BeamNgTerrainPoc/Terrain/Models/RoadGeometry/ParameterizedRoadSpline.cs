@@ -63,6 +63,14 @@ public class ParameterizedRoadSpline
     public List<LaneSegment>? LaneSegments { get; init; }
 
     /// <summary>
+    ///     Bridge/tunnel sub-ranges along this (possibly merged) spline, anchored by arc-length.
+    ///     Propagated from <see cref="RoadSpline.StructureSegments"/> during network building.
+    ///     Empty/null for a plain road. Source of the per-span exclusion + deck build in the
+    ///     "merged-corridor bridge" refactor (plan doc 11). Consumed by nothing yet (Phase 1 is additive).
+    /// </summary>
+    public List<StructureSegment>? StructureSegments { get; init; }
+
+    /// <summary>
     ///     Pre-computed width profile derived from OSM lane/width data.
     ///     Null if no layerset was resolved (falls back to RoadSmoothingParameters).
     /// </summary>
@@ -146,6 +154,13 @@ public class ParameterizedRoadSpline
     ///     Null if not a bridge or type not specified.
     /// </summary>
     public string? BridgeStructureType { get; set; }
+
+    /// <summary>
+    ///     Full OSM tag dictionary from the source way(s), captured at spline creation (D-6).
+    ///     Null if not from OSM. Lets downstream read raw tags like bridge=, maxheight=, man_made=
+    ///     that aren't promoted to dedicated fields.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? OsmTags { get; set; }
 
     /// <summary>
     ///     Elevation profile for bridges and tunnels.

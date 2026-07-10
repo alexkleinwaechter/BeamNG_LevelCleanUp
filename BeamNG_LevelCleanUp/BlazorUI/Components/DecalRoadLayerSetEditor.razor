@@ -152,6 +152,13 @@
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
                              Color="Color.Warning">rnd</MudChip>
                 }
+                @if (GetRenderScopeLabel(layer) is { } scopeLabel)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="@(scopeLabel == "nowhere" ? Color.Error : Color.Info)">
+                        @scopeLabel
+                    </MudChip>
+                }
             </div>
             <MudIcon Icon="@Icons.Material.Filled.Circle"
                      Size="Size.Small"
@@ -231,7 +238,7 @@
                                     <MudSelectItem Value="t">@t</MudSelectItem>
                                 }
                             </MudSelect>
-                            <HelpAdornment TooltipText="Controls positioning logic: EdgeLine at road edges, LaneMarking between lanes, EdgeBlend for shoulders, TreadMarks for wear, AIRoad for AI navigation." />
+                            <HelpAdornment TooltipText="Controls positioning logic: EdgeLine at road edges, LaneMarking between lanes, EdgeBlend for shoulders, TreadMarks for wear, AIRoad for AI navigation, RoadSurface for a full-width surface decal (asphalt/dirt)." />
                         </div>
                     </MudItem>
                     <MudItem xs="12" sm="5">
@@ -410,6 +417,38 @@
                             <HelpAdornment TooltipText="Camera distance where the road becomes fully invisible." />
                         </div>
                     </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-2" />
+
+                @* ───── RENDER SCOPE ───── *@
+                <MudText Typo="Typo.overline" Color="Color.Primary" Class="mb-1">Render Scope</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12">
+                        <div class="d-flex align-center flex-wrap gap-3">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Render on:</MudText>
+                            <MudCheckBox T="bool" @bind-Value="layer.RenderOnRoads"
+                                         Label="Roads" Color="Color.Primary"
+                                         Dense="true" Disabled="@ReadOnly" />
+                            <MudCheckBox T="bool" @bind-Value="layer.RenderOnBridges"
+                                         Label="Bridges" Color="Color.Primary"
+                                         Dense="true" Disabled="@ReadOnly" />
+                            <MudCheckBox T="bool" @bind-Value="layer.RenderOnTunnels"
+                                         Label="Tunnels" Color="Color.Primary"
+                                         Dense="true" Disabled="@ReadOnly" />
+                            <MudTooltip Text="Where along a road this layer is generated. All checked = everywhere (default). Only 'Bridges' checked = bridge decks only; 'Tunnels' unchecked = skip tunnel stretches; etc.">
+                                <MudIcon Icon="@Icons.Material.Filled.HelpOutline" Size="Size.Small" Color="Color.Default" Style="opacity:0.6" />
+                            </MudTooltip>
+                        </div>
+                    </MudItem>
+                    @if (!layer.RenderOnRoads && !layer.RenderOnBridges && !layer.RenderOnTunnels)
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Warning" Dense="true">
+                                No render scope selected — this layer will not be generated anywhere.
+                            </MudAlert>
+                        </MudItem>
+                    }
                 </MudGrid>
 
                 <MudDivider Class="my-2" />

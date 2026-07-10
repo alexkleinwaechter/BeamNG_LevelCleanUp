@@ -215,6 +215,7 @@ public class RoadMaskBuilder
         // Fix: at each junction, fill a circular area using the max road width of all
         // contributing roads, pinned to the junction's harmonized elevation.
         var junctionPixelsFilled = 0;
+        var deckJunctionSkips = 0;
         foreach (var junction in network.Junctions.Where(j =>
                      (!j.IsExcluded
                       // Roundabout parent junctions are IsExcluded by the harmonizer, but on the no-blend
@@ -224,6 +225,19 @@ public class RoadMaskBuilder
                       || (j.Type == JunctionType.Roundabout && !float.IsNaN(j.HarmonizedElevation)))
                      && j.Contributors.Count >= 2))
         {
+            // Doc 13 §3.3: a junction whose EVERY contributor section is an excluded deck (deck-deck
+            // merge — a ramp span landing mid-span on a trunk) has no stamped road pixels around it;
+            // the disk would be a pure ground-to-deck terrain pillar at deck Z under a mid-air joint.
+            // Opt-in via EnableBridgeToBridgeAbutmentSuppression on any contributor spline (off ⇒
+            // legacy fill, byte-identical).
+            if (junction.Contributors.All(c => c.CrossSection.IsExcluded) &&
+                junction.Contributors.Any(c =>
+                    c.Spline.Parameters.BridgeRules?.EnableBridgeToBridgeAbutmentSuppression == true))
+            {
+                deckJunctionSkips++;
+                continue;
+            }
+
             // Use the max half-width + margin across all contributors
             var maxHalfWidth = 0f;
             var maxMargin = 0f;
@@ -298,6 +312,10 @@ public class RoadMaskBuilder
             TerrainCreationLogger.Current?.Detail(
                 $"Filled {junctionPixelsFilled:N0} junction gap pixels across {network.Junctions.Count(j => !j.IsExcluded)} junctions");
 
+        if (deckJunctionSkips > 0)
+            TerrainCreationLogger.Current?.Detail(
+                $"[BRIDGE-B2B] junction fill skipped at {deckJunctionSkips} all-excluded deck junction(s)");
+
         TerrainCreationLogger.Current?.Detail(
             $"Built combined mask with elevation: {maskedPixels} road pixels across {crossSectionsBySpline.Count} splines");
 
@@ -332,6 +350,16 @@ public class RoadMaskBuilder
         {
             var cs1 = sections[i];
             var cs2 = sections[i + 1];
+
+            // Never stitch a corridor quad across an EXCLUDED gap. `sections` has already had its excluded
+            // cross-sections filtered out, so two list-consecutive sections whose LocalIndex jumps by more than
+            // 1 straddle a removed run — a bridge/tunnel span (or another excluded zone). Bridging it rasterizes
+            // one giant deck-height quad over ground the structure must NOT terraform: the rule "a bridge spline
+            // does not change the terrain it spans". The span stays unmasked so the terrain under the deck keeps
+            // its natural shape (only the approach ramps, which are real sections, build embankments). For a
+            // normal road LocalIndex is always consecutive, so this is a no-op (byte-identical).
+            if (cs2.LocalIndex - cs1.LocalIndex > 1)
+                continue;
 
             if (!IsValidTargetElevation(cs1.TargetElevation) ||
                 !IsValidTargetElevation(cs2.TargetElevation))

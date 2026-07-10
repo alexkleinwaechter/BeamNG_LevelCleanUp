@@ -96,7 +96,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 5.0f, RenderPriority = 15,
                 FadeIn = 5.0f, FadeOut = 5.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -107,7 +108,8 @@ public static class DecalRoadDefaultLayerSets
                 JunctionConstraint = JunctionConstraintMode.None,
                 CurveConstraint = CurveConstraintMode.CurveOnly, CurveMinCurvature = 0.05f,
                 CurveTransitionLength = 20,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -116,7 +118,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 10.0f, RenderPriority = 20,
                 FadeIn = 5.0f, FadeOut = 5.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -127,7 +130,8 @@ public static class DecalRoadDefaultLayerSets
                 JunctionConstraint = JunctionConstraintMode.None,
                 CurveConstraint = CurveConstraintMode.CurveOnly, CurveMinCurvature = 0.05f,
                 CurveTransitionLength = 20.0f,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -138,7 +142,8 @@ public static class DecalRoadDefaultLayerSets
                 JunctionConstraint = JunctionConstraintMode.None,
                 CurveConstraint = CurveConstraintMode.CurveOnly, CurveMinCurvature = 0.07f,
                 CurveTransitionLength = 15.0f,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -156,7 +161,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 25.0f, RenderPriority = 12,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -167,7 +173,8 @@ public static class DecalRoadDefaultLayerSets
                 JunctionConstraint = JunctionConstraintMode.None,
                 Randomize = true, RandomMinPatchLength = 50.0f, RandomMaxPatchLength = 250.0f,
                 RandomMinGapLength = 200.0f, RandomMaxGapLength = 500.0f,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -176,7 +183,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 15.0f, RenderPriority = 13,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -185,7 +193,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 10.0f, RenderPriority = 7,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsMirrored = true, JunctionConstraint = JunctionConstraintMode.Interrupt,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -194,7 +203,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 10.0f, RenderPriority = 8,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsMirrored = true, JunctionConstraint = JunctionConstraintMode.Interrupt,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -204,7 +214,18 @@ public static class DecalRoadDefaultLayerSets
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsMirrored = true, JunctionConstraint = JunctionConstraintMode.Interrupt,
                 IsEnabled = false,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
+            },
+            new()
+            {
+                Name = "BridgeTunnelSurface", LayerType = DecalRoadLayerType.RoadSurface,
+                Material = "road_asphalt_2lane", IsTrackWidth = true,
+                TextureLength = 5.0f, RenderPriority = 30,
+                FadeIn = 2.0f, FadeOut = 2.0f,
+                JunctionConstraint = JunctionConstraintMode.None,
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
             },
             new()
             {
@@ -273,7 +294,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 5.0f, RenderPriority = 15,
                 FadeIn = 5.0f, FadeOut = 5.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = false, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = false, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -283,7 +305,8 @@ public static class DecalRoadDefaultLayerSets
                 FadeIn = 10.0f, FadeOut = 10.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
                 ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
-                IsEnabled = true
+                IsEnabled = true,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -293,7 +316,8 @@ public static class DecalRoadDefaultLayerSets
                 FadeIn = 5.0f, FadeOut = 5.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
                 ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
-                IsEnabled = false
+                IsEnabled = false,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -304,7 +328,8 @@ public static class DecalRoadDefaultLayerSets
                 JunctionConstraint = JunctionConstraintMode.None,
                 CurveConstraint = CurveConstraintMode.CurveOnly, CurveMinCurvature = 0.05f,
                 CurveTransitionLength = 20.0f,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -313,7 +338,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 25.0f, RenderPriority = 12,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -322,7 +348,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 25.0f, RenderPriority = 12,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -332,7 +359,8 @@ public static class DecalRoadDefaultLayerSets
                 FadeIn = 10.0f, FadeOut = 10.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
                 ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
-                IsEnabled = false
+                IsEnabled = false,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -341,7 +369,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 15.0f, RenderPriority = 13,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -350,7 +379,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 10.0f, RenderPriority = 7,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsMirrored = true, JunctionConstraint = JunctionConstraintMode.Interrupt,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -359,7 +389,8 @@ public static class DecalRoadDefaultLayerSets
                 TextureLength = 10.0f, RenderPriority = 8,
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsMirrored = true, JunctionConstraint = JunctionConstraintMode.Interrupt,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
             new()
             {
@@ -369,8 +400,19 @@ public static class DecalRoadDefaultLayerSets
                 FadeIn = 1.0f, FadeOut = 1.0f,
                 IsMirrored = true, JunctionConstraint = JunctionConstraintMode.Interrupt,
                 IsEnabled = false,
-                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
             },
+            new()
+            {
+                Name = "BridgeTunnelSurface", LayerType = DecalRoadLayerType.RoadSurface,
+                Material = "road_asphalt_2lane", IsTrackWidth = true,
+                TextureLength = 5.0f, RenderPriority = 30,
+                FadeIn = 2.0f, FadeOut = 2.0f,
+                JunctionConstraint = JunctionConstraintMode.None,
+                ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
+            },            
             new()
             {
                 Name = "AIRoad", LayerType = DecalRoadLayerType.AIRoad,
@@ -408,24 +450,26 @@ public static class DecalRoadDefaultLayerSets
             MasterSplineMargin = splineMargin,
             Layers =
             [
-                new DecalRoadLayerDefinition
+                new ()
                 {
                     Name = "EdgeBlend1", LayerType = DecalRoadLayerType.EdgeBlend,
                     Material = "m_road_edge_dirt", Width = 1.0f, Position = 1.1f,
                     TextureLength = 12.0f, FadeIn = 1.0f, FadeOut = 1.0f,
                     IsMirrored = true, RenderPriority = 9, JunctionConstraint = JunctionConstraintMode.Interrupt,
-                    ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                    ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                    RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
                 },
-                new DecalRoadLayerDefinition
+                new()
                 {
-                    Name = "DirtVariation04", LayerType = DecalRoadLayerType.TreadMarks,
-                    Material = "m_dirt_variation_04", Width = 0, Position = 0.0f,
-                    TextureLength = 96.0f, FadeIn = 1.0f, FadeOut = 1.0f,
-                    IsTrackWidth = true, RenderPriority = 10,
+                    Name = "BridgeTunnelSurface", LayerType = DecalRoadLayerType.RoadSurface,
+                    Material = "road_asphalt_2lane", IsTrackWidth = true,
+                    TextureLength = 5.0f, RenderPriority = 30,
+                    FadeIn = 2.0f, FadeOut = 2.0f,
                     JunctionConstraint = JunctionConstraintMode.None,
-                    ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
-                },
-                new DecalRoadLayerDefinition
+                    ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
+                    RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
+                },                
+                new ()
                 {
                     Name = "AIRoad", LayerType = DecalRoadLayerType.AIRoad,
                     Material = "road_invisible", Width = 0, Position = 0.0f,

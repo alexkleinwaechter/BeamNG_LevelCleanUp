@@ -1105,7 +1105,8 @@ public partial class TerrainMaterialSettings
         public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null,
             float terrainBaseHeight = 0.0f,
             bool excludeBridgesFromTerrain = false,
-            bool excludeTunnelsFromTerrain = false)
+            bool excludeTunnelsFromTerrain = false,
+            bool mergeStructuresIntoCorridor = false)
         {
             // Create a subfolder for this material's debug output to avoid overwriting other materials' images
             string? materialDebugDirectory = null;
@@ -1152,6 +1153,7 @@ public partial class TerrainMaterialSettings
                 // Bridge/Tunnel exclusion
                 ExcludeBridgesFromTerrain = excludeBridgesFromTerrain,
                 ExcludeTunnelsFromTerrain = excludeTunnelsFromTerrain,
+                MergeStructuresIntoCorridor = mergeStructuresIntoCorridor,
 
                 // Debug - use material-specific subfolder, always export debug images
                 DebugOutputDirectory = materialDebugDirectory,

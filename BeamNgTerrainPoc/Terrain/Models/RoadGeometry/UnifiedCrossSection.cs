@@ -65,6 +65,38 @@ public class UnifiedCrossSection
     public bool IsExcluded { get; set; }
 
     /// <summary>
+    ///     Hard-held target centerline elevation for a merged-corridor bridge deck (plan doc 14 §7, Phase C).
+    ///     Set only on bridge-span sections by <c>BridgeElevationPlanner</c> (the required deck Z it decided),
+    ///     and honoured by the FOUR elevation passes — the chain box low-pass (input overwrite + hard-hold),
+    ///     the re-smooth iterations, the affine leveler (exempted + boundary-blended, §7 D6) and the max-slope
+    ///     clamp (pinned neighbourhood exempted) — so the smoother BUILDS the rising approach ramps up to a held
+    ///     deck instead of dragging the deck down to terrain. Null (default) ⇒ unpinned, normal smoothing. The
+    ///     peer of the edge-constraint and junction-pin mechanisms, but for the centerline.
+    /// </summary>
+    public float? PinnedElevation { get; set; }
+
+    /// <summary>
+    ///     Amendment 03 v3 ("give the bridge cross-sections"): SOFT deck-shaping for sparse mode — the
+    ///     clearance RISE (m, ≥0) this span section needs above the deck chord, from the planner's
+    ///     per-crossing eased humps. Deliberately RELATIVE: the smoother re-anchors the chord itself on the
+    ///     actual approach raw values every iteration (<c>OptimizedElevationSmoother.ApplySoftShapingToRaw</c>
+    ///     writes `boundary chord + rise` into the RAW filter input), so planner-estimate offsets cannot
+    ///     reach the road — only the intended rise survives. Unlike <see cref="PinnedElevation"/> this is
+    ///     NEVER hard-held: the filter solves the span like ordinary road — natural vertical curvature, both
+    ///     abutment seams continuous by construction (a hard hold can step; a filtered profile cannot).
+    ///     Exact clearance comes from the post-solve cubic re-curve + floors + resolver dips. Null ⇒ none.
+    /// </summary>
+    public float? SoftDeckRiseMeters { get; set; }
+
+    /// <summary>
+    ///     Stable id of the bridge/tunnel span this cross-section belongs to, or −1 if none. Set alongside
+    ///     <see cref="IsExcluded" /> when a merged corridor's structure sub-range is marked (plan doc 11,
+    ///     Phase 3). Derived from the span's sorted OSM way-id set so it is reproducible across runs. Lets
+    ///     downstream consumers group a span's sections and build one deck per span (Phase 4/5).
+    /// </summary>
+    public int StructureSpanId { get; set; } = -1;
+
+    /// <summary>
     ///     Global index of this cross-section across all splines in the network.
     /// </summary>
     public int Index { get; set; }

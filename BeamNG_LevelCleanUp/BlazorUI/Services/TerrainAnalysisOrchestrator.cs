@@ -321,7 +321,8 @@ public class TerrainAnalysisOrchestrator
             layerImagePath = mat.LayerMapPath;
             if (mat.IsRoadMaterial)
                 roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
-                    state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
+                    state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain,
+                    state.MergeStructuresIntoCorridor);
         }
         else if (mat.IsRoadMaterial)
         {
@@ -377,10 +378,14 @@ public class TerrainAnalysisOrchestrator
                     state.MetersPerPixel,
                     interpolationType,
                     minPathLengthMeters,
-                    disableSplineMerging: state.DisableSplineMerging);
+                    disableSplineMerging: state.DisableSplineMerging,
+                    mergeStructuresIntoCorridor: state.MergeStructuresIntoCorridor,
+                    reprojectStructureStations: state.BridgeRules.EnableBridgeStationReprojection,
+                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation);
 
                 roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
-                    state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain);
+                    state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain,
+                    state.MergeStructuresIntoCorridor);
                 roadParams.EnableContinuationConnectorElevationBridging = state.DisableSplineMerging;
                 roadParams.PreBuiltSplines = splines;
 

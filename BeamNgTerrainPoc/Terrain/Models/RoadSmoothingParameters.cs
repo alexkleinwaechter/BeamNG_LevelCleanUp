@@ -260,11 +260,42 @@ public class RoadSmoothingParameters
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
     /// <summary>
+    ///     When true, bridges/tunnels merge INTO the through-road corridor and only their arc-length sub-range
+    ///     (a <see cref="RoadGeometry.StructureSegment" />) is excluded from terrain, instead of excluding the
+    ///     whole spline. This is the "merged-corridor bridge" continuity fix (plan doc 11). When false, the
+    ///     legacy whole-spline exclusion is used. Default: false until validated in-game.
+    /// </summary>
+    public bool MergeStructuresIntoCorridor { get; set; } = false;
+
+    /// <summary>
     ///     When true, continuation connector splines that have no elevation edge because they have no
     ///     per-spline cross-sections can bridge their two neighbouring road edges in the elevation
     ///     graph. Enabled by default for no-blend terrain generation.
     /// </summary>
     public bool EnableContinuationConnectorElevationBridging { get; set; } = true;
+
+    /// <summary>
+    ///     Bridge Rule System configuration (V2 plan doc 01): obstacle-typed clearances, §3.5 priority
+    ///     raise/dip distribution, ramp feasibility, dip-as-pin, R8 stamping. Null = defaults (all rule
+    ///     flags OFF ⇒ byte-identical to current merged-corridor behaviour). Should be the same instance
+    ///     as <c>TerrainCreationParameters.BridgeRules</c> when threaded from the orchestrator.
+    /// </summary>
+    public BridgeRuleSystemOptions? BridgeRules { get; set; }
+
+    /// <summary>Gets or creates the BridgeRuleSystemOptions (auto-creates all-flags-off defaults if null).</summary>
+    public BridgeRuleSystemOptions GetBridgeRules()
+    {
+        return BridgeRules ??= new BridgeRuleSystemOptions();
+    }
+
+    /// <summary>
+    ///     Pre-projected OSM bridge obstacles (rail / water / un-generated roads) in terrain-local meters,
+    ///     built once per generation by <c>BridgeObstacleClassifier.BuildObstacleSet</c> whenever OSM
+    ///     features exist (V2 plan 0.4; obstacle typing is unconditional, doc 17 §4a). The SAME instance
+    ///     is shared by every material. Null = no OSM features available (PNG-skeleton sources) — the
+    ///     planner then degrades to Road/Terrain classification.
+    /// </summary>
+    public BridgeObstacleSet? BridgeObstacles { get; set; }
 
     // ========================================
     // PRE-BUILT SPLINES (OSM Integration)

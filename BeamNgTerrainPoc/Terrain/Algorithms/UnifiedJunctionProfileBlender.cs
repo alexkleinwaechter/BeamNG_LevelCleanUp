@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
@@ -73,6 +73,15 @@ public class UnifiedJunctionProfileBlender
 
         var jhParams = network.Splines.FirstOrDefault()?.Parameters.JunctionHarmonizationParameters
                        ?? new JunctionHarmonizationParameters();
+
+        // Sparse mode (V2 review R-1.1): the blender must not overwrite PINNED sections (bridge-deck pins
+        // and lower-road dip wells incl. their ramps) — otherwise the per-iteration pin re-assert and the
+        // junction blend fight each other (tug-of-war) and leave a kink at the well shoulder. Gated on the
+        // flag so legacy output stays byte-identical when it is off.
+        var pinRules = network.Splines
+            .Select(s => s.Parameters.BridgeRules)
+            .FirstOrDefault(r => r != null);
+        var respectPins = pinRules?.EnableSparseDeckConstraints == true;
 
         // === TWO-PASS HERMITE: Process primary roads first, then terminating roads ===
         // This ensures T-junction constraints use the ACTUAL post-blend primary elevation,
@@ -184,7 +193,7 @@ public class UnifiedJunctionProfileBlender
 
         // Step 5: Handle MidSplineCrossings (both roads continue through)
         result.MidSplineCrossingModified = ApplyMidSplineCrossingInfluences(
-            network, crossSectionsBySpline, originalElevations);
+            network, crossSectionsBySpline, originalElevations, respectPins);
 
         // Step 5b: Apply propagated mid-spline influences from short-segment propagation.
         // These nudge continuous roads near T-junctions where short terminating roads
@@ -209,7 +218,8 @@ public class UnifiedJunctionProfileBlender
                 var propagatedModified = ApplyPropagatedMidSplineInfluences(
                     network.CrossSections,
                     _propagatedMidSplineInfluences,
-                    _splineClaimedZones);
+                    _splineClaimedZones,
+                    respectPins);
 
                 if (propagatedModified > 0)
                     TerrainCreationLogger.Current?.InfoFileOnly(
@@ -228,7 +238,7 @@ public class UnifiedJunctionProfileBlender
         if (!jhParams.EnableEndpointTerrainSlopeMatch)
         {
             result.EndpointsTapered = ApplyEndpointTapering(
-                network, crossSectionsBySpline, heightMap, metersPerPixel);
+                network, crossSectionsBySpline, heightMap, metersPerPixel, respectPins);
         }
 
         TerrainLogger.Detail(
@@ -807,7 +817,8 @@ public class UnifiedJunctionProfileBlender
     internal static int ApplyPropagatedMidSplineInfluences(
         IEnumerable<UnifiedCrossSection> crossSections,
         Dictionary<int, List<(float elevation, float weight, int junctionId)>> influencesByCsIndex,
-        Dictionary<int, SplineClaimedZone>? splineClaimedZones)
+        Dictionary<int, SplineClaimedZone>? splineClaimedZones,
+        bool respectPins = false)
     {
         var modified = 0;
         var csIndexLookup = crossSections.ToDictionary(cs => cs.Index);
@@ -818,6 +829,8 @@ public class UnifiedJunctionProfileBlender
                 continue;
             if (float.IsNaN(cs.TargetElevation) || cs.IsRoundaboutBlended)
                 continue;
+            if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue))
+                continue; // A6: never fight a bridge deck/dip pin
 
             var totalWeight = 0f;
             var weightedElevSum = 0f;
@@ -856,7 +869,8 @@ public class UnifiedJunctionProfileBlender
     private int ApplyMidSplineCrossingInfluences(
         UnifiedRoadNetwork network,
         Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
-        Dictionary<int, float> originalElevations)
+        Dictionary<int, float> originalElevations,
+        bool respectPins = false)
     {
         var modifiedCount = 0;
         var crossSectionInfluences = new Dictionary<int, List<(float elevation, float weight, int junctionId)>>();
@@ -915,9 +929,13 @@ public class UnifiedJunctionProfileBlender
             if (!originalElevations.TryGetValue(csIndex, out var originalElev))
                 continue;
 
-            var cs = network.CrossSections.FirstOrDefault(c => c.Index == csIndex);
+            // Indexed lookup — the previous FirstOrDefault was a linear scan over ALL cross-sections
+            // (~1M on big maps) for every influenced section, dominating this method's runtime.
+            var cs = network.GetCrossSectionByIndex(csIndex);
             if (cs == null || cs.IsRoundaboutBlended)
                 continue;
+            if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue))
+                continue; // A6: never fight a bridge deck/dip pin
 
             var totalWeight = influences.Sum(inf => inf.weight);
             if (totalWeight < 0.001f)
@@ -1007,7 +1025,8 @@ public class UnifiedJunctionProfileBlender
         UnifiedRoadNetwork network,
         Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
         float[,] heightMap,
-        float metersPerPixel)
+        float metersPerPixel,
+        bool respectPins = false)
     {
         var taperedCount = 0;
         var mapHeight = heightMap.GetLength(0);
@@ -1034,6 +1053,8 @@ public class UnifiedJunctionProfileBlender
                 var cs = splineSections[i];
                 if (cs.IsRoundaboutBlended)
                     continue;
+                if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue))
+                    continue; // A6: never fight a bridge deck/dip pin
 
                 // Sample terrain at this cross-section's position
                 var localTerrainElev = SampleTerrainBilinear(

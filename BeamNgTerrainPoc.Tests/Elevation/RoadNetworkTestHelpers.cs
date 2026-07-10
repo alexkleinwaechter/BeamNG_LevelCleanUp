@@ -11,6 +11,20 @@ namespace BeamNgTerrainPoc.Tests.Elevation;
 internal static class RoadNetworkTestHelpers
 {
     /// <summary>
+    ///     Stamps a clean round road clearance (5 m, no structural depth) onto a rules instance so
+    ///     decision-logic tests keep readable raise/dip arithmetic. Obstacle typing is unconditional
+    ///     (doc 17 §4a); the real typed budgets (4.7 + span/20 depth, rail, water) are covered by
+    ///     <c>BridgeObstacleTypingPlannerTests</c>. Returns the same instance for fluent use.
+    /// </summary>
+    public static BridgeRuleSystemOptions WithTestClearance(this BridgeRuleSystemOptions rules)
+    {
+        rules.RoadClearanceMeters = 5f;
+        rules.StructuralDepthMinMeters = 0f;
+        rules.StructuralDepthMaxMeters = 0f;
+        return rules;
+    }
+
+    /// <summary>
     ///     Creates a straight road spline between two points.
     /// </summary>
     public static RoadSpline CreateStraightSpline(Vector2 start, Vector2 end, int pointCount = 5)
@@ -41,7 +55,9 @@ internal static class RoadNetworkTestHelpers
         bool excludeBridges = true,
         bool excludeTunnels = true,
         long? startOsmNodeId = null,
-        long? endOsmNodeId = null)
+        long? endOsmNodeId = null,
+        bool mergeStructuresIntoCorridor = false,
+        List<StructureSegment>? structureSegments = null)
     {
         var spline = CreateStraightSpline(start, end);
         spline.StartOsmNodeId = startOsmNodeId;
@@ -55,7 +71,8 @@ internal static class RoadNetworkTestHelpers
                 TerrainAffectedRangeMeters = 6f,
                 CrossSectionIntervalMeters = 0.5f,
                 ExcludeBridgesFromTerrain = excludeBridges,
-                ExcludeTunnelsFromTerrain = excludeTunnels
+                ExcludeTunnelsFromTerrain = excludeTunnels,
+                MergeStructuresIntoCorridor = mergeStructuresIntoCorridor
             },
             MaterialName = "asphalt",
             SplineId = splineId,
@@ -66,6 +83,7 @@ internal static class RoadNetworkTestHelpers
             IsTunnel = isTunnel,
             StartOsmNodeId = startOsmNodeId,
             EndOsmNodeId = endOsmNodeId,
+            StructureSegments = structureSegments,
         };
     }
 

@@ -8,6 +8,7 @@ using BeamNG_LevelCleanUp.Logic;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Objects.MtSettings;
 using BeamNG_LevelCleanUp.Utils;
+using BeamNgTerrainPoc.Terrain.Export;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
@@ -125,6 +126,76 @@ public partial class GenerateTerrain : IDisposable
     {
         get => _state.ExcludeTunnelsFromTerrain;
         set => _state.ExcludeTunnelsFromTerrain = value;
+    }
+
+    private bool _mergeStructuresIntoCorridor
+    {
+        get => _state.MergeStructuresIntoCorridor;
+        set => _state.MergeStructuresIntoCorridor = value;
+    }
+
+    private float _bridgeMaxSagBelowChordMeters
+    {
+        get => _state.BridgeMaxSagBelowChordMeters;
+        set => _state.BridgeMaxSagBelowChordMeters = value;
+    }
+
+    private float _bridgeDeckUndercutMeters
+    {
+        get => _state.BridgeDeckUndercutMeters;
+        set => _state.BridgeDeckUndercutMeters = value;
+    }
+
+    /// <summary>
+    ///     Doc 07 under-deck repaint material. Lazily prepopulated with the contains-query default
+    ///     (dirt → asphalt, shortest matching name) whenever the selection is empty and materials exist,
+    ///     so the dropdown always shows the effective material — including after importing a preset that
+    ///     predates the property. Selecting a value has no immediate effect; it is read at generation time.
+    /// </summary>
+    private string? _underDeckMaterialName
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_state.BridgeRules.UnderDeckMaterialName))
+                _state.BridgeRules.UnderDeckMaterialName =
+                    BridgeUnderDeckMaterialPainter.ResolveDefaultMaterialName(_underDeckMaterialOptions);
+            return _state.BridgeRules.UnderDeckMaterialName;
+        }
+        set => _state.BridgeRules.UnderDeckMaterialName = value;
+    }
+
+    /// <summary>Dropdown options = the terrain material list in .ter index order.</summary>
+    private IEnumerable<string> _underDeckMaterialOptions =>
+        _state.TerrainMaterials.OrderBy(m => m.Order).Select(m => m.InternalName);
+
+    private float _bridgeDeckThicknessSpanRatio
+    {
+        get => _state.BridgeDeckThicknessSpanRatio;
+        set => _state.BridgeDeckThicknessSpanRatio = value;
+    }
+
+    private float _bridgeDeckThicknessMinMeters
+    {
+        get => _state.BridgeDeckThicknessMinMeters;
+        set => _state.BridgeDeckThicknessMinMeters = value;
+    }
+
+    private float _bridgeDeckThicknessMaxMeters
+    {
+        get => _state.BridgeDeckThicknessMaxMeters;
+        set => _state.BridgeDeckThicknessMaxMeters = value;
+    }
+
+    private float _bridgeParapetHeightMeters
+    {
+        get => _state.BridgeParapetHeightMeters;
+        set => _state.BridgeParapetHeightMeters = value;
+    }
+
+    private float _bridgeAbutmentDepthMeters
+    {
+        get => _state.BridgeAbutmentDepthMeters;
+        set => _state.BridgeAbutmentDepthMeters = value;
     }
 
     private bool _disableSplineMerging
@@ -851,6 +922,45 @@ public partial class GenerateTerrain : IDisposable
     private bool CanGenerate()
     {
         return _state.CanGenerate();
+    }
+
+    private void OnExcludeBridgesFromTerrainChanged(bool value)
+    {
+        if (_state.ExcludeBridgesFromTerrain == value)
+            return;
+
+        _state.ExcludeBridgesFromTerrain = value;
+        InvalidateRoadAnalysisAndGeneratedCaches();
+        StateHasChanged();
+    }
+
+    private void OnExcludeTunnelsFromTerrainChanged(bool value)
+    {
+        if (_state.ExcludeTunnelsFromTerrain == value)
+            return;
+
+        _state.ExcludeTunnelsFromTerrain = value;
+        InvalidateRoadAnalysisAndGeneratedCaches();
+        StateHasChanged();
+    }
+
+    private void OnMergeStructuresIntoCorridorChanged(bool value)
+    {
+        if (_state.MergeStructuresIntoCorridor == value)
+            return;
+
+        _state.MergeStructuresIntoCorridor = value;
+        InvalidateRoadAnalysisAndGeneratedCaches();
+        StateHasChanged();
+    }
+
+    private void InvalidateRoadAnalysisAndGeneratedCaches()
+    {
+        if (_analysisState.HasAnalysis)
+            _analysisState.Reset();
+
+        _state.CachedNetwork = null;
+        _state.CachedHeightMap = null;
     }
 
     private async Task SelectHeightmap()
@@ -2064,6 +2174,33 @@ public partial class GenerateTerrain : IDisposable
 
             if (result.ExcludeTunnelsFromTerrain.HasValue)
                 _excludeTunnelsFromTerrain = result.ExcludeTunnelsFromTerrain.Value;
+
+            if (result.MergeStructuresIntoCorridor.HasValue)
+                _mergeStructuresIntoCorridor = result.MergeStructuresIntoCorridor.Value;
+
+            if (result.BridgeMaxSagBelowChordMeters.HasValue)
+                _bridgeMaxSagBelowChordMeters = result.BridgeMaxSagBelowChordMeters.Value;
+
+            if (result.BridgeDeckUndercutMeters.HasValue)
+                _bridgeDeckUndercutMeters = result.BridgeDeckUndercutMeters.Value;
+
+            if (result.BridgeRules != null)
+                _state.BridgeRules = result.BridgeRules; // V2 rule system (whole options object)
+
+            if (result.BridgeDeckThicknessSpanRatio.HasValue)
+                _bridgeDeckThicknessSpanRatio = result.BridgeDeckThicknessSpanRatio.Value;
+
+            if (result.BridgeDeckThicknessMinMeters.HasValue)
+                _bridgeDeckThicknessMinMeters = result.BridgeDeckThicknessMinMeters.Value;
+
+            if (result.BridgeDeckThicknessMaxMeters.HasValue)
+                _bridgeDeckThicknessMaxMeters = result.BridgeDeckThicknessMaxMeters.Value;
+
+            if (result.BridgeParapetHeightMeters.HasValue)
+                _bridgeParapetHeightMeters = result.BridgeParapetHeightMeters.Value;
+
+            if (result.BridgeAbutmentDepthMeters.HasValue)
+                _bridgeAbutmentDepthMeters = result.BridgeAbutmentDepthMeters.Value;
 
             if (result.HydraulicErosion != null)
                 _state.HydraulicErosion = result.HydraulicErosion.Clone();

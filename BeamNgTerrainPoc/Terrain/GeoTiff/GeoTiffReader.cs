@@ -301,7 +301,8 @@ public class GeoTiffReader
 
         // Convert to 16-bit heightmap image, then release the elevation array
         // (can be 256MB+ for 16K x 16K terrains)
-        var heightmapImage = ConvertToHeightmap(elevationData, width, height, minElevation, maxElevation);
+        var heightmapImage = ConvertToHeightmap(elevationData, width, height, minElevation, maxElevation,
+            useNodata ? nodataValue : null);
         elevationData = null!; // Allow GC to reclaim before resize allocates another large buffer
 
         // Resize if target size is specified and different from source
@@ -451,7 +452,8 @@ public class GeoTiffReader
             $"Cropped elevation range: {minElevation:F1}m to {maxElevation:F1}m (range: {maxElevation - minElevation:F1}m)");
 
         // Convert to 16-bit heightmap image, then release the elevation array
-        var heightmapImage = ConvertToHeightmap(elevationData, cropWidth, cropHeight, minElevation, maxElevation);
+        var heightmapImage = ConvertToHeightmap(elevationData, cropWidth, cropHeight, minElevation, maxElevation,
+            useNodata ? nodataValue : null);
         elevationData = null!; // Allow GC to reclaim before resize allocates another large buffer
 
         // Resize if target size is specified and different from cropped source
@@ -485,6 +487,155 @@ public class GeoTiffReader
     /// <param name="maxElevation">Maximum elevation value</param>
     /// <param name="nodataValue">NoData value to treat as minElevation (optional)</param>
     /// <returns>16-bit grayscale heightmap image in standard top-down format</returns>
+    /// <summary>
+    ///     Inpaints DEM voids in place: NODATA / NaN / extreme fill values are replaced by a BFS dilation
+    ///     fill from their valid neighbours, so LiDAR shadows (no ground return under solid structures —
+    ///     e.g. Park Row under the Police Plaza deck) become smooth plausible ground instead of pits at
+    ///     the global minimum. Pits manufactured 25–30m cliffs next to stamped road corridors, which the
+    ///     terrain passes amplified into needle-spike fields (Manhattan render 2026-07-07). Returns the
+    ///     number of cells filled; 0 when there is nothing to fill or nothing valid to fill FROM (the
+    ///     caller's min-elevation fallback stays responsible for that degenerate case).
+    /// </summary>
+    /// <summary>
+    ///     Void components larger than this stay untouched (legacy pit behaviour): water bodies are
+    ///     sometimes NODATA on coastal maps, and inpainting a whole river would smear shoreline heights
+    ///     across it. Structure shadows / covered roads are far smaller. 20 000 cells ≈ 141×141 m at 1 m/px.
+    /// </summary>
+    internal const int DefaultMaxFillComponentCells = 20_000;
+
+    internal static int FillNodataVoids(double[] elevationData, int width, int height, double? nodataValue,
+        int maxFillComponentCells = DefaultMaxFillComponentCells)
+    {
+        var total = elevationData.Length;
+
+        // < -1000 also catches undeclared sentinel fills (-9999, -32767) when the nodata tag was lost
+        // (e.g. by cropping) — no real terrain sits below -430 m (Dead Sea).
+        bool IsVoidValue(double v) =>
+            double.IsNaN(v) || double.IsInfinity(v) ||
+            v < -1000 || v > 1000000 ||
+            (nodataValue.HasValue && Math.Abs(v - nodataValue.Value) < 0.001);
+
+        var isVoid = new bool[total];
+        var voidCount = 0;
+        for (var i = 0; i < total; i++)
+        {
+            if (!IsVoidValue(elevationData[i])) continue;
+            isVoid[i] = true;
+            voidCount++;
+        }
+
+        if (voidCount == 0 || voidCount == total) return 0;
+
+        // Component labelling (4-connected): only components small enough to be structure shadows are
+        // fillable; oversized ones (water, reprojection collars) keep the legacy behaviour.
+        var fillable = new bool[total];
+        var visited = new bool[total];
+        var component = new List<int>();
+        var stack = new Stack<int>();
+        for (var seed = 0; seed < total; seed++)
+        {
+            if (!isVoid[seed] || visited[seed]) continue;
+
+            component.Clear();
+            stack.Push(seed);
+            visited[seed] = true;
+            while (stack.Count > 0)
+            {
+                var i = stack.Pop();
+                component.Add(i);
+                var x = i % width;
+                var y = i / width;
+                if (x > 0 && isVoid[i - 1] && !visited[i - 1]) { visited[i - 1] = true; stack.Push(i - 1); }
+                if (x < width - 1 && isVoid[i + 1] && !visited[i + 1]) { visited[i + 1] = true; stack.Push(i + 1); }
+                if (y > 0 && isVoid[i - width] && !visited[i - width]) { visited[i - width] = true; stack.Push(i - width); }
+                if (y < height - 1 && isVoid[i + width] && !visited[i + width]) { visited[i + width] = true; stack.Push(i + width); }
+            }
+
+            if (component.Count <= maxFillComponentCells)
+                foreach (var i in component)
+                    fillable[i] = true;
+        }
+
+        // Frontier = fillable void cells touching valid ground; the fill grows inward in BFS waves, each
+        // cell averaging its already-valid 8-neighbours — a smooth continuation of the surrounding terrain.
+        var queue = new Queue<int>();
+        var queued = new bool[total];
+
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            var i = y * width + x;
+            if (!fillable[i]) continue;
+
+            var hasValidNeighbor = false;
+            for (var dy = -1; dy <= 1 && !hasValidNeighbor; dy++)
+            for (var dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                var nx = x + dx;
+                var ny = y + dy;
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                if (!isVoid[ny * width + nx])
+                {
+                    hasValidNeighbor = true;
+                    break;
+                }
+            }
+
+            if (hasValidNeighbor)
+            {
+                queue.Enqueue(i);
+                queued[i] = true;
+            }
+        }
+
+        var filledCount = 0;
+        while (queue.Count > 0)
+        {
+            var i = queue.Dequeue();
+            var x = i % width;
+            var y = i / width;
+
+            double sum = 0;
+            var validNeighbors = 0;
+            for (var dy = -1; dy <= 1; dy++)
+            for (var dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                var nx = x + dx;
+                var ny = y + dy;
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                var ni = ny * width + nx;
+                if (isVoid[ni]) continue;
+                sum += elevationData[ni];
+                validNeighbors++;
+            }
+
+            if (validNeighbors == 0) continue; // frontier cells always have one; defensive only
+
+            elevationData[i] = sum / validNeighbors;
+            isVoid[i] = false;
+            filledCount++;
+
+            for (var dy = -1; dy <= 1; dy++)
+            for (var dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                var nx = x + dx;
+                var ny = y + dy;
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                var ni = ny * width + nx;
+                if (isVoid[ni] && fillable[ni] && !queued[ni])
+                {
+                    queue.Enqueue(ni);
+                    queued[ni] = true;
+                }
+            }
+        }
+
+        return filledCount;
+    }
+
     private Image<L16> ConvertToHeightmap(
         double[] elevationData,
         int width,
@@ -493,6 +644,15 @@ public class GeoTiffReader
         double maxElevation,
         double? nodataValue = null)
     {
+        // Inpaint DEM voids BEFORE normalization — without this, nodata cells become pits at the
+        // global minimum (declared nodata via the fallback below; undeclared fill values like -9999
+        // via normalization clamping to pixel 0), and the terrain passes amplify the manufactured
+        // cliffs into needle-spike fields (Park Row / Police Plaza, 2026-07-07). An all-void tile
+        // fills nothing — the fallbacks below then apply.
+        var inpainted = FillNodataVoids(elevationData, width, height, nodataValue);
+        if (inpainted > 0)
+            TerrainLogger.Info($"  Inpainted {inpainted} DEM void cell(s) (nodata/extreme) from valid neighbours");
+
         var heightmapImage = new Image<L16>(width, height);
         var elevationRange = maxElevation - minElevation;
 

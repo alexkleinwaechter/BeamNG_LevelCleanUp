@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch BeamNG Tools",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build BeamNG_LevelCleanUp",
+      "program": "${workspaceFolder}/BeamNG_LevelCleanUp/bin/Debug/net9.0-windows10.0.17763.0/BeamNG_LevelCleanUp.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}/BeamNG_LevelCleanUp",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "justMyCode": true
+    }
+  ]
+}

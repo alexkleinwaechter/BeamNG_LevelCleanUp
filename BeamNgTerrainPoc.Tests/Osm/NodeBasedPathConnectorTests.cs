@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 
@@ -52,6 +53,38 @@ public class NodeBasedPathConnectorTests
             points, startNodeId, endNodeId,
             osmWayId, tags,
             false, false, StructureType.None, 0, null);
+    }
+
+    /// <summary>
+    /// Creates a straight horizontal path with explicit (nullable) node IDs and an OSM layer.
+    /// Used by the layer anti-merge guard tests, where a null endpoint node ID is what lets the
+    /// proximity fallback consider a merge in the first place.
+    /// </summary>
+    private static PathWithMetadata MakeLayeredPath(
+        float startX, float endX, float y,
+        long osmWayId,
+        long? startNodeId, long? endNodeId,
+        int layer,
+        string highway = "secondary")
+    {
+        var points = new List<Vector2>();
+        var step = startX < endX ? 10f : -10f;
+        for (var x = startX; ; x += step)
+        {
+            points.Add(new Vector2(x, y));
+            if (MathF.Abs(x - endX) < 0.1f) break;
+            if ((step > 0 && x > endX) || (step < 0 && x < endX))
+            {
+                points.Add(new Vector2(endX, y));
+                break;
+            }
+        }
+
+        var tags = new Dictionary<string, string> { ["highway"] = highway };
+        return new PathWithMetadata(
+            points, startNodeId, endNodeId,
+            osmWayId, tags,
+            isBridge: layer > 0, isTunnel: false, StructureType.None, layer, null);
     }
 
     /// <summary>
@@ -340,6 +373,67 @@ public class NodeBasedPathConnectorTests
     //  AllWayIds survives multi-hop merges
     // ========================================================================================
 
+    // ========================================================================================
+    //  Layer anti-merge guard (merged-corridor bridges, plan doc 11 §4.2.3)
+    // ========================================================================================
+
+    [Fact]
+    public void LayerGuard_GradeSeparatedFlyover_DoesNotMerge()
+    {
+        // A bridge (layer 1) whose endpoint lands near a road (layer 0) endpoint but shares NO OSM node
+        // (null node IDs at the join) — a grade-separated fly-over that would only merge via the proximity
+        // fallback. With the guard ON it must NOT merge.
+        var bridge = MakeLayeredPath(0, 100, 0, osmWayId: 10, startNodeId: 1, endNodeId: null, layer: 1);
+        var road = MakeLayeredPath(100, 200, 0, osmWayId: 20, startNodeId: null, endNodeId: 3, layer: 0);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { bridge, road },
+            tolerance: 1f,
+            routeRelations: null,
+            enforceLayerAntiMerge: true);
+
+        Assert.Equal(2, result.Count);
+        Assert.DoesNotContain(result, p => p.AllWayIds.Contains(10L) && p.AllWayIds.Contains(20L));
+    }
+
+    [Fact]
+    public void LayerGuard_Off_GradeSeparatedFlyover_MergesViaProximity()
+    {
+        // Same geometry, guard OFF (legacy default): the proximity fallback DOES merge them. This pins the
+        // legacy behaviour and proves the guard — not some other rule — is what blocks the fly-over.
+        var bridge = MakeLayeredPath(0, 100, 0, osmWayId: 10, startNodeId: 1, endNodeId: null, layer: 1);
+        var road = MakeLayeredPath(100, 200, 0, osmWayId: 20, startNodeId: null, endNodeId: 3, layer: 0);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { bridge, road },
+            tolerance: 1f,
+            routeRelations: null,
+            enforceLayerAntiMerge: false);
+
+        Assert.Single(result);
+        Assert.Contains(10L, result[0].AllWayIds);
+        Assert.Contains(20L, result[0].AllWayIds);
+    }
+
+    [Fact]
+    public void LayerGuard_SharedAbutmentNode_MergesAcrossLayerChange()
+    {
+        // A bridge (layer 1) meeting its approach road (layer 0) at a SHARED OSM node — a real abutment.
+        // The guard must allow this even though the layers differ (shared node ⇒ allow).
+        var approach = MakeLayeredPath(0, 100, 0, osmWayId: 20, startNodeId: 1, endNodeId: 2, layer: 0);
+        var bridge = MakeLayeredPath(100, 200, 0, osmWayId: 10, startNodeId: 2, endNodeId: 3, layer: 1);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { approach, bridge },
+            tolerance: 1f,
+            routeRelations: null,
+            enforceLayerAntiMerge: true);
+
+        Assert.Single(result);
+        Assert.Contains(10L, result[0].AllWayIds);
+        Assert.Contains(20L, result[0].AllWayIds);
+    }
+
     [Fact]
     public void AllWayIds_SurvivesMultiHopMerge()
     {
@@ -356,5 +450,160 @@ public class NodeBasedPathConnectorTests
         Assert.Contains(10L, result[0].AllWayIds);
         Assert.Contains(20L, result[0].AllWayIds);
         Assert.Contains(30L, result[0].AllWayIds);
+    }
+
+    // ========================================================================================
+    //  Global junction set + >90° deflection guard (ramp hairpin fix)
+    // ========================================================================================
+
+    /// <summary>
+    /// Two ramps meeting nearly head-to-tail at shared node 2 — the off-ramp/on-ramp pair at the
+    /// node where both touch a through road of a DIFFERENT highway type. Deflection ≈ 177°.
+    /// </summary>
+    private static (PathWithMetadata rampIn, PathWithMetadata rampOut) MakeHairpinRamps(bool oneway = true)
+    {
+        var rampIn = MakePath(0, 100, 0, osmWayId: 10, startNodeId: 1, endNodeId: 2,
+            highway: "primary_link", oneway: oneway);
+
+        var points = new List<Vector2>();
+        for (float x = 100; x >= 0; x -= 10)
+            points.Add(new Vector2(x, (100 - x) * 0.06f));
+        var tags = new Dictionary<string, string> { ["highway"] = "primary_link" };
+        if (oneway) tags["oneway"] = "yes";
+        var rampOut = new PathWithMetadata(
+            points, startNodeId: 2, endNodeId: 3,
+            osmWayId: 20, tags,
+            false, false, StructureType.None, 0, null);
+
+        return (rampIn, rampOut);
+    }
+
+    [Fact]
+    public void GlobalJunction_HairpinRampPair_MergeBlocked()
+    {
+        // Node 2 is a junction with a through road of a different highway type — invisible to the
+        // per-partition valence map, visible only via the global junction set.
+        var (rampIn, rampOut) = MakeHairpinRamps();
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { rampIn, rampOut },
+            tolerance: 1f,
+            globalJunctionNodes: new HashSet<long> { 2 });
+
+        Assert.Equal(2, result.Count);
+        Assert.DoesNotContain(result, p => p.AllWayIds.Contains(10L) && p.AllWayIds.Contains(20L));
+    }
+
+    [Fact]
+    public void BidirectionalHairpin_NoJunction_StillMerges()
+    {
+        // A hairpin between two BIDIRECTIONAL ways at a valence-2 node is a legitimate mountain
+        // switchback — neither the junction guard (no junction) nor the oneway U-turn guard
+        // (not oneway) may block it.
+        var (rampIn, rampOut) = MakeHairpinRamps(oneway: false);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { rampIn, rampOut },
+            tolerance: 1f);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void OnewayUTurn_DualCarriagewayThroat_MergeBlocked_WithoutJunction()
+    {
+        // The B416 Winninger Straße case: two oneway carriageways rejoin head-to-tail at a node
+        // whose only other ways (highway=path) are outside the downloaded network — no junction
+        // is detectable. The oneway U-turn guard must still block the hairpin.
+        var (rampIn, rampOut) = MakeHairpinRamps(oneway: true);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { rampIn, rampOut },
+            tolerance: 1f);
+
+        Assert.Equal(2, result.Count);
+        Assert.DoesNotContain(result, p => p.AllWayIds.Contains(10L) && p.AllWayIds.Contains(20L));
+    }
+
+    [Fact]
+    public void OnewayUTurn_DilutedChainTags_EndpointLaneSegmentStillBlocks()
+    {
+        // A Tier-0 chain keeps only its BASE way's tags. A chain seeded from a bidirectional way
+        // but ENDING in a oneway carriageway piece must still trigger the U-turn guard — the
+        // endpoint's lane segment, not the diluted path tags, carries the truth.
+        var (rampIn, rampOut) = MakeHairpinRamps(oneway: true);
+        rampIn.Tags.Remove("oneway");
+        rampIn.LaneSegments =
+        [
+            new LaneSegment { StartPointIndex = 0, LaneInfo = new OsmLaneInfo { TotalLanes = 2 } },
+            new LaneSegment { StartPointIndex = 5, LaneInfo = new OsmLaneInfo { TotalLanes = 1, IsOneWay = true } }
+        ];
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { rampIn, rampOut },
+            tolerance: 1f);
+
+        Assert.Equal(2, result.Count);
+        Assert.DoesNotContain(result, p => p.AllWayIds.Contains(10L) && p.AllWayIds.Contains(20L));
+    }
+
+    [Fact]
+    public void OnewayModerateAngle_StillMerges()
+    {
+        // Two oneway ways bending ~100° at a valence-2 node — sharper than the 90° junction
+        // threshold but flatter than the 120° oneway U-turn threshold. Must still merge.
+        var p1 = MakePath(0, 100, 0, osmWayId: 10, startNodeId: 1, endNodeId: 2,
+            highway: "primary_link", oneway: true);
+
+        var points = new List<Vector2>();
+        for (var k = 0; k <= 10; k++)
+            points.Add(new Vector2(100f - 1.74f * k, 9.85f * k));
+        var p2 = new PathWithMetadata(
+            points, startNodeId: 2, endNodeId: 3,
+            osmWayId: 20,
+            new Dictionary<string, string> { ["highway"] = "primary_link", ["oneway"] = "yes" },
+            false, false, StructureType.None, 0, null);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { p1, p2 },
+            tolerance: 1f);
+
+        Assert.Single(result);
+        Assert.Contains(10L, result[0].AllWayIds);
+        Assert.Contains(20L, result[0].AllWayIds);
+    }
+
+    [Fact]
+    public void GlobalJunction_StraightContinuation_StillMerges()
+    {
+        // A road split at a junction node continues straight through it — deflection ≈ 0°,
+        // the angle guard must not block that.
+        var p1 = MakePath(0, 100, 0, osmWayId: 10, startNodeId: 1, endNodeId: 2);
+        var p2 = MakePath(100, 200, 0, osmWayId: 20, startNodeId: 2, endNodeId: 3);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { p1, p2 },
+            tolerance: 1f,
+            globalJunctionNodes: new HashSet<long> { 2 });
+
+        Assert.Single(result);
+        Assert.Contains(10L, result[0].AllWayIds);
+        Assert.Contains(20L, result[0].AllWayIds);
+    }
+
+    [Fact]
+    public void PartitionValence_HairpinAtSameTypeJunction_MergeBlocked()
+    {
+        // Even WITHOUT the global set, a valence-3 node within one partition is a junction —
+        // the re-enabled deflection guard must block the hairpin there too.
+        var (rampIn, rampOut) = MakeHairpinRamps();
+        var third = MakePath(100, 200, 40, osmWayId: 30, startNodeId: 2, endNodeId: 4,
+            highway: "primary_link", oneway: true);
+
+        var result = NodeBasedPathConnector.Connect(
+            new List<PathWithMetadata> { rampIn, rampOut, third },
+            tolerance: 1f);
+
+        Assert.DoesNotContain(result, p => p.AllWayIds.Contains(10L) && p.AllWayIds.Contains(20L));
     }
 }

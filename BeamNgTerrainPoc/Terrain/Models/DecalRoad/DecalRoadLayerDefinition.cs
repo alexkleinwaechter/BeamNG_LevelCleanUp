@@ -47,6 +47,22 @@ public class DecalRoadLayerDefinition
     public bool OverObjects { get; set; } // When true, DecalRoad renders on top of mesh objects
 
     // ========================================
+    // RENDER SCOPE (structure contexts)
+    // ========================================
+    // Where along a spline this layer is generated, keyed off the deck/ground/tunnel run
+    // partitioning in DecalRoadGenerator. All three true (default) = render everywhere.
+    // "Only on bridges" = only RenderOnBridges true; "Not on tunnels" = RenderOnTunnels false; etc.
+
+    /// <summary>Generate this layer on regular (ground) road stretches.</summary>
+    public bool RenderOnRoads { get; set; } = true;
+
+    /// <summary>Generate this layer on bridge stretches (generated deck spans and legacy bridge splines).</summary>
+    public bool RenderOnBridges { get; set; } = true;
+
+    /// <summary>Generate this layer on tunnel stretches (tagged tunnel spans and legacy tunnel splines).</summary>
+    public bool RenderOnTunnels { get; set; } = true;
+
+    // ========================================
     // SPLINE BEHAVIOUR
     // ========================================
 

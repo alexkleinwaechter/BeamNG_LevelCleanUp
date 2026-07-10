@@ -63,7 +63,10 @@
       "Read(//c/Users/aklei/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.5/skills/subagent-driven-development/**)",
       "Bash(cd /d \"D:\\\\Source\\\\beamng_mapping_pro\")",
       "Read(//c/Users/aklei/.claude/plans/**)",
-      "Bash(wc -l /d/Source/beamng_mapping_pro/BeamNgTerrainPoc.Tests/DecalRoad/*.cs)"
+      "Bash(wc -l /d/Source/beamng_mapping_pro/BeamNgTerrainPoc.Tests/DecalRoad/*.cs)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Source\\\\beamng_mapping_pro\" -Recurse -Filter \"StructureSegment.cs\")",
+      "Bash(Select-Object -First 5 FullName)",
+      "Bash(dotnet build *)"
     ],
     "additionalDirectories": [
       "\\tmp",

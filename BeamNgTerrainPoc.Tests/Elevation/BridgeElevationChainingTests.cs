@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Reflection;
 using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
@@ -11,6 +12,79 @@ namespace BeamNgTerrainPoc.Tests.Elevation;
 /// </summary>
 public class BridgeElevationChainingTests
 {
+    [Fact]
+    public void HarmonizerLookup_IncludesExcludedBridgeWithConnectedEndpoint()
+    {
+        var road1 = RoadNetworkTestHelpers.CreateParameterizedSpline(1, new(10, 50), new(100, 50), "primary");
+        var bridge = RoadNetworkTestHelpers.CreateParameterizedSpline(2, new(100, 50), new(200, 50), "primary",
+            isBridge: true);
+        var road2 = RoadNetworkTestHelpers.CreateParameterizedSpline(3, new(200, 50), new(290, 50), "primary");
+
+        var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(road1, bridge, road2);
+        MarkBridgeCrossSectionsExcluded(network);
+
+        var lookup = BuildHarmonizerLookup(network);
+
+        Assert.True(lookup.ContainsKey(2), "connected excluded bridge spline should be visible to junction harmonization");
+        Assert.True(lookup.ContainsKey(1), "regular approach road should remain visible to junction harmonization");
+        Assert.True(lookup.ContainsKey(3), "regular approach road should remain visible to junction harmonization");
+    }
+
+    [Fact]
+    public void HarmonizerLookup_ExcludesIsolatedGeneratedBridgeEndpoint()
+    {
+        var bridge = RoadNetworkTestHelpers.CreateParameterizedSpline(2, new(100, 50), new(200, 50), "primary",
+            isBridge: true);
+
+        var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(bridge);
+        MarkBridgeCrossSectionsExcluded(network);
+
+        var lookup = BuildHarmonizerLookup(network);
+
+        Assert.False(lookup.ContainsKey(2), "isolated excluded bridge endpoint must not be treated like a terrain-tapered road end");
+    }
+
+    [Fact]
+    public void BridgeEndpointHarmonization_DoesNotPullDeckEndsTowardTerrain()
+    {
+        var road1 = RoadNetworkTestHelpers.CreateParameterizedSpline(1, new(10, 50), new(100, 50), "primary", 80);
+        var bridge = RoadNetworkTestHelpers.CreateParameterizedSpline(2, new(100, 50), new(200, 50), "primary", 80,
+            isBridge: true);
+        var road2 = RoadNetworkTestHelpers.CreateParameterizedSpline(3, new(200, 50), new(290, 50), "primary", 80);
+
+        var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(road1, bridge, road2);
+
+        var hm = new float[300, 300];
+        for (var y = 0; y < 300; y++)
+        for (var x = 0; x < 300; x++)
+        {
+            if (x < 80 || x > 220)
+                hm[y, x] = 100f;
+            else if (x >= 120 && x <= 180)
+                hm[y, x] = 60f;
+            else if (x < 120)
+                hm[y, x] = 100f - (x - 80f) / 40f * 40f;
+            else
+                hm[y, x] = 60f + (x - 180f) / 40f * 40f;
+        }
+
+        MarkBridgeCrossSectionsExcluded(network);
+        var (_, csBySpline) = RoadNetworkTestHelpers.RunChainSmoothing(network, hm);
+        var bridgeCs = csBySpline[2].OrderBy(c => c.LocalIndex).ToList();
+        var chainStart = bridgeCs.First().TargetElevation;
+        var chainEnd = bridgeCs.Last().TargetElevation;
+
+        var harmonizer = new NetworkJunctionHarmonizer();
+        harmonizer.HarmonizeNetwork(network, hm, 1f, skipDetection: true);
+
+        Assert.True(Math.Abs(bridgeCs.First().TargetElevation - chainStart) < 1.0f,
+            $"bridge start changed from chain value by {Math.Abs(bridgeCs.First().TargetElevation - chainStart):F3}m");
+        Assert.True(Math.Abs(bridgeCs.Last().TargetElevation - chainEnd) < 1.0f,
+            $"bridge end changed from chain value by {Math.Abs(bridgeCs.Last().TargetElevation - chainEnd):F3}m");
+        Assert.True(bridgeCs[bridgeCs.Count / 2].TargetElevation > hm[50, 150] + 5f,
+            "bridge deck should remain above valley terrain after junction harmonization");
+    }
+
     /// <summary>
     ///     When co-located splines have no junction detection, they should still
     ///     be connected if the elevation graph can cluster co-located synthetic endpoints.
@@ -267,5 +341,27 @@ public class BridgeElevationChainingTests
 
         // 3m apart > clustering tolerance → should be separate
         Assert.Equal(2, chains.Count);
+    }
+
+    private static void MarkBridgeCrossSectionsExcluded(UnifiedRoadNetwork network)
+    {
+        var bridgeSplineIds = network.Splines
+            .Where(s => s.IsBridge && s.Parameters.ExcludeBridgesFromTerrain)
+            .Select(s => s.SplineId)
+            .ToHashSet();
+
+        foreach (var cs in network.CrossSections.Where(cs => bridgeSplineIds.Contains(cs.OwnerSplineId)))
+            cs.IsExcluded = true;
+    }
+
+    private static Dictionary<int, List<UnifiedCrossSection>> BuildHarmonizerLookup(UnifiedRoadNetwork network)
+    {
+        var method = typeof(NetworkJunctionHarmonizer).GetMethod(
+            "BuildCrossSectionLookupForHarmonization",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var result = method.Invoke(null, [network, network.Junctions]);
+        return Assert.IsType<Dictionary<int, List<UnifiedCrossSection>>>(result);
     }
 }

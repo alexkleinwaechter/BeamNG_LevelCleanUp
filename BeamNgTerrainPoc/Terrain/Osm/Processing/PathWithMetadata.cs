@@ -1,5 +1,6 @@
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
@@ -69,6 +70,51 @@ internal class PathWithMetadata
     /// Segments survive merges via LaneSegmentOps.
     /// </summary>
     public List<LaneSegment> LaneSegments { get; set; } = [];
+
+    /// <summary>
+    /// Bridge/tunnel sub-ranges of this path (the "merged-corridor bridge" refactor — plan doc 11).
+    /// Empty for a non-structure path. Seeded once at original path creation (for a structure feature)
+    /// and merged/reversed through path connection via <see cref="StructureSegmentOps"/>, exactly like
+    /// <see cref="LaneSegments"/>. Lets a merged corridor remember which arc-range is a bridge.
+    /// </summary>
+    public List<StructureSegment> StructureSegments { get; set; } = [];
+
+    /// <summary>
+    /// True when the road piece at the given endpoint is a oneway, resolved from the lane
+    /// segment covering that endpoint. Merged paths keep only the merge BASE path's Tags, so the
+    /// whole-path oneway tag is unreliable after merges — a chain seeded from a bidirectional way
+    /// hides the oneway carriageways merged into it (the B416 dual-carriageway ring bug).
+    /// LaneSegments survive merges per-piece, so the covering segment tells the truth.
+    /// Falls back to the path-level oneway tag when no lane segments exist (hand-built paths).
+    /// </summary>
+    /// <param name="atEnd">True to inspect the last point's piece, false for the first point's.</param>
+    public bool IsOnewayAtEndpoint(bool atEnd)
+    {
+        var index = atEnd ? Points.Count - 1 : 0;
+        LaneSegment? covering = null;
+        foreach (var segment in LaneSegments)
+        {
+            if (segment.StartPointIndex <= index &&
+                (covering == null || segment.StartPointIndex > covering.StartPointIndex))
+                covering = segment;
+        }
+
+        // A sentinel segment (TotalLanes=0, no lane/oneway tags on the source way) correctly
+        // reports IsOneWay=false — do NOT fall back to the base tags in that case.
+        if (covering != null)
+            return covering.LaneInfo.IsOneWay;
+
+        return HasOnewayTag(Tags);
+    }
+
+    /// <summary>
+    /// True when the tag dictionary marks a oneway road (yes/true/1/-1).
+    /// </summary>
+    public static bool HasOnewayTag(Dictionary<string, string> tags)
+    {
+        return tags.TryGetValue("oneway", out var value) &&
+               (value == "yes" || value == "true" || value == "1" || value == "-1");
+    }
 
     public PathWithMetadata(
         List<Vector2> points,
