@@ -26,7 +26,8 @@ public class DecalRoadGenerator
         int terrainSizePixels,
         float terrainBaseHeight,
         DecalRoadSettings settings,
-        IReadOnlyDictionary<string, DecalRoadLayerSet> appDataDefaults)
+        IReadOnlyDictionary<string, DecalRoadLayerSet> appDataDefaults,
+        List<GeneratedAiWaypointSegment>? aiWaypointSegments = null)
     {
         var results = new List<GeneratedDecalRoad>();
         var splineSurfaces = new List<SplineSurfaceData>();
@@ -103,6 +104,21 @@ public class DecalRoadGenerator
                 heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                 settings.NodeSpacingMeters, settings, isGeneratedBridge);
             results.AddRange(splineResults);
+
+            // AI waypoint paths replace the AI decal over bridge/tunnel stretches (see
+            // AiWaypointPathGenerator; the decal runs are suppressed in GenerateForLayerRange).
+            // surfaceSections uses the same sub-sampling as GenerateForSpline, so the endpoint
+            // waypoints coincide with the ground AI decal's boundary nodes.
+            if (aiWaypointSegments != null)
+            {
+                var aiLayer = layerSet.Layers.FirstOrDefault(l =>
+                    l.IsEnabled && l.LayerType == DecalRoadLayerType.AIRoad);
+                if (aiLayer != null && surfaceSections.Count >= 2)
+                    aiWaypointSegments.AddRange(AiWaypointPathGenerator.GenerateForSpline(
+                        spline, aiLayer, surfaceSections,
+                        heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
+                        isGeneratedBridge));
+            }
         }
 
         // Post-process: detect and resolve overlaps on actual generated geometry
@@ -377,10 +393,10 @@ public class DecalRoadGenerator
         // ── V2 plan 0.5 hook seam ────────────────────────────────────────────────────────────────────────
         // Bespoke bridge-DecalRoad rules land HERE: each run already knows (a) the spline, (b) its structure
         // context (Road/Bridge/Tunnel + OnDeck, from StructureSpanId ≥ 0), and (c) the resolved layer.
-        // The render-scope filter below is the first consumer. Still planned (V2 plan "Later"): per-span
-        // deck materials/markings driven by StructureSegment.OsmTags, and replacing AI decals with an AI
-        // waypoint path for bridge-over-bridge (where a decal would project onto the wrong deck).
-        // Keyed by UnifiedCrossSection.StructureSpanId ↔ network.BridgeSpans (BridgeSpanSnapshot).
+        // The render-scope filter below is the first consumer; the AI-layer structure filter below replaces
+        // AI decals over bridges/tunnels with an AI waypoint path (AiWaypointPathGenerator + map.json).
+        // Still planned (V2 plan "Later"): per-span deck materials/markings driven by
+        // StructureSegment.OsmTags. Keyed by UnifiedCrossSection.StructureSpanId ↔ network.BridgeSpans.
         // Tunnels currently have no mesh/excavation — their runs are just tagged stretches of road; the
         // scope filter still applies so tunnel-specific layers can be prepared ahead of full tunnel support.
         // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -388,6 +404,12 @@ public class DecalRoadGenerator
         for (var runIndex = 0; runIndex < runs.Count; runIndex++)
         {
             var (runStart, runEnd, context, onDeck) = runs[runIndex];
+
+            // AI decals don't feed the navgraph reliably on structures (they project onto whatever
+            // surface lies beneath, so crossing roads break the path). Bridge/tunnel stretches are
+            // covered by the AI waypoint path instead — see the Generate() spline loop.
+            if (layer.LayerType == DecalRoadLayerType.AIRoad && context != StructureRunContext.Road)
+                continue;
 
             // Render-scope filter: skip runs whose structure context this layer excludes.
             var rendersHere = context switch
@@ -569,7 +591,8 @@ public class DecalRoadGenerator
     internal static List<SectionRun> PartitionSectionsByStructure(
         ParameterizedRoadSpline spline,
         IReadOnlyList<UnifiedCrossSection> sections,
-        bool isGeneratedBridge)
+        bool isGeneratedBridge,
+        int structureRunExtension = 2)
     {
         if (sections.Count == 0)
             return [];
@@ -626,13 +649,15 @@ public class DecalRoadGenerator
         // arc, leaving a wedge-shaped coverage gap. With a one-span overlap the neighbour's properly
         // curved interior covers that tail — and since the overlap nodes are the SAME cross-sections,
         // the pieces coincide and same-material double-draw is invisible.
+        // (AiWaypointPathGenerator passes extension 1 instead: the endpoint waypoint then sits ON the
+        // ground run's boundary section = the ground AI decal's end node, for the navgraph merge.)
         for (var i = 0; i < runs.Count; i++)
         {
             if (runs[i].Context == StructureRunContext.Road) continue;
             runs[i] = runs[i] with
             {
-                Start = Math.Max(0, runs[i].Start - 2),
-                End = Math.Min(last, runs[i].End + 2)
+                Start = Math.Max(0, runs[i].Start - structureRunExtension),
+                End = Math.Min(last, runs[i].End + structureRunExtension)
             };
         }
 

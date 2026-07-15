@@ -483,6 +483,7 @@ public class TerrainCreator
                 var appDataDefaults = parameters.DecalRoadAppDataDefaults
                     ?? Services.DecalRoad.DecalRoadDefaultLayerSets.GetDefaults();
 
+                var aiWaypointSegments = new List<Models.DecalRoad.GeneratedAiWaypointSegment>();
                 var decalRoads = Services.DecalRoad.DecalRoadGenerator.Generate(
                     unifiedResult.Network,
                     heightMap2D,
@@ -490,13 +491,13 @@ public class TerrainCreator
                     parameters.Size,
                     parameters.TerrainBaseHeight,
                     parameters.DecalRoadSettings,
-                    appDataDefaults);
+                    appDataDefaults,
+                    aiWaypointSegments);
 
                 perfLog.Info($"DecalRoadGenerator.Generate returned {decalRoads.Count} roads");
+                var levelDir = Path.GetDirectoryName(outputPath)!;
                 if (decalRoads.Count > 0)
                 {
-                    var levelDir = Path.GetDirectoryName(outputPath)!;
-
                     // Clean previous DecalRoads to avoid duplicates on re-generation
                     Services.DecalRoad.DecalRoadSceneWriter.CleanPrevious(levelDir);
 
@@ -509,6 +510,20 @@ public class TerrainCreator
                 {
                     perfLog.Info("DecalRoadGenerator returned 0 roads — check layer set resolution and spline data");
                 }
+
+                // AI waypoint paths over bridges/tunnels (replaces the AI decal there).
+                // Always clean + merge so stale waypoints/segments from a previous run disappear
+                // when the network no longer has structures.
+                Services.DecalRoad.AiWaypointSceneWriter.CleanPrevious(levelDir);
+                if (aiWaypointSegments.Count > 0)
+                {
+                    var wpWritten = new Services.DecalRoad.AiWaypointSceneWriter()
+                        .WriteAll(aiWaypointSegments, levelDir);
+                    perfLog.Info(
+                        $"Generated {wpWritten} AI waypoints in {aiWaypointSegments.Count} bridge/tunnel segments");
+                }
+
+                Services.DecalRoad.AiMapJsonWriter.Write(aiWaypointSegments, levelDir);
 
                 perfLog.Timing($"DecalRoad generation: {sw.ElapsedMilliseconds}ms");
             }

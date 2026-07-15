@@ -2941,6 +2941,7 @@ public partial class GenerateTerrain : IDisposable
 
                 DecalRoadSceneWriter.CleanPrevious(_state.WorkingDirectory);
 
+                var aiWaypointSegments = new List<GeneratedAiWaypointSegment>();
                 var decalRoads = DecalRoadGenerator.Generate(
                     network,
                     heightMap,
@@ -2948,7 +2949,8 @@ public partial class GenerateTerrain : IDisposable
                     _state.TerrainSize,
                     _state.TerrainBaseHeight,
                     _state.DecalRoadSettings,
-                    appDataDefaults);
+                    appDataDefaults,
+                    aiWaypointSegments);
 
                 if (decalRoads.Count > 0)
                 {
@@ -2956,8 +2958,17 @@ public partial class GenerateTerrain : IDisposable
                     writer.WriteAll(decalRoads, _state.WorkingDirectory);
                 }
 
+                // AI waypoint paths over bridges/tunnels (replaces the AI decal there)
+                AiWaypointSceneWriter.CleanPrevious(_state.WorkingDirectory);
+                if (aiWaypointSegments.Count > 0)
+                    new AiWaypointSceneWriter().WriteAll(aiWaypointSegments, _state.WorkingDirectory);
+                AiMapJsonWriter.Write(aiWaypointSegments, _state.WorkingDirectory);
+
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Re-generated {decalRoads.Count} DecalRoad objects");
+                    $"Re-generated {decalRoads.Count} DecalRoad objects" +
+                    (aiWaypointSegments.Count > 0
+                        ? $" and {aiWaypointSegments.Count} AI waypoint segment(s) for bridges/tunnels"
+                        : string.Empty));
             });
 
             await InvokeAsync(() =>
