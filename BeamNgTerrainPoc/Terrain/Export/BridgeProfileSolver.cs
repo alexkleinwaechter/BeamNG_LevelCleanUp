@@ -51,6 +51,40 @@ public static class BridgeProfileSolver
     public const float MaxLandingAnchorZGapMeters = 6f;
 
     /// <summary>
+    /// Anchor plausibility gap (m) between the landed-on deck surface and the span end — the MINIMUM
+    /// over every available authority for where that end is MEANT to be: (1) the end's own solved Z,
+    /// (2) the end section's planner deck pin (hard-pin modes; sparse-soft has none), (3) the landing
+    /// junction's junction-on-deck PLAN elevation, captured INTO the landing record at creation
+    /// (<see cref="DeckLandingRecord.PlannedDeckZ"/> — junction ids are re-assigned by later phases,
+    /// so no id lookup here, and <c>HarmonizedElevation</c> is not drift-proof either: the no-blend
+    /// endpoint targeting overwrites it from interim profiles). The solved end can drift meters above
+    /// the plan when per-pass affine retargeting re-reads the through-deck's interim profile
+    /// (Manhattan 111802/114757: spline 55/56 end 40,9 while its landing junction was planned at 34,3
+    /// and the final deck sat at 34,7 — a 6,3 m own-Z "gap" that is pure solver drift the anchor
+    /// exists to repair). Genuine plan-view crossings stay capped: every authority they have sits far
+    /// from the crossed deck's surface. Returns +∞ when no authority is finite — callers keep the
+    /// legacy "no own Z → anchor unconditionally" behaviour.
+    /// </summary>
+    private static float MinLandingAnchorGap(
+        DeckLandingRecord landing,
+        UnifiedCrossSection endSection,
+        float deckZ)
+    {
+        var gap = float.PositiveInfinity;
+
+        if (IsFinite(endSection.TargetElevation))
+            gap = MathF.Min(gap, MathF.Abs(deckZ - endSection.TargetElevation));
+
+        if (endSection.PinnedElevation is { } pin && IsFinite(pin))
+            gap = MathF.Min(gap, MathF.Abs(deckZ - pin));
+
+        if (landing.PlannedDeckZ is { } planned && IsFinite(planned))
+            gap = MathF.Min(gap, MathF.Abs(deckZ - planned));
+
+        return gap;
+    }
+
+    /// <summary>
     /// Doc 15 (a): lateral slack (m) beyond the landed-on deck half-width within which a landing-span
     /// point still counts as overlapping the deck footprint (the conformance-zone membership test).
     /// </summary>
@@ -645,12 +679,13 @@ public static class BridgeProfileSolver
         if (startLanding != null &&
             TrySampleDeckSurface(network, startLanding, spanSections[0], gradeSampleLengthMeters, out var la0))
         {
-            var ownZ = spanSections[0].TargetElevation;
-            if (IsFinite(ownZ) && MathF.Abs(la0.z - ownZ) > MaxLandingAnchorZGapMeters)
+            var gap0 = MinLandingAnchorGap(startLanding, spanSections[0], la0.z);
+            if (!float.IsPositiveInfinity(gap0) && gap0 > MaxLandingAnchorZGapMeters)
             {
                 landingSkips.Add(
                     $"start landing on spline={startLanding.DeckSplineId} skipped " +
-                    $"(deck {la0.z:F1} vs end {ownZ:F1} exceeds {MaxLandingAnchorZGapMeters:F0}m — crossing, not a merge)");
+                    $"(deck {la0.z:F1} vs end {spanSections[0].TargetElevation:F1} gap {gap0:F1} " +
+                    $"exceeds {MaxLandingAnchorZGapMeters:F0}m — crossing, not a merge)");
             }
             else
             {
@@ -664,12 +699,13 @@ public static class BridgeProfileSolver
         if (endLanding != null &&
             TrySampleDeckSurface(network, endLanding, spanSections[^1], gradeSampleLengthMeters, out var la1))
         {
-            var ownZ = spanSections[^1].TargetElevation;
-            if (IsFinite(ownZ) && MathF.Abs(la1.z - ownZ) > MaxLandingAnchorZGapMeters)
+            var gap1 = MinLandingAnchorGap(endLanding, spanSections[^1], la1.z);
+            if (!float.IsPositiveInfinity(gap1) && gap1 > MaxLandingAnchorZGapMeters)
             {
                 landingSkips.Add(
                     $"end landing on spline={endLanding.DeckSplineId} skipped " +
-                    $"(deck {la1.z:F1} vs end {ownZ:F1} exceeds {MaxLandingAnchorZGapMeters:F0}m — crossing, not a merge)");
+                    $"(deck {la1.z:F1} vs end {spanSections[^1].TargetElevation:F1} gap {gap1:F1} " +
+                    $"exceeds {MaxLandingAnchorZGapMeters:F0}m — crossing, not a merge)");
             }
             else
             {

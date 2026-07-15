@@ -184,5 +184,13 @@ public readonly record struct StructureLayerRange(float StartDistance, float End
 /// A resolved bridge-to-bridge landing (doc 14): the span end continues onto <paramref name="DeckSplineId"/>'s
 /// deck at <paramref name="DeckStation"/> (arc-length along THAT spline). <paramref name="JunctionId"/> is set
 /// when the landing was resolved from a junction's contributors rather than the doc-13 radius test.
+/// <paramref name="PlannedDeckZ"/> captures that junction's junction-on-deck PLAN elevation AT RECORD
+/// CREATION (Phase 1.85 junction objects) — junction ids are re-assigned by later phases (roundabout
+/// restore, Phase-3 re-detection), so the id must never be resolved against <c>network.Junctions</c>
+/// at solve time. Drift-proof witness for the landing-anchor plausibility cap: a span end whose
+/// landing junction was PLANNED at the landed-on deck's height is a merge, however far the solved
+/// profile drifted (Manhattan 114757: spline 56 end 40,9 vs deck 34,7 while junction 103 was planned
+/// at 34,3 — the id lookup found a renumbered junction and the anchor stayed capped).
 /// </summary>
-public sealed record DeckLandingRecord(int DeckSplineId, float DeckStation, int? JunctionId);
+public sealed record DeckLandingRecord(
+    int DeckSplineId, float DeckStation, int? JunctionId, float? PlannedDeckZ = null);

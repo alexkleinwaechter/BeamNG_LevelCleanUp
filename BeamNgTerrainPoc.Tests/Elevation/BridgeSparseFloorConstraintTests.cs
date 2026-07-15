@@ -202,10 +202,10 @@ public class BridgeSparseFloorConstraintTests
             Assert.True(raw[i + 1] >= raw[i] - 0.01f, $"climb must be monotone at {i}");
 
         // The far end of the chain (beyond the ramp) is untouched; the junction pin's raw stays its own,
-        // and the ramp from the run start at 150 (length = 5/0.05 = 100 samples → down to 50) STOPS there.
+        // and the ramp from the run start at 150 (LengthFor(5, 5 %) ≈ 133 samples → down to 17) STOPS there.
         Assert.Equal(100f, raw[60], 0.001f); // junction pin never overwritten
         Assert.Equal(100f, raw[55], 0.001f); // beyond the junction pin the ramp is cut off
-        Assert.Equal(100f, raw[320], 0.001f); // beyond the far ramp end (200 + 100 samples) — untouched
+        Assert.Equal(100f, raw[340], 0.001f); // beyond the far ramp end (200 + 133 samples) — untouched
     }
 
     [Fact]
@@ -243,6 +243,74 @@ public class BridgeSparseFloorConstraintTests
         for (var i = 1; i < approach.Count; i++)
             Assert.True(approach[i].TargetElevation >= approach[i - 1].TargetElevation - 0.02f,
                 $"sawtooth at station {approach[i].DistanceAlongSpline:F1}");
+    }
+
+    [Fact]
+    public void FeatherRawApproachRamps_SoftRun_GetsEngineeredRampToo()
+    {
+        // 2026-07-13: a SOFT-shaped raised deck (sparse mode, no hard pins anywhere in the chain) must get
+        // the same engineered approach ramp in the raw input — previously only PINNED runs were feathered
+        // and the soft approach climb was just the filter window smearing the deck-edge step.
+        var (network, corridor, span) = BuildScenario(zLeft: 100f, zRight: 100f,
+            new BridgeRuleSystemOptions { EnableSparseDeckConstraints = true });
+        TagSpanSections(network, corridor.SplineId, span);
+        var cs = network.GetCrossSectionsForSpline(corridor.SplineId)
+            .OrderBy(c => c.DistanceAlongSpline).ToList();
+        var raw = new float[cs.Count];
+        for (var i = 0; i < raw.Length; i++) raw[i] = 100f;
+        foreach (var c in cs.Where(c => c.StructureSpanId >= 0))
+            c.SoftDeckRiseMeters = 5f; // uniformly raised deck → full rise at both span edges
+
+        Assert.True(OptimizedElevationSmoother.ApplySoftShapingToRaw(cs, raw));
+        OptimizedElevationSmoother.FeatherRawApproachRamps(cs, raw, 1f);
+
+        var first = cs.FindIndex(c => c.StructureSpanId >= 0); // ≈ station 100
+        Assert.Equal(105f, raw[first], 0.01f); // chord (100) + rise (5)
+
+        // Just outside the abutment the ramp is ≈ deck Z (crest curve, flat arrival), then it descends
+        // monotonically to natural over LengthFor(5, 5 %) ≈ 133 m (cut off at the chain start here).
+        Assert.Equal(105f, raw[first - 1], 0.2f);
+        for (var i = first - 1; i > Math.Max(1, first - 130); i--)
+            Assert.True(raw[i - 1] <= raw[i] + 0.01f, $"ramp must descend away from the deck at {i}");
+        Assert.True(raw[first - 60] is > 101f and < 104.5f,
+            $"mid-ramp should sit on the constant-grade tangent, got {raw[first - 60]:F2}");
+    }
+
+    [Fact]
+    public void FeatherRawApproachRamps_AnchorsToPinnedJunctionLine_NoOvershoot()
+    {
+        // 2026-07-14 (winningen splines 8/15/21/42/66): a doc-05-raised junction inside the ramp run is an
+        // agreement point the blender enforces AFTER the filter. The feather must descend from the deck
+        // edge to the junction's pinned line and STOP there — feathering past it on the free class-grade
+        // run gets yanked down post-blend, notching the road right before the abutment.
+        var (network, corridor, span) = BuildScenario(zLeft: 100f, zRight: 100f,
+            new BridgeRuleSystemOptions { EnableSparseDeckConstraints = true });
+        TagSpanSections(network, corridor.SplineId, span);
+        var cs = network.GetCrossSectionsForSpline(corridor.SplineId)
+            .OrderBy(c => c.DistanceAlongSpline).ToList();
+        var raw = new float[cs.Count];
+        for (var i = 0; i < raw.Length; i++) raw[i] = 100f;
+        foreach (var c in cs.Where(c => c.StructureSpanId >= 0))
+            c.SoftDeckRiseMeters = 8f; // deck edge at 108
+
+        // Junction 30 m past the end abutment, pinned by the raise pass at 104 (its own, LOWER ramp line).
+        var last = cs.FindLastIndex(c => c.StructureSpanId >= 0);
+        var junctionIdx = last + 30;
+        cs[junctionIdx].JunctionPinnedElevation = 104f;
+
+        OptimizedElevationSmoother.ApplySoftShapingToRaw(cs, raw);
+        OptimizedElevationSmoother.FeatherRawApproachRamps(cs, raw, 1f);
+
+        // The ramp lands EXACTLY on the junction line at the junction, and leaves everything beyond alone
+        // (the junction machinery owns the far side) — no free-run overshoot, so no post-blend notch.
+        Assert.Equal(104f, raw[junctionIdx], 0.01f);
+        Assert.Equal(100f, raw[junctionIdx + 1], 0.001f);
+        Assert.Equal(100f, raw[junctionIdx + 40], 0.001f);
+
+        // Deck edge → junction is a monotone descent from 108 to 104, flat arrival at the deck edge.
+        Assert.Equal(108f, raw[last + 1], 0.2f);
+        for (var i = last + 1; i < junctionIdx; i++)
+            Assert.True(raw[i + 1] <= raw[i] + 0.01f, $"anchored ramp must descend monotonically at {i}");
     }
 
     // ── PlanFloorConstraints: plan → interior floors ───────────────────────────────────────────────────

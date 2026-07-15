@@ -77,6 +77,16 @@ public class ParameterizedRoadSpline
     public RoadWidthProfile? WidthProfile { get; set; }
 
     /// <summary>
+    ///     True when this spline is a lateral dual-carriageway union (LateralCarriagewayMerger):
+    ///     its centerline is the MIDLINE of the two original oneway ways. Roads that OSM-connected
+    ///     to one carriageway (ramps, crossovers) end up to half the carriageway separation away
+    ///     from this centerline, so T-junction detection admits their endpoints by the corridor's
+    ///     surface half-width instead of the default detection radius. False ⇒ byte-identical
+    ///     junction detection.
+    /// </summary>
+    public bool IsLaterallyMerged { get; set; }
+
+    /// <summary>
     ///     Optional display name for the road (e.g., from OSM name tag).
     ///     Used for debugging and BeamNG export.
     /// </summary>

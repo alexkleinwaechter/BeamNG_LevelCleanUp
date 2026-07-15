@@ -726,7 +726,8 @@ public class OsmGeometryProcessor
         bool disableSplineMerging = false,
         bool mergeStructuresIntoCorridor = false,
         bool reprojectStructureStations = false,
-        bool consolidateContiguousSpans = false)
+        bool consolidateContiguousSpans = false,
+        IReadOnlySet<string>? lateralMergeRoadTypes = null)
     {
         var splines = new List<RoadSpline>();
         int skippedZeroLength = 0;
@@ -901,6 +902,16 @@ public class OsmGeometryProcessor
                 : new List<PathWithMetadata>();
 
             Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPathsMeta.Count})");
+
+            // Step 4.5: Lateral dual-carriageway merge (ai_docs/2026-07-10_lateral_spline_merge).
+            // Runs AFTER longitudinal chaining — the connector's oneway guards keep the two
+            // directions apart, so each carriageway is one long antiparallel chain here. Combining
+            // them into one wider bidirectional path gives both directions ONE elevation solve,
+            // eliminating the twin-deck elevation drift. Off (null/empty) ⇒ byte-identical output.
+            if (lateralMergeRoadTypes is { Count: > 0 } && connectedPaths.Count > 1)
+            {
+                connectedPaths = LateralCarriagewayMerger.Merge(connectedPaths, lateralMergeRoadTypes);
+            }
         }
 
         // Step 5: Create splines from structure paths (preserve metadata from PathWithMetadata)
@@ -946,6 +957,7 @@ public class OsmGeometryProcessor
                     StartOsmNodeId = pm.StartNodeId,
                     EndOsmNodeId = pm.EndNodeId,
                     OsmWayIds = new HashSet<long>(pm.AllWayIds),
+                    IsLaterallyMerged = pm.IsLaterallyMerged,
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
                 PropagatePathStructureSegmentsToSpline(pm, spline, reprojectStructureStations,
@@ -1005,6 +1017,7 @@ public class OsmGeometryProcessor
                     StartOsmNodeId = pm.StartNodeId,
                     EndOsmNodeId = pm.EndNodeId,
                     OsmWayIds = new HashSet<long>(pm.AllWayIds),
+                    IsLaterallyMerged = pm.IsLaterallyMerged,
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
                 PropagatePathStructureSegmentsToSpline(pm, spline, reprojectStructureStations,
@@ -1300,7 +1313,8 @@ public class OsmGeometryProcessor
         bool disableSplineMerging = false,
         bool mergeStructuresIntoCorridor = false,
         bool reprojectStructureStations = false,
-        bool consolidateContiguousSpans = false)
+        bool consolidateContiguousSpans = false,
+        IReadOnlySet<string>? lateralMergeRoadTypes = null)
     {
         // Use the full overload and discard the roundabout processing result
         return ConvertLinesToSplinesWithRoundabouts(
@@ -1323,7 +1337,8 @@ public class OsmGeometryProcessor
             disableSplineMerging: disableSplineMerging,
             mergeStructuresIntoCorridor: mergeStructuresIntoCorridor,
             reprojectStructureStations: reprojectStructureStations,
-            consolidateContiguousSpans: consolidateContiguousSpans);
+            consolidateContiguousSpans: consolidateContiguousSpans,
+            lateralMergeRoadTypes: lateralMergeRoadTypes);
     }
 
     /// <summary>
@@ -1370,7 +1385,8 @@ public class OsmGeometryProcessor
         bool disableSplineMerging = false,
         bool mergeStructuresIntoCorridor = false,
         bool reprojectStructureStations = false,
-        bool consolidateContiguousSpans = false)
+        bool consolidateContiguousSpans = false,
+        IReadOnlySet<string>? lateralMergeRoadTypes = null)
     {
         // Build a set of feature IDs that belong to this material
         // This is CRITICAL for ensuring roundabout splines are only created once
@@ -1506,7 +1522,8 @@ public class OsmGeometryProcessor
             disableSplineMerging: disableSplineMerging,
             mergeStructuresIntoCorridor: mergeStructuresIntoCorridor,
             reprojectStructureStations: reprojectStructureStations,
-            consolidateContiguousSpans: consolidateContiguousSpans);
+            consolidateContiguousSpans: consolidateContiguousSpans,
+            lateralMergeRoadTypes: lateralMergeRoadTypes);
 
         // Step 6: Combine results
         var allSplines = new List<RoadSpline>();

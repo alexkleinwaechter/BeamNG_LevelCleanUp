@@ -65,6 +65,15 @@ internal class PathWithMetadata
     public HashSet<long> AllWayIds { get; set; }
 
     /// <summary>
+    /// True when this path is the LATERAL union of two antiparallel carriageways
+    /// (<see cref="LateralCarriagewayMerger"/>). Its centerline is the midline between the original
+    /// oneway ways, so roads that OSM-connected to one carriageway (ramps, crossovers) end up to
+    /// half the carriageway separation AWAY from this path — junction detection must admit their
+    /// endpoints by corridor width, not by the default radius.
+    /// </summary>
+    public bool IsLaterallyMerged { get; set; }
+
+    /// <summary>
     /// Per-segment lane configuration parsed from OSM tags.
     /// Empty list means no lane data available (use defaults at generation time).
     /// Segments survive merges via LaneSegmentOps.

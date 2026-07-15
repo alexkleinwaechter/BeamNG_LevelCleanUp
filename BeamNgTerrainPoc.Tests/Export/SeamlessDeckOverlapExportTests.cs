@@ -164,6 +164,73 @@ public class SeamlessDeckOverlapExportTests
     }
 
     [Fact]
+    public void ButtSeamKink_ExtendsLandedEndOntoPartnerDeck()
+    {
+        // Manhattan render 2026-07-11 (span 1192907311 → 39479211, junction 24): two z-conformed
+        // decks meeting END-TO-END with a heading kink leave a pie-slice hole on the outside of the
+        // bend — each end cap is perpendicular to its OWN tangent. The landed end must be extended
+        // along its tangent (halfWidth·tanΔ), stations riding the partner surface SUB-FLUSH (3 cm —
+        // exactly-coincident surfaces z-fight, run 130041). Fixture kink: atan(100/200) ≈ 26.6°,
+        // half-width 4 ⇒ +2 m. The trunk is truncated to end AT the meet point (butt joint).
+        var network = BuildNetwork(overlapOn: true);
+        var trunkSpan = network.BridgeSpans.Single(s => s.SplineId == TrunkId);
+        trunkSpan.Stations.RemoveAll(st => st.DistanceAlongSpline > 200f);
+        var rampSpan = network.BridgeSpans.Single(s => s.SplineId == RampId);
+        var stationsBefore = rampSpan.Stations.Count;
+        var endBefore = rampSpan.Stations[^1].Center;
+
+        ExportDecks(network);
+
+        Assert.True(rampSpan.Stations.Count > stationsBefore,
+            $"landed end must gain extension stations, {stationsBefore} → {rampSpan.Stations.Count}");
+        var tail = rampSpan.Stations[^1];
+        Assert.True(Vector2.Distance(tail.Center, endBefore) >= 1.9f,
+            "extension must reach past the old end toward the wedge");
+        Assert.Equal(23.97f, tail.CenterZ, 0.05f); // roadway plane minus the 3 cm sub-flush
+    }
+
+    [Fact]
+    public void MidDeckGoreLanding_DoesNotExtend()
+    {
+        // A mid-deck landing has the partner deck continuing underneath — no hole to fill, and a
+        // filler would only shadow (z-fight) the partner's surface. The shared fixture lands at
+        // trunk station 200, mid-span [100,300] ⇒ no extension. Stacked decks likewise.
+        var network = BuildNetwork(overlapOn: true);
+        var rampSpan = network.BridgeSpans.Single(s => s.SplineId == RampId);
+        var stationsBefore = rampSpan.Stations.Count;
+        ExportDecks(network);
+        Assert.Equal(stationsBefore, rampSpan.Stations.Count);
+
+        var stacked = BuildNetwork(overlapOn: true, rampZ: 36f);
+        var stackedSpan = stacked.BridgeSpans.Single(s => s.SplineId == RampId);
+        var stackedBefore = stackedSpan.Stations.Count;
+        ExportDecks(stacked);
+        Assert.Equal(stackedBefore, stackedSpan.Stations.Count);
+    }
+
+    [Fact]
+    public void MergeTransitionZone_LowerDeckParapetOpens_UpperDeckKeepsWalls()
+    {
+        // Manhattan render 2026-07-11: at the 904452323→621793096 gore the LANDING deck rides up to
+        // ~1 parapet-height above the trunk edge before the surfaces meet — inside the trunk
+        // footprint but no longer coplanar (Δz 1 m > 0.5 m), so the trunk wall was KEPT and pierced
+        // the ramp's roadway from below. The Z window must be asymmetric: partner surface up to
+        // parapet height + tolerance ABOVE the edge still suppresses (the wall would poke through
+        // that roadway); the UPPER deck's own parapet sits above everything and stays.
+        var (rampOff, trunkOff) = ExportDecks(BuildNetwork(overlapOn: false, rampZ: 25f));
+        var (rampOn, trunkOn) = ExportDecks(BuildNetwork(overlapOn: true, rampZ: 25f));
+
+        // Trunk (lower): gore-mouth wall under the ramp surface is opened.
+        Assert.True(trunkOn.Vertices < trunkOff.Vertices,
+            $"trunk parapet under the ramp roadway must open, {trunkOff.Vertices} → {trunkOn.Vertices}");
+
+        // Ramp (upper, 1 m above the trunk surface): keeps its parapets — only the merge-end stamp
+        // goes (its edge is ABOVE the trunk surface; nothing to pierce).
+        Assert.Equal(rampOff.Vertices - 24, rampOn.Vertices);
+        Assert.Equal(rampOff.Triangles - 12, rampOn.Triangles);
+    }
+
+    [Fact]
     public void CoplanarOverlap_OpensParapets_WithoutRequiringALandingPair()
     {
         // Manhattan render 2026-07-07 (first screenshot): walls still crossed same-level roadways

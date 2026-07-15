@@ -1379,10 +1379,12 @@ public class UnifiedRoadSmoother
     ///     Approach-ramp pins (graded-deck companion, render review #4): every RAISED span end sits some
     ///     `delta` above (lift) — or occasionally below — the natural approach profile, and the box-filter
     ///     blend alone cannot close that gap inside one smoothing window (doc 16 §3b: the abutment step).
-    ///     For each raised span end this pins an eased ramp on the APPROACH sections: from the deck-end Z at
-    ///     the abutment, easing to the natural profile (`(1−u)²(1+2u)`, zero slope at BOTH ends) over a
-    ///     length sized by the §3.3 class slope (`|delta| / normalMaxSlope`), clamped to the junction-safe
-    ///     room (<see cref="BridgeElevationPlanner.MeasureRampLength"/>). The smoother then holds the climb
+    ///     For each raised span end this pins an engineered ramp on the APPROACH sections: from the deck-end
+    ///     Z at the abutment, descending to the natural profile via <see cref="ApproachRampProfile"/> (a
+    ///     parabolic crest curve at the deck, a constant-grade tangent, a parabolic sag at the bottom — zero
+    ///     slope at BOTH ends) over a length sized so the tangent runs at the §3.3 class grade
+    ///     (<see cref="ApproachRampProfile.LengthFor"/>), clamped to the junction-safe room
+    ///     (<see cref="BridgeElevationPlanner.MeasureRampLength"/>). The smoother then holds the climb
     ///     instead of improvising it. Existing pins (junction/deck/dip) win.
     /// </summary>
     internal static int ApplyApproachRampPins(
@@ -1449,7 +1451,7 @@ public class UnifiedRoadSmoother
         var delta = deckEndZ - baseAtAbutment;
         if (MathF.Abs(delta) <= 0.05f) return 0; // already flush
 
-        var needed = maxSlope > 0.001f ? MathF.Abs(delta) / maxSlope : 60f;
+        var needed = maxSlope > 0.001f ? ApproachRampProfile.LengthFor(delta, maxSlope) : 60f;
         var available = BridgeElevationPlanner.MeasureRampLength(network, spline, abutmentStation, forward);
         var rampLen = MathF.Min(MathF.Max(needed, 10f), MathF.Min(available, 150f));
         if (rampLen <= 1f) return 0; // junction-boxed — leave the seam to the junction harmonizer
@@ -1467,7 +1469,7 @@ public class UnifiedRoadSmoother
             if (float.IsNaN(baseZ)) continue;
 
             var u = d / rampLen; // 0 at the abutment → 1 at the ramp end
-            var w = (1f - u) * (1f - u) * (1f + 2f * u); // 1 with zero slope at the abutment, 0 at the end
+            var w = ApproachRampProfile.Weight(u); // crest VC → constant-grade tangent → sag VC
             cs.PinnedElevation = baseZ + delta * w;
             pinnedCount++;
         }
@@ -1555,7 +1557,8 @@ public class UnifiedRoadSmoother
         if (delta <= 0.05f) return 0; // only raises — a deck below the approach is not this pass's problem
 
         // Ramp sizing mirrors PinApproachRamp — deliberately NOT junction-clamped (that's the point).
-        var rampLen = MathF.Min(MathF.Max(maxSlope > 0.001f ? delta / maxSlope : 60f, 10f), 150f);
+        var rampLen = MathF.Min(MathF.Max(
+            maxSlope > 0.001f ? ApproachRampProfile.LengthFor(delta, maxSlope) : 60f, 10f), 150f);
 
         var count = 0;
         foreach (var junction in network.Junctions)
@@ -1574,7 +1577,7 @@ public class UnifiedRoadSmoother
                     continue;
 
                 var u = MathF.Max(d, 0f) / rampLen;
-                var w = (1f - u) * (1f - u) * (1f + 2f * u); // 1 at the abutment, 0 at the ramp end
+                var w = ApproachRampProfile.Weight(u); // 1 at the abutment, 0 at the ramp end
 
                 var baseJ = !float.IsNaN(junction.HarmonizedElevation)
                     ? junction.HarmonizedElevation
@@ -1603,6 +1606,14 @@ public class UnifiedRoadSmoother
                     raised.Add(junction);
                     count++;
                 }
+
+                // 2026-07-14 (junction-aware feather): stamp the junction's final agreement Z onto its
+                // corridor cross-section so the smoother's raw approach-ramp feather can anchor its
+                // descent to the SAME line the blender will enforce — otherwise the two disagree (the
+                // feather bases off the actual raw, this pass off the estimate) and the blender yanks
+                // the feathered climb down at the junction, notching the road right before the abutment.
+                if (junction.IsPinned && !float.IsNaN(junction.HarmonizedElevation))
+                    contributor.CrossSection.JunctionPinnedElevation = junction.HarmonizedElevation;
 
                 break; // one contributor on this spline is enough to place the junction on the ramp
             }
@@ -1681,6 +1692,7 @@ public class UnifiedRoadSmoother
                             $"contributors={contribs.Count}[{string.Join(",", contribs)}]");
                         junction.HarmonizedElevation = deckZ;
                         junction.IsPinned = true;
+                        junction.PlannedDeckElevation = deckZ;
                         raisedJunctions.Add(junction);
                         onDeck++;
                     }
@@ -1798,6 +1810,7 @@ public class UnifiedRoadSmoother
                 $" contributors={contribs.Count}[{string.Join(",", contribs)}]");
             junction.HarmonizedElevation = deckZ;
             junction.IsPinned = true;
+            junction.PlannedDeckElevation = deckZ;
             raisedJunctions.Add(junction);
             onDeck++;
         }

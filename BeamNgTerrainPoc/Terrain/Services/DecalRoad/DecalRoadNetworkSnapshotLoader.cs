@@ -122,6 +122,7 @@ public static class DecalRoadNetworkSnapshotLoader
                 // OsmTags: not persisted in the DecalRoad snapshot (D-6 is for live OSM generation); left null.
             };
             spline.IsRoundabout = ss.IsRoundabout;
+            spline.IsLaterallyMerged = ss.IsLaterallyMerged;
             spline.Priority = ss.Priority;
 
             // Reconstruct RoadWidthProfile when layerset resolution context is available
@@ -205,7 +206,11 @@ public static class DecalRoadNetworkSnapshotLoader
 
         var segments = new List<WidthSegment>();
 
-        if (layerSet.EnablePerSegmentWidth && spline.LaneSegments is { Count: > 0 })
+        // Laterally merged corridors carry BOTH carriageways — width must follow the merged
+        // per-station lane counts even when the layerset disables per-segment width (the
+        // constant default describes ONE carriageway). Mirrors UnifiedRoadNetworkBuilder.
+        if ((layerSet.EnablePerSegmentWidth || spline.IsLaterallyMerged) &&
+            spline.LaneSegments is { Count: > 0 })
         {
             foreach (var ls in spline.LaneSegments)
             {

@@ -145,6 +145,15 @@ public class RoadSpline
     public HashSet<long> OsmWayIds { get; set; } = [];
 
     /// <summary>
+    ///     True when this spline came from the LATERAL union of two antiparallel oneway carriageways
+    ///     (LateralCarriagewayMerger). The centerline is the midline between the original ways, so
+    ///     roads that OSM-connected to one carriageway (ramps, crossovers) end up to half the
+    ///     carriageway separation away — junction detection admits their endpoints by corridor
+    ///     surface width instead of the default radius.
+    /// </summary>
+    public bool IsLaterallyMerged { get; set; }
+
+    /// <summary>
     ///     Per-segment lane configuration from OSM tags.
     ///     Null if no lane data was parsed. StartDistance is populated during spline creation.
     /// </summary>

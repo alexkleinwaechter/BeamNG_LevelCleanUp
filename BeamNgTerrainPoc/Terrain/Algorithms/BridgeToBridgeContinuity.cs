@@ -232,8 +232,11 @@ internal static class BridgeToBridgeContinuity
                     (interior && !bestInterior) ||
                     (interior == bestInterior && c.Spline.Priority > bestPriority))
                 {
+                    // PlannedDeckZ is captured NOW (same-phase junction objects) — junction ids get
+                    // re-assigned by later phases, so the id can't be resolved at solve time.
                     bestLanding = new DeckLandingRecord(
-                        c.Spline.SplineId, c.CrossSection.DistanceAlongSpline, junction.JunctionId);
+                        c.Spline.SplineId, c.CrossSection.DistanceAlongSpline, junction.JunctionId,
+                        junction.PlannedDeckElevation);
                     bestInterior = interior;
                     bestPriority = c.Spline.Priority;
                 }

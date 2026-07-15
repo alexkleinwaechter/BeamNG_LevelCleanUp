@@ -60,12 +60,14 @@ public sealed class BridgeDeckMeshBuilder
             .WithName(meshName)
             .WithMaterial(materialName);
 
-        BuildBoxShell(builder, crossSections, down);
+        var (left, right) = BuildAntiFoldEdges(crossSections);
+
+        BuildBoxShell(builder, crossSections, down, left, right);
 
         if (profile.ParapetHeightMeters > 0f)
         {
-            BuildParapet(builder, crossSections, profile, leftSide: true, trim?.LeftParapetSuppressed);
-            BuildParapet(builder, crossSections, profile, leftSide: false, trim?.RightParapetSuppressed);
+            BuildParapet(builder, crossSections, profile, leftSide: true, left, trim?.LeftParapetSuppressed);
+            BuildParapet(builder, crossSections, profile, leftSide: false, right, trim?.RightParapetSuppressed);
         }
 
         if (profile.GenerateAbutments)
@@ -73,26 +75,68 @@ public sealed class BridgeDeckMeshBuilder
             // Doc 15 (c): no stamp at ends that continue onto another deck — it would hang through the
             // trunk deck mid-air (the terrain layer learned this in doc 13; this is the mesh mirror).
             if (trim is not { SuppressStartStamp: true })
-                AddEndStamp(builder, crossSections, down, profile, isStart: true);
+                AddEndStamp(builder, crossSections, down, profile, isStart: true, left, right);
             if (trim is not { SuppressEndStamp: true })
-                AddEndStamp(builder, crossSections, down, profile, isStart: false);
+                AddEndStamp(builder, crossSections, down, profile, isStart: false, left, right);
         }
 
         // Normals are written explicitly (flat, outward) by AddFace — no smooth/flat recompute pass.
         return builder.Build();
     }
 
+    /// <summary>
+    /// Per-station top edge positions with an ANTI-FOLD weld (miter limit). Where the corridor's
+    /// local curvature exceeds 1/halfWidth — a kink concentrated over a few stations — the inside
+    /// edge polyline BACKTRACKS: consecutive edge points reverse against the direction of travel,
+    /// the top quads pleat over themselves, and the winding-forced normals turn the pleat into
+    /// overlapping geometry that breaks collision (Manhattan span 1192907311, ~27° over 11 m on a
+    /// 21.6 m deck between merged ways 432550257/46177152 — vehicles wedged INTO the fold). Any
+    /// edge point whose plan-view advance is not positive along the centerline direction is clamped
+    /// to its predecessor, so the inside edge PIVOTS in place (a clean fan) while the outside edge
+    /// sweeps — no crossing, no pleat, watertight collision. Straight and normally-curved decks are
+    /// byte-identical.
+    /// </summary>
+    public static (Vector3[] Left, Vector3[] Right) BuildAntiFoldEdges(
+        IReadOnlyList<RoadCrossSection> crossSections)
+    {
+        int n = crossSections.Count;
+        var left = new Vector3[n];
+        var right = new Vector3[n];
+        for (int i = 0; i < n; i++)
+        {
+            left[i] = crossSections[i].GetLeftEdgePosition();
+            right[i] = crossSections[i].GetRightEdgePosition();
+        }
+
+        for (int i = 1; i < n; i++)
+        {
+            var advance = crossSections[i].CenterPoint - crossSections[i - 1].CenterPoint;
+            if (advance.LengthSquared() < 1e-10f)
+                advance = crossSections[i].TangentDirection;
+
+            var dl = new Vector2(left[i].X - left[i - 1].X, left[i].Y - left[i - 1].Y);
+            if (Vector2.Dot(dl, advance) <= 0f)
+                left[i] = left[i - 1];
+
+            var dr = new Vector2(right[i].X - right[i - 1].X, right[i].Y - right[i - 1].Y);
+            if (Vector2.Dot(dr, advance) <= 0f)
+                right[i] = right[i - 1];
+        }
+
+        return (left, right);
+    }
+
     /// <summary>The closed box shell: deck top, soffit, two fascia sides and the two end caps.</summary>
-    private static void BuildBoxShell(MeshBuilder b, IReadOnlyList<RoadCrossSection> cs, Vector3 down)
+    private static void BuildBoxShell(
+        MeshBuilder b, IReadOnlyList<RoadCrossSection> cs, Vector3 down, Vector3[] left, Vector3[] right)
     {
         int n = cs.Count;
         for (int i = 0; i < n - 1; i++)
         {
             var s0 = cs[i];
-            var s1 = cs[i + 1];
 
-            Vector3 tl0 = s0.GetLeftEdgePosition(), tr0 = s0.GetRightEdgePosition();
-            Vector3 tl1 = s1.GetLeftEdgePosition(), tr1 = s1.GetRightEdgePosition();
+            Vector3 tl0 = left[i], tr0 = right[i];
+            Vector3 tl1 = left[i + 1], tr1 = right[i + 1];
             Vector3 bl0 = tl0 - down, br0 = tr0 - down, bl1 = tl1 - down, br1 = tr1 - down;
 
             AddFace(b, tl0, tr0, tr1, tl1, Vector3.UnitZ);                       // deck top → up
@@ -102,13 +146,8 @@ public sealed class BridgeDeckMeshBuilder
         }
 
         // Start cap → −Tangent, end cap → +Tangent.
-        var f = cs[0];
-        AddFace(b, f.GetLeftEdgePosition(), f.GetRightEdgePosition(),
-            f.GetRightEdgePosition() - down, f.GetLeftEdgePosition() - down, Tangent3D(f, -1f));
-
-        var l = cs[^1];
-        AddFace(b, l.GetLeftEdgePosition(), l.GetRightEdgePosition(),
-            l.GetRightEdgePosition() - down, l.GetLeftEdgePosition() - down, Tangent3D(l, 1f));
+        AddFace(b, left[0], right[0], right[0] - down, left[0] - down, Tangent3D(cs[0], -1f));
+        AddFace(b, left[n - 1], right[n - 1], right[n - 1] - down, left[n - 1] - down, Tangent3D(cs[^1], 1f));
     }
 
     /// <summary>
@@ -125,7 +164,7 @@ public sealed class BridgeDeckMeshBuilder
     /// </summary>
     private static void BuildParapet(
         MeshBuilder b, IReadOnlyList<RoadCrossSection> cs, BridgeDeckProfile p, bool leftSide,
-        IReadOnlyList<bool>? suppressed = null)
+        Vector3[] edges, IReadOnlyList<bool>? suppressed = null)
     {
         int n = cs.Count;
         float topW = MathF.Max(p.ParapetTopWidthMeters, BridgeDeckProfile.MinParapetThicknessMeters);
@@ -139,7 +178,7 @@ public sealed class BridgeDeckMeshBuilder
         for (int i = 0; i < n; i++)
         {
             var s = cs[i];
-            Vector3 edge = leftSide ? s.GetLeftEdgePosition() : s.GetRightEdgePosition();
+            Vector3 edge = edges[i]; // anti-fold welded — the wall pivots with the deck edge
             Vector3 inward = Normal3D(s, leftSide ? 1f : -1f); // toward deck centre
             baseOuter[i] = edge;
             baseInner[i] = edge + inward * baseW;
@@ -187,7 +226,8 @@ public sealed class BridgeDeckMeshBuilder
     /// Watertight: two caps + per segment left/right/top/bottom faces, all outward via <see cref="AddFace"/>.
     /// </summary>
     private static void AddEndStamp(
-        MeshBuilder b, IReadOnlyList<RoadCrossSection> cs, Vector3 down, BridgeDeckProfile p, bool isStart)
+        MeshBuilder b, IReadOnlyList<RoadCrossSection> cs, Vector3 down, BridgeDeckProfile p, bool isStart,
+        Vector3[] leftEdges, Vector3[] rightEdges)
     {
         int n = cs.Count;
         var end = isStart ? cs[0] : cs[n - 1];
@@ -197,24 +237,24 @@ public sealed class BridgeDeckMeshBuilder
 
         // Soffit edge corners from the deck end inward, cut at exactly `len` with a section lerped
         // between the bracketing stations (so the knob keeps its meaning regardless of station spacing).
-        var left = new List<Vector3> { end.GetLeftEdgePosition() - down };
-        var right = new List<Vector3> { end.GetRightEdgePosition() - down };
+        var left = new List<Vector3> { leftEdges[isStart ? 0 : n - 1] - down };
+        var right = new List<Vector3> { rightEdges[isStart ? 0 : n - 1] - down };
         for (int k = 1; k < n; k++)
         {
-            var cur = cs[isStart ? k : n - 1 - k];
-            float d = MathF.Abs(cur.DistanceAlongRoad - endDist);
+            int curIdx = isStart ? k : n - 1 - k;
+            float d = MathF.Abs(cs[curIdx].DistanceAlongRoad - endDist);
             if (d >= len - 1e-3f)
             {
-                var prev = cs[isStart ? k - 1 : n - k];
-                float dPrev = MathF.Abs(prev.DistanceAlongRoad - endDist);
+                int prevIdx = isStart ? k - 1 : n - k;
+                float dPrev = MathF.Abs(cs[prevIdx].DistanceAlongRoad - endDist);
                 float t = d > dPrev ? Math.Clamp((len - dPrev) / (d - dPrev), 0f, 1f) : 0f;
-                left.Add(Vector3.Lerp(prev.GetLeftEdgePosition(), cur.GetLeftEdgePosition(), t) - down);
-                right.Add(Vector3.Lerp(prev.GetRightEdgePosition(), cur.GetRightEdgePosition(), t) - down);
+                left.Add(Vector3.Lerp(leftEdges[prevIdx], leftEdges[curIdx], t) - down);
+                right.Add(Vector3.Lerp(rightEdges[prevIdx], rightEdges[curIdx], t) - down);
                 break;
             }
 
-            left.Add(cur.GetLeftEdgePosition() - down);
-            right.Add(cur.GetRightEdgePosition() - down);
+            left.Add(leftEdges[curIdx] - down);
+            right.Add(rightEdges[curIdx] - down);
         }
 
         int m = left.Count;

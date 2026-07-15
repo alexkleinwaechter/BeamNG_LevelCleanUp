@@ -23,6 +23,7 @@ public static class DecalRoadNetworkSnapshotBuilder
                 IsBridge = spline.IsBridge,
                 IsTunnel = spline.IsTunnel,
                 IsRoundabout = spline.IsRoundabout,
+                IsLaterallyMerged = spline.IsLaterallyMerged,
                 Priority = spline.Priority,
                 RoadWidthMeters = spline.Parameters.RoadWidthMeters,
                 RoadSurfaceWidthMeters = spline.Parameters.RoadSurfaceWidthMeters,

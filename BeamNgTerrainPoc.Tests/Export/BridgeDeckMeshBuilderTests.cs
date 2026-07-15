@@ -58,6 +58,81 @@ public class BridgeDeckMeshBuilderTests
         Assert.Equal(expected, BridgeDeckProfile.ComputeDeckThicknessMeters(span, profile), precision: 4);
     }
 
+    /// <summary>Straight deck along +X for 10 stations (1 m spacing), then a hard
+    /// <paramref name="angleDegrees"/> kink at a single station, continuing straight for 10 more.</summary>
+    private static List<RoadCrossSection> KinkedDeck(float angleDegrees, float width)
+    {
+        var rad = angleDegrees * MathF.PI / 180f;
+        var dir1 = new Vector2(1f, 0f);
+        var n1 = new Vector2(0f, 1f);
+        var dir2 = new Vector2(MathF.Cos(rad), MathF.Sin(rad));
+        var n2 = new Vector2(-dir2.Y, dir2.X);
+
+        var list = new List<RoadCrossSection>();
+        var p = Vector2.Zero;
+        var d = 0f;
+        for (var i = 0; i < 10; i++)
+        {
+            list.Add(new RoadCrossSection
+            {
+                CenterPoint = p, CenterElevation = 10f, TangentDirection = dir1,
+                NormalDirection = n1, WidthMeters = width, DistanceAlongRoad = d
+            });
+            p += dir1;
+            d += 1f;
+        }
+
+        for (var i = 0; i < 10; i++)
+        {
+            list.Add(new RoadCrossSection
+            {
+                CenterPoint = p, CenterElevation = 10f, TangentDirection = dir2,
+                NormalDirection = n2, WidthMeters = width, DistanceAlongRoad = d
+            });
+            p += dir2;
+            d += 1f;
+        }
+
+        return list;
+    }
+
+    [Fact]
+    public void AntiFoldWeld_SharpKink_InnerEdgeNeverBacktracks()
+    {
+        // Manhattan span 1192907311 between merged ways 432550257/46177152: a ~27° bend
+        // concentrated over a few stations of a 21.6 m deck made the inside edge polyline REVERSE —
+        // the deck top pleated over itself (winding-forced normals ⇒ overlapping geometry, vehicles
+        // wedged into the fold). The weld must clamp any edge point whose plan advance reverses.
+        var cs = KinkedDeck(angleDegrees: 35f, width: 22f);
+        var (left, right) = BridgeDeckMeshBuilder.BuildAntiFoldEdges(cs);
+
+        var welded = false;
+        for (var i = 1; i < cs.Count; i++)
+        {
+            var advance = cs[i].CenterPoint - cs[i - 1].CenterPoint;
+            var dl = new Vector2(left[i].X - left[i - 1].X, left[i].Y - left[i - 1].Y);
+            var dr = new Vector2(right[i].X - right[i - 1].X, right[i].Y - right[i - 1].Y);
+            Assert.True(Vector2.Dot(dl, advance) >= 0f, $"left edge backtracks at station {i}");
+            Assert.True(Vector2.Dot(dr, advance) >= 0f, $"right edge backtracks at station {i}");
+            welded = welded || left[i] == left[i - 1] || right[i] == right[i - 1];
+        }
+
+        Assert.True(welded, "the 35° kink on a 22 m deck must actually trigger the weld");
+    }
+
+    [Fact]
+    public void AntiFoldWeld_StraightDeck_LeavesEdgesUntouched()
+    {
+        var cs = StraightDeck(10, 90f, 22f, 10f);
+        var (left, right) = BridgeDeckMeshBuilder.BuildAntiFoldEdges(cs);
+
+        for (var i = 0; i < cs.Count; i++)
+        {
+            Assert.Equal(cs[i].GetLeftEdgePosition(), left[i]);
+            Assert.Equal(cs[i].GetRightEdgePosition(), right[i]);
+        }
+    }
+
     [Fact]
     public void Build_ReturnsEmptyMesh_ForFewerThanTwoSections()
     {

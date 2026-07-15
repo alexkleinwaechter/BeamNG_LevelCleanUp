@@ -224,6 +224,47 @@ public class DeckToDeckContinuityTests
         Assert.Equal(26.5f, rampEnd.TargetElevation, 0.05f); // kept its own isolated profile
     }
 
+    [Fact]
+    public void LandingAnchor_JunctionPlannedAtDeck_AnchorsDespiteDriftedEnd()
+    {
+        // Manhattan 111802/114757: spline 55/56's end drifted to 40.9 (per-pass affine retargeting
+        // off the through-deck's interim profile) while the planner had planned its landing junction
+        // at 34.3 and the final deck sat at 34.7 — a 6.3 m own-Z "gap" the cap misread as a crossing.
+        // The junction-on-deck PLAN elevation captured in the landing record is the drift-proof
+        // witness (junction ids get re-assigned by later phases, so it must live IN the record).
+        var (network, _, _, _, rampSpan) = BuildMerge(continuityOn: true, rampEndZ: 33f); // 9 m above deck
+        rampSpan.EndContinuesOntoDeck = true;
+        rampSpan.EndDeckLanding =
+            new DeckLandingRecord(TrunkId, 200f, JunctionId: 106, PlannedDeckZ: 24f);
+
+        var result = BridgeProfileSolver.RefineSpans(network, log: false);
+
+        var app = Assert.Single(result.Applications, a => a.BridgeSplineId == RampId);
+        Assert.True(app.EndConnected);
+        Assert.Contains("anchored to deck", app.Note);
+        var rampEnd = network.GetCrossSectionsForSpline(RampId).OrderBy(c => c.LocalIndex).Last();
+        Assert.Equal(24.0f, rampEnd.TargetElevation, 0.05f);
+    }
+
+    [Fact]
+    public void LandingAnchor_JunctionPlannedFarFromDeck_StillCrossing()
+    {
+        // The plan Z only vouches for a merge when it AGREES with the crossed deck: a z-blind
+        // junction planned at the span's own level under a high deck must not weld the span onto it.
+        var (network, _, _, _, rampSpan) = BuildMerge(continuityOn: true);
+        foreach (var cs in network.GetCrossSectionsForSpline(TrunkId))
+            cs.TargetElevation += 21f; // trunk deck now ~45 at the landing
+        rampSpan.EndContinuesOntoDeck = true;
+        rampSpan.EndDeckLanding =
+            new DeckLandingRecord(TrunkId, 200f, JunctionId: 106, PlannedDeckZ: 26.5f);
+
+        var result = BridgeProfileSolver.RefineSpans(network, log: false);
+
+        var app = Assert.Single(result.Applications, a => a.BridgeSplineId == RampId);
+        Assert.False(app.EndConnected);
+        Assert.Contains("crossing, not a merge", app.Note);
+    }
+
     // ── (a) junction authority rule in PinOnDeckJunctions ──────────────────────────────────────────
 
     private static SpanDeckPlan PlanSpan(

@@ -45,6 +45,13 @@
                      Label="Use OSM road width tag if available"
                      Disabled="@ReadOnly" />
     </MudItem>
+    <MudItem xs="12">
+        <MudTooltip Text="Combines parallel oneway ways (e.g. the two directions of a motorway) into one wider road. Fixes elevation drift between twin bridge decks. Requires full terrain regeneration.">
+            <MudCheckBox T="bool" @bind-Value="LayerSet.MergeSplinesLaterally"
+                         Label="Merge dual carriageways into one road"
+                         Disabled="@ReadOnly" />
+        </MudTooltip>
+    </MudItem>
     <MudItem xs="6" sm="3">
         <MudNumericField T="float" @bind-Value="LayerSet.SmoothingCorridorMargin"
                          Label="Smoothing Margin (m)"

@@ -15,6 +15,7 @@ using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Building;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
+using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 using BeamNG_LevelCleanUp.Utils;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -35,6 +36,37 @@ public class TerrainGenerationOrchestrator
     ///     preventing duplicate ring splines when multiple materials reference the same roundabout.
     /// </summary>
     private HashSet<long> _processedRoundaboutIds = new();
+
+    /// <summary>AppData DecalRoad defaults, loaded once per orchestrator (lateral-merge flag resolution).</summary>
+    private Dictionary<string, DecalRoadLayerSet>? _decalRoadAppDataDefaults;
+
+    /// <summary>
+    ///     OSM highway types (among this material's line features) whose resolved DecalRoad layer set
+    ///     enables lateral dual-carriageway merging (ai_docs/2026-07-10_lateral_spline_merge). Resolved
+    ///     here because layer sets are not otherwise reachable inside OSM processing. Null when none —
+    ///     the OSM processor then skips the merge step entirely (byte-identical output).
+    /// </summary>
+    internal static HashSet<string>? BuildLateralMergeRoadTypes(
+        IEnumerable<OsmFeature> lineFeatures,
+        string materialName,
+        DecalRoadSettings? settings,
+        IReadOnlyDictionary<string, DecalRoadLayerSet> appDataDefaults)
+    {
+        var resolvedSettings = settings ?? new DecalRoadSettings();
+        HashSet<string>? types = null;
+        foreach (var highway in lineFeatures
+                     .Select(f => f.Tags.GetValueOrDefault("highway"))
+                     .Where(h => h != null)
+                     .Distinct())
+        {
+            var layerSet = DecalRoadLayerSetResolver.Resolve(
+                highway, materialName, resolvedSettings, appDataDefaults);
+            if (layerSet?.MergeSplinesLaterally == true)
+                (types ??= new HashSet<string>()).Add(highway!);
+        }
+
+        return types;
+    }
 
     /// <summary>
     ///     Executes the full terrain generation pipeline.
@@ -855,6 +887,12 @@ public class TerrainGenerationOrchestrator
                 state.MergeStructuresIntoCorridor);
             roadParams.EnableContinuationConnectorElevationBridging = state.DisableSplineMerging;
 
+            // Lateral dual-carriageway merge: which of this material's highway types opted in via
+            // their DecalRoad layer set (checkbox "Merge dual carriageways into one road").
+            _decalRoadAppDataDefaults ??= DecalRoadDefaultsManager.Load();
+            var lateralMergeRoadTypes = BuildLateralMergeRoadTypes(
+                lineFeatures, mat.InternalName, state.DecalRoadSettings, _decalRoadAppDataDefaults);
+
             // Check if roundabout detection is enabled
             var junctionParams = roadParams.JunctionHarmonizationParameters;
             var enableRoundaboutDetection = junctionParams?.EnableRoundaboutDetection ?? true;
@@ -899,7 +937,8 @@ public class TerrainGenerationOrchestrator
                     disableSplineMerging: state.DisableSplineMerging,
                     mergeStructuresIntoCorridor: state.MergeStructuresIntoCorridor,
                     reprojectStructureStations: state.BridgeRules.EnableBridgeStationReprojection,
-                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation);
+                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation,
+                    lateralMergeRoadTypes: lateralMergeRoadTypes);
 
                 // Store roundabout info in road params for potential use in junction detection
                 if (detectedRoundabouts.Count > 0)
@@ -927,7 +966,8 @@ public class TerrainGenerationOrchestrator
                     disableSplineMerging: state.DisableSplineMerging,
                     mergeStructuresIntoCorridor: state.MergeStructuresIntoCorridor,
                     reprojectStructureStations: state.BridgeRules.EnableBridgeStationReprojection,
-                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation);
+                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation,
+                    lateralMergeRoadTypes: lateralMergeRoadTypes);
             }
 
             // Log to file only - per-material detail

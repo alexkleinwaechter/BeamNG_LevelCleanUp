@@ -24,6 +24,14 @@ public class NetworkJunctionDetector
     private const float SpatialIndexCellSize = 50f;
 
     /// <summary>
+    ///     Extra tolerance (m) beyond a laterally-merged corridor's surface half-width when
+    ///     admitting an endpoint as a T-junction onto the corridor (see
+    ///     <see cref="IsAdmittedByMergedCorridorSurface"/>). Mirrors
+    ///     <c>BridgeToBridgeContinuity.OnDeckMarginMeters</c>.
+    /// </summary>
+    private const float LateralMergeAdmissionMarginMeters = 1.0f;
+
+    /// <summary>
     ///     Detects all junctions in the unified road network.
     ///     Algorithm:
     ///     1. Build spatial index of all cross-section endpoints
@@ -421,6 +429,14 @@ public class NetworkJunctionDetector
     {
         var tJunctionCount = 0;
 
+        // Lateral dual-carriageway merge (ai_docs/2026-07-10): a merged corridor's centerline is the
+        // MIDLINE of the two original oneway ways, so a ramp endpoint that shared an OSM node with
+        // one carriageway now sits up to half the carriageway separation (5-12 m) away — beyond the
+        // default detection radius. Such endpoints are admitted by the corridor's own painted
+        // surface half-width instead (they lie ON the merged roadway). Zero when no merged splines
+        // exist ⇒ detection identical to before.
+        var mergedCorridorMaxHalfWidth = ComputeMaxLaterallyMergedHalfWidth(network);
+
         // Process ALL junctions to find passing-through splines
         foreach (var junction in junctions.ToList())
         {
@@ -449,7 +465,10 @@ public class NetworkJunctionDetector
             var continuousContributors =
                 new List<(UnifiedCrossSection cs, ParameterizedRoadSpline spline, float dist)>();
 
-            foreach (var cs in QuerySpatialIndex(spatialIndex, junctionPosition, detectionRadius))
+            var queryRadius = MathF.Max(detectionRadius,
+                mergedCorridorMaxHalfWidth + LateralMergeAdmissionMarginMeters);
+
+            foreach (var cs in QuerySpatialIndex(spatialIndex, junctionPosition, queryRadius))
             {
                 // Skip if this cross-section is itself an endpoint
                 if (cs.IsSplineStart || cs.IsSplineEnd)
@@ -459,6 +478,11 @@ public class NetworkJunctionDetector
                 var dist = Vector2.Distance(junctionPosition, cs.CenterPoint);
                 var spline = network.GetSplineById(cs.OwnerSplineId);
                 if (spline == null)
+                    continue;
+
+                // Beyond the classic radius only merged-corridor surface admission applies.
+                if (dist > detectionRadius &&
+                    !IsAdmittedByMergedCorridorSurface(junction, spline, cs, dist))
                     continue;
 
                 // Check if this spline already has a CONTINUOUS contributor in the junction
@@ -471,7 +495,7 @@ public class NetworkJunctionDetector
 
             // Add the closest continuous contributor for each unique spline
             var addedSplines = new HashSet<int>();
-            foreach (var (cs, spline, _) in continuousContributors.OrderBy(c => c.dist))
+            foreach (var (cs, spline, dist) in continuousContributors.OrderBy(c => c.dist))
             {
                 if (addedSplines.Contains(spline.SplineId))
                     continue;
@@ -501,10 +525,109 @@ public class NetworkJunctionDetector
 
                 addedSplines.Add(spline.SplineId);
                 tJunctionCount++;
+
+                if (dist > detectionRadius)
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[LATERAL-MERGE] T-junction admission: endpoint of spline(s) " +
+                        $"{string.Join(",", splineIdsWithEndpoints)} joined merged corridor " +
+                        $"spline={spline.SplineId} at dist={dist:F1}m (radius {detectionRadius:F1}m, " +
+                        $"surface halfWidth={cs.SurfaceWidth * 0.5f:F1}m)");
             }
         }
 
         return tJunctionCount;
+    }
+
+    /// <summary>
+    ///     Max surface half-width (m) over all laterally-merged corridor splines, used to widen the
+    ///     T-junction candidate query. 0 when the network has no merged corridors — the widened
+    ///     query then collapses to the classic detection radius (byte-identical behaviour).
+    /// </summary>
+    private static float ComputeMaxLaterallyMergedHalfWidth(UnifiedRoadNetwork network)
+    {
+        var maxHalfWidth = 0f;
+        foreach (var spline in network.Splines)
+        {
+            if (!spline.IsLaterallyMerged)
+                continue;
+
+            var width = spline.WidthProfile is { Segments.Count: > 0 } profile
+                ? profile.Segments.Max(s => s.RoadSurfaceWidth)
+                : spline.Parameters.RoadWidthMeters;
+            maxHalfWidth = MathF.Max(maxHalfWidth, width * 0.5f);
+        }
+
+        return maxHalfWidth;
+    }
+
+    /// <summary>
+    ///     Lateral-merge T-junction admission (ai_docs/2026-07-10, Manhattan spline 57): admit an
+    ///     endpoint-to-interior candidate BEYOND the classic detection radius when the endpoint lies
+    ///     ON a laterally-merged corridor's painted surface. Pre-merge, a ramp/crossover endpoint
+    ///     shared an OSM node with one carriageway (distance ≈ 0); the merged midline moved that
+    ///     distance to ~half the carriageway separation, silently degrading the ramp end to an
+    ///     isolated endpoint (floating deck ends: profile fallback + landing-anchor cap rejection).
+    ///     Guard: both sides must agree on bridge/tunnel state at the meeting point, so a street
+    ///     dead-ending UNDER an elevated corridor does not junction onto the deck. Deliberately no
+    ///     layer-tag comparison — OSM layer encodes only local crossing order (doc 10 learning).
+    /// </summary>
+    private static bool IsAdmittedByMergedCorridorSurface(
+        NetworkJunction junction,
+        ParameterizedRoadSpline candidateSpline,
+        UnifiedCrossSection candidateCs,
+        float dist)
+    {
+        if (!candidateSpline.IsLaterallyMerged)
+            return false;
+
+        if (dist > candidateCs.SurfaceWidth * 0.5f + LateralMergeAdmissionMarginMeters)
+            return false;
+
+        var (candBridge, candTunnel) =
+            BridgeTunnelStateAt(candidateSpline, candidateCs.DistanceAlongSpline);
+
+        foreach (var contributor in junction.Contributors)
+        {
+            if (!contributor.IsEndpoint)
+                continue;
+
+            var (endBridge, endTunnel) = BridgeTunnelStateAt(
+                contributor.Spline, contributor.CrossSection.DistanceAlongSpline);
+            if (endBridge == candBridge && endTunnel == candTunnel)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Bridge/tunnel state of <paramref name="spline"/> at an arc-length station: the containing
+    ///     <see cref="StructureSegment"/>'s type when sub-range spans exist (merged corridors),
+    ///     else the whole-spline flags (legacy separate structure splines). Unlike
+    ///     <see cref="EffectiveStructureAt"/> this is not gated on
+    ///     <c>MergeStructuresIntoCorridor</c> — the admission guard needs the true state wherever
+    ///     the segments happen to live. Span edges get a small tolerance because an endpoint
+    ///     station sits exactly on its own span boundary.
+    /// </summary>
+    private static (bool isBridge, bool isTunnel) BridgeTunnelStateAt(
+        ParameterizedRoadSpline spline, float station)
+    {
+        const float edgeToleranceMeters = 0.75f;
+        if (spline.StructureSegments is { Count: > 0 } segments)
+        {
+            foreach (var seg in segments)
+            {
+                if (station >= seg.StartDistance - edgeToleranceMeters &&
+                    station <= seg.EndDistance + edgeToleranceMeters)
+                    return (seg.IsBridge, seg.IsTunnel);
+            }
+
+            // Stations outside every span are the corridor's at-grade stretches, even when the
+            // whole-spline flag says "bridge" (merge-base tag).
+            return (false, false);
+        }
+
+        return (spline.IsBridge, spline.IsTunnel);
     }
 
     /// <summary>

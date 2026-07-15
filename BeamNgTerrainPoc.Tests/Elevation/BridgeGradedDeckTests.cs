@@ -122,9 +122,10 @@ public class BridgeGradedDeckTests
     public void ApproachRampPins_EaseFromDeckEnd_ToNaturalProfile()
     {
         // The veto-lift scenario: deck ends at 13.5 (station 100) / 12.5 (station 200) while the natural
-        // road runs 9.0 / 8.0 there — delta ≈ 4.5. Approach-ramp pins must hold an eased climb on BOTH
-        // approaches: ≈ deck-end Z just outside the abutment, back at the natural profile at the ramp end
-        // (primary → 5 % → ~90 m ramps).
+        // road runs 9.0 / 8.0 there — delta ≈ 4.5. Approach-ramp pins must hold the engineered climb on
+        // BOTH approaches: ≈ deck-end Z just outside the abutment, back at the natural profile at the ramp
+        // end. Primary → 5 % tangent → LengthFor(4.5, 0.05) = 120 m: the back ramp is clamped to the 100 m
+        // of room before the way start; the forward ramp gets its full 120 m (stations 200–320).
         var (network, corridor) = BuildSlopedScenario(
             zLeft: 10f, zRight: 6f, graded: true, underZ: 8f, underPriority: 20000);
         var hm = RoadNetworkTestHelpers.CreateFlatHeightmap(512, 0f);
@@ -148,13 +149,14 @@ public class BridgeGradedDeckTests
         Assert.True(nearEnd.PinnedElevation.HasValue);
         Assert.Equal(12.5f, nearEnd.PinnedElevation!.Value, 0.2f);
 
-        // Mid-ramp (station ≈ 55, halfway down the ~90 m back ramp): roughly half the delta remains.
-        var midRamp = sections.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 55f)).First();
+        // Mid-ramp (station ≈ 50, halfway down the clamped 100 m back ramp): on the constant-grade
+        // tangent, half the delta remains (base 9.5 + 4.5·0.5 = 11.75).
+        var midRamp = sections.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 50f)).First();
         Assert.True(midRamp.PinnedElevation.HasValue);
         Assert.InRange(midRamp.PinnedElevation!.Value, 10.5f, 12.5f);
 
-        // Beyond the ramp the road is free (station < 10).
-        Assert.All(sections.Where(c => c.DistanceAlongSpline < 9f),
+        // Beyond the forward ramp (station > 320) the road is free.
+        Assert.All(sections.Where(c => c.DistanceAlongSpline > 321f),
             c => Assert.False(c.PinnedElevation.HasValue));
 
         // The pinned ramp descends monotonically away from the deck on the back side.

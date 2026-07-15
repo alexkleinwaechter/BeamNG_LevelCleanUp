@@ -713,13 +713,15 @@ public class OptimizedElevationSmoother : IHeightCalculator
         // ordinary road, so both abutment seams are continuous by construction and the deck gets a natural
         // vertical curve. Anchors re-read the current raw each call, so iterations converge onto the
         // solved approaches.
-        ApplySoftShapingToRaw(chainCrossSections, rawElevations);
+        var hasSoft = ApplySoftShapingToRaw(chainCrossSections, rawElevations);
 
         // Step 1.6 (Amendment 03 v2): soft approach ramps — feather the deck-end delta into the RAW input
-        // outside each pinned run, so the filter's output CLIMBS to the deck instead of stopping half-way
-        // (doc 16 §3b abutment step). The approaches stay un-held: the filter blends the ramp with the real
-        // road context, so estimate errors smooth out instead of being stamped (the render-#5 crumple).
-        if (hasPins && parameters?.BridgeRules?.EnableSparseDeckConstraints == true)
+        // outside each pinned/soft run, so the filter's output CLIMBS to the deck instead of stopping
+        // half-way (doc 16 §3b abutment step) — soft runs included (2026-07-13), so the climb is the
+        // engineered class-grade ramp, not the filter window's smear of the deck-edge step. The approaches
+        // stay un-held: the filter blends the ramp with the real road context, so estimate errors smooth
+        // out instead of being stamped (the render-#5 crumple).
+        if ((hasPins || hasSoft) && parameters?.BridgeRules?.EnableSparseDeckConstraints == true)
             FeatherRawApproachRamps(chainCrossSections, rawElevations, crossSectionSpacing);
 
         // Step 2: Apply smoothing filter on the full chain
@@ -776,11 +778,12 @@ public class OptimizedElevationSmoother : IHeightCalculator
 
         // Amendment 03 v3: re-shape the soft spans each iteration — the chord re-anchors on the PREVIOUS
         // iteration's solved approaches, so the deck converges flush while the humps keep the clearance.
-        ApplySoftShapingToRaw(chainCrossSections, rawElevations);
+        var hasSoft = ApplySoftShapingToRaw(chainCrossSections, rawElevations);
 
-        // Amendment 03 v2: re-feather the soft approach ramps each iteration. The raw base here is the
-        // PREVIOUS iteration's solved profile, so the ramp converges onto the real approach — flush seams.
-        if (hasPins && parameters?.BridgeRules?.EnableSparseDeckConstraints == true)
+        // Amendment 03 v2: re-feather the soft approach ramps each iteration (soft runs included,
+        // 2026-07-13). The raw base here is the PREVIOUS iteration's solved profile, so the ramp
+        // converges onto the real approach — flush seams.
+        if ((hasPins || hasSoft) && parameters?.BridgeRules?.EnableSparseDeckConstraints == true)
             FeatherRawApproachRamps(chainCrossSections, rawElevations, crossSectionSpacing);
 
         // Apply smoothing filter on the full chain
@@ -829,10 +832,11 @@ public class OptimizedElevationSmoother : IHeightCalculator
     /// hump that reaches the span end keeps its full value (the ramp then spills into the approach via
     /// the filter window — the climb the deck needs). Iterations re-anchor and converge.
     /// </summary>
-    internal static void ApplySoftShapingToRaw(List<UnifiedCrossSection> cs, float[] raw)
+    internal static bool ApplySoftShapingToRaw(List<UnifiedCrossSection> cs, float[] raw)
     {
         var n = cs.Count;
         var i = 0;
+        var any = false;
         while (i < n)
         {
             if (cs[i].SoftDeckRiseMeters is null)
@@ -841,6 +845,7 @@ public class OptimizedElevationSmoother : IHeightCalculator
                 continue;
             }
 
+            any = true;
             var runStart = i;
             while (i < n && cs[i].SoftDeckRiseMeters is not null) i++;
             var runEnd = i - 1;
@@ -856,6 +861,8 @@ public class OptimizedElevationSmoother : IHeightCalculator
                 raw[k] = boundaryChord + MathF.Max(0f, cs[k].SoftDeckRiseMeters!.Value);
             }
         }
+
+        return any;
     }
 
     /// <summary>Soft approach ramps: slope used to size the feather length from the deck-end delta (5 %).</summary>
@@ -866,14 +873,18 @@ public class OptimizedElevationSmoother : IHeightCalculator
     private const float ApproachRampMaxMeters = 150f;
 
     /// <summary>
-    /// Amendment 03 v2 (render #6: decks sank into under-roads): for each contiguous PINNED run in the
-    /// chain, eases the boundary delta (pin Z − raw approach) into the RAW filter input on the un-pinned
-    /// approach side, over a length sized by <see cref="ApproachRampSlope"/>. The approach sections are
-    /// NOT hard-held — the filter blends this soft ramp with the real road context, so the output climbs
-    /// to the deck end (the ramp the deck needs to arrive at clearance height) without stamping
-    /// planner-time estimates into the road (the render-#5 crumple). Stops at any other pinned section
-    /// (junction pins win) and never touches the pinned run itself. Idempotent per iteration: re-smooth
-    /// passes re-base the ramp on the previous solved profile, so it converges flush.
+    /// Amendment 03 v2 (render #6: decks sank into under-roads): for each contiguous structure run in the
+    /// chain — hard-PINNED sections or SOFT-shaped deck sections (2026-07-13: soft runs previously got no
+    /// feather at all, so their approach climb was just the filter window smearing the deck-edge step) —
+    /// eases the boundary delta (deck raw − raw approach) into the RAW filter input on the free approach
+    /// side, shaped by <see cref="ApproachRampProfile"/> (parabolic crest at the deck, constant-grade
+    /// tangent, parabolic sag at the bottom) over a length sized so the tangent runs at
+    /// <see cref="ApproachRampSlope"/>. The approach sections are NOT hard-held — the filter blends this
+    /// soft ramp with the real road context, so the output climbs to the deck end (the ramp the deck needs
+    /// to arrive at clearance height) without stamping planner-time estimates into the road (the render-#5
+    /// crumple). Stops at any other pinned/soft section (junction pins and other spans win) and never
+    /// touches the run itself. Idempotent per iteration: re-smooth passes re-base the ramp on the previous
+    /// solved profile, so it converges flush.
     /// </summary>
     internal static void FeatherRawApproachRamps(
         List<UnifiedCrossSection> cs, float[] raw, float crossSectionSpacing)
@@ -884,15 +895,15 @@ public class OptimizedElevationSmoother : IHeightCalculator
         var i = 0;
         while (i < n)
         {
-            if (cs[i].PinnedElevation is null)
+            if (!IsStructureSection(cs[i]))
             {
                 i++;
                 continue;
             }
 
-            // Contiguous pinned run [runStart, runEnd].
+            // Contiguous pinned/soft structure run [runStart, runEnd].
             var runStart = i;
-            while (i < n && cs[i].PinnedElevation is not null) i++;
+            while (i < n && IsStructureSection(cs[i])) i++;
             var runEnd = i - 1;
 
             FeatherOneSide(cs, raw, spacing, boundary: runStart, dir: -1);
@@ -900,33 +911,58 @@ public class OptimizedElevationSmoother : IHeightCalculator
         }
     }
 
+    /// <summary>A section whose raw input is authored by a structure (hard deck/dip pin or soft deck shaping).</summary>
+    private static bool IsStructureSection(UnifiedCrossSection cs) =>
+        cs.PinnedElevation is not null || cs.SoftDeckRiseMeters is not null;
+
     private static void FeatherOneSide(
         List<UnifiedCrossSection> cs, float[] raw, float spacing, int boundary, int dir)
     {
         var n = cs.Count;
         var neighbor = boundary + dir;
-        if (neighbor < 0 || neighbor >= n || cs[neighbor].PinnedElevation is not null)
-            return; // chain end, or an adjacent pinned run (junction/other span) — nothing to feather
+        if (neighbor < 0 || neighbor >= n || IsStructureSection(cs[neighbor]))
+            return; // chain end, or an adjacent structure run (junction/other span) — nothing to feather
 
         var delta = raw[boundary] - raw[neighbor];
         if (MathF.Abs(delta) <= 0.05f)
             return; // already flush
 
-        var rampMeters = Math.Clamp(MathF.Abs(delta) / ApproachRampSlope,
+        var rampMeters = Math.Clamp(ApproachRampProfile.LengthFor(delta, ApproachRampSlope),
             ApproachRampMinMeters, ApproachRampMaxMeters);
         var rampSamples = Math.Max(2, (int)(rampMeters / spacing));
 
+        // 2026-07-14 (junction-aware feather): a PINNED junction inside the run is an agreement point the
+        // blender will enforce after the filter regardless of what we author here. Anchor the ramp to the
+        // NEAREST one: descend from the deck-edge delta to the junction's own lift (its pinned Z − raw)
+        // over the distance to the junction, and stop — beyond it the junction machinery owns the profile.
+        // Feathering past it on our free class-grade run loses the argument post-blend and notches the
+        // road right before the abutment (winningen splines 8/15/21/42/66, ±35 % arrival grades).
+        var endSamples = rampSamples;
+        var endDelta = 0f; // free run: ease all the way back to the natural raw
         for (var k = 1; k <= rampSamples; k++)
+        {
+            var idx = boundary + dir * k;
+            if (idx < 0 || idx >= n || IsStructureSection(cs[idx]))
+                break;
+            if (cs[idx].JunctionPinnedElevation is { } junctionZ)
+            {
+                endSamples = k;
+                endDelta = junctionZ - raw[idx];
+                break;
+            }
+        }
+
+        for (var k = 1; k <= endSamples; k++)
         {
             var idx = boundary + dir * k;
             if (idx < 0 || idx >= n)
                 break;
-            if (cs[idx].PinnedElevation is not null)
-                break; // junction pin (or next span) — its hard-hold wins; stop the ramp here
+            if (IsStructureSection(cs[idx]))
+                break; // junction pin or the next span — its own authoring wins; stop the ramp here
 
-            var u = (float)k / rampSamples; // 0 at the abutment → 1 at the ramp end
-            var w = (1f - u) * (1f - u) * (1f + 2f * u); // smooth, zero slope at both ends
-            raw[idx] += delta * w;
+            var u = (float)k / endSamples; // 0 at the abutment → 1 at the ramp/anchor end
+            var w = ApproachRampProfile.Weight(u); // crest VC → constant-grade tangent → sag VC
+            raw[idx] += endDelta + (delta - endDelta) * w;
         }
     }
 

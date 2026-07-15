@@ -89,6 +89,17 @@ public class UnifiedCrossSection
     public float? SoftDeckRiseMeters { get; set; }
 
     /// <summary>
+    ///     2026-07-14 (junction-aware approach feather): the final agreement Z of a PINNED junction whose
+    ///     corridor contributor is this cross-section, stamped by the doc-05 §4.2 junction-raise pass
+    ///     (<c>UnifiedRoadSmoother.RaiseJunctionsAlongApproachRamps</c>). The smoother's raw approach-ramp
+    ///     feather (<c>OptimizedElevationSmoother.FeatherRawApproachRamps</c>) anchors its descent to this
+    ///     value: the ramp runs deck edge → junction line and stops, so the profile the filter builds is
+    ///     the SAME line the junction blender later enforces — no post-blend notch at near-abutment
+    ///     junctions. Null ⇒ no pinned junction here, the feather uses its free class-grade run.
+    /// </summary>
+    public float? JunctionPinnedElevation { get; set; }
+
+    /// <summary>
     ///     Stable id of the bridge/tunnel span this cross-section belongs to, or −1 if none. Set alongside
     ///     <see cref="IsExcluded" /> when a merged corridor's structure sub-range is marked (plan doc 11,
     ///     Phase 3). Derived from the span's sorted OSM way-id set so it is reproducible across runs. Lets

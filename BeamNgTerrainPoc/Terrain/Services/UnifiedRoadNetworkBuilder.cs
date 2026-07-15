@@ -122,6 +122,7 @@ public class UnifiedRoadNetworkBuilder
                         StartOsmNodeId = spline.StartOsmNodeId,
                         EndOsmNodeId = spline.EndOsmNodeId,
                         OsmWayIds = new HashSet<long>(spline.OsmWayIds),
+                        IsLaterallyMerged = spline.IsLaterallyMerged,
                     };
 
                     // Resolve layerset for width profile
@@ -349,8 +350,13 @@ public class UnifiedRoadNetworkBuilder
 
         var segments = new List<WidthSegment>();
 
-        // When per-segment width is disabled, use layerset defaults as a single uniform segment
-        if (layerSet.EnablePerSegmentWidth && spline.LaneSegments is { Count: > 0 })
+        // When per-segment width is disabled, use layerset defaults as a single uniform segment.
+        // EXCEPT for laterally merged corridors: they carry BOTH carriageways, so the layerset's
+        // constant default (DefaultLaneCount × DefaultLaneWidth) describes ONE carriageway and
+        // would paint e.g. 4 lanes of markings into a 2-lane surface — width must follow the
+        // merged per-station lane counts.
+        if ((layerSet.EnablePerSegmentWidth || spline.IsLaterallyMerged) &&
+            spline.LaneSegments is { Count: > 0 })
         {
             foreach (var ls in spline.LaneSegments)
             {

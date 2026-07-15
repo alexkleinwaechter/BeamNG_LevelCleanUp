@@ -371,6 +371,12 @@ public class TerrainAnalysisOrchestrator
                 var minPathLengthMeters = mat.MinPathLengthPixels * state.MetersPerPixel;
                 var interpolationType = mat.SplineInterpolationType;
 
+                // Must mirror TerrainGenerationOrchestrator: without the same lateral
+                // dual-carriageway merge, analysis and generation produce different networks.
+                var lateralMergeRoadTypes = TerrainGenerationOrchestrator.BuildLateralMergeRoadTypes(
+                    lineFeatures, mat.InternalName, state.DecalRoadSettings,
+                    Utils.DecalRoadDefaultsManager.Load());
+
                 var splines = processor.ConvertLinesToSplines(
                     lineFeatures,
                     effectiveBoundingBox,
@@ -381,7 +387,8 @@ public class TerrainAnalysisOrchestrator
                     disableSplineMerging: state.DisableSplineMerging,
                     mergeStructuresIntoCorridor: state.MergeStructuresIntoCorridor,
                     reprojectStructureStations: state.BridgeRules.EnableBridgeStationReprojection,
-                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation);
+                    consolidateContiguousSpans: state.BridgeRules.EnableContiguousSpanConsolidation,
+                    lateralMergeRoadTypes: lateralMergeRoadTypes);
 
                 roadParams = mat.BuildRoadSmoothingParameters(debugPath, state.TerrainBaseHeight,
                     state.ExcludeBridgesFromTerrain, state.ExcludeTunnelsFromTerrain,

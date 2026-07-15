@@ -101,11 +101,12 @@ public class BridgeJunctionRoomWideningTests
     [Fact]
     public void JunctionInsideRampRun_RePinnedUpToRampLine()
     {
-        // Deck end 14.7, natural 10 → delta 4.7, ramp 94 m. Junction 20 m past the abutment: ramp line
-        // there = 10 + 4.7·w(20/94) ≈ 14.15 — the junction agreement moves UP, IsPinned makes it stick.
+        // Deck end 14.7, natural 10 → delta 4.7, ramp LengthFor(4.7, 5 %) ≈ 125 m. Junction 20 m past the
+        // abutment sits on the crest curve: ramp line there = 10 + 4.7·w(20/125.3) ≈ 14.38 — the junction
+        // agreement moves UP, IsPinned makes it stick.
         var (network, corridor, span) = BuildCorridor();
         var inside = AddJunction(network, corridor, station: 220f, id: 1);
-        var beyond = AddJunction(network, corridor, station: 320f, id: 2); // 120 m out — past the 94 m run
+        var beyond = AddJunction(network, corridor, station: 340f, id: 2); // 140 m out — past the 125 m run
 
         var (count, raised) = UnifiedRoadSmoother.RaiseJunctionsAlongApproachRamps(
             network, RaisedPlan(network, corridor, span, 14.7f), null, FlatMap, 1f);
@@ -113,9 +114,16 @@ public class BridgeJunctionRoomWideningTests
         Assert.Equal(1, count);
         Assert.True(inside.IsPinned);
         Assert.Contains(inside, raised);
-        Assert.Equal(14.15f, inside.HarmonizedElevation, 0.1f);
+        Assert.Equal(14.38f, inside.HarmonizedElevation, 0.1f);
         Assert.False(beyond.IsPinned);
         Assert.True(float.IsNaN(beyond.HarmonizedElevation));
+
+        // 2026-07-14: the agreement Z is stamped on the corridor section so the smoother's approach
+        // feather anchors to the SAME line the blender enforces (no post-blend notch).
+        var insideCs = inside.Contributors.Single().CrossSection;
+        Assert.True(insideCs.JunctionPinnedElevation.HasValue);
+        Assert.Equal(14.38f, insideCs.JunctionPinnedElevation!.Value, 0.1f);
+        Assert.Null(beyond.Contributors.Single().CrossSection.JunctionPinnedElevation);
     }
 
     [Fact]
