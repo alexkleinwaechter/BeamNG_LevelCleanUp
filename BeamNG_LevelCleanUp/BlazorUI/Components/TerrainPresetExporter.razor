@@ -67,6 +67,8 @@
     [Parameter] public int XyzEpsgCode { get; set; }
     [Parameter] public string? CachedCombinedGeoTiffPath { get; set; }
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
+    [Parameter] public bool EnableTerrainBackdrop { get; set; }
+    [Parameter] public float TerrainBackdropDistanceMeters { get; set; } = 5000f;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
     [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
     [Parameter] public bool ExcludeTunnelsFromTerrain { get; set; } = false;
@@ -465,6 +467,8 @@
                 ["metersPerPixel"] = MetersPerPixel,
                 ["terrainBaseHeight"] = TerrainBaseHeight,
                 ["updateTerrainBlock"] = UpdateTerrainBlock,
+                ["enableTerrainBackdrop"] = EnableTerrainBackdrop,
+                ["terrainBackdropDistanceMeters"] = TerrainBackdropDistanceMeters,
                 ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization,
                 ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
                 ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain,

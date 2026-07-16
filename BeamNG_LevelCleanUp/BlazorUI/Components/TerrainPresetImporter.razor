@@ -679,6 +679,10 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.TerrainSize = terrainOptions["terrainSize"]!.GetValue<int>();
                 if (terrainOptions["updateTerrainBlock"] != null)
                     result.UpdateTerrainBlock = terrainOptions["updateTerrainBlock"]!.GetValue<bool>();
+                if (terrainOptions["enableTerrainBackdrop"] != null)
+                    result.EnableTerrainBackdrop = terrainOptions["enableTerrainBackdrop"]!.GetValue<bool>();
+                if (terrainOptions["terrainBackdropDistanceMeters"] != null)
+                    result.TerrainBackdropDistanceMeters = terrainOptions["terrainBackdropDistanceMeters"]!.GetValue<float>();
                 if (terrainOptions["enableCrossMaterialHarmonization"] != null)
                     result.EnableCrossMaterialHarmonization = terrainOptions["enableCrossMaterialHarmonization"]!.GetValue<bool>();
                 // Note: globalJunctionDetectionRadiusMeters and globalJunctionBlendDistanceMeters

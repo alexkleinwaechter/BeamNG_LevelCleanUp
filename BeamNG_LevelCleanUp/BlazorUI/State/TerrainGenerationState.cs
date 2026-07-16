@@ -33,6 +33,8 @@ public class TerrainGenerationState
     public float MetersPerPixel { get; set; } = 1.0f;
     public float TerrainBaseHeight { get; set; }
     public bool UpdateTerrainBlock { get; set; } = true;
+    public bool EnableTerrainBackdrop { get; set; }
+    public float TerrainBackdropDistanceMeters { get; set; } = 5000f;
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
     public HydraulicErosionSettings HydraulicErosion { get; set; } = new();
 
@@ -389,6 +391,8 @@ public class TerrainGenerationState
         TerrainName = "theTerrain";
         TerrainBaseHeight = 0.0f;
         UpdateTerrainBlock = true;
+        EnableTerrainBackdrop = false;
+        TerrainBackdropDistanceMeters = 5000f;
         EnableCrossMaterialHarmonization = true;
         HydraulicErosion = new HydraulicErosionSettings();
         FlipMaterialProcessingOrder = false;

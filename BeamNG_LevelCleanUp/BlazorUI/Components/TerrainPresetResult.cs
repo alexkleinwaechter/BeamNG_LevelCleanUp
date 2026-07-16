@@ -91,6 +91,16 @@ public class TerrainPresetResult
     public bool? UpdateTerrainBlock { get; set; }
 
     /// <summary>
+    ///     Whether to generate a separate visual terrain backdrop around the TerrainBlock.
+    /// </summary>
+    public bool? EnableTerrainBackdrop { get; set; }
+
+    /// <summary>
+    ///     Visual backdrop distance beyond each playable terrain edge, in meters.
+    /// </summary>
+    public float? TerrainBackdropDistanceMeters { get; set; }
+
+    /// <summary>
     ///     Whether to enable cross-material harmonization for road smoothing.
     /// </summary>
     public bool? EnableCrossMaterialHarmonization { get; set; }

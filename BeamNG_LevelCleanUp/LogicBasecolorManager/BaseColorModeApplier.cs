@@ -4,6 +4,7 @@ using BeamNG_LevelCleanUp.LogicCopyAssets;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Objects.MtSettings;
 using BeamNG_LevelCleanUp.Utils;
+using BeamNgTerrainPoc.Terrain.Export;
 using Grille.BeamNG.IO.Binary;
 
 namespace BeamNG_LevelCleanUp.LogicBasecolorManager;
@@ -28,7 +29,21 @@ public class BaseColorModeApplier
     {
         var terrainFolder = Path.GetDirectoryName(materialsJsonPath) ?? Path.Join(levelPath, "art", "terrains");
         var terrainSize = checked((int)terrain.Size);
-        var maps = _mapBuilder.BuildMaps(terrain, materials, terrainFolder, generateHeight, normalStrength, aoRadius, aoIntensity, overlayOptions, borderBlendOptions);
+        var backdropDirectory = Path.Combine(levelPath, "art", "shapes", TerrainBackdropExporter.GroupName);
+        var backdropTexturePath = Directory.Exists(backdropDirectory)
+            ? Path.Combine(backdropDirectory, TerrainBackdropExporter.BaseColorFileName)
+            : null;
+        var maps = _mapBuilder.BuildMaps(
+            terrain,
+            materials,
+            terrainFolder,
+            generateHeight,
+            normalStrength,
+            aoRadius,
+            aoIntensity,
+            overlayOptions,
+            borderBlendOptions,
+            backdropTexturePath);
         var jsonNode = JsonUtils.GetValidJsonNodeFromFilePath(materialsJsonPath);
 
         foreach (var property in jsonNode.AsObject().ToList())
@@ -46,6 +61,10 @@ public class BaseColorModeApplier
         File.WriteAllText(materialsJsonPath, jsonNode.ToJsonString(BeamJsonOptions.GetJsonSerializerOptions()));
         new PbrUpgradeHandler(materialsJsonPath, levelName, levelPath).EnsureTerrainMaterialTextureSetSize(terrainSize);
         DeletePaintModePlaceholders(terrainFolder);
+
+        if (backdropTexturePath != null && File.Exists(backdropTexturePath))
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Updated the visual terrain backdrop with a {TerrainBackdropExporter.MaximumTextureSize}px BaseColor texture.");
 
         settings.CurrentMode = BasecolorMode.BaseColorMode;
         settings.BasecolorModeSettings.Materials = materials.Select(MtTerrainMaterialSetting.FromCopyAsset).ToList();

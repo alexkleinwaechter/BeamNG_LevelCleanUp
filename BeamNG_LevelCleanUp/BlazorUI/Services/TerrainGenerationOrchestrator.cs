@@ -13,6 +13,7 @@ using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Building;
+using BeamNgTerrainPoc.Terrain.Export;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
 using BeamNgTerrainPoc.Terrain.Osm.Services;
 using BeamNG_LevelCleanUp.Utils;
@@ -269,6 +270,41 @@ public class TerrainGenerationOrchestrator
             else
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     "Could not update TerrainBlock - check warnings");
+
+            if (state.EnableTerrainBackdrop)
+            {
+                taskStopwatch.Restart();
+                if (terrainParameters?.OutputHeightMap == null)
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        "Terrain backdrop was not generated because the finished heightmap was unavailable.");
+                }
+                else
+                {
+                    try
+                    {
+                        var distanceMeters = Math.Clamp(state.TerrainBackdropDistanceMeters, 250f, 100000f);
+                        state.TerrainBackdropDistanceMeters = distanceMeters;
+                        var backdrop = TerrainBackdropExporter.Export(
+                            terrainParameters.OutputHeightMap,
+                            state.WorkingDirectory,
+                            state.LevelName,
+                            state.TerrainSize,
+                            state.MetersPerPixel,
+                            state.TerrainBaseHeight,
+                            distanceMeters);
+                        PubSubChannel.SendMessage(PubSubMessageType.Info,
+                            $"Generated {distanceMeters / 1000f:F2} km visual terrain backdrop " +
+                            $"({backdrop.VertexCount:N0} vertices, no collision).");
+                        Console.WriteLine($"[Perf] TerrainBackdropExporter: {taskStopwatch.ElapsedMilliseconds}ms");
+                    }
+                    catch (Exception ex)
+                    {
+                        PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                            $"Terrain backdrop generation failed; playable terrain is unchanged: {ex.Message}");
+                    }
+                }
+            }
 
             // Handle spawn points
             taskStopwatch.Restart();

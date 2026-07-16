@@ -106,6 +106,8 @@
                                        XyzEpsgCode="@_xyzEpsgCode"
                                        CachedCombinedGeoTiffPath="@_cachedCombinedGeoTiffPath"
                                        UpdateTerrainBlock="@_updateTerrainBlock"
+                                       EnableTerrainBackdrop="@_state.EnableTerrainBackdrop"
+                                       TerrainBackdropDistanceMeters="@_state.TerrainBackdropDistanceMeters"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
                                        ExcludeBridgesFromTerrain="@_excludeBridgesFromTerrain"
                                        ExcludeTunnelsFromTerrain="@_excludeTunnelsFromTerrain"
@@ -480,6 +482,37 @@
                                              Variant="Variant.Outlined"
                                              Min="-10000.0f" Max="10000.0f" Step="1.0f"
                                              HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Auto-calculated from GeoTIFF min elevation" : "Z position offset for terrain")" />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Landscape" Size="Size.Small" Class="mr-1" />
+                                Visual Surrounding Background
+                            </MudText>
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudCheckBox @bind-Value="_state.EnableTerrainBackdrop"
+                                         Label="Generate terrain backdrop"
+                                         Color="Color.Primary" />
+                        </MudItem>
+
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudNumericField T="float"
+                                             @bind-Value="_state.TerrainBackdropDistanceMeters"
+                                             Label="Backdrop Distance (m)"
+                                             Variant="Variant.Outlined"
+                                             Min="250f" Max="100000f" Step="250f"
+                                             Disabled="@(!_state.EnableTerrainBackdrop)"
+                                             HelperText="Distance beyond each playable-terrain edge" />
+                        </MudItem>
+
+                        <MudItem xs="12" md="5">
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                Creates a separate, non-colliding TSStatic ring. It edge-extends the finished elevation and stretches a
+                                2048px copy of MT_basecolor.png; LevelCleanUp does not paint or overwrite it as playable terrain.
+                            </MudAlert>
                         </MudItem>
 
                         @* Hydraulic Erosion *@

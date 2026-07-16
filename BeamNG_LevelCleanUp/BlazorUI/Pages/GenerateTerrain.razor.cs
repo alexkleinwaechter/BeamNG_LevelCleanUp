@@ -2056,6 +2056,11 @@ public partial class GenerateTerrain : IDisposable
             if (result.UpdateTerrainBlock.HasValue)
                 _updateTerrainBlock = result.UpdateTerrainBlock.Value;
 
+            if (result.EnableTerrainBackdrop.HasValue)
+                _state.EnableTerrainBackdrop = result.EnableTerrainBackdrop.Value;
+            if (result.TerrainBackdropDistanceMeters.HasValue)
+                _state.TerrainBackdropDistanceMeters = result.TerrainBackdropDistanceMeters.Value;
+
             if (result.EnableCrossMaterialHarmonization.HasValue)
                 _enableCrossMaterialHarmonization = result.EnableCrossMaterialHarmonization.Value;
 

@@ -1,5 +1,6 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
+using BeamNgTerrainPoc.Terrain.Export;
 using Grille.BeamNG.IO.Binary;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -22,7 +23,8 @@ public class TerrainPbrMapBuilder
         int aoRadius,
         double aoIntensity,
         BasecolorOverlayOptions? overlayOptions = null,
-        MaterialBorderBlendOptions? borderBlendOptions = null)
+        MaterialBorderBlendOptions? borderBlendOptions = null,
+        string? backdropTexturePath = null)
     {
         Directory.CreateDirectory(terrainFolder);
 
@@ -34,7 +36,14 @@ public class TerrainPbrMapBuilder
         var roughnessPath = Path.Join(terrainFolder, "MT_basecolor_r.png");
         var heightPath = Path.Join(terrainFolder, "MT_basecolor_h.png");
 
-        WriteMergedBaseColor(terrain, materialLookup, baseColorPath, size, overlayOptions, borderBlendOptions);
+        WriteMergedBaseColor(
+            terrain,
+            materialLookup,
+            baseColorPath,
+            size,
+            overlayOptions,
+            borderBlendOptions,
+            backdropTexturePath);
         WriteNormal(terrain, normalPath, size, normalStrength);
         WriteAo(terrain, aoPath, size, Math.Max(1, aoRadius), aoIntensity);
         WriteRoughness(terrain, materialLookup, roughnessPath, size, overlayOptions, borderBlendOptions);
@@ -112,7 +121,8 @@ public class TerrainPbrMapBuilder
         string path,
         int size,
         BasecolorOverlayOptions? overlayOptions,
-        MaterialBorderBlendOptions? borderBlendOptions)
+        MaterialBorderBlendOptions? borderBlendOptions,
+        string? backdropTexturePath)
     {
         using var overlay = LoadOverlayImage(overlayOptions, size);
         using var maskSet = LoadMaskSet(overlayOptions, size);
@@ -131,6 +141,18 @@ public class TerrainPbrMapBuilder
         ApplyMaterialBorderBlend(image, 1, borderBlendOptions);
 
         OverwritePng(image, path);
+        if (!string.IsNullOrWhiteSpace(backdropTexturePath))
+        {
+            using var backdrop = image.Clone(context => context.Resize(new ResizeOptions
+            {
+                Mode = ResizeMode.Max,
+                Size = new SixLabors.ImageSharp.Size(
+                    TerrainBackdropExporter.MaximumTextureSize,
+                    TerrainBackdropExporter.MaximumTextureSize),
+                Sampler = KnownResamplers.Lanczos3
+            }));
+            OverwritePng(backdrop, backdropTexturePath);
+        }
     }
 
     private static void WriteRoughness(
