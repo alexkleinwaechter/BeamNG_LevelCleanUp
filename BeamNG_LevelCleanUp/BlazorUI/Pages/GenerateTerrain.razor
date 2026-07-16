@@ -104,6 +104,8 @@
                                        XyzPath="@_state.XyzPath"
                                        XyzFilePaths="@_state.XyzFilePaths"
                                        XyzEpsgCode="@_xyzEpsgCode"
+                                       LidarFilePaths="@_state.LidarFilePaths"
+                                       LidarEpsgCode="@_state.LidarEpsgCode"
                                        CachedCombinedGeoTiffPath="@_cachedCombinedGeoTiffPath"
                                        UpdateTerrainBlock="@_updateTerrainBlock"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
@@ -179,7 +181,7 @@
                                         <strong>Select Folder:</strong> Import all elevation tiles from a directory.
                                     </MudText>
                                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                                        Supported formats: GeoTIFF (.tif, .tiff), XYZ ASCII (.xyz, .txt), PNG heightmap (.png), ZIP archive (.zip)
+                                        Supported formats: GeoTIFF, XYZ ASCII, classified LAS/LAZ point clouds, PNG heightmap, ZIP archive
                                     </MudText>
                                 </MudPaper>
                             }
@@ -259,6 +261,38 @@
                                             }
                                         </div>
                                     }
+                                    @if (_elevationImportResult.SourceType == ElevationSourceType.LidarPointCloud)
+                                    {
+                                        <MudDivider Class="my-3" />
+                                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                                            Only ASPRS <strong>classification 2 (bare-earth ground)</strong> is used.
+                                            Empty cells are interpolated; choosing cells finer than the measured point spacing does not create new detail.
+                                            The original LAS/LAZ files are read locally and are never modified.
+                                        </MudAlert>
+                                        <MudSelect T="float"
+                                                   Value="@_metersPerPixel"
+                                                   ValueChanged="OnLidarResolutionChanged"
+                                                   Label="Ground DTM Cell Size"
+                                                   Variant="Variant.Outlined"
+                                                   HelperText="Also becomes BeamNG terrain squareSize"
+                                                   Style="max-width: 280px;">
+                                            <MudSelectItem Value="0.25f">0.25 m (only for very dense QL0/QL1)</MudSelectItem>
+                                            <MudSelectItem Value="0.5f">0.5 m (high-detail)</MudSelectItem>
+                                            <MudSelectItem Value="1.0f">1.0 m (QL2 / larger coverage)</MudSelectItem>
+                                            <MudSelectItem Value="2.0f">2.0 m (very large coverage)</MudSelectItem>
+                                        </MudSelect>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                            @GetLidarCoverageDescription()
+                                        </MudText>
+                                        <MudButton Href="https://apps.nationalmap.gov/lidar-explorer/"
+                                                   Target="_blank"
+                                                   Variant="Variant.Text"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.OpenInNew"
+                                                   Class="mt-2">
+                                            Find USGS 3DEP LAS/LAZ Tiles
+                                        </MudButton>
+                                    }
                                 </MudPaper>
                             }
                         </MudItem>
@@ -285,7 +319,7 @@
                                     @if (_geoTiffMinElevation.HasValue && _geoTiffMaxElevation.HasValue)
                                     {
                                         <MudText Typo="Typo.body2">
-                                            <strong>Elevation:</strong> @_geoTiffMinElevation.Value.ToString("F1")m - @_geoTiffMaxElevation.Value.ToString("F1")m
+                                            <strong>@(_heightmapSourceType == HeightmapSourceType.LidarPointCloud ? "Header Elevation (all classes):" : "Elevation:")</strong> @_geoTiffMinElevation.Value.ToString("F1")m - @_geoTiffMaxElevation.Value.ToString("F1")m
                                             (range: @((_geoTiffMaxElevation.Value - _geoTiffMinElevation.Value).ToString("F1"))m)
                                         </MudText>
                                     }
@@ -391,7 +425,7 @@
                         {
                             <MudItem xs="12">
                                 <CropAnchorSelector @ref="_cropAnchorSelector"
-                                                    Title="GeoTIFF Selection Region"
+                                                    Title="@(_heightmapSourceType == HeightmapSourceType.LidarPointCloud ? "LAS/LAZ DTM Selection Region" : "GeoTIFF Selection Region")"
                                                     OriginalWidth="@_geoTiffOriginalWidth"
                                                     OriginalHeight="@_geoTiffOriginalHeight"
                                                     TargetSize="@_terrainSize"
@@ -403,7 +437,8 @@
                                                     SelectedAnchorChanged="OnCropAnchorChanged"
                                                     OriginalBoundingBox="@_geoBoundingBox"
                                                     CropResultChanged="OnCropResultChanged" />
-                                @if (_cropResult is { NeedsCropping: true })
+                                @if (_cropResult is { NeedsCropping: true } &&
+                                     _heightmapSourceType != HeightmapSourceType.LidarPointCloud)
                                 {
                                     <div class="d-flex align-center gap-2 mt-2">
                                         <MudButton Variant="Variant.Outlined"
@@ -453,13 +488,13 @@
                                              Label="Max Height (m)"
                                              Variant="Variant.Outlined"
                                              Min="0.0f" Max="10000.0f" Step="10.0f"
-                                             HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Set to 0 to auto-calculate from GeoTIFF" : "Maximum terrain elevation")" />
+                                             HelperText="@(_heightmapSourceType == HeightmapSourceType.LidarPointCloud ? "0 = calculate from ground-class points" : _heightmapSourceType != HeightmapSourceType.Png ? "Set to 0 to auto-calculate from elevation data" : "Maximum terrain elevation")" />
                         </MudItem>
 
                         <!-- Meters Per Pixel -->
                         <MudItem xs="12" sm="6" md="3">
                             <MudNumericField @bind-Value="_metersPerPixel"
-                                             Label="Meters Per Pixel"
+                                             Label="@(_heightmapSourceType == HeightmapSourceType.LidarPointCloud ? "DTM / Terrain Cell Size (m)" : "Meters Per Pixel")"
                                              Variant="Variant.Outlined"
                                              Min="0.1f" Max="100.0f" Step="0.1f"
                                              HelperText="@GetMetersPerPixelHelperText()" />
@@ -479,7 +514,7 @@
                                              Label="Base Height (m)"
                                              Variant="Variant.Outlined"
                                              Min="-10000.0f" Max="10000.0f" Step="1.0f"
-                                             HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Auto-calculated from GeoTIFF min elevation" : "Z position offset for terrain")" />
+                                             HelperText="@(_heightmapSourceType == HeightmapSourceType.LidarPointCloud ? "Calculated from class-2 ground points" : _heightmapSourceType != HeightmapSourceType.Png ? "Auto-calculated from elevation data minimum" : "Z position offset for terrain")" />
                         </MudItem>
 
                         @* Hydraulic Erosion *@

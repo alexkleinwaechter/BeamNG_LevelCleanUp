@@ -122,6 +122,34 @@ public class TerrainCreationParameters
     public int XyzEpsgCode { get; set; } = 25832;
 
     /// <summary>
+    ///     Paths to classified LAS/LAZ point-cloud tiles. Only points matching
+    ///     <see cref="LidarGroundClassification"/> are rasterized into the DTM.
+    /// </summary>
+    public string[]? LidarFilePaths { get; set; }
+
+    /// <summary>
+    ///     EPSG code for the LAS/LAZ horizontal coordinate reference system.
+    ///     LAS/LAZ files do not always carry readable CRS metadata, so the UI lets the user correct it.
+    /// </summary>
+    public int LidarEpsgCode { get; set; }
+
+    /// <summary>
+    ///     ASPRS classification to rasterize. Class 2 is bare-earth ground.
+    /// </summary>
+    public byte LidarGroundClassification { get; set; } = 2;
+
+    /// <summary>
+    ///     Cell size used to describe the point-cloud extent in the crop selector.
+    ///     This is independent of the final terrain square size in <see cref="MetersPerPixel"/>.
+    /// </summary>
+    public float LidarMetadataCellSizeMeters { get; set; } = 0.5f;
+
+    /// <summary>
+    ///     When true, saves the ground-only 16-bit DTM PNG alongside terrain-generation diagnostics.
+    /// </summary>
+    public bool ExportLidarDtmHeightmap { get; set; } = true;
+
+    /// <summary>
     ///     Geographic bounding box of the terrain.
     ///     Automatically populated when importing from GeoTIFF.
     ///     Can be used for OSM Overpass API queries to fetch roads, buildings, etc.

@@ -1,6 +1,7 @@
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Lidar;
 using OSGeo.GDAL;
 using OSGeo.OSR;
 
@@ -608,6 +609,44 @@ public class GeoTiffMetadataService
             $"GeoTIFF: {info.Width}x{info.Height}px, terrain size will be {suggestedTerrainSize}");
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Projection: {info.ProjectionName}");
+    }
+
+    /// <summary>
+    ///     Reads LAS/LAZ header metadata without decompressing the full point cloud.
+    ///     Elevation limits are header limits (all classes); the exact class-2 range is
+    ///     calculated while the DTM is generated.
+    /// </summary>
+    public async Task<GeoTiffMetadataResult> ReadFromLidarFilesAsync(
+        string[] filePaths,
+        int epsgCode = 0,
+        float metadataCellSizeMeters = LidarPointCloudReader.DefaultMetadataCellSizeMeters)
+    {
+        var info = await Task.Run(() =>
+            new LidarPointCloudReader().ReadInfo(filePaths, epsgCode, metadataCellSizeMeters));
+        var canFetchOsm = info.Wgs84BoundingBox?.IsValidWgs84 == true;
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"LAS/LAZ: {info.FilePaths.Length} tile(s), {info.PointCount:N0} points, " +
+            $"extent grid {info.PreviewWidth}x{info.PreviewHeight} at {metadataCellSizeMeters:F2}m");
+
+        return new GeoTiffMetadataResult
+        {
+            Wgs84BoundingBox = info.Wgs84BoundingBox,
+            NativeBoundingBox = info.NativeBoundingBox,
+            ProjectionName = info.ProjectionName,
+            ProjectionWkt = info.ProjectionWkt,
+            GeoTransform = info.GeoTransform,
+            OriginalWidth = info.PreviewWidth,
+            OriginalHeight = info.PreviewHeight,
+            MinElevation = info.HeaderMinElevationMeters,
+            MaxElevation = info.HeaderMaxElevationMeters,
+            SuggestedTerrainSize = GetNearestPowerOfTwo(Math.Max(info.PreviewWidth, info.PreviewHeight)),
+            CanFetchOsmData = canFetchOsm,
+            OsmBlockedReason = !canFetchOsm
+                ? "LAS/LAZ requires the correct projected EPSG code before OSM coordinates can be calculated"
+                : null,
+            TileBounds = info.TileBounds
+        };
     }
 
     public static int GetNearestPowerOfTwo(int value)

@@ -12,7 +12,8 @@ public enum HeightmapSourceType
     Png,
     GeoTiffFile,
     GeoTiffDirectory,
-    XyzFile
+    XyzFile,
+    LidarPointCloud
 }
 
 /// <summary>
@@ -82,6 +83,10 @@ public class TerrainPresetResult
     ///     EPSG code for XYZ coordinate system (when HeightmapSourceType is XyzFile).
     /// </summary>
     public int? XyzEpsgCode { get; set; }
+
+    public string[]? LidarFilePaths { get; set; }
+
+    public int? LidarEpsgCode { get; set; }
 
     // ========== NEW: Terrain Generation Options ==========
 

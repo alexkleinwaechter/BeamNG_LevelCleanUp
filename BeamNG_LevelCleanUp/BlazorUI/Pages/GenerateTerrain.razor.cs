@@ -995,6 +995,11 @@ public partial class GenerateTerrain : IDisposable
                 result = await _geoTiffService.ReadFromXyzFileAsync(_state.XyzFilePaths[0], _xyzEpsgCode);
             else if (!string.IsNullOrEmpty(_state.XyzPath) && File.Exists(_state.XyzPath))
                 result = await _geoTiffService.ReadFromXyzFileAsync(_state.XyzPath, _xyzEpsgCode);
+            else if (_state.LidarFilePaths is { Length: > 0 })
+                result = await _geoTiffService.ReadFromLidarFilesAsync(
+                    _state.LidarFilePaths,
+                    _state.LidarEpsgCode,
+                    _state.LidarMetadataCellSizeMeters);
 
             if (result == null) return;
 
@@ -1021,7 +1026,15 @@ public partial class GenerateTerrain : IDisposable
                     $"Keeping terrain size {_terrainSize} from terrain.json (GeoTIFF suggests {result.SuggestedTerrainSize.Value})");
 
             // Auto-populate maxHeight and terrainBaseHeight from GeoTIFF elevation data
-            if (_geoTiffMinElevation.HasValue && _geoTiffMaxElevation.HasValue)
+            if (_heightmapSourceType == HeightmapSourceType.LidarPointCloud)
+            {
+                // Header limits include vegetation/buildings. The exact class-2 range is calculated
+                // during DTM generation and then becomes MaxHeight/TerrainBaseHeight.
+                _maxHeight = 0;
+                if (_geoTiffMinElevation.HasValue)
+                    _terrainBaseHeight = (float)_geoTiffMinElevation.Value;
+            }
+            else if (_geoTiffMinElevation.HasValue && _geoTiffMaxElevation.HasValue)
             {
                 var elevationRange = _geoTiffMaxElevation.Value - _geoTiffMinElevation.Value;
                 _maxHeight = (float)elevationRange;
@@ -1038,7 +1051,12 @@ public partial class GenerateTerrain : IDisposable
             // Log scale information
             LogScaleInformation(result);
 
-            var formatLabel = _heightmapSourceType == HeightmapSourceType.XyzFile ? "XYZ" : "GeoTIFF";
+            var formatLabel = _heightmapSourceType switch
+            {
+                HeightmapSourceType.XyzFile => "XYZ",
+                HeightmapSourceType.LidarPointCloud => "LAS/LAZ",
+                _ => "GeoTIFF"
+            };
             finalMessage = $"{formatLabel} loaded: {result.OriginalWidth}×{result.OriginalHeight}px, " +
                            $"elevation {_geoTiffMinElevation:F0}m – {_geoTiffMaxElevation:F0}m";
             finalSeverity = Severity.Success;
@@ -1141,7 +1159,7 @@ public partial class GenerateTerrain : IDisposable
 
     /// <summary>
     ///     Opens a file dialog to select elevation data files, then imports them.
-    ///     Supports GeoTIFF (.tif, .tiff), XYZ ASCII (.xyz, .txt), PNG (.png), and ZIP (.zip).
+    ///     Supports GeoTIFF, XYZ ASCII, classified LAS/LAZ, PNG, and ZIP.
     /// </summary>
     private async Task ImportElevationFiles()
     {
@@ -1150,9 +1168,10 @@ public partial class GenerateTerrain : IDisposable
         {
             using var dialog = new OpenFileDialog();
             dialog.Filter =
-                "Elevation Files (*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.png;*.zip)|*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.png;*.zip|" +
+                "Elevation Files (*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.las;*.laz;*.png;*.zip)|*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.las;*.laz;*.png;*.zip|" +
                 "GeoTIFF (*.tif;*.tiff;*.geotiff)|*.tif;*.tiff;*.geotiff|" +
                 "XYZ ASCII (*.xyz;*.txt)|*.xyz;*.txt|" +
+                "Classified Point Cloud (*.las;*.laz)|*.las;*.laz|" +
                 "PNG Heightmap (*.png)|*.png|" +
                 "ZIP Archive (*.zip)|*.zip|" +
                 "All Files (*.*)|*.*";
@@ -1256,6 +1275,8 @@ public partial class GenerateTerrain : IDisposable
         _geoTiffPath = null;
         _geoTiffDirectory = null;
         _state.XyzPath = null;
+        _state.XyzFilePaths = null;
+        _state.LidarFilePaths = null;
 
         // Set source type and paths based on detected format
         switch (result.SourceType)
@@ -1290,6 +1311,15 @@ public partial class GenerateTerrain : IDisposable
                 _xyzEpsgCode = result.EpsgCode;
                 _state.XyzDetectedEpsg = result.DetectedEpsgCode;
                 break;
+
+            case ElevationSourceType.LidarPointCloud:
+                _heightmapSourceType = HeightmapSourceType.LidarPointCloud;
+                _state.LidarFilePaths = result.ResolvedLidarFilePaths;
+                _state.LidarEpsgCode = result.EpsgCode;
+                _xyzEpsgCode = result.EpsgCode;
+                _state.XyzDetectedEpsg = result.DetectedEpsgCode;
+                _metersPerPixel = _state.LidarMetadataCellSizeMeters;
+                break;
         }
 
         // Apply metadata if available
@@ -1310,6 +1340,9 @@ public partial class GenerateTerrain : IDisposable
             ElevationSourceType.GeoTiffMultiple => $"GeoTIFF tiles loaded: {result.FileCount} files",
             ElevationSourceType.XyzFile => $"XYZ file loaded: {result.FileNames[0]} (EPSG:{result.EpsgCode})",
             ElevationSourceType.XyzMultiple => $"XYZ tiles loaded: {result.FileCount} files (EPSG:{result.EpsgCode})",
+            ElevationSourceType.LidarPointCloud => result.EpsgCode > 0
+                ? $"Classified LAS/LAZ loaded: {result.FileCount} file(s) (EPSG:{result.EpsgCode})"
+                : $"Classified LAS/LAZ loaded: {result.FileCount} file(s); enter the projected EPSG code",
             _ => "Elevation data loaded"
         };
         Snackbar.Add(message, Severity.Success);
@@ -1332,6 +1365,7 @@ public partial class GenerateTerrain : IDisposable
         _canFetchOsmData = metadata.CanFetchOsmData;
         _osmBlockedReason = metadata.OsmBlockedReason;
         _geoTiffValidationResult = metadata.ValidationResult;
+        _tileBoundsInfo = metadata.TileBounds;
     }
 
     /// <summary>
@@ -1348,6 +1382,8 @@ public partial class GenerateTerrain : IDisposable
         _geoTiffDirectory = null;
         _state.XyzPath = null;
         _state.XyzFilePaths = null;
+        _state.LidarFilePaths = null;
+        _state.LidarEpsgCode = 0;
 
         // Clear geo metadata
         ClearGeoMetadata();
@@ -1378,6 +1414,8 @@ public partial class GenerateTerrain : IDisposable
         {
             // Update the import result's EPSG code
             _elevationImportResult.EpsgCode = _xyzEpsgCode;
+            if (_elevationImportResult.SourceType == ElevationSourceType.LidarPointCloud)
+                _state.LidarEpsgCode = _xyzEpsgCode;
 
             // Re-read metadata with new EPSG
             var updatedResult =
@@ -1434,6 +1472,8 @@ public partial class GenerateTerrain : IDisposable
             25833 => "ETRS89 / UTM zone 33N (Eastern Germany)",
             32632 => "WGS 84 / UTM zone 32N",
             32633 => "WGS 84 / UTM zone 33N",
+            26913 => "NAD83 / UTM zone 13N (Wyoming)",
+            6342 => "NAD83(2011) / UTM zone 13N (Wyoming)",
             _ => $"EPSG:{_xyzEpsgCode}"
         };
     }
@@ -1448,6 +1488,20 @@ public partial class GenerateTerrain : IDisposable
     {
         _metersPerPixel = newMpp;
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnLidarResolutionChanged(float newMpp)
+    {
+        _metersPerPixel = newMpp;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetLidarCoverageDescription()
+    {
+        var coverageKm = _terrainSize * _metersPerPixel / 1000f;
+        return $"{_terrainSize:N0} × {_terrainSize:N0} at {_metersPerPixel:0.##} m covers " +
+               $"{coverageKm:0.###} km × {coverageKm:0.###} km. " +
+               "For a 16.384 km single terrain, use 16,384 at 1.0 m.";
     }
 
     private async Task OnCropAnchorChanged(CropAnchor newAnchor)
@@ -1470,7 +1524,15 @@ public partial class GenerateTerrain : IDisposable
             // CRITICAL: Recalculate elevation range for the cropped region
             // The maxHeight and baseHeight must reflect the cropped area, not the full image
             // This will call StateHasChanged internally when done
-            await RecalculateCroppedElevation(result);
+            if (_heightmapSourceType != HeightmapSourceType.LidarPointCloud)
+                await RecalculateCroppedElevation(result);
+        }
+        else if (!result.NeedsCropping && _heightmapSourceType == HeightmapSourceType.LidarPointCloud)
+        {
+            _maxHeight = 0;
+            if (_geoTiffMinElevation.HasValue)
+                _terrainBaseHeight = (float)_geoTiffMinElevation.Value;
+            await InvokeAsync(StateHasChanged);
         }
         else if (!result.NeedsCropping && _geoTiffMinElevation.HasValue && _geoTiffMaxElevation.HasValue)
         {
@@ -2049,6 +2111,40 @@ public partial class GenerateTerrain : IDisposable
                 {
                     PubSubChannel.SendMessage(PubSubMessageType.Warning,
                         $"XYZ file not found: {result.XyzPath}. Please browse to select the file.");
+                }
+            }
+            else if (result.HeightmapSourceType == HeightmapSourceType.LidarPointCloud &&
+                     result.LidarFilePaths is { Length: > 0 })
+            {
+                _state.LidarFilePaths = result.LidarFilePaths;
+                _state.LidarEpsgCode = result.LidarEpsgCode ?? 0;
+                _xyzEpsgCode = _state.LidarEpsgCode;
+                _geoTiffPath = null;
+                _geoTiffDirectory = null;
+                _state.XyzPath = null;
+                _state.XyzFilePaths = null;
+
+                _elevationImportResult = new ElevationImportResult
+                {
+                    SourceType = ElevationSourceType.LidarPointCloud,
+                    FilePaths = result.LidarFilePaths,
+                    FileNames = result.LidarFilePaths.Select(Path.GetFileName).ToArray()!,
+                    FileCount = result.LidarFilePaths.Length,
+                    FormatLabel = "Classified LAS/LAZ",
+                    NeedsEpsgCode = true,
+                    EpsgCode = _state.LidarEpsgCode,
+                    ResolvedLidarFilePaths = result.LidarFilePaths
+                };
+
+                if (result.LidarFilePaths.All(File.Exists))
+                {
+                    await ReadGeoTiffMetadata(syncMetersPerPixel: false);
+                    geoTiffLoaded = true;
+                }
+                else
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        "One or more LAS/LAZ files from the preset are missing. Re-import the point-cloud tiles.");
                 }
             }
 
@@ -2650,6 +2746,8 @@ public partial class GenerateTerrain : IDisposable
                 _state.XyzFilePaths.Where(path => !string.IsNullOrWhiteSpace(path)).ToList(),
             HeightmapSourceType.XyzFile when !string.IsNullOrWhiteSpace(_state.XyzPath) =>
                 [_state.XyzPath],
+            HeightmapSourceType.LidarPointCloud when _state.LidarFilePaths is { Length: > 0 } =>
+                _state.LidarFilePaths.Where(path => !string.IsNullOrWhiteSpace(path)).ToList(),
             HeightmapSourceType.Png when !string.IsNullOrWhiteSpace(_state.HeightmapPath) =>
                 [_state.HeightmapPath],
             _ => []

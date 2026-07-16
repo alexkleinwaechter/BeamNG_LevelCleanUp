@@ -4,6 +4,7 @@ using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Lidar;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
@@ -422,6 +423,7 @@ public class TerrainAnalysisOrchestrator
                 HeightmapSourceType.Png => await LoadPngHeightMapAsync(state.HeightmapPath, state.MaxHeight),
                 HeightmapSourceType.GeoTiffFile => await LoadGeoTiffHeightMapAsync(state),
                 HeightmapSourceType.GeoTiffDirectory => await LoadGeoTiffDirectoryHeightMapAsync(state),
+                HeightmapSourceType.LidarPointCloud => await LoadLidarHeightMapAsync(state),
                 _ => null
             };
         }
@@ -451,6 +453,33 @@ public class TerrainAnalysisOrchestrator
             }
 
             return heightMap;
+        });
+    }
+
+    private static async Task<float[,]?> LoadLidarHeightMapAsync(TerrainGenerationState state)
+    {
+        if (state.LidarFilePaths is not { Length: > 0 } || state.LidarEpsgCode <= 0)
+            return null;
+
+        return await Task.Run(() =>
+        {
+            var crop = state.CropResult is { NeedsCropping: true };
+            var dtm = new LidarPointCloudReader().CreateGroundDtm(
+                state.LidarFilePaths,
+                state.LidarEpsgCode,
+                state.TerrainSize,
+                state.MetersPerPixel,
+                state.LidarGroundClassification,
+                crop,
+                crop ? state.CropResult!.OffsetX : 0,
+                crop ? state.CropResult!.OffsetY : 0,
+                state.LidarMetadataCellSizeMeters);
+            using var image = dtm.HeightmapImage;
+
+            return ConvertImageToHeightMap(
+                image,
+                dtm.MinElevation,
+                dtm.MaxElevation);
         });
     }
 

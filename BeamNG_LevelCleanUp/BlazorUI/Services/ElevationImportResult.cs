@@ -9,7 +9,8 @@ public enum ElevationSourceType
     GeoTiffSingle,
     GeoTiffMultiple,
     XyzFile,
-    XyzMultiple
+    XyzMultiple,
+    LidarPointCloud
 }
 
 /// <summary>
@@ -53,4 +54,5 @@ public class ElevationImportResult
     public string? ResolvedXyzPath { get; init; }
     public string[]? ResolvedXyzFilePaths { get; init; }
     public string? ResolvedHeightmapPath { get; init; }
+    public string[]? ResolvedLidarFilePaths { get; init; }
 }

@@ -156,6 +156,10 @@ public class TerrainGenerationState
     public string[]? XyzFilePaths { get; set; }
     public int XyzEpsgCode { get; set; } = 25832;
     public int? XyzDetectedEpsg { get; set; }
+    public string[]? LidarFilePaths { get; set; }
+    public int LidarEpsgCode { get; set; }
+    public byte LidarGroundClassification { get; set; } = 2;
+    public float LidarMetadataCellSizeMeters { get; set; } = 0.5f;
 
     /// <summary>
     ///     Per-tile bounding boxes for filtering tiles before combine operations.
@@ -285,6 +289,9 @@ public class TerrainGenerationState
             HeightmapSourceType.XyzFile => ((!string.IsNullOrEmpty(XyzPath) && File.Exists(XyzPath)) ||
                                             (XyzFilePaths is { Length: > 0 })) &&
                                            XyzEpsgCode > 0,
+            HeightmapSourceType.LidarPointCloud => LidarFilePaths is { Length: > 0 } &&
+                                                   LidarFilePaths.All(File.Exists) &&
+                                                   LidarEpsgCode > 0,
             _ => false
         };
 
@@ -313,6 +320,7 @@ public class TerrainGenerationState
             HeightmapSourceType.GeoTiffFile => "Single GeoTIFF elevation file with geographic coordinates",
             HeightmapSourceType.GeoTiffDirectory => "Directory with multiple GeoTIFF tiles to combine",
             HeightmapSourceType.XyzFile => "XYZ ASCII elevation file (georeferenced grid data)",
+            HeightmapSourceType.LidarPointCloud => "Classified LAS/LAZ ground points rasterized to a 16-bit DTM",
             _ => "Unknown"
         };
     }
@@ -410,6 +418,10 @@ public class TerrainGenerationState
         XyzFilePaths = null;
         XyzEpsgCode = 25832;
         XyzDetectedEpsg = null;
+        LidarFilePaths = null;
+        LidarEpsgCode = 0;
+        LidarGroundClassification = 2;
+        LidarMetadataCellSizeMeters = 0.5f;
         CropAnchor = CropAnchor.Center;
         CropResult = null;
         CanFetchOsmData = false;

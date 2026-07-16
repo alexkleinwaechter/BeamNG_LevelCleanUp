@@ -261,6 +261,39 @@
 
             <MudDivider Class="my-4" />
 
+            <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.ScatterPlot" Size="Size.Small" Class="mr-1" />
+                Classified LAS/LAZ to Ground DTM
+            </MudText>
+
+            <MudText Typo="Typo.body2" Class="mb-2">
+                For the highest-detail source, download classified LAS/LAZ tiles and import them directly.
+                LevelCleanUp streams the files, keeps ASPRS class 2 bare-earth points, fills cells between
+                measured points, and writes a 16-bit DTM PNG plus the BeamNG terrain.
+            </MudText>
+
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                USA: use the
+                <MudLink Href="https://apps.nationalmap.gov/lidar-explorer/" Target="_blank">
+                    USGS LidarExplorer
+                </MudLink>
+                to find and download source point-cloud tiles. Select all LAS/LAZ tiles intersecting the map square.
+            </MudAlert>
+
+            <MudList T="string" Dense="true" Class="mb-3">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                    Use a projected CRS in linear units; embedded EPSG metadata is detected when available.
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                    Start with 0.5 m for dense QL0/QL1 data or 1.0 m for typical QL2 data.
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">
+                    A finer cell size only preserves more detail when the ground-point density supports it.
+                </MudListItem>
+            </MudList>
+
+            <MudDivider Class="my-4" />
+
             @* Section 4: Tips *@
             <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Primary">
                 <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Small" Class="mr-1" />

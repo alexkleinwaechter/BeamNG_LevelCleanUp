@@ -668,6 +668,25 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                                 "Please re-import elevation data.");
                         }
                     }
+                    else if (result.HeightmapSourceType == HeightmapSourceType.LidarPointCloud)
+                    {
+                        var lidarEpsgCode = heightmapSource["lidarEpsgCode"]?.GetValue<int>();
+                        var lidarPathsNode = heightmapSource["originalLidarFilePaths"]?.AsArray();
+                        var lidarPaths = lidarPathsNode?
+                            .Select(node => node?.GetValue<string>())
+                            .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                            .Cast<string>()
+                            .ToArray() ?? [];
+
+                        result.LidarFilePaths = lidarPaths;
+                        result.LidarEpsgCode = lidarEpsgCode;
+
+                        if (lidarPaths.Length == 0)
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                "LAS/LAZ files from this preset were not found. Re-import the point-cloud tiles.");
+                        }
+                    }
                 }
             }
 

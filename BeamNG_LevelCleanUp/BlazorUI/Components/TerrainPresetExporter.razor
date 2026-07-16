@@ -65,6 +65,8 @@
     [Parameter] public string? XyzPath { get; set; }
     [Parameter] public string[]? XyzFilePaths { get; set; }
     [Parameter] public int XyzEpsgCode { get; set; }
+    [Parameter] public string[]? LidarFilePaths { get; set; }
+    [Parameter] public int LidarEpsgCode { get; set; }
     [Parameter] public string? CachedCombinedGeoTiffPath { get; set; }
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
@@ -550,6 +552,18 @@
                 foreach (var p in XyzFilePaths)
                     pathsArray.Add(p);
                 source["originalXyzFilePaths"] = pathsArray;
+            }
+        }
+
+        if (HeightmapSourceType == HeightmapSourceType.LidarPointCloud)
+        {
+            source["lidarEpsgCode"] = LidarEpsgCode;
+            if (LidarFilePaths is { Length: > 0 })
+            {
+                var pathsArray = new JsonArray();
+                foreach (var path in LidarFilePaths)
+                    pathsArray.Add(path);
+                source["originalLidarFilePaths"] = pathsArray;
             }
         }
 

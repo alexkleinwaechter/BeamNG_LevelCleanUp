@@ -38,11 +38,12 @@ public static class TerrainValidator
             !string.IsNullOrWhiteSpace(parameters.GeoTiffPath) ||
             !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory) ||
             !string.IsNullOrWhiteSpace(parameters.XyzPath) ||
-            (parameters.XyzFilePaths != null && parameters.XyzFilePaths.Length > 0);
+            (parameters.XyzFilePaths != null && parameters.XyzFilePaths.Length > 0) ||
+            (parameters.LidarFilePaths != null && parameters.LidarFilePaths.Length > 0);
 
         if (!hasHeightmapSource)
         {
-            result.Errors.Add("Heightmap is required (provide HeightmapImage, HeightmapPath, GeoTiffPath, GeoTiffDirectory, or XYZ files)");
+            result.Errors.Add("Heightmap is required (provide PNG, GeoTIFF, XYZ, or classified LAS/LAZ files)");
             result.IsValid = false;
         }
         
@@ -84,6 +85,33 @@ public static class TerrainValidator
                     result.Errors.Add($"XYZ file not found: {xyzFile}");
                     result.IsValid = false;
                 }
+            }
+        }
+
+        if (parameters.LidarFilePaths != null)
+        {
+            foreach (var lidarFile in parameters.LidarFilePaths)
+            {
+                if (string.IsNullOrWhiteSpace(lidarFile) || !File.Exists(lidarFile))
+                {
+                    result.Errors.Add($"LAS/LAZ file not found: {lidarFile}");
+                    result.IsValid = false;
+                    continue;
+                }
+
+                var extension = Path.GetExtension(lidarFile);
+                if (!extension.Equals(".las", StringComparison.OrdinalIgnoreCase) &&
+                    !extension.Equals(".laz", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Errors.Add($"Unsupported point-cloud file type: {lidarFile}");
+                    result.IsValid = false;
+                }
+            }
+
+            if (parameters.LidarFilePaths.Length > 0 && parameters.LidarEpsgCode <= 0)
+            {
+                result.Errors.Add("A valid EPSG code is required for LAS/LAZ terrain generation");
+                result.IsValid = false;
             }
         }
 
@@ -137,7 +165,8 @@ public static class TerrainValidator
         bool isUsingGeoSource = !string.IsNullOrWhiteSpace(parameters.GeoTiffPath) ||
                                 !string.IsNullOrWhiteSpace(parameters.GeoTiffDirectory) ||
                                 !string.IsNullOrWhiteSpace(parameters.XyzPath) ||
-                                (parameters.XyzFilePaths != null && parameters.XyzFilePaths.Length > 0);
+                                (parameters.XyzFilePaths != null && parameters.XyzFilePaths.Length > 0) ||
+                                (parameters.LidarFilePaths != null && parameters.LidarFilePaths.Length > 0);
         if (parameters.MaxHeight <= 0 && !isUsingGeoSource)
         {
             result.Errors.Add("MaxHeight must be positive (or use GeoTIFF/XYZ import which auto-calculates height)");

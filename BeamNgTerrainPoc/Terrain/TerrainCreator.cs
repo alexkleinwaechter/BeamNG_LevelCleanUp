@@ -4,6 +4,7 @@ using BeamNG.Procedural3D.RoadMesh;
 using BeamNgTerrainPoc.Terrain.Export;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Lidar;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Processing;
@@ -141,6 +142,23 @@ public class TerrainCreator
                 isGeoTiffSource = true; // GeoTIFF may have data artifacts
                 perfLog.Timing($"Loaded GeoTIFF directory heightmap: {sw.Elapsed.TotalSeconds:F2}s");
             }
+            else if (parameters.LidarFilePaths is { Length: > 0 })
+            {
+                perfLog.Info($"Creating ground-only DTM from {parameters.LidarFilePaths.Length} LAS/LAZ tile(s)");
+                heightmapImage = await LoadFromLidarAsync(parameters, perfLog);
+                shouldDisposeHeightmap = true;
+                isGeoTiffSource = true;
+                perfLog.Timing($"Created LAS/LAZ ground DTM: {sw.Elapsed.TotalSeconds:F2}s");
+
+                if (parameters.ExportLidarDtmHeightmap)
+                {
+                    Directory.CreateDirectory(debugBaseDir!);
+                    var dtmPath = Path.Combine(
+                        debugBaseDir!, $"{parameters.TerrainName}_lidar_ground_dtm_16bit.png");
+                    perfLog.Info($"Saving ground-only 16-bit DTM: {dtmPath}");
+                    await heightmapImage.SaveAsPngAsync(dtmPath);
+                }
+            }
             else if (parameters.XyzFilePaths is { Length: > 0 })
             {
                 // Combine and load from multiple XYZ ASCII tiles
@@ -164,7 +182,7 @@ public class TerrainCreator
             else
             {
                 perfLog.Error(
-                    "No heightmap provided (HeightmapImage, HeightmapPath, GeoTiffPath, GeoTiffDirectory, or XyzPath required)");
+                    "No heightmap provided (PNG, GeoTIFF, XYZ, or classified LAS/LAZ required)");
                 return false;
             }
 
@@ -899,6 +917,57 @@ public class TerrainCreator
         {
             log.Warning("Could not determine WGS84 bounding box from XYZ - OSM features will not be available.");
         }
+
+        return result.HeightmapImage;
+    }
+
+    /// <summary>
+    ///     Streams classified LAS/LAZ files, keeps ASPRS ground-class points, and rasterizes
+    ///     them directly at the BeamNG terrain square size.
+    /// </summary>
+    private async Task<Image<L16>> LoadFromLidarAsync(
+        TerrainCreationParameters parameters, TerrainCreationLogger log)
+    {
+        var reader = new LidarPointCloudReader();
+        var result = await Task.Run(() => reader.CreateGroundDtm(
+            parameters.LidarFilePaths!,
+            parameters.LidarEpsgCode,
+            parameters.Size,
+            parameters.MetersPerPixel,
+            parameters.LidarGroundClassification,
+            parameters.CropGeoTiff && parameters.CropWidth > 0 && parameters.CropHeight > 0,
+            parameters.CropOffsetX,
+            parameters.CropOffsetY,
+            parameters.LidarMetadataCellSizeMeters,
+            message =>
+            {
+                if (message.StartsWith("Warning:", StringComparison.OrdinalIgnoreCase))
+                    log.Warning(message[8..].Trim());
+                else
+                    log.Info(message);
+            }));
+
+        parameters.GeoBoundingBox = result.Wgs84BoundingBox ??
+                                    (result.BoundingBox.IsValidWgs84 ? result.BoundingBox : null);
+        parameters.GeoTiffMinElevation = result.MinElevation;
+        parameters.GeoTiffMaxElevation = result.MaxElevation;
+
+        if (parameters.MaxHeight <= 0)
+        {
+            parameters.MaxHeight = (float)Math.Max(result.ElevationRange, 0.01);
+            log.Info($"Using ground DTM elevation range as MaxHeight: {parameters.MaxHeight:F2}m");
+        }
+
+        if (parameters.AutoSetBaseHeightFromGeoTiff)
+        {
+            parameters.TerrainBaseHeight = (float)result.MinElevation;
+            log.Info($"Using ground DTM minimum as TerrainBaseHeight: {parameters.TerrainBaseHeight:F2}m");
+        }
+
+        if (parameters.GeoBoundingBox != null)
+            log.Info($"LAS/LAZ DTM bounding box for Overpass API: {parameters.GeoBoundingBox.ToOverpassBBox()}");
+        else
+            log.Warning("Could not transform LAS/LAZ bounds to WGS84; verify the EPSG code.");
 
         return result.HeightmapImage;
     }

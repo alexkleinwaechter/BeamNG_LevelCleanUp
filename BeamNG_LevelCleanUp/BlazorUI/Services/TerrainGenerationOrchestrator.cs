@@ -1120,6 +1120,15 @@ public class TerrainGenerationOrchestrator
 
                 parameters.XyzEpsgCode = state.XyzEpsgCode;
                 break;
+
+            case HeightmapSourceType.LidarPointCloud:
+                parameters.LidarFilePaths = state.LidarFilePaths;
+                parameters.LidarEpsgCode = state.LidarEpsgCode;
+                parameters.LidarGroundClassification = state.LidarGroundClassification;
+                parameters.LidarMetadataCellSizeMeters = state.LidarMetadataCellSizeMeters;
+                parameters.ExportLidarDtmHeightmap = true;
+                ApplyCropSettings(state, parameters);
+                break;
         }
 
         return parameters;

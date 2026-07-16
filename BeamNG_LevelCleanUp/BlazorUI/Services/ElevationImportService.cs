@@ -3,19 +3,21 @@ using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Lidar;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 
 /// <summary>
 ///     Service that orchestrates unified elevation data import.
 ///     Handles format detection, ZIP extraction, EPSG auto-detection, and metadata reading.
-///     Supports GeoTIFF (.tif/.tiff), XYZ ASCII (.xyz/.txt), ZIP archives (.zip), and PNG (.png).
+///     Supports GeoTIFF, XYZ ASCII, classified LAS/LAZ, ZIP archives, and PNG.
 /// </summary>
 public class ElevationImportService
 {
     private static readonly string[] GeoTiffExtensions = [".tif", ".tiff", ".geotiff"];
     private static readonly string[] XyzExtensions = [".xyz", ".txt"];
     private static readonly string[] PngExtensions = [".png"];
+    private static readonly string[] LidarExtensions = [".las", ".laz"];
     private static readonly string[] ZipExtensions = [".zip"];
 
     private readonly GeoTiffMetadataService _metadataService = new();
@@ -53,7 +55,7 @@ public class ElevationImportService
 
         if (resolvedPaths.Count == 0)
             throw new InvalidOperationException(
-                "No supported elevation files found. Supported formats: GeoTIFF (.tif, .tiff), XYZ (.xyz, .txt), PNG (.png).");
+                "No supported elevation files found. Supported formats: GeoTIFF, XYZ, classified LAS/LAZ, and PNG.");
 
         _tempExtractionPath = tempExtractionPath;
 
@@ -73,14 +75,15 @@ public class ElevationImportService
         if (supportedFiles.Length == 0)
             throw new InvalidOperationException(
                 $"No supported elevation files found in '{folderPath}'. " +
-                "Supported extensions: .tif, .tiff, .xyz, .txt, .png");
+                "Supported extensions: .tif, .tiff, .xyz, .txt, .las, .laz, .png");
 
         // Check if all files are the same type
         var geoTiffs = supportedFiles.Where(f => IsGeoTiffFile(f)).ToArray();
         var xyzFiles = supportedFiles.Where(f => IsXyzFile(f)).ToArray();
+        var lidarFiles = supportedFiles.Where(f => IsLidarFile(f)).ToArray();
 
         // Prefer GeoTIFF tiles if found (existing behavior)
-        if (geoTiffs.Length > 0 && xyzFiles.Length == 0)
+        if (geoTiffs.Length > 0 && xyzFiles.Length == 0 && lidarFiles.Length == 0)
         {
             // Use the existing directory-based tile reading
             var metadata = await _metadataService.ReadFromDirectoryAsync(folderPath);
@@ -107,12 +110,19 @@ public class ElevationImportService
     public async Task<ElevationImportResult> ReloadWithEpsgAsync(ElevationImportResult previous, int epsgCode)
     {
         if (previous.SourceType != ElevationSourceType.XyzFile &&
-            previous.SourceType != ElevationSourceType.XyzMultiple)
+            previous.SourceType != ElevationSourceType.XyzMultiple &&
+            previous.SourceType != ElevationSourceType.LidarPointCloud)
             return previous;
 
         GeoTiffMetadataService.GeoTiffMetadataResult? metadata;
 
-        if (previous.SourceType == ElevationSourceType.XyzMultiple &&
+        if (previous.SourceType == ElevationSourceType.LidarPointCloud &&
+            previous.ResolvedLidarFilePaths is { Length: > 0 })
+        {
+            metadata = await _metadataService.ReadFromLidarFilesAsync(
+                previous.ResolvedLidarFilePaths, epsgCode);
+        }
+        else if (previous.SourceType == ElevationSourceType.XyzMultiple &&
             previous.ResolvedXyzFilePaths is { Length: > 1 })
         {
             // Multiple XYZ tiles — read combined metadata from all tiles
@@ -143,7 +153,8 @@ public class ElevationImportService
             TempExtractionPath = previous.TempExtractionPath,
             WasExtractedFromZip = previous.WasExtractedFromZip,
             ResolvedXyzPath = previous.ResolvedXyzPath,
-            ResolvedXyzFilePaths = previous.ResolvedXyzFilePaths
+            ResolvedXyzFilePaths = previous.ResolvedXyzFilePaths,
+            ResolvedLidarFilePaths = previous.ResolvedLidarFilePaths
         };
     }
 
@@ -173,19 +184,51 @@ public class ElevationImportService
         var geoTiffs = filePaths.Where(IsGeoTiffFile).ToArray();
         var xyzFiles = filePaths.Where(IsXyzFile).ToArray();
         var pngFiles = filePaths.Where(IsPngFile).ToArray();
+        var lidarFiles = filePaths.Where(IsLidarFile).ToArray();
 
         // Validate: don't mix formats
         var formatCount = (geoTiffs.Length > 0 ? 1 : 0) +
                           (xyzFiles.Length > 0 ? 1 : 0) +
-                          (pngFiles.Length > 0 ? 1 : 0);
+                          (pngFiles.Length > 0 ? 1 : 0) +
+                          (lidarFiles.Length > 0 ? 1 : 0);
 
         if (formatCount > 1)
             throw new InvalidOperationException(
-                "Mixed file formats detected. Please select files of a single format (GeoTIFF, XYZ, or PNG).");
+                "Mixed file formats detected. Please select one format (GeoTIFF, XYZ, LAS/LAZ, or PNG).");
 
         if (formatCount == 0)
             throw new InvalidOperationException(
-                "No supported elevation files found. Supported: .tif, .tiff, .xyz, .txt, .png");
+                "No supported elevation files found. Supported: .tif, .tiff, .xyz, .txt, .las, .laz, .png");
+
+        // Classified LAS/LAZ point cloud
+        if (lidarFiles.Length > 0)
+        {
+            var pointCloudInfo = await Task.Run(() =>
+                new LidarPointCloudReader().ReadInfo(lidarFiles));
+            var epsgCode = pointCloudInfo.EpsgCode ?? 0;
+            var metadata = await _metadataService.ReadFromLidarFilesAsync(lidarFiles, epsgCode);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                epsgCode > 0
+                    ? $"Detected EPSG:{epsgCode} from LAS/LAZ projection metadata"
+                    : "LAS/LAZ projection was not embedded; enter its projected EPSG code");
+
+            return new ElevationImportResult
+            {
+                SourceType = ElevationSourceType.LidarPointCloud,
+                FilePaths = lidarFiles,
+                FileNames = lidarFiles.Select(Path.GetFileName).ToArray()!,
+                FileCount = lidarFiles.Length,
+                FormatLabel = "Classified LAS/LAZ",
+                Metadata = metadata,
+                NeedsEpsgCode = true,
+                DetectedEpsgCode = pointCloudInfo.EpsgCode,
+                EpsgCode = epsgCode,
+                TempExtractionPath = tempExtractionPath,
+                WasExtractedFromZip = wasZip,
+                ResolvedLidarFilePaths = lidarFiles
+            };
+        }
 
         // PNG
         if (pngFiles.Length > 0)
@@ -353,7 +396,7 @@ public class ElevationImportService
     private static string[] ScanDirectoryForSupportedFiles(string directoryPath)
     {
         return Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories)
-            .Where(f => IsGeoTiffFile(f) || IsXyzFile(f) || IsPngFile(f))
+            .Where(f => IsGeoTiffFile(f) || IsXyzFile(f) || IsLidarFile(f) || IsPngFile(f))
             .OrderBy(f => f)
             .ToArray();
     }
@@ -374,6 +417,12 @@ public class ElevationImportService
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         return PngExtensions.Contains(ext);
+    }
+
+    private static bool IsLidarFile(string path)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        return LidarExtensions.Contains(ext);
     }
 
     private static bool IsZipFile(string path)
