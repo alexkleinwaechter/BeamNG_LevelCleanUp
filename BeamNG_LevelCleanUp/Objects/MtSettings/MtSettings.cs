@@ -214,6 +214,9 @@ public class MtBasecolorOverlaySettings
     [JsonPropertyName("SelectedTileProvider")]
     public string SelectedTileProvider { get; set; } = string.Empty;
 
+    [JsonPropertyName("TileImageryDate")]
+    public string TileImageryDate { get; set; } = string.Empty;
+
     [JsonPropertyName("CachedTileImagePath")]
     public string CachedTileImagePath { get; set; } = string.Empty;
 

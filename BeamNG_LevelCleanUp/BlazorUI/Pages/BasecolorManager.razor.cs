@@ -61,11 +61,26 @@ public partial class BasecolorManager
     private bool IsBusy => _isLoading || _isApplying;
     private bool HasBusyMessage => IsBusy && !string.IsNullOrWhiteSpace(_busyMessage);
     private bool HasGeoReference => MapTileOverlayService.HasUsableGeoReference(_settings.GeoReferenceSettings);
+    private MapTileProvider? SelectedTileProvider => MapTileOverlayService.Providers.FirstOrDefault(provider =>
+        provider.Name.Equals(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider, StringComparison.OrdinalIgnoreCase));
+    private bool SelectedTileProviderSupportsHistoricalDate => SelectedTileProvider?.SupportsHistoricalDate == true;
+    private DateTime? SelectedTileImageryDate => DateTime.TryParseExact(
+        _settings.BasecolorModeSettings.OverlaySettings.TileImageryDate,
+        "yyyy-MM-dd",
+        System.Globalization.CultureInfo.InvariantCulture,
+        System.Globalization.DateTimeStyles.None,
+        out var date)
+        ? date
+        : null;
     private bool CanFetchTileOverlay => HasLevel && HasGeoReference && !IsBusy &&
-                                        !string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider);
+                                        !string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider) &&
+                                        (!SelectedTileProviderSupportsHistoricalDate || SelectedTileImageryDate.HasValue);
     private bool CanClearTileOverlayCache => HasLevel && !IsBusy &&
-                                             !string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider) &&
-                                             _tileOverlayService.HasOverlayCache(_levelPath, _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider);
+                                              !string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider) &&
+                                              _tileOverlayService.HasOverlayCache(
+                                                  _levelPath,
+                                                  _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider,
+                                                  _settings.BasecolorModeSettings.OverlaySettings.TileImageryDate);
     private bool HasActiveBasecolorOverlay => !string.IsNullOrWhiteSpace(GetActiveBasecolorOverlayPath()) && File.Exists(GetActiveBasecolorOverlayPath());
     private int GlobalOverlayBlendPercent => (int)Math.Round(Math.Clamp(_settings.BasecolorModeSettings.OverlaySettings.GlobalBlend, 0.0, 1.0) * 100.0);
     private int OverlayBrightnessPercent => ToSignedPercent(_settings.BasecolorModeSettings.OverlaySettings.Brightness);
@@ -240,27 +255,53 @@ public partial class BasecolorManager
 
     private async Task OnTileProviderChanged(string providerName)
     {
-        _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider = providerName ?? string.Empty;
+        var overlaySettings = _settings.BasecolorModeSettings.OverlaySettings;
+        overlaySettings.SelectedTileProvider = providerName ?? string.Empty;
         var provider = MapTileOverlayService.Providers.FirstOrDefault(x => x.Name.Equals(providerName, StringComparison.OrdinalIgnoreCase));
+        if (provider?.SupportsHistoricalDate == true && string.IsNullOrWhiteSpace(overlaySettings.TileImageryDate))
+            overlaySettings.TileImageryDate = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
         if (provider != null && HasLevel)
         {
-            var cachedPath = Path.Join(_levelPath, "MT_Tiles", provider.FinalImageName);
+            var cachedPath = _tileOverlayService.GetFinalOverlayPath(_levelPath, provider.Name, overlaySettings.TileImageryDate);
             if (File.Exists(cachedPath))
             {
-                _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = cachedPath;
-                _settings.BasecolorModeSettings.OverlaySettings.UseTileProvider = true;
+                overlaySettings.CachedTileImagePath = cachedPath;
+                overlaySettings.UseTileProvider = true;
                 EnsureDefaultOverlayBlend();
                 await RefreshPreview();
             }
-            else if (_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider)
+            else
             {
-                _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = string.Empty;
-                _settings.BasecolorModeSettings.OverlaySettings.UseTileProvider = false;
-                await RefreshPreview();
+                var wasUsingTileProvider = overlaySettings.UseTileProvider;
+                overlaySettings.CachedTileImagePath = string.Empty;
+                overlaySettings.UseTileProvider = false;
+                if (wasUsingTileProvider)
+                    await RefreshPreview();
             }
         }
 
         UpdateSettingsFromMaterialLists();
+    }
+
+    private async Task OnTileImageryDateChanged(DateTime? date)
+    {
+        var overlaySettings = _settings.BasecolorModeSettings.OverlaySettings;
+        overlaySettings.TileImageryDate = date?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+
+        var providerName = overlaySettings.SelectedTileProvider;
+        var cachedPath = HasLevel
+            ? _tileOverlayService.GetFinalOverlayPath(_levelPath, providerName, overlaySettings.TileImageryDate)
+            : string.Empty;
+        var wasUsingTileProvider = overlaySettings.UseTileProvider;
+        overlaySettings.CachedTileImagePath = File.Exists(cachedPath) ? cachedPath : string.Empty;
+        overlaySettings.UseTileProvider = File.Exists(cachedPath);
+        if (overlaySettings.UseTileProvider)
+            EnsureDefaultOverlayBlend();
+
+        UpdateSettingsFromMaterialLists();
+        if (wasUsingTileProvider || overlaySettings.UseTileProvider)
+            await RefreshPreview();
     }
 
     private async Task OnUseTileProviderChanged(bool useTileProvider)
@@ -278,9 +319,15 @@ public partial class BasecolorManager
         await RunBusyOperation(OperationFetchTile, "Fetching tile overlay...", async () =>
         {
             var providerName = _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider;
-            var wasFinalImageCached = _tileOverlayService.HasFinalOverlayImage(_levelPath, providerName);
-            var imagePath = await _tileOverlayService.EnsureOverlayImageAsync(_levelPath, _settings.GeoReferenceSettings, providerName, _terrainSize);
-            _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = imagePath;
+            var imageryDate = _settings.BasecolorModeSettings.OverlaySettings.TileImageryDate;
+            var wasFinalImageCached = _tileOverlayService.HasFinalOverlayImage(_levelPath, providerName, imageryDate);
+            var result = await _tileOverlayService.EnsureOverlayImageAsync(
+                _levelPath,
+                _settings.GeoReferenceSettings,
+                providerName,
+                _terrainSize,
+                imageryDate);
+            _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = result.ImagePath;
             _settings.BasecolorModeSettings.OverlaySettings.UseTileProvider = true;
             EnsureDefaultOverlayBlend();
             UpdateSettingsFromMaterialLists();
@@ -290,7 +337,9 @@ public partial class BasecolorManager
             Snackbar.Add(
                 wasFinalImageCached
                     ? $"Loaded {providerName} tile overlay from cache."
-                    : $"Fetched {providerName} tile overlay.",
+                    : result.ResolvedReleaseDate is { Length: > 0 }
+                        ? $"Fetched {providerName} release {result.ResolvedReleaseDate}."
+                        : $"Fetched {providerName} tile overlay.",
                 wasFinalImageCached ? Severity.Info : Severity.Success);
         });
     }
@@ -303,9 +352,10 @@ public partial class BasecolorManager
         await RunBusyOperation(OperationClearTileCache, "Clearing tile overlay cache...", async () =>
         {
             var providerName = _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider;
-            var result = await Task.Run(() => _tileOverlayService.ClearOverlayCache(_levelPath, providerName));
+            var imageryDate = _settings.BasecolorModeSettings.OverlaySettings.TileImageryDate;
+            var result = await Task.Run(() => _tileOverlayService.ClearOverlayCache(_levelPath, providerName, imageryDate));
 
-            if (!_tileOverlayService.HasFinalOverlayImage(_levelPath, providerName) &&
+            if (!_tileOverlayService.HasFinalOverlayImage(_levelPath, providerName, imageryDate) &&
                 !File.Exists(_settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath))
             {
                 _settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath = string.Empty;
@@ -429,8 +479,12 @@ public partial class BasecolorManager
         {
             var provider = MapTileOverlayService.Providers.FirstOrDefault(x =>
                 x.Name.Equals(overlaySettings.SelectedTileProvider, StringComparison.OrdinalIgnoreCase));
+            var expectedPath = provider == null
+                ? string.Empty
+                : _tileOverlayService.GetFinalOverlayPath(_levelPath, provider.Name, overlaySettings.TileImageryDate);
             if (provider != null &&
-                !Path.GetFileName(overlaySettings.CachedTileImagePath).Equals(provider.FinalImageName, StringComparison.OrdinalIgnoreCase))
+                (string.IsNullOrWhiteSpace(expectedPath) ||
+                 !Path.GetFullPath(overlaySettings.CachedTileImagePath).Equals(Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase)))
             {
                 overlaySettings.CachedTileImagePath = string.Empty;
                 overlaySettings.UseTileProvider = false;
