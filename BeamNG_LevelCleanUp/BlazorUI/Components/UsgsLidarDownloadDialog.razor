@@ -1,0 +1,245 @@
+@using BeamNgTerrainPoc.Terrain.GeoTiff
+@using BeamNgTerrainPoc.Terrain.Lidar
+@implements IDisposable
+
+<MudDialog>
+    <DialogContent>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            <MudText Typo="Typo.subtitle2">USGS 3DEP classified point clouds (free)</MudText>
+            <MudText Typo="Typo.body2">
+                Finds LAS/LAZ tiles intersecting the map area. LevelCleanUp filters ground-class points and
+                generates a high-detail DTM. Downloads can be large; completed files and partial progress are cached.
+            </MudText>
+        </MudAlert>
+
+        @if (_requiresCenter)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+                This level has no saved geographic bounds. Enter the terrain center; the area is calculated
+                from terrain size × meters per pixel.
+            </MudAlert>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="double?" @bind-Value="_centerLatitude"
+                                     Label="Center Latitude" Variant="Variant.Outlined"
+                                     Min="-85.0" Max="85.0" Step="0.0001" Immediate="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="double?" @bind-Value="_centerLongitude"
+                                     Label="Center Longitude" Variant="Variant.Outlined"
+                                     Min="-180.0" Max="180.0" Step="0.0001" Immediate="true" />
+                </MudItem>
+            </MudGrid>
+        }
+
+        @if (RequestBounds is { } bounds)
+        {
+            <MudPaper Outlined="true" Class="pa-3 mt-3">
+                <MudText Typo="Typo.subtitle2">Search area</MudText>
+                <MudText Typo="Typo.body2">
+                    @bounds.ApproximateWidthMeters.ToString("N0") m × @bounds.ApproximateHeightMeters.ToString("N0") m
+                </MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    SW @bounds.MinLatitude.ToString("F6"), @bounds.MinLongitude.ToString("F6") ·
+                    NE @bounds.MaxLatitude.ToString("F6"), @bounds.MaxLongitude.ToString("F6")
+                </MudText>
+            </MudPaper>
+        }
+
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="mt-3"
+                   StartIcon="@Icons.Material.Filled.Search" OnClick="Search"
+                   Disabled="@_isSearching">
+            Find USGS 3DEP LAZ Tiles
+        </MudButton>
+
+        @if (_isSearching)
+        {
+            <div class="d-flex align-center gap-2 mt-3">
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                <MudText Typo="Typo.body2">@_statusMessage</MudText>
+            </div>
+        }
+
+        @if (_searchResult != null)
+        {
+            @if (_searchResult.Products.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mt-3">
+                    No USGS 3DEP classified LAS/LAZ tiles were found for this area. Try a raster DEM source instead.
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success" Dense="true" Class="mt-3">
+                    Found @_searchResult.Products.Count.ToString("N0") intersecting tile(s),
+                    approximately @FormatBytes(_searchResult.TotalSizeInBytes). All are selected by default.
+                </MudAlert>
+                @if (_searchResult.WasTruncated)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                        The search exceeded @UsgsLidarDownloadService.MaximumSearchProducts.ToString("N0") products.
+                        Reduce the requested area before downloading.
+                    </MudAlert>
+                }
+
+                <MudTable T="UsgsLidarProduct" Items="_searchResult.Products"
+                          MultiSelection="true" @bind-SelectedItems="_selectedProducts"
+                          Hover="true" Dense="true" RowsPerPage="10" Class="mt-3">
+                    <HeaderContent>
+                        <MudTh>USGS product</MudTh>
+                        <MudTh>Published</MudTh>
+                        <MudTh>Size</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="USGS product">@context.Title</MudTd>
+                        <MudTd DataLabel="Published">@FormatDate(context.PublicationDate)</MudTd>
+                        <MudTd DataLabel="Size">@FormatBytes(context.SizeInBytes)</MudTd>
+                    </RowTemplate>
+                    <PagerContent><MudTablePager /></PagerContent>
+                </MudTable>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                    @_selectedProducts.Count.ToString("N0") tile(s) selected. LAZ keeps the original point-cloud detail;
+                    the final BeamNG resolution is set by the DTM meters-per-pixel control after import.
+                </MudText>
+            }
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_errorMessage</MudAlert>
+        }
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-3">
+            <MudLink Href="https://apps.nationalmap.gov/lidar-explorer/" Target="_blank">Open USGS LidarExplorer</MudLink>
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Filled.CloudDownload"
+                   OnClick="Submit" Disabled="@(!_selectedProducts.Any() || _isSearching)">
+            Download Selected LAZ
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public GeoBoundingBox? InitialBounds { get; set; }
+    [Parameter] public int TerrainSize { get; set; }
+    [Parameter] public double MetersPerPixel { get; set; }
+
+    private readonly CancellationTokenSource _cancellation = new();
+    private readonly UsgsLidarDownloadService _service = new();
+    private double? _centerLatitude;
+    private double? _centerLongitude;
+    private bool _requiresCenter;
+    private bool _isSearching;
+    private string _statusMessage = "Searching...";
+    private string? _errorMessage;
+    private UsgsLidarSearchResult? _searchResult;
+    private HashSet<UsgsLidarProduct> _selectedProducts = new();
+
+    private GeoBoundingBox? RequestBounds
+    {
+        get
+        {
+            if (!_requiresCenter)
+                return InitialBounds;
+            if (!_centerLatitude.HasValue || !_centerLongitude.HasValue)
+                return null;
+            try
+            {
+                return UsgsLidarDownloadService.BuildSquareBounds(
+                    _centerLatitude.Value,
+                    _centerLongitude.Value,
+                    TerrainSize * MetersPerPixel);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        _requiresCenter = InitialBounds is not { IsValidWgs84: true };
+        if (!_requiresCenter && InitialBounds != null)
+        {
+            _centerLatitude = InitialBounds.Center.Latitude;
+            _centerLongitude = InitialBounds.Center.Longitude;
+        }
+    }
+
+    private async Task Search()
+    {
+        _errorMessage = null;
+        _searchResult = null;
+        _selectedProducts.Clear();
+        if (RequestBounds is not { } bounds)
+        {
+            _errorMessage = "Enter a valid center latitude and longitude.";
+            return;
+        }
+
+        _isSearching = true;
+        try
+        {
+            var progress = new Progress<string>(message =>
+            {
+                _statusMessage = message;
+                _ = InvokeAsync(StateHasChanged);
+            });
+            _searchResult = await _service.SearchAsync(bounds, progress, _cancellation.Token);
+            _selectedProducts = _searchResult.Products.ToHashSet();
+        }
+        catch (OperationCanceledException)
+        {
+            // Dialog is closing.
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"USGS search failed: {ex.Message}";
+        }
+        finally
+        {
+            _isSearching = false;
+        }
+    }
+
+    private void Submit()
+    {
+        if (RequestBounds is not { } bounds || !_selectedProducts.Any())
+            return;
+        MudDialog.Close(DialogResult.Ok(new UsgsLidarDialogResult(
+            bounds,
+            _selectedProducts.OrderBy(product => product.Title, StringComparer.OrdinalIgnoreCase).ToList())));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "unknown size";
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var value = (double)bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return $"{value:0.##} {units[unit]}";
+    }
+
+    private static string FormatDate(string? value) =>
+        DateTimeOffset.TryParse(value, out var date) ? date.ToString("yyyy-MM-dd") : "—";
+
+    public void Dispose()
+    {
+        _cancellation.Cancel();
+        _cancellation.Dispose();
+        _service.Dispose();
+    }
+}
