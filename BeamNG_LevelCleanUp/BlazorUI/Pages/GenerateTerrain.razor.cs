@@ -9,6 +9,7 @@ using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Objects.MtSettings;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Lidar;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
@@ -1488,6 +1489,112 @@ public partial class GenerateTerrain : IDisposable
     {
         _metersPerPixel = newMpp;
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Finds free USGS 3DEP classified LAZ products for the saved/current map bounds,
+    /// downloads selected tiles with resume/cache support, then imports them into the
+    /// existing ground-class DTM workflow.
+    /// </summary>
+    private async Task DownloadUsgsLidar()
+    {
+        var parameters = new DialogParameters<UsgsLidarDownloadDialog>
+        {
+            { x => x.InitialBounds, GetSavedElevationBounds() },
+            { x => x.TerrainSize, _terrainSize },
+            { x => x.MetersPerPixel, (double)_metersPerPixel }
+        };
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            CloseOnEscapeKey = true,
+            BackdropClick = false,
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<UsgsLidarDownloadDialog>(
+            "Find USGS 3DEP Classified Point Clouds",
+            parameters,
+            options);
+        var dialogResult = await dialog.Result;
+        if (dialogResult == null || dialogResult.Canceled ||
+            dialogResult.Data is not UsgsLidarDialogResult request)
+            return;
+
+        _isImportingElevation = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _elevationImportSnackbar = Snackbar.Add(
+                $"USGS 3DEP: checking cache for {request.Products.Count:N0} LAZ tile(s)...",
+                Severity.Info,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+
+            var progress = new Progress<UsgsLidarDownloadProgress>(update =>
+                PubSubChannel.SendMessage(PubSubMessageType.Info, update.Message));
+
+            UsgsLidarDownloadResult download;
+            using (var service = new UsgsLidarDownloadService())
+            {
+                download = await service.DownloadAsync(
+                    request.Products,
+                    AppPaths.UsgsLidarCacheFolder,
+                    progress,
+                    _disposalCts.Token);
+            }
+
+            var importResult = await _elevationImportService.ImportFilesAsync(download.FilePaths.ToArray());
+            await ApplyImportResult(importResult);
+
+            Snackbar.Add(
+                $"USGS point cloud ready: {download.DownloadedFiles:N0} downloaded, " +
+                $"{download.ReusedFiles:N0} reused from cache. Choose DTM cell size, then generate terrain.",
+                Severity.Success);
+        }
+        catch (OperationCanceledException)
+        {
+            Snackbar.Add("USGS download cancelled. Partial and completed files remain cached for resume.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"USGS point-cloud download failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            if (_elevationImportSnackbar != null)
+            {
+                Snackbar.Remove(_elevationImportSnackbar);
+                _elevationImportSnackbar = null;
+            }
+
+            _isImportingElevation = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private GeoBoundingBox? GetSavedElevationBounds()
+    {
+        if (EffectiveBoundingBox is { IsValidWgs84: true } current &&
+            current.Width > 0 && current.Height > 0)
+            return current;
+
+        if (string.IsNullOrWhiteSpace(_workingDirectory))
+            return null;
+
+        var geoReference = MtSettings.Load(_workingDirectory)?.GeoReferenceSettings;
+        if (geoReference is not { HasGeoReference: true })
+            return null;
+
+        var bounds = new GeoBoundingBox(
+            geoReference.TerrainMinLongitude,
+            geoReference.TerrainMinLatitude,
+            geoReference.TerrainMaxLongitude,
+            geoReference.TerrainMaxLatitude);
+        return bounds.IsValidWgs84 && bounds.Width > 0 && bounds.Height > 0
+            ? bounds
+            : null;
     }
 
     private async Task OnLidarResolutionChanged(float newMpp)

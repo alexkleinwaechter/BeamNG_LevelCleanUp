@@ -39,6 +39,12 @@ public static class AppPaths
     public static string LogsFolder => Path.Combine(AppDataFolder, "logs");
 
     /// <summary>
+    /// Persistent cache for free USGS 3DEP LAS/LAZ downloads. Completed files and
+    /// partial downloads are retained so large point-cloud acquisitions can resume.
+    /// </summary>
+    public static string UsgsLidarCacheFolder => Path.Combine(AppDataFolder, "cache", "usgs-3dep-lidar");
+
+    /// <summary>
     /// Settings folder (already used by WindowSettings).
     /// C:\Users\{username}\AppData\Local\BeamNG_LevelCleanUp
     /// </summary>
@@ -79,6 +85,7 @@ public static class AppPaths
     {
         Directory.CreateDirectory(TempFolder);
         Directory.CreateDirectory(LogsFolder);
+        Directory.CreateDirectory(UsgsLidarCacheFolder);
         
         // On application startup, clean up any stale temp folders from previous sessions
         // This prevents accumulation of temp files and ensures a fresh state

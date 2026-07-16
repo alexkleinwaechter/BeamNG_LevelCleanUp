@@ -170,6 +170,13 @@
                                                    Disabled="@_isImportingElevation">
                                             Select Folder
                                         </MudButton>
+                                        <MudButton Variant="Variant.Outlined"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.Terrain"
+                                                   OnClick="DownloadUsgsLidar"
+                                                   Disabled="@_isImportingElevation">
+                                            USGS 3DEP Point Cloud (Free)
+                                        </MudButton>
                                         @if (_isImportingElevation)
                                         {
                                             <MudProgressCircular Size="Size.Small" Indeterminate="true" />
@@ -179,6 +186,7 @@
                                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
                                         <strong>Select Files:</strong> Pick one or multiple files (hold Ctrl/Shift for multi-select).
                                         <strong>Select Folder:</strong> Import all elevation tiles from a directory.
+                                        <strong>USGS 3DEP:</strong> Find classified LAS/LAZ tiles and generate a bare-earth DTM.
                                     </MudText>
                                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
                                         Supported formats: GeoTIFF, XYZ ASCII, classified LAS/LAZ point clouds, PNG heightmap, ZIP archive
@@ -284,13 +292,12 @@
                                         <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
                                             @GetLidarCoverageDescription()
                                         </MudText>
-                                        <MudButton Href="https://apps.nationalmap.gov/lidar-explorer/"
-                                                   Target="_blank"
+                                        <MudButton OnClick="DownloadUsgsLidar"
                                                    Variant="Variant.Text"
                                                    Color="Color.Primary"
-                                                   StartIcon="@Icons.Material.Filled.OpenInNew"
+                                                   StartIcon="@Icons.Material.Filled.Search"
                                                    Class="mt-2">
-                                            Find USGS 3DEP LAS/LAZ Tiles
+                                            Find or Add USGS 3DEP LAS/LAZ Tiles
                                         </MudButton>
                                     }
                                 </MudPaper>
