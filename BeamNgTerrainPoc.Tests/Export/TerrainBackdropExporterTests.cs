@@ -77,6 +77,24 @@ public class TerrainBackdropExporterTests
         }
     }
 
+    [Theory]
+    [InlineData(0f, 0f, 0.5f, 0.5f)]
+    [InlineData(0f, 100f, 0.5f, 0f)]
+    [InlineData(0f, 200f, 0.5f, 0f)]
+    [InlineData(200f, 0f, 1f, 0.5f)]
+    [InlineData(-200f, -200f, 0f, 1f)]
+    public void BackdropUv_PreservesTerrainSeamAndClampsOutsideIt(
+        float worldX,
+        float worldY,
+        float expectedU,
+        float expectedV)
+    {
+        var uv = TerrainBackdropExporter.CalculateClampedTextureCoordinate(worldX, worldY, 100f);
+
+        Assert.Equal(expectedU, uv.X, 5);
+        Assert.Equal(expectedV, uv.Y, 5);
+    }
+
     private static string CreateLevelDirectory()
     {
         var levelPath = Path.Combine(Path.GetTempPath(), "terrain-backdrop-tests", Guid.NewGuid().ToString("N"));

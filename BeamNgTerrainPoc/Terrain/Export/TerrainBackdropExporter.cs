@@ -96,9 +96,11 @@ public static class TerrainBackdropExporter
                         worldX,
                         worldY,
                         terrainBaseHeight + sampledHeight - SeamOffsetMeters);
-                    var u = (worldX + outerHalfExtent) / outerWorldSize;
-                    var v = 1f - (worldY + outerHalfExtent) / outerWorldSize;
-                    mesh.Vertices.Add(new Vertex(position, Vector3.UnitZ, new Vector2(u, v)));
+                    var textureCoordinate = CalculateClampedTextureCoordinate(
+                        worldX,
+                        worldY,
+                        innerHalfExtent);
+                    mesh.Vertices.Add(new Vertex(position, Vector3.UnitZ, textureCoordinate));
                 }
             }
 
@@ -192,6 +194,22 @@ public static class TerrainBackdropExporter
         var bottom = heightMap[y0, x0] + (heightMap[y0, x1] - heightMap[y0, x0]) * tx;
         var top = heightMap[y1, x0] + (heightMap[y1, x1] - heightMap[y1, x0]) * tx;
         return bottom + (top - bottom) * ty;
+    }
+
+    internal static Vector2 CalculateClampedTextureCoordinate(
+        float worldX,
+        float worldY,
+        float innerHalfExtent)
+    {
+        if (innerHalfExtent <= 0 || !float.IsFinite(innerHalfExtent))
+            throw new ArgumentOutOfRangeException(nameof(innerHalfExtent));
+
+        // The backdrop uses a lower-resolution copy of the playable BaseColor.
+        // Keep the texture aligned at the TerrainBlock seam, then extend its edge
+        // pixels outward instead of remapping the whole image over the larger ring.
+        var u = Math.Clamp((worldX + innerHalfExtent) / (innerHalfExtent * 2f), 0f, 1f);
+        var v = 1f - Math.Clamp((worldY + innerHalfExtent) / (innerHalfExtent * 2f), 0f, 1f);
+        return new Vector2(u, v);
     }
 
     private static void ApplySmoothNormals(Mesh mesh)
