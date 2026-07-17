@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Processing;
@@ -427,9 +428,12 @@ public static class BridgeElevationPlanner
             };
 
         if (ob.Crossing.LowerKind is BridgeObstacleKind.Rail or BridgeObstacleKind.Water ||
+            !ob.Crossing.HasLowerSpline ||
             (rules?.EnableSpanSolveOrder == true && ob.Crossing.LowerIsBridge))
             // A1/§3.5: rail and water can never be lowered (L=0 always) — raise the deck interior instead,
-            // exactly like a priority veto. (Synthetic crossings also have no lower spline to dip.)
+            // exactly like a priority veto. ANY synthetic crossing (no lower spline — incl. the Road-kind
+            // self-crossing) has nothing to dip either: without this a §3.5 split would assign a phantom
+            // dip share that no pass can execute, silently under-clearing the deck.
             // A5: a pinned bridge deck below is equally immovable — never dip another bridge's deck.
             return new CrossingPlan
             {
@@ -891,8 +895,112 @@ public static class BridgeElevationPlanner
         }
 
         AddSyntheticObstacles(span, heightMap, metersPerPixel, obstacles);
+        AddSelfCrossingObstacles(span, heightMap, metersPerPixel, options, obstacles);
 
         return obstacles;
+    }
+
+    /// <summary>
+    /// Minimum along-road distance (m) between a span boundary and an own-spline section for it to count
+    /// as the corridor's SELF-crossing ground leg (a hairpin passing under its own bridge). Sections closer
+    /// than this are the span's own approaches touching the footprint at the abutment — never an obstacle.
+    /// A real self-crossing cannot be closer: the road must descend a full clearance height between
+    /// leaving the deck and passing under it. SINGLE SOURCE OF TRUTH — the resolver's self-leg exclusion
+    /// window (<c>GradeSeparationResolver.NearestSectionExcludingSelfLeg</c>) derives from this constant.
+    /// </summary>
+    public const float SelfCrossingMinStationGapMeters = 30f;
+
+    /// <summary>Station gap (m) above which own-leg sections inside the footprint split into separate
+    /// self-crossings (a spiral passing under the same span twice).</summary>
+    private const float SelfCrossingClusterGapMeters = 25f;
+
+    /// <summary>
+    /// Self-crossing obstacles (<see cref="BridgeRuleSystemOptions.EnableSelfCrossingClearance"/>): the
+    /// corridor's own ground leg passing under this span. The junction detector excludes same-spline pairs
+    /// structurally (proximity sampler AND footprint sweep), and <see cref="AddSyntheticObstacles"/> drops
+    /// Road-kind OSM features on the assumption that road crossings always arrive via the detector — false
+    /// exactly for a switchback under its own bridge (run 143909 bridge_8655179: the deck skimmed its own
+    /// lower leg with ~0 m clearance). Detected here directly and station-disambiguated: own-spline
+    /// sections whose XY lies inside the span footprint but whose station is far outside the span ARE the
+    /// under-deck leg. Emitted with <c>LowerSplineId = −1</c> (never dipped — the lower member is the
+    /// deck's own approach chain) and <see cref="GradeSeparatedCrossing.SelfLowerStationMeters"/> so the
+    /// post-solve passes can read the leg's FINAL Z by station (an XY lookup would find the deck itself).
+    /// </summary>
+    private static void AddSelfCrossingObstacles(
+        SpanContext span, float[,]? heightMap, float metersPerPixel,
+        BridgeElevationPlannerOptions? options, List<Obstacle> obstacles)
+    {
+        if (span.Spline.Parameters.BridgeRules?.EnableSelfCrossingClearance != true)
+            return;
+
+        // Own-spline ground sections under the deck: inside the footprint, station well outside the span,
+        // and not part of ANY structure span (a lower deck of the same corridor is R6 multi-level, not a
+        // ground leg). span.Sections is station-ordered (EnumerateSpans), so runs cluster by adjacency.
+        List<UnifiedCrossSection>? under = null;
+        foreach (var cs in span.Sections)
+        {
+            if (cs.DistanceAlongSpline > span.Seg.StartDistance - SelfCrossingMinStationGapMeters &&
+                cs.DistanceAlongSpline < span.Seg.EndDistance + SelfCrossingMinStationGapMeters)
+                continue;
+            if (cs.StructureSpanId >= 0)
+                continue;
+            if (!float.IsFinite(cs.CenterPoint.X) || !float.IsFinite(cs.CenterPoint.Y))
+                continue;
+            if (!span.Footprint.Contains(cs.CenterPoint))
+                continue;
+            (under ??= []).Add(cs);
+        }
+
+        if (under == null)
+            return;
+
+        var runStart = 0;
+        for (var i = 1; i <= under.Count; i++)
+        {
+            if (i < under.Count &&
+                under[i].DistanceAlongSpline - under[i - 1].DistanceAlongSpline <= SelfCrossingClusterGapMeters)
+                continue;
+
+            var run = under[runStart..i];
+            runStart = i;
+
+            // Obstacle Z = the leg's highest section over the run (errs toward MORE clearance, like the
+            // water-surface estimate); the crossing anchors at the run's midpoint section.
+            var z = float.NaN;
+            foreach (var cs in run)
+            {
+                var sz = SectionZ(cs, heightMap, metersPerPixel, options);
+                if (IsFinite(sz))
+                    z = float.IsNaN(z) ? sz : MathF.Max(z, sz);
+            }
+
+            if (!IsFinite(z))
+                continue;
+
+            var mid = run[run.Count / 2];
+            obstacles.Add(new Obstacle(new GradeSeparatedCrossing
+            {
+                UpperSplineId = span.Spline.SplineId,
+                LowerSplineId = -1, // self: resolvable only by station — XY is ambiguous with the deck
+                SelfLowerStationMeters = mid.DistanceAlongSpline,
+                CrossingXY = mid.CenterPoint,
+                UpperLayer = span.Seg.Layer,
+                LowerLayer = 0,
+                UpperPriority = span.Spline.Priority,
+                LowerPriority = span.Spline.Priority,
+                UpperIsBridge = true,
+                LowerIsBridge = false,
+                LowerKind = BridgeObstacleKind.Road,
+                UpperOsmClass = span.Spline.OsmRoadType,
+                LowerOsmClass = span.Spline.OsmRoadType,
+            }, z));
+
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"[BRIDGE-PLAN] SELF-CROSSING spline={span.Spline.SplineId} span={span.Footprint.SpanId} " +
+                $"own leg under deck at leg-station {mid.DistanceAlongSpline:F1}m " +
+                $"xy=({mid.CenterPoint.X:F0},{mid.CenterPoint.Y:F0}) z={z:F2} " +
+                $"({run.Count} section(s)) — typed Road budget applies (raise-only)");
+        }
     }
 
     /// <summary>

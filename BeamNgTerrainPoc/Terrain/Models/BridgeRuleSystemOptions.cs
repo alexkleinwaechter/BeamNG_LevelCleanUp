@@ -136,6 +136,21 @@ public class BridgeRuleSystemOptions
     public bool EnableSeamlessDeckOverlap { get; set; }
 
     /// <summary>
+    ///     Self-crossing clearance (run 143909 bridge_8655179): a corridor whose ground leg passes under
+    ///     its OWN bridge span (a switchback/hairpin) gets a synthetic Road obstacle so the deck is raised
+    ///     to the typed road budget. The junction detector excludes same-spline pairs structurally (both
+    ///     the proximity sampler and the footprint sweep), and the planner's synthetic pass drops Road
+    ///     features on the assumption "roads always arrive via the detector" — false exactly here, so the
+    ///     deck used to skim its own lower leg with no clearance at all. The crossing carries the lower
+    ///     leg's along-spline STATION (<see cref="RoadGeometry.GradeSeparatedCrossing.SelfLowerStationMeters"/>)
+    ///     because an XY lookup on the shared spline would find the deck itself. Never dipped (the lower
+    ///     member is the deck's own approach chain — raise-only veto, like rail/water). Like
+    ///     <see cref="EnableDeckToDeckContinuity"/>, deliberately NOT part of <see cref="AnyEnabled"/> —
+    ///     meaningless without merged spans. Off ⇒ byte-identical.
+    /// </summary>
+    public bool EnableSelfCrossingClearance { get; set; }
+
+    /// <summary>
     ///     Turns on every rule of the system plus pier generation. Product default for the UI since
     ///     2026-07: the rules are no longer user-facing feature flags — the app always runs the full
     ///     system. Property initializers stay OFF so library consumers and tests keep the legacy
@@ -158,6 +173,7 @@ public class BridgeRuleSystemOptions
         EnableBridgeToBridgeAbutmentSuppression = true;
         EnableDeckToDeckContinuity = true;
         EnableSeamlessDeckOverlap = true;
+        EnableSelfCrossingClearance = true;
         EnableBridgePiers = true;
     }
 

@@ -1333,9 +1333,12 @@ public static class BridgeProfileSolver
                 continue;
 
             // Station-match the crossing to THIS span: the nearest section over the whole spline must
-            // belong to it (a corridor can carry several spans).
+            // belong to it (a corridor can carry several spans). Self-crossing: restrict to deck sections
+            // — the plain XY lookup finds the crossing's own ground-leg section (distance 0) instead.
             splineSections ??= network.GetCrossSectionsForSpline(splineId).ToList();
-            var upper = NearestSection(splineSections, cp.Crossing.CrossingXY);
+            var upper = cp.Crossing.HasSelfLowerStation
+                ? NearestSection(splineSections.Where(cs => cs.StructureSpanId == spanId), cp.Crossing.CrossingXY)
+                : NearestSection(splineSections, cp.Crossing.CrossingXY);
             if (upper == null || upper.StructureSpanId != spanId || !IsFinite(upper.TargetElevation))
                 continue;
 
@@ -1348,7 +1351,9 @@ public static class BridgeProfileSolver
             }
             else
             {
-                lowerZ = IsFinite(cp.LowerRoadTargetZ) ? cp.LowerRoadTargetZ : cp.ObstacleZEstimate;
+                // Self-crossing: the own ground leg's final Z, resolved by STATION (XY finds the deck).
+                lowerZ = GradeSeparationResolver.ResolveSelfLowerZ(network, cp.Crossing)
+                         ?? (IsFinite(cp.LowerRoadTargetZ) ? cp.LowerRoadTargetZ : cp.ObstacleZEstimate);
             }
 
             if (!IsFinite(lowerZ))

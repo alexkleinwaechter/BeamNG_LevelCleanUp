@@ -30,6 +30,18 @@ public sealed class GradeSeparatedCrossing
     /// <summary>True when the lower member is a real road spline (false for synthetic rail/water).</summary>
     public bool HasLowerSpline => LowerSplineId >= 0;
 
+    /// <summary>
+    /// Self-crossing (<c>EnableSelfCrossingClearance</c>): the upper spline's own ground leg passes under
+    /// this span (a switchback/hairpin), and this is that leg's along-spline station on the UPPER spline.
+    /// <see cref="LowerSplineId"/> stays −1 — the lower member can never be resolved by XY because the
+    /// deck sits at the same plan-view point; consumers that need the leg's solved Z resolve it by this
+    /// station instead (<c>GradeSeparationResolver.ResolveSelfLowerZ</c>). NaN for every other crossing.
+    /// </summary>
+    public float SelfLowerStationMeters { get; init; } = float.NaN;
+
+    /// <summary>True when this is a self-crossing (see <see cref="SelfLowerStationMeters"/>).</summary>
+    public bool HasSelfLowerStation => !float.IsNaN(SelfLowerStationMeters);
+
     /// <summary>Plan-view crossing point (midpoint of the two closest cross-sections).</summary>
     public required Vector2 CrossingXY { get; init; }
 

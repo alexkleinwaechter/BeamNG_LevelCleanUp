@@ -126,6 +126,64 @@ public static class GradeSeparationResolver
     public const float FloorMinArchShape = 0.25f;
 
     /// <summary>
+    /// The lower member's FINAL solved Z for a SELF-crossing (the upper spline's own ground leg passing
+    /// under its span, <see cref="GradeSeparatedCrossing.SelfLowerStationMeters"/>): the upper spline's
+    /// section nearest that STATION. An XY lookup would find the deck itself — the deck and the leg share
+    /// the plan-view point, only their stations differ. Null when the crossing is not a self-crossing or
+    /// no section with a finite elevation exists near the station; callers fall back to the planner's
+    /// obstacle estimate exactly like plain synthetic rail/water.
+    /// </summary>
+    internal static float? ResolveSelfLowerZ(UnifiedRoadNetwork network, GradeSeparatedCrossing crossing)
+    {
+        if (!crossing.HasSelfLowerStation)
+            return null;
+
+        UnifiedCrossSection? best = null;
+        var bestD = float.MaxValue;
+        foreach (var cs in network.GetCrossSectionsForSpline(crossing.UpperSplineId))
+        {
+            var d = MathF.Abs(cs.DistanceAlongSpline - crossing.SelfLowerStationMeters);
+            if (d < bestD)
+            {
+                bestD = d;
+                best = cs;
+            }
+        }
+
+        return best != null && IsFinite(best.TargetElevation) ? best.TargetElevation : null;
+    }
+
+    /// <summary>
+    /// Nearest section of the crossing's UPPER spline to its crossing point, EXCLUDING the self-crossing's
+    /// own ground-leg station window: the plain nearest-by-XY lookup returns the leg section itself
+    /// (distance 0 — it anchors the crossing point), which would make the caller's span-membership test
+    /// skip the crossing entirely. Excluding ± the planner's station gap around
+    /// <see cref="GradeSeparatedCrossing.SelfLowerStationMeters"/> leaves the DECK as the nearest
+    /// candidate — the planner guarantees leg and span are at least that far apart along the road, so no
+    /// deck section is ever excluded.
+    /// </summary>
+    private static UnifiedCrossSection? NearestSectionExcludingSelfLeg(
+        UnifiedRoadNetwork network, GradeSeparatedCrossing crossing)
+    {
+        UnifiedCrossSection? best = null;
+        var bestDist = float.MaxValue;
+        foreach (var cs in network.GetCrossSectionsForSpline(crossing.UpperSplineId))
+        {
+            if (MathF.Abs(cs.DistanceAlongSpline - crossing.SelfLowerStationMeters) <=
+                BridgeElevationPlanner.SelfCrossingMinStationGapMeters)
+                continue;
+            var d = Vector2.DistanceSquared(cs.CenterPoint, crossing.CrossingXY);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = cs;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// Amendment 03 (sparse floor constraints): converts the rule engine's stashed
     /// <see cref="UnifiedRoadNetwork.BridgeElevationPlan"/> into interior FLOOR constraints for
     /// <see cref="BridgeProfileSolver.RefineSpans"/>. The planner emitted no pins — the span deck is
@@ -175,7 +233,8 @@ public static class GradeSeparationResolver
             }
             else
             {
-                lowerZ = cp.ObstacleZEstimate;
+                // Self-crossing: the own ground leg's final Z, resolved by STATION (XY finds the deck).
+                lowerZ = ResolveSelfLowerZ(network, cp.Crossing) ?? cp.ObstacleZEstimate;
             }
 
             if (!IsFinite(lowerZ))
@@ -187,7 +246,10 @@ public static class GradeSeparationResolver
             var dipShare = cp.Action == BridgeElevationAction.Split ? MathF.Max(0f, cp.DipDepthMeters) : 0f;
             var minZ = lowerZ + required - dipShare;
 
-            var upperSection = NearestSection(network, upperId, cp.Crossing.CrossingXY);
+            // Self-crossing: exclude the ground leg's station window — the plain XY lookup finds the leg.
+            var upperSection = cp.Crossing.HasSelfLowerStation
+                ? NearestSectionExcludingSelfLeg(network, cp.Crossing)
+                : NearestSection(network, upperId, cp.Crossing.CrossingXY);
             if (upperSection == null)
                 continue;
             var station = upperSection.DistanceAlongSpline;
@@ -609,7 +671,11 @@ public static class GradeSeparationResolver
                 if (cp.Action == BridgeElevationAction.DipLowerRoad)
                     continue;
 
-                var upper = NearestSection(network, span.OwnerSplineId, cp.Crossing.CrossingXY);
+                // Self-crossing: exclude the ground leg's station window — the plain XY lookup finds the
+                // leg itself, and its StructureSpanId (−1) would skip the crossing here.
+                var upper = cp.Crossing.HasSelfLowerStation
+                    ? NearestSectionExcludingSelfLeg(network, cp.Crossing)
+                    : NearestSection(network, span.OwnerSplineId, cp.Crossing.CrossingXY);
                 if (upper == null || upper.StructureSpanId != span.SpanId || !IsFinite(upper.TargetElevation))
                     continue;
 
@@ -631,7 +697,9 @@ public static class GradeSeparationResolver
                 }
                 else
                 {
-                    lowerZ = IsFinite(cp.LowerRoadTargetZ) ? cp.LowerRoadTargetZ : cp.ObstacleZEstimate;
+                    // Self-crossing: the own ground leg's final Z, resolved by STATION (XY finds the deck).
+                    lowerZ = ResolveSelfLowerZ(network, cp.Crossing)
+                             ?? (IsFinite(cp.LowerRoadTargetZ) ? cp.LowerRoadTargetZ : cp.ObstacleZEstimate);
                 }
 
                 if (!IsFinite(lowerZ))
