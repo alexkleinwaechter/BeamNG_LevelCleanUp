@@ -944,16 +944,6 @@ public partial class GenerateTerrain : IDisposable
         StateHasChanged();
     }
 
-    private void OnMergeStructuresIntoCorridorChanged(bool value)
-    {
-        if (_state.MergeStructuresIntoCorridor == value)
-            return;
-
-        _state.MergeStructuresIntoCorridor = value;
-        InvalidateRoadAnalysisAndGeneratedCaches();
-        StateHasChanged();
-    }
-
     private void InvalidateRoadAnalysisAndGeneratedCaches()
     {
         if (_analysisState.HasAnalysis)
@@ -2174,9 +2164,6 @@ public partial class GenerateTerrain : IDisposable
 
             if (result.ExcludeTunnelsFromTerrain.HasValue)
                 _excludeTunnelsFromTerrain = result.ExcludeTunnelsFromTerrain.Value;
-
-            if (result.MergeStructuresIntoCorridor.HasValue)
-                _mergeStructuresIntoCorridor = result.MergeStructuresIntoCorridor.Value;
 
             if (result.BridgeMaxSagBelowChordMeters.HasValue)
                 _bridgeMaxSagBelowChordMeters = result.BridgeMaxSagBelowChordMeters.Value;

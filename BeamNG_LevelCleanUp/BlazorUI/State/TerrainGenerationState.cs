@@ -50,9 +50,9 @@ public class TerrainGenerationState
     // ========================================
 
     /// <summary>
-    ///     When true, bridges are excluded from terrain smoothing and material painting.
-    ///     When false, bridge ways are treated as normal roads (legacy behavior).
-    ///     Default: true (bridges are excluded)
+    ///     UI label "Generate Bridges". When true, bridges are excluded from terrain smoothing and
+    ///     material painting and are built as elevated decks instead. When false, bridge ways are
+    ///     treated as normal roads (legacy behavior). Default: false.
     /// </summary>
     public bool ExcludeBridgesFromTerrain { get; set; } = false;
 
@@ -66,8 +66,8 @@ public class TerrainGenerationState
     /// <summary>
     ///     When true, bridges/tunnels merge INTO the through-road corridor (remembering the bridge arc-range)
     ///     so the corridor is smoothed as one road and the deck is built from that merged, smoothed sub-range —
-    ///     the "merged-corridor bridge" continuity fix (plan doc 11). When false, bridges stay separate splines
-    ///     (legacy). Default: true (the structural continuity fix is now the default; toggle off for legacy).
+    ///     the "merged-corridor bridge" continuity fix (plan doc 11). Always true in the app since 2026-07
+    ///     (checkbox removed, preset values ignored); false = legacy separate-spline behavior, code-only.
     /// </summary>
     public bool MergeStructuresIntoCorridor { get; set; } = true;
 
@@ -111,11 +111,12 @@ public class TerrainGenerationState
     public float BridgeAbutmentDepthMeters { get; set; } = 1.0f;
 
     /// <summary>
-    ///     Bridge Rule System configuration (V2 plan doc 01). All rule flags default OFF (byte-identical).
-    ///     Engine-first: not yet bound to UI controls — the orchestrator threads this single instance onto
-    ///     TerrainCreationParameters and every road material's RoadSmoothingParameters.
+    ///     Bridge Rule System configuration (V2 plan doc 01). The rules are always on in the app (only the
+    ///     tunables and the pier toggle are user-facing); preset import re-enables them likewise. The
+    ///     orchestrator threads this single instance onto TerrainCreationParameters and every road
+    ///     material's RoadSmoothingParameters.
     /// </summary>
-    public BridgeRuleSystemOptions BridgeRules { get; set; } = new();
+    public BridgeRuleSystemOptions BridgeRules { get; set; } = BridgeRuleSystemOptions.CreateWithAllRulesEnabled();
 
     /// <summary>
     ///     When true, disables spline merging (each OSM way becomes a separate spline).
@@ -454,7 +455,7 @@ public class TerrainGenerationState
         BridgeDeckThicknessMaxMeters = 1.2f;
         BridgeParapetHeightMeters = 0.9f;
         BridgeAbutmentDepthMeters = 1.0f;
-        BridgeRules = new BridgeRuleSystemOptions();
+        BridgeRules = BridgeRuleSystemOptions.CreateWithAllRulesEnabled();
         HydraulicErosion = new HydraulicErosionSettings();
         FlipMaterialProcessingOrder = false;
         EnableDecalRoads = true;

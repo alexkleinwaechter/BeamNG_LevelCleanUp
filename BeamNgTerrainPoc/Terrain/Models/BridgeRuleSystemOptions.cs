@@ -135,6 +135,40 @@ public class BridgeRuleSystemOptions
     /// </summary>
     public bool EnableSeamlessDeckOverlap { get; set; }
 
+    /// <summary>
+    ///     Turns on every rule of the system plus pier generation. Product default for the UI since
+    ///     2026-07: the rules are no longer user-facing feature flags — the app always runs the full
+    ///     system. Property initializers stay OFF so library consumers and tests keep the legacy
+    ///     byte-identical baseline; the UI layer opts in via this method /
+    ///     <see cref="CreateWithAllRulesEnabled"/>.
+    /// </summary>
+    public void EnableAllRules()
+    {
+        EnablePriorityDistribution = true;
+        EnableRampFeasibility = true;
+        EnableBridgeBridge = true;
+        EnableEarlyElevationEstimate = true;
+        EnableGradedDeck = true;
+        EnableSparseDeckConstraints = true;
+        EnableSpanSolveOrder = true;
+        EnablePinnedDeckProfile = true;
+        EnableBridgeStationReprojection = true;
+        EnableNaturalProfileAnchor = true;
+        EnableContiguousSpanConsolidation = true;
+        EnableBridgeToBridgeAbutmentSuppression = true;
+        EnableDeckToDeckContinuity = true;
+        EnableSeamlessDeckOverlap = true;
+        EnableBridgePiers = true;
+    }
+
+    /// <summary>Fresh options with every rule enabled (see <see cref="EnableAllRules"/>) and default tunables.</summary>
+    public static BridgeRuleSystemOptions CreateWithAllRulesEnabled()
+    {
+        var options = new BridgeRuleSystemOptions();
+        options.EnableAllRules();
+        return options;
+    }
+
     /// <summary>True when any rule of the system is active (cheap pipeline gate).</summary>
     public bool AnyEnabled =>
         EnablePriorityDistribution || EnableRampFeasibility ||
