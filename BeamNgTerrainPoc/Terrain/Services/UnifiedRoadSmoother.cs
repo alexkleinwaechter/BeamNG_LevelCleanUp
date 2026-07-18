@@ -1217,6 +1217,7 @@ public class UnifiedRoadSmoother
                         c.DistanceAlongSpline > seg.EndDistance)
                         continue;
                     c.StructureSpanId = spanId;
+                    c.StructureSpanType = seg.Type;
                 }
             }
         }
@@ -2231,6 +2232,14 @@ public class UnifiedRoadSmoother
                             MathF.Max(0f, (seg.EndDistance - seg.StartDistance) / 3f))
                         : 0f;
 
+                    // Tunnel plan Phase 2c: portal-apron shrink — the first/last PortalApronMeters of a
+                    // tunnel span stay ORDINARY stamped road, so the ground road runs INTO the portal on
+                    // real terrain and the floor mesh takes over at the apron end with identical Z.
+                    var tunnelRules = parameters.TunnelRules;
+                    if (seg.IsTunnel && tunnelRules?.EnablePortalAprons == true)
+                        overlap = MathF.Min(MathF.Max(0f, tunnelRules.PortalApronMeters),
+                            MathF.Max(0f, (seg.EndDistance - seg.StartDistance) / 3f));
+
                     // Doc 13: a bridge-to-bridge continuation end keeps the FULL exclusion — its 3 m
                     // would otherwise be stamped as ordinary road at deck Z and Phase 4 would blend a
                     // ground-to-deck embankment pillar under a mid-air deck corner.
@@ -2245,6 +2254,7 @@ public class UnifiedRoadSmoother
                             c.DistanceAlongSpline > seg.EndDistance)
                             continue;
                         c.StructureSpanId = spanId;
+                        c.StructureSpanType = seg.Type;
                         if (c.DistanceAlongSpline >= seg.StartDistance + overlapStart &&
                             c.DistanceAlongSpline <= seg.EndDistance - overlapEnd)
                         {

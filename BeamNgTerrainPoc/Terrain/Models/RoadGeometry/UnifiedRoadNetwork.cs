@@ -41,6 +41,16 @@ public class UnifiedRoadNetwork
     public List<BridgeSpanSnapshot> BridgeSpans { get; } = [];
 
     /// <summary>
+    /// Captured tunnel spans (tunnel plan Phase 2, ai_docs/2026-07-18). Populated by
+    /// <c>TunnelProfileSolver.RefineSpans</c> after the portal-anchored floor profile is written and
+    /// BEFORE any heightmap edit. Empty with the tunnel rules off. The single frozen source for the
+    /// tunnel mesh / portal hole cutting / tunnel DecalRoads — one tube per span, keyed by the OSM
+    /// way-id set. Reuses the structure-agnostic <see cref="BridgeSpanSnapshot" /> shape (rename to
+    /// StructureSpanSnapshot is a later mechanical refactor, plan §9.6).
+    /// </summary>
+    public List<BridgeSpanSnapshot> TunnelSpans { get; } = [];
+
+    /// <summary>
     /// The merged-corridor bridge-elevation plan (plan doc 14 §4, Phase C/D). Computed by
     /// <c>BridgeElevationPlanner.Plan</c> and stashed by <c>UnifiedRoadSmoother.ApplyBridgeDeckPins</c>
     /// (Phase 1.85) once the span decks have been pinned. Null in legacy (flag-off) mode — there are no spans
@@ -302,6 +312,7 @@ public class UnifiedRoadNetwork
         Junctions.Clear();
         GradeSeparatedCrossings.Clear();
         BridgeSpans.Clear();
+        TunnelSpans.Clear();
         SplineMaterialMap.Clear();
         _splineById.Clear();
     }

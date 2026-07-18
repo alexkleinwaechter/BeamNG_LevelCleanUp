@@ -716,6 +716,16 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.BridgeRules?.EnableAllRules();
                 }
 
+                // Tunnel rule system (tunnel plan 2026-07-18): same discipline — tunables from the
+                // preset, flags forced back on (the app always runs the full tunnel system; old
+                // presets without the node simply keep the state defaults).
+                if (terrainOptions["tunnelRules"] is JsonObject tunnelRulesNode)
+                {
+                    result.TunnelRules = tunnelRulesNode.Deserialize<TunnelRuleSystemOptions>(
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    result.TunnelRules?.EnableAllRules();
+                }
+
                 var hydraulicErosion = terrainOptions["hydraulicErosion"];
                 if (hydraulicErosion != null)
                     result.HydraulicErosion = ImportHydraulicErosionSettings(hydraulicErosion);

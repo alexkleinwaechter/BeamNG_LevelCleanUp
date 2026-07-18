@@ -131,6 +131,13 @@ public class TerrainPresetResult
     public BridgeRuleSystemOptions? BridgeRules { get; set; }
 
     /// <summary>
+    ///     Tunnel rule system options (tunnel plan 2026-07-18): bore dimensions, portal apron/hole
+    ///     tunables. Null when the preset predates tunnels (state keeps its defaults). Flags are
+    ///     forced on at import like <see cref="BridgeRules" />.
+    /// </summary>
+    public TunnelRuleSystemOptions? TunnelRules { get; set; }
+
+    /// <summary>
     ///     Bridge deck structural thickness as a fraction of the span (clamped to Min/Max below).
     /// </summary>
     public float? BridgeDeckThicknessSpanRatio { get; set; }

@@ -43,6 +43,7 @@ public class BridgeAbutmentOverlapTests
             if (cs.DistanceAlongSpline >= span.StartDistance && cs.DistanceAlongSpline <= span.EndDistance)
             {
                 cs.StructureSpanId = span.SpanId;
+                cs.StructureSpanType = span.Type;
                 cs.IsExcluded = true;
                 cs.TargetElevation = deckZ;
             }
@@ -169,6 +170,7 @@ public class BridgeAbutmentOverlapTests
             if (cs.DistanceAlongSpline >= span.StartDistance && cs.DistanceAlongSpline <= span.EndDistance)
             {
                 cs.StructureSpanId = span.SpanId;
+                cs.StructureSpanType = span.Type;
                 cs.IsExcluded = true;
                 cs.TargetElevation = 14.7f;
             }

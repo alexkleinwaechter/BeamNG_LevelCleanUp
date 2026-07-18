@@ -45,6 +45,7 @@ public class BridgeSpanProfileTests
             if (d >= 15f && d <= 25f)
             {
                 c.StructureSpanId = seg.SpanId;
+                c.StructureSpanType = seg.Type;
                 c.IsExcluded = true;
                 // Terrain-following valley: a parabola dipping 10 m below the road at mid-span.
                 var t = (d - 15f) / 10f;

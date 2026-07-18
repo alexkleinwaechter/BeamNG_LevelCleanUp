@@ -9,7 +9,7 @@ namespace BeamNG_LevelCleanUp.LogicBasecolorManager;
 
 public class TerrainPbrMapBuilder
 {
-    private const byte HoleMaterialIndex = 255;
+    private const byte HoleMaterialIndex = BeamNgTerrainPoc.Terrain.Processing.TerrainHoleCutter.HoleMaterialIndex;
     private const int PreviewMaxSize = 512;
     public const int LargePreviewMaxSize = 1024;
 

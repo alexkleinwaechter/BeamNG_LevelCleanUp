@@ -69,6 +69,7 @@ public class DeckToDeckContinuityTests
             if (d >= trunkSpan.StartDistance && d <= trunkSpan.EndDistance)
             {
                 cs.StructureSpanId = trunkSpan.SpanId;
+                cs.StructureSpanType = trunkSpan.Type;
                 cs.IsExcluded = true;
                 if (trunkSag)
                 {
@@ -87,6 +88,7 @@ public class DeckToDeckContinuityTests
             if (d >= rampSpan.StartDistance && d <= rampSpan.EndDistance)
             {
                 cs.StructureSpanId = rampSpan.SpanId;
+                cs.StructureSpanType = rampSpan.Type;
                 cs.IsExcluded = true;
                 var t = (d - rampSpan.StartDistance) / (rampLength - rampSpan.StartDistance);
                 cs.TargetElevation = 10f + (rampEndZ - 10f) * t;

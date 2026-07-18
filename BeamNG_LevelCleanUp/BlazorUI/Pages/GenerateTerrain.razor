@@ -118,6 +118,7 @@
                                        BridgeParapetHeightMeters="@_bridgeParapetHeightMeters"
                                        BridgeAbutmentDepthMeters="@_bridgeAbutmentDepthMeters"
                                        BridgeRules="@_state.BridgeRules"
+                                       TunnelRules="@_state.TunnelRules"
                                        HydraulicErosion="@_state.HydraulicErosion"
                                        EnableBuildings="@_enableBuildings"
                                        EnableBuildingClustering="@_enableBuildingClustering"
@@ -674,15 +675,15 @@
                                 <MudCheckBox T="bool"
                                              Value="_excludeTunnelsFromTerrain"
                                              ValueChanged="OnExcludeTunnelsFromTerrainChanged"
-                                             Label="Exclude Tunnels"
+                                             Label="Generate Tunnels"
                                              Disabled="@(_isGenerating || _isAnalyzing)"
                                              Color="Color.Primary" />
-                                <MudTooltip Text="When enabled, roads tagged as tunnels in OSM are excluded from terrain smoothing and material painting. This prevents tunnel structures from modifying the terrain surface, as tunnels should pass through the terrain without surface modification.">
+                                <MudTooltip Text="Builds roads tagged as tunnels in OSM as drivable tube meshes through the terrain: portal-anchored floor profile, arched bore with portal headwalls, terrain holes cut at the portal mouths. The mountain above deep sections stays untouched. When off, tunnel roads are pressed into the terrain surface like normal roads.">
                                     <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
                                 </MudTooltip>
                             </div>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Don't modify terrain over tunnels
+                                Build OSM tunnels as drivable tubes
                             </MudText>
                         </MudItem>
 
@@ -1074,6 +1075,153 @@
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">Default 12</MudText>
                                 </MudItem>
                             </div>
+                        </div>
+
+                        @* Tunnel tuning values. Like the bridge rules, the tunnel rule system itself
+                           (profile solve, mesh, portal holes/aprons) is always on — gated only by the
+                           "Generate Tunnels" switch. Same CSS-hidden pattern (MudNumericField text sync). *@
+                        <div style="@(_excludeTunnelsFromTerrain ? "display: contents" : "display: none")">
+                            <MudItem xs="12">
+                                <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Tunnel Bore</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                    Dimensions of the generated tunnel tube and its portals.
+                                </MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.TunnelInteriorHeightMeters"
+                                                     Label="Interior Height (m)"
+                                                     Min="3f" Max="10f" Step="0.1f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Height from the tunnel floor to the apex of the ceiling arch.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Floor to ceiling apex (default 5.0)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.TunnelWallThicknessMeters"
+                                                     Label="Wall Thickness (m)"
+                                                     Min="0.2f" Max="2f" Step="0.1f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Thickness of the tube shell between the interior surface and the outside of the tunnel structure.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Interior to outer shell (default 0.6)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.TunnelSideClearanceMeters"
+                                                     Label="Side Clearance (m)"
+                                                     Min="0f" Max="3f" Step="0.1f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Extra space between the edge of the roadway and the tunnel wall, per side.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Roadway edge to wall (default 1.0)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.PortalApronMeters"
+                                                     Label="Portal Apron (m)"
+                                                     Min="0f" Max="10f" Step="0.5f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Length of ordinary surface road kept at each tunnel end, so the road runs into the portal on real terrain before the tube takes over.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Stamped road into the portal (default 3.0)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.PortalHeadwallFlareMeters"
+                                                     Label="Portal Wall Size (m)"
+                                                     Min="0f" Max="20f" Step="0.5f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="How far the portal front wall extends beyond the tube - left, right and up - to hide the ragged terrain hole edge around the mouth.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Face plate beyond the tube (default 5.0)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.PortalHeadwallDepthMeters"
+                                                     Label="Portal Wall Depth (m)"
+                                                     Min="0.1f" Max="20f" Step="0.1f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Thickness of the portal front wall, extruded into the mountain - makes it a solid block visible from every side, not a thin plate.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Solid wall thickness (default 10.0)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.PortalFloorTongueMeters"
+                                                     Label="Portal Floor Tongue (m)"
+                                                     Min="0f" Max="15f" Step="0.5f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Drivable floor slab extended out of each portal toward the road, slightly below the road surface - catches the wheels where the terrain hole edge is imprecise.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Safety slab out of the mouth (default 6.0)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.TunnelMinCoverMeters"
+                                                     Label="Min Cover (m)"
+                                                     Min="0f" Max="20f" Step="0.5f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Terrain cover wanted above the tunnel roof. Shallow stretches are reported in the log; the terrain there becomes part of the portal opening.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Terrain above the roof (default 5.0)</MudText>
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <div class="d-flex align-center gap-1">
+                                    <MudNumericField T="float"
+                                                     @bind-Value="_state.TunnelRules.TunnelMaxGradePercent"
+                                                     Label="Max Grade (%)"
+                                                     Min="1f" Max="20f" Step="0.5f"
+                                                     Disabled="@(_isGenerating || _isAnalyzing)"
+                                                     Variant="Variant.Text" />
+                                    <MudTooltip Text="Steepest longitudinal slope expected inside a tunnel. Steeper profiles are only reported in the log — they are never flattened automatically.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Warn-only threshold (default 6.0)</MudText>
+                            </MudItem>
                         </div>
 
                         @* Building Generation *@

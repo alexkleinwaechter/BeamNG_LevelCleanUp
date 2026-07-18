@@ -1,6 +1,7 @@
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Export;
 
@@ -469,7 +470,7 @@ public static class BridgeProfileSolver
         // just outside the span — no fragile junction walk — and only the span sections are overridden, so the
         // road keeps its chain elevation and continuity is structural. Each span is captured into BridgeSpans.
         var spanKeys = network.CrossSections
-            .Where(c => c.StructureSpanId >= 0)
+            .Where(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge)
             .Select(c => (SplineId: c.OwnerSplineId, SpanId: c.StructureSpanId))
             .Distinct()
             .OrderBy(k => k.SplineId).ThenBy(k => k.SpanId)
@@ -1520,7 +1521,7 @@ public static class BridgeProfileSolver
                     !float.IsInfinity(c.CrossSection.TargetElevation) &&
                     (c.IsEndpoint
                         ? BridgeDeckDaeExporter.ShouldGenerateDeck(c.Spline)
-                        : c.CrossSection.StructureSpanId >= 0)).ToList();
+                        : c.CrossSection is { StructureSpanId: >= 0, StructureSpanType: StructureType.Bridge })).ToList();
             }
 
             if (candidates.Count == 0)

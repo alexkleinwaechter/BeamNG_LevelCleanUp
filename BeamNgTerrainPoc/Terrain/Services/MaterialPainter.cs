@@ -202,7 +202,24 @@ public class MaterialPainter
         {
             if ((seg.IsBridge && p.ExcludeBridgesFromTerrain) ||
                 (seg.IsTunnel && p.ExcludeTunnelsFromTerrain))
-                ranges.Add((seg.StartDistance, seg.EndDistance));
+            {
+                var start = seg.StartDistance;
+                var end = seg.EndDistance;
+
+                // Tunnel plan Phase 2c: the portal aprons (first/last PortalApronMeters, exclusion-shrunk
+                // to ordinary stamped road) must stay material-painted — the road runs INTO the portal on
+                // real terrain. Shrink the paint-skip range by the same rule as the exclusion shrink.
+                if (seg.IsTunnel && p.TunnelRules?.EnablePortalAprons == true)
+                {
+                    var apron = MathF.Min(MathF.Max(0f, p.TunnelRules.PortalApronMeters),
+                        MathF.Max(0f, (end - start) / 3f));
+                    start += apron;
+                    end -= apron;
+                }
+
+                if (end > start)
+                    ranges.Add((start, end));
+            }
         }
         return ranges;
     }

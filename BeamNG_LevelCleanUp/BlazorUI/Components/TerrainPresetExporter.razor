@@ -79,6 +79,7 @@
     [Parameter] public float BridgeParapetHeightMeters { get; set; } = 0.9f;
     [Parameter] public float BridgeAbutmentDepthMeters { get; set; } = 1.0f;
     [Parameter] public BridgeRuleSystemOptions? BridgeRules { get; set; }
+    [Parameter] public TunnelRuleSystemOptions? TunnelRules { get; set; }
     [Parameter] public HydraulicErosionSettings HydraulicErosion { get; set; } = new();
     [Parameter] public bool EnableBuildings { get; set; }
     [Parameter] public bool EnableBuildingClustering { get; set; }
@@ -488,6 +489,10 @@
                 // Bridge Rule System V2 (plan doc 01): the whole options object, flags + tunables.
                 ["bridgeRules"] = BridgeRules != null
                     ? System.Text.Json.JsonSerializer.SerializeToNode(BridgeRules)
+                    : null,
+                // Tunnel rule system (tunnel plan 2026-07-18): same whole-object pattern.
+                ["tunnelRules"] = TunnelRules != null
+                    ? System.Text.Json.JsonSerializer.SerializeToNode(TunnelRules)
                     : null,
                 ["hydraulicErosion"] = BuildHydraulicErosionOptions()
             },

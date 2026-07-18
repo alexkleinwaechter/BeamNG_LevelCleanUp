@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
@@ -106,6 +107,17 @@ public class UnifiedCrossSection
     ///     downstream consumers group a span's sections and build one deck per span (Phase 4/5).
     /// </summary>
     public int StructureSpanId { get; set; } = -1;
+
+    /// <summary>
+    ///     Structure type of the span this cross-section belongs to (<see cref="StructureType.None" /> when
+    ///     <see cref="StructureSpanId" /> is −1). Set alongside the span id in
+    ///     <c>UnifiedRoadSmoother.TagStructureSpans</c> / <c>MarkStructureExclusions</c> from the owning
+    ///     <see cref="StructureSegment.Type" />. The span machinery was historically bridge-only and every
+    ///     consumer assumed "span ⇒ bridge deck"; tunnel spans flow through the same tagging, so
+    ///     bridge-specific consumers (deck solver/exporter/excavator/abutment stamper) must gate on
+    ///     <c>StructureSpanType == StructureType.Bridge</c> (tunnel plan Phase 0, ai_docs/2026-07-18).
+    /// </summary>
+    public StructureType StructureSpanType { get; set; } = StructureType.None;
 
     /// <summary>
     ///     Global index of this cross-section across all splines in the network.

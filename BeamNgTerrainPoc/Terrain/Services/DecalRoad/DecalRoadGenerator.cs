@@ -39,9 +39,13 @@ public class DecalRoadGenerator
         foreach (var spline in network.Splines)
         {
             // Generated bridges still need DecalRoad visual layers on top of the deck mesh.
-            // Generated tunnels stay skipped until tunnel mesh/decal behavior is designed.
+            // Tunnels: with the tunnel MESH rule on (tunnel plan Phase 5), decals are generated and
+            // the tunnel runs project onto the tube floor collision; without it the legacy skip
+            // stands. (The legacy whole-spline skip was also a latent bug: a merged corridor whose
+            // base way was the tunnel lost ALL its decals, ground stretches included.)
             var isGeneratedBridge = IsGeneratedBridge(spline);
-            if (spline.IsTunnel && spline.Parameters.ExcludeTunnelsFromTerrain)
+            if (spline.IsTunnel && spline.Parameters.ExcludeTunnelsFromTerrain &&
+                spline.Parameters.TunnelRules?.EnableTunnelMesh != true)
                 continue;
 
             // Resolve layer set — roundabout splines use "roundabout" key
@@ -388,7 +392,9 @@ public class DecalRoadGenerator
         // OverObjects that passes UNDER another structure would project its markings onto the wrong deck),
         // and the layer's render scope (RenderOnRoads/Bridges/Tunnels) can drop runs entirely.
         // Legacy whole-spline bridges (isGeneratedBridge) are a single all-deck run.
-        var runs = PartitionSectionsByStructure(spline, sections, isGeneratedBridge);
+        // Tunnel runs project onto the tube floor collision when the mesh rule is on (Phase 5).
+        var runs = PartitionSectionsByStructure(spline, sections, isGeneratedBridge,
+            tunnelHasMesh: spline.Parameters.TunnelRules?.EnableTunnelMesh == true);
 
         // ── V2 plan 0.5 hook seam ────────────────────────────────────────────────────────────────────────
         // Bespoke bridge-DecalRoad rules land HERE: each run already knows (a) the spline, (b) its structure
@@ -580,10 +586,11 @@ public class DecalRoadGenerator
     ///     overlap by one full node span (two shared nodes) — a point-contact cut leaves a wedge-shaped
     ///     gap in curves (see the extension loop below). The extra nodes over ground are harmless
     ///     because decals still project onto terrain.</para>
-    ///     <para>Only BRIDGE spans set <see cref="SectionRun.OnDeck" /> (only decks have a collision mesh
-    ///     for OverObjects to project onto). Tunnel spans — tagged by
-    ///     <see cref="UnifiedRoadSmoother.TagStructureSpans" /> as well — get the Tunnel context for
-    ///     scope filtering but never OnDeck.</para>
+    ///     <para>BRIDGE spans always set <see cref="SectionRun.OnDeck" /> (the deck collision mesh is
+    ///     what OverObjects projects onto). Tunnel spans — tagged by
+    ///     <see cref="UnifiedRoadSmoother.TagStructureSpans" /> as well — set OnDeck only when
+    ///     <paramref name="tunnelHasMesh" /> (the tunnel mesh rule generates a tube whose floor is the
+    ///     collision surface, tunnel plan Phase 5); otherwise they keep scope filtering only.</para>
     ///     <para>Legacy whole-spline structures: a generated bridge is a single all-deck run; a
     ///     non-generated bridge/tunnel spline (stamped into terrain) is a single Bridge/Tunnel-context
     ///     run without OnDeck, so render scopes still apply to it.</para>
@@ -592,7 +599,8 @@ public class DecalRoadGenerator
         ParameterizedRoadSpline spline,
         IReadOnlyList<UnifiedCrossSection> sections,
         bool isGeneratedBridge,
-        int structureRunExtension = 2)
+        int structureRunExtension = 2,
+        bool tunnelHasMesh = false)
     {
         if (sections.Count == 0)
             return [];
@@ -625,6 +633,10 @@ public class DecalRoadGenerator
             return [new SectionRun(0, last, wholeContext, OnDeck: false)];
         }
 
+        bool RunOnDeck(StructureRunContext context) =>
+            context == StructureRunContext.Bridge ||
+            (context == StructureRunContext.Tunnel && tunnelHasMesh);
+
         var runs = new List<SectionRun>();
         var runStart = 0;
         var runContext = ClassifySection(sections[0], bridgeSpanIds, tunnelSpanIds);
@@ -632,12 +644,12 @@ public class DecalRoadGenerator
         {
             var context = ClassifySection(sections[i], bridgeSpanIds, tunnelSpanIds);
             if (context == runContext) continue;
-            runs.Add(new SectionRun(runStart, i - 1, runContext, runContext == StructureRunContext.Bridge));
+            runs.Add(new SectionRun(runStart, i - 1, runContext, RunOnDeck(runContext)));
             runStart = i;
             runContext = context;
         }
 
-        runs.Add(new SectionRun(runStart, last, runContext, runContext == StructureRunContext.Bridge));
+        runs.Add(new SectionRun(runStart, last, runContext, RunOnDeck(runContext)));
 
         if (runs.Count == 1)
             return runs;

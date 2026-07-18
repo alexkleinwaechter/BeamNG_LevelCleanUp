@@ -30,7 +30,7 @@ public class BridgeDeckDaeExporter
     /// <summary>
     /// Default placeholder material name for bridge decks (D3). Replaced with real materials later.
     /// </summary>
-    public const string DefaultMaterialName = "eca_bld_concrete"; //bridge_deck_placeholder
+    public const string DefaultMaterialName = "building_concrete"; //bridge_deck_placeholder
 
     /// <summary>
     /// Doc 15 (b): a parapet station is suppressed only when its edge point lies INSIDE the partner

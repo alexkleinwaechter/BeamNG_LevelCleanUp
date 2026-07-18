@@ -4,6 +4,7 @@ using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Export;
 
@@ -838,7 +839,7 @@ public static class GradeSeparationResolver
                 movedSections++;
                 maxRaise = MathF.Max(maxRaise, raise);
 
-                if (cs.StructureSpanId >= 0)
+                if (cs is { StructureSpanId: >= 0, StructureSpanType: StructureType.Bridge })
                     touchedSpans.Add((group.Key, cs.StructureSpanId));
                 if (cs.IsExcluded || fillByCell == null)
                     continue; // deck-only sections get no terrain fill — the doc-06 overlap zone IS road
@@ -988,7 +989,9 @@ public static class GradeSeparationResolver
         // thickness span must be measured over the span sections — NOT the whole corridor — or the deck would
         // read as enormously thick. Legacy mode: every section of the whole bridge spline is the deck.
         var sections = network.GetCrossSectionsForSpline(upperSplineId).ToList();
-        var spanSections = sections.Where(c => c.StructureSpanId >= 0).ToList();
+        var spanSections = sections
+            .Where(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge)
+            .ToList();
         if (spanSections.Count == 0 && !BridgeDeckDaeExporter.ShouldGenerateDeck(upper))
             return 0f;
         var deckSections = spanSections.Count > 0 ? spanSections : sections;
@@ -1017,7 +1020,7 @@ public static class GradeSeparationResolver
         if (BridgeDeckDaeExporter.ShouldGenerateDeck(spline))
             return true;
         var near = NearestSection(network, spline.SplineId, atXY);
-        return near is { StructureSpanId: >= 0 };
+        return near is { StructureSpanId: >= 0, StructureSpanType: StructureType.Bridge };
     }
 
     /// <summary>

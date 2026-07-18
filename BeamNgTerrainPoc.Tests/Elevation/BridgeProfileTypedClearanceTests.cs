@@ -52,6 +52,7 @@ public class BridgeProfileTypedClearanceTests
             if (inSpan)
             {
                 c.StructureSpanId = seg.SpanId;
+                c.StructureSpanType = seg.Type;
                 c.IsExcluded = true;
                 c.PinnedElevation = PinZ;
                 c.TargetElevation = PinZ;

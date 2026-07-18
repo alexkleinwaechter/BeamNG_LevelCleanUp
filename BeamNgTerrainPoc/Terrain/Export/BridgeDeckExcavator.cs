@@ -1,5 +1,6 @@
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Export;
 
@@ -158,10 +159,10 @@ public static class BridgeDeckExcavator
     /// </summary>
     public static List<List<UnifiedCrossSection>> CollectDeckGroups(UnifiedRoadNetwork network)
     {
-        if (network.CrossSections.Any(c => c.StructureSpanId >= 0))
+        if (network.CrossSections.Any(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge))
         {
             return network.CrossSections
-                .Where(c => c.StructureSpanId >= 0)
+                .Where(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge)
                 .GroupBy(c => (c.OwnerSplineId, c.StructureSpanId))
                 .Select(g => g.OrderBy(c => c.LocalIndex).ToList())
                 .ToList();

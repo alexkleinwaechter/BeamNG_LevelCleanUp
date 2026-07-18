@@ -251,11 +251,10 @@ public class RoadSmoothingParameters
     public bool ExcludeBridgesFromTerrain { get; set; } = false;
 
     /// <summary>
-    ///     When true, tunnels are excluded from terrain smoothing and material painting.
-    ///     When false, tunnel ways are treated as normal roads (legacy behavior).
-    ///     This prevents tunnel structures from modifying the terrain surface,
-    ///     as tunnels should pass through the terrain without surface modification.
-    ///     Default: true (tunnels are excluded)
+    ///     When true, tunnel spans are excluded from terrain smoothing and material painting (and,
+    ///     with the tunnel rules on, built as drivable tube meshes with portal holes — tunnel plan
+    ///     2026-07-18). When false, tunnel ways are treated as normal surface roads (legacy behavior).
+    ///     Default: false.
     /// </summary>
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
@@ -286,6 +285,20 @@ public class RoadSmoothingParameters
     public BridgeRuleSystemOptions GetBridgeRules()
     {
         return BridgeRules ??= new BridgeRuleSystemOptions();
+    }
+
+    /// <summary>
+    ///     Tunnel rule system configuration (plan ai_docs/2026-07-18_tunnel_generation/01): portal-anchored
+    ///     floor profile, tube mesh, portal holes/aprons. Null = defaults (all flags OFF ⇒ byte-identical
+    ///     baseline). Should be the same instance as <c>TerrainCreationParameters.TunnelRules</c> when
+    ///     threaded from the orchestrator (the <see cref="BridgeRules" /> single-instance rule applies).
+    /// </summary>
+    public TunnelRuleSystemOptions? TunnelRules { get; set; }
+
+    /// <summary>Gets or creates the TunnelRuleSystemOptions (auto-creates all-flags-off defaults if null).</summary>
+    public TunnelRuleSystemOptions GetTunnelRules()
+    {
+        return TunnelRules ??= new TunnelRuleSystemOptions();
     }
 
     /// <summary>

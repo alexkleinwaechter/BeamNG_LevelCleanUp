@@ -2174,6 +2174,9 @@ public partial class GenerateTerrain : IDisposable
             if (result.BridgeRules != null)
                 _state.BridgeRules = result.BridgeRules; // V2 rule system (whole options object)
 
+            if (result.TunnelRules != null)
+                _state.TunnelRules = result.TunnelRules; // tunnel rule system (whole options object)
+
             if (result.BridgeDeckThicknessSpanRatio.HasValue)
                 _bridgeDeckThicknessSpanRatio = result.BridgeDeckThicknessSpanRatio.Value;
 

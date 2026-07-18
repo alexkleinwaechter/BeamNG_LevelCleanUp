@@ -227,7 +227,7 @@ public static class DecalRoadDefaultLayerSets
                 FadeIn = 2.0f, FadeOut = 2.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
                 ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
-                RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
+                RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = true
             },
             new()
             {
@@ -413,7 +413,7 @@ public static class DecalRoadDefaultLayerSets
                 FadeIn = 2.0f, FadeOut = 2.0f,
                 JunctionConstraint = JunctionConstraintMode.None,
                 ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
-                RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
+                RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = true
             },
             new()
             {
@@ -478,7 +478,7 @@ public static class DecalRoadDefaultLayerSets
                     FadeIn = 2.0f, FadeOut = 2.0f,
                     JunctionConstraint = JunctionConstraintMode.None,
                     ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
-                    RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
+                    RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = true
                 },
                 new ()
                 {

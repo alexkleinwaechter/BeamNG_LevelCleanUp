@@ -1068,6 +1068,7 @@ public class TerrainGenerationOrchestrator
             BridgeParapetHeightMeters = state.BridgeParapetHeightMeters,
             BridgeAbutmentDepthMeters = state.BridgeAbutmentDepthMeters,
             BridgeRules = state.BridgeRules,
+            TunnelRules = state.TunnelRules,
             HydraulicErosion = state.HydraulicErosion.Clone(),
             AutoSetBaseHeightFromGeoTiff = state.MaxHeight <= 0,
             DecalRoadSettings = state.EnableDecalRoads
@@ -1095,6 +1096,7 @@ public class TerrainGenerationOrchestrator
             if (mat.RoadParameters != null)
             {
                 mat.RoadParameters.BridgeRules = parameters.BridgeRules;
+                mat.RoadParameters.TunnelRules = parameters.TunnelRules;
                 mat.RoadParameters.BridgeObstacles = bridgeObstacles;
             }
 

@@ -36,7 +36,7 @@ public static class RoadElevationDeviationReport
 
         var anchors = BuildSpanAnchors(network);
         var rows = new List<SplineDeviation>();
-        long sectionsCompared = 0, deckSectionsSkipped = 0;
+        long sectionsCompared = 0, deckSectionsSkipped = 0, tunnelSectionsSkipped = 0;
 
         foreach (var spline in network.Splines)
         {
@@ -59,7 +59,12 @@ public static class RoadElevationDeviationReport
 
                 if (cs.IsExcluded || cs.StructureSpanId >= 0)
                 {
-                    deckSectionsSkipped++;
+                    // ALL structure spans stay out of the dam metric (a span's profile is solver-owned,
+                    // not terrain-following); tunnels are merely counted apart for diagnosis (Phase 0).
+                    if (cs.StructureSpanType == Osm.Models.StructureType.Tunnel)
+                        tunnelSectionsSkipped++;
+                    else
+                        deckSectionsSkipped++;
                     continue;
                 }
 
@@ -117,7 +122,7 @@ public static class RoadElevationDeviationReport
             $"[DAM-REPORT] totals: splines>1m={rows.Count(r => r.MaxAbs > 1f)} " +
             $"splines>3m={rows.Count(r => r.MaxAbs > 3f)} " +
             $"len>1m={rows.Sum(r => r.LenOver1):F0}m len>3m={rows.Sum(r => r.LenOver3):F0}m " +
-            $"deckSectionsSkipped={deckSectionsSkipped}");
+            $"deckSectionsSkipped={deckSectionsSkipped} tunnelSectionsSkipped={tunnelSectionsSkipped}");
         log.InfoFileOnly("=== [DAM-REPORT] end ===");
     }
 

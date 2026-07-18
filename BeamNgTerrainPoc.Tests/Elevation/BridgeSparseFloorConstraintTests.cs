@@ -64,6 +64,7 @@ public class BridgeSparseFloorConstraintTests
             if (cs.DistanceAlongSpline < seg.StartDistance || cs.DistanceAlongSpline > seg.EndDistance)
                 continue;
             cs.StructureSpanId = seg.SpanId;
+            cs.StructureSpanType = seg.Type;
             cs.IsExcluded = true;
         }
     }

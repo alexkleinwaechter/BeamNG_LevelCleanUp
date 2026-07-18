@@ -57,9 +57,10 @@ public class TerrainGenerationState
     public bool ExcludeBridgesFromTerrain { get; set; } = false;
 
     /// <summary>
-    ///     When true, tunnels are excluded from terrain smoothing and material painting.
-    ///     When false, tunnel ways are treated as normal roads (legacy behavior).
-    ///     Default: true (tunnels are excluded)
+    ///     UI label "Generate Tunnels". When true, tunnel spans are excluded from terrain
+    ///     smoothing/painting and built as drivable tube meshes with portal terrain holes instead
+    ///     (tunnel plan 2026-07-18). When false, tunnel ways are treated as normal surface roads
+    ///     (legacy behavior). Default: false.
     /// </summary>
     public bool ExcludeTunnelsFromTerrain { get; set; } = false;
 
@@ -117,6 +118,15 @@ public class TerrainGenerationState
     ///     material's RoadSmoothingParameters.
     /// </summary>
     public BridgeRuleSystemOptions BridgeRules { get; set; } = BridgeRuleSystemOptions.CreateWithAllRulesEnabled();
+
+    /// <summary>
+    ///     Tunnel rule system configuration (tunnel plan 2026-07-18). Like <see cref="BridgeRules" />,
+    ///     the rules are always on in the app (only the tunables are user-facing; the "Generate
+    ///     Tunnels" switch gates the whole feature via <see cref="ExcludeTunnelsFromTerrain" />);
+    ///     preset import re-enables them likewise. Threaded as one shared instance onto
+    ///     TerrainCreationParameters and every road material's RoadSmoothingParameters.
+    /// </summary>
+    public TunnelRuleSystemOptions TunnelRules { get; set; } = TunnelRuleSystemOptions.CreateWithAllRulesEnabled();
 
     /// <summary>
     ///     When true, disables spline merging (each OSM way becomes a separate spline).
@@ -456,6 +466,7 @@ public class TerrainGenerationState
         BridgeParapetHeightMeters = 0.9f;
         BridgeAbutmentDepthMeters = 1.0f;
         BridgeRules = BridgeRuleSystemOptions.CreateWithAllRulesEnabled();
+        TunnelRules = TunnelRuleSystemOptions.CreateWithAllRulesEnabled();
         HydraulicErosion = new HydraulicErosionSettings();
         FlipMaterialProcessingOrder = false;
         EnableDecalRoads = true;

@@ -49,6 +49,7 @@ public class BridgePinnedSpanProfileTests
             if (inSpan)
             {
                 c.StructureSpanId = seg.SpanId;
+                c.StructureSpanType = seg.Type;
                 c.IsExcluded = true;
                 c.PinnedElevation = PinZ;
                 c.TargetElevation = PinZ; // the smoother hard-held the pin
@@ -128,6 +129,7 @@ public class BridgePinnedSpanProfileTests
             if (inSpan)
             {
                 c.StructureSpanId = seg.SpanId;
+                c.StructureSpanType = seg.Type;
                 c.IsExcluded = true;
             }
 

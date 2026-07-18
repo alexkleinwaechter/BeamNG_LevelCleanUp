@@ -48,6 +48,7 @@ public class BridgeDeckFootprintRasterTests
                 cs.DistanceAlongSpline <= span.EndDistance)
             {
                 cs.StructureSpanId = span.SpanId;
+                cs.StructureSpanType = span.Type;
                 cs.IsExcluded = true;
                 cs.TargetElevation = deckZ;
             }
@@ -132,6 +133,7 @@ public class BridgeDeckFootprintRasterTests
             if (cs.DistanceAlongSpline >= 100f && cs.DistanceAlongSpline <= 200f)
             {
                 cs.StructureSpanId = spanA.SpanId;
+                cs.StructureSpanType = spanA.Type;
                 cs.IsExcluded = true;
                 cs.TargetElevation = 10f; // LOWER deck
             }
@@ -144,6 +146,7 @@ public class BridgeDeckFootprintRasterTests
             if (cs.DistanceAlongSpline >= 100f && cs.DistanceAlongSpline <= 200f)
             {
                 cs.StructureSpanId = spanB.SpanId;
+                cs.StructureSpanType = spanB.Type;
                 cs.IsExcluded = true;
                 cs.TargetElevation = 30f; // HIGHER deck
             }

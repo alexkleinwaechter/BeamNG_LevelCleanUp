@@ -67,6 +67,7 @@ public class SeamlessDeckOverlapTests
             if (d >= trunkSpan.StartDistance && d <= trunkSpan.EndDistance)
             {
                 cs.StructureSpanId = trunkSpan.SpanId;
+                cs.StructureSpanType = trunkSpan.Type;
                 cs.IsExcluded = true;
                 cs.BankAngleRadians = trunkBankRadians;
             }
@@ -80,6 +81,7 @@ public class SeamlessDeckOverlapTests
             if (d >= rampSpan.StartDistance && d <= rampSpan.EndDistance)
             {
                 cs.StructureSpanId = rampSpan.SpanId;
+                cs.StructureSpanType = rampSpan.Type;
                 cs.IsExcluded = true;
                 var t = (d - rampSpan.StartDistance) / (rampLength - rampSpan.StartDistance);
                 cs.TargetElevation = 10f + (rampEndZ - 10f) * t;

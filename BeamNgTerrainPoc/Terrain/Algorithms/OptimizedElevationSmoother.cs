@@ -2,6 +2,7 @@
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Algorithms;
 
@@ -715,6 +716,14 @@ public class OptimizedElevationSmoother : IHeightCalculator
         // solved approaches.
         var hasSoft = ApplySoftShapingToRaw(chainCrossSections, rawElevations);
 
+        // Step 1.57 (tunnel plan follow-up, tunneljena): replace the RAW terrain under each TUNNEL span
+        // with the boundary-anchored chord — the mountain must never enter the filter input. Without
+        // this the filter window drags the approach's last meters up the flank (polluted portal grades,
+        // 21.8% on a 3.1 km bore) and the whole corridor solves over the peak instead of through it.
+        // The direct mirror of the bridge soft-span shaping; flag-gated ⇒ baseline byte-identical.
+        if (parameters?.TunnelRules?.EnableTunnelProfile == true)
+            ApplyTunnelChordToRaw(chainCrossSections, rawElevations);
+
         // Step 1.6 (Amendment 03 v2): soft approach ramps — feather the deck-end delta into the RAW input
         // outside each pinned/soft run, so the filter's output CLIMBS to the deck instead of stopping
         // half-way (doc 16 §3b abutment step) — soft runs included (2026-07-13), so the climb is the
@@ -779,6 +788,11 @@ public class OptimizedElevationSmoother : IHeightCalculator
         // Amendment 03 v3: re-shape the soft spans each iteration — the chord re-anchors on the PREVIOUS
         // iteration's solved approaches, so the deck converges flush while the humps keep the clearance.
         var hasSoft = ApplySoftShapingToRaw(chainCrossSections, rawElevations);
+
+        // Tunnel chord shaping, re-applied per iteration (re-anchors on the previous solved approaches —
+        // same convergence argument as the bridge soft spans; see CalculateChainElevations Step 1.57).
+        if (parameters?.TunnelRules?.EnableTunnelProfile == true)
+            ApplyTunnelChordToRaw(chainCrossSections, rawElevations);
 
         // Amendment 03 v2: re-feather the soft approach ramps each iteration (soft runs included,
         // 2026-07-13). The raw base here is the PREVIOUS iteration's solved profile, so the ramp
@@ -859,6 +873,55 @@ public class OptimizedElevationSmoother : IHeightCalculator
                 var t = (float)(k - runStart) / len;
                 var boundaryChord = zL + (zR - zL) * t;
                 raw[k] = boundaryChord + MathF.Max(0f, cs[k].SoftDeckRiseMeters!.Value);
+            }
+        }
+
+        return any;
+    }
+
+    /// <summary>
+    /// Tunnel plan follow-up (tunneljena render 2026-07-18): rewrites the RAW filter input of each
+    /// contiguous TUNNEL-span run (<see cref="UnifiedCrossSection.StructureSpanType"/> == Tunnel) as the
+    /// chord between the raw values just OUTSIDE the run — the portal-level line. The over-the-mountain
+    /// terrain samples must never reach the filter: its window otherwise drags the approach's last
+    /// meters up the flank (polluted portal grades) and solves the corridor over the peak. Nothing is
+    /// hard-held — the filter still solves the span like ordinary road (flush portal seams by
+    /// construction, the bridge soft-span argument); the post-solve <c>TunnelProfileSolver</c> re-curves
+    /// from these now-sane approaches. Chain ends inside a span hold the single available anchor flat.
+    /// </summary>
+    internal static bool ApplyTunnelChordToRaw(List<UnifiedCrossSection> cs, float[] raw)
+    {
+        var n = cs.Count;
+        var i = 0;
+        var any = false;
+        while (i < n)
+        {
+            if (!(cs[i].StructureSpanId >= 0 &&
+                  cs[i].StructureSpanType == StructureType.Tunnel))
+            {
+                i++;
+                continue;
+            }
+
+            any = true;
+            var runStart = i;
+            while (i < n && cs[i].StructureSpanId >= 0 &&
+                   cs[i].StructureSpanType == StructureType.Tunnel)
+                i++;
+            var runEnd = i - 1;
+
+            var zL = runStart > 0 ? raw[runStart - 1] : float.NaN;
+            var zR = runEnd < n - 1 ? raw[runEnd + 1] : float.NaN;
+            if (float.IsNaN(zL) && float.IsNaN(zR))
+                continue; // whole chain is span — no portal truth, leave terrain-following
+            if (float.IsNaN(zL)) zL = zR;
+            if (float.IsNaN(zR)) zR = zL;
+
+            var len = Math.Max(1, runEnd - runStart);
+            for (var k = runStart; k <= runEnd; k++)
+            {
+                var t = (float)(k - runStart) / len;
+                raw[k] = zL + (zR - zL) * t;
             }
         }
 

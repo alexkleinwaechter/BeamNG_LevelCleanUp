@@ -7,6 +7,7 @@ using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Processing;
 using BeamNgTerrainPoc.Terrain.Services;
 using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
@@ -366,7 +367,8 @@ public class TerrainCreator
                 // over (retired in Phase F). deckProfile measures clearance to the deck SOFFIT (top −
                 // thickness) since the 3D box hangs `thickness` below the solved deck-top Z.
                 var bridgeDeckProfile = BuildBridgeDeckProfile(parameters);
-                var hasMergedSpans = unifiedResult.Network.CrossSections.Any(c => c.StructureSpanId >= 0);
+                var hasMergedSpans = unifiedResult.Network.CrossSections.Any(c =>
+                    c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge);
                 // Amendment 03 (sparse floor constraints): the planner emitted no pins — feed RefineSpans
                 // the plan's typed budgets as interior FLOORS instead, so the span re-curve from the
                 // solved approaches arches over each crossing only where the natural curve is short
@@ -461,6 +463,22 @@ public class TerrainCreator
                     roadSurfaceOwner: roadSurfaceOwner);
             }
 
+            // 3b-tunnel (tunnel plan Phase 2, ai_docs/2026-07-18): portal-anchored floor profile +
+            // portal apron stamping. Runs after the bridge block (bridge elevations final) and BEFORE
+            // the DAM report / DecalRoad generation, so every consumer reads identical tunnel-floor
+            // elevations (the bridge single-source contract, mirrored).
+            if (unifiedResult?.Network != null && HasTunnelWork(unifiedResult.Network))
+            {
+                TunnelProfileSolver.RefineSpans(unifiedResult.Network);
+
+                var tunnelSurfaceOwner = RoadSurfaceOwnerRaster.Build(
+                    unifiedResult.Network, heightMap2D.GetLength(0), heightMap2D.GetLength(1),
+                    parameters.MetersPerPixel);
+                TunnelPortalApronStamper.Stamp(
+                    unifiedResult.Network, heightMap2D, parameters.MetersPerPixel,
+                    roadSurfaceOwner: tunnelSurfaceOwner);
+            }
+
             // Doc 08 §5 D2: post-solve "dam report" — per-spline deviation of the FINAL road profile from
             // the A0 natural estimate. TargetElevation is final here (ApplyApproachRaiseRamps and
             // ApplyLowerRoadDips above were the last elevation writers; the stamper/excavator only touch
@@ -540,6 +558,14 @@ public class TerrainCreator
                 await ExportBridgeDecksAsync(unifiedResult.Network, outputPath, parameters, perfLog, heightMap2D);
             }
 
+            // 3a-4. Export tunnel tubes (tunnel plan Phase 3) — one DAE + TSStatic per captured
+            // TunnelSpan. Clean first so stale tunnel output disappears when tunnel generation is off.
+            CleanTunnelOutputDirectories(outputPath);
+            if (unifiedResult?.Network is { TunnelSpans.Count: > 0 })
+            {
+                await ExportTunnelsAsync(unifiedResult.Network, outputPath, parameters, perfLog);
+            }
+
             // Populate output properties for downstream use (re-generation)
             parameters.OutputNetwork = unifiedResult?.Network;
             parameters.OutputHeightMap = heightMap2D;
@@ -600,6 +626,21 @@ public class TerrainCreator
                     parameters.BridgeRules?.UnderDeckMaterialName,
                     materialNames,
                     parameters.BridgeRules?.UnderDeckPaintClearanceMeters ?? 1.0f);
+            }
+
+            // 4c. Tunnel portal holes (tunnel plan Phase 4): stamp hole cells (byte 255) into the
+            // material grid AFTER all painters (nothing may repaint over holes) and BEFORE terrain
+            // assembly. Cells where the final heightmap passes through the tube, plus the portal-mouth
+            // wall; guarded so crossing surface roads above the tunnel are never holed.
+            if (unifiedResult?.Network is { TunnelSpans.Count: > 0 })
+            {
+                var holeSurfaceOwner = RoadSurfaceOwnerRaster.Build(
+                    unifiedResult.Network, heightMap2D.GetLength(0), heightMap2D.GetLength(1),
+                    parameters.MetersPerPixel);
+                TunnelPortalHoleProvider.CutPortalHoles(
+                    unifiedResult.Network, heightMap2D, materialIndices,
+                    parameters.Size, parameters.MetersPerPixel,
+                    roadSurfaceOwner: holeSurfaceOwner);
             }
 
             // 5. Create Grille.BeamNG.Lib Terrain object
@@ -708,11 +749,15 @@ public class TerrainCreator
                     spikeFixCount++;
                 }
                 
+                // Holes (tunnel portals / imported hole maps) are stamped into materialIndices as
+                // byte 255 — surface truthfully as IsHole instead of a fake material index. Heights
+                // under holes stay meaningful (portal floor).
+                var isHole = materialIndices[i] == TerrainHoleCutter.HoleMaterialIndex;
                 terrain.Data[i] = new TerrainData
                 {
                     Height = height,
-                    Material = materialIndices[i],
-                    IsHole = false
+                    Material = isHole ? (byte)0 : materialIndices[i],
+                    IsHole = isHole
                 };
             }
             
@@ -1395,12 +1440,23 @@ public class TerrainCreator
     /// <summary>
     ///     True if the network has bridge-deck work to do: a legacy whole-spline generated bridge
     ///     (<see cref="BridgeDeckDaeExporter.ShouldGenerateDeck"/>), OR — merged-corridor mode (plan doc 11) —
-    ///     any cross-section tagged with a bridge span (<see cref="UnifiedCrossSection.StructureSpanId"/> &gt;= 0).
+    ///     any cross-section tagged with a bridge span (<see cref="UnifiedCrossSection.StructureSpanId"/> &gt;= 0
+    ///     with <see cref="UnifiedCrossSection.StructureSpanType"/> == Bridge — tunnel spans share the tagging
+    ///     machinery but must NOT activate the deck pipeline, tunnel plan Phase 0).
     ///     Gates the 3b-bridge profile/excavate block and the deck-export block.
     /// </summary>
     private static bool HasBridgeDeckWork(Models.RoadGeometry.UnifiedRoadNetwork network) =>
         network.Splines.Any(BridgeDeckDaeExporter.ShouldGenerateDeck) ||
-        network.CrossSections.Any(c => c.StructureSpanId >= 0);
+        network.CrossSections.Any(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge);
+
+    /// <summary>
+    ///     True if the network has tunnel work to do: any tunnel-typed span tagged on cross-sections AND
+    ///     any spline with a tunnel rule enabled (all rules default off ⇒ byte-identical baseline).
+    ///     Gates the 3b-tunnel profile/apron block (tunnel plan Phase 2).
+    /// </summary>
+    private static bool HasTunnelWork(Models.RoadGeometry.UnifiedRoadNetwork network) =>
+        network.Splines.Any(s => s.Parameters.TunnelRules?.AnyEnabled == true) &&
+        network.CrossSections.Any(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Tunnel);
 
     /// <summary>
     ///     Deletes previous bridge output directories so generation starts fresh.
@@ -1420,6 +1476,82 @@ public class TerrainCreator
                 Console.WriteLine($"TerrainCreator: Cleaning previous bridge output: {dir}");
                 Directory.Delete(dir, recursive: true);
             }
+        }
+    }
+
+    /// <summary>
+    ///     Deletes previous tunnel output directories so generation starts fresh (mirrors
+    ///     <see cref="CleanBridgeOutputDirectories"/>).
+    /// </summary>
+    private static void CleanTunnelOutputDirectories(string terrainOutputPath)
+    {
+        var levelDir = Path.GetDirectoryName(terrainOutputPath)!;
+        var shapesDir = Path.Combine(levelDir, "art", "shapes", "MT_tunnels");
+        var sceneDir = Path.Combine(levelDir, "main", "MissionGroup", "MT_tunnels");
+
+        foreach (var dir in new[] { shapesDir, sceneDir })
+        {
+            if (Directory.Exists(dir))
+            {
+                Console.WriteLine($"TerrainCreator: Cleaning previous tunnel output: {dir}");
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Exports tunnel tubes (tunnel plan Phase 3): one <c>tunnel_{SpanId}.dae</c> + TSStatic per
+    ///     captured <c>network.TunnelSpans</c> snapshot, plus the placeholder material and the
+    ///     <c>MT_tunnels</c> SimGroup. Runs after the final heightmap (portal aprons already stamped).
+    /// </summary>
+    private async Task ExportTunnelsAsync(
+        UnifiedRoadNetwork network,
+        string outputPath,
+        TerrainCreationParameters parameters,
+        TerrainCreationLogger log)
+    {
+        var sw = Stopwatch.StartNew();
+        log.LogSection("Tunnel Export");
+
+        try
+        {
+            var levelDir = Path.GetDirectoryName(outputPath)!;
+            var levelName = ExtractLevelName(outputPath);
+            var shapesDir = Path.Combine(levelDir, "art", "shapes", "MT_tunnels");
+            var shapePath = $"/levels/{levelName}/art/shapes/MT_tunnels/";
+            var groupDir = Path.Combine(levelDir, "main", "MissionGroup", "MT_tunnels");
+
+            var exportResult = await Task.Run(() => new TunnelDaeExporter().Export(
+                network, shapesDir, parameters.Size, parameters.MetersPerPixel,
+                parameters.TerrainBaseHeight));
+
+            foreach (var warning in exportResult.Warnings)
+                log.Warning($"  {warning}");
+
+            if (exportResult.Tunnels.Count == 0)
+            {
+                log.Info("No tunnel tubes generated (no captured tunnel spans with mesh rule enabled).");
+                return;
+            }
+
+            var writer = new TunnelSceneWriter();
+            writer.WritePlaceholderMaterial(Path.Combine(shapesDir, "main.materials.json"));
+
+            var parentItemsPath = Path.Combine(levelDir, "main", "MissionGroup", "items.level.json");
+            writer.EnsureSimGroupInParent(parentItemsPath);
+            var groupItemsPath = Path.Combine(groupDir, "items.level.json");
+            var written = writer.WriteSceneItems(exportResult.Tunnels, groupItemsPath, shapePath);
+
+            log.Info($"Tunnel export: {exportResult.Tunnels.Count} tube(s) written ({written} TSStatic), " +
+                     $"{exportResult.TotalVertices:N0} verts, {exportResult.TotalTriangles:N0} tris, " +
+                     $"{exportResult.TunnelsSkipped} skipped.");
+            log.Timing($"Tunnel export: {sw.ElapsedMilliseconds}ms");
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Failed to export tunnels: {ex.Message}");
+            log.Detail($"Stack trace: {ex.StackTrace}");
+            // Don't throw - terrain generation should continue.
         }
     }
 

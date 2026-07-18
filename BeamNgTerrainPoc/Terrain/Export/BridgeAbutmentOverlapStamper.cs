@@ -1,5 +1,6 @@
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Export;
 
@@ -36,7 +37,7 @@ public static class BridgeAbutmentOverlapStamper
         var lateralStep = MathF.Max(0.25f, metersPerPixel * 0.5f);
 
         var deckGroups = network.CrossSections
-            .Where(c => c.StructureSpanId >= 0)
+            .Where(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge)
             .GroupBy(c => (c.OwnerSplineId, c.StructureSpanId))
             .Select(g => g.OrderBy(c => c.DistanceAlongSpline).ToList());
 

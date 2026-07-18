@@ -40,6 +40,7 @@ public class BridgeApproachRaiseRampTests
             if (cs.DistanceAlongSpline >= span.StartDistance && cs.DistanceAlongSpline <= span.EndDistance)
             {
                 cs.StructureSpanId = span.SpanId;
+                cs.StructureSpanType = span.Type;
                 cs.IsExcluded = true;
             }
         }
