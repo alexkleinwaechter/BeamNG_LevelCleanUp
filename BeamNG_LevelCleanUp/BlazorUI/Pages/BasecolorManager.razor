@@ -156,6 +156,21 @@
                                                         <MudSelectItem Value="@provider.Name">@provider.Name</MudSelectItem>
                                                     }
                                                 </MudSelect>
+                                                @if (SelectedTileProviderSupportsHistoricalDate)
+                                                {
+                                                    <MudDatePicker Date="@SelectedTileImageryDate"
+                                                                   DateChanged="OnTileImageryDateChanged"
+                                                                   Label="Imagery date"
+                                                                   DateFormat="yyyy-MM-dd"
+                                                                   MaxDate="@DateTime.Today"
+                                                                   Editable="true"
+                                                                   Variant="Variant.Outlined"
+                                                                   Disabled="@IsBusy"
+                                                                   Class="mt-2" />
+                                                    <MudText Typo="Typo.caption">
+                                                        Uses the latest available Wayback release on or before this date.
+                                                    </MudText>
+                                                }
                                                 @if (!string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath))
                                                 {
                                                     <MudCheckBox T="bool" Value="_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider"
