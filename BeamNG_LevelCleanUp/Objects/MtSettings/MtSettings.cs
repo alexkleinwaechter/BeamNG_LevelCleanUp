@@ -168,6 +168,12 @@ public class MtBasecolorModeSettings
 
     [JsonPropertyName("OsmLayerBlendExceptions")]
     public List<MtOsmLayerBlendException> OsmLayerBlendExceptions { get; set; } = new();
+
+    [JsonPropertyName("LastBakeTerrainTimestampUtc")]
+    public DateTime? LastBakeTerrainTimestampUtc { get; set; }
+
+    [JsonPropertyName("LastBakeGeoRefSavedAtUtc")]
+    public DateTime? LastBakeGeoRefSavedAtUtc { get; set; }
 }
 
 public class MtOsmLayerBlendException

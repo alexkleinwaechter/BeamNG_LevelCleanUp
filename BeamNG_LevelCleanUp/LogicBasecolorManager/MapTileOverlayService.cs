@@ -76,6 +76,10 @@ public class MapTileOverlayService
             deletedItems++;
         }
 
+        var fingerprintPath = GetWarpFingerprintPath(finalPath);
+        if (File.Exists(fingerprintPath))
+            File.Delete(fingerprintPath);
+
         if (Directory.Exists(cachePath))
         {
             Directory.Delete(cachePath, true);
@@ -102,10 +106,17 @@ public class MapTileOverlayService
 
         var finalImageName = GetFinalImageName(provider, normalizedDate);
         var finalPath = Path.Join(tileRoot, finalImageName);
+        var fingerprintJson = BuildWarpFingerprintJson(geoReferenceSettings, outputSize);
         if (File.Exists(finalPath))
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info, $"Using cached map tile overlay {finalImageName}.");
-            return new MapTileOverlayResult(finalPath, provider.Name, normalizedDate, null);
+            if (WarpFingerprintMatches(finalPath, fingerprintJson))
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Using cached map tile overlay {finalImageName}.");
+                return new MapTileOverlayResult(finalPath, provider.Name, normalizedDate, null, true);
+            }
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Cached overlay {finalImageName} no longer matches the terrain georeference or size and will be rebuilt. Already downloaded tiles are reused.");
         }
 
         WaybackRelease? waybackRelease = null;
@@ -175,6 +186,7 @@ public class MapTileOverlayService
         if (File.Exists(finalPath))
             File.Delete(finalPath);
         output.SaveAsPng(finalPath);
+        File.WriteAllText(GetWarpFingerprintPath(finalPath), fingerprintJson);
 
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Saved map tile overlay to {Path.GetFileName(finalPath)}.");
         return new MapTileOverlayResult(
@@ -445,6 +457,42 @@ public class MapTileOverlayService
         return provider.SupportsHistoricalDate ? Path.Join(providerCache, normalizedDate!) : providerCache;
     }
 
+    private static string GetWarpFingerprintPath(string finalPath) => finalPath + ".meta.json";
+
+    private static string BuildWarpFingerprintJson(MtGeoReferenceSettings settings, int outputSize)
+    {
+        var fingerprint = new WarpFingerprint(
+            1,
+            settings.TerrainMinLongitude,
+            settings.TerrainMinLatitude,
+            settings.TerrainMaxLongitude,
+            settings.TerrainMaxLatitude,
+            settings.TerrainCenterLatitude,
+            settings.TerrainMetersPerPixel,
+            settings.SourceGeoTransform ?? [],
+            settings.SourceRasterWidth,
+            settings.SourceRasterHeight,
+            settings.ProjectionWkt ?? string.Empty,
+            outputSize);
+        return JsonSerializer.Serialize(fingerprint);
+    }
+
+    private static bool WarpFingerprintMatches(string finalPath, string expectedFingerprintJson)
+    {
+        var fingerprintPath = GetWarpFingerprintPath(finalPath);
+        if (!File.Exists(fingerprintPath))
+            return false;
+
+        try
+        {
+            return string.Equals(File.ReadAllText(fingerprintPath), expectedFingerprintJson, StringComparison.Ordinal);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private static async Task<WaybackRelease> ResolveWaybackReleaseAsync(DateOnly requestedDate)
     {
         var releases = await GetWaybackReleasesAsync();
@@ -526,6 +574,20 @@ public class MapTileOverlayService
     private readonly record struct PixelCoordinate(double X, double Y);
     private sealed record WaybackRelease(DateOnly ReleaseDate, string TileUrlTemplate);
 
+    private sealed record WarpFingerprint(
+        int Version,
+        double MinLongitude,
+        double MinLatitude,
+        double MaxLongitude,
+        double MaxLatitude,
+        double CenterLatitude,
+        double MetersPerPixel,
+        double[] GeoTransform,
+        int RasterWidth,
+        int RasterHeight,
+        string ProjectionWkt,
+        int OutputSize);
+
     private sealed class LoadedTile : IDisposable
     {
         public LoadedTile(Image<Rgba32> image, bool usedFallback)
@@ -553,7 +615,8 @@ public sealed record MapTileOverlayResult(
     string ImagePath,
     string ProviderName,
     string? RequestedDate,
-    string? ResolvedReleaseDate);
+    string? ResolvedReleaseDate,
+    bool ReusedFinalImage = false);
 
 public sealed record MapTileCacheClearResult(string ProviderName, int DeletedItems)
 {
