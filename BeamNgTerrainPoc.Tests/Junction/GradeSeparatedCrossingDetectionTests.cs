@@ -277,8 +277,12 @@ public class GradeSeparatedCrossingDetectionTests
     [Fact]
     public void JunctionConnectedPair_HitNearSharedJunction_IsNotACrossing()
     {
-        // The under-road tees into the corridor ON the deck itself: its sections inside the footprint sit
-        // right at the shared junction — the T-junction overlap area, not a crossing to clear.
+        // The side road tees into the corridor at the span EDGE (abutment area — station 105 of span
+        // [100,200], inside DeckEndEpsilonMeters): a genuine connection, so the pair is
+        // junction-connected and its footprint sections right at the shared junction are the
+        // T-junction overlap area, not a crossing to clear. (2026-07-18: a tee into the deck
+        // INTERIOR is no longer a junction at all — the structure-state admission guard rejects it
+        // and the crossing IS recorded; see StructureStateTJunctionGuardTests.)
         var span = new StructureSegment
         {
             Type = StructureType.Bridge, StartDistance = 100f, EndDistance = 200f, Layer = 1,
@@ -293,9 +297,15 @@ public class GradeSeparatedCrossingDetectionTests
         };
 
         var sideRoad = RoadNetworkTestHelpers.CreateParameterizedSpline(
-            2, new(200, 50), new(200, 150), priority: 8001, isBridge: false);
+            2, new(155, 50), new(155, 150), priority: 8001, isBridge: false);
 
         var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(corridor, sideRoad);
+
+        // The tee must survive as a junction — the edge admission is what makes the pair
+        // junction-connected and routes it through the shared-junction exclusion.
+        Assert.Contains(network.Junctions, j =>
+            j.Contributors.Any(c => c.Spline.SplineId == corridor.SplineId) &&
+            j.Contributors.Any(c => c.Spline.SplineId == sideRoad.SplineId));
 
         Assert.Empty(network.GradeSeparatedCrossings);
     }

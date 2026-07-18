@@ -232,6 +232,11 @@ public static class BridgePierPlanner
         /// <summary>All span snapshots of the network — the lower-deck exclusion partners (§3b.4).</summary>
         public IReadOnlyList<BridgeSpanSnapshot>? AllSpans { get; init; }
 
+        /// <summary>Run-level geometry cache. Every span consults every other span (§3b.4 + footprint
+        /// validation), so without a shared cache the same partner geometry is rebuilt O(spans²) times
+        /// per export. Null ⇒ a per-call cache is used (correct, just slower across spans).</summary>
+        public SpanGeometryCache? GeometryCache { get; init; }
+
         /// <summary>Post-carve ground elevation at a terrain-local point (§1 ordering — FINAL ground).</summary>
         public required Func<Vector2, float> GroundZ { get; init; }
 
@@ -292,8 +297,9 @@ public static class BridgePierPlanner
         var pierHalfExtent = 0.5f * MathF.Sqrt(
             capWidthMax * capWidthMax + options.PierCapLengthMeters * options.PierCapLengthMeters);
 
-        var geometry = new SpanStationGeometry(stations);
-        var forbidden = BuildForbiddenIntervals(input, geometry, pierHalfExtent, firstS, lastS);
+        var cache = input.GeometryCache ?? new SpanGeometryCache();
+        var geometry = cache.Get(span);
+        var forbidden = BuildForbiddenIntervals(input, geometry, cache, pierHalfExtent, firstS, lastS);
 
         // §3a.4 + slide predicate: soffit-to-ground must stay ≥ MinPierHeightMeters at the FINAL station.
         bool TallEnough(float s)
@@ -380,7 +386,7 @@ public static class BridgePierPlanner
                 thickness, columnDiameter, pierHalfExtent);
             if (plan == null) continue;
 
-            var violation = ValidateFootprint(plan, input, pierHalfExtent);
+            var violation = ValidateFootprint(plan, input, cache, pierHalfExtent);
             if (violation != null)
             {
                 log?.Invoke($"[PIER] span {span.SpanId} bay {bay}: footprint validation hit {violation} " +
@@ -409,7 +415,8 @@ public static class BridgePierPlanner
     // ========================================
 
     private static PierForbiddenIntervals BuildForbiddenIntervals(
-        PlanInput input, SpanStationGeometry geometry, float pierHalfExtent, float firstS, float lastS)
+        PlanInput input, SpanStationGeometry geometry, SpanGeometryCache cache,
+        float pierHalfExtent, float firstS, float lastS)
     {
         var span = input.Span;
         var options = input.Options;
@@ -448,6 +455,12 @@ public static class BridgePierPlanner
             {
                 if (span.OsmWayIds.Contains(feature.OsmId))
                     continue; // merged-corridor self-exclusion (doc 19 §7)
+
+                // The grid buckets are coarse — drop candidates whose exact AABB misses the query
+                // rect (they can't contribute an interval) before sampling their polyline.
+                if (feature.Max.X < queryMin.X || feature.Min.X > queryMax.X ||
+                    feature.Max.Y < queryMin.Y || feature.Min.Y > queryMax.Y)
+                    continue;
 
                 if (feature.Kind == BridgeObstacleKind.Water && !feature.Navigable)
                 {
@@ -498,7 +511,7 @@ public static class BridgePierPlanner
             {
                 if (partner.SpanId == span.SpanId || partner.Stations.Count < 2) continue;
 
-                var partnerGeometry = new SpanStationGeometry(partner.Stations);
+                var partnerGeometry = cache.Get(partner);
                 if (!BoundsOverlap(geometry, partnerGeometry)) continue;
 
                 float? runStart = null;
@@ -588,7 +601,13 @@ public static class BridgePierPlanner
 
         foreach (var st in geometry.Stations)
         {
-            if (polygon.ContainsPoint(st.Center))
+            // AABB pre-check: the ray-cast is O(ring points) and most stations of a long span are
+            // nowhere near the polygon.
+            var c = st.Center;
+            var inside = c.X >= polygon.Min.X && c.X <= polygon.Max.X &&
+                         c.Y >= polygon.Min.Y && c.Y <= polygon.Max.Y &&
+                         polygon.ContainsPoint(c);
+            if (inside)
             {
                 runStart ??= st.DistanceAlongSpline;
                 runEnd = st.DistanceAlongSpline;
@@ -712,7 +731,8 @@ public static class BridgePierPlanner
     ///     must clear every building polygon, and must not sit over a LOWER partner deck. Catches skewed
     ///     geometry the axis-interval projection can leak. Returns the violation label or null.
     /// </summary>
-    private static string? ValidateFootprint(PierPlan plan, PlanInput input, float pierHalfExtent)
+    private static string? ValidateFootprint(
+        PierPlan plan, PlanInput input, SpanGeometryCache cache, float pierHalfExtent)
     {
         var probes = new List<Vector2>(9) { plan.Center };
         for (var i = 0; i < 8; i++)
@@ -742,7 +762,14 @@ public static class BridgePierPlanner
             foreach (var partner in input.AllSpans)
             {
                 if (partner.SpanId == plan.SpanId || partner.Stations.Count < 2) continue;
-                var partnerGeometry = new SpanStationGeometry(partner.Stations);
+                var partnerGeometry = cache.Get(partner);
+                // All probes lie within pierHalfExtent of the center — a partner whose (already
+                // half-width-inflated) AABB can't contain any probe can't contain a violation.
+                if (plan.Center.X + pierHalfExtent < partnerGeometry.Min.X ||
+                    plan.Center.X - pierHalfExtent > partnerGeometry.Max.X ||
+                    plan.Center.Y + pierHalfExtent < partnerGeometry.Min.Y ||
+                    plan.Center.Y - pierHalfExtent > partnerGeometry.Max.Y)
+                    continue;
                 foreach (var p in probes)
                 {
                     if (partnerGeometry.TryGetSurfaceZ(p, out var z) && z < plan.SoffitZ)
@@ -770,6 +797,25 @@ public static class BridgePierPlanner
         return parts.Count > 0 ? string.Join(", ", parts) : "none";
     }
 
+    /// <summary>
+    ///     Caches one <see cref="SpanStationGeometry"/> per span snapshot (reference-keyed). Share one
+    ///     instance across all <see cref="PlanSpan"/> calls of an export via
+    ///     <see cref="PlanInput.GeometryCache"/> — but only build it AFTER the stations are final
+    ///     (post <c>ExtendLandedEndsOntoPartnerDecks</c>), the geometry snapshots the station list.
+    /// </summary>
+    public sealed class SpanGeometryCache
+    {
+        private readonly Dictionary<BridgeSpanSnapshot, SpanStationGeometry> _bySpan =
+            new(ReferenceEqualityComparer.Instance);
+
+        internal SpanStationGeometry Get(BridgeSpanSnapshot span)
+        {
+            if (!_bySpan.TryGetValue(span, out var geometry))
+                _bySpan[span] = geometry = new SpanStationGeometry(span.Stations);
+            return geometry;
+        }
+    }
+
     // ========================================
     // STATION-FIELD GEOMETRY (snapshot analogue of BridgeSpanFootprint + doc-15 surface interp)
     // ========================================
@@ -786,7 +832,12 @@ public static class BridgePierPlanner
     /// </summary>
     internal sealed class SpanStationGeometry
     {
+        /// <summary>Segments per <see cref="Project"/> pruning chunk (perf; result-identical).</summary>
+        private const int SegmentsPerChunk = 32;
+
         private readonly List<BridgeStation> _stations;
+        private readonly Vector2[] _chunkMin;
+        private readonly Vector2[] _chunkMax;
 
         public SpanStationGeometry(List<BridgeStation> stations)
         {
@@ -804,6 +855,28 @@ public static class BridgePierPlanner
             MaxHalfWidth = maxHalf;
             Min = min - new Vector2(maxHalf + 0.1f);
             Max = max + new Vector2(maxHalf + 0.1f);
+
+            // Chunk AABBs over the segment polyline for Project() pruning. Slightly inflated so a
+            // skipped chunk provably cannot beat the current best under the strict '<' update.
+            var segCount = Math.Max(0, stations.Count - 1);
+            var chunkCount = (segCount + SegmentsPerChunk - 1) / SegmentsPerChunk;
+            _chunkMin = new Vector2[chunkCount];
+            _chunkMax = new Vector2[chunkCount];
+            for (var c = 0; c < chunkCount; c++)
+            {
+                var start = c * SegmentsPerChunk;
+                var end = Math.Min(start + SegmentsPerChunk, segCount);
+                var cmin = new Vector2(float.MaxValue);
+                var cmax = new Vector2(float.MinValue);
+                for (var i = start; i <= end; i++)
+                {
+                    cmin = Vector2.Min(cmin, stations[i].Center);
+                    cmax = Vector2.Max(cmax, stations[i].Center);
+                }
+
+                _chunkMin[c] = cmin - new Vector2(1e-3f);
+                _chunkMax[c] = cmax + new Vector2(1e-3f);
+            }
         }
 
         public IReadOnlyList<BridgeStation> Stations => _stations;
@@ -821,25 +894,28 @@ public static class BridgePierPlanner
             if (s <= stations[0].DistanceAlongSpline) return ToSample(stations[0]);
             if (s >= stations[^1].DistanceAlongSpline) return ToSample(stations[^1]);
 
-            for (var i = 0; i < stations.Count - 1; i++)
+            // Binary search for the smallest hi with stations[hi].s >= s — same segment the previous
+            // linear scan selected (invariant: stations[lo].s < s <= stations[hi].s).
+            int lo = 0, hi = stations.Count - 1;
+            while (hi - lo > 1)
             {
-                var a = stations[i];
-                var b = stations[i + 1];
-                if (s > b.DistanceAlongSpline) continue;
-
-                var seg = b.DistanceAlongSpline - a.DistanceAlongSpline;
-                var t = seg > 1e-6f ? (s - a.DistanceAlongSpline) / seg : 0f;
-                return new StationSample(
-                    Vector2.Lerp(a.Center, b.Center, t),
-                    SafeNormalize(Vector2.Lerp(a.Normal, b.Normal, t)),
-                    SafeNormalize(Vector2.Lerp(a.Tangent, b.Tangent, t)),
-                    a.Width + (b.Width - a.Width) * t,
-                    a.CenterZ + (b.CenterZ - a.CenterZ) * t,
-                    a.LeftEdgeZ + (b.LeftEdgeZ - a.LeftEdgeZ) * t,
-                    a.RightEdgeZ + (b.RightEdgeZ - a.RightEdgeZ) * t);
+                var mid = (lo + hi) / 2;
+                if (stations[mid].DistanceAlongSpline < s) lo = mid;
+                else hi = mid;
             }
 
-            return ToSample(stations[^1]);
+            var a = stations[lo];
+            var b = stations[hi];
+            var seg = b.DistanceAlongSpline - a.DistanceAlongSpline;
+            var t = seg > 1e-6f ? (s - a.DistanceAlongSpline) / seg : 0f;
+            return new StationSample(
+                Vector2.Lerp(a.Center, b.Center, t),
+                SafeNormalize(Vector2.Lerp(a.Normal, b.Normal, t)),
+                SafeNormalize(Vector2.Lerp(a.Tangent, b.Tangent, t)),
+                a.Width + (b.Width - a.Width) * t,
+                a.CenterZ + (b.CenterZ - a.CenterZ) * t,
+                a.LeftEdgeZ + (b.LeftEdgeZ - a.LeftEdgeZ) * t,
+                a.RightEdgeZ + (b.RightEdgeZ - a.RightEdgeZ) * t);
         }
 
         /// <summary>Nearest point on the station polyline: arc-length station + plan distance.</summary>
@@ -849,18 +925,29 @@ public static class BridgePierPlanner
             var bestDistSq = float.MaxValue;
             var bestS = stations[0].DistanceAlongSpline;
 
-            for (var i = 0; i < stations.Count - 1; i++)
+            for (var c = 0; c < _chunkMin.Length; c++)
             {
-                var a = stations[i];
-                var b = stations[i + 1];
-                var ab = b.Center - a.Center;
-                var lenSq = ab.LengthSquared();
-                var t = lenSq > 1e-8f ? Math.Clamp(Vector2.Dot(p - a.Center, ab) / lenSq, 0f, 1f) : 0f;
-                var distSq = Vector2.DistanceSquared(p, a.Center + ab * t);
-                if (distSq < bestDistSq)
+                // Distance lower bound to the chunk AABB — a chunk that can't beat the current best
+                // under the strict '<' update below is skipped without changing the result.
+                var dx = MathF.Max(MathF.Max(_chunkMin[c].X - p.X, p.X - _chunkMax[c].X), 0f);
+                var dy = MathF.Max(MathF.Max(_chunkMin[c].Y - p.Y, p.Y - _chunkMax[c].Y), 0f);
+                if (dx * dx + dy * dy >= bestDistSq) continue;
+
+                var start = c * SegmentsPerChunk;
+                var end = Math.Min(start + SegmentsPerChunk, stations.Count - 1);
+                for (var i = start; i < end; i++)
                 {
-                    bestDistSq = distSq;
-                    bestS = a.DistanceAlongSpline + (b.DistanceAlongSpline - a.DistanceAlongSpline) * t;
+                    var a = stations[i];
+                    var b = stations[i + 1];
+                    var ab = b.Center - a.Center;
+                    var lenSq = ab.LengthSquared();
+                    var t = lenSq > 1e-8f ? Math.Clamp(Vector2.Dot(p - a.Center, ab) / lenSq, 0f, 1f) : 0f;
+                    var distSq = Vector2.DistanceSquared(p, a.Center + ab * t);
+                    if (distSq < bestDistSq)
+                    {
+                        bestDistSq = distSq;
+                        bestS = a.DistanceAlongSpline + (b.DistanceAlongSpline - a.DistanceAlongSpline) * t;
+                    }
                 }
             }
 
@@ -870,8 +957,15 @@ public static class BridgePierPlanner
         /// <summary>Plan containment in the swept deck footprint; outputs the projected station.</summary>
         public bool ContainsPlan(Vector2 p, out float s)
         {
+            // Bounds first: Min/Max are inflated by the max half-width, so any contained point lies
+            // inside them — rejecting here skips the O(stations) projection for the common far case.
+            if (p.X < Min.X || p.X > Max.X || p.Y < Min.Y || p.Y > Max.Y)
+            {
+                s = 0f;
+                return false;
+            }
+
             (s, var dist) = Project(p);
-            if (p.X < Min.X || p.X > Max.X || p.Y < Min.Y || p.Y > Max.Y) return false;
             var half = Interpolate(s).Width / 2f;
             return dist <= half;
         }

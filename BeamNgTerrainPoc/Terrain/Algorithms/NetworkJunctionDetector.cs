@@ -513,6 +513,29 @@ public class NetworkJunctionDetector
                     // Only log at Trace level since this is expected behavior.
                     continue;
 
+                // Structure-state guard (2026-07-18, Manhattan junction 154∩162 under the Manhattan
+                // Bridge): the classic-radius admission above is plan-view only, so a ground street
+                // junction sitting UNDER a bridge deck admitted the deck spline as a passing-through
+                // contributor. That weld suppressed the pair's grade-separated crossing
+                // (junction-connected skip) and let PinOnDeckJunctions raise the street junction to
+                // deck Z — an 11.8 m terrain dam. A candidate INTERIOR to a bridge/tunnel span may
+                // only join when at least one ENDPOINT contributor shares that structure state at
+                // its end (a bridge ramp landing mid-span still matches; a ground street does not).
+                // Span EDGES stay admissible — abutment T-connections keep junctioning.
+                var (candBridge, candTunnel) = StructureInteriorStateAt(spline, cs.DistanceAlongSpline);
+                if ((candBridge || candTunnel) &&
+                    !AnyEndpointMatchesStructureState(junction, candBridge, candTunnel))
+                {
+                    // Farther sections of the same spline sit in the same span — don't retry them.
+                    addedSplines.Add(spline.SplineId);
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[JUNCTION-GUARD] T-junction admission rejected: spline={spline.SplineId} " +
+                        $"is {(candBridge ? "bridge" : "tunnel")}-interior @s={cs.DistanceAlongSpline:F1}m " +
+                        $"while endpoint spline(s) {string.Join(",", splineIdsWithEndpoints)} are not — " +
+                        $"grade separation, not a junction");
+                    continue;
+                }
+
                 // Add as new continuous contributor
                 junction.Contributors.Add(new JunctionContributor
                 {
@@ -594,6 +617,61 @@ public class NetworkJunctionDetector
             var (endBridge, endTunnel) = BridgeTunnelStateAt(
                 contributor.Spline, contributor.CrossSection.DistanceAlongSpline);
             if (endBridge == candBridge && endTunnel == candTunnel)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Bridge/tunnel state of <paramref name="spline"/> at a station, reported ONLY when the
+    ///     station is INTERIOR to the structure span — more than
+    ///     <see cref="BridgeToBridgeContinuity.DeckEndEpsilonMeters"/> from both span ends (the same
+    ///     interior notion <c>PinOnDeckJunctionsWithAuthority</c> uses). At span edges and outside
+    ///     spans this returns (false, false): a road tee-ing in exactly at a deck end (abutment) is
+    ///     a genuine connection and must not be blocked by the structure-state guard. Falls back to
+    ///     whole-spline flags with the spline's own ends as the span (legacy separate structure
+    ///     splines, no <see cref="StructureSegment"/> list).
+    /// </summary>
+    private static (bool isBridge, bool isTunnel) StructureInteriorStateAt(
+        ParameterizedRoadSpline spline, float station)
+    {
+        const float margin = BridgeToBridgeContinuity.DeckEndEpsilonMeters;
+        if (spline.StructureSegments is { Count: > 0 } segments)
+        {
+            foreach (var seg in segments)
+            {
+                if (station >= seg.StartDistance + margin &&
+                    station <= seg.EndDistance - margin)
+                    return (seg.IsBridge, seg.IsTunnel);
+            }
+
+            return (false, false);
+        }
+
+        if ((spline.IsBridge || spline.IsTunnel) &&
+            station >= margin && station <= spline.TotalLengthMeters - margin)
+            return (spline.IsBridge, spline.IsTunnel);
+
+        return (false, false);
+    }
+
+    /// <summary>
+    ///     True when at least one ENDPOINT contributor of <paramref name="junction"/> has the given
+    ///     bridge/tunnel state at its end station (edge-tolerant <see cref="BridgeTunnelStateAt"/> —
+    ///     a ramp whose own structure span runs to its endpoint counts as on-structure there).
+    /// </summary>
+    private static bool AnyEndpointMatchesStructureState(
+        NetworkJunction junction, bool isBridge, bool isTunnel)
+    {
+        foreach (var contributor in junction.Contributors)
+        {
+            if (!contributor.IsEndpoint)
+                continue;
+
+            var (endBridge, endTunnel) = BridgeTunnelStateAt(
+                contributor.Spline, contributor.CrossSection.DistanceAlongSpline);
+            if (endBridge == isBridge && endTunnel == isTunnel)
                 return true;
         }
 

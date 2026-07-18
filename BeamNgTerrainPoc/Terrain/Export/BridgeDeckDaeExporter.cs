@@ -206,6 +206,11 @@ public class BridgeDeckDaeExporter
 
         Dictionary<BridgeSpanSnapshot, (Vector2 Min, Vector2 Max)>? spanBounds = null;
         var warnedNoHeightMap = false;
+        // Shared across all spans: every plan probes every partner span (§3b.4 + footprint
+        // validation) — built here, AFTER the stations are final.
+        var pierGeometryCache = new BridgePierPlanner.SpanGeometryCache();
+        var pierPlanningStopwatch = new System.Diagnostics.Stopwatch();
+        var pierSpansPlanned = 0;
         foreach (var span in network.BridgeSpans)
         {
             var crossSections = span.Stations
@@ -256,7 +261,11 @@ public class BridgeDeckDaeExporter
                 }
                 else
                 {
-                    pierPlans = PlanSpanPiers(network, span, pierRules, profile, heightMap, metersPerPixel);
+                    pierPlanningStopwatch.Start();
+                    pierPlans = PlanSpanPiers(network, span, pierRules, profile, heightMap, metersPerPixel,
+                        pierGeometryCache);
+                    pierPlanningStopwatch.Stop();
+                    pierSpansPlanned++;
                 }
             }
 
@@ -286,6 +295,13 @@ public class BridgeDeckDaeExporter
                 Triangles = meshes.Sum(m => m.Triangles.Count),
                 Piers = pierPlans?.Count ?? 0
             });
+        }
+
+        if (pierSpansPlanned > 0)
+        {
+            TerrainCreationLogger.Current?.Detail(
+                $"[PIER] planning total: {pierPlanningStopwatch.Elapsed.TotalMilliseconds:F0}ms " +
+                $"across {pierSpansPlanned} span(s)");
         }
     }
 
@@ -348,7 +364,8 @@ public class BridgeDeckDaeExporter
         BridgeRuleSystemOptions rules,
         BridgeDeckProfile profile,
         float[,] heightMap,
-        float metersPerPixel)
+        float metersPerPixel,
+        BridgePierPlanner.SpanGeometryCache geometryCache)
     {
         var spline = network.GetSplineById(span.SplineId);
         var segment = spline?.StructureSegments?.FirstOrDefault(s => s.SpanId == span.SpanId);
@@ -388,6 +405,7 @@ public class BridgeDeckDaeExporter
             Crossings = network.GradeSeparatedCrossings,
             LowerRoadHalfWidth = LowerHalfWidth,
             AllSpans = network.BridgeSpans,
+            GeometryCache = geometryCache,
             GroundZ = p => SampleHeightMap(heightMap, metersPerPixel, p),
             Log = msg => TerrainCreationLogger.Current?.Detail(msg),
         });
