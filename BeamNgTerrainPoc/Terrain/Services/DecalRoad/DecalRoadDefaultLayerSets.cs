@@ -44,6 +44,8 @@ public static class DecalRoadDefaultLayerSets
             ["unclassified"] = CreateAsphaltRoadSet("Unclassified", 2, 3.0f, 2.0f, 0.0f),
             ["residential"] = CreateAsphaltRoadSet("Residential", 2, 3.0f, 2.0f, 0.0f),
             ["service"] = CreateAsphaltRoadSet("Service", 2, 2.75f, 1.5f, 0.0f),
+            ["raceway"] = CreateAsphaltRoadSet("Raceway", 1, 5f, 3f, -0.8f),
+            ["road"] = CreateAsphaltRoadSet("Road", 2, 3f, 1.5f, 0.0f),
             ["track"] = CreateTrackSet("Track", 1, 2.5f, 1.0f, 0.0f),
             ["roundabout"] = CreateRoundaboutSet("Roundabout", 1, 3.5f, 2.0f, 0.0f)
         };
@@ -412,7 +414,7 @@ public static class DecalRoadDefaultLayerSets
                 JunctionConstraint = JunctionConstraintMode.None,
                 ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
                 RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
-            },            
+            },
             new()
             {
                 Name = "AIRoad", LayerType = DecalRoadLayerType.AIRoad,
@@ -459,6 +461,15 @@ public static class DecalRoadDefaultLayerSets
                     ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
                     RenderOnRoads = true, RenderOnBridges = false, RenderOnTunnels = false
                 },
+                new DecalRoadLayerDefinition
+                {
+                    Name = "DirtVariation04", LayerType = DecalRoadLayerType.TreadMarks,
+                    Material = "m_dirt_variation_04", Width = 0, Position = 0.0f,
+                    TextureLength = 96.0f, FadeIn = 1.0f, FadeOut = 1.0f,
+                    IsTrackWidth = true, RenderPriority = 10,
+                    JunctionConstraint = JunctionConstraintMode.None,
+                    ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f
+                },
                 new()
                 {
                     Name = "BridgeTunnelSurface", LayerType = DecalRoadLayerType.RoadSurface,
@@ -468,7 +479,7 @@ public static class DecalRoadDefaultLayerSets
                     JunctionConstraint = JunctionConstraintMode.None,
                     ImprovedSpline = true, Detail = 0.6f, Smoothness = 0.5f,
                     RenderOnRoads = false, RenderOnBridges = true, RenderOnTunnels = false
-                },                
+                },
                 new ()
                 {
                     Name = "AIRoad", LayerType = DecalRoadLayerType.AIRoad,
