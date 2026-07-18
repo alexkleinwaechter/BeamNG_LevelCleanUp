@@ -139,14 +139,16 @@
                                        OnRequestMaterialReorder="HandleMaterialReorderRequest"
                                        Class="mt-4" />
 
-                <!-- Terrain Parameters Section -->
+                <!-- Section 1: Terrain Parameters (Elevation / GeoTIFF) -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
-                    <MudText Typo="Typo.h6" Class="mb-4">
+                    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _sectionTerrainParamsExpanded = !_sectionTerrainParamsExpanded)">
                         <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2" />
-                        Terrain Parameters
-                    </MudText>
-
-                    <MudGrid Spacing="3">
+                        <MudText Typo="Typo.h6">Terrain Parameters</MudText>
+                        <MudSpacer />
+                        <MudIcon Icon="@(_sectionTerrainParamsExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </div>
+                    <MudCollapse Expanded="_sectionTerrainParamsExpanded">
+                        <MudGrid Spacing="3" Class="mt-2">
                         <!-- Elevation Data Import -->
                         <MudItem xs="12">
                             <div class="d-flex align-center gap-2 mb-2">
@@ -491,168 +493,188 @@
                                              Min="-10000.0f" Max="10000.0f" Step="1.0f"
                                              HelperText="@(_heightmapSourceType != HeightmapSourceType.Png ? "Auto-calculated from GeoTIFF min elevation" : "Z position offset for terrain")" />
                         </MudItem>
+                        </MudGrid>
+                    </MudCollapse>
+                </MudPaper>
 
-                        @* Hydraulic Erosion *@
-                        <MudItem xs="12">
-                            <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.WaterDrop" Size="Size.Small" Class="mr-1" />
-                                Hydraulic Erosion
-                            </MudText>
-                        </MudItem>
+                <!-- Section 2: Terrain Materials -->
+                @if (_terrainMaterials.Any())
+                {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _sectionMaterialsExpanded = !_sectionMaterialsExpanded)">
+                        <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2" />
+                        <MudText Typo="Typo.h6">Terrain Materials (@_terrainMaterials.Count)</MudText>
+                        <div @onclick:stopPropagation="true" class="ml-1">
+                            <MudTooltip Text="Learn about material order and priority">
+                                <MudIconButton Icon="@Icons.Material.Filled.Help"
+                                               Size="Size.Small"
+                                               Color="Color.Primary"
+                                               OnClick="OpenMaterialOrderHelpDialog" />
+                            </MudTooltip>
+                        </div>
+                        <MudSpacer />
+                        <MudIcon Icon="@(_sectionMaterialsExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </div>
+                    <MudCollapse Expanded="_sectionMaterialsExpanded">
+                    <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
+                        Drag and drop to change the order. Material at index 0 is the default/fallback material.
+                        Expand each material to configure layer maps and road smoothing.
+                    </MudText>
 
-                        <MudItem xs="12" sm="6" md="3">
-                            <div class="d-flex align-center gap-1">
-                                <MudCheckBox @bind-Value="_enableHydraulicErosion"
-                                             Label="Enable Hydraulic Erosion"
-                                             Color="Color.Primary" />
-                                <MudTooltip Text="Runs a droplet-based erosion pass after elevation import and before road smoothing.">
-                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
-                                </MudTooltip>
-                            </div>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Naturalize terrain before roads are smoothed
-                            </MudText>
-                        </MudItem>
+                    <MudDropContainer T="TerrainMaterialItemExtended"
+                                      @ref="_dropContainer"
+                                      Items="@_terrainMaterials"
+                                      ItemsSelector="@((item, dropzone) => item.Selector == dropzone)"
+                                      ItemDropped="OnMaterialDropped"
+                                      Class="d-flex flex-column">
+                        <ChildContent>
+                            <MudDropZone T="TerrainMaterialItemExtended"
+                                         Identifier="materials"
+                                         Class="mud-height-full"
+                                         AllowReorder="true">
+                            </MudDropZone>
+                        </ChildContent>
+                        <ItemRenderer>
+                            <MudPaper Class="pa-1 mb-1" Elevation="0" Outlined="true">
+                                <div class="d-flex align-center">
+                                    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
+                                             Class="mr-1"
+                                             Style="cursor: move;"
+                                             Color="Color.Default" />
+                                    <div class="flex-grow-1">
+                                        <TerrainMaterialSettings Material="@context"
+                                                                 OnMaterialChanged="OnMaterialSettingsChanged"
+                                                                 GeoBoundingBox="@EffectiveBoundingBox"
+                                                                 TerrainSize="@_terrainSize"
+                                                                 DecalRoadSettings="@(_enableDecalRoads ? _state.DecalRoadSettings : null)" />
+                                    </div>
+                                    <MudMenu Icon="@Icons.Material.Filled.MoreVert"
+                                             Size="Size.Small"
+                                             AnchorOrigin="Origin.BottomRight"
+                                             TransformOrigin="Origin.TopRight">
+                                        <MudMenuItem OnClick="@(() => ToggleRoadSmoothing(context))"
+                                                     Icon="@(context.IsRoadMaterial ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)">
+                                            @(context.IsRoadMaterial ? "Disable Road Smoothing" : "Enable Road Smoothing")
+                                        </MudMenuItem>
+                                        <MudDivider />
+                                        <MudMenuItem OnClick="@(() => MoveToTop(context))"
+                                                     Icon="@Icons.Material.Filled.VerticalAlignTop">
+                                            Move to Top
+                                        </MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => MoveToBottom(context))"
+                                                     Icon="@Icons.Material.Filled.VerticalAlignBottom">
+                                            Move to Bottom
+                                        </MudMenuItem>
+                                    </MudMenu>
+                                </div>
+                            </MudPaper>
+                        </ItemRenderer>
+                    </MudDropContainer>
+                    </MudCollapse>
+                </MudPaper>
+                }
+                else if (!_isLoading && !_errors.Any())
+                {
+                <MudAlert Severity="Severity.Warning" Class="mt-4">
+                    No terrain materials found in the selected folder.
+                    Make sure the folder contains <code>art/terrains/main.materials.json</code>.
+                </MudAlert>
+                }
 
-                        @if (_enableHydraulicErosion)
-                        {
-                            <MudItem xs="12" sm="6" md="3">
-                                <MudNumericField T="int"
-                                                 @bind-Value="_hydraulicErosionIterations"
-                                                 Label="Iterations"
+                <!-- Section 3: Road Width, Lanes & DecalRoad Definition -->
+                @if (_canFetchOsmData)
+                {
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _sectionDecalRoadsExpanded = !_sectionDecalRoadsExpanded)">
+                        <MudIcon Icon="@Icons.Material.Filled.LinearScale" Class="mr-2" />
+                        <MudText Typo="Typo.h6">Road Width, Lanes &amp; DecalRoad Definition</MudText>
+                        <MudSpacer />
+                        <MudIcon Icon="@(_sectionDecalRoadsExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </div>
+                    <MudCollapse Expanded="_sectionDecalRoadsExpanded">
+                    <MudCheckBox @bind-Value="_enableDecalRoads"
+                                 Label="Enable DecalRoad and AI-Road generation"
+                                 Color="Color.Primary" />
+                    @if (_enableDecalRoads)
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
+                            Defines road lane counts, widths, visual detail layers (edge lines, lane markings, edge blends)
+                            and AI road paths. Settings here apply globally via layer set defaults. Per-material overrides available below.
+                        </MudText>
+                        <MudGrid Spacing="2" Class="mb-3">
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadNodeSpacing()"
+                                                 ValueChanged="SetDecalRoadNodeSpacing"
+                                                 Label="Node Spacing (m)"
                                                  Variant="Variant.Outlined"
-                                                 Min="1" Max="1000000" Step="1000"
-                                                 HelperText="More iterations increase detail and processing time" />
+                                                 Min="0.5f" Max="15.0f" Step="0.5f"
+                                                 HelperText="Distance between DecalRoad nodes" />
                             </MudItem>
-
-                            <MudItem xs="12" sm="6" md="3">
-                                <MudNumericField T="int"
-                                                 @bind-Value="_hydraulicErosionRadius"
-                                                 Label="Erosion Radius"
+                            <MudItem xs="12" sm="4">
+                                <MudNumericField T="float"
+                                                 Value="@GetDecalRoadJunctionMargin()"
+                                                 ValueChanged="SetDecalRoadJunctionMargin"
+                                                 Label="Junction Margin (m)"
                                                  Variant="Variant.Outlined"
-                                                 Min="1" Max="16" Step="1"
-                                                 HelperText="Brush radius in terrain pixels" />
+                                                 Min="-5.0f" Max="20.0f" Step="0.5f"
+                                                 HelperText="Extra corridor margin at junctions" />
                             </MudItem>
-
-                            <MudItem xs="12" sm="6" md="3">
+                            <MudItem xs="12" sm="4">
                                 <MudNumericField T="int"
-                                                 @bind-Value="_hydraulicErosionSeed"
+                                                 Value="@GetDecalRoadRandomSeed()"
+                                                 ValueChanged="SetDecalRoadRandomSeed"
                                                  Label="Random Seed"
                                                  Variant="Variant.Outlined"
                                                  Step="1"
-                                                 HelperText="Same seed gives repeatable erosion" />
+                                                 HelperText="Seed for randomizer constraint" />
                             </MudItem>
-
-                            <MudItem xs="12">
-                                <MudExpansionPanels Dense="true">
-                                    <MudExpansionPanel Text="Advanced Erosion Settings" Dense="true">
-                                        <MudGrid Spacing="3">
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInertia"
-                                                                 Label="Inertia" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
-                                                                 HelperText="Higher values keep droplets moving in the same direction longer" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionGravity"
-                                                                 Label="Gravity" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="20.0f" Step="0.25f"
-                                                                 HelperText="Controls how strongly downhill slopes accelerate droplets" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="int" @bind-Value="_hydraulicErosionDropletLifetime"
-                                                                 Label="Droplet Lifetime" Variant="Variant.Outlined"
-                                                                 Min="1" Max="200" Step="1"
-                                                                 HelperText="Maximum simulation steps for each water droplet" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionCapacityFactor"
-                                                                 Label="Capacity Factor" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="20.0f" Step="0.1f"
-                                                                 HelperText="Higher values let moving water carry more sediment" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionMinCapacity"
-                                                                 Label="Min Capacity" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="1.0f" Step="0.001f"
-                                                                 HelperText="Minimum sediment capacity on flat or slow terrain" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionErodeSpeed"
-                                                                 Label="Erode Speed" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
-                                                                 HelperText="Fraction of available sediment capacity eroded per step" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionDepositSpeed"
-                                                                 Label="Deposit Speed" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
-                                                                 HelperText="Fraction of excess sediment dropped per step" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionEvaporateSpeed"
-                                                                 Label="Evaporation" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
-                                                                 HelperText="Water loss per step; higher values shorten erosion paths" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInitialWater"
-                                                                 Label="Initial Water" Variant="Variant.Outlined"
-                                                                 Min="0.0001f" Max="10.0f" Step="0.1f"
-                                                                 HelperText="Starting water volume for each droplet" />
-                                            </MudItem>
-                                            <MudItem xs="12" sm="6" md="3">
-                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInitialSpeed"
-                                                                 Label="Initial Speed" Variant="Variant.Outlined"
-                                                                 Min="0.0f" Max="10.0f" Step="0.1f"
-                                                                 HelperText="Starting movement speed before slope acceleration" />
-                                            </MudItem>
-                                        </MudGrid>
-                                    </MudExpansionPanel>
-                                </MudExpansionPanels>
-                            </MudItem>
+                        </MudGrid>
+                        <div class="d-flex gap-2 align-center">
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Settings"
+                                       OnClick="OpenDefaultLayerSetsDialog">
+                                Edit Default Layer Sets
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Disabled="@(!CanRegenerateDecalRoads() || _isGenerating)"
+                                       OnClick="RegenerateDecalRoads">
+                                Re-generate DecalRoads
+                            </MudButton>
+                        </div>
+                        @if (!CanRegenerateDecalRoads())
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-1">
+                                Generate terrain first to enable re-generation.
+                            </MudText>
                         }
-
-                        @* UpdateTerrainBlock: always true, UI removed *@
-                        @* FlipMaterialProcessingOrder: always false, UI removed *@
-                        @* Cross-Material Harmonization: always enabled, UI removed *@
-
-                        @* Road Network *@
-                        <MudItem xs="12">
-                            <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.Timeline" Size="Size.Small" Class="mr-1" />
-                                Road Network
+                        else if (_state.CachedNetwork == null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-1">
+                                Will load road network from saved snapshot.
                             </MudText>
-                        </MudItem>
+                        }
+                    }
+                    </MudCollapse>
+                </MudPaper>
+                }
 
-                        <MudItem xs="12" sm="6" md="3">
-                            <div class="d-flex align-center gap-1">
-                                <MudCheckBox @bind-Value="_disableSplineMerging"
-                                             Label="Disable Spline Merging"
-                                             Color="Color.Warning" />
-                                <MudTooltip Text="Keeps every OSM way as its own spline instead of merging connected ways into longer roads. Debugging aid for wrong merge results at complex junctions; merged splines are needed for smooth, continuous roads.">
-                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
-                                </MudTooltip>
-                            </div>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Debugging: one spline per OSM way
-                            </MudText>
-                        </MudItem>
-
-                        @* Bridges & Tunnels *@
-                        <MudItem xs="12">
-                            <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.Architecture" Size="Size.Small" Class="mr-1" />
-                                Bridges &amp; Tunnels
-                            </MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                How bridges and tunnels from the OSM data are handled during terrain generation.
-                            </MudText>
-                        </MudItem>
-
+                <!-- Section 4: Bridges & Tunnels -->
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _sectionBridgesTunnelsExpanded = !_sectionBridgesTunnelsExpanded)">
+                        <MudIcon Icon="@Icons.Material.Filled.Architecture" Class="mr-2" />
+                        <MudText Typo="Typo.h6">Bridges &amp; Tunnels</MudText>
+                        <MudSpacer />
+                        <MudIcon Icon="@(_sectionBridgesTunnelsExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </div>
+                    <MudCollapse Expanded="_sectionBridgesTunnelsExpanded">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 mb-2">
+                            How bridges and tunnels from the OSM data are handled during terrain generation.
+                        </MudText>
+                        <MudGrid Spacing="3">
                         <MudItem xs="12" sm="6" md="3">
                             <div class="d-flex align-center gap-1">
                                 <MudCheckBox T="bool"
@@ -1223,19 +1245,23 @@
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Warn-only threshold (default 6.0)</MudText>
                             </MudItem>
                         </div>
+                        </MudGrid>
+                    </MudCollapse>
+                </MudPaper>
 
-                        @* Building Generation *@
-                        <MudItem xs="12">
-                            <MudDivider Class="my-2" />
-                            <MudText Typo="Typo.subtitle2" Class="mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.Apartment" Size="Size.Small" Class="mr-1" />
-                                Building Generation
-                            </MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                Generate 3D buildings from OSM building footprints.
-                            </MudText>
-                        </MudItem>
-
+                <!-- Section 5: Building Generation -->
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _sectionBuildingsExpanded = !_sectionBuildingsExpanded)">
+                        <MudIcon Icon="@Icons.Material.Filled.Apartment" Class="mr-2" />
+                        <MudText Typo="Typo.h6">Building Generation</MudText>
+                        <MudSpacer />
+                        <MudIcon Icon="@(_sectionBuildingsExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </div>
+                    <MudCollapse Expanded="_sectionBuildingsExpanded">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 mb-2">
+                            Generate 3D buildings from OSM building footprints.
+                        </MudText>
+                        <MudGrid Spacing="3">
                         <MudItem xs="12" sm="6" md="3">
                             <div class="d-flex align-center gap-1">
                                 <MudCheckBox @bind-Value="_enableBuildings"
@@ -1364,160 +1390,170 @@
                                                  AdornmentText="px" />
                             </MudItem>
                         }
-
-                    </MudGrid>
+                        </MudGrid>
+                    </MudCollapse>
                 </MudPaper>
-            }
 
-            @* DecalRoad Generation Section *@
-            @if (_canFetchOsmData)
-            {
-                <MudPaper Class="pa-4 mt-4" Elevation="1">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">
-                        <MudIcon Icon="@Icons.Material.Filled.LinearScale" Size="Size.Small" Class="mr-1" />
-                        Road Width, Lanes &amp; DecalRoad Definition
-                    </MudText>
-                    <MudCheckBox @bind-Value="_enableDecalRoads"
-                                 Label="Enable DecalRoad and AI-Road generation"
-                                 Color="Color.Primary" />
-                    @if (_enableDecalRoads)
-                    {
-                        <MudText Typo="Typo.body2" Class="mt-2 mb-2">
-                            Defines road lane counts, widths, visual detail layers (edge lines, lane markings, edge blends)
-                            and AI road paths. Settings here apply globally via layer set defaults. Per-material overrides available below.
-                        </MudText>
-                        <MudGrid Spacing="2" Class="mb-3">
-                            <MudItem xs="12" sm="4">
-                                <MudNumericField T="float"
-                                                 Value="@GetDecalRoadNodeSpacing()"
-                                                 ValueChanged="SetDecalRoadNodeSpacing"
-                                                 Label="Node Spacing (m)"
-                                                 Variant="Variant.Outlined"
-                                                 Min="0.5f" Max="15.0f" Step="0.5f"
-                                                 HelperText="Distance between DecalRoad nodes" />
-                            </MudItem>
-                            <MudItem xs="12" sm="4">
-                                <MudNumericField T="float"
-                                                 Value="@GetDecalRoadJunctionMargin()"
-                                                 ValueChanged="SetDecalRoadJunctionMargin"
-                                                 Label="Junction Margin (m)"
-                                                 Variant="Variant.Outlined"
-                                                 Min="-5.0f" Max="20.0f" Step="0.5f"
-                                                 HelperText="Extra corridor margin at junctions" />
-                            </MudItem>
-                            <MudItem xs="12" sm="4">
+                <!-- Section 6: Hydraulic Erosion -->
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _sectionErosionExpanded = !_sectionErosionExpanded)">
+                        <MudIcon Icon="@Icons.Material.Filled.WaterDrop" Class="mr-2" />
+                        <MudText Typo="Typo.h6">Hydraulic Erosion</MudText>
+                        <MudSpacer />
+                        <MudIcon Icon="@(_sectionErosionExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </div>
+                    <MudCollapse Expanded="_sectionErosionExpanded">
+                        <MudGrid Spacing="3" Class="mt-2">
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_enableHydraulicErosion"
+                                             Label="Enable Hydraulic Erosion"
+                                             Color="Color.Primary" />
+                                <MudTooltip Text="Runs a droplet-based erosion pass after elevation import and before road smoothing.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Naturalize terrain before roads are smoothed
+                            </MudText>
+                        </MudItem>
+
+                        @if (_enableHydraulicErosion)
+                        {
+                            <MudItem xs="12" sm="6" md="3">
                                 <MudNumericField T="int"
-                                                 Value="@GetDecalRoadRandomSeed()"
-                                                 ValueChanged="SetDecalRoadRandomSeed"
+                                                 @bind-Value="_hydraulicErosionIterations"
+                                                 Label="Iterations"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1" Max="1000000" Step="1000"
+                                                 HelperText="More iterations increase detail and processing time" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int"
+                                                 @bind-Value="_hydraulicErosionRadius"
+                                                 Label="Erosion Radius"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1" Max="16" Step="1"
+                                                 HelperText="Brush radius in terrain pixels" />
+                            </MudItem>
+
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudNumericField T="int"
+                                                 @bind-Value="_hydraulicErosionSeed"
                                                  Label="Random Seed"
                                                  Variant="Variant.Outlined"
                                                  Step="1"
-                                                 HelperText="Seed for randomizer constraint" />
+                                                 HelperText="Same seed gives repeatable erosion" />
                             </MudItem>
+
+                            <MudItem xs="12">
+                                <MudExpansionPanels Dense="true">
+                                    <MudExpansionPanel Text="Advanced Erosion Settings" Dense="true">
+                                        <MudGrid Spacing="3">
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInertia"
+                                                                 Label="Inertia" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Higher values keep droplets moving in the same direction longer" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionGravity"
+                                                                 Label="Gravity" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="20.0f" Step="0.25f"
+                                                                 HelperText="Controls how strongly downhill slopes accelerate droplets" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="int" @bind-Value="_hydraulicErosionDropletLifetime"
+                                                                 Label="Droplet Lifetime" Variant="Variant.Outlined"
+                                                                 Min="1" Max="200" Step="1"
+                                                                 HelperText="Maximum simulation steps for each water droplet" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionCapacityFactor"
+                                                                 Label="Capacity Factor" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="20.0f" Step="0.1f"
+                                                                 HelperText="Higher values let moving water carry more sediment" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionMinCapacity"
+                                                                 Label="Min Capacity" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.001f"
+                                                                 HelperText="Minimum sediment capacity on flat or slow terrain" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionErodeSpeed"
+                                                                 Label="Erode Speed" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Fraction of available sediment capacity eroded per step" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionDepositSpeed"
+                                                                 Label="Deposit Speed" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Fraction of excess sediment dropped per step" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionEvaporateSpeed"
+                                                                 Label="Evaporation" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="1.0f" Step="0.01f"
+                                                                 HelperText="Water loss per step; higher values shorten erosion paths" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInitialWater"
+                                                                 Label="Initial Water" Variant="Variant.Outlined"
+                                                                 Min="0.0001f" Max="10.0f" Step="0.1f"
+                                                                 HelperText="Starting water volume for each droplet" />
+                                            </MudItem>
+                                            <MudItem xs="12" sm="6" md="3">
+                                                <MudNumericField T="float" @bind-Value="_hydraulicErosionInitialSpeed"
+                                                                 Label="Initial Speed" Variant="Variant.Outlined"
+                                                                 Min="0.0f" Max="10.0f" Step="0.1f"
+                                                                 HelperText="Starting movement speed before slope acceleration" />
+                                            </MudItem>
+                                        </MudGrid>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            </MudItem>
+                        }
                         </MudGrid>
-                        <div class="d-flex gap-2 align-center">
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Settings"
-                                       OnClick="OpenDefaultLayerSetsDialog">
-                                Edit Default Layer Sets
-                            </MudButton>
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Secondary"
-                                       StartIcon="@Icons.Material.Filled.Refresh"
-                                       Disabled="@(!CanRegenerateDecalRoads() || _isGenerating)"
-                                       OnClick="RegenerateDecalRoads">
-                                Re-generate DecalRoads
-                            </MudButton>
-                        </div>
-                        @if (!CanRegenerateDecalRoads())
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mt-1">
-                                Generate terrain first to enable re-generation.
+                    </MudCollapse>
+                </MudPaper>
+
+                @* UpdateTerrainBlock: always true, UI removed *@
+                @* FlipMaterialProcessingOrder: always false, UI removed *@
+                @* Cross-Material Harmonization: always enabled, UI removed *@
+
+                <!-- Section 7: Road Network -->
+                <MudPaper Class="pa-4 mt-4" Elevation="2">
+                    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _sectionRoadNetworkExpanded = !_sectionRoadNetworkExpanded)">
+                        <MudIcon Icon="@Icons.Material.Filled.Timeline" Class="mr-2" />
+                        <MudText Typo="Typo.h6">Road Network</MudText>
+                        <MudSpacer />
+                        <MudIcon Icon="@(_sectionRoadNetworkExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </div>
+                    <MudCollapse Expanded="_sectionRoadNetworkExpanded">
+                        <MudGrid Spacing="3" Class="mt-2">
+                        <MudItem xs="12" sm="6" md="3">
+                            <div class="d-flex align-center gap-1">
+                                <MudCheckBox @bind-Value="_disableSplineMerging"
+                                             Label="Disable Spline Merging"
+                                             Color="Color.Warning" />
+                                <MudTooltip Text="Keeps every OSM way as its own spline instead of merging connected ways into longer roads. Debugging aid for wrong merge results at complex junctions; merged splines are needed for smooth, continuous roads.">
+                                    <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                                </MudTooltip>
+                            </div>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Debugging: one spline per OSM way
                             </MudText>
-                        }
-                        else if (_state.CachedNetwork == null)
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Info" Class="mt-1">
-                                Will load road network from saved snapshot.
-                            </MudText>
-                        }
-                    }
+                        </MudItem>
+                        </MudGrid>
+                    </MudCollapse>
                 </MudPaper>
             }
 
             @if (_terrainMaterials.Any())
             {
-                <!-- Materials Section with Drag-Drop -->
-                <MudPaper Class="pa-4 mt-4" Elevation="2">
-                    <div class="d-flex align-center justify-space-between mb-2">
-                        <MudText Typo="Typo.h6">
-                            <MudIcon Icon="@Icons.Material.Filled.Terrain" Class="mr-2" />
-                            Terrain Materials (@_terrainMaterials.Count)
-                        </MudText>
-                        <MudTooltip Text="Learn about material order and priority">
-                            <MudIconButton Icon="@Icons.Material.Filled.Help"
-                                           Size="Size.Small"
-                                           Color="Color.Primary"
-                                           OnClick="OpenMaterialOrderHelpDialog" />
-                        </MudTooltip>
-                    </div>
-                    <MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
-                        Drag and drop to change the order. Material at index 0 is the default/fallback material.
-                        Expand each material to configure layer maps and road smoothing.
-                    </MudText>
-
-                    <MudDropContainer T="TerrainMaterialItemExtended"
-                                      @ref="_dropContainer"
-                                      Items="@_terrainMaterials"
-                                      ItemsSelector="@((item, dropzone) => item.Selector == dropzone)"
-                                      ItemDropped="OnMaterialDropped"
-                                      Class="d-flex flex-column">
-                        <ChildContent>
-                            <MudDropZone T="TerrainMaterialItemExtended"
-                                         Identifier="materials"
-                                         Class="mud-height-full"
-                                         AllowReorder="true">
-                            </MudDropZone>
-                        </ChildContent>
-                        <ItemRenderer>
-                            <MudPaper Class="pa-1 mb-1" Elevation="0" Outlined="true">
-                                <div class="d-flex align-center">
-                                    <MudIcon Icon="@Icons.Material.Filled.DragIndicator"
-                                             Class="mr-1"
-                                             Style="cursor: move;"
-                                             Color="Color.Default" />
-                                    <div class="flex-grow-1">
-                                        <TerrainMaterialSettings Material="@context"
-                                                                 OnMaterialChanged="OnMaterialSettingsChanged"
-                                                                 GeoBoundingBox="@EffectiveBoundingBox"
-                                                                 TerrainSize="@_terrainSize"
-                                                                 DecalRoadSettings="@(_enableDecalRoads ? _state.DecalRoadSettings : null)" />
-                                    </div>
-                                    <MudMenu Icon="@Icons.Material.Filled.MoreVert"
-                                             Size="Size.Small"
-                                             AnchorOrigin="Origin.BottomRight"
-                                             TransformOrigin="Origin.TopRight">
-                                        <MudMenuItem OnClick="@(() => ToggleRoadSmoothing(context))"
-                                                     Icon="@(context.IsRoadMaterial ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)">
-                                            @(context.IsRoadMaterial ? "Disable Road Smoothing" : "Enable Road Smoothing")
-                                        </MudMenuItem>
-                                        <MudDivider />
-                                        <MudMenuItem OnClick="@(() => MoveToTop(context))"
-                                                     Icon="@Icons.Material.Filled.VerticalAlignTop">
-                                            Move to Top
-                                        </MudMenuItem>
-                                        <MudMenuItem OnClick="@(() => MoveToBottom(context))"
-                                                     Icon="@Icons.Material.Filled.VerticalAlignBottom">
-                                            Move to Bottom
-                                        </MudMenuItem>
-                                    </MudMenu>
-                                </div>
-                            </MudPaper>
-                        </ItemRenderer>
-                    </MudDropContainer>
-                </MudPaper>
-
                 <!-- Generate Button -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">
                     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
@@ -1576,13 +1612,7 @@
                     </MudStack>
                 </MudPaper>
             }
-            else if (_hasWorkingDirectory && !_isLoading && !_errors.Any())
-            {
-                <MudAlert Severity="Severity.Warning" Class="mt-4">
-                    No terrain materials found in the selected folder.
-                    Make sure the folder contains <code>art/terrains/main.materials.json</code>.
-                </MudAlert>
-            }
+
 
             @if (_isLoading)
             {
@@ -1678,6 +1708,15 @@
 </CascadingValue>
 
 @code {
+    // Collapsible section state
+    private bool _sectionTerrainParamsExpanded = true;
+    private bool _sectionMaterialsExpanded = true;
+    private bool _sectionDecalRoadsExpanded = true;
+    private bool _sectionBridgesTunnelsExpanded = true;
+    private bool _sectionBuildingsExpanded = true;
+    private bool _sectionErosionExpanded = true;
+    private bool _sectionRoadNetworkExpanded = true;
+
     // State variables
 
     // Terrain parameters
