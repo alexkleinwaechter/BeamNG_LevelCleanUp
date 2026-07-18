@@ -689,8 +689,12 @@
                         @* Bridge tuning values. The bridge rule system itself (clearance planning, raise/dip
                            sharing, deck profiles, span consolidation, …) is always on — the former per-rule
                            feature flags are forced true in TerrainGenerationState and on preset import. *@
-                        @if (_excludeBridgesFromTerrain)
-                        {
+                        @* Always rendered, only CSS-hidden while bridges are off: MudNumericFields
+                           CREATED after the initial render show an empty input until blurred
+                           (MudBlazor text sync), so the fields must exist from the start and merely
+                           toggle visibility. display:contents keeps the MudItems direct children of
+                           the grid layout. *@
+                        <div style="@(_excludeBridgesFromTerrain ? "display: contents" : "display: none")">
                             <MudItem xs="12">
                                 <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Clearances</MudText>
                                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
@@ -979,8 +983,7 @@
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">Generate supports under long bridges</MudText>
                             </MudItem>
 
-                            @if (_state.BridgeRules.EnableBridgePiers)
-                            {
+                            <div style="@(_state.BridgeRules.EnableBridgePiers ? "display: contents" : "display: none")">
                                 <MudItem xs="12" sm="6" md="3">
                                     <div class="d-flex align-center gap-1">
                                         <MudNumericField T="float"
@@ -1070,9 +1073,8 @@
                                     </div>
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">Default 12</MudText>
                                 </MudItem>
-                            }
-
-                        }
+                            </div>
+                        </div>
 
                         @* Building Generation *@
                         <MudItem xs="12">
