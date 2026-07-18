@@ -128,6 +128,17 @@ public partial class GenerateTerrain : IDisposable
         set => _state.ExcludeTunnelsFromTerrain = value;
     }
 
+    // Show/hide styles for the bridge/pier/tunnel tuning MudItems. The fields stay
+    // rendered and are only CSS-hidden (MudNumericField text sync); the style lives
+    // on each MudItem so they remain direct children of the MudGrid — the grid's
+    // spacing padding only applies via a direct-child selector.
+    private string? _bridgeFieldStyle => _excludeBridgesFromTerrain ? null : "display:none";
+
+    private string? _pierFieldStyle =>
+        _excludeBridgesFromTerrain && _state.BridgeRules.EnableBridgePiers ? null : "display:none";
+
+    private string? _tunnelFieldStyle => _excludeTunnelsFromTerrain ? null : "display:none";
+
     private bool _mergeStructuresIntoCorridor
     {
         get => _state.MergeStructuresIntoCorridor;

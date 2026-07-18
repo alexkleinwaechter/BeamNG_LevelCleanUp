@@ -20,13 +20,12 @@ public class OsmCacheManager
     }
 
     /// <summary>
-    /// Creates a new cache manager with custom settings.
+    /// Creates a new cache manager with a custom cache directory.
     /// </summary>
     /// <param name="cacheDirectory">Directory for cache files. Null for default location.</param>
-    /// <param name="cacheExpiry">How long cached results are valid.</param>
-    public OsmCacheManager(string? cacheDirectory, TimeSpan cacheExpiry)
+    public OsmCacheManager(string? cacheDirectory)
     {
-        _roadCache = new OsmQueryCache(cacheDirectory, cacheExpiry);
+        _roadCache = new OsmQueryCache(cacheDirectory);
     }
 
     /// <summary>
@@ -49,11 +48,6 @@ public class OsmCacheManager
     public string CacheDirectory => _roadCache.CacheDirectory;
 
     /// <summary>
-    /// Gets the cache expiry duration.
-    /// </summary>
-    public TimeSpan CacheExpiry => _roadCache.CacheExpiry;
-
-    /// <summary>
     /// Invalidates cached data for a specific bounding box.
     /// </summary>
     /// <param name="bbox">The bounding box to invalidate.</param>
@@ -70,23 +64,6 @@ public class OsmCacheManager
     {
         TerrainLogger.Info("Clearing all OSM caches...");
         _roadCache.ClearAll();
-    }
-
-    /// <summary>
-    /// Cleans up expired cache files.
-    /// </summary>
-    /// <returns>Number of files deleted.</returns>
-    public int CleanupAllExpired()
-    {
-        TerrainLogger.Info("Cleaning up expired OSM cache files...");
-        var deleted = _roadCache.CleanupExpired();
-
-        if (deleted > 0)
-        {
-            TerrainLogger.Info($"OSM cache cleanup complete: {deleted} expired files deleted");
-        }
-
-        return deleted;
     }
 
     /// <summary>

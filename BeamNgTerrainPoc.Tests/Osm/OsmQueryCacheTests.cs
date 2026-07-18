@@ -17,7 +17,7 @@ public class OsmQueryCacheTests : IDisposable
     [Fact]
     public async Task GetAsync_ReturnsCachedResult_WhenRequestedBboxIsCoveredByMultipleCachedChunks()
     {
-        var cache = new OsmQueryCache(_cacheDirectory, TimeSpan.FromDays(7));
+        var cache = new OsmQueryCache(_cacheDirectory);
         var chunks = new[]
         {
             CreateResult(1, new GeoBoundingBox(0.0, 0.0, 2.0, 2.0), 1.75, 1.75),
@@ -30,7 +30,7 @@ public class OsmQueryCacheTests : IDisposable
             await cache.SetAsync(chunk.BoundingBox, chunk);
 
         cache.ClearMemoryCache();
-        cache = new OsmQueryCache(_cacheDirectory, TimeSpan.FromDays(7));
+        cache = new OsmQueryCache(_cacheDirectory);
 
         var requestedBbox = new GeoBoundingBox(1.5, 1.5, 2.5, 2.5);
         var result = await cache.GetAsync(requestedBbox);

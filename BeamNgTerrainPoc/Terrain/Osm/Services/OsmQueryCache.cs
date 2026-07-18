@@ -53,7 +53,6 @@ public class OsmQueryCache
 
     private readonly ConcurrentDictionary<string, OsmQueryResult> _memoryCache = new();
     private readonly string _cacheDirectory;
-    private readonly TimeSpan _cacheExpiry;
 
     /// <summary>
     /// Per-key file locks to prevent concurrent read/write/delete races on the same cache file.
@@ -76,18 +75,17 @@ public class OsmQueryCache
     /// Creates a new cache with default settings.
     /// Prefer using <see cref="Shared"/> instead of creating new instances.
     /// </summary>
-    public OsmQueryCache() : this(null, TimeSpan.FromDays(7))
+    public OsmQueryCache() : this(null)
     {
     }
 
     /// <summary>
-    /// Creates a new cache with custom settings.
+    /// Creates a new cache with a custom directory.
+    /// Cached results never expire; they remain valid until explicitly invalidated or cleared.
     /// </summary>
     /// <param name="cacheDirectory">Directory to store cache files. Null for default location.</param>
-    /// <param name="cacheExpiry">How long cached results are valid.</param>
-    public OsmQueryCache(string? cacheDirectory, TimeSpan cacheExpiry)
+    public OsmQueryCache(string? cacheDirectory)
     {
-        _cacheExpiry = cacheExpiry;
         _cacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "BeamNG_LevelCleanUp",
@@ -163,14 +161,8 @@ public class OsmQueryCache
         // Check memory cache first
         if (_memoryCache.TryGetValue(cacheKey, out var memoryResult))
         {
-            if (DateTime.UtcNow - memoryResult.QueryTime < _cacheExpiry)
-            {
-                TerrainLogger.Info($"OSM cache hit (memory, exact): {cacheKey}");
-                return memoryResult;
-            }
-
-            // Expired, remove from memory
-            _memoryCache.TryRemove(cacheKey, out _);
+            TerrainLogger.Info($"OSM cache hit (memory, exact): {cacheKey}");
+            return memoryResult;
         }
 
         // Check disk cache (GZip-compressed) with per-key lock
@@ -189,14 +181,6 @@ public class OsmQueryCache
                 return null;
 
             var fileInfo = new FileInfo(filePath);
-            if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiry)
-            {
-                // Expired, delete file
-                SafeDeleteFile(filePath);
-                InvalidateBboxIndex();
-                return null;
-            }
-
             var result = await ReadCompressedCacheFileAsync(filePath);
 
             if (result != null)
@@ -210,8 +194,13 @@ public class OsmQueryCache
         catch (Exception ex)
         {
             TerrainLogger.Warning($"Failed to read OSM cache: {ex.Message}");
-            // Delete corrupted cache file
-            try { SafeDeleteFile(filePath); InvalidateBboxIndex(); } catch { }
+            // Only delete files that are actually corrupted (bad GZip/JSON content).
+            // Transient I/O errors (file locked by antivirus/backup/sync tools) must
+            // not destroy valid cache data.
+            if (ex is InvalidDataException or JsonException)
+            {
+                try { SafeDeleteFile(filePath); InvalidateBboxIndex(); } catch { }
+            }
         }
         finally
         {
@@ -228,14 +217,12 @@ public class OsmQueryCache
     /// </summary>
     private async Task<OsmQueryResult?> GetFromCoveringCachesAsync(GeoBoundingBox requestedBbox)
     {
-        var now = DateTime.UtcNow;
         var candidates = new Dictionary<string, OsmQueryResult>();
 
         foreach (var (cacheKey, cachedResult) in _memoryCache)
         {
             if (cachedResult.BoundingBox != null &&
-                IntersectsWithTolerance(cachedResult.BoundingBox, requestedBbox) &&
-                now - cachedResult.QueryTime < _cacheExpiry)
+                IntersectsWithTolerance(cachedResult.BoundingBox, requestedBbox))
             {
                 candidates[cacheKey] = cachedResult;
             }
@@ -244,8 +231,7 @@ public class OsmQueryCache
         var index = GetOrBuildBboxIndex();
         foreach (var entry in index)
         {
-            if (!IntersectsWithTolerance(entry.BBox, requestedBbox) ||
-                now - entry.LastWriteUtc > _cacheExpiry)
+            if (!IntersectsWithTolerance(entry.BBox, requestedBbox))
                 continue;
 
             var entryFileName = Path.GetFileNameWithoutExtension(
@@ -311,8 +297,7 @@ public class OsmQueryCache
         foreach (var (_, cachedResult) in _memoryCache)
         {
             if (cachedResult.BoundingBox != null &&
-                ContainsWithTolerance(cachedResult.BoundingBox, requestedBbox) &&
-                DateTime.UtcNow - cachedResult.QueryTime < _cacheExpiry)
+                ContainsWithTolerance(cachedResult.BoundingBox, requestedBbox))
             {
                 var filtered = FilterFeaturesToBbox(cachedResult, requestedBbox);
                 TerrainLogger.Info($"OSM cache hit (memory, containing): filtered {filtered.Features.Count} features from larger cached region");
@@ -325,8 +310,7 @@ public class OsmQueryCache
 
         foreach (var entry in index)
         {
-            if (ContainsWithTolerance(entry.BBox, requestedBbox) &&
-                DateTime.UtcNow - entry.LastWriteUtc <= _cacheExpiry)
+            if (ContainsWithTolerance(entry.BBox, requestedBbox))
             {
                 // Derive cache key from the indexed file's bbox for per-key locking
                 var entryFileName = Path.GetFileNameWithoutExtension(
@@ -546,7 +530,7 @@ public class OsmQueryCache
             TerrainLogger.Info($"OSM result cached: {cacheKey} ({fileInfo.Length / 1024}KB compressed)");
 
             // Add to bbox index
-            AddToBboxIndex(filePath, bbox, fileInfo.LastWriteTimeUtc);
+            AddToBboxIndex(filePath, bbox);
 
             CacheChanged?.Invoke();
         }
@@ -646,54 +630,6 @@ public class OsmQueryCache
     public string CacheDirectory => _cacheDirectory;
 
     /// <summary>
-    /// Gets the cache expiry duration.
-    /// </summary>
-    public TimeSpan CacheExpiry => _cacheExpiry;
-
-    /// <summary>
-    /// Cleans up expired cache files from disk (both compressed and legacy).
-    /// Returns the number of files deleted.
-    /// </summary>
-    public int CleanupExpired()
-    {
-        var deletedCount = 0;
-
-        try
-        {
-            var files = GetAllCacheFiles();
-            foreach (var file in files)
-            {
-                try
-                {
-                    var fileInfo = new FileInfo(file);
-                    if (DateTime.UtcNow - fileInfo.LastWriteTimeUtc > _cacheExpiry)
-                    {
-                        SafeDeleteFile(file);
-                        deletedCount++;
-                    }
-                }
-                catch
-                {
-                    // Skip files that can't be deleted
-                }
-            }
-
-            if (deletedCount > 0)
-            {
-                InvalidateBboxIndex();
-                TerrainLogger.Info($"OSM cache cleanup: {deletedCount} expired files deleted");
-                CacheChanged?.Invoke();
-            }
-        }
-        catch (Exception ex)
-        {
-            TerrainLogger.Warning($"Failed to cleanup OSM cache: {ex.Message}");
-        }
-
-        return deletedCount;
-    }
-
-    /// <summary>
     /// Clears only the in-memory cache tier, releasing deserialized OSM data from RAM.
     /// Disk cache remains intact. Call this after terrain generation completes
     /// to free memory while keeping the disk cache for future runs.
@@ -756,7 +692,7 @@ public class OsmQueryCache
 
     #region Bbox Index
 
-    private record CacheBboxEntry(string FilePath, GeoBoundingBox BBox, DateTime LastWriteUtc);
+    private record CacheBboxEntry(string FilePath, GeoBoundingBox BBox);
 
     /// <summary>
     /// Gets or lazily builds the bbox index from cache filenames.
@@ -781,8 +717,7 @@ public class OsmQueryCache
                     var bbox = ParseBboxFromFileName(filePath);
                     if (bbox != null)
                     {
-                        var lastWrite = new FileInfo(filePath).LastWriteTimeUtc;
-                        _bboxIndex.Add(new CacheBboxEntry(filePath, bbox, lastWrite));
+                        _bboxIndex.Add(new CacheBboxEntry(filePath, bbox));
                     }
                 }
 
@@ -801,7 +736,7 @@ public class OsmQueryCache
     /// <summary>
     /// Adds a new entry to the bbox index (called after writing a cache file).
     /// </summary>
-    private void AddToBboxIndex(string filePath, GeoBoundingBox bbox, DateTime lastWriteUtc)
+    private void AddToBboxIndex(string filePath, GeoBoundingBox bbox)
     {
         lock (_indexLock)
         {
@@ -810,7 +745,7 @@ public class OsmQueryCache
 
             // Remove any existing entry for the same file
             _bboxIndex.RemoveAll(e => e.FilePath == filePath);
-            _bboxIndex.Add(new CacheBboxEntry(filePath, bbox, lastWriteUtc));
+            _bboxIndex.Add(new CacheBboxEntry(filePath, bbox));
         }
     }
 
