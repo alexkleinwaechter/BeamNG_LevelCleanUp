@@ -1,5 +1,6 @@
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Algorithms;
+using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Tests.Elevation;
@@ -196,5 +197,106 @@ public class GradeSeparatedCrossingDetectionTests
         Assert.Equal(underRoad.SplineId, crossing.LowerSplineId);
         Assert.Equal(1, crossing.UpperLayer);
         Assert.DoesNotContain(network.Junctions, j => j.Type == JunctionType.MidSplineCrossing);
+    }
+
+    // ── EnableHiddenCrossingDetection, junction-connected half (run 160210 bridge_8655179): a corridor
+    // that tees into another road can STILL bridge over it elsewhere. The pair-connected skip hid the
+    // crossing from BOTH detector passes — the footprint pass now re-examines such pairs, guarded by
+    // distance from the shared junction.
+
+    // Corridor (tertiary-like, prio 6001) with a bridge span [100,200] (x∈[150,250], layer 1); an
+    // under-road (primary-like, prio 8001) that crosses beneath the deck at x=200 AND tees into the
+    // corridor at (350,150) — 150 m from the crossing, like the K 102 joining the B 53.
+    private static (ParameterizedRoadSpline corridor, ParameterizedRoadSpline underRoad)
+        ConnectedCrossingPair(bool hiddenCrossings)
+    {
+        var span = new StructureSegment
+        {
+            Type = StructureType.Bridge, StartDistance = 100f, EndDistance = 200f, Layer = 1,
+            OsmWayIds = { 4712L }
+        };
+        var corridor = RoadNetworkTestHelpers.CreateParameterizedSpline(
+            1, new(50, 150), new(450, 150), priority: 6001, isBridge: false,
+            mergeStructuresIntoCorridor: true, structureSegments: [span]);
+        corridor.Parameters.BridgeRules = new BridgeRuleSystemOptions
+        {
+            EnableHiddenCrossingDetection = hiddenCrossings,
+        };
+
+        var underRoad = new ParameterizedRoadSpline
+        {
+            Spline = new RoadSpline(
+                [new(200, 50), new(200, 250), new(350, 250), new(350, 150)],
+                SplineInterpolationType.LinearControlPoints),
+            Parameters = new RoadSmoothingParameters
+            {
+                RoadWidthMeters = 8f,
+                TerrainAffectedRangeMeters = 6f,
+                CrossSectionIntervalMeters = 0.5f,
+            },
+            MaterialName = "asphalt",
+            SplineId = 2,
+            OsmRoadType = "primary",
+            Priority = 8001,
+        };
+
+        return (corridor, underRoad);
+    }
+
+    [Fact]
+    public void JunctionConnectedPair_CrossingFarFromSharedJunction_IsRecorded()
+    {
+        var (corridor, underRoad) = ConnectedCrossingPair(hiddenCrossings: true);
+
+        var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(corridor, underRoad);
+
+        // The tee at (350,150) must exist — it is exactly what used to hide the crossing.
+        Assert.Contains(network.Junctions, j =>
+            j.Contributors.Any(c => c.Spline.SplineId == corridor.SplineId) &&
+            j.Contributors.Any(c => c.Spline.SplineId == underRoad.SplineId));
+
+        var crossing = Assert.Single(network.GradeSeparatedCrossings);
+        Assert.Equal(corridor.SplineId, crossing.UpperSplineId);
+        Assert.Equal(underRoad.SplineId, crossing.LowerSplineId);
+        Assert.Equal(1, crossing.UpperLayer);
+        Assert.Equal(0, crossing.LowerLayer);
+        Assert.True(crossing.UpperIsBridge);
+        Assert.True(crossing.LowerPriority > crossing.UpperPriority); // primary under tertiary ⇒ veto raise
+    }
+
+    [Fact]
+    public void JunctionConnectedPair_FlagOff_StaysHidden()
+    {
+        var (corridor, underRoad) = ConnectedCrossingPair(hiddenCrossings: false);
+
+        var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(corridor, underRoad);
+
+        Assert.Empty(network.GradeSeparatedCrossings); // legacy baseline: connected pairs never checked
+    }
+
+    [Fact]
+    public void JunctionConnectedPair_HitNearSharedJunction_IsNotACrossing()
+    {
+        // The under-road tees into the corridor ON the deck itself: its sections inside the footprint sit
+        // right at the shared junction — the T-junction overlap area, not a crossing to clear.
+        var span = new StructureSegment
+        {
+            Type = StructureType.Bridge, StartDistance = 100f, EndDistance = 200f, Layer = 1,
+            OsmWayIds = { 4713L }
+        };
+        var corridor = RoadNetworkTestHelpers.CreateParameterizedSpline(
+            1, new(50, 150), new(450, 150), priority: 6001, isBridge: false,
+            mergeStructuresIntoCorridor: true, structureSegments: [span]);
+        corridor.Parameters.BridgeRules = new BridgeRuleSystemOptions
+        {
+            EnableHiddenCrossingDetection = true,
+        };
+
+        var sideRoad = RoadNetworkTestHelpers.CreateParameterizedSpline(
+            2, new(200, 50), new(200, 150), priority: 8001, isBridge: false);
+
+        var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(corridor, sideRoad);
+
+        Assert.Empty(network.GradeSeparatedCrossings);
     }
 }

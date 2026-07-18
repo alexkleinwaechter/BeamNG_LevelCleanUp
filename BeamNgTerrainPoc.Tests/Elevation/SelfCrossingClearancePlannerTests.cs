@@ -8,7 +8,7 @@ using BeamNgTerrainPoc.Terrain.Osm.Models;
 namespace BeamNgTerrainPoc.Tests.Elevation;
 
 /// <summary>
-/// <c>EnableSelfCrossingClearance</c> (run 143909 bridge_8655179): a corridor whose ground leg passes
+/// <c>EnableHiddenCrossingDetection</c>, self-crossing half: a corridor whose ground leg passes
 /// under its OWN bridge span (a switchback/hairpin). The junction detector excludes same-spline pairs
 /// structurally, so the planner detects the leg directly from the span footprint and emits a synthetic
 /// Road obstacle (LowerSplineId −1, station-disambiguated via SelfLowerStationMeters). The crossing is
@@ -38,7 +38,7 @@ public class SelfCrossingClearancePlannerTests
             OsmWayIds = { 88001L },
         };
         var rules = new BridgeRuleSystemOptions().WithTestClearance();
-        rules.EnableSelfCrossingClearance = selfCrossing;
+        rules.EnableHiddenCrossingDetection = selfCrossing;
         rules.EnablePriorityDistribution = priorityDistribution;
 
         return new ParameterizedRoadSpline
@@ -142,7 +142,7 @@ public class SelfCrossingClearancePlannerTests
             1, new(50, 150), new(450, 150), priority: 6001,
             mergeStructuresIntoCorridor: true, structureSegments: [span]);
         var rules = new BridgeRuleSystemOptions().WithTestClearance();
-        rules.EnableSelfCrossingClearance = true;
+        rules.EnableHiddenCrossingDetection = true;
         corridor.Parameters.BridgeRules = rules;
 
         var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(corridor);

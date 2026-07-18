@@ -773,6 +773,13 @@ public class NetworkJunctionDetector
         var crossings = new List<NetworkJunction>();
         var processedPairs = new HashSet<(int, int)>(); // Track spline pairs we've already found crossings for
 
+        // Run 160210 bridge_8655179: pairs skipped ONLY because they share a junction were never checked
+        // for grade separation anywhere — a corridor that tees into another road can STILL bridge over it
+        // elsewhere (K 102 joins the B 53 120 m north of the K 102 bridge that crosses the B 53). Tracked
+        // separately so the footprint pass can re-examine exactly these pairs (flag-gated, junction-distance
+        // guarded) while the at-grade junction suppression they exist for stays untouched.
+        var connectedSkippedPairs = new HashSet<(int, int)>();
+
         // E-A: grade-separated crossings are recorded on the network instead of becoming at-grade junctions.
         // This is the sole populator of the list, so reset it for this detection run.
         network.GradeSeparatedCrossings.Clear();
@@ -883,6 +890,7 @@ public class NetworkJunctionDetector
                     {
                         skippedAlreadyConnected++;
                         processedPairs.Add(pairKey); // Don't check this pair again
+                        connectedSkippedPairs.Add(pairKey); // …but the footprint pass may re-examine it
                         continue;
                     }
 
@@ -961,8 +969,10 @@ public class NetworkJunctionDetector
         // (sparse sampling, lateral offset under a wide deck). Sweep each bridge span's XY footprint for any
         // other spline's section it contains and record the grade separation directly — so "no road under the
         // bridge is harmonized as a crossing with it" is structurally true, not sampling-dependent. Add-only:
-        // pairs the loop already handled are skipped via processedPairs.
-        RecordFootprintGradeSeparations(network, processedPairs, ref gradeSeparatedCount);
+        // pairs the loop already handled are skipped via processedPairs — EXCEPT junction-connected pairs
+        // (flag-gated), whose under-deck hits far from the shared junction are genuine crossings.
+        RecordFootprintGradeSeparations(
+            network, processedPairs, connectedSkippedPairs, existingJunctions, ref gradeSeparatedCount);
 
         TerrainCreationLogger.Current?.Detail(
             $"DetectMidSplineCrossings summary: Checked {totalMidSplineSectionsChecked} mid-spline sections, " +
@@ -1069,16 +1079,31 @@ public class NetworkJunctionDetector
     }
 
     /// <summary>
+    ///     A footprint hit within this XY distance of a junction SHARED by the two splines is the
+    ///     T-junction / ramp-landing area itself (a side road touching the deck footprint at the abutment,
+    ///     a landing overlapping the deck), never a genuine crossing. Beyond it, a junction-connected pair's
+    ///     under-deck hit is a real grade separation (run 160210: K 102 bridges the B 53 ~120 m from where
+    ///     they tee together).
+    /// </summary>
+    public const float SharedJunctionCrossingExclusionMeters = 40f;
+
+    /// <summary>
     ///     Footprint-based grade-separation pass (plan doc 14 §5). For every merged-corridor bridge span,
     ///     records a <see cref="GradeSeparatedCrossing"/> for any other spline that has a mid-section inside
     ///     the span's XY footprint and sits on a lower effective layer — catching under-deck roads the
     ///     proximity sampler missed. Add-only and pair-deduped: pairs already handled by the mid-spline loop
-    ///     (whether grade-separated or genuine at-grade) are left untouched. No-op when there are no spans
+    ///     (whether grade-separated or genuine at-grade) are left untouched — EXCEPT pairs the loop skipped
+    ///     ONLY for being junction-connected (<paramref name="connectedSkippedPairs"/>): with
+    ///     <c>BridgeRuleSystemOptions.EnableHiddenCrossingDetection</c> on the span owner, those are
+    ///     re-examined here, guarded by <see cref="SharedJunctionCrossingExclusionMeters"/> so the shared
+    ///     junction's own overlap area never reports as a crossing. No-op when there are no spans
     ///     (legacy / flag off), so it never affects non-merged networks.
     /// </summary>
     private static void RecordFootprintGradeSeparations(
         UnifiedRoadNetwork network,
         HashSet<(int, int)> processedPairs,
+        HashSet<(int, int)> connectedSkippedPairs,
+        List<NetworkJunction> existingJunctions,
         ref int gradeSeparatedCount)
     {
         var footprints = BridgeSpanFootprint.BuildAll(network);
@@ -1110,6 +1135,9 @@ public class NetworkJunctionDetector
             var ownerSpline = network.GetSplineById(fp.OwnerSplineId);
             if (ownerSpline == null) continue;
 
+            var hiddenCrossings =
+                ownerSpline.Parameters.BridgeRules?.EnableHiddenCrossingDetection == true;
+
             foreach (var other in network.Splines)
             {
                 if (other.SplineId == fp.OwnerSplineId) continue;
@@ -1117,7 +1145,10 @@ public class NetworkJunctionDetector
                 var pairKey = fp.OwnerSplineId < other.SplineId
                     ? (fp.OwnerSplineId, other.SplineId)
                     : (other.SplineId, fp.OwnerSplineId);
-                if (processedPairs.Contains(pairKey))
+                // A junction-connected pair was skipped by the loop WITHOUT classification — re-examine it
+                // (flag-gated); a pair the loop actually classified stays skipped.
+                var connectedPair = hiddenCrossings && connectedSkippedPairs.Contains(pairKey);
+                if (processedPairs.Contains(pairKey) && !connectedPair)
                     continue; // mid-spline loop already classified this pair
 
                 // AABB prefilter: a spline whose bounds don't overlap the footprint can't have a
@@ -1154,6 +1185,18 @@ public class NetworkJunctionDetector
                 if (fp.Layer <= lowerLayer)
                     continue; // owner span is not genuinely above → leave to the planner / the other span's footprint
 
+                // Junction-connected pair: only a hit FAR from every junction the two splines share is a
+                // genuine crossing — near one it is the T-junction / landing overlap the skip exists for.
+                if (connectedPair && IsNearSharedJunction(
+                        existingJunctions, fp.OwnerSplineId, other.SplineId, underSection.CenterPoint))
+                {
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Footprint hit for connected pair {fp.OwnerSplineId}/{other.SplineId} at " +
+                        $"({underSection.CenterPoint.X:F1}, {underSection.CenterPoint.Y:F1}) is within " +
+                        $"{SharedJunctionCrossingExclusionMeters:F0}m of their shared junction — not a crossing");
+                    continue;
+                }
+
                 network.GradeSeparatedCrossings.Add(new GradeSeparatedCrossing
                 {
                     UpperSplineId = fp.OwnerSplineId,
@@ -1170,18 +1213,49 @@ public class NetworkJunctionDetector
                     LowerOsmClass = other.OsmRoadType
                 });
                 processedPairs.Add(pairKey);
+                // A recorded connected pair drops out of the re-examination set so the normal
+                // one-crossing-per-pair dedup applies to any further footprints of the same pair.
+                connectedSkippedPairs.Remove(pairKey);
                 gradeSeparatedCount++;
 
                 TerrainCreationLogger.Current?.Detail(
                     $"GradeSeparatedCrossing (footprint): upper spline {fp.OwnerSplineId} span {fp.SpanId} " +
                     $"(layer {fp.Layer}) over lower spline {other.SplineId} (layer {lowerLayer}) at " +
-                    $"({underSection.CenterPoint.X:F1}, {underSection.CenterPoint.Y:F1}) — sampler missed it");
+                    $"({underSection.CenterPoint.X:F1}, {underSection.CenterPoint.Y:F1}) — " +
+                    (connectedPair ? "junction-connected pair, crossing far from the shared junction" : "sampler missed it"));
                 if (lowerBridge && ownerSpline.Parameters.BridgeRules?.EnableBridgeBridge == true)
                     TerrainCreationLogger.Current?.Detail(
                         $"[BRIDGE-BRIDGE] span {fp.SpanId} over bridge {other.SplineId} " +
                         $"(layers {fp.Layer}/{lowerLayer}) — detection only, R6 multi-level deferred");
             }
         }
+    }
+
+    /// <summary>
+    ///     True when <paramref name="point"/> lies within
+    ///     <see cref="SharedJunctionCrossingExclusionMeters"/> of any junction that BOTH splines
+    ///     contribute to — the T-junction / landing area of a connected pair, where a footprint hit is
+    ///     the junction overlap itself and never a grade-separated crossing.
+    /// </summary>
+    private static bool IsNearSharedJunction(
+        List<NetworkJunction> junctions, int splineA, int splineB, Vector2 point)
+    {
+        foreach (var junction in junctions)
+        {
+            var hasA = false;
+            var hasB = false;
+            foreach (var contributor in junction.Contributors)
+            {
+                if (contributor.Spline.SplineId == splineA) hasA = true;
+                else if (contributor.Spline.SplineId == splineB) hasB = true;
+            }
+
+            if (hasA && hasB &&
+                Vector2.Distance(junction.Position, point) < SharedJunctionCrossingExclusionMeters)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

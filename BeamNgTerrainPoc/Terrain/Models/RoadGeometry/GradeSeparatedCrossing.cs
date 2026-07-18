@@ -31,7 +31,7 @@ public sealed class GradeSeparatedCrossing
     public bool HasLowerSpline => LowerSplineId >= 0;
 
     /// <summary>
-    /// Self-crossing (<c>EnableSelfCrossingClearance</c>): the upper spline's own ground leg passes under
+    /// Self-crossing (<c>EnableHiddenCrossingDetection</c>): the upper spline's own ground leg passes under
     /// this span (a switchback/hairpin), and this is that leg's along-spline station on the UPPER spline.
     /// <see cref="LowerSplineId"/> stays −1 — the lower member can never be resolved by XY because the
     /// deck sits at the same plan-view point; consumers that need the leg's solved Z resolve it by this

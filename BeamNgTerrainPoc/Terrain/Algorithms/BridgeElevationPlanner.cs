@@ -915,7 +915,7 @@ public static class BridgeElevationPlanner
     private const float SelfCrossingClusterGapMeters = 25f;
 
     /// <summary>
-    /// Self-crossing obstacles (<see cref="BridgeRuleSystemOptions.EnableSelfCrossingClearance"/>): the
+    /// Self-crossing obstacles (<see cref="BridgeRuleSystemOptions.EnableHiddenCrossingDetection"/>): the
     /// corridor's own ground leg passing under this span. The junction detector excludes same-spline pairs
     /// structurally (proximity sampler AND footprint sweep), and <see cref="AddSyntheticObstacles"/> drops
     /// Road-kind OSM features on the assumption that road crossings always arrive via the detector — false
@@ -930,7 +930,7 @@ public static class BridgeElevationPlanner
         SpanContext span, float[,]? heightMap, float metersPerPixel,
         BridgeElevationPlannerOptions? options, List<Obstacle> obstacles)
     {
-        if (span.Spline.Parameters.BridgeRules?.EnableSelfCrossingClearance != true)
+        if (span.Spline.Parameters.BridgeRules?.EnableHiddenCrossingDetection != true)
             return;
 
         // Own-spline ground sections under the deck: inside the footprint, station well outside the span,

@@ -136,19 +136,25 @@ public class BridgeRuleSystemOptions
     public bool EnableSeamlessDeckOverlap { get; set; }
 
     /// <summary>
-    ///     Self-crossing clearance (run 143909 bridge_8655179): a corridor whose ground leg passes under
-    ///     its OWN bridge span (a switchback/hairpin) gets a synthetic Road obstacle so the deck is raised
-    ///     to the typed road budget. The junction detector excludes same-spline pairs structurally (both
-    ///     the proximity sampler and the footprint sweep), and the planner's synthetic pass drops Road
-    ///     features on the assumption "roads always arrive via the detector" — false exactly here, so the
-    ///     deck used to skim its own lower leg with no clearance at all. The crossing carries the lower
-    ///     leg's along-spline STATION (<see cref="RoadGeometry.GradeSeparatedCrossing.SelfLowerStationMeters"/>)
-    ///     because an XY lookup on the shared spline would find the deck itself. Never dipped (the lower
-    ///     member is the deck's own approach chain — raise-only veto, like rail/water). Like
-    ///     <see cref="EnableDeckToDeckContinuity"/>, deliberately NOT part of <see cref="AnyEnabled"/> —
-    ///     meaningless without merged spans. Off ⇒ byte-identical.
+    ///     Crossings hidden by the detector's connectivity heuristics (run 160210 bridge_8655179). Two
+    ///     blindspots, one knob:
+    ///     (a) <b>Junction-connected pairs</b> — the mid-spline crossing detector skips every spline pair
+    ///     that already shares a junction ("that's a T-junction, not a crossing"), and the footprint safety
+    ///     net inherited the skip. But a corridor that tees into another road can STILL bridge over it
+    ///     elsewhere (the K 102 joins the B 53 120 m north of the K 102 bridge that crosses the B 53 —
+    ///     zero clearance budgeted). With this flag the footprint pass re-examines those pairs, guarded by
+    ///     <c>NetworkJunctionDetector.SharedJunctionCrossingExclusionMeters</c> so the shared junction's
+    ///     own overlap area never reports as a crossing.
+    ///     (b) <b>Self-crossings</b> — a corridor whose own ground leg passes under its OWN bridge span
+    ///     (switchback/hairpin) is invisible to both detector passes (same-spline pairs are structurally
+    ///     excluded); the planner sweeps the span footprint for own-leg sections and emits a synthetic Road
+    ///     obstacle carrying the leg's along-spline STATION
+    ///     (<see cref="RoadGeometry.GradeSeparatedCrossing.SelfLowerStationMeters"/> — an XY lookup on the
+    ///     shared spline would find the deck itself). Never dipped (raise-only veto, like rail/water).
+    ///     Like <see cref="EnableDeckToDeckContinuity"/>, deliberately NOT part of
+    ///     <see cref="AnyEnabled"/> — meaningless without merged spans. Off ⇒ byte-identical.
     /// </summary>
-    public bool EnableSelfCrossingClearance { get; set; }
+    public bool EnableHiddenCrossingDetection { get; set; }
 
     /// <summary>
     ///     Turns on every rule of the system plus pier generation. Product default for the UI since
@@ -173,7 +179,7 @@ public class BridgeRuleSystemOptions
         EnableBridgeToBridgeAbutmentSuppression = true;
         EnableDeckToDeckContinuity = true;
         EnableSeamlessDeckOverlap = true;
-        EnableSelfCrossingClearance = true;
+        EnableHiddenCrossingDetection = true;
         EnableBridgePiers = true;
     }
 
