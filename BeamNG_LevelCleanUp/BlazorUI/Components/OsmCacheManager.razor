@@ -8,7 +8,7 @@
         <MudStack Spacing="2">
             <MudText Typo="Typo.body2">
                 OSM data from the Overpass API is cached locally to avoid repeated downloads.
-                Cache expires after 7 days.
+                Cached data is kept indefinitely — use "Clear All Cache" to force a fresh download.
             </MudText>
 
             <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
@@ -29,13 +29,6 @@
                            StartIcon="@Icons.Material.Filled.Refresh"
                            OnClick="RefreshStats">
                     Refresh Stats
-                </MudButton>
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Warning"
-                           Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.CleaningServices"
-                           OnClick="CleanupExpired">
-                    Cleanup Expired
                 </MudButton>
                 <MudButton Variant="Variant.Outlined"
                            Color="Color.Error"
@@ -122,30 +115,6 @@
         }
 
         StateHasChanged();
-    }
-
-    private void CleanupExpired()
-    {
-        try
-        {
-            var cacheManager = new BeamNgTerrainPoc.Terrain.Osm.Services.OsmCacheManager();
-            var deletedCount = cacheManager.CleanupAllExpired();
-
-            if (deletedCount > 0)
-            {
-                Snackbar.Add($"Cleaned up {deletedCount} expired cache file(s)", Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add("No expired cache files found", Severity.Info);
-            }
-
-            RefreshStats();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error cleaning cache: {ex.Message}", Severity.Error);
-        }
     }
 
     private void ClearAll()

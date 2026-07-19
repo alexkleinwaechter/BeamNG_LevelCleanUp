@@ -16,6 +16,7 @@ public class BaseColorModeApplier
         string levelPath,
         string levelName,
         string materialsJsonPath,
+        string terrainFilePath,
         TerrainV9Binary terrain,
         IReadOnlyCollection<CopyAsset> materials,
         MtSettings settings,
@@ -54,6 +55,11 @@ public class BaseColorModeApplier
         settings.BasecolorModeSettings.NormalStrength = normalStrength;
         settings.BasecolorModeSettings.AoRadius = aoRadius;
         settings.BasecolorModeSettings.AoIntensity = aoIntensity;
+        settings.BasecolorModeSettings.LastBakeTerrainTimestampUtc =
+            !string.IsNullOrWhiteSpace(terrainFilePath) && File.Exists(terrainFilePath)
+                ? File.GetLastWriteTimeUtc(terrainFilePath)
+                : null;
+        settings.BasecolorModeSettings.LastBakeGeoRefSavedAtUtc = settings.GeoReferenceSettings?.SavedAtUtc;
         settings.Save(levelPath);
 
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"BaseColor Mode activated. Generated merged {terrainSize}x{terrainSize} terrain PBR maps.");

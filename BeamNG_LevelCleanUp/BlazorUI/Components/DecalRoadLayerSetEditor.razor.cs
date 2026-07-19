@@ -131,6 +131,9 @@ public partial class DecalRoadLayerSetEditor
             OneWay = source.OneWay,
             FlipDirection = source.FlipDirection,
             OverObjects = source.OverObjects,
+            RenderOnRoads = source.RenderOnRoads,
+            RenderOnBridges = source.RenderOnBridges,
+            RenderOnTunnels = source.RenderOnTunnels,
             ImprovedSpline = source.ImprovedSpline,
             Smoothness = source.Smoothness,
             Detail = source.Detail,
@@ -156,6 +159,7 @@ public partial class DecalRoadLayerSetEditor
         DecalRoadLayerType.EdgeBlend => Color.Success,
         DecalRoadLayerType.TreadMarks => Color.Secondary,
         DecalRoadLayerType.AIRoad => Color.Default,
+        DecalRoadLayerType.RoadSurface => Color.Primary,
         _ => Color.Default
     };
 
@@ -164,6 +168,22 @@ public partial class DecalRoadLayerSetEditor
         if (layer.IsTrackWidth) return "trk";
         if (layer.IsLaneWidth) return "lane";
         return $"{layer.Width:F2}m";
+    }
+
+    /// <summary>
+    /// Collapsed-header chip label for a non-default render scope,
+    /// or null when the layer renders everywhere (default).
+    /// </summary>
+    private static string? GetRenderScopeLabel(DecalRoadLayerDefinition layer)
+    {
+        if (layer.RenderOnRoads && layer.RenderOnBridges && layer.RenderOnTunnels)
+            return null;
+
+        var scopes = new List<string>(3);
+        if (layer.RenderOnRoads) scopes.Add("roads");
+        if (layer.RenderOnBridges) scopes.Add("bridges");
+        if (layer.RenderOnTunnels) scopes.Add("tunnels");
+        return scopes.Count == 0 ? "nowhere" : $"on:{string.Join("+", scopes)}";
     }
 
     /// <summary>

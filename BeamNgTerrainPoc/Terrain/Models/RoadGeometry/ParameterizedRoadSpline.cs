@@ -63,10 +63,28 @@ public class ParameterizedRoadSpline
     public List<LaneSegment>? LaneSegments { get; init; }
 
     /// <summary>
+    ///     Bridge/tunnel sub-ranges along this (possibly merged) spline, anchored by arc-length.
+    ///     Propagated from <see cref="RoadSpline.StructureSegments"/> during network building.
+    ///     Empty/null for a plain road. Source of the per-span exclusion + deck build in the
+    ///     "merged-corridor bridge" refactor (plan doc 11). Consumed by nothing yet (Phase 1 is additive).
+    /// </summary>
+    public List<StructureSegment>? StructureSegments { get; init; }
+
+    /// <summary>
     ///     Pre-computed width profile derived from OSM lane/width data.
     ///     Null if no layerset was resolved (falls back to RoadSmoothingParameters).
     /// </summary>
     public RoadWidthProfile? WidthProfile { get; set; }
+
+    /// <summary>
+    ///     True when this spline is a lateral dual-carriageway union (LateralCarriagewayMerger):
+    ///     its centerline is the MIDLINE of the two original oneway ways. Roads that OSM-connected
+    ///     to one carriageway (ramps, crossovers) end up to half the carriageway separation away
+    ///     from this centerline, so T-junction detection admits their endpoints by the corridor's
+    ///     surface half-width instead of the default detection radius. False ⇒ byte-identical
+    ///     junction detection.
+    /// </summary>
+    public bool IsLaterallyMerged { get; set; }
 
     /// <summary>
     ///     Optional display name for the road (e.g., from OSM name tag).
@@ -148,24 +166,11 @@ public class ParameterizedRoadSpline
     public string? BridgeStructureType { get; set; }
 
     /// <summary>
-    ///     Elevation profile for bridges and tunnels.
-    ///     Defines how the structure's elevation varies along its length,
-    ///     independent of the underlying terrain.
-    ///     Null for regular road splines that follow terrain elevation.
+    ///     Full OSM tag dictionary from the source way(s), captured at spline creation (D-6).
+    ///     Null if not from OSM. Lets downstream read raw tags like bridge=, maxheight=, man_made=
+    ///     that aren't promoted to dedicated fields.
     /// </summary>
-    /// <remarks>
-    ///     <para>
-    ///     This profile is used to:
-    ///     - Calculate proper deck/floor elevation at any point along the structure
-    ///     - Generate cross-sections with correct target elevations
-    ///     - Support future procedural DAE geometry generation
-    ///     </para>
-    ///     <para>
-    ///     The profile contains entry/exit elevations from connecting roads,
-    ///     curve type (linear, arch, S-curve), and terrain sampling data for tunnels.
-    ///     </para>
-    /// </remarks>
-    public StructureElevationProfile? ElevationProfile { get; set; }
+    public IReadOnlyDictionary<string, string>? OsmTags { get; set; }
 
     /// <summary>
     ///     Total length of the spline in meters.
@@ -219,6 +224,7 @@ public class ParameterizedRoadSpline
             "tertiary_link" => 58,
             "residential" => 55,
             "unclassified" => 50,
+            "road" => 48,
             "service" => 45,
             "living_street" => 40,
 

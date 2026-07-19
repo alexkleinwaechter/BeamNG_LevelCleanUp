@@ -88,8 +88,16 @@ public static class CrossSectionConverter
     /// Coordinates remain in terrain space.
     /// </summary>
     /// <param name="crossSections">The cross-sections to convert (should be from a single spline).</param>
+    /// <param name="includeExcluded">
+    /// When false (default), cross-sections flagged <see cref="UnifiedCrossSection.IsExcluded"/> are dropped
+    /// (the behavior road/DecalRoad callers rely on). When true, excluded cross-sections are kept — used by
+    /// bridge-deck generation, where bridge cross-sections are excluded from terrain stamping but still carry
+    /// a solved <see cref="UnifiedCrossSection.TargetElevation"/> usable as the deck surface.
+    /// </param>
     /// <returns>A list of valid RoadCrossSections ordered by distance along the spline.</returns>
-    public static List<RoadCrossSection> ConvertPath(IEnumerable<UnifiedCrossSection> crossSections)
+    public static List<RoadCrossSection> ConvertPath(
+        IEnumerable<UnifiedCrossSection> crossSections,
+        bool includeExcluded = false)
     {
         var result = new List<RoadCrossSection>();
 
@@ -99,7 +107,7 @@ public static class CrossSectionConverter
             if (float.IsNaN(cs.TargetElevation) || cs.TargetElevation < -1000)
                 continue;
 
-            if (cs.IsExcluded)
+            if (cs.IsExcluded && !includeExcluded)
                 continue;
 
             // Skip cross-sections with invalid positions
@@ -122,12 +130,19 @@ public static class CrossSectionConverter
     /// <param name="terrainSizePixels">Terrain size in pixels.</param>
     /// <param name="metersPerPixel">Scale factor (meters per pixel).</param>
     /// <param name="terrainBaseHeight">Base height offset for the terrain (added to all Z coordinates).</param>
+    /// <param name="includeExcluded">
+    /// When false (default), cross-sections flagged <see cref="UnifiedCrossSection.IsExcluded"/> are dropped
+    /// (the behavior road/DecalRoad callers rely on). When true, excluded cross-sections are kept — used by
+    /// bridge-deck generation, where bridge cross-sections are excluded from terrain stamping but still carry
+    /// a solved <see cref="UnifiedCrossSection.TargetElevation"/> usable as the deck surface.
+    /// </param>
     /// <returns>A list of valid RoadCrossSections in world coordinates, ordered by distance along the spline.</returns>
     public static List<RoadCrossSection> ConvertPathToWorldCoordinates(
         IEnumerable<UnifiedCrossSection> crossSections,
         int terrainSizePixels,
         float metersPerPixel,
-        float terrainBaseHeight)
+        float terrainBaseHeight,
+        bool includeExcluded = false)
     {
         var result = new List<RoadCrossSection>();
 
@@ -137,7 +152,7 @@ public static class CrossSectionConverter
             if (float.IsNaN(cs.TargetElevation) || cs.TargetElevation < -1000)
                 continue;
 
-            if (cs.IsExcluded)
+            if (cs.IsExcluded && !includeExcluded)
                 continue;
 
             // Skip cross-sections with invalid positions
@@ -148,6 +163,35 @@ public static class CrossSectionConverter
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Converts the cross-sections of a single spline to world coordinates, INCLUDING cross-sections
+    /// flagged <see cref="UnifiedCrossSection.IsExcluded"/>. This is the entry point for bridge-deck
+    /// generation: a bridge spline's cross-sections are excluded from terrain stamping/painting, but the
+    /// elevation chain solve still populates their <see cref="UnifiedCrossSection.TargetElevation"/> and
+    /// <see cref="UnifiedCrossSection.EffectiveRoadWidth"/>, so they describe the deck surface directly.
+    /// Road/DecalRoad callers must keep using the default (excluded-dropping) conversion methods.
+    /// </summary>
+    /// <param name="network">The unified road network containing the spline and its cross-sections.</param>
+    /// <param name="splineId">The id of the (bridge) spline to convert.</param>
+    /// <param name="terrainSizePixels">Terrain size in pixels.</param>
+    /// <param name="metersPerPixel">Scale factor (meters per pixel).</param>
+    /// <param name="terrainBaseHeight">Base height offset for the terrain (added to all Z coordinates).</param>
+    /// <returns>
+    /// The spline's cross-sections in world coordinates, ordered by distance along the spline,
+    /// including excluded sections. Empty if the spline is unknown or has no usable cross-sections.
+    /// </returns>
+    public static List<RoadCrossSection> ConvertSplineToWorldCoordinates(
+        UnifiedRoadNetwork network,
+        int splineId,
+        int terrainSizePixels,
+        float metersPerPixel,
+        float terrainBaseHeight)
+    {
+        var crossSections = network.GetCrossSectionsForSpline(splineId);
+        return ConvertPathToWorldCoordinates(
+            crossSections, terrainSizePixels, metersPerPixel, terrainBaseHeight, includeExcluded: true);
     }
 
     /// <summary>

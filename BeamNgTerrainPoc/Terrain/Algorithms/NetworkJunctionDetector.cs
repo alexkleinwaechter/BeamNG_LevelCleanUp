@@ -24,6 +24,14 @@ public class NetworkJunctionDetector
     private const float SpatialIndexCellSize = 50f;
 
     /// <summary>
+    ///     Extra tolerance (m) beyond a laterally-merged corridor's surface half-width when
+    ///     admitting an endpoint as a T-junction onto the corridor (see
+    ///     <see cref="IsAdmittedByMergedCorridorSurface"/>). Mirrors
+    ///     <c>BridgeToBridgeContinuity.OnDeckMarginMeters</c>.
+    /// </summary>
+    private const float LateralMergeAdmissionMarginMeters = 1.0f;
+
+    /// <summary>
     ///     Detects all junctions in the unified road network.
     ///     Algorithm:
     ///     1. Build spatial index of all cross-section endpoints
@@ -120,19 +128,19 @@ public class NetworkJunctionDetector
     private List<UnifiedCrossSection> FindSplineEndpoints(UnifiedRoadNetwork network)
     {
         var endpoints = new List<UnifiedCrossSection>();
+        var sectionsBySpline = network.GetCrossSectionsBySpline();
 
         foreach (var spline in network.Splines)
         {
-            var splineSections = network.GetCrossSectionsForSpline(spline.SplineId).ToList();
+            if (!sectionsBySpline.TryGetValue(spline.SplineId, out var splineSections)
+                || splineSections.Count == 0)
+                continue;
 
-            if (splineSections.Count >= 1)
-            {
-                // First endpoint
-                endpoints.Add(splineSections[0]);
+            // First endpoint
+            endpoints.Add(splineSections[0]);
 
-                // Last endpoint (if different from first)
-                if (splineSections.Count > 1) endpoints.Add(splineSections[^1]);
-            }
+            // Last endpoint (if different from first)
+            if (splineSections.Count > 1) endpoints.Add(splineSections[^1]);
         }
 
         return endpoints;
@@ -421,6 +429,14 @@ public class NetworkJunctionDetector
     {
         var tJunctionCount = 0;
 
+        // Lateral dual-carriageway merge (ai_docs/2026-07-10): a merged corridor's centerline is the
+        // MIDLINE of the two original oneway ways, so a ramp endpoint that shared an OSM node with
+        // one carriageway now sits up to half the carriageway separation (5-12 m) away — beyond the
+        // default detection radius. Such endpoints are admitted by the corridor's own painted
+        // surface half-width instead (they lie ON the merged roadway). Zero when no merged splines
+        // exist ⇒ detection identical to before.
+        var mergedCorridorMaxHalfWidth = ComputeMaxLaterallyMergedHalfWidth(network);
+
         // Process ALL junctions to find passing-through splines
         foreach (var junction in junctions.ToList())
         {
@@ -449,7 +465,10 @@ public class NetworkJunctionDetector
             var continuousContributors =
                 new List<(UnifiedCrossSection cs, ParameterizedRoadSpline spline, float dist)>();
 
-            foreach (var cs in QuerySpatialIndex(spatialIndex, junctionPosition, detectionRadius))
+            var queryRadius = MathF.Max(detectionRadius,
+                mergedCorridorMaxHalfWidth + LateralMergeAdmissionMarginMeters);
+
+            foreach (var cs in QuerySpatialIndex(spatialIndex, junctionPosition, queryRadius))
             {
                 // Skip if this cross-section is itself an endpoint
                 if (cs.IsSplineStart || cs.IsSplineEnd)
@@ -459,6 +478,11 @@ public class NetworkJunctionDetector
                 var dist = Vector2.Distance(junctionPosition, cs.CenterPoint);
                 var spline = network.GetSplineById(cs.OwnerSplineId);
                 if (spline == null)
+                    continue;
+
+                // Beyond the classic radius only merged-corridor surface admission applies.
+                if (dist > detectionRadius &&
+                    !IsAdmittedByMergedCorridorSurface(junction, spline, cs, dist))
                     continue;
 
                 // Check if this spline already has a CONTINUOUS contributor in the junction
@@ -471,7 +495,7 @@ public class NetworkJunctionDetector
 
             // Add the closest continuous contributor for each unique spline
             var addedSplines = new HashSet<int>();
-            foreach (var (cs, spline, _) in continuousContributors.OrderBy(c => c.dist))
+            foreach (var (cs, spline, dist) in continuousContributors.OrderBy(c => c.dist))
             {
                 if (addedSplines.Contains(spline.SplineId))
                     continue;
@@ -489,6 +513,29 @@ public class NetworkJunctionDetector
                     // Only log at Trace level since this is expected behavior.
                     continue;
 
+                // Structure-state guard (2026-07-18, Manhattan junction 154∩162 under the Manhattan
+                // Bridge): the classic-radius admission above is plan-view only, so a ground street
+                // junction sitting UNDER a bridge deck admitted the deck spline as a passing-through
+                // contributor. That weld suppressed the pair's grade-separated crossing
+                // (junction-connected skip) and let PinOnDeckJunctions raise the street junction to
+                // deck Z — an 11.8 m terrain dam. A candidate INTERIOR to a bridge/tunnel span may
+                // only join when at least one ENDPOINT contributor shares that structure state at
+                // its end (a bridge ramp landing mid-span still matches; a ground street does not).
+                // Span EDGES stay admissible — abutment T-connections keep junctioning.
+                var (candBridge, candTunnel) = StructureInteriorStateAt(spline, cs.DistanceAlongSpline);
+                if ((candBridge || candTunnel) &&
+                    !AnyEndpointMatchesStructureState(junction, candBridge, candTunnel))
+                {
+                    // Farther sections of the same spline sit in the same span — don't retry them.
+                    addedSplines.Add(spline.SplineId);
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[JUNCTION-GUARD] T-junction admission rejected: spline={spline.SplineId} " +
+                        $"is {(candBridge ? "bridge" : "tunnel")}-interior @s={cs.DistanceAlongSpline:F1}m " +
+                        $"while endpoint spline(s) {string.Join(",", splineIdsWithEndpoints)} are not — " +
+                        $"grade separation, not a junction");
+                    continue;
+                }
+
                 // Add as new continuous contributor
                 junction.Contributors.Add(new JunctionContributor
                 {
@@ -501,10 +548,164 @@ public class NetworkJunctionDetector
 
                 addedSplines.Add(spline.SplineId);
                 tJunctionCount++;
+
+                if (dist > detectionRadius)
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[LATERAL-MERGE] T-junction admission: endpoint of spline(s) " +
+                        $"{string.Join(",", splineIdsWithEndpoints)} joined merged corridor " +
+                        $"spline={spline.SplineId} at dist={dist:F1}m (radius {detectionRadius:F1}m, " +
+                        $"surface halfWidth={cs.SurfaceWidth * 0.5f:F1}m)");
             }
         }
 
         return tJunctionCount;
+    }
+
+    /// <summary>
+    ///     Max surface half-width (m) over all laterally-merged corridor splines, used to widen the
+    ///     T-junction candidate query. 0 when the network has no merged corridors — the widened
+    ///     query then collapses to the classic detection radius (byte-identical behaviour).
+    /// </summary>
+    private static float ComputeMaxLaterallyMergedHalfWidth(UnifiedRoadNetwork network)
+    {
+        var maxHalfWidth = 0f;
+        foreach (var spline in network.Splines)
+        {
+            if (!spline.IsLaterallyMerged)
+                continue;
+
+            var width = spline.WidthProfile is { Segments.Count: > 0 } profile
+                ? profile.Segments.Max(s => s.RoadSurfaceWidth)
+                : spline.Parameters.RoadWidthMeters;
+            maxHalfWidth = MathF.Max(maxHalfWidth, width * 0.5f);
+        }
+
+        return maxHalfWidth;
+    }
+
+    /// <summary>
+    ///     Lateral-merge T-junction admission (ai_docs/2026-07-10, Manhattan spline 57): admit an
+    ///     endpoint-to-interior candidate BEYOND the classic detection radius when the endpoint lies
+    ///     ON a laterally-merged corridor's painted surface. Pre-merge, a ramp/crossover endpoint
+    ///     shared an OSM node with one carriageway (distance ≈ 0); the merged midline moved that
+    ///     distance to ~half the carriageway separation, silently degrading the ramp end to an
+    ///     isolated endpoint (floating deck ends: profile fallback + landing-anchor cap rejection).
+    ///     Guard: both sides must agree on bridge/tunnel state at the meeting point, so a street
+    ///     dead-ending UNDER an elevated corridor does not junction onto the deck. Deliberately no
+    ///     layer-tag comparison — OSM layer encodes only local crossing order (doc 10 learning).
+    /// </summary>
+    private static bool IsAdmittedByMergedCorridorSurface(
+        NetworkJunction junction,
+        ParameterizedRoadSpline candidateSpline,
+        UnifiedCrossSection candidateCs,
+        float dist)
+    {
+        if (!candidateSpline.IsLaterallyMerged)
+            return false;
+
+        if (dist > candidateCs.SurfaceWidth * 0.5f + LateralMergeAdmissionMarginMeters)
+            return false;
+
+        var (candBridge, candTunnel) =
+            BridgeTunnelStateAt(candidateSpline, candidateCs.DistanceAlongSpline);
+
+        foreach (var contributor in junction.Contributors)
+        {
+            if (!contributor.IsEndpoint)
+                continue;
+
+            var (endBridge, endTunnel) = BridgeTunnelStateAt(
+                contributor.Spline, contributor.CrossSection.DistanceAlongSpline);
+            if (endBridge == candBridge && endTunnel == candTunnel)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Bridge/tunnel state of <paramref name="spline"/> at a station, reported ONLY when the
+    ///     station is INTERIOR to the structure span — more than
+    ///     <see cref="BridgeToBridgeContinuity.DeckEndEpsilonMeters"/> from both span ends (the same
+    ///     interior notion <c>PinOnDeckJunctionsWithAuthority</c> uses). At span edges and outside
+    ///     spans this returns (false, false): a road tee-ing in exactly at a deck end (abutment) is
+    ///     a genuine connection and must not be blocked by the structure-state guard. Falls back to
+    ///     whole-spline flags with the spline's own ends as the span (legacy separate structure
+    ///     splines, no <see cref="StructureSegment"/> list).
+    /// </summary>
+    private static (bool isBridge, bool isTunnel) StructureInteriorStateAt(
+        ParameterizedRoadSpline spline, float station)
+    {
+        const float margin = BridgeToBridgeContinuity.DeckEndEpsilonMeters;
+        if (spline.StructureSegments is { Count: > 0 } segments)
+        {
+            foreach (var seg in segments)
+            {
+                if (station >= seg.StartDistance + margin &&
+                    station <= seg.EndDistance - margin)
+                    return (seg.IsBridge, seg.IsTunnel);
+            }
+
+            return (false, false);
+        }
+
+        if ((spline.IsBridge || spline.IsTunnel) &&
+            station >= margin && station <= spline.TotalLengthMeters - margin)
+            return (spline.IsBridge, spline.IsTunnel);
+
+        return (false, false);
+    }
+
+    /// <summary>
+    ///     True when at least one ENDPOINT contributor of <paramref name="junction"/> has the given
+    ///     bridge/tunnel state at its end station (edge-tolerant <see cref="BridgeTunnelStateAt"/> —
+    ///     a ramp whose own structure span runs to its endpoint counts as on-structure there).
+    /// </summary>
+    private static bool AnyEndpointMatchesStructureState(
+        NetworkJunction junction, bool isBridge, bool isTunnel)
+    {
+        foreach (var contributor in junction.Contributors)
+        {
+            if (!contributor.IsEndpoint)
+                continue;
+
+            var (endBridge, endTunnel) = BridgeTunnelStateAt(
+                contributor.Spline, contributor.CrossSection.DistanceAlongSpline);
+            if (endBridge == isBridge && endTunnel == isTunnel)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Bridge/tunnel state of <paramref name="spline"/> at an arc-length station: the containing
+    ///     <see cref="StructureSegment"/>'s type when sub-range spans exist (merged corridors),
+    ///     else the whole-spline flags (legacy separate structure splines). Unlike
+    ///     <see cref="EffectiveStructureAt"/> this is not gated on
+    ///     <c>MergeStructuresIntoCorridor</c> — the admission guard needs the true state wherever
+    ///     the segments happen to live. Span edges get a small tolerance because an endpoint
+    ///     station sits exactly on its own span boundary.
+    /// </summary>
+    private static (bool isBridge, bool isTunnel) BridgeTunnelStateAt(
+        ParameterizedRoadSpline spline, float station)
+    {
+        const float edgeToleranceMeters = 0.75f;
+        if (spline.StructureSegments is { Count: > 0 } segments)
+        {
+            foreach (var seg in segments)
+            {
+                if (station >= seg.StartDistance - edgeToleranceMeters &&
+                    station <= seg.EndDistance + edgeToleranceMeters)
+                    return (seg.IsBridge, seg.IsTunnel);
+            }
+
+            // Stations outside every span are the corridor's at-grade stretches, even when the
+            // whole-spline flag says "bridge" (merge-base tag).
+            return (false, false);
+        }
+
+        return (spline.IsBridge, spline.IsTunnel);
     }
 
     /// <summary>
@@ -650,6 +851,18 @@ public class NetworkJunctionDetector
         var crossings = new List<NetworkJunction>();
         var processedPairs = new HashSet<(int, int)>(); // Track spline pairs we've already found crossings for
 
+        // Run 160210 bridge_8655179: pairs skipped ONLY because they share a junction were never checked
+        // for grade separation anywhere — a corridor that tees into another road can STILL bridge over it
+        // elsewhere (K 102 joins the B 53 120 m north of the K 102 bridge that crosses the B 53). Tracked
+        // separately so the footprint pass can re-examine exactly these pairs (flag-gated, junction-distance
+        // guarded) while the at-grade junction suppression they exist for stays untouched.
+        var connectedSkippedPairs = new HashSet<(int, int)>();
+
+        // E-A: grade-separated crossings are recorded on the network instead of becoming at-grade junctions.
+        // This is the sole populator of the list, so reset it for this detection run.
+        network.GradeSeparatedCrossings.Clear();
+        var gradeSeparatedCount = 0;
+
         // Use the full detection radius for mid-spline crossings
         // The roads need to be within this distance to be considered "crossing"
         // This accounts for road width - two 8m wide roads crossing need ~8-10m detection
@@ -702,27 +915,44 @@ public class NetworkJunctionDetector
                 var cs = splineSections[i];
                 totalMidSplineSectionsChecked++;
 
-                // Find cross-sections from OTHER splines that are very close
-                var nearbySections = QuerySpatialIndex(spatialIndex, cs.CenterPoint, crossingDetectionRadius)
-                    .Where(other =>
-                        other.OwnerSplineId != spline.SplineId && // Different spline
-                        !other.IsSplineStart && !other.IsSplineEnd) // Also mid-spline
-                    .ToList();
+                // Find the closest mid-spline cross-section per OTHER spline near this sample.
+                // Manual loop instead of Where/ToList/GroupBy/OrderBy — this runs for every sampled
+                // section (200k+ on big maps) and the LINQ chains dominated allocation/GC cost.
+                // Semantics preserved EXACTLY: keys in first-appearance order (GroupBy), float sqrt
+                // distance metric with strict < (ties keep the first-seen section, like stable OrderBy
+                // over Vector2.Distance — squared distance would resolve sqrt-rounding ties differently).
+                Dictionary<int, (UnifiedCrossSection cs, float dist)>? closestBySpline = null;
+                List<int>? splineOrder = null;
 
-                if (nearbySections.Count == 0)
+                foreach (var other in QuerySpatialIndex(spatialIndex, cs.CenterPoint, crossingDetectionRadius))
+                {
+                    if (other.OwnerSplineId == spline.SplineId || // Different spline
+                        other.IsSplineStart || other.IsSplineEnd) // Also mid-spline
+                        continue;
+
+                    var dist = Vector2.Distance(other.CenterPoint, cs.CenterPoint);
+                    closestBySpline ??= new Dictionary<int, (UnifiedCrossSection, float)>();
+                    splineOrder ??= [];
+
+                    if (!closestBySpline.TryGetValue(other.OwnerSplineId, out var current))
+                    {
+                        closestBySpline[other.OwnerSplineId] = (other, dist);
+                        splineOrder.Add(other.OwnerSplineId);
+                    }
+                    else if (dist < current.dist)
+                    {
+                        closestBySpline[other.OwnerSplineId] = (other, dist);
+                    }
+                }
+
+                if (closestBySpline == null || splineOrder == null)
                     continue;
 
                 candidateCrossingsFound++;
 
-                // Group by spline to find unique crossings
-                var crossingSplines = nearbySections
-                    .GroupBy(s => s.OwnerSplineId)
-                    .Select(g => (SplineId: g.Key, ClosestSection: g.OrderBy(s =>
-                        Vector2.Distance(s.CenterPoint, cs.CenterPoint)).First()))
-                    .ToList();
-
-                foreach (var (otherSplineId, otherCs) in crossingSplines)
+                foreach (var otherSplineId in splineOrder)
                 {
+                    var otherCs = closestBySpline[otherSplineId].cs;
                     // Create a canonical pair key to avoid duplicates
                     var pairKey = spline.SplineId < otherSplineId
                         ? (spline.SplineId, otherSplineId)
@@ -738,6 +968,7 @@ public class NetworkJunctionDetector
                     {
                         skippedAlreadyConnected++;
                         processedPairs.Add(pairKey); // Don't check this pair again
+                        connectedSkippedPairs.Add(pairKey); // …but the footprint pass may re-examine it
                         continue;
                     }
 
@@ -752,6 +983,29 @@ public class NetworkJunctionDetector
                     if (newCrossingPositions.Any(p =>
                             Vector2.Distance(p, crossingPoint) < crossingDetectionRadius * 0.5f))
                         continue;
+
+                    // E-A: is this a grade-separated crossing (one road rides over the other) rather than a
+                    // real at-grade intersection? If so, record it on the network and SKIP the false
+                    // at-grade junction — this both fixes the latent grade-separation bug and yields the data
+                    // GradeSeparationResolver needs (doc 07 §6).
+                    if (TryClassifyGradeSeparation(spline, cs, otherSpline, otherCs, crossingPoint, out var gsc))
+                    {
+                        network.GradeSeparatedCrossings.Add(gsc);
+                        processedPairs.Add(pairKey);
+                        newCrossingPositions.Add(crossingPoint);
+                        gradeSeparatedCount++;
+                        TerrainCreationLogger.Current?.Detail(
+                            $"GradeSeparatedCrossing: upper spline {gsc.UpperSplineId} " +
+                            $"(layer {gsc.UpperLayer}, bridge={gsc.UpperIsBridge}, prio {gsc.UpperPriority}) " +
+                            $"over lower spline {gsc.LowerSplineId} " +
+                            $"(layer {gsc.LowerLayer}, prio {gsc.LowerPriority}) " +
+                            $"at ({crossingPoint.X:F1}, {crossingPoint.Y:F1})");
+                        if (gsc.IsBridgeOverBridge && spline.Parameters.BridgeRules?.EnableBridgeBridge == true)
+                            TerrainCreationLogger.Current?.Detail(
+                                $"[BRIDGE-BRIDGE] spline {gsc.UpperSplineId} over bridge {gsc.LowerSplineId} " +
+                                $"(layers {gsc.UpperLayer}/{gsc.LowerLayer}) — detection only, R6 multi-level deferred");
+                        continue;
+                    }
 
                     // Create a new junction for this mid-spline crossing
                     var junction = new NetworkJunction
@@ -789,13 +1043,297 @@ public class NetworkJunctionDetector
             }
         }
 
+        // Footprint pass (plan doc 14 §5): the ~100-sample proximity loop above can MISS an under-deck road
+        // (sparse sampling, lateral offset under a wide deck). Sweep each bridge span's XY footprint for any
+        // other spline's section it contains and record the grade separation directly — so "no road under the
+        // bridge is harmonized as a crossing with it" is structurally true, not sampling-dependent. Add-only:
+        // pairs the loop already handled are skipped via processedPairs — EXCEPT junction-connected pairs
+        // (flag-gated), whose under-deck hits far from the shared junction are genuine crossings.
+        RecordFootprintGradeSeparations(
+            network, processedPairs, connectedSkippedPairs, existingJunctions, ref gradeSeparatedCount);
+
         TerrainCreationLogger.Current?.Detail(
             $"DetectMidSplineCrossings summary: Checked {totalMidSplineSectionsChecked} mid-spline sections, " +
             $"skipped {skippedAlreadyConnected} pairs already connected at junctions, " +
             $"found {candidateCrossingsFound} candidate locations, " +
-            $"created {crossings.Count} crossing junctions");
+            $"created {crossings.Count} crossing junctions, " +
+            $"recorded {gradeSeparatedCount} grade-separated crossing(s)");
 
         return crossings;
+    }
+
+    /// <summary>
+    ///     E-A classification: decides whether two crossing splines are vertically separated (one rides
+    ///     above the other) rather than meeting at grade. Grade separation is established by the
+    ///     <b>effective</b> OSM <c>Layer</c> at the crossing first, then by one being a bridge while the
+    ///     other is not. Priority is NOT used here (it only breaks the under/over tie in
+    ///     <c>GradeSeparationResolver</c>); two same-layer, equally-bridged roads are treated as a genuine
+    ///     at-grade crossing.
+    ///
+    ///     <para><b>Merged corridors (plan doc 14 §5/§1a).</b> When a bridge way has been merged INTO its
+    ///     through-road corridor (<see cref="RoadSmoothingParameters.MergeStructuresIntoCorridor" />), the
+    ///     whole-spline <c>Layer</c>/<c>IsBridge</c> describe the merge-base approach (layer 0, not a bridge),
+    ///     not the interior bridge span. The span carries the real <c>layer=1</c> on its
+    ///     <see cref="StructureSegment" />, so the effective layer at the crossing is the containing span's
+    ///     layer if the crossing cross-section falls inside a span, else the whole-spline layer. With the flag
+    ///     off there are no <c>StructureSegments</c> on a merged corridor, so this falls back to the
+    ///     whole-spline values — byte-identical to the legacy separate-bridge-spline behaviour.</para>
+    /// </summary>
+    /// <returns>True and a populated <paramref name="crossing"/> if grade-separated; false otherwise.</returns>
+    private static bool TryClassifyGradeSeparation(
+        ParameterizedRoadSpline splineA,
+        UnifiedCrossSection csA,
+        ParameterizedRoadSpline splineB,
+        UnifiedCrossSection csB,
+        Vector2 crossingPoint,
+        out GradeSeparatedCrossing crossing)
+    {
+        crossing = null!;
+
+        var (layerA, bridgeA) = EffectiveStructureAt(splineA, csA);
+        var (layerB, bridgeB) = EffectiveStructureAt(splineB, csB);
+
+        int upperLayer, lowerLayer;
+        bool upperBridge, lowerBridge;
+        ParameterizedRoadSpline upper, lower;
+        if (layerA != layerB)
+        {
+            var aIsUpper = layerA > layerB;
+            (upper, upperLayer, upperBridge) = aIsUpper ? (splineA, layerA, bridgeA) : (splineB, layerB, bridgeB);
+            (lower, lowerLayer, lowerBridge) = aIsUpper ? (splineB, layerB, bridgeB) : (splineA, layerA, bridgeA);
+        }
+        else if (bridgeA != bridgeB)
+        {
+            (upper, upperLayer, upperBridge) = bridgeA ? (splineA, layerA, bridgeA) : (splineB, layerB, bridgeB);
+            (lower, lowerLayer, lowerBridge) = bridgeA ? (splineB, layerB, bridgeB) : (splineA, layerA, bridgeA);
+        }
+        else
+        {
+            return false; // same effective layer, neither uniquely a bridge → genuine at-grade crossing
+        }
+
+        crossing = new GradeSeparatedCrossing
+        {
+            UpperSplineId = upper.SplineId,
+            LowerSplineId = lower.SplineId,
+            CrossingXY = crossingPoint,
+            UpperLayer = upperLayer,
+            LowerLayer = lowerLayer,
+            UpperPriority = upper.Priority,
+            LowerPriority = lower.Priority,
+            UpperIsBridge = upperBridge,
+            LowerIsBridge = lowerBridge,
+            LowerKind = BridgeObstacleKind.Road, // both members are road splines (rail/water are synthetic, A1)
+            UpperOsmClass = upper.OsmRoadType,
+            LowerOsmClass = lower.OsmRoadType
+        };
+        return true;
+    }
+
+    /// <summary>
+    ///     The effective vertical layer and bridge state of <paramref name="spline"/> at the crossing
+    ///     cross-section <paramref name="cs"/>. On a merged corridor (flag on, with structure spans) the
+    ///     containing span's <see cref="StructureSegment.Layer"/>/<see cref="StructureSegment.IsBridge"/>
+    ///     win; otherwise the whole-spline values are used. See <see cref="TryClassifyGradeSeparation"/>.
+    /// </summary>
+    private static (int layer, bool isBridge) EffectiveStructureAt(
+        ParameterizedRoadSpline spline, UnifiedCrossSection cs)
+    {
+        if (spline.Parameters.MergeStructuresIntoCorridor &&
+            spline.StructureSegments is { Count: > 0 } segments)
+        {
+            foreach (var seg in segments)
+            {
+                // LayerAt: a consolidated span (doc 10) carries the original per-way layers as station
+                // sub-ranges — the classification must see the LOCAL layer at the crossing, not the
+                // joined span's governing max.
+                if (cs.DistanceAlongSpline >= seg.StartDistance &&
+                    cs.DistanceAlongSpline <= seg.EndDistance)
+                    return (seg.LayerAt(cs.DistanceAlongSpline), seg.IsBridge);
+            }
+        }
+
+        return (spline.Layer, spline.IsBridge);
+    }
+
+    /// <summary>
+    ///     A footprint hit within this XY distance of a junction SHARED by the two splines is the
+    ///     T-junction / ramp-landing area itself (a side road touching the deck footprint at the abutment,
+    ///     a landing overlapping the deck), never a genuine crossing. Beyond it, a junction-connected pair's
+    ///     under-deck hit is a real grade separation (run 160210: K 102 bridges the B 53 ~120 m from where
+    ///     they tee together).
+    /// </summary>
+    public const float SharedJunctionCrossingExclusionMeters = 40f;
+
+    /// <summary>
+    ///     Footprint-based grade-separation pass (plan doc 14 §5). For every merged-corridor bridge span,
+    ///     records a <see cref="GradeSeparatedCrossing"/> for any other spline that has a mid-section inside
+    ///     the span's XY footprint and sits on a lower effective layer — catching under-deck roads the
+    ///     proximity sampler missed. Add-only and pair-deduped: pairs already handled by the mid-spline loop
+    ///     (whether grade-separated or genuine at-grade) are left untouched — EXCEPT pairs the loop skipped
+    ///     ONLY for being junction-connected (<paramref name="connectedSkippedPairs"/>): with
+    ///     <c>BridgeRuleSystemOptions.EnableHiddenCrossingDetection</c> on the span owner, those are
+    ///     re-examined here, guarded by <see cref="SharedJunctionCrossingExclusionMeters"/> so the shared
+    ///     junction's own overlap area never reports as a crossing. No-op when there are no spans
+    ///     (legacy / flag off), so it never affects non-merged networks.
+    /// </summary>
+    private static void RecordFootprintGradeSeparations(
+        UnifiedRoadNetwork network,
+        HashSet<(int, int)> processedPairs,
+        HashSet<(int, int)> connectedSkippedPairs,
+        List<NetworkJunction> existingJunctions,
+        ref int gradeSeparatedCount)
+    {
+        var footprints = BridgeSpanFootprint.BuildAll(network);
+        if (footprints.Count == 0) return;
+
+        // Per-spline cross-section lists (cached on the network) + per-spline XY bounds, computed ONCE.
+        // The previous per-pair GetCrossSectionsForSpline call re-scanned and re-sorted ALL cross-sections
+        // (~1M) for every footprint × spline pair — O(footprints × splines × totalCS), the dominant cost of
+        // the whole detection phase on large maps. The AABB prefilter rejects almost every pair outright.
+        var sectionsBySpline = network.GetCrossSectionsBySpline();
+        var boundsBySpline = new Dictionary<int, (Vector2 min, Vector2 max)>(sectionsBySpline.Count);
+        foreach (var (splineId, sections) in sectionsBySpline)
+        {
+            var min = new Vector2(float.MaxValue);
+            var max = new Vector2(float.MinValue);
+            foreach (var cs in sections)
+            {
+                // Skip non-finite centers — NaN would propagate through Min/Max and disable the prefilter.
+                if (!float.IsFinite(cs.CenterPoint.X) || !float.IsFinite(cs.CenterPoint.Y)) continue;
+                min = Vector2.Min(min, cs.CenterPoint);
+                max = Vector2.Max(max, cs.CenterPoint);
+            }
+
+            boundsBySpline[splineId] = (min, max);
+        }
+
+        foreach (var fp in footprints)
+        {
+            var ownerSpline = network.GetSplineById(fp.OwnerSplineId);
+            if (ownerSpline == null) continue;
+
+            var hiddenCrossings =
+                ownerSpline.Parameters.BridgeRules?.EnableHiddenCrossingDetection == true;
+
+            foreach (var other in network.Splines)
+            {
+                if (other.SplineId == fp.OwnerSplineId) continue;
+
+                var pairKey = fp.OwnerSplineId < other.SplineId
+                    ? (fp.OwnerSplineId, other.SplineId)
+                    : (other.SplineId, fp.OwnerSplineId);
+                // A junction-connected pair was skipped by the loop WITHOUT classification — re-examine it
+                // (flag-gated); a pair the loop actually classified stays skipped.
+                var connectedPair = hiddenCrossings && connectedSkippedPairs.Contains(pairKey);
+                if (processedPairs.Contains(pairKey) && !connectedPair)
+                    continue; // mid-spline loop already classified this pair
+
+                // AABB prefilter: a spline whose bounds don't overlap the footprint can't have a
+                // section inside it (Contains starts with the same bbox test per point).
+                if (!boundsBySpline.TryGetValue(other.SplineId, out var bounds)
+                    || bounds.min.X > fp.Max.X || bounds.max.X < fp.Min.X
+                    || bounds.min.Y > fp.Max.Y || bounds.max.Y < fp.Min.Y)
+                    continue;
+
+                if (!sectionsBySpline.TryGetValue(other.SplineId, out var otherSections))
+                    continue;
+
+                // First mid-section of `other` whose center lies inside the deck footprint.
+                // Non-finite centers (degenerate spline geometry) must be skipped explicitly:
+                // with NaN coordinates every point-in-triangle sign test is false, which the
+                // all-same-sign check misreads as "inside EVERY footprint" — producing bogus
+                // (NaN, NaN) grade-separated crossings that poison the bridge planner.
+                UnifiedCrossSection? underSection = null;
+                foreach (var cs in otherSections)
+                {
+                    if (cs.IsSplineStart || cs.IsSplineEnd) continue;
+                    if (!float.IsFinite(cs.CenterPoint.X) || !float.IsFinite(cs.CenterPoint.Y)) continue;
+                    if (fp.Contains(cs.CenterPoint))
+                    {
+                        underSection = cs;
+                        break;
+                    }
+                }
+
+                if (underSection == null)
+                    continue;
+
+                var (lowerLayer, lowerBridge) = EffectiveStructureAt(other, underSection);
+                if (fp.Layer <= lowerLayer)
+                    continue; // owner span is not genuinely above → leave to the planner / the other span's footprint
+
+                // Junction-connected pair: only a hit FAR from every junction the two splines share is a
+                // genuine crossing — near one it is the T-junction / landing overlap the skip exists for.
+                if (connectedPair && IsNearSharedJunction(
+                        existingJunctions, fp.OwnerSplineId, other.SplineId, underSection.CenterPoint))
+                {
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Footprint hit for connected pair {fp.OwnerSplineId}/{other.SplineId} at " +
+                        $"({underSection.CenterPoint.X:F1}, {underSection.CenterPoint.Y:F1}) is within " +
+                        $"{SharedJunctionCrossingExclusionMeters:F0}m of their shared junction — not a crossing");
+                    continue;
+                }
+
+                network.GradeSeparatedCrossings.Add(new GradeSeparatedCrossing
+                {
+                    UpperSplineId = fp.OwnerSplineId,
+                    LowerSplineId = other.SplineId,
+                    CrossingXY = underSection.CenterPoint,
+                    UpperLayer = fp.Layer,
+                    LowerLayer = lowerLayer,
+                    UpperPriority = ownerSpline.Priority,
+                    LowerPriority = other.Priority,
+                    UpperIsBridge = true,
+                    LowerIsBridge = lowerBridge,
+                    LowerKind = BridgeObstacleKind.Road, // both members are road splines (rail/water are synthetic, A1)
+                    UpperOsmClass = ownerSpline.OsmRoadType,
+                    LowerOsmClass = other.OsmRoadType
+                });
+                processedPairs.Add(pairKey);
+                // A recorded connected pair drops out of the re-examination set so the normal
+                // one-crossing-per-pair dedup applies to any further footprints of the same pair.
+                connectedSkippedPairs.Remove(pairKey);
+                gradeSeparatedCount++;
+
+                TerrainCreationLogger.Current?.Detail(
+                    $"GradeSeparatedCrossing (footprint): upper spline {fp.OwnerSplineId} span {fp.SpanId} " +
+                    $"(layer {fp.Layer}) over lower spline {other.SplineId} (layer {lowerLayer}) at " +
+                    $"({underSection.CenterPoint.X:F1}, {underSection.CenterPoint.Y:F1}) — " +
+                    (connectedPair ? "junction-connected pair, crossing far from the shared junction" : "sampler missed it"));
+                if (lowerBridge && ownerSpline.Parameters.BridgeRules?.EnableBridgeBridge == true)
+                    TerrainCreationLogger.Current?.Detail(
+                        $"[BRIDGE-BRIDGE] span {fp.SpanId} over bridge {other.SplineId} " +
+                        $"(layers {fp.Layer}/{lowerLayer}) — detection only, R6 multi-level deferred");
+            }
+        }
+    }
+
+    /// <summary>
+    ///     True when <paramref name="point"/> lies within
+    ///     <see cref="SharedJunctionCrossingExclusionMeters"/> of any junction that BOTH splines
+    ///     contribute to — the T-junction / landing area of a connected pair, where a footprint hit is
+    ///     the junction overlap itself and never a grade-separated crossing.
+    /// </summary>
+    private static bool IsNearSharedJunction(
+        List<NetworkJunction> junctions, int splineA, int splineB, Vector2 point)
+    {
+        foreach (var junction in junctions)
+        {
+            var hasA = false;
+            var hasB = false;
+            foreach (var contributor in junction.Contributors)
+            {
+                if (contributor.Spline.SplineId == splineA) hasA = true;
+                else if (contributor.Spline.SplineId == splineB) hasB = true;
+            }
+
+            if (hasA && hasB &&
+                Vector2.Distance(junction.Position, point) < SharedJunctionCrossingExclusionMeters)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

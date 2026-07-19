@@ -217,6 +217,86 @@ public class DecalRoadNetworkSnapshotTests
     }
 
     [Fact]
+    public void ReconstructNetwork_MergedCorridor_WidthFollowsLaneCounts_EvenWithPerSegmentWidthDisabled()
+    {
+        // Regression: a trunk layerset with EnablePerSegmentWidth=false collapsed a laterally
+        // merged corridor (two carriageways, 4-6 lanes) to ONE carriageway's constant width
+        // (DefaultLaneCount 2 × 3.5 = 7 m) — 4 lanes of markings painted into 7 m of asphalt.
+        var network = new UnifiedRoadNetwork();
+
+        var merged = new ParameterizedRoadSpline
+        {
+            Spline = new RoadSpline(new List<Vector2> { new(0, 0), new(200, 0) },
+                SplineInterpolationType.LinearControlPoints),
+            Parameters = new RoadSmoothingParameters { RoadWidthMeters = 8f },
+            MaterialName = "Asphalt",
+            SplineId = 1,
+            OsmRoadType = "trunk",
+            IsLaterallyMerged = true,
+            LaneSegments =
+            [
+                new LaneSegment
+                {
+                    StartPointIndex = 0, StartDistance = 0f,
+                    LaneInfo = new OsmLaneInfo { TotalLanes = 4, LanesForward = 2, LanesBackward = 2 },
+                },
+                new LaneSegment
+                {
+                    StartPointIndex = 5, StartDistance = 100f,
+                    LaneInfo = new OsmLaneInfo { TotalLanes = 6, LanesForward = 3, LanesBackward = 3 },
+                },
+            ],
+        };
+        network.AddSpline(merged);
+
+        var single = new ParameterizedRoadSpline
+        {
+            Spline = new RoadSpline(new List<Vector2> { new(0, 50), new(200, 50) },
+                SplineInterpolationType.LinearControlPoints),
+            Parameters = new RoadSmoothingParameters { RoadWidthMeters = 8f },
+            MaterialName = "Asphalt",
+            SplineId = 2,
+            OsmRoadType = "trunk",
+            LaneSegments =
+            [
+                new LaneSegment
+                {
+                    StartPointIndex = 0, StartDistance = 0f,
+                    LaneInfo = new OsmLaneInfo { TotalLanes = 2, LanesForward = 2, IsOneWay = true },
+                },
+            ],
+        };
+        network.AddSpline(single);
+
+        var trunkSet = new DecalRoadLayerSet
+        {
+            Name = "Trunk",
+            DefaultLaneCount = 2,
+            DefaultLaneWidth = 3.5f,
+            EnablePerSegmentWidth = false,
+            SmoothingCorridorMargin = 2f,
+            MasterSplineMargin = 0f,
+        };
+        var appDataDefaults = new Dictionary<string, DecalRoadLayerSet> { ["trunk"] = trunkSet };
+
+        var deserialized = RoundTrip(DecalRoadNetworkSnapshotBuilder.Build(network));
+        var reconstructed = DecalRoadNetworkSnapshotLoader.ReconstructNetwork(
+            deserialized, new DecalRoadSettings(), appDataDefaults);
+
+        // Merged corridor: lane-derived per-segment widths despite EnablePerSegmentWidth=false.
+        var mergedSpline = reconstructed.Splines.First(s => s.SplineId == 1);
+        Assert.True(mergedSpline.IsLaterallyMerged);
+        var mergedProfile = mergedSpline.WidthProfile!;
+        Assert.Equal(4 * 3.5f, mergedProfile.GetWidthsAtDistance(0f).surface);
+        Assert.Equal(6 * 3.5f, mergedProfile.GetWidthsAtDistance(200f).surface);
+
+        // Unmerged trunk carriageway keeps the layerset's constant width.
+        var singleProfile = reconstructed.Splines.First(s => s.SplineId == 2).WidthProfile!;
+        Assert.Equal(2 * 3.5f, singleProfile.GetWidthsAtDistance(0f).surface);
+        Assert.Equal(2 * 3.5f, singleProfile.GetWidthsAtDistance(200f).surface);
+    }
+
+    [Fact]
     public void RoundTrip_FullNetwork_BuildAndReconstruct()
     {
         var network = new UnifiedRoadNetwork();

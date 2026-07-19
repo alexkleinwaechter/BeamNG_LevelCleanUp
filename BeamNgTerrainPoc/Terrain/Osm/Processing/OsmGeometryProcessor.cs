@@ -723,7 +723,11 @@ public class OsmGeometryProcessor
         bool excludeBridges = false,
         bool excludeTunnels = false,
         IReadOnlyList<RouteRelation>? routeRelations = null,
-        bool disableSplineMerging = false)
+        bool disableSplineMerging = false,
+        bool mergeStructuresIntoCorridor = false,
+        bool reprojectStructureStations = false,
+        bool consolidateContiguousSpans = false,
+        IReadOnlySet<string>? lateralMergeRoadTypes = null)
     {
         var splines = new List<RoadSpline>();
         int skippedZeroLength = 0;
@@ -792,6 +796,31 @@ public class OsmGeometryProcessor
                 var laneInfo = OsmLaneInfo.TryParse(feature.Tags) ?? new OsmLaneInfo();
                 pathMeta.LaneSegments = [new LaneSegment { StartPointIndex = 0, LaneInfo = laneInfo }];
 
+                // Seed a structure sub-range covering the whole original way when it's a bridge/tunnel.
+                // This rides along through merging (StructureSegmentOps) so a merged corridor remembers which
+                // arc-range is the bridge — the "merged-corridor bridge" refactor (plan doc 11). Done here at
+                // ORIGINAL path creation only, never in the merge/clone constructors (which copy via the ops).
+                if (feature.IsBridge || feature.IsTunnel)
+                {
+                    pathMeta.StructureSegments =
+                    [
+                        new StructureSegment
+                        {
+                            StartPointIndex = 0,
+                            EndPointIndex = uniqueCoords.Count - 1,
+                            Type = feature.GetStructureType(),
+                            Layer = feature.Layer,
+                            BridgeStructureType = feature.BridgeStructureType,
+                            OsmTags = new Dictionary<string, string>(feature.Tags),
+                            OsmWayIds = [feature.Id],
+                            // The original way's endpoint coords — re-projected onto the FINAL merged
+                            // spline to fix the pre-Chaikin station drift (V2 plan 0.3a).
+                            OriginalStartPoint = uniqueCoords[0],
+                            OriginalEndPoint = uniqueCoords[^1],
+                        }
+                    ];
+                }
+
                 allPathsMeta.Add(pathMeta);
             }
             else
@@ -814,9 +843,14 @@ public class OsmGeometryProcessor
             // A path is "protected" (kept separate) only if:
             // - It's a bridge AND excludeBridges is true, OR
             // - It's a tunnel AND excludeTunnels is true
-            bool isProtectedStructure = 
+            bool isProtectedStructure =
                 (pm.IsBridge && excludeBridges) ||
                 (pm.IsTunnel && excludeTunnels);
+
+            // Merged-corridor bridges (plan doc 11): when on, structures merge INTO the corridor like any
+            // other way (their arc-range is remembered via StructureSegments), so never hold them out.
+            if (mergeStructuresIntoCorridor)
+                isProtectedStructure = false;
 
             if (isProtectedStructure)
                 structurePathsMeta.Add(pm);
@@ -857,11 +891,34 @@ public class OsmGeometryProcessor
             // Step 4: Connect only regular (non-structure) paths using angle-first greedy matching.
             // Scores all possible connections by deflection angle and picks the straightest one.
             // Route relations provide optional scoring bonus for relation-aware strategy.
+            // The global junction set spans ALL highway types (endpoint and interior node references) —
+            // the connector's per-partition valence map is blind to a junction whose through road has a
+            // different type, which let ramp pairs merge into hairpins across their shared junction node.
+            // The per-node max CONTINUING road-class map powers the cross-class chaining guard: a
+            // lower-class pair (e.g. two residential streets) must not chain THROUGH a junction that a
+            // higher-class road also continues through — it must terminate there so the crossing becomes
+            // a real junction, not a MidSplineCrossing hump. A higher-class road that merely ENDS at the
+            // node does not block (the lower road chaining through is the proper T-junction through road).
+            var globalJunctionNodes = BuildGlobalJunctionNodeSet(lineFeatures);
+            var junctionNodeMaxClass = BuildJunctionNodeMaxContinuingClassMap(lineFeatures, globalJunctionNodes);
             connectedPaths = regularPathsMeta.Count > 0
-                ? NodeBasedPathConnector.Connect(regularPathsMeta, endpointJoinToleranceMeters, routeRelations)
+                ? NodeBasedPathConnector.Connect(regularPathsMeta, endpointJoinToleranceMeters, routeRelations,
+                    enforceLayerAntiMerge: mergeStructuresIntoCorridor,
+                    globalJunctionNodes: globalJunctionNodes,
+                    junctionNodeMaxClass: junctionNodeMaxClass)
                 : new List<PathWithMetadata>();
 
             Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPathsMeta.Count})");
+
+            // Step 4.5: Lateral dual-carriageway merge (ai_docs/2026-07-10_lateral_spline_merge).
+            // Runs AFTER longitudinal chaining — the connector's oneway guards keep the two
+            // directions apart, so each carriageway is one long antiparallel chain here. Combining
+            // them into one wider bidirectional path gives both directions ONE elevation solve,
+            // eliminating the twin-deck elevation drift. Off (null/empty) ⇒ byte-identical output.
+            if (lateralMergeRoadTypes is { Count: > 0 } && connectedPaths.Count > 1)
+            {
+                connectedPaths = LateralCarriagewayMerger.Merge(connectedPaths, lateralMergeRoadTypes);
+            }
         }
 
         // Step 5: Create splines from structure paths (preserve metadata from PathWithMetadata)
@@ -902,12 +959,16 @@ public class OsmGeometryProcessor
                     StructureType = pm.StructureType,
                     Layer = pm.Layer,
                     BridgeStructureType = pm.BridgeStructureType,
+                    OsmTags = new Dictionary<string, string>(pm.Tags),
                     OsmRoadType = pm.Tags.GetValueOrDefault("highway"),
                     StartOsmNodeId = pm.StartNodeId,
                     EndOsmNodeId = pm.EndNodeId,
                     OsmWayIds = new HashSet<long>(pm.AllWayIds),
+                    IsLaterallyMerged = pm.IsLaterallyMerged,
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
+                PropagatePathStructureSegmentsToSpline(pm, spline, reprojectStructureStations,
+                    consolidateContiguousSpans);
                 splines.Add(spline);
 
                 if (spline.IsBridge) bridgeCount++;
@@ -957,13 +1018,17 @@ public class OsmGeometryProcessor
                     StructureType = pm.StructureType,
                     Layer = pm.Layer,
                     BridgeStructureType = pm.BridgeStructureType,
+                    OsmTags = new Dictionary<string, string>(pm.Tags),
                     // Propagate OSM road type from preserved tags (survives merges)
                     OsmRoadType = pm.Tags.GetValueOrDefault("highway"),
                     StartOsmNodeId = pm.StartNodeId,
                     EndOsmNodeId = pm.EndNodeId,
                     OsmWayIds = new HashSet<long>(pm.AllWayIds),
+                    IsLaterallyMerged = pm.IsLaterallyMerged,
                 };
                 PropagatePathLaneSegmentsToSpline(pm, spline);
+                PropagatePathStructureSegmentsToSpline(pm, spline, reprojectStructureStations,
+                    consolidateContiguousSpans);
                 splines.Add(spline);
             }
             catch (Exception ex)
@@ -981,6 +1046,137 @@ public class OsmGeometryProcessor
             Console.WriteLine($"  Skipped {skippedZeroLength} paths shorter than {minPathLengthMeters:F1}m");
         Console.WriteLine($"  Coordinate system: meters (metersPerPixel={metersPerPixel})");
         return splines;
+    }
+
+    /// <summary>
+    /// Builds the set of OSM node IDs that are road junctions, looking across ALL line features
+    /// regardless of highway type. A node is a junction when:
+    /// (a) at least two distinct ways reference it and it is an interior (non-endpoint) node of at
+    ///     least one of them — the through road was not split at the node, or
+    /// (b) three or more way endpoints meet at it — the classic fork / ramp node.
+    /// NodeBasedPathConnector partitions paths by exact highway type, so its own endpoint valence
+    /// map cannot see a junction whose through road has a different type (e.g. two primary_link
+    /// ramps meeting a primary road). This set restores that visibility for the junction
+    /// deflection guard. Internal for tests.
+    /// </summary>
+    internal static HashSet<long> BuildGlobalJunctionNodeSet(List<OsmFeature> lineFeatures)
+    {
+        var wayCount = new Dictionary<long, int>();
+        var endpointCount = new Dictionary<long, int>();
+        var interiorNodes = new HashSet<long>();
+        var seenInWay = new HashSet<long>();
+
+        foreach (var feature in lineFeatures.Where(f => f.GeometryType == OsmGeometryType.LineString))
+        {
+            var nodeIds = feature.NodeIds;
+            if (nodeIds.Count < 2)
+                continue;
+
+            seenInWay.Clear();
+            for (var i = 0; i < nodeIds.Count; i++)
+            {
+                var nodeId = nodeIds[i];
+                if (seenInWay.Add(nodeId))
+                {
+                    wayCount.TryGetValue(nodeId, out var ways);
+                    wayCount[nodeId] = ways + 1;
+                }
+
+                if (i == 0 || i == nodeIds.Count - 1)
+                {
+                    endpointCount.TryGetValue(nodeId, out var endpoints);
+                    endpointCount[nodeId] = endpoints + 1;
+                }
+                else
+                {
+                    interiorNodes.Add(nodeId);
+                }
+            }
+        }
+
+        var junctions = new HashSet<long>();
+        foreach (var (nodeId, ways) in wayCount)
+        {
+            if (ways >= 2 && interiorNodes.Contains(nodeId))
+                junctions.Add(nodeId);
+            else if (endpointCount.TryGetValue(nodeId, out var endpoints) && endpoints >= 3)
+                junctions.Add(nodeId);
+        }
+
+        return junctions;
+    }
+
+    /// <summary>
+    /// For each global junction node, the highest road-class band
+    /// (<see cref="BridgeRuleSystemOptions.ClassStepFor"/>) that CONTINUES THROUGH the node — a band
+    /// continues when a way of that band has the node as an INTERIOR node, or when TWO OR MORE
+    /// way-ends of that band meet there (a road split at the node, e.g. the tertiary pair at node
+    /// 5429248736). A higher-class road that merely TERMINATES at the node (one way-end) does NOT
+    /// count: the lower road chaining through under a terminating higher arm is exactly what makes
+    /// the node a proper T-junction (continuous through + terminating arm), and blocking it would
+    /// split ongoing roads into endpoint splines at every side-road mouth of a higher class.
+    /// Used by <see cref="NodeBasedPathConnector"/>'s cross-class chaining guard: a pair of
+    /// LOWER-band ways must not chain through a junction a higher band also continues through —
+    /// both roads continuous swallows the node into two spline interiors, so the crossing degrades
+    /// to a MidSplineCrossing (elevation nudge only, no junction surface) and renders as a hump.
+    /// Internal for tests.
+    /// </summary>
+    internal static Dictionary<long, int> BuildJunctionNodeMaxContinuingClassMap(
+        List<OsmFeature> lineFeatures, HashSet<long> junctionNodes)
+    {
+        // Per junction node: bands with interior presence, and way-END counts per band.
+        var interiorBands = new Dictionary<long, HashSet<int>>();
+        var endCounts = new Dictionary<(long nodeId, int band), int>();
+
+        foreach (var feature in lineFeatures.Where(f => f.GeometryType == OsmGeometryType.LineString))
+        {
+            var nodeIds = feature.NodeIds;
+            if (nodeIds.Count < 2)
+                continue;
+
+            var cls = BridgeRuleSystemOptions.ClassStepFor(
+                feature.Tags.TryGetValue("highway", out var highway) ? highway : null);
+
+            for (var i = 0; i < nodeIds.Count; i++)
+            {
+                var nodeId = nodeIds[i];
+                if (!junctionNodes.Contains(nodeId))
+                    continue;
+
+                if (i == 0 || i == nodeIds.Count - 1)
+                {
+                    endCounts.TryGetValue((nodeId, cls), out var count);
+                    endCounts[(nodeId, cls)] = count + 1;
+                }
+                else
+                {
+                    if (!interiorBands.TryGetValue(nodeId, out var bands))
+                    {
+                        bands = new HashSet<int>();
+                        interiorBands[nodeId] = bands;
+                    }
+                    bands.Add(cls);
+                }
+            }
+        }
+
+        var maxContinuing = new Dictionary<long, int>();
+        foreach (var (nodeId, bands) in interiorBands)
+        foreach (var band in bands)
+        {
+            if (!maxContinuing.TryGetValue(nodeId, out var current) || band > current)
+                maxContinuing[nodeId] = band;
+        }
+
+        foreach (var ((nodeId, band), count) in endCounts)
+        {
+            if (count < 2)
+                continue; // a single way-end terminates at the node — not a continuation
+            if (!maxContinuing.TryGetValue(nodeId, out var current) || band > current)
+                maxContinuing[nodeId] = band;
+        }
+
+        return maxContinuing;
     }
 
     /// <summary>
@@ -1034,6 +1230,98 @@ public class OsmGeometryProcessor
                 : distances[^1],
             LaneInfo = seg.LaneInfo
         }).ToList();
+    }
+
+    /// <summary>
+    /// Resolves each structure sub-range's point-index span to a stable arc-length span on the final spline,
+    /// mirroring <see cref="PropagatePathLaneSegmentsToSpline"/>. Arc-length survives the Chaikin densification
+    /// that point indices do not, so downstream code anchors bridge spans by StartDistance/EndDistance.
+    ///
+    /// The legacy arc-length sums run over the PRE-Chaikin path points while the spline is built from the
+    /// POST-Chaikin points — Chaikin shortens corners, so the span can be shifted/resized by a few % of the
+    /// distance-to-the-bridge (docs 11/13 "station drift"). When <paramref name="reprojectStations"/> is on
+    /// (V2 plan 0.3a, <c>BridgeRuleSystemOptions.EnableBridgeStationReprojection</c>) and the segment carries
+    /// its original endpoint coordinates, the span is instead anchored by PROJECTING those coordinates onto
+    /// the final spline — the pre-Chaikin estimate only seeds the projection's ambiguity tie-break.
+    /// </summary>
+    private static void PropagatePathStructureSegmentsToSpline(PathWithMetadata pm, RoadSpline spline,
+        bool reprojectStations = false, bool consolidateContiguousSpans = false)
+    {
+        if (pm.StructureSegments.Count == 0) return;
+
+        var distances = new float[pm.Points.Count];
+        distances[0] = 0f;
+        for (int d = 1; d < pm.Points.Count; d++)
+            distances[d] = distances[d - 1] + Vector2.Distance(pm.Points[d - 1], pm.Points[d]);
+
+        float DistanceAt(int idx) =>
+            idx < 0 ? 0f : idx < distances.Length ? distances[idx] : distances[^1];
+
+        // Map a pre-Chaikin arc-length onto the (shorter) post-Chaikin spline proportionally — only used as
+        // the projection seed, never as the final anchor.
+        var preChaikinTotal = distances[^1];
+        var scale = preChaikinTotal > 0.001f ? spline.TotalLength / preChaikinTotal : 1f;
+
+        spline.StructureSegments = pm.StructureSegments.Select(seg =>
+        {
+            var clone = seg.Clone();
+            var legacyStart = DistanceAt(seg.StartPointIndex);
+            var legacyEnd = DistanceAt(seg.EndPointIndex);
+            clone.StartDistance = legacyStart;
+            clone.EndDistance = legacyEnd;
+
+            if (reprojectStations && seg.OriginalStartPoint is { } origStart && seg.OriginalEndPoint is { } origEnd)
+            {
+                var projStart = spline.GetClosestDistanceTo(origStart, legacyStart * scale);
+                var projEnd = spline.GetClosestDistanceTo(origEnd, legacyEnd * scale);
+                if (projEnd < projStart) (projStart, projEnd) = (projEnd, projStart);
+
+                // A projection that collapses the span or lands wildly off the estimate means the original
+                // endpoints didn't survive cropping/merging cleanly — keep the legacy anchor for that span.
+                var legacyLen = legacyEnd - legacyStart;
+                var projLen = projEnd - projStart;
+                if (projLen > 0.5f && (legacyLen <= 0.5f || projLen > 0.25f * legacyLen))
+                {
+                    TerrainCreationLogger.Current?.Detail(
+                        $"[BRIDGE-REPROJECT] ways=[{string.Join(",", seg.OsmWayIds)}] " +
+                        $"legacy=[{legacyStart:F1},{legacyEnd:F1}]m → projected=[{projStart:F1},{projEnd:F1}]m " +
+                        $"(shift {projStart - legacyStart:+0.0;-0.0}m / {projEnd - legacyEnd:+0.0;-0.0}m)");
+                    clone.StartDistance = projStart;
+                    clone.EndDistance = projEnd;
+                }
+                else
+                {
+                    TerrainCreationLogger.Current?.Detail(
+                        $"[BRIDGE-REPROJECT] ways=[{string.Join(",", seg.OsmWayIds)}] projection rejected " +
+                        $"(projLen={projLen:F1}m vs legacyLen={legacyLen:F1}m) — keeping legacy stations");
+                }
+            }
+
+            return clone;
+        }).ToList();
+
+        // Doc 10: with stations final (post reprojection), join contiguous same-type spans across layer
+        // differences — one physical deck fragmented only by OSM's local-crossing-order layer tags becomes
+        // ONE span (two real abutments instead of a fake pair per way boundary). Flag-gated
+        // (BridgeRuleSystemOptions.EnableContiguousSpanConsolidation); off ⇒ byte-identical.
+        if (consolidateContiguousSpans && spline.StructureSegments.Count > 1)
+        {
+            var before = spline.StructureSegments.Count;
+            spline.StructureSegments = StructureSegmentOps.ConsolidateByStation(spline.StructureSegments);
+            foreach (var seg in spline.StructureSegments)
+            {
+                if (seg.LayerRanges is not { Count: > 1 }) continue;
+                var msg =
+                    $"[SPAN-CONSOLIDATE] {before}→{spline.StructureSegments.Count} spans: " +
+                    $"ways=[{string.Join(",", seg.OsmWayIds.OrderBy(x => x))}] joined into one {seg.Type} " +
+                    $"span [{seg.StartDistance:F1},{seg.EndDistance:F1}]m " +
+                    $"layers={string.Join(",", seg.LayerRanges.Select(r => r.Layer))}";
+                // Spline creation can run before a TerrainCreationLogger session exists (the
+                // [BRIDGE-REPROJECT] lines above share this fate) — fall back to the console logger.
+                if (TerrainCreationLogger.Current is { } log) log.Detail(msg);
+                else TerrainLogger.Detail(msg);
+            }
+        }
     }
 
     private static float CalculatePathLength(List<Vector2> points)
@@ -1102,7 +1390,11 @@ public class OsmGeometryProcessor
         float endpointJoinToleranceMeters = 1.0f,
         bool excludeBridges = false,
         bool excludeTunnels = false,
-        bool disableSplineMerging = false)
+        bool disableSplineMerging = false,
+        bool mergeStructuresIntoCorridor = false,
+        bool reprojectStructureStations = false,
+        bool consolidateContiguousSpans = false,
+        IReadOnlySet<string>? lateralMergeRoadTypes = null)
     {
         // Use the full overload and discard the roundabout processing result
         return ConvertLinesToSplinesWithRoundabouts(
@@ -1122,7 +1414,11 @@ public class OsmGeometryProcessor
             endpointJoinToleranceMeters,
             excludeBridges: excludeBridges,
             excludeTunnels: excludeTunnels,
-            disableSplineMerging: disableSplineMerging);
+            disableSplineMerging: disableSplineMerging,
+            mergeStructuresIntoCorridor: mergeStructuresIntoCorridor,
+            reprojectStructureStations: reprojectStructureStations,
+            consolidateContiguousSpans: consolidateContiguousSpans,
+            lateralMergeRoadTypes: lateralMergeRoadTypes);
     }
 
     /// <summary>
@@ -1166,7 +1462,11 @@ public class OsmGeometryProcessor
         bool excludeBridges = false,
         bool excludeTunnels = false,
         HashSet<long>? alreadyProcessedRoundaboutIds = null,
-        bool disableSplineMerging = false)
+        bool disableSplineMerging = false,
+        bool mergeStructuresIntoCorridor = false,
+        bool reprojectStructureStations = false,
+        bool consolidateContiguousSpans = false,
+        IReadOnlySet<string>? lateralMergeRoadTypes = null)
     {
         // Build a set of feature IDs that belong to this material
         // This is CRITICAL for ensuring roundabout splines are only created once
@@ -1299,8 +1599,12 @@ public class OsmGeometryProcessor
             excludeBridges,
             excludeTunnels,
             routeRelations: fullQueryResult.RouteRelations,
-            disableSplineMerging: disableSplineMerging);
-        
+            disableSplineMerging: disableSplineMerging,
+            mergeStructuresIntoCorridor: mergeStructuresIntoCorridor,
+            reprojectStructureStations: reprojectStructureStations,
+            consolidateContiguousSpans: consolidateContiguousSpans,
+            lateralMergeRoadTypes: lateralMergeRoadTypes);
+
         // Step 6: Combine results
         var allSplines = new List<RoadSpline>();
         allSplines.AddRange(roundaboutSplines);

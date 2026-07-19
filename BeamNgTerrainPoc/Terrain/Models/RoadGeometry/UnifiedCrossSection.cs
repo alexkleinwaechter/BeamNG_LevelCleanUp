@@ -1,4 +1,5 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 
@@ -63,6 +64,60 @@ public class UnifiedCrossSection
     ///     If true, no smoothing is applied at this location.
     /// </summary>
     public bool IsExcluded { get; set; }
+
+    /// <summary>
+    ///     Hard-held target centerline elevation for a merged-corridor bridge deck (plan doc 14 §7, Phase C).
+    ///     Set only on bridge-span sections by <c>BridgeElevationPlanner</c> (the required deck Z it decided),
+    ///     and honoured by the FOUR elevation passes — the chain box low-pass (input overwrite + hard-hold),
+    ///     the re-smooth iterations, the affine leveler (exempted + boundary-blended, §7 D6) and the max-slope
+    ///     clamp (pinned neighbourhood exempted) — so the smoother BUILDS the rising approach ramps up to a held
+    ///     deck instead of dragging the deck down to terrain. Null (default) ⇒ unpinned, normal smoothing. The
+    ///     peer of the edge-constraint and junction-pin mechanisms, but for the centerline.
+    /// </summary>
+    public float? PinnedElevation { get; set; }
+
+    /// <summary>
+    ///     Amendment 03 v3 ("give the bridge cross-sections"): SOFT deck-shaping for sparse mode — the
+    ///     clearance RISE (m, ≥0) this span section needs above the deck chord, from the planner's
+    ///     per-crossing eased humps. Deliberately RELATIVE: the smoother re-anchors the chord itself on the
+    ///     actual approach raw values every iteration (<c>OptimizedElevationSmoother.ApplySoftShapingToRaw</c>
+    ///     writes `boundary chord + rise` into the RAW filter input), so planner-estimate offsets cannot
+    ///     reach the road — only the intended rise survives. Unlike <see cref="PinnedElevation"/> this is
+    ///     NEVER hard-held: the filter solves the span like ordinary road — natural vertical curvature, both
+    ///     abutment seams continuous by construction (a hard hold can step; a filtered profile cannot).
+    ///     Exact clearance comes from the post-solve cubic re-curve + floors + resolver dips. Null ⇒ none.
+    /// </summary>
+    public float? SoftDeckRiseMeters { get; set; }
+
+    /// <summary>
+    ///     2026-07-14 (junction-aware approach feather): the final agreement Z of a PINNED junction whose
+    ///     corridor contributor is this cross-section, stamped by the doc-05 §4.2 junction-raise pass
+    ///     (<c>UnifiedRoadSmoother.RaiseJunctionsAlongApproachRamps</c>). The smoother's raw approach-ramp
+    ///     feather (<c>OptimizedElevationSmoother.FeatherRawApproachRamps</c>) anchors its descent to this
+    ///     value: the ramp runs deck edge → junction line and stops, so the profile the filter builds is
+    ///     the SAME line the junction blender later enforces — no post-blend notch at near-abutment
+    ///     junctions. Null ⇒ no pinned junction here, the feather uses its free class-grade run.
+    /// </summary>
+    public float? JunctionPinnedElevation { get; set; }
+
+    /// <summary>
+    ///     Stable id of the bridge/tunnel span this cross-section belongs to, or −1 if none. Set alongside
+    ///     <see cref="IsExcluded" /> when a merged corridor's structure sub-range is marked (plan doc 11,
+    ///     Phase 3). Derived from the span's sorted OSM way-id set so it is reproducible across runs. Lets
+    ///     downstream consumers group a span's sections and build one deck per span (Phase 4/5).
+    /// </summary>
+    public int StructureSpanId { get; set; } = -1;
+
+    /// <summary>
+    ///     Structure type of the span this cross-section belongs to (<see cref="StructureType.None" /> when
+    ///     <see cref="StructureSpanId" /> is −1). Set alongside the span id in
+    ///     <c>UnifiedRoadSmoother.TagStructureSpans</c> / <c>MarkStructureExclusions</c> from the owning
+    ///     <see cref="StructureSegment.Type" />. The span machinery was historically bridge-only and every
+    ///     consumer assumed "span ⇒ bridge deck"; tunnel spans flow through the same tagging, so
+    ///     bridge-specific consumers (deck solver/exporter/excavator/abutment stamper) must gate on
+    ///     <c>StructureSpanType == StructureType.Bridge</c> (tunnel plan Phase 0, ai_docs/2026-07-18).
+    /// </summary>
+    public StructureType StructureSpanType { get; set; } = StructureType.None;
 
     /// <summary>
     ///     Global index of this cross-section across all splines in the network.

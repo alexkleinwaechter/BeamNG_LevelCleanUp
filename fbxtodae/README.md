@@ -147,7 +147,7 @@ Everything below is deferred — add if you hit them:
 dotnet build fbxtodae/fbxtodae.csproj
 ```
 
-Windows-only at runtime (AssimpNet's native `assimp.dll` is shipped for `win-x64`). The csproj itself targets plain `net9.0` so code analysis works on non-Windows CI.
+Windows-only at runtime (AssimpNet's native `assimp.dll` is shipped for `win-x64`). The csproj itself targets plain `net10.0` so code analysis works on non-Windows CI.
 
 ## Implementation plan
 

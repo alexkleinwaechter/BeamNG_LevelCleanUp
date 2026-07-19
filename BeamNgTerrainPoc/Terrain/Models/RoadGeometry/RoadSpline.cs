@@ -31,16 +31,32 @@ public class RoadSpline
         if (controlPoints == null || controlPoints.Count < 2)
             throw new ArgumentException("Need at least 2 control points for spline", nameof(controlPoints));
 
-        ControlPoints = controlPoints;
         InterpolationType = interpolationType;
 
-        // Calculate cumulative arc lengths (parameter t for spline)
+        // Calculate cumulative arc lengths (parameter t for spline), enforcing STRICTLY increasing
+        // knots — MathNet's *Sorted interpolators silently produce NaN coefficients on duplicate t
+        // values, which turns every sampled position into (NaN, NaN) downstream (degenerate OSM ways,
+        // Chaikin-coincident points, or tiny segments that collapse in float cumulative distance).
+        // Points that don't advance the arc length (incl. non-finite points, whose distance compares
+        // false) are dropped.
+        var keptPoints = new List<Vector2>(controlPoints.Count) { controlPoints[0] };
         _distances = new List<float> { 0 };
         for (var i = 1; i < controlPoints.Count; i++)
         {
-            var segmentLength = Vector2.Distance(controlPoints[i - 1], controlPoints[i]);
-            _distances.Add(_distances[i - 1] + segmentLength);
+            var point = controlPoints[i];
+            var cumulative = _distances[^1] + Vector2.Distance(keptPoints[^1], point);
+            if (!(cumulative > _distances[^1]))
+                continue;
+
+            keptPoints.Add(point);
+            _distances.Add(cumulative);
         }
+
+        // Preserve the caller's list reference when nothing was dropped (the common case).
+        ControlPoints = keptPoints.Count == controlPoints.Count ? controlPoints : keptPoints;
+
+        if (ControlPoints.Count < 2)
+            throw new ArgumentException("Control points result in zero-length spline", nameof(controlPoints));
 
         TotalLength = _distances[_distances.Count - 1];
 
@@ -50,8 +66,8 @@ public class RoadSpline
 
         // Create separate splines for X and Y coordinates
         var t = _distances.Select(d => (double)d).ToArray();
-        var x = controlPoints.Select(p => (double)p.X).ToArray();
-        var y = controlPoints.Select(p => (double)p.Y).ToArray();
+        var x = ControlPoints.Select(p => (double)p.X).ToArray();
+        var y = ControlPoints.Select(p => (double)p.Y).ToArray();
 
         // Choose interpolation method based on type and number of points
         if (interpolationType == SplineInterpolationType.LinearControlPoints)
@@ -63,13 +79,13 @@ public class RoadSpline
         else // SmoothInterpolated (default)
         {
             // Choose smooth interpolation method based on number of points
-            if (controlPoints.Count >= MinPointsForAkima)
+            if (ControlPoints.Count >= MinPointsForAkima)
             {
                 // Akima spline - good for avoiding overshoot, smooth for roads
                 _splineX = CubicSpline.InterpolateAkimaSorted(t, x);
                 _splineY = CubicSpline.InterpolateAkimaSorted(t, y);
             }
-            else if (controlPoints.Count >= 3)
+            else if (ControlPoints.Count >= 3)
             {
                 // Natural cubic spline for 3-4 points
                 _splineX = CubicSpline.InterpolateNaturalSorted(t, x);
@@ -129,10 +145,29 @@ public class RoadSpline
     public HashSet<long> OsmWayIds { get; set; } = [];
 
     /// <summary>
+    ///     True when this spline came from the LATERAL union of two antiparallel oneway carriageways
+    ///     (LateralCarriagewayMerger). The centerline is the midline between the original ways, so
+    ///     roads that OSM-connected to one carriageway (ramps, crossovers) end up to half the
+    ///     carriageway separation away — junction detection admits their endpoints by corridor
+    ///     surface width instead of the default radius.
+    /// </summary>
+    public bool IsLaterallyMerged { get; set; }
+
+    /// <summary>
     ///     Per-segment lane configuration from OSM tags.
     ///     Null if no lane data was parsed. StartDistance is populated during spline creation.
     /// </summary>
     public List<LaneSegment>? LaneSegments { get; set; }
+
+    /// <summary>
+    ///     Bridge/tunnel sub-ranges along this (possibly merged) spline, anchored by arc-length
+    ///     (StartDistance/EndDistance, populated during spline creation). Empty/null for a plain road.
+    ///     Lets a merged corridor remember which stretch is a bridge — the "merged-corridor bridge"
+    ///     refactor (plan doc 11). The whole-spline <see cref="IsBridge"/>/<see cref="IsTunnel"/> flags
+    ///     remain the source of truth while structures are still kept as separate splines; this list is
+    ///     the per-sub-range record that survives merging.
+    /// </summary>
+    public List<StructureSegment>? StructureSegments { get; set; }
 
     // ========================================
     // STRUCTURE METADATA (Bridge/Tunnel)
@@ -172,6 +207,13 @@ public class RoadSpline
     ///     Set during spline creation from OsmFeature.BridgeStructureType.
     /// </summary>
     public string? BridgeStructureType { get; set; }
+
+    /// <summary>
+    ///     Full OSM tag dictionary from the source way(s), captured at spline creation (D-6).
+    ///     Null if not from OSM. Lets downstream read raw tags like bridge=, maxheight=, man_made=
+    ///     that aren't promoted to dedicated fields.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? OsmTags { get; set; }
 
     /// <summary>
     ///     Pre-computed width profile derived from OSM lane/width data.
@@ -237,6 +279,56 @@ public class RoadSpline
         // Rotate 90 degrees clockwise: (x, y) -> (y, -x)
         // This gives a vector pointing to the RIGHT when facing forward
         return new Vector2(tangent.Y, -tangent.X);
+    }
+
+    /// <summary>
+    ///     Arc-length (m) of the point on this spline closest to <paramref name="point"/> (V2 plan 0.3a).
+    ///     Works on the control-point polyline (the same chord-length parameterization the spline uses), so
+    ///     the returned distance is directly comparable to <see cref="GetPointAtDistance"/> stations.
+    ///     Closest-point on a curvy network can be ambiguous (switchbacks, parallel carriageways): among all
+    ///     candidates within <paramref name="ambiguityToleranceMeters"/> of the true minimum lateral distance,
+    ///     the one nearest <paramref name="seedDistance"/> wins — pass the best a-priori station estimate
+    ///     (e.g. the pre-Chaikin arc-length sum) to disambiguate. NaN seed ⇒ pure global minimum.
+    /// </summary>
+    public float GetClosestDistanceTo(Vector2 point, float seedDistance = float.NaN,
+        float ambiguityToleranceMeters = 2.0f)
+    {
+        var bestLateralSq = float.MaxValue;
+        // (arcDistance, lateralSq) per local candidate; collected in one pass, filtered after.
+        var candidates = new List<(float Arc, float LatSq)>(8);
+
+        for (var i = 1; i < ControlPoints.Count; i++)
+        {
+            var a = ControlPoints[i - 1];
+            var b = ControlPoints[i];
+            var ab = b - a;
+            var abLenSq = ab.LengthSquared();
+            var t = abLenSq > 1e-12f ? Math.Clamp(Vector2.Dot(point - a, ab) / abLenSq, 0f, 1f) : 0f;
+            var proj = a + ab * t;
+            var latSq = (point - proj).LengthSquared();
+            var arc = _distances[i - 1] + (_distances[i] - _distances[i - 1]) * t;
+
+            if (latSq < bestLateralSq) bestLateralSq = latSq;
+            candidates.Add((arc, latSq));
+        }
+
+        var cutoff = MathF.Sqrt(bestLateralSq) + ambiguityToleranceMeters;
+        var cutoffSq = cutoff * cutoff;
+
+        var bestArc = 0f;
+        var bestScore = float.MaxValue;
+        foreach (var (arc, latSq) in candidates)
+        {
+            if (latSq > cutoffSq) continue;
+            var score = float.IsNaN(seedDistance) ? latSq : MathF.Abs(arc - seedDistance);
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestArc = arc;
+            }
+        }
+
+        return bestArc;
     }
 
     /// <summary>

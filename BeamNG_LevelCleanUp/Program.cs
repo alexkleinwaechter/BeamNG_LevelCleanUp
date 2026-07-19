@@ -1,3 +1,4 @@
+using System.Globalization;
 using AutoUpdaterDotNET;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
@@ -24,6 +25,15 @@ internal class Program6
     [STAThread]
     private static void Main()
     {
+        // MudBlazor's input converters format with CurrentUICulture (Converters.DefaultCulture).
+        // On a German OS that writes "4,7" into <input type="number">, which the browser rejects as
+        // invalid — freshly created numeric fields then show an EMPTY input until blurred (the blur
+        // re-formats with the invariant culture MudNumericField switches to after its first render
+        // anyway). Invariant UI culture makes the first paint match that steady state.
+        // CurrentCulture is deliberately left untouched.
+        CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+        Thread.CurrentThread.CurrentUICulture = CultureInfo.InvariantCulture;
+
         var cancelSource = new CancellationTokenSource();
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

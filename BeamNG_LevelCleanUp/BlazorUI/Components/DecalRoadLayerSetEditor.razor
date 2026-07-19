@@ -45,6 +45,13 @@
                      Label="Use OSM road width tag if available"
                      Disabled="@ReadOnly" />
     </MudItem>
+    <MudItem xs="12">
+        <MudTooltip Text="Combines parallel oneway ways (e.g. the two directions of a motorway) into one wider road. Fixes elevation drift between twin bridge decks. Requires full terrain regeneration.">
+            <MudCheckBox T="bool" @bind-Value="LayerSet.MergeSplinesLaterally"
+                         Label="Merge dual carriageways into one road"
+                         Disabled="@ReadOnly" />
+        </MudTooltip>
+    </MudItem>
     <MudItem xs="6" sm="3">
         <MudNumericField T="float" @bind-Value="LayerSet.SmoothingCorridorMargin"
                          Label="Smoothing Margin (m)"
@@ -152,6 +159,13 @@
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
                              Color="Color.Warning">rnd</MudChip>
                 }
+                @if (GetRenderScopeLabel(layer) is { } scopeLabel)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="@(scopeLabel == "nowhere" ? Color.Error : Color.Info)">
+                        @scopeLabel
+                    </MudChip>
+                }
             </div>
             <MudIcon Icon="@Icons.Material.Filled.Circle"
                      Size="Size.Small"
@@ -216,7 +230,7 @@
                                            Size="Size.Small"
                                            Disabled="@(string.IsNullOrEmpty(layer.Material))"
                                            OnClick="() => PreviewMaterial(layer.Material)"
-                                           Title="Preview material in 3D viewer" />
+                                           title="Preview material in 3D viewer" />
                         </div>
                     </MudItem>
                     <MudItem xs="12" sm="4">
@@ -231,7 +245,7 @@
                                     <MudSelectItem Value="t">@t</MudSelectItem>
                                 }
                             </MudSelect>
-                            <HelpAdornment TooltipText="Controls positioning logic: EdgeLine at road edges, LaneMarking between lanes, EdgeBlend for shoulders, TreadMarks for wear, AIRoad for AI navigation." />
+                            <HelpAdornment TooltipText="Controls positioning logic: EdgeLine at road edges, LaneMarking between lanes, EdgeBlend for shoulders, TreadMarks for wear, AIRoad for AI navigation, RoadSurface for a full-width surface decal (asphalt/dirt)." />
                         </div>
                     </MudItem>
                     <MudItem xs="12" sm="5">
@@ -414,6 +428,38 @@
 
                 <MudDivider Class="my-2" />
 
+                @* ───── RENDER SCOPE ───── *@
+                <MudText Typo="Typo.overline" Color="Color.Primary" Class="mb-1">Render Scope</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12">
+                        <div class="d-flex align-center flex-wrap gap-3">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Render on:</MudText>
+                            <MudCheckBox T="bool" @bind-Value="layer.RenderOnRoads"
+                                         Label="Roads" Color="Color.Primary"
+                                         Dense="true" Disabled="@ReadOnly" />
+                            <MudCheckBox T="bool" @bind-Value="layer.RenderOnBridges"
+                                         Label="Bridges" Color="Color.Primary"
+                                         Dense="true" Disabled="@ReadOnly" />
+                            <MudCheckBox T="bool" @bind-Value="layer.RenderOnTunnels"
+                                         Label="Tunnels" Color="Color.Primary"
+                                         Dense="true" Disabled="@ReadOnly" />
+                            <MudTooltip Text="Where along a road this layer is generated. All checked = everywhere (default). Only 'Bridges' checked = bridge decks only; 'Tunnels' unchecked = skip tunnel stretches; etc.">
+                                <MudIcon Icon="@Icons.Material.Filled.HelpOutline" Size="Size.Small" Color="Color.Default" Style="opacity:0.6" />
+                            </MudTooltip>
+                        </div>
+                    </MudItem>
+                    @if (!layer.RenderOnRoads && !layer.RenderOnBridges && !layer.RenderOnTunnels)
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Warning" Dense="true">
+                                No render scope selected — this layer will not be generated anywhere.
+                            </MudAlert>
+                        </MudItem>
+                    }
+                </MudGrid>
+
+                <MudDivider Class="my-2" />
+
                 @* ───── GENERATION CONSTRAINTS ───── *@
                 <MudText Typo="Typo.overline" Color="Color.Primary" Class="mb-1">Generation Constraints</MudText>
                 <MudGrid Spacing="2">
@@ -496,7 +542,7 @@
                                                    Color="Color.Primary" Size="Size.Small"
                                                    Disabled="@(string.IsNullOrEmpty(layer.JunctionReplacementMaterial))"
                                                    OnClick="() => PreviewMaterial(layer.JunctionReplacementMaterial)"
-                                                   Title="Preview material in 3D viewer" />
+                                                   title="Preview material in 3D viewer" />
                                 </div>
                             </MudItem>
                             <MudItem xs="6" sm="4">
@@ -596,7 +642,7 @@
                                                    Size="Size.Small"
                                                    Disabled="@(string.IsNullOrEmpty(layer.CurveReplacementMaterial))"
                                                    OnClick="() => PreviewMaterial(layer.CurveReplacementMaterial)"
-                                                   Title="Preview material in 3D viewer" />
+                                                   title="Preview material in 3D viewer" />
                                 </div>
                             </MudItem>
                             <MudItem xs="6" sm="4">

@@ -152,6 +152,17 @@ public class NetworkJunction
     public bool IsPinned { get; set; }
 
     /// <summary>
+    ///     The junction-on-deck PLAN elevation (m) written by <c>PinOnDeckJunctions</c> (Phase 1.85)
+    ///     and never touched again — unlike <see cref="HarmonizedElevation"/>, which later passes
+    ///     (no-blend endpoint targeting, harmonizer edge cases) may overwrite from interim profiles.
+    ///     The drift-proof witness for the landing-anchor plausibility cap
+    ///     (<c>BridgeProfileSolver.MinLandingAnchorGap</c>): a span end whose landing junction was
+    ///     PLANNED at the landed-on deck's height is a merge, however far the solved profile drifted.
+    ///     Null when the junction never received a junction-on-deck pin.
+    /// </summary>
+    public float? PlannedDeckElevation { get; set; }
+
+    /// <summary>
     ///     Reason for exclusion (user-provided or auto-detected).
     /// </summary>
     public string? ExclusionReason { get; set; }

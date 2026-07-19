@@ -74,9 +74,14 @@ public class MaterialPainter
 
             foreach (var paramSpline in splines)
             {
-                // Phase 5: Exclude bridge/tunnel structures from material painting if configured
-                if ((paramSpline.IsBridge && paramSpline.Parameters.ExcludeBridgesFromTerrain) ||
-                    (paramSpline.IsTunnel && paramSpline.Parameters.ExcludeTunnelsFromTerrain))
+                var p = paramSpline.Parameters;
+
+                // Merged-corridor mode (plan doc 11, Phase 5): the structure is an arc-range of a corridor, so
+                // the corridor is painted but the structure SUB-RANGE samples are skipped per-sample (below).
+                // Legacy mode: the whole bridge/tunnel spline is skipped.
+                if (!p.MergeStructuresIntoCorridor &&
+                    ((paramSpline.IsBridge && p.ExcludeBridgesFromTerrain) ||
+                     (paramSpline.IsTunnel && p.ExcludeTunnelsFromTerrain)))
                 {
                     TerrainLogger.Detail(
                         $"Excluding {(paramSpline.IsBridge ? "bridge" : "tunnel")} spline from material painting: " +
@@ -84,9 +89,13 @@ public class MaterialPainter
                     continue;
                 }
 
+                var skipRanges = p.MergeStructuresIntoCorridor
+                    ? GetExcludableSpanRanges(paramSpline)
+                    : null;
+
                 // Paint directly from the original spline with fine sampling for curve accuracy
                 paintedPixels += PaintSplineDirectly(
-                    layer, paramSpline, metersPerPixel, width, height);
+                    layer, paramSpline, metersPerPixel, width, height, skipRanges);
             }
 
             TerrainLogger.Info($"    {materialName}: {paintedPixels:N0} pixels painted from {splines.Count} spline(s)");
@@ -113,7 +122,8 @@ public class MaterialPainter
         ParameterizedRoadSpline paramSpline,
         float metersPerPixel,
         int width,
-        int height)
+        int height,
+        IReadOnlyList<(float start, float end)>? skipRanges = null)
     {
         // Calculate optimal sampling interval:
         // - Use at most MaxPaintingSampleIntervalMeters
@@ -127,6 +137,19 @@ public class MaterialPainter
         if (samples.Count < 2)
             return 0;
 
+        // Merged-corridor mode: skip samples whose arc-length falls inside an excludable structure span
+        // (paint road, skip bridge/tunnel sub-range) so terrain under the deck keeps its natural material.
+        // Plain loop (not LINQ .Any) — this runs per sample on a long spline; the lambda would allocate a
+        // capturing closure on every call. Returns false immediately for the common no-span spline.
+        bool InSkip(float distance)
+        {
+            if (skipRanges == null) return false;
+            for (var r = 0; r < skipRanges.Count; r++)
+                if (distance >= skipRanges[r].start && distance <= skipRanges[r].end)
+                    return true;
+            return false;
+        }
+
         var paintedPixels = 0;
 
         // Paint quads between consecutive samples, using per-sample surface width
@@ -134,6 +157,9 @@ public class MaterialPainter
         {
             var s1 = samples[i];
             var s2 = samples[i + 1];
+
+            if (InSkip((s1.Distance + s2.Distance) * 0.5f))
+                continue;
 
             var surfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(s1.Distance).surface
                 ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
@@ -144,23 +170,58 @@ public class MaterialPainter
         }
 
         // Paint end caps
-        if (samples.Count > 0)
+        if (samples.Count > 0 && !InSkip(samples[0].Distance))
         {
             var startSurfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(samples[0].Distance).surface
                 ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
             paintedPixels += PaintSampleCrossSection(
                 layer, samples[0], startSurfaceWidth / 2.0f, metersPerPixel, width, height);
+        }
 
-            if (samples.Count > 1)
-            {
-                var endSurfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(samples[^1].Distance).surface
-                    ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
-                paintedPixels += PaintSampleCrossSection(
-                    layer, samples[^1], endSurfaceWidth / 2.0f, metersPerPixel, width, height);
-            }
+        if (samples.Count > 1 && !InSkip(samples[^1].Distance))
+        {
+            var endSurfaceWidth = paramSpline.WidthProfile?.GetWidthsAtDistance(samples[^1].Distance).surface
+                ?? paramSpline.Parameters.EffectiveRoadSurfaceWidthMeters;
+            paintedPixels += PaintSampleCrossSection(
+                layer, samples[^1], endSurfaceWidth / 2.0f, metersPerPixel, width, height);
         }
 
         return paintedPixels;
+    }
+
+    /// <summary>
+    /// Arc-length ranges of a spline that are excludable structure spans (bridge with ExcludeBridges, or
+    /// tunnel with ExcludeTunnels) — the sub-ranges material painting must skip in merged-corridor mode.
+    /// </summary>
+    private static List<(float start, float end)> GetExcludableSpanRanges(ParameterizedRoadSpline spline)
+    {
+        var ranges = new List<(float, float)>();
+        if (spline.StructureSegments == null) return ranges;
+        var p = spline.Parameters;
+        foreach (var seg in spline.StructureSegments)
+        {
+            if ((seg.IsBridge && p.ExcludeBridgesFromTerrain) ||
+                (seg.IsTunnel && p.ExcludeTunnelsFromTerrain))
+            {
+                var start = seg.StartDistance;
+                var end = seg.EndDistance;
+
+                // Tunnel plan Phase 2c: the portal aprons (first/last PortalApronMeters, exclusion-shrunk
+                // to ordinary stamped road) must stay material-painted — the road runs INTO the portal on
+                // real terrain. Shrink the paint-skip range by the same rule as the exclusion shrink.
+                if (seg.IsTunnel && p.TunnelRules?.EnablePortalAprons == true)
+                {
+                    var apron = MathF.Min(MathF.Max(0f, p.TunnelRules.PortalApronMeters),
+                        MathF.Max(0f, (end - start) / 3f));
+                    start += apron;
+                    end -= apron;
+                }
+
+                if (end > start)
+                    ranges.Add((start, end));
+            }
+        }
+        return ranges;
     }
 
     /// <summary>

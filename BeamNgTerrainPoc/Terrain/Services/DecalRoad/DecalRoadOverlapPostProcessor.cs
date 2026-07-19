@@ -319,7 +319,8 @@ public static class DecalRoadOverlapPostProcessor
 
     /// <summary>
     /// Computes per-node overlap mask. A node is overlapping if it falls inside
-    /// another road's surface footprint, unless continuity exempts it.
+    /// another road's surface footprint — in plan AND vertically (a bridge deck
+    /// crossing above a road is not a junction) — unless continuity exempts it.
     /// </summary>
     private static bool[] ComputeOverlapMask(
         GeneratedDecalRoad road,
@@ -339,7 +340,7 @@ public static class DecalRoadOverlapPostProcessor
         for (int i = 0; i < nodes.Count; i++)
         {
             var (isOverlapping, overlappingSplineId) =
-                index.CheckPoint(nodes[i][0], nodes[i][1], ownSplineId);
+                index.CheckPoint(nodes[i][0], nodes[i][1], nodes[i][2], ownSplineId);
 
             if (isOverlapping)
             {

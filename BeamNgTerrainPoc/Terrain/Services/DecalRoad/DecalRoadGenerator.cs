@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Utils;
@@ -25,7 +26,8 @@ public class DecalRoadGenerator
         int terrainSizePixels,
         float terrainBaseHeight,
         DecalRoadSettings settings,
-        IReadOnlyDictionary<string, DecalRoadLayerSet> appDataDefaults)
+        IReadOnlyDictionary<string, DecalRoadLayerSet> appDataDefaults,
+        List<GeneratedAiWaypointSegment>? aiWaypointSegments = null)
     {
         var results = new List<GeneratedDecalRoad>();
         var splineSurfaces = new List<SplineSurfaceData>();
@@ -36,10 +38,14 @@ public class DecalRoadGenerator
         // Generate all DecalRoads uninterrupted (no corridor checking during generation)
         foreach (var spline in network.Splines)
         {
-            // Skip structures only when exclusion is enabled — when disabled, bridges/tunnels
-            // get DecalRoad surfaces like regular roads (flat terrain representation)
-            if ((spline.IsBridge && spline.Parameters.ExcludeBridgesFromTerrain) ||
-                (spline.IsTunnel && spline.Parameters.ExcludeTunnelsFromTerrain))
+            // Generated bridges still need DecalRoad visual layers on top of the deck mesh.
+            // Tunnels: with the tunnel MESH rule on (tunnel plan Phase 5), decals are generated and
+            // the tunnel runs project onto the tube floor collision; without it the legacy skip
+            // stands. (The legacy whole-spline skip was also a latent bug: a merged corridor whose
+            // base way was the tunnel lost ALL its decals, ground stretches included.)
+            var isGeneratedBridge = IsGeneratedBridge(spline);
+            if (spline.IsTunnel && spline.Parameters.ExcludeTunnelsFromTerrain &&
+                spline.Parameters.TunnelRules?.EnableTunnelMesh != true)
                 continue;
 
             // Resolve layer set — roundabout splines use "roundabout" key
@@ -80,8 +86,19 @@ public class DecalRoadGenerator
                     SplineId = spline.SplineId,
                     SurfaceHalfWidth = maxMasterSplineWidth / 2f,
                     CenterlinePoints = surfaceSections
-                        .Select(cs => BeamNgCoordinateTransformer.TerrainToWorld2D(
-                            cs.CenterPoint, terrainSizePixels, metersPerPixel))
+                        .Select(cs =>
+                        {
+                            var plan = BeamNgCoordinateTransformer.TerrainToWorld2D(
+                                cs.CenterPoint, terrainSizePixels, metersPerPixel);
+                            // Same elevation rule as node generation below, so the
+                            // footprint Z and the node Z it is compared against share
+                            // one frame (TerrainToWorld passes Z through unchanged).
+                            var elevation = float.IsFinite(cs.TargetElevation) && cs.TargetElevation > -1000f
+                                ? cs.TargetElevation
+                                : GetHeightMapElevation(
+                                    heightMap, cs.CenterPoint.X, cs.CenterPoint.Y, metersPerPixel);
+                            return new Vector3(plan.X, plan.Y, elevation + terrainBaseHeight);
+                        })
                         .ToList()
                 });
             }
@@ -89,8 +106,23 @@ public class DecalRoadGenerator
             var splineResults = GenerateForSpline(
                 spline, layerSet, crossSections,
                 heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
-                settings.NodeSpacingMeters, settings);
+                settings.NodeSpacingMeters, settings, isGeneratedBridge);
             results.AddRange(splineResults);
+
+            // AI waypoint paths replace the AI decal over bridge/tunnel stretches (see
+            // AiWaypointPathGenerator; the decal runs are suppressed in GenerateForLayerRange).
+            // surfaceSections uses the same sub-sampling as GenerateForSpline, so the endpoint
+            // waypoints coincide with the ground AI decal's boundary nodes.
+            if (aiWaypointSegments != null)
+            {
+                var aiLayer = layerSet.Layers.FirstOrDefault(l =>
+                    l.IsEnabled && l.LayerType == DecalRoadLayerType.AIRoad);
+                if (aiLayer != null && surfaceSections.Count >= 2)
+                    aiWaypointSegments.AddRange(AiWaypointPathGenerator.GenerateForSpline(
+                        spline, aiLayer, surfaceSections,
+                        heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
+                        isGeneratedBridge));
+            }
         }
 
         // Post-process: detect and resolve overlaps on actual generated geometry
@@ -145,6 +177,11 @@ public class DecalRoadGenerator
         return chunkedResults;
     }
 
+    private static bool IsGeneratedBridge(ParameterizedRoadSpline spline)
+    {
+        return spline.IsBridge && spline.Parameters.ExcludeBridgesFromTerrain;
+    }
+
     internal static List<GeneratedDecalRoad> GenerateForSpline(
         ParameterizedRoadSpline spline,
         DecalRoadLayerSet layerSet,
@@ -154,7 +191,8 @@ public class DecalRoadGenerator
         int terrainSizePixels,
         float terrainBaseHeight,
         float nodeSpacingMeters,
-        DecalRoadSettings settings)
+        DecalRoadSettings settings,
+        bool isGeneratedBridge = false)
     {
         var results = new List<GeneratedDecalRoad>();
         // Use master spline width for lateral offsets (cascade: MasterSplineWidth → RoadSurfaceWidth → RoadWidth)
@@ -245,7 +283,8 @@ public class DecalRoadGenerator
                             spline, roadWidth, splineName,
                             heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                             ref chunkIndex, results,
-                            seg.Material, seg.Width, seg.TextureLength);
+                            seg.Material, seg.Width, seg.TextureLength,
+                            isGeneratedBridge);
                     }
                 }
             }
@@ -265,7 +304,8 @@ public class DecalRoadGenerator
                         spline, roadWidth, splineName,
                         heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                         ref chunkIndex, results,
-                        seg.Material, seg.Width, seg.TextureLength);
+                        seg.Material, seg.Width, seg.TextureLength,
+                        isGeneratedBridge);
                 }
             }
         }
@@ -308,7 +348,8 @@ public class DecalRoadGenerator
                             spline, roadWidth, splineName,
                             heightMap, metersPerPixel, terrainSizePixels, terrainBaseHeight,
                             ref chunkIndex, results,
-                            seg.Material, seg.Width, seg.TextureLength);
+                            seg.Material, seg.Width, seg.TextureLength,
+                            isGeneratedBridge);
                     }
                 }
             }
@@ -335,132 +376,332 @@ public class DecalRoadGenerator
         ref int chunkIndex, List<GeneratedDecalRoad> results,
         string? overrideMaterial = null,
         float? overrideWidth = null,
-        float? overrideTextureLength = null)
+        float? overrideTextureLength = null,
+        bool isGeneratedBridge = false)
     {
         // Note: IsTrackWidth and IsLaneWidth take precedence over overrideWidth.
         // These modes mean "fill the road/lane width" which is geometry-driven,
         // not material-driven. The override only applies to fixed-width layers.
         var baseWidth = overrideWidth ?? layer.Width;
 
-        // Calculate laterally offset nodes and per-node widths using cross-section normals.
-        // When a WidthProfile is available, query per-section distance for varying road width;
-        // this enables DecalRoad overlays to widen/narrow with lane count changes.
-        var offsetNodes2D = new List<Vector2>(sections.Count);
-        var nodeWidths = new List<float>(sections.Count);
-        foreach (var cs in sections)
+        // Merged-corridor mode (plan doc 11, Phase 5): a node whose cross-section is inside a bridge span rides
+        // on the deck mesh, so its decal must project OverObjects (onto the deck's collision mesh) rather than
+        // the terrain — but ONLY that stretch. The section range is partitioned into contiguous
+        // road/bridge/tunnel runs and one DecalRoad is emitted per run, so the OverObjects flag hugs the
+        // physical deck extent instead of leaking across the whole spline (a ground stretch carrying
+        // OverObjects that passes UNDER another structure would project its markings onto the wrong deck),
+        // and the layer's render scope (RenderOnRoads/Bridges/Tunnels) can drop runs entirely.
+        // Legacy whole-spline bridges (isGeneratedBridge) are a single all-deck run.
+        // Tunnel runs project onto the tube floor collision when the mesh rule is on (Phase 5).
+        var runs = PartitionSectionsByStructure(spline, sections, isGeneratedBridge,
+            tunnelHasMesh: spline.Parameters.TunnelRules?.EnableTunnelMesh == true);
+
+        // ── V2 plan 0.5 hook seam ────────────────────────────────────────────────────────────────────────
+        // Bespoke bridge-DecalRoad rules land HERE: each run already knows (a) the spline, (b) its structure
+        // context (Road/Bridge/Tunnel + OnDeck, from StructureSpanId ≥ 0), and (c) the resolved layer.
+        // The render-scope filter below is the first consumer; the AI-layer structure filter below replaces
+        // AI decals over bridges/tunnels with an AI waypoint path (AiWaypointPathGenerator + map.json).
+        // Still planned (V2 plan "Later"): per-span deck materials/markings driven by
+        // StructureSegment.OsmTags. Keyed by UnifiedCrossSection.StructureSpanId ↔ network.BridgeSpans.
+        // Tunnels currently have no mesh/excavation — their runs are just tagged stretches of road; the
+        // scope filter still applies so tunnel-specific layers can be prepared ahead of full tunnel support.
+        // ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+        for (var runIndex = 0; runIndex < runs.Count; runIndex++)
         {
-            var sectionRoadWidth = spline.WidthProfile?.GetWidthsAtDistance(cs.DistanceAlongSpline).masterSpline
-                                   ?? roadWidth;
+            var (runStart, runEnd, context, onDeck) = runs[runIndex];
 
-            var offset = position * 0.5f * sectionRoadWidth;
-            var offsetPos = cs.CenterPoint + cs.NormalDirection * offset;
-            offsetNodes2D.Add(offsetPos);
+            // AI decals don't feed the navgraph reliably on structures (they project onto whatever
+            // surface lies beneath, so crossing roads break the path). Bridge/tunnel stretches are
+            // covered by the AI waypoint path instead — see the Generate() spline loop.
+            if (layer.LayerType == DecalRoadLayerType.AIRoad && context != StructureRunContext.Road)
+                continue;
 
-            float nodeWidth;
-            if (layer.IsTrackWidth)
-                nodeWidth = sectionRoadWidth;
-            else if (layer.IsLaneWidth)
-                nodeWidth = sectionRoadWidth / Math.Max(1, segLaneCount);
-            else
-                nodeWidth = baseWidth;
-            nodeWidths.Add(nodeWidth);
+            // Render-scope filter: skip runs whose structure context this layer excludes.
+            var rendersHere = context switch
+            {
+                StructureRunContext.Bridge => layer.RenderOnBridges,
+                StructureRunContext.Tunnel => layer.RenderOnTunnels,
+                _ => layer.RenderOnRoads
+            };
+            if (!rendersHere) continue;
+
+            var runSections = new List<UnifiedCrossSection>(runEnd - runStart + 1);
+            for (var s = runStart; s <= runEnd; s++)
+                runSections.Add(sections[s]);
+
+            // Calculate laterally offset nodes and per-node widths using cross-section normals.
+            // When a WidthProfile is available, query per-section distance for varying road width;
+            // this enables DecalRoad overlays to widen/narrow with lane count changes.
+            var offsetNodes2D = new List<Vector2>(runSections.Count);
+            var nodeWidths = new List<float>(runSections.Count);
+            foreach (var cs in runSections)
+            {
+                var sectionRoadWidth = spline.WidthProfile?.GetWidthsAtDistance(cs.DistanceAlongSpline).masterSpline
+                                       ?? roadWidth;
+
+                var offset = position * 0.5f * sectionRoadWidth;
+                var offsetPos = cs.CenterPoint + cs.NormalDirection * offset;
+                offsetNodes2D.Add(offsetPos);
+
+                float nodeWidth;
+                if (layer.IsTrackWidth)
+                    nodeWidth = sectionRoadWidth;
+                else if (layer.IsLaneWidth)
+                    nodeWidth = sectionRoadWidth / Math.Max(1, segLaneCount);
+                else
+                    nodeWidth = baseWidth;
+                nodeWidths.Add(nodeWidth);
+            }
+
+            // Convert all nodes to world coordinates with elevation from cross-sections
+            // (no corridor-based interruption — post-processor handles overlap detection)
+            var worldNodes = new List<float[]>(offsetNodes2D.Count);
+            var skippedNonFiniteNodes = 0;
+            for (var i = 0; i < offsetNodes2D.Count; i++)
+            {
+                var pos = offsetNodes2D[i];
+                var cs = runSections[i];
+
+                // Use TargetElevation from unified pipeline (smoothed/harmonized),
+                // matching MasterSplineExporter behavior exactly.
+                // IsFinite (not just !IsNaN): an Infinity elevation would pass the -1000 floor check
+                // and crash the JSON scene writer (System.Text.Json rejects non-finite numbers).
+                float elevation;
+                if (float.IsFinite(cs.TargetElevation) && cs.TargetElevation > -1000f)
+                    elevation = cs.TargetElevation;
+                else
+                    elevation = GetHeightMapElevation(heightMap, pos.X, pos.Y, metersPerPixel);
+
+                var worldPos = BeamNgCoordinateTransformer.TerrainToWorld(
+                    pos.X, pos.Y, elevation + terrainBaseHeight,
+                    terrainSizePixels, metersPerPixel);
+
+                // Degenerate-geometry guard: a NaN/Infinity node (e.g. NaN cross-section centers from a
+                // collapsed spline) would abort the ENTIRE terrain creation in the JSON scene writer.
+                if (!float.IsFinite(worldPos.X) || !float.IsFinite(worldPos.Y) ||
+                    !float.IsFinite(worldPos.Z) || !float.IsFinite(nodeWidths[i]))
+                {
+                    skippedNonFiniteNodes++;
+                    continue;
+                }
+
+                worldNodes.Add([worldPos.X, worldPos.Y, worldPos.Z, nodeWidths[i]]);
+            }
+
+            if (skippedNonFiniteNodes > 0)
+                TerrainCreationLogger.Current?.Detail(
+                    $"DecalRoad {splineName}_{layer.Name}: skipped {skippedNonFiniteNodes} non-finite node(s) " +
+                    "(degenerate spline geometry)");
+
+            if (worldNodes.Count < 2)
+                continue; // Not enough valid nodes for a DecalRoad — skip rather than emit broken JSON
+
+            // Reverse node order for flipped layers (right-side mirrored).
+            if (isFlipped)
+                worldNodes.Reverse();
+
+            chunkIndex++;
+            var name = $"{splineName}_{layer.Name}_{side}_{chunkIndex:D3}";
+
+            // Fades apply only at the geometric ends of the whole range; internal deck-boundary cut ends
+            // get 0 so markings continue seamlessly between approach and deck (same rule as ChunkNodes
+            // and the overlap post-processor use for their internal splits).
+            var geoStartFade = runIndex == 0 ? layer.FadeIn : 0f;
+            var geoEndFade = runIndex == runs.Count - 1 ? layer.FadeOut : 0f;
+            var startFade = isFlipped ? geoEndFade : geoStartFade;
+            var endFade = isFlipped ? geoStartFade : geoEndFade;
+
+            var road = new GeneratedDecalRoad
+            {
+                Name = name,
+                ParentGroupName = splineName,
+                Material = overrideMaterial ?? layer.Material,
+                TextureLength = overrideTextureLength ?? layer.TextureLength,
+                RenderPriority = layer.RenderPriority,
+                StartEndFade = [startFade, endFade],
+                DistanceFade = layer.DistanceFade,
+                Drivability = layer.Drivability,
+                IsAIRoad = layer.LayerType == DecalRoadLayerType.AIRoad,
+                LanesLeft = layer.LanesLeft,
+                LanesRight = layer.LanesRight,
+                OneWay = layer.OneWay,
+                FlipDirection = layer.FlipDirection,
+                GatedRoad = layer.GatedRoad,
+                OverObjects = layer.OverObjects || onDeck,
+                ImprovedSpline = layer.ImprovedSpline,
+                Smoothness = layer.Smoothness,
+                Detail = layer.Detail,
+                Nodes = worldNodes,
+                SplineId = spline.SplineId,
+                JunctionConstraint = layer.JunctionConstraint,
+                JunctionReplacementMaterial = layer.JunctionReplacementMaterial,
+                JunctionReplacementWidth = layer.JunctionReplacementWidth > 0
+                    ? layer.JunctionReplacementWidth : (overrideWidth ?? layer.Width),
+                JunctionReplacementTextureLength = layer.JunctionReplacementTextureLength > 0
+                    ? layer.JunctionReplacementTextureLength : (overrideTextureLength ?? layer.TextureLength),
+                IsRoundaboutRoad = spline.IsRoundabout,
+                PreserveContinuity = layer.LayerType == DecalRoadLayerType.DirectionDivider
+            };
+
+            // Override AI road properties from lane segment data.
+            // Only override when TotalLanes > 0 (explicit OSM lane tags exist).
+            // When TotalLanes is 0 (width-only OSM data, no lanes= tag), keep layer defaults
+            // so that LanesLeft/LanesRight come from the layer set rather than being zeroed out.
+            if (layer.LayerType == DecalRoadLayerType.AIRoad && segInfo is { TotalLanes: > 0 })
+            {
+                var (lanesRight, lanesLeft, oneWay, flipDirection) = DeriveAIRoadProperties(segInfo);
+                road.LanesRight = lanesRight;
+                road.LanesLeft = lanesLeft;
+                road.OneWay = oneWay;
+                road.FlipDirection = flipDirection;
+                road.AutoLanes = false; // Disable auto-computation when we set lanes explicitly
+            }
+
+            // Roundabout AI road: always one-way, use OSM lanes or default to 1
+            // Must run AFTER the segInfo override above (it overwrites those values)
+            if (layer.LayerType == DecalRoadLayerType.AIRoad && spline.IsRoundabout)
+            {
+                road.OneWay = true;
+                road.LanesLeft = 0;
+                // If we have lane info from OSM with explicit lanes, use total lanes as right lanes.
+                // TotalLanes can be 0 when OSM has width= but no lanes= tag — keep layer default.
+                if (segInfo != null && segInfo.TotalLanes > 0)
+                    road.LanesRight = segInfo.TotalLanes;
+                // Always disable auto-lane computation — we set lanes explicitly.
+                // Without this, BeamNG's auto-lane logic overrides OneWay and LanesLeft at runtime.
+                road.AutoLanes = false;
+            }
+
+            results.Add(road);
         }
-
-        // Convert all nodes to world coordinates with elevation from cross-sections
-        // (no corridor-based interruption — post-processor handles overlap detection)
-        var worldNodes = new List<float[]>(offsetNodes2D.Count);
-        for (var i = 0; i < offsetNodes2D.Count; i++)
-        {
-            var pos = offsetNodes2D[i];
-            var cs = sections[i];
-
-            // Use TargetElevation from unified pipeline (smoothed/harmonized),
-            // matching MasterSplineExporter behavior exactly
-            float elevation;
-            if (!float.IsNaN(cs.TargetElevation) && cs.TargetElevation > -1000f)
-                elevation = cs.TargetElevation;
-            else
-                elevation = GetHeightMapElevation(heightMap, pos.X, pos.Y, metersPerPixel);
-
-            var worldPos = BeamNgCoordinateTransformer.TerrainToWorld(
-                pos.X, pos.Y, elevation + terrainBaseHeight,
-                terrainSizePixels, metersPerPixel);
-            worldNodes.Add([worldPos.X, worldPos.Y, worldPos.Z, nodeWidths[i]]);
-        }
-
-        // Reverse node order for flipped layers (right-side mirrored).
-        if (isFlipped)
-            worldNodes.Reverse();
-
-        chunkIndex++;
-        var name = $"{splineName}_{layer.Name}_{side}_{chunkIndex:D3}";
-
-        var startFade = isFlipped ? layer.FadeOut : layer.FadeIn;
-        var endFade = isFlipped ? layer.FadeIn : layer.FadeOut;
-
-        var road = new GeneratedDecalRoad
-        {
-            Name = name,
-            ParentGroupName = splineName,
-            Material = overrideMaterial ?? layer.Material,
-            TextureLength = overrideTextureLength ?? layer.TextureLength,
-            RenderPriority = layer.RenderPriority,
-            StartEndFade = [startFade, endFade],
-            DistanceFade = layer.DistanceFade,
-            Drivability = layer.Drivability,
-            IsAIRoad = layer.LayerType == DecalRoadLayerType.AIRoad,
-            LanesLeft = layer.LanesLeft,
-            LanesRight = layer.LanesRight,
-            OneWay = layer.OneWay,
-            FlipDirection = layer.FlipDirection,
-            GatedRoad = layer.GatedRoad,
-            OverObjects = layer.OverObjects,
-            ImprovedSpline = layer.ImprovedSpline,
-            Smoothness = layer.Smoothness,
-            Detail = layer.Detail,
-            Nodes = worldNodes,
-            SplineId = spline.SplineId,
-            JunctionConstraint = layer.JunctionConstraint,
-            JunctionReplacementMaterial = layer.JunctionReplacementMaterial,
-            JunctionReplacementWidth = layer.JunctionReplacementWidth > 0
-                ? layer.JunctionReplacementWidth : (overrideWidth ?? layer.Width),
-            JunctionReplacementTextureLength = layer.JunctionReplacementTextureLength > 0
-                ? layer.JunctionReplacementTextureLength : (overrideTextureLength ?? layer.TextureLength),
-            IsRoundaboutRoad = spline.IsRoundabout,
-            PreserveContinuity = layer.LayerType == DecalRoadLayerType.DirectionDivider
-        };
-
-        // Override AI road properties from lane segment data.
-        // Only override when TotalLanes > 0 (explicit OSM lane tags exist).
-        // When TotalLanes is 0 (width-only OSM data, no lanes= tag), keep layer defaults
-        // so that LanesLeft/LanesRight come from the layer set rather than being zeroed out.
-        if (layer.LayerType == DecalRoadLayerType.AIRoad && segInfo is { TotalLanes: > 0 })
-        {
-            var (lanesRight, lanesLeft, oneWay, flipDirection) = DeriveAIRoadProperties(segInfo);
-            road.LanesRight = lanesRight;
-            road.LanesLeft = lanesLeft;
-            road.OneWay = oneWay;
-            road.FlipDirection = flipDirection;
-            road.AutoLanes = false; // Disable auto-computation when we set lanes explicitly
-        }
-
-        // Roundabout AI road: always one-way, use OSM lanes or default to 1
-        // Must run AFTER the segInfo override above (it overwrites those values)
-        if (layer.LayerType == DecalRoadLayerType.AIRoad && spline.IsRoundabout)
-        {
-            road.OneWay = true;
-            road.LanesLeft = 0;
-            // If we have lane info from OSM with explicit lanes, use total lanes as right lanes.
-            // TotalLanes can be 0 when OSM has width= but no lanes= tag — keep layer default.
-            if (segInfo != null && segInfo.TotalLanes > 0)
-                road.LanesRight = segInfo.TotalLanes;
-            // Always disable auto-lane computation — we set lanes explicitly.
-            // Without this, BeamNG's auto-lane logic overrides OneWay and LanesLeft at runtime.
-            road.AutoLanes = false;
-        }
-
-        results.Add(road);
     }
+
+    /// <summary>
+    ///     Partitions a section range into contiguous runs by structure context (road / bridge / tunnel),
+    ///     so each run becomes its own DecalRoad: OverObjects hugs the physical deck extent instead of
+    ///     flagging the whole spline, and the layer render scope (RenderOnRoads/Bridges/Tunnels) can drop
+    ///     runs entirely (V2 plan 0.5).
+    ///     <para>Structure runs are extended by two sections into their neighbours so adjacent pieces
+    ///     overlap by one full node span (two shared nodes) — a point-contact cut leaves a wedge-shaped
+    ///     gap in curves (see the extension loop below). The extra nodes over ground are harmless
+    ///     because decals still project onto terrain.</para>
+    ///     <para>BRIDGE spans always set <see cref="SectionRun.OnDeck" /> (the deck collision mesh is
+    ///     what OverObjects projects onto). Tunnel spans — tagged by
+    ///     <see cref="UnifiedRoadSmoother.TagStructureSpans" /> as well — set OnDeck only when
+    ///     <paramref name="tunnelHasMesh" /> (the tunnel mesh rule generates a tube whose floor is the
+    ///     collision surface, tunnel plan Phase 5); otherwise they keep scope filtering only.</para>
+    ///     <para>Legacy whole-spline structures: a generated bridge is a single all-deck run; a
+    ///     non-generated bridge/tunnel spline (stamped into terrain) is a single Bridge/Tunnel-context
+    ///     run without OnDeck, so render scopes still apply to it.</para>
+    /// </summary>
+    internal static List<SectionRun> PartitionSectionsByStructure(
+        ParameterizedRoadSpline spline,
+        IReadOnlyList<UnifiedCrossSection> sections,
+        bool isGeneratedBridge,
+        int structureRunExtension = 2,
+        bool tunnelHasMesh = false)
+    {
+        if (sections.Count == 0)
+            return [];
+
+        var last = sections.Count - 1;
+
+        // Legacy whole-spline generated bridge: the entire spline IS the deck.
+        if (isGeneratedBridge)
+            return [new SectionRun(0, last, StructureRunContext.Bridge, OnDeck: true)];
+
+        HashSet<int>? bridgeSpanIds = null;
+        HashSet<int>? tunnelSpanIds = null;
+        if (spline.StructureSegments is { Count: > 0 } segments)
+            foreach (var seg in segments)
+            {
+                if (seg.IsBridge)
+                    (bridgeSpanIds ??= []).Add(seg.SpanId);
+                else if (seg.IsTunnel)
+                    (tunnelSpanIds ??= []).Add(seg.SpanId);
+            }
+
+        // Fast path: no structure spans on this spline — a single whole-range run (the common case).
+        // Whole-spline legacy bridges/tunnels (not merged corridors) still carry their context so the
+        // render scope applies to them, but never OnDeck (no generated deck mesh exists).
+        if (bridgeSpanIds == null && tunnelSpanIds == null)
+        {
+            var wholeContext = spline.IsBridge ? StructureRunContext.Bridge
+                : spline.IsTunnel ? StructureRunContext.Tunnel
+                : StructureRunContext.Road;
+            return [new SectionRun(0, last, wholeContext, OnDeck: false)];
+        }
+
+        bool RunOnDeck(StructureRunContext context) =>
+            context == StructureRunContext.Bridge ||
+            (context == StructureRunContext.Tunnel && tunnelHasMesh);
+
+        var runs = new List<SectionRun>();
+        var runStart = 0;
+        var runContext = ClassifySection(sections[0], bridgeSpanIds, tunnelSpanIds);
+        for (var i = 1; i < sections.Count; i++)
+        {
+            var context = ClassifySection(sections[i], bridgeSpanIds, tunnelSpanIds);
+            if (context == runContext) continue;
+            runs.Add(new SectionRun(runStart, i - 1, runContext, RunOnDeck(runContext)));
+            runStart = i;
+            runContext = context;
+        }
+
+        runs.Add(new SectionRun(runStart, last, runContext, RunOnDeck(runContext)));
+
+        if (runs.Count == 1)
+            return runs;
+
+        // Extend structure runs TWO sections into their neighbours while the neighbour keeps its own
+        // end, so adjacent pieces OVERLAP by one full node span (two shared nodes). A cut that merely
+        // shares one node meets at a point: each piece's end segment straightens (the spline has no
+        // control point beyond its last node), and in curves the straightened tails diverge from the
+        // arc, leaving a wedge-shaped coverage gap. With a one-span overlap the neighbour's properly
+        // curved interior covers that tail — and since the overlap nodes are the SAME cross-sections,
+        // the pieces coincide and same-material double-draw is invisible.
+        // (AiWaypointPathGenerator passes extension 1 instead: the endpoint waypoint then sits ON the
+        // ground run's boundary section = the ground AI decal's end node, for the navgraph merge.)
+        for (var i = 0; i < runs.Count; i++)
+        {
+            if (runs[i].Context == StructureRunContext.Road) continue;
+            runs[i] = runs[i] with
+            {
+                Start = Math.Max(0, runs[i].Start - structureRunExtension),
+                End = Math.Min(last, runs[i].End + structureRunExtension)
+            };
+        }
+
+        // Drop runs too short to form a road (a short ground gap between two structure runs
+        // is already covered by both neighbours' extension).
+        runs.RemoveAll(r => r.End - r.Start < 1);
+        return runs;
+    }
+
+    private static StructureRunContext ClassifySection(
+        UnifiedCrossSection cs, HashSet<int>? bridgeSpanIds, HashSet<int>? tunnelSpanIds)
+    {
+        if (bridgeSpanIds != null && bridgeSpanIds.Contains(cs.StructureSpanId))
+            return StructureRunContext.Bridge;
+        if (tunnelSpanIds != null && tunnelSpanIds.Contains(cs.StructureSpanId))
+            return StructureRunContext.Tunnel;
+        return StructureRunContext.Road;
+    }
+
+    /// <summary>Structure context of a contiguous section run (see <see cref="PartitionSectionsByStructure" />).</summary>
+    internal enum StructureRunContext
+    {
+        Road,
+        Bridge,
+        Tunnel
+    }
+
+    /// <summary>
+    ///     One contiguous section run: inclusive [Start, End] indices into the section range, its structure
+    ///     context, and whether it rides a generated bridge deck (drives OverObjects).
+    /// </summary>
+    internal readonly record struct SectionRun(int Start, int End, StructureRunContext Context, bool OnDeck);
 
     /// <summary>
     ///     Computes constraint-filtered sub-ranges for a layer within [rangeStart, rangeEnd].
@@ -673,8 +914,11 @@ public class DecalRoadGenerator
 
     /// <summary>
     ///     Splits a node list into chunks of at most maxNodesPerChunk.
-    ///     Adjacent chunks share a boundary node (overlap by 1) to ensure
-    ///     seamless spline continuity, matching BeamNG's chunking behavior.
+    ///     Adjacent chunks share ONE boundary node, matching BeamNG's chunking behavior. Unlike the
+    ///     bridge/tunnel cuts (<see cref="PartitionSectionsByStructure" /> overlaps by a full node
+    ///     span there), chunk seams do NOT get the wider overlap: both chunk pieces follow the same
+    ///     terrain so no wedge gap appears, and a full-span overlap double-draws translucent layers
+    ///     (tread marks / wear), showing as a darker band across the road.
     ///     Avoids tiny last chunks (less than minLastChunkNodes) by redistributing
     ///     nodes evenly — prevents fade values from making short chunks invisible.
     /// </summary>
@@ -684,47 +928,42 @@ public class DecalRoadGenerator
         if (nodes.Count <= maxNodesPerChunk)
             return [nodes];
 
-        // Calculate how many chunks we need, accounting for overlap of 1
-        var stride = maxNodesPerChunk - 1;
-        var naiveChunkCount = (int)Math.Ceiling((double)(nodes.Count - 1) / stride);
+        // With C chunks of size S overlapping by k nodes, coverage is C*(S-k)+k nodes.
+        const int overlap = 1;
+        var stride = maxNodesPerChunk - overlap;
+        var naiveChunkCount = (int)Math.Ceiling((double)(nodes.Count - overlap) / stride);
 
         // Check if the last chunk would be too small
         var lastChunkSize = nodes.Count - (naiveChunkCount - 1) * stride;
         if (lastChunkSize < minLastChunkNodes && naiveChunkCount > 1)
         {
-            // Redistribute: use equal-sized chunks that all fit within maxNodesPerChunk
-            // Each chunk overlaps by 1, so total coverage = sum(chunkSize - 1) + 1 = nodes.Count
-            // With N chunks: N * (chunkSize - 1) + 1 = nodes.Count
-            // chunkSize = ceil((nodes.Count - 1) / N) + 1
-            var chunkSize = (int)Math.Ceiling((double)(nodes.Count - 1) / naiveChunkCount) + 1;
+            // Redistribute: equal-sized chunks that all fit within maxNodesPerChunk.
+            // C*(chunkSize-k)+k = nodes.Count → chunkSize = ceil((nodes.Count-k)/C) + k
+            var chunkSize = (int)Math.Ceiling((double)(nodes.Count - overlap) / naiveChunkCount) + overlap;
             chunkSize = Math.Min(chunkSize, maxNodesPerChunk);
 
-            var chunks = new List<List<float[]>>();
-            var i = 0;
-            while (i < nodes.Count)
-            {
-                var count = Math.Min(chunkSize, nodes.Count - i);
-                chunks.Add(nodes.GetRange(i, count));
-                i += count - 1; // overlap by 1
-                if (i >= nodes.Count - 1) break;
-            }
-
-            return chunks;
+            return BuildChunks(nodes, chunkSize, overlap);
         }
 
         // Standard chunking — last chunk is large enough
-        {
-            var chunks = new List<List<float[]>>();
-            var i = 0;
-            while (i < nodes.Count)
-            {
-                var count = Math.Min(maxNodesPerChunk, nodes.Count - i);
-                chunks.Add(nodes.GetRange(i, count));
-                i += maxNodesPerChunk - 1;
-            }
+        return BuildChunks(nodes, maxNodesPerChunk, overlap);
+    }
 
-            return chunks;
+    private static List<List<float[]>> BuildChunks(List<float[]> nodes, int chunkSize, int overlap)
+    {
+        var chunks = new List<List<float[]>>();
+        var i = 0;
+        while (true)
+        {
+            var count = Math.Min(chunkSize, nodes.Count - i);
+            chunks.Add(nodes.GetRange(i, count));
+            // Stop once the end is covered — advancing blindly by the stride can otherwise
+            // emit a degenerate 1–2 node tail chunk that duplicates already-covered nodes.
+            if (i + count >= nodes.Count) break;
+            i += count - overlap;
         }
+
+        return chunks;
     }
 
     /// <summary>

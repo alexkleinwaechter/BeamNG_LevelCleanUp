@@ -167,6 +167,52 @@ public class OsmBridgeIdentityTests
     }
 
     [Fact]
+    public void BridgeSpline_ExposesFullOsmTagBag_WhenExcludeBridgesTrue()
+    {
+        // Arrange: a bridge way carrying raw tags (bridge=yes, maxheight=4.5) that are NOT
+        // promoted to dedicated spline fields. D-6 requires the full tag dict on the spline.
+        var bbox = new GeoBoundingBox(
+            new GeoCoordinate(3.0, 42.4),
+            new GeoCoordinate(3.005, 42.405));
+
+        var road1 = CreateRoadFeature(1001, [
+            new GeoCoordinate(3.001, 42.402),
+            new GeoCoordinate(3.0015, 42.402),
+            new GeoCoordinate(3.002, 42.402)
+        ], [100, 101, 102]);
+
+        var bridgeFeature = CreateRoadFeature(1002, [
+            new GeoCoordinate(3.002, 42.402),
+            new GeoCoordinate(3.0025, 42.402),
+            new GeoCoordinate(3.003, 42.402)
+        ], [102, 103, 104], isBridge: true, layer: 1);
+        // Extra raw tags that only survive via the OsmTags bag.
+        bridgeFeature.Tags["maxheight"] = "4.5";
+
+        var road2 = CreateRoadFeature(1003, [
+            new GeoCoordinate(3.003, 42.402),
+            new GeoCoordinate(3.0035, 42.402),
+            new GeoCoordinate(3.004, 42.402)
+        ], [104, 105, 106]);
+
+        var processor = new OsmGeometryProcessor();
+
+        // Act: bridge mode (excludeBridges=true) — the mode in which decks are generated.
+        var splines = processor.ConvertLinesToSplines(
+            [road1, bridgeFeature, road2], bbox, terrainSize: 512, metersPerPixel: 1f,
+            excludeBridges: true, excludeTunnels: false,
+            disableSplineMerging: true);
+
+        // Assert: the bridge spline carries the full tag dict, including tags with no dedicated field.
+        var bridgeSpline = splines.FirstOrDefault(s => s.IsBridge);
+        Assert.NotNull(bridgeSpline);
+        Assert.NotNull(bridgeSpline.OsmTags);
+        Assert.Equal("yes", bridgeSpline.OsmTags!["bridge"]);
+        Assert.Equal("4.5", bridgeSpline.OsmTags["maxheight"]);
+        Assert.Equal("primary", bridgeSpline.OsmTags["highway"]);
+    }
+
+    [Fact]
     public void BridgeSpline_StillProtected_WhenExcludeBridgesTrue()
     {
         // Verify the existing behavior still works: with excludeBridges=true,

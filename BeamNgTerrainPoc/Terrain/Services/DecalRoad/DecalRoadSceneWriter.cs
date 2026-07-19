@@ -33,7 +33,7 @@ public class DecalRoadSceneWriter
         var groupDir = Path.Combine(missionGroupPath, GroupName);
 
         // 1. Ensure MT_decalroads SimGroup exists in parent
-        EnsureSimGroupInParent(parentItemsPath, "MissionGroup");
+        EnsureSimGroupInParent(parentItemsPath, GroupName, "MissionGroup");
 
         // 2. Group DecalRoads by parent spline group
         var bySpline = decalRoads.GroupBy(d => d.ParentGroupName).ToList();
@@ -88,10 +88,12 @@ public class DecalRoadSceneWriter
     }
 
     /// <summary>
-    /// Ensures a SimGroup entry for MT_decalroads exists in the parent items.level.json.
+    /// Ensures a SimGroup entry with the given name exists in the parent items.level.json.
     /// If a SimGroup with matching name already exists, it is left untouched (idempotent).
+    /// Shared with <see cref="AiWaypointSceneWriter"/>.
     /// </summary>
-    private void EnsureSimGroupInParent(string parentItemsPath, string parentGroupName)
+    internal static void EnsureSimGroupInParent(
+        string parentItemsPath, string groupName, string parentGroupName)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(parentItemsPath)!);
 
@@ -108,7 +110,7 @@ public class DecalRoadSceneWriter
                 using var doc = JsonDocument.Parse(line);
                 var root = doc.RootElement;
                 if (root.TryGetProperty("class", out var cls) && cls.GetString() == "SimGroup" &&
-                    root.TryGetProperty("name", out var name) && name.GetString() == GroupName)
+                    root.TryGetProperty("name", out var name) && name.GetString() == groupName)
                     return; // Already exists
             }
             catch (JsonException) { }
@@ -117,7 +119,7 @@ public class DecalRoadSceneWriter
         // Append the SimGroup entry
         var entry = new Dictionary<string, object>
         {
-            { "name", GroupName },
+            { "name", groupName },
             { "class", "SimGroup" },
             { "persistentId", Guid.NewGuid().ToString() },
             { "__parent", parentGroupName }
@@ -125,7 +127,7 @@ public class DecalRoadSceneWriter
         lines.Add(JsonSerializer.Serialize(entry));
         File.WriteAllLines(parentItemsPath, lines);
 
-        Console.WriteLine($"DecalRoadSceneWriter: Added '{GroupName}' SimGroup to {parentItemsPath}");
+        Console.WriteLine($"DecalRoadSceneWriter: Added '{groupName}' SimGroup to {parentItemsPath}");
     }
 
     private static JsonDict CreateDecalRoadEntry(GeneratedDecalRoad dr)

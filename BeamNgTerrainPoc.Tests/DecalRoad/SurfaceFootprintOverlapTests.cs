@@ -8,13 +8,18 @@ public class SurfaceFootprintOverlapTests
 {
     /// <summary>
     /// Creates a SplineSurfaceData for a straight horizontal road along X axis.
+    /// Surface elevation ramps linearly from zStart to zEnd (flat at 0 by default).
     /// </summary>
     private static SplineSurfaceData CreateStraightSurface(
-        int splineId, float roadWidth, float length = 100f, int pointCount = 11)
+        int splineId, float roadWidth, float length = 100f, int pointCount = 11,
+        float zStart = 0f, float zEnd = 0f)
     {
-        var points = new List<Vector2>();
+        var points = new List<Vector3>();
         for (int i = 0; i < pointCount; i++)
-            points.Add(new Vector2(length * i / (pointCount - 1), 0));
+        {
+            var frac = (float)i / (pointCount - 1);
+            points.Add(new Vector3(length * frac, 0, zStart + (zEnd - zStart) * frac));
+        }
 
         return new SplineSurfaceData
         {
@@ -33,7 +38,7 @@ public class SurfaceFootprintOverlapTests
         var index = new SurfaceFootprintIndex();
         index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f));
 
-        var (isOverlapping, _) = index.CheckPoint(50f, 3.0f, excludeSplineId: 99);
+        var (isOverlapping, _) = index.CheckPoint(50f, 3.0f, 0f, excludeSplineId: 99);
         Assert.True(isOverlapping);
     }
 
@@ -44,7 +49,7 @@ public class SurfaceFootprintOverlapTests
         var index = new SurfaceFootprintIndex();
         index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f));
 
-        var (isOverlapping, _) = index.CheckPoint(50f, 5.0f, excludeSplineId: 99);
+        var (isOverlapping, _) = index.CheckPoint(50f, 5.0f, 0f, excludeSplineId: 99);
         Assert.False(isOverlapping);
     }
 
@@ -55,7 +60,7 @@ public class SurfaceFootprintOverlapTests
         var index = new SurfaceFootprintIndex();
         index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f));
 
-        var (isOverlapping, _) = index.CheckPoint(50f, 1.0f, excludeSplineId: 1);
+        var (isOverlapping, _) = index.CheckPoint(50f, 1.0f, 0f, excludeSplineId: 1);
         Assert.False(isOverlapping);
     }
 
@@ -65,7 +70,7 @@ public class SurfaceFootprintOverlapTests
         var index = new SurfaceFootprintIndex();
         index.AddSplineSurface(CreateStraightSurface(splineId: 42, roadWidth: 7f));
 
-        var (isOverlapping, overlappingId) = index.CheckPoint(50f, 1.0f, excludeSplineId: 99);
+        var (isOverlapping, overlappingId) = index.CheckPoint(50f, 1.0f, 0f, excludeSplineId: 99);
         Assert.True(isOverlapping);
         Assert.Equal(42, overlappingId);
     }
@@ -80,7 +85,7 @@ public class SurfaceFootprintOverlapTests
         var index = new SurfaceFootprintIndex();
         index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f));
 
-        var (isOverlapping, _) = index.CheckPoint(50f, 3.0f, excludeSplineId: 99);
+        var (isOverlapping, _) = index.CheckPoint(50f, 3.0f, 0f, excludeSplineId: 99);
         Assert.True(isOverlapping, "Point at 3.0m should be inside 7m road (half-width 3.5m + margin)");
     }
 
@@ -90,8 +95,57 @@ public class SurfaceFootprintOverlapTests
         var index = new SurfaceFootprintIndex();
         index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f, length: 100f));
 
-        var (isOverlapping, _) = index.CheckPoint(110f, 0f, excludeSplineId: 99);
+        var (isOverlapping, _) = index.CheckPoint(110f, 0f, 0f, excludeSplineId: 99);
         Assert.False(isOverlapping);
+    }
+
+    // --- Vertical coplanarity tests (bridge/underpass crossings are not junctions) ---
+
+    [Fact]
+    public void CheckPoint_CrossingAboveSurface_NotDetected()
+    {
+        // Bridge deck node 5m above a road's surface: plan-inside but not coplanar
+        var index = new SurfaceFootprintIndex();
+        index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f));
+
+        var (isOverlapping, _) = index.CheckPoint(50f, 1.0f, 5f, excludeSplineId: 99);
+        Assert.False(isOverlapping);
+    }
+
+    [Fact]
+    public void CheckPoint_WithinVerticalTolerance_Detected()
+    {
+        // 0.9m above the surface — within the 1.0m coplanarity tolerance
+        var index = new SurfaceFootprintIndex();
+        index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f));
+
+        var (isOverlapping, _) = index.CheckPoint(50f, 1.0f, 0.9f, excludeSplineId: 99);
+        Assert.True(isOverlapping);
+    }
+
+    [Fact]
+    public void CheckPoint_JustBeyondVerticalTolerance_NotDetected()
+    {
+        var index = new SurfaceFootprintIndex();
+        index.AddSplineSurface(CreateStraightSurface(splineId: 1, roadWidth: 7f));
+
+        var (isOverlapping, _) = index.CheckPoint(50f, 1.0f, 1.5f, excludeSplineId: 99);
+        Assert.False(isOverlapping);
+    }
+
+    [Fact]
+    public void CheckPoint_SlopedSurface_InterpolatesZAlongSegment()
+    {
+        // Surface ramps 0→10m over 100m; at x=50 the surface is at z=5
+        var index = new SurfaceFootprintIndex();
+        index.AddSplineSurface(CreateStraightSurface(
+            splineId: 1, roadWidth: 7f, zStart: 0f, zEnd: 10f));
+
+        var (atSurface, _) = index.CheckPoint(50f, 1.0f, 5f, excludeSplineId: 99);
+        Assert.True(atSurface, "Point at the interpolated surface elevation should overlap");
+
+        var (belowSurface, _) = index.CheckPoint(50f, 1.0f, 0f, excludeSplineId: 99);
+        Assert.False(belowSurface, "Point 5m below the interpolated surface should not overlap");
     }
 
     // --- DecalRoadOverlapPostProcessor tests ---
@@ -183,6 +237,32 @@ public class SurfaceFootprintOverlapTests
 
         // All fragments should preserve the splineId
         Assert.All(results, r => Assert.Equal(2, r.SplineId));
+    }
+
+    [Fact]
+    public void Process_BridgeCrossingAbove_NotSplit()
+    {
+        // Same plan geometry as the split test, but the crossing line runs 6m
+        // ABOVE Road A's surface (a bridge deck marking over a street, or the
+        // street's marking under a deck). Plan-only overlap must not interrupt.
+        var bridgeLineNodes = Enumerable.Range(0, 13)
+            .Select(i => new float[] { 50f, -30f + i * 5f, 6f, 0.2f })
+            .ToList();
+
+        var bridgeLine = CreateTestRoad("bridge_edge", splineId: 2,
+            junctionConstraint: JunctionConstraintMode.Interrupt, nodes: bridgeLineNodes);
+
+        var surfaces = new List<SplineSurfaceData>
+        {
+            CreateStraightSurface(splineId: 1, roadWidth: 10f)
+        };
+
+        var results = DecalRoadOverlapPostProcessor.Process(
+            [bridgeLine], surfaces, null);
+
+        Assert.Single(results);
+        Assert.Equal("bridge_edge", results[0].Name);
+        Assert.Equal(13, results[0].Nodes.Count);
     }
 
     [Fact]

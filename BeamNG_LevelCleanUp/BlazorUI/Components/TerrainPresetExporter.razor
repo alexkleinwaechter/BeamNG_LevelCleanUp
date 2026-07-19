@@ -70,6 +70,16 @@
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
     [Parameter] public bool ExcludeBridgesFromTerrain { get; set; } = false;
     [Parameter] public bool ExcludeTunnelsFromTerrain { get; set; } = false;
+    [Parameter] public bool MergeStructuresIntoCorridor { get; set; } = false;
+    [Parameter] public float BridgeMaxSagBelowChordMeters { get; set; } = 1.0f;
+    [Parameter] public float BridgeDeckUndercutMeters { get; set; } = 0.05f;
+    [Parameter] public float BridgeDeckThicknessSpanRatio { get; set; } = 0.05f;
+    [Parameter] public float BridgeDeckThicknessMinMeters { get; set; } = 0.45f;
+    [Parameter] public float BridgeDeckThicknessMaxMeters { get; set; } = 1.2f;
+    [Parameter] public float BridgeParapetHeightMeters { get; set; } = 0.9f;
+    [Parameter] public float BridgeAbutmentDepthMeters { get; set; } = 1.0f;
+    [Parameter] public BridgeRuleSystemOptions? BridgeRules { get; set; }
+    [Parameter] public TunnelRuleSystemOptions? TunnelRules { get; set; }
     [Parameter] public HydraulicErosionSettings HydraulicErosion { get; set; } = new();
     [Parameter] public bool EnableBuildings { get; set; }
     [Parameter] public bool EnableBuildingClustering { get; set; }
@@ -468,6 +478,22 @@
                 ["enableCrossMaterialHarmonization"] = EnableCrossMaterialHarmonization,
                 ["excludeBridgesFromTerrain"] = ExcludeBridgesFromTerrain,
                 ["excludeTunnelsFromTerrain"] = ExcludeTunnelsFromTerrain,
+                ["mergeStructuresIntoCorridor"] = MergeStructuresIntoCorridor,
+                ["bridgeMaxSagBelowChordMeters"] = BridgeMaxSagBelowChordMeters,
+                ["bridgeDeckUndercutMeters"] = BridgeDeckUndercutMeters,
+                ["bridgeDeckThicknessSpanRatio"] = BridgeDeckThicknessSpanRatio,
+                ["bridgeDeckThicknessMinMeters"] = BridgeDeckThicknessMinMeters,
+                ["bridgeDeckThicknessMaxMeters"] = BridgeDeckThicknessMaxMeters,
+                ["bridgeParapetHeightMeters"] = BridgeParapetHeightMeters,
+                ["bridgeAbutmentDepthMeters"] = BridgeAbutmentDepthMeters,
+                // Bridge Rule System V2 (plan doc 01): the whole options object, flags + tunables.
+                ["bridgeRules"] = BridgeRules != null
+                    ? System.Text.Json.JsonSerializer.SerializeToNode(BridgeRules)
+                    : null,
+                // Tunnel rule system (tunnel plan 2026-07-18): same whole-object pattern.
+                ["tunnelRules"] = TunnelRules != null
+                    ? System.Text.Json.JsonSerializer.SerializeToNode(TunnelRules)
+                    : null,
                 ["hydraulicErosion"] = BuildHydraulicErosionOptions()
             },
             ["buildingOptions"] = BuildBuildingOptions(),
@@ -676,9 +702,9 @@
                 ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
                 ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,
                 ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
-                // No-blend tuning (Side-Road Transitions)
+                // No-blend tuning (Side-Road Transitions). No connectorGradeRampLengthMeters:
+                // the connector grade weld is always on and self-sizing, not a preset setting.
                 ["bankingRunoffSurfaceWidthMultiplier"] = mat.BankingRunoffSurfaceWidthMultiplier,
-                ["connectorGradeRampLengthMeters"] = mat.ConnectorGradeRampLengthMeters,
                 // Roundabout settings
                 ["enableRoundaboutDetection"] = mat.EnableRoundaboutDetection,
                 ["enableRoundaboutRoadTrimming"] = mat.EnableRoundaboutRoadTrimming,

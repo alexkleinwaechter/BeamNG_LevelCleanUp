@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**BeamNG Tools for Mapbuilders** is a Windows desktop application for BeamNG.drive modders and mapbuilders. Built with .NET 9, Windows Forms, and Blazor WebView, it provides tools to manage, optimize, and transform BeamNG map files (levels).
+**BeamNG Tools for Mapbuilders** is a Windows desktop application for BeamNG.drive modders and mapbuilders. Built with .NET 10, Windows Forms, and Blazor WebView, it provides tools to manage, optimize, and transform BeamNG map files (levels).
 
 Main features: Map Shrinker (remove unused assets), Rename Map, Copy Assets, Copy/Replace Terrain Materials (with groundcover), Convert TSStatic to Forest Items, and Generate Terrain from OSM/GeoTIFF data.
 
@@ -27,7 +27,7 @@ dotnet publish BeamNG_LevelCleanUp/BeamNG_LevelCleanUp.csproj -c Release -r win-
 build-installer.cmd
 ```
 
-**Important**: This is a Windows-only application targeting `net9.0-windows10.0.17763.0`. On non-Windows systems for static analysis only:
+**Important**: This is a Windows-only application targeting `net10.0-windows10.0.17763.0`. On non-Windows systems for static analysis only:
 ```bash
 dotnet restore /p:EnableWindowsTargeting=true
 dotnet build /p:EnableWindowsTargeting=true
@@ -395,7 +395,7 @@ Compiled DAE files (`.cdae`) cannot be parsed for material extraction. Workaroun
 Required at runtime but not bundled with installer. Windows 11 and recent Windows 10 have it pre-installed. Users on older systems must install from https://go.microsoft.com/fwlink/p/?LinkId=2124703.
 
 ### Cross-Platform Building
-Project targets `net9.0-windows10.0.17763.0`. Use `/p:EnableWindowsTargeting=true` for CI on Linux for code analysis only - binary won't run.
+Project targets `net10.0-windows10.0.17763.0`. Use `/p:EnableWindowsTargeting=true` for CI on Linux for code analysis only - binary won't run.
 
 ### Static Collections State
 `BeamFileReader` uses static collections (`Assets`, `MaterialsJson`) for performance. **Always call `BeamFileReader.Reset()` between operations** to clear stale data from previous map scans.
@@ -437,7 +437,8 @@ The `GenerateTerrain.razor` page uses `BeamNgTerrainPoc` library to generate Bea
 - Coordinate transformation (WGS84 → local terrain coordinates)
 - Road network analysis (junction detection, banking, elevation smoothing)
 - Material painting along roads
-- Automatic bridge/tunnel elevation handling (experimental)
+- Bridge generation ("Generate Bridges"): rule-based deck elevation planning, box deck/parapet/abutment/pier meshes (`MT_bridges`), always-on rule system (`BridgeRuleSystemOptions.EnableAllRules()` in-app; library/test defaults stay off = byte-identical baseline)
+- Tunnel generation ("Generate Tunnels", plan `ai_docs/2026-07-18_tunnel_generation/`): portal-anchored floor profile (`TunnelProfileSolver` → `network.TunnelSpans`), swept tube DAE with portal headwalls (`MT_tunnels`), terrain holes at portal mouths (`.ter` material byte 255 via `TerrainHoleCutter` — index 255 is reserved, materials must stay ≤ 0..254), portal aprons stamped to road Z, DecalRoads project onto the tube floor. Same default-off flag discipline (`TunnelRuleSystemOptions`). Span machinery is type-gated: `UnifiedCrossSection.StructureSpanType` keeps tunnel spans out of the bridge deck pipeline
 
 **Pipeline flow:**
 `TerrainGenerationOrchestrator` → Material processing → OSM fetch → Coordinate transform → Heightmap generation → Road creation → Post-processing
@@ -456,7 +457,6 @@ Uses `AutoUpdater.NET` package:
 
 ## Branch Strategy
 
-Current branch: `feature/bridge_tunnel_splines`
 Main development branch: `develop`
 
 When creating PRs, target `develop` branch.

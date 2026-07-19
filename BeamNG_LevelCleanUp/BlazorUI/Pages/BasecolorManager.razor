@@ -103,6 +103,15 @@
 
                     <MudTabPanel Text="BaseColor Mode" Icon="@Icons.Material.Filled.Palette">
                         <MudGrid Spacing="3">
+                            @if (!string.IsNullOrWhiteSpace(_bakeStaleReason))
+                            {
+                                <MudItem xs="12">
+                                    <MudAlert Severity="Severity.Warning" Dense="true" Icon="@Icons.Material.Filled.Sync">
+                                        @_bakeStaleReason The baked BaseColor maps no longer match the level.
+                                        Use "Reset &amp; Rebake" to restore the Paint Mode textures, reload the terrain layers and bake again.
+                                    </MudAlert>
+                                </MudItem>
+                            }
                             <MudItem xs="12" md="8">
                                 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
                                     <MudTextField T="string" ValueChanged="OnSearch" Immediate="true" DebounceInterval="250"
@@ -131,6 +140,19 @@
                                         }
                                         @(_settings.CurrentMode == BasecolorMode.BaseColorMode ? "Regenerate BaseColor Mode" : "Activate BaseColor Mode")
                                     </MudButton>
+                                    @if (_settings.CurrentMode == BasecolorMode.BaseColorMode)
+                                    {
+                                        <MudTooltip Text="Restores the Paint Mode per-material textures, reloads the terrain layers from disk, refreshes the map tile overlay if one is used, and bakes the BaseColor maps again.">
+                                            <MudButton OnClick="ResetAndRebakeBaseColorMode" Color="Color.Secondary" Variant="Variant.Filled"
+                                                       StartIcon="@Icons.Material.Filled.RestartAlt" Disabled="@(!CanApply())">
+                                                @if (IsOperation(OperationResetRebake))
+                                                {
+                                                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                                }
+                                                Reset &amp; Rebake
+                                            </MudButton>
+                                        </MudTooltip>
+                                    }
                                 </MudStack>
 
                                 <MudPaper Outlined="true" Class="pa-3 mb-3">
@@ -156,6 +178,21 @@
                                                         <MudSelectItem Value="@provider.Name">@provider.Name</MudSelectItem>
                                                     }
                                                 </MudSelect>
+                                                @if (SelectedTileProviderSupportsHistoricalDate)
+                                                {
+                                                    <MudDatePicker Date="@SelectedTileImageryDate"
+                                                                   DateChanged="OnTileImageryDateChanged"
+                                                                   Label="Imagery date"
+                                                                   DateFormat="yyyy-MM-dd"
+                                                                   MaxDate="@DateTime.Today"
+                                                                   Editable="true"
+                                                                   Variant="Variant.Outlined"
+                                                                   Disabled="@IsBusy"
+                                                                   Class="mt-2" />
+                                                    <MudText Typo="Typo.caption">
+                                                        Uses the latest available Wayback release on or before this date.
+                                                    </MudText>
+                                                }
                                                 @if (!string.IsNullOrWhiteSpace(_settings.BasecolorModeSettings.OverlaySettings.CachedTileImagePath))
                                                 {
                                                     <MudCheckBox T="bool" Value="_settings.BasecolorModeSettings.OverlaySettings.UseTileProvider"

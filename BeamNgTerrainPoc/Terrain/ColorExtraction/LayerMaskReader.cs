@@ -1,3 +1,4 @@
+using BeamNgTerrainPoc.Terrain.Processing;
 using Grille.BeamNG.IO.Binary;
 
 namespace BeamNgTerrainPoc.Terrain.ColorExtraction;
@@ -8,9 +9,9 @@ namespace BeamNgTerrainPoc.Terrain.ColorExtraction;
 public static class LayerMaskReader
 {
     /// <summary>
-    /// Material index value indicating a terrain hole.
+    /// Material index value indicating a terrain hole (shared sentinel).
     /// </summary>
-    private const byte HoleMaterialIndex = 255;
+    private const byte HoleMaterialIndex = TerrainHoleCutter.HoleMaterialIndex;
 
     /// <summary>
     /// Reads layer masks from a terrain .ter file.

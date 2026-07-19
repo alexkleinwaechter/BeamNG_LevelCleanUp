@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Text.Json;
 using BeamNG.Procedural3D.RoadMesh;
+using BeamNgTerrainPoc.Terrain.Algorithms;
 using BeamNgTerrainPoc.Terrain.Export;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
+using BeamNgTerrainPoc.Terrain.Osm.Models;
 using BeamNgTerrainPoc.Terrain.Processing;
 using BeamNgTerrainPoc.Terrain.Services;
 using BeamNgTerrainPoc.Terrain.Services.DecalRoad;
@@ -346,6 +348,144 @@ public class TerrainCreator
                 perfLog.Timing($"Spawn point extraction: {sw.ElapsedMilliseconds}ms");
             }
 
+            // 3b-bridge. Bridge elevation/continuity (plan doc 05). Runs before DecalRoad generation AND
+            // deck export so both consumers read identical bridge-deck elevations (one source of truth —
+            // this is what removed the old export-time endpoint band-aid and the deck/marking divergence).
+            if (unifiedResult?.Network != null &&
+                HasBridgeDeckWork(unifiedResult.Network))
+            {
+                // Step 1 gate (read-only): pre-override per-seam Z/grade/heading/normal/XY-gap so we can
+                // see whether the residual artifact is vertical, positional, or orientation.
+                BridgeProfileSolver.DiagnoseSeams(unifiedResult.Network);
+
+                // Merged corridors (plan doc 14 Phase D): the deck Z is now an INPUT to smoothing — the
+                // rule engine (BridgeElevationPlanner) decided it and PINNED it pre-smoothing (Phase 1.85),
+                // and the smoother already grew the rising approach ramps to it. So we do NOT re-run the
+                // veto/dip decision here (PlanConstraints) and we feed RefineSpans no interior constraints;
+                // the planner's stashed plan drives the post-smoothing dips below. Legacy whole-spline
+                // bridges (flag off) keep emitting priority-veto interior constraints for the solver to arch
+                // over (retired in Phase F). deckProfile measures clearance to the deck SOFFIT (top −
+                // thickness) since the 3D box hangs `thickness` below the solved deck-top Z.
+                var bridgeDeckProfile = BuildBridgeDeckProfile(parameters);
+                var hasMergedSpans = unifiedResult.Network.CrossSections.Any(c =>
+                    c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge);
+                // Amendment 03 (sparse floor constraints): the planner emitted no pins — feed RefineSpans
+                // the plan's typed budgets as interior FLOORS instead, so the span re-curve from the
+                // solved approaches arches over each crossing only where the natural curve is short
+                // (overshoot allowed). Without the flag, merged corridors pass null (the pin already
+                // raised the deck) and legacy corridors keep PlanConstraints.
+                var sparseFloors = hasMergedSpans &&
+                                   parameters.BridgeRules?.EnableSparseDeckConstraints == true;
+                var gradeSepConstraints = hasMergedSpans
+                    ? sparseFloors
+                        ? GradeSeparationResolver.PlanFloorConstraints(
+                            unifiedResult.Network, deckProfile: bridgeDeckProfile)
+                        : null
+                    : GradeSeparationResolver.PlanConstraints(
+                        unifiedResult.Network, parameters.GetBridgeRules().RoadClearanceMeters,
+                        deckProfile: bridgeDeckProfile);
+
+                // RefineSpans: re-curve the (already-pinned, ramp-matched) span into a clean G0+G1 deck and
+                // capture its snapshot. On legacy corridors it still resolves the deck height + honours the
+                // veto constraints. Runs before DecalRoad gen + deck export so both read identical elevations.
+                BridgeProfileSolver.RefineSpans(unifiedResult.Network,
+                    maxSagBelowChordMeters: parameters.BridgeMaxSagBelowChordMeters,
+                    interiorConstraints: gradeSepConstraints);
+
+                // Doc 14 (d): deck-to-deck seam metric AFTER the span refine — one line per recorded
+                // bridge→bridge landing with the FINAL zGap/gradeΔ at the merge (58's end at j106:
+                // ≈ +1.5 m baseline, ≈ 0 with EnableDeckToDeckContinuity). Read-only.
+                BridgeProfileSolver.DiagnoseDeckToDeckSeams(unifiedResult.Network);
+
+                // Doc 07 follow-up (render: gouge beside a bridge start): the four post-blend terrain passes
+                // below sculpt heightMap2D to the bridge deck profile. Where an abutment sits beside/over
+                // ANOTHER road they would overwrite that road's painted surface. Build an owner map of every
+                // road's painted surface (SurfaceWidth) ONCE; each pass then shapes only its own structure's
+                // footprint + bare terrain and skips cells owned by a different spline.
+                var roadSurfaceOwner = RoadSurfaceOwnerRaster.Build(
+                    unifiedResult.Network, heightMap2D.GetLength(0), heightMap2D.GetLength(1),
+                    parameters.MetersPerPixel);
+
+                // Doc 09 §9.2: deck footprints as a RAISE guard — one bridge's abutment tongue /
+                // approach fill must never raise terrain over another bridge's deck. Raising passes
+                // only; the lowering passes (dips, excavator) stay unguarded by this raster on purpose.
+                var deckFootprint = BridgeDeckFootprintRaster.Build(
+                    unifiedResult.Network, heightMap2D.GetLength(0), heightMap2D.GetLength(1),
+                    parameters.MetersPerPixel);
+
+                // Doc 09 C4: the post-solve raise measured clearance against the dam-lifted solved road
+                // (the feedback loop). With the natural-profile anchor holding lower roads at their
+                // natural elevation, deck clearance holds by construction — skip the raise (kept for
+                // legacy flag-off maps) and replace it with a read-only clearance assertion (C5).
+                var anchorOn = unifiedResult.Network.Splines.Any(s =>
+                    s.Parameters.BridgeRules?.EnableNaturalProfileAnchor == true);
+                if (!anchorOn)
+                    GradeSeparationResolver.ApplyApproachRaiseRamps(
+                        unifiedResult.Network, heightMap2D, parameters.MetersPerPixel,
+                        roadSurfaceOwner: roadSurfaceOwner, deckFootprint: deckFootprint);
+                else
+                    GradeSeparationResolver.AssertCrossingClearances(unifiedResult.Network);
+
+                // Post-solver: the deck Z is now final. On merged corridors the planner already decided who
+                // moves, so this dips ONLY its "dip"/"split" crossings against the final stamped deck Z, with
+                // the precise user clearance + deck thickness (the pin used the planner default) — Rule-1
+                // raise/veto crossings are left alone. On legacy corridors it dips every non-veto crossing
+                // that still doesn't clear (eased, no grade clamp — D-3a). heightMap2D is passed so the dip
+                // is carved into the DRIVEN terrain surface, not just the cross-sections (the road was
+                // already stamped during Phase-4 blending).
+                GradeSeparationResolver.ApplyLowerRoadDips(
+                    unifiedResult.Network, heightMap2D, parameters.MetersPerPixel,
+                    parameters.GetBridgeRules().RoadClearanceMeters, deckProfile: bridgeDeckProfile,
+                    roadSurfaceOwner: roadSurfaceOwner);
+
+                // Doc 06 §3.1: stamp the abutment overlap tongues — the terrain runs CONTINUOUSLY from each
+                // approach onto the first/last ~3 m of the span at deckZ − drop, closing the cap hole the
+                // mask exclusion boundary leaves (a butt-joint at 1 m raster can never be gap-free; overlap
+                // can). Post-solve so it reads the same final deck Z the mesh uses; raise-only; runs BEFORE
+                // the excavator, which exempts the overlap zone below. Sparse-gated per span inside.
+                BridgeAbutmentOverlapStamper.Stamp(
+                    unifiedResult.Network, heightMap2D, parameters.MetersPerPixel,
+                    roadSurfaceOwner: roadSurfaceOwner, deckFootprint: deckFootprint);
+
+                // Shave only the terrain that pokes ABOVE the deck driving surface (deckZ − undercut).
+                // The D-5 soffit-clearance carve was rolled back (it dug a deep ragged channel and broke the
+                // road↔bridge transition at the abutments and side-road crossings); we do NOT reopen daylight
+                // under the deck right now — the deck box just sits on natural terrain. Re-enable a redesigned
+                // under-deck excavation later. Runs after the profile override (reads the final deck Z) and
+                // mutates heightMap2D before terrain assembly so it lands in the .ter.
+                var sparseOverlap = parameters.BridgeRules?.EnableSparseDeckConstraints == true
+                    ? parameters.BridgeRules
+                    : null;
+                BridgeDeckExcavator.Excavate(unifiedResult.Network, heightMap2D, parameters.MetersPerPixel,
+                    undercutMeters: parameters.BridgeDeckUndercutMeters,
+                    abutmentOverlapMeters: sparseOverlap?.AbutmentOverlapMeters ?? 0f,
+                    abutmentOverlapDropMeters: sparseOverlap?.AbutmentOverlapDropMeters ?? 0f,
+                    roadSurfaceOwner: roadSurfaceOwner);
+            }
+
+            // 3b-tunnel (tunnel plan Phase 2, ai_docs/2026-07-18): portal-anchored floor profile +
+            // portal apron stamping. Runs after the bridge block (bridge elevations final) and BEFORE
+            // the DAM report / DecalRoad generation, so every consumer reads identical tunnel-floor
+            // elevations (the bridge single-source contract, mirrored).
+            if (unifiedResult?.Network != null && HasTunnelWork(unifiedResult.Network))
+            {
+                TunnelProfileSolver.RefineSpans(unifiedResult.Network);
+
+                var tunnelSurfaceOwner = RoadSurfaceOwnerRaster.Build(
+                    unifiedResult.Network, heightMap2D.GetLength(0), heightMap2D.GetLength(1),
+                    parameters.MetersPerPixel);
+                TunnelPortalApronStamper.Stamp(
+                    unifiedResult.Network, heightMap2D, parameters.MetersPerPixel,
+                    roadSurfaceOwner: tunnelSurfaceOwner);
+            }
+
+            // Doc 08 §5 D2: post-solve "dam report" — per-spline deviation of the FINAL road profile from
+            // the A0 natural estimate. TargetElevation is final here (ApplyApproachRaiseRamps and
+            // ApplyLowerRoadDips above were the last elevation writers; the stamper/excavator only touch
+            // the heightmap). Runs with AND without bridge work so a regen pair is directly comparable.
+            if (unifiedResult?.Network != null)
+                RoadElevationDeviationReport.Emit(unifiedResult.Network);
+
             // 3c. Generate DecalRoads (requires unified network and heightmap)
             perfLog.Info($"DecalRoad check: unifiedResult null={unifiedResult == null}, " +
                          $"Network null={unifiedResult?.Network == null}, " +
@@ -361,6 +501,7 @@ public class TerrainCreator
                 var appDataDefaults = parameters.DecalRoadAppDataDefaults
                     ?? Services.DecalRoad.DecalRoadDefaultLayerSets.GetDefaults();
 
+                var aiWaypointSegments = new List<Models.DecalRoad.GeneratedAiWaypointSegment>();
                 var decalRoads = Services.DecalRoad.DecalRoadGenerator.Generate(
                     unifiedResult.Network,
                     heightMap2D,
@@ -368,13 +509,13 @@ public class TerrainCreator
                     parameters.Size,
                     parameters.TerrainBaseHeight,
                     parameters.DecalRoadSettings,
-                    appDataDefaults);
+                    appDataDefaults,
+                    aiWaypointSegments);
 
                 perfLog.Info($"DecalRoadGenerator.Generate returned {decalRoads.Count} roads");
+                var levelDir = Path.GetDirectoryName(outputPath)!;
                 if (decalRoads.Count > 0)
                 {
-                    var levelDir = Path.GetDirectoryName(outputPath)!;
-
                     // Clean previous DecalRoads to avoid duplicates on re-generation
                     Services.DecalRoad.DecalRoadSceneWriter.CleanPrevious(levelDir);
 
@@ -388,7 +529,41 @@ public class TerrainCreator
                     perfLog.Info("DecalRoadGenerator returned 0 roads — check layer set resolution and spline data");
                 }
 
+                // AI waypoint paths over bridges/tunnels (replaces the AI decal there).
+                // Always clean + merge so stale waypoints/segments from a previous run disappear
+                // when the network no longer has structures.
+                Services.DecalRoad.AiWaypointSceneWriter.CleanPrevious(levelDir);
+                if (aiWaypointSegments.Count > 0)
+                {
+                    var wpWritten = new Services.DecalRoad.AiWaypointSceneWriter()
+                        .WriteAll(aiWaypointSegments, levelDir);
+                    perfLog.Info(
+                        $"Generated {wpWritten} AI waypoints in {aiWaypointSegments.Count} bridge/tunnel segments");
+                }
+
+                Services.DecalRoad.AiMapJsonWriter.Write(aiWaypointSegments, levelDir);
+
                 perfLog.Timing($"DecalRoad generation: {sw.ElapsedMilliseconds}ms");
+            }
+
+            // 3a-3. Export bridge decks — independent of ExportRoadMeshDae; gated on the presence of
+            // "generate bridge" splines (IsBridge && ExcludeBridgesFromTerrain, per decision D1).
+            // Clean first so stale bridge output from a previous run is removed when bridge generation is off.
+            CleanBridgeOutputDirectories(outputPath);
+            if (unifiedResult?.Network != null &&
+                HasBridgeDeckWork(unifiedResult.Network))
+            {
+                // heightMap2D is FINAL here (excavator/dam stampers ran above) — doc 19 §1: piers must
+                // stand on the carved ground, so the exporter samples it at export time.
+                await ExportBridgeDecksAsync(unifiedResult.Network, outputPath, parameters, perfLog, heightMap2D);
+            }
+
+            // 3a-4. Export tunnel tubes (tunnel plan Phase 3) — one DAE + TSStatic per captured
+            // TunnelSpan. Clean first so stale tunnel output disappears when tunnel generation is off.
+            CleanTunnelOutputDirectories(outputPath);
+            if (unifiedResult?.Network is { TunnelSpans.Count: > 0 })
+            {
+                await ExportTunnelsAsync(unifiedResult.Network, outputPath, parameters, perfLog);
             }
 
             // Populate output properties for downstream use (re-generation)
@@ -432,11 +607,44 @@ public class TerrainCreator
                 parameters.Size);
             perfLog.Timing($"MaterialLayerProcessor.ProcessMaterialLayers: {sw.ElapsedMilliseconds}ms");
 
-            // 5. Create Grille.BeamNG.Lib Terrain object
-            perfLog.Info("Building terrain data structure...");
             var materialNames = parameters.Materials
                 .Select(m => m.MaterialName)
                 .ToList();
+
+            // 4b. Doc 07: repaint the terrain material under each bridge deck footprint so material-keyed
+            // billboard/groundcover vegetation can't grow through the deck (doc 06 tucks terrain tight under
+            // it). Runs AFTER all road material painting so the repaint wins under the deck; only "tight"
+            // cells within the clearance below the deck are touched, so ravines/water under tall spans keep
+            // their natural material. No-op (warned) when no material is selected or it isn't in the list.
+            if (unifiedResult?.Network != null && HasBridgeDeckWork(unifiedResult.Network))
+            {
+                BridgeUnderDeckMaterialPainter.Paint(
+                    unifiedResult.Network,
+                    heightMap2D,
+                    materialIndices,
+                    parameters.MetersPerPixel,
+                    parameters.BridgeRules?.UnderDeckMaterialName,
+                    materialNames,
+                    parameters.BridgeRules?.UnderDeckPaintClearanceMeters ?? 1.0f);
+            }
+
+            // 4c. Tunnel portal holes (tunnel plan Phase 4): stamp hole cells (byte 255) into the
+            // material grid AFTER all painters (nothing may repaint over holes) and BEFORE terrain
+            // assembly. Cells where the final heightmap passes through the tube, plus the portal-mouth
+            // wall; guarded so crossing surface roads above the tunnel are never holed.
+            if (unifiedResult?.Network is { TunnelSpans.Count: > 0 })
+            {
+                var holeSurfaceOwner = RoadSurfaceOwnerRaster.Build(
+                    unifiedResult.Network, heightMap2D.GetLength(0), heightMap2D.GetLength(1),
+                    parameters.MetersPerPixel);
+                TunnelPortalHoleProvider.CutPortalHoles(
+                    unifiedResult.Network, heightMap2D, materialIndices,
+                    parameters.Size, parameters.MetersPerPixel,
+                    roadSurfaceOwner: holeSurfaceOwner);
+            }
+
+            // 5. Create Grille.BeamNG.Lib Terrain object
+            perfLog.Info("Building terrain data structure...");
 
             var terrain = new Grille.BeamNG.Terrain(
                 parameters.Size,
@@ -541,11 +749,15 @@ public class TerrainCreator
                     spikeFixCount++;
                 }
                 
+                // Holes (tunnel portals / imported hole maps) are stamped into materialIndices as
+                // byte 255 — surface truthfully as IsHole instead of a fake material index. Heights
+                // under holes stay meaningful (portal floor).
+                var isHole = materialIndices[i] == TerrainHoleCutter.HoleMaterialIndex;
                 terrain.Data[i] = new TerrainData
                 {
                     Height = height,
-                    Material = materialIndices[i],
-                    IsHole = false
+                    Material = isHole ? (byte)0 : materialIndices[i],
+                    IsHole = isHole
                 };
             }
             
@@ -688,12 +900,6 @@ public class TerrainCreator
     {
         // Convert 1D heightmap to 2D (already flipped by HeightmapProcessor)
         var heightMap2D = ConvertTo2DArray(heightMap1D, size);
-
-        // Configure structure elevation parameters if provided
-        if (terrainParameters != null)
-        {
-            _unifiedRoadSmoother.ConfigureStructureElevationParameters(terrainParameters);
-        }
 
         var decalRoadSettings = terrainParameters?.DecalRoadSettings;
         var appDataDefaults = terrainParameters?.DecalRoadAppDataDefaults
@@ -1147,6 +1353,205 @@ public class TerrainCreator
             log.Warning($"Failed to export road mesh DAE: {ex.Message}");
             log.Detail($"Stack trace: {ex.StackTrace}");
             // Don't throw - this is optional output, terrain generation should continue
+        }
+    }
+
+    /// <summary>
+    ///     Single source of truth for the bridge-deck box profile (E-B Stage 6). Maps the param-driven deck
+    ///     knobs onto a <see cref="BridgeDeckProfile" /> so the under-deck excavation (soffit the terrain is
+    ///     daylighted under) and the 3D deck mesh (its actual soffit) are computed from the SAME values.
+    ///     Abutment + parapet-width fields keep <see cref="BridgeDeckProfile" /> defaults.
+    /// </summary>
+    private static BridgeDeckProfile BuildBridgeDeckProfile(TerrainCreationParameters p)
+        => new()
+        {
+            DeckThicknessSpanRatio = p.BridgeDeckThicknessSpanRatio,
+            DeckThicknessMinMeters = p.BridgeDeckThicknessMinMeters,
+            DeckThicknessMaxMeters = p.BridgeDeckThicknessMaxMeters,
+            ParapetHeightMeters = p.BridgeParapetHeightMeters,
+            AbutmentDepthMeters = p.BridgeAbutmentDepthMeters,
+            // GenerateAbutments, parapet base/top widths keep BridgeDeckProfile defaults.
+        };
+
+    /// <summary>
+    ///     Exports bridge decks: one flat deck <c>.dae</c> + one <c>TSStatic</c> per "generate bridge" spline
+    ///     (<c>IsBridge &amp;&amp; ExcludeBridgesFromTerrain</c>), plus a placeholder material and the
+    ///     <c>MT_bridges</c> SimGroup. The deck consumes the bridge cross-sections' solved (banking-aware)
+    ///     elevations, so it spans the gap and meets the approach roads. Terrain underneath stays untouched.
+    ///     Mirrors the road-mesh/DecalRoad scene-writing convention (level dir = directory of the .ter file).
+    /// </summary>
+    private async Task ExportBridgeDecksAsync(
+        UnifiedRoadNetwork network,
+        string outputPath,
+        TerrainCreationParameters parameters,
+        TerrainCreationLogger log,
+        float[,]? heightMap2D = null)
+    {
+        var sw = Stopwatch.StartNew();
+        log.LogSection("Bridge Deck Export");
+
+        try
+        {
+            var levelDir = Path.GetDirectoryName(outputPath)!;
+            var levelName = ExtractLevelName(outputPath);
+            var shapesDir = Path.Combine(levelDir, "art", "shapes", "MT_bridges");
+            var shapePath = $"/levels/{levelName}/art/shapes/MT_bridges/";
+            var groupDir = Path.Combine(levelDir, "main", "MissionGroup", "MT_bridges");
+
+            // 1. Deck meshes — one .dae per bridge (world coordinates, Z-up).
+            var deckResult = await Task.Run(() => new BridgeDeckDaeExporter().Export(
+                network, shapesDir, parameters.Size, parameters.MetersPerPixel, parameters.TerrainBaseHeight,
+                profile: BuildBridgeDeckProfile(parameters),
+                heightMap: heightMap2D));
+
+            foreach (var warning in deckResult.Warnings)
+                log.Warning($"  {warning}");
+
+            if (deckResult.Decks.Count == 0)
+            {
+                log.Info("No bridge decks generated (no qualifying bridge splines with solved geometry).");
+                return;
+            }
+
+            var writer = new BridgeSceneWriter();
+
+            // 2. Placeholder material next to the decks so the surface renders.
+            writer.WritePlaceholderMaterial(Path.Combine(shapesDir, "main.materials.json"));
+
+            // 3. Scene: ensure MT_bridges SimGroup in the parent, then one TSStatic per deck.
+            var parentItemsPath = Path.Combine(levelDir, "main", "MissionGroup", "items.level.json");
+            var groupItemsPath = Path.Combine(groupDir, "items.level.json");
+            writer.EnsureSimGroupInParent(parentItemsPath, "MissionGroup");
+            var written = writer.WriteSceneItems(deckResult.Decks, groupItemsPath, shapePath);
+
+            log.Info($"Bridge deck export: {deckResult.Decks.Count} deck(s) written ({written} TSStatic), " +
+                     $"{deckResult.TotalVertices:N0} verts, {deckResult.TotalTriangles:N0} tris, " +
+                     $"{deckResult.TotalPiers} pier(s), {deckResult.BridgesSkipped} skipped.");
+            log.Timing($"Bridge deck export: {sw.ElapsedMilliseconds}ms");
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Failed to export bridge decks: {ex.Message}");
+            log.Detail($"Stack trace: {ex.StackTrace}");
+            // Don't throw - terrain generation should continue.
+        }
+    }
+
+    /// <summary>
+    ///     True if the network has bridge-deck work to do: a legacy whole-spline generated bridge
+    ///     (<see cref="BridgeDeckDaeExporter.ShouldGenerateDeck"/>), OR — merged-corridor mode (plan doc 11) —
+    ///     any cross-section tagged with a bridge span (<see cref="UnifiedCrossSection.StructureSpanId"/> &gt;= 0
+    ///     with <see cref="UnifiedCrossSection.StructureSpanType"/> == Bridge — tunnel spans share the tagging
+    ///     machinery but must NOT activate the deck pipeline, tunnel plan Phase 0).
+    ///     Gates the 3b-bridge profile/excavate block and the deck-export block.
+    /// </summary>
+    private static bool HasBridgeDeckWork(Models.RoadGeometry.UnifiedRoadNetwork network) =>
+        network.Splines.Any(BridgeDeckDaeExporter.ShouldGenerateDeck) ||
+        network.CrossSections.Any(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Bridge);
+
+    /// <summary>
+    ///     True if the network has tunnel work to do: any tunnel-typed span tagged on cross-sections AND
+    ///     any spline with a tunnel rule enabled (all rules default off ⇒ byte-identical baseline).
+    ///     Gates the 3b-tunnel profile/apron block (tunnel plan Phase 2).
+    /// </summary>
+    private static bool HasTunnelWork(Models.RoadGeometry.UnifiedRoadNetwork network) =>
+        network.Splines.Any(s => s.Parameters.TunnelRules?.AnyEnabled == true) &&
+        network.CrossSections.Any(c => c.StructureSpanId >= 0 && c.StructureSpanType == StructureType.Tunnel);
+
+    /// <summary>
+    ///     Deletes previous bridge output directories so generation starts fresh.
+    ///     Mirrors the MT_buildings cleanup style: generated asset and scene folders are removed,
+    ///     while the parent MissionGroup items file is left untouched.
+    /// </summary>
+    private static void CleanBridgeOutputDirectories(string terrainOutputPath)
+    {
+        var levelDir = Path.GetDirectoryName(terrainOutputPath)!;
+        var shapesDir = Path.Combine(levelDir, "art", "shapes", "MT_bridges");
+        var sceneDir = Path.Combine(levelDir, "main", "MissionGroup", "MT_bridges");
+
+        foreach (var dir in new[] { shapesDir, sceneDir })
+        {
+            if (Directory.Exists(dir))
+            {
+                Console.WriteLine($"TerrainCreator: Cleaning previous bridge output: {dir}");
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Deletes previous tunnel output directories so generation starts fresh (mirrors
+    ///     <see cref="CleanBridgeOutputDirectories"/>).
+    /// </summary>
+    private static void CleanTunnelOutputDirectories(string terrainOutputPath)
+    {
+        var levelDir = Path.GetDirectoryName(terrainOutputPath)!;
+        var shapesDir = Path.Combine(levelDir, "art", "shapes", "MT_tunnels");
+        var sceneDir = Path.Combine(levelDir, "main", "MissionGroup", "MT_tunnels");
+
+        foreach (var dir in new[] { shapesDir, sceneDir })
+        {
+            if (Directory.Exists(dir))
+            {
+                Console.WriteLine($"TerrainCreator: Cleaning previous tunnel output: {dir}");
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Exports tunnel tubes (tunnel plan Phase 3): one <c>tunnel_{SpanId}.dae</c> + TSStatic per
+    ///     captured <c>network.TunnelSpans</c> snapshot, plus the placeholder material and the
+    ///     <c>MT_tunnels</c> SimGroup. Runs after the final heightmap (portal aprons already stamped).
+    /// </summary>
+    private async Task ExportTunnelsAsync(
+        UnifiedRoadNetwork network,
+        string outputPath,
+        TerrainCreationParameters parameters,
+        TerrainCreationLogger log)
+    {
+        var sw = Stopwatch.StartNew();
+        log.LogSection("Tunnel Export");
+
+        try
+        {
+            var levelDir = Path.GetDirectoryName(outputPath)!;
+            var levelName = ExtractLevelName(outputPath);
+            var shapesDir = Path.Combine(levelDir, "art", "shapes", "MT_tunnels");
+            var shapePath = $"/levels/{levelName}/art/shapes/MT_tunnels/";
+            var groupDir = Path.Combine(levelDir, "main", "MissionGroup", "MT_tunnels");
+
+            var exportResult = await Task.Run(() => new TunnelDaeExporter().Export(
+                network, shapesDir, parameters.Size, parameters.MetersPerPixel,
+                parameters.TerrainBaseHeight));
+
+            foreach (var warning in exportResult.Warnings)
+                log.Warning($"  {warning}");
+
+            if (exportResult.Tunnels.Count == 0)
+            {
+                log.Info("No tunnel tubes generated (no captured tunnel spans with mesh rule enabled).");
+                return;
+            }
+
+            var writer = new TunnelSceneWriter();
+            writer.WritePlaceholderMaterial(Path.Combine(shapesDir, "main.materials.json"));
+
+            var parentItemsPath = Path.Combine(levelDir, "main", "MissionGroup", "items.level.json");
+            writer.EnsureSimGroupInParent(parentItemsPath);
+            var groupItemsPath = Path.Combine(groupDir, "items.level.json");
+            var written = writer.WriteSceneItems(exportResult.Tunnels, groupItemsPath, shapePath);
+
+            log.Info($"Tunnel export: {exportResult.Tunnels.Count} tube(s) written ({written} TSStatic), " +
+                     $"{exportResult.TotalVertices:N0} verts, {exportResult.TotalTriangles:N0} tris, " +
+                     $"{exportResult.TunnelsSkipped} skipped.");
+            log.Timing($"Tunnel export: {sw.ElapsedMilliseconds}ms");
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Failed to export tunnels: {ex.Message}");
+            log.Detail($"Stack trace: {ex.StackTrace}");
+            // Don't throw - terrain generation should continue.
         }
     }
 

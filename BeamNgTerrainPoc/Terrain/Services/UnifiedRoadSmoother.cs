@@ -43,7 +43,6 @@ public class UnifiedRoadSmoother
     private readonly RoundaboutElevationHarmonizer _roundaboutHarmonizer;
     private readonly UnifiedTerrainBlender _terrainBlender;
     private readonly UnifiedJunctionProfileBlender _unifiedProfileBlender;
-    private StructureElevationIntegrator _structureElevationIntegrator;
 
     /// <summary>
     ///     Cached elevation chain data, built once in Phase 2 iteration 0 and reused for re-smooth iterations.
@@ -58,6 +57,20 @@ public class UnifiedRoadSmoother
     // (§2 absolute-depth, connector ramp, roundabout tilt) is still being validated, so these traces
     // are worth keeping rather than deleting. When false the JIT can dead-strip the gated blocks.
     private const bool EmitNoBlendDiagnostics = false;
+
+    /// <summary>
+    ///     Margin (m) over which the affine endpoint correction is blended back from 0 (on a pinned bridge deck)
+    ///     to full strength on the open road (D6, plan doc 14 §7 step 3). See <see cref="BuildAffinePinWeights" />.
+    /// </summary>
+    private const float AffinePinBlendMeters = 40f;
+
+    /// <summary>
+    ///     Below this affine pin weight AT the junction endpoint the endpoint is considered pin-locked:
+    ///     the leveling target is unreachable (the pin holds the endpoint), so the endpoint's correction
+    ///     is skipped entirely instead of bulging the unpinned body (§3 retarget divergence — Manhattan
+    ///     spline 157). See <see cref="ApplyAffineLeveling" />.
+    /// </summary>
+    private const float AffineEndpointPinLockWeight = 0.01f;
 
     // NO-BLEND DIAGNOSTIC support: snapshot of each cross-section's pure chain low-pass elevation,
     // captured right before the per-spline affine/anchoring correction. Lets the pre-Phase-4 dump
@@ -74,7 +87,6 @@ public class UnifiedRoadSmoother
         _terrainBlender = new UnifiedTerrainBlender();
         _materialPainter = new MaterialPainter();
         _elevationCalculator = new OptimizedElevationSmoother();
-        _structureElevationIntegrator = new StructureElevationIntegrator();
         _unifiedProfileBlender = new UnifiedJunctionProfileBlender();
     }
 
@@ -85,16 +97,6 @@ public class UnifiedRoadSmoother
     public void ClearCachedData()
     {
         _terrainBlender.ClearCachedData();
-    }
-
-    /// <summary>
-    ///     Configures the structure elevation integrator with parameters from TerrainCreationParameters.
-    ///     Should be called before SmoothAllRoads if custom structure elevation parameters are needed.
-    /// </summary>
-    /// <param name="parameters">The terrain creation parameters containing structure elevation settings.</param>
-    public void ConfigureStructureElevationParameters(TerrainCreationParameters parameters)
-    {
-        _structureElevationIntegrator = StructureElevationIntegrator.FromParameters(parameters);
     }
 
     /// <summary>
@@ -182,9 +184,13 @@ public class UnifiedRoadSmoother
         if (paintOnlySplines.Count > 0)
         {
             TerrainLogger.Info($"  Paint-only splines: {paintOnlySplines.Count} (excluded from elevation phases)");
-            // Remove from network for elevation phases (2-4 + post-processing)
+            // Remove from network for elevation phases (2-4 + post-processing).
+            // Single RemoveAll pass instead of per-item Remove (each Remove was an O(N) scan
+            // over up to ~1M cross-sections). Reference-set membership keeps identical semantics.
             foreach (var s in paintOnlySplines) network.Splines.Remove(s);
-            foreach (var cs in paintOnlyCrossSections) network.CrossSections.Remove(cs);
+            var paintOnlyCsSet = new HashSet<UnifiedCrossSection>(paintOnlyCrossSections);
+            network.CrossSections.RemoveAll(paintOnlyCsSet.Contains);
+            network.InvalidateCrossSectionCache();
         }
 
         var allPaintOnly = network.Splines.Count == 0 && paintOnlySplines.Count > 0;
@@ -214,6 +220,18 @@ public class UnifiedRoadSmoother
         }
 
         var shouldHarmonize = ShouldHarmonize(roadMaterials);
+
+        // Phase 1.7: tag merged-corridor structure spans BEFORE junction detection (plan doc 14 §4a) so the
+        // crossing detector and the bridge-elevation planner can key off span membership (StructureSpanId)
+        // rather than the merged corridor's meaningless whole-spline IsBridge/Layer. Only writes
+        // StructureSpanId (no IsExcluded, no elevation), so it is observationally inert until those consumers
+        // land; idempotent + flag-gated (no-op with MergeStructuresIntoCorridor off → legacy byte-identical).
+        {
+            var csBySplineForTag = network.CrossSections
+                .GroupBy(cs => cs.OwnerSplineId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.LocalIndex).ToList());
+            TagStructureSpans(network.Splines, csBySplineForTag);
+        }
 
         // Phase 1.8: Early junction detection (WI-5)
         // Detect junctions BEFORE elevation calculation so that future phases
@@ -246,6 +264,22 @@ public class UnifiedRoadSmoother
             }
         }
 
+        // Phase 1.85: bridge-elevation planning (plan doc 14 §4/§7, Phase C). Now that junctions + grade-separated
+        // crossings are detected (Phase 1.8) and structure spans tagged (Phase 1.7), decide each merged-corridor
+        // bridge span's required deck Z (first cut from terrain + whatever is under the footprint) and PIN it on
+        // the span cross-sections. The chain low-pass below then builds the rising approach ramps up to the held
+        // deck instead of dragging the deck to terrain (the §1a spline-394 flattening fix). Flag-gated: the
+        // planner returns an empty plan when no spline opts into MergeStructuresIntoCorridor, so flag-off sets no
+        // pins and the four elevation passes are byte-identical to legacy.
+        // Doc 08 §5 D2: build the A0 centerline estimate for EVERY run (bridges on or off) against the
+        // pre-smoothing DEM and stash it on the network. The bridge planner below reuses it (flag-gated,
+        // same inputs → same values as its former private build) and the post-solve dam report
+        // (RoadElevationDeviationReport, TerrainCreator) compares final TargetElevation against it.
+        network.EarlyElevationEstimate = EarlyRoadElevationEstimator.Build(network, heightMap, metersPerPixel);
+
+        if (network.Splines.Any(s => s.Parameters.MergeStructuresIntoCorridor))
+            ApplyBridgeDeckPins(network, heightMap, metersPerPixel);
+
         // === Iterative Junction Refinement Loop (WI-4) ===
         // Phases 2 and 3 are wrapped in a convergence loop. On iteration 0, the full pipeline runs
         // (heightmap sampling, structure profiles, banking, roundabouts, junction harmonization).
@@ -271,42 +305,15 @@ public class UnifiedRoadSmoother
             CalculateNetworkElevations(network, heightMap, metersPerPixel, reSmoothFromExisting: !isFirstIteration);
             perfLog?.Timing($"CalculateNetworkElevations: {sw.Elapsed.TotalSeconds:F2}s");
 
-            // Phases 2.3, 2.5, 2.6 run ONLY on iteration 0
+            // Phases 2.5, 2.6 run ONLY on iteration 0
             if (isFirstIteration)
             {
-                // Phase 2.3: Calculate elevation profiles for bridge/tunnel structures
-                // This calculates independent elevation profiles for structures that are excluded from terrain smoothing.
-                // The profiles are stored on the splines for future DAE generation even though the cross-sections
-                // are excluded from terrain modification.
-                var structureCount = network.Splines.Count(s => s.IsStructure);
-                if (structureCount > 0)
-                {
-                    perfLog?.LogSection("Phase 2.3: Structure Elevation Profiles");
-                    TerrainCreationLogger.Current?.InfoFileOnly($"Phase 2.3: Calculating elevation profiles for {structureCount} structure(s)...");
-                    sw.Restart();
-
-                    // Calculate profiles for excluded structures (profiles stored for DAE generation)
-                    var structureResult = _structureElevationIntegrator.IntegrateStructureElevationsSelective(
-                        network, heightMap, metersPerPixel,
-                        excludeBridges: roadMaterials.Any(m => m.RoadParameters?.ExcludeBridgesFromTerrain == true),
-                        excludeTunnels: roadMaterials.Any(m => m.RoadParameters?.ExcludeTunnelsFromTerrain == true));
-
-                    perfLog?.Timing($"StructureElevationProfiles: {sw.Elapsed.TotalSeconds:F2}s");
-
-                    if (structureResult.TotalStructuresProcessed > 0)
-                    {
-                        TerrainCreationLogger.Current?.InfoFileOnly($"  Calculated profiles for {structureResult.BridgesProcessed} bridge(s), " +
-                                          $"{structureResult.TunnelsProcessed} tunnel(s)");
-                    }
-
-                    if (structureResult.ValidationMessages.Count > 0)
-                    {
-                        foreach (var msg in structureResult.ValidationMessages)
-                        {
-                            TerrainLogger.Warning($"  Structure validation: {msg}");
-                        }
-                    }
-                }
+                // NOTE: The former "Phase 2.3" structure-elevation-profile pass was removed (2026-06-07).
+                // It called StructureElevationIntegrator to store a StructureElevationProfile on each
+                // bridge/tunnel spline, but that profile was never read by any geometry-producing code —
+                // bridge deck elevation is now solved by BridgeProfileSolver.RefineSpans in
+                // TerrainCreator (before DecalRoad gen + deck export). See
+                // ai_docs/2026-06-03_bridge_generation/05-bridge-elevation-and-continuity-plan.md §7.
 
                 // Phase 2.5: Pre-calculate banking (bank angles and edge elevations)
                 // This ALWAYS runs - even without user-enabled banking, the pipeline computes
@@ -422,6 +429,30 @@ public class UnifiedRoadSmoother
                 perfLog?.Timing($"UnifiedJunctionProfiles: {sw.Elapsed.TotalSeconds:F2}s, " +
                                 $"modified {unifiedResult.ModifiedCrossSections} cross-sections, " +
                                 $"{unifiedResult.ConstraintsComputed} constraints");
+
+                // Convergence on the BLENDER's actual modifications. The legacy metric below uses the
+                // harmonizer's MaxElevationChange, but those elevations are restored right after
+                // HarmonizeNetwork (see above) — so it measures reverted work and re-reads the same value
+                // every iteration, never converging. If the unified blender (the only component that
+                // actually mutates the network here) changed NOTHING this iteration, further iterations
+                // would recompute identical constraints from unchanged state — skip them.
+                var blenderModifications = unifiedResult.ModifiedCrossSections
+                                           + unifiedResult.MidSplineCrossingModified
+                                           + unifiedResult.OverlapCrossSectionsSnapped
+                                           + unifiedResult.EndpointsTapered;
+                TerrainCreationLogger.Current?.InfoFileOnly(
+                    $"  Iteration {iteration + 1}: blender modifications = {blenderModifications} " +
+                    $"(profile={unifiedResult.ModifiedCrossSections}, " +
+                    $"midSpline={unifiedResult.MidSplineCrossingModified}, " +
+                    $"overlapSnapped={unifiedResult.OverlapCrossSectionsSnapped}, " +
+                    $"endpointsTapered={unifiedResult.EndpointsTapered})");
+
+                if (blenderModifications == 0)
+                {
+                    TerrainLogger.Info(
+                        $"  Converged after {iteration + 1} iteration(s): junction blender modified nothing");
+                    break;
+                }
 
                 // Check convergence
                 var maxCorrection = lastHarmonizationResult?.MaxElevationChange ?? 0f;
@@ -856,6 +887,7 @@ public class UnifiedRoadSmoother
         {
             network.Splines.AddRange(paintOnlySplines);
             network.CrossSections.AddRange(paintOnlyCrossSections);
+            network.InvalidateCrossSectionCache();
             TerrainLogger.Info($"  Re-added {paintOnlySplines.Count} paint-only spline(s) for painting phase");
         }
 
@@ -1130,6 +1162,1130 @@ public class UnifiedRoadSmoother
     }
 
     /// <summary>
+    ///     Tags bridge/tunnel cross-sections as <see cref="UnifiedCrossSection.IsExcluded" /> so terrain
+    ///     stamping/painting skips them, WITHOUT skipping elevation computation (TargetElevation is virtual
+    ///     data for span profiling + ramp matching).
+    ///
+    ///     Two modes:
+    ///     <list type="bullet">
+    ///       <item><b>Merged-corridor</b> (<see cref="RoadSmoothingParameters.MergeStructuresIntoCorridor" />
+    ///       on, plan doc 11 Phase 3): exclude ONLY each structure sub-range
+    ///       (<see cref="StructureSegment" /> arc-range), tagging it with a reproducible
+    ///       <see cref="StructureSegment.SpanId" />. The rest of the corridor stamps terrain normally, so
+    ///       plan-view + elevation stay continuous across the span by construction. The deck (Phases 4/5) is
+    ///       built from these same tagged sections, so the terrain hole and the deck share endpoints
+    ///       regardless of the arc-length anchor's Chaikin approximation.</item>
+    ///       <item><b>Legacy whole-spline</b> (flag off): the separated bridge/tunnel IS its own spline, so
+    ///       every one of its cross-sections is excluded — byte-identical to the pre-refactor behaviour.</item>
+    ///     </list>
+    /// </summary>
+    /// <summary>
+    ///     Tags each merged-corridor structure span's cross-sections with its
+    ///     <see cref="StructureSegment.SpanId" /> (writing <see cref="UnifiedCrossSection.StructureSpanId" />)
+    ///     WITHOUT marking them excluded. This is the "tagging half" of
+    ///     <see cref="MarkStructureExclusions" />, hoisted to run before junction detection (plan doc 14 §4a)
+    ///     so the detector and the bridge-elevation planner can key "is this XY on a deck" off span membership
+    ///     instead of the meaningless whole-spline <c>IsBridge</c>/<c>Layer</c> of a merged corridor.
+    ///
+    ///     <para>Idempotent and flag-gated: with
+    ///     <see cref="RoadSmoothingParameters.MergeStructuresIntoCorridor" /> off a merged corridor has no
+    ///     <c>StructureSegments</c>, so this is a no-op (legacy stays byte-identical). It uses the SAME
+    ///     condition + arc-range as <see cref="MarkStructureExclusions" />, so the tag it writes here and the
+    ///     one re-affirmed there in Phase 2.0 agree by construction.</para>
+    /// </summary>
+    internal static void TagStructureSpans(
+        IEnumerable<ParameterizedRoadSpline> splines,
+        Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline)
+    {
+        foreach (var spline in splines)
+        {
+            var parameters = spline.Parameters;
+            if (!parameters.MergeStructuresIntoCorridor) continue;
+            if (spline.StructureSegments is not { Count: > 0 }) continue;
+            if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var spanCs)) continue;
+
+            foreach (var seg in spline.StructureSegments)
+            {
+                var tagSeg = (seg.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
+                             (seg.IsTunnel && parameters.ExcludeTunnelsFromTerrain);
+                if (!tagSeg) continue;
+
+                var spanId = seg.SpanId;
+                foreach (var c in spanCs)
+                {
+                    if (c.DistanceAlongSpline < seg.StartDistance ||
+                        c.DistanceAlongSpline > seg.EndDistance)
+                        continue;
+                    c.StructureSpanId = spanId;
+                    c.StructureSpanType = seg.Type;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Phase 1.85 (plan doc 14 §4/§7, Phase C). Runs the pure <see cref="BridgeElevationPlanner" /> against
+    ///     the detected grade-separated crossings + tagged structure spans, then PINS each raised span's deck Z
+    ///     onto its cross-sections (<see cref="UnifiedCrossSection.PinnedElevation" />). The four downstream
+    ///     elevation passes honour the pin, so the smoother grows the rising approach ramps to a held deck.
+    ///
+    ///     <para>This is the first cut (§6): pre-Phase-2.0 the under-roads are not yet smoothed, so the planner
+    ///     drives off raw terrain + whatever is under each span's footprint. <c>BridgeProfileSolver.RefineSpans</c>
+    ///     re-curves and <c>GradeSeparationResolver.ApplyLowerRoadDips</c> guarantees clearance against the final
+    ///     stamped Z later (Phase D). The clearance C uses the planner default here; the precise user clearance +
+    ///     deck thickness is applied in that post pass.</para>
+    /// </summary>
+    private static void ApplyBridgeDeckPins(UnifiedRoadNetwork network, float[,] heightMap, float metersPerPixel)
+    {
+        // A0 (V2 review P0-2): when enabled, the planner reads approach/obstacle Z from a smoothed
+        // centerline-DEM estimate instead of raw DEM samples (raw pre-smooth DEM ≈ embankment banks).
+        var rules = network.Splines.Select(s => s.Parameters.BridgeRules).FirstOrDefault(r => r != null);
+        BridgeElevationPlannerOptions? plannerOptions = null;
+        if (rules?.EnableEarlyElevationEstimate == true)
+        {
+            // Reuses the run-wide stash from SmoothAllRoads (doc 08 D2) — identical inputs, so the
+            // planner sees the same values the former private build produced.
+            var early = network.EarlyElevationEstimate
+                        ?? EarlyRoadElevationEstimator.Build(network, heightMap, metersPerPixel);
+            plannerOptions = new BridgeElevationPlannerOptions
+            {
+                EarlyElevation = cs => early.TryGetValue(cs.Index, out var z) ? z : float.NaN,
+            };
+            TerrainCreationLogger.Current?.Detail(
+                $"[BRIDGE-PLAN] A0 early elevation estimate built for {early.Count} sections");
+        }
+
+        var plan = BridgeElevationPlanner.Plan(network, heightMap, metersPerPixel, plannerOptions);
+        if (plan.IsEmpty) return;
+
+        // Stash the plan so the post-smoothing dip pass (Phase D, GradeSeparationResolver.ApplyLowerRoadDips)
+        // knows which crossings the rule engine assigned a dip/split — the only ones it lowers against the
+        // final stamped deck Z. Raise/veto/already-clear crossings are left to the deck pin alone.
+        network.BridgeElevationPlan = plan;
+
+        // Amendment 03 (sparse mode): the planner authors no HARD geometry for the DECK. v3: the span pins
+        // become SOFT raw-input shaping (the filter solves the span like road — flush seams by construction,
+        // natural curvature); no ramp pins; the span is re-curved from the solved approaches in RefineSpans
+        // with the plan's budgets as floors. (Doc 04 §8.3 B, 2026-06-11: lower-road DIP wells ARE now pinned
+        // pre-smooth in sparse mode — see the dip-pin emit below — so the smoother solves them continuously
+        // instead of the post-solve resolver carving the well into the already-solved profile, which stepped
+        // the dip edges.)
+        var sparse = rules?.EnableSparseDeckConstraints == true;
+
+        var pinnedSections = 0;
+        var softPinnedSections = 0;
+        var raisedSpans = 0;
+        foreach (var span in plan.Spans)
+        {
+            if (!span.IsRaised) continue;
+            raisedSpans++;
+            foreach (var pin in span.Pins)
+            {
+                if (sparse)
+                {
+                    // v3: transport the RISE, not the absolute Z — the smoother re-anchors the chord on
+                    // the real approaches (ApplySoftShapingToRaw), so estimate offsets cancel out.
+                    pin.Section.SoftDeckRiseMeters = pin.SoftRiseMeters;
+                    softPinnedSections++;
+                }
+                else
+                {
+                    pin.Section.PinnedElevation = pin.DeckZ;
+                    pinnedSections++;
+                }
+            }
+        }
+
+        // Approach-ramp pins (graded-deck companion): a RAISED deck end sits `delta` above (or below) the
+        // natural approach — pin an eased ramp on the approach at the §3.3 class slope so the smoother
+        // holds the climb up to the deck end instead of leaving an abutment step (render review #4:
+        // uniform lift stepped BOTH ends of 762726404 off the road).
+        var rampPinnedSections = 0;
+        if (rules?.EnableGradedDeck == true && !sparse)
+            rampPinnedSections = ApplyApproachRampPins(
+                network, plan, plannerOptions?.EarlyElevation, heightMap, metersPerPixel);
+
+        // Doc 05 §4.2 (sparse): junctions inside a raised span's approach-ramp run are re-pinned UP to the
+        // ramp line BEFORE smoothing, so the agreement at the junction changes and ALL contributor roads
+        // are solved to the new height (the blender respects IsPinned). This is what widens the junction
+        // room the post-solve uniform raise kept running into (394's 11.4% [STEEP] start ramp, 199's boxed
+        // bridgehead) — the post-solve pass then only tops up estimate-error-sized residuals.
+        var junctionRaises = 0;
+        HashSet<NetworkJunction>? raisedJunctions = null;
+        var onDeckJunctionPins = 0;
+        if (sparse)
+        {
+            (junctionRaises, raisedJunctions) = RaiseJunctionsAlongApproachRamps(
+                network, plan, plannerOptions?.EarlyElevation, heightMap, metersPerPixel);
+
+            // Doc 08 §7 C3 step A: pin on-deck junctions to the deck line (M1 skips them, d<0) so the
+            // deck-Z inheritance is explicit and dip-protected.
+            onDeckJunctionPins = PinOnDeckJunctions(
+                network, plan, plannerOptions?.EarlyElevation, heightMap, metersPerPixel, raisedJunctions);
+
+            // Doc 08 §7 C3 step B (the containment): stash the deck-anchored junction set so the affine
+            // junction leveling DECAYS its correction on their terminating side roads over a class-slope
+            // run instead of tilting the whole road (the M7 "Damm" vector). In-solver — Phase-4 stamping
+            // then builds matching terrain; nothing is corrected after the fact.
+            network.BridgeRaisedJunctions.Clear();
+            foreach (var j in raisedJunctions)
+                network.BridgeRaisedJunctions.Add(j);
+        }
+
+        // Sparse dip wells: after the deck pins, pin each planned lower-road dip as a FULL eased well
+        // (including its ramps) so the smoother solves the dip continuously — and so the slope-clamp
+        // pin exemption covers the whole well, not just its bottom (review R-1.3). Deck and junction
+        // pins win over dip pins (P1-1). Paired with the resolver demotion in GradeSeparationResolver so
+        // the late carve never double-dips. NOTE: these are HARD PinnedElevation wells off the estimate
+        // base — the diagnostic, not the keeper (A = soft constraint).
+        // Doc 05 §4.3 (sparse): the well is no longer junction-clamped — junctions inside it are re-pinned
+        // DOWN to the well line instead (the §8 mirror of the approach raise).
+        var dipPinnedSections = 0;
+        if (sparse)
+            dipPinnedSections = ApplyLowerRoadDipPins(
+                network, plan, plannerOptions?.EarlyElevation, heightMap, metersPerPixel,
+                widenRoomViaJunctions: sparse, raisedJunctions);
+
+        var syntheticCrossings = plan.Crossings.Count(c => !c.Crossing.HasLowerSpline);
+        TerrainCreationLogger.Current?.InfoFileOnly(
+            $"[BRIDGE-PLAN] spans={plan.Spans.Count} raised={raisedSpans} pinnedSections={pinnedSections} " +
+            (sparse
+                ? $"softPinnedSections={softPinnedSections} junctionRaises={junctionRaises} " +
+                  $"onDeckJunctionPins={onDeckJunctionPins} "
+                : "") +
+            $"approachRampPins={rampPinnedSections} dipPinnedSections={dipPinnedSections} " +
+            $"crossings={plan.Crossings.Count} railWater={syntheticCrossings}" +
+            (sparse ? " mode=sparse-soft" : ""));
+
+        foreach (var cp in plan.Crossings)
+            if (cp.Warning != null)
+                TerrainCreationLogger.Current?.InfoFileOnly(
+                    $"[BRIDGE-PLAN] WARN upper={cp.Crossing.UpperSplineId} lower={cp.Crossing.LowerSplineId} " +
+                    $"({cp.Crossing.LowerKind}): {cp.Warning}");
+
+        // Doc 28 observability: one line per coherent underpass — the lower road, the bridges cleared, the
+        // dip depth and any accepted over-cap residual, so a regen is auditable (companion of the M2 trace).
+        foreach (var cluster in plan.UnderpassClusters)
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"[BRIDGE-PLAN] coherent underpass: lower={cluster.LowerSplineId} " +
+                $"stations=[{cluster.StartStation:F0},{cluster.EndStation:F0}]m " +
+                $"bridges={string.Join(",", cluster.UpperSplineIds)} " +
+                $"crossings={cluster.Crossings.Count} maxDip={cluster.MaxDipMeters:F2}m" +
+                (cluster.CappedResidualMeters > 0.01f
+                    ? $" cappedResidual={cluster.CappedResidualMeters:F2}m (accepted — bridges not raised)"
+                    : ""));
+    }
+
+    /// <summary>
+    ///     Approach-ramp pins (graded-deck companion, render review #4): every RAISED span end sits some
+    ///     `delta` above (lift) — or occasionally below — the natural approach profile, and the box-filter
+    ///     blend alone cannot close that gap inside one smoothing window (doc 16 §3b: the abutment step).
+    ///     For each raised span end this pins an engineered ramp on the APPROACH sections: from the deck-end
+    ///     Z at the abutment, descending to the natural profile via <see cref="ApproachRampProfile"/> (a
+    ///     parabolic crest curve at the deck, a constant-grade tangent, a parabolic sag at the bottom — zero
+    ///     slope at BOTH ends) over a length sized so the tangent runs at the §3.3 class grade
+    ///     (<see cref="ApproachRampProfile.LengthFor"/>), clamped to the junction-safe room
+    ///     (<see cref="BridgeElevationPlanner.MeasureRampLength"/>). The smoother then holds the climb
+    ///     instead of improvising it. Existing pins (junction/deck/dip) win.
+    /// </summary>
+    internal static int ApplyApproachRampPins(
+        UnifiedRoadNetwork network,
+        BridgeElevationPlan plan,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        var pinned = 0;
+        foreach (var span in plan.Spans)
+        {
+            if (!span.IsRaised || span.Pins.Count == 0) continue;
+            var spline = network.GetSplineById(span.OwnerSplineId);
+            if (spline == null) continue;
+
+            var slope = BridgeRuleSystemOptions.NormalMaxSlopePercent(
+                BridgeRuleSystemOptions.ClassStepFor(spline.OsmRoadType)) / 100f;
+            var sections = network.GetCrossSectionsForSpline(spline.SplineId)
+                .OrderBy(c => c.DistanceAlongSpline).ToList();
+
+            var orderedPins = span.Pins.OrderBy(p => p.DistanceAlongSpline).ToList();
+            pinned += PinApproachRamp(network, spline, sections, span.StartDistance,
+                orderedPins[0].DeckZ, forward: false, slope, earlyElevation, heightMap, metersPerPixel);
+            pinned += PinApproachRamp(network, spline, sections, span.EndDistance,
+                orderedPins[^1].DeckZ, forward: true, slope, earlyElevation, heightMap, metersPerPixel);
+        }
+
+        return pinned;
+    }
+
+    /// <summary>One eased approach ramp outside a span end (see <see cref="ApplyApproachRampPins"/>).</summary>
+    private static int PinApproachRamp(
+        UnifiedRoadNetwork network,
+        ParameterizedRoadSpline spline,
+        List<UnifiedCrossSection> sections,
+        float abutmentStation,
+        float deckEndZ,
+        bool forward,
+        float maxSlope,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        // The first section OUTSIDE the span on this side anchors the natural-profile reference.
+        UnifiedCrossSection? abutment = null;
+        var bestGap = float.MaxValue;
+        foreach (var cs in sections)
+        {
+            var d = forward ? cs.DistanceAlongSpline - abutmentStation : abutmentStation - cs.DistanceAlongSpline;
+            if (d <= 0.01f) continue;
+            if (d < bestGap)
+            {
+                bestGap = d;
+                abutment = cs;
+            }
+        }
+
+        if (abutment == null) return 0;
+
+        var baseAtAbutment = DipBaseZ(abutment, earlyElevation, heightMap, metersPerPixel);
+        if (float.IsNaN(baseAtAbutment)) return 0;
+
+        var delta = deckEndZ - baseAtAbutment;
+        if (MathF.Abs(delta) <= 0.05f) return 0; // already flush
+
+        var needed = maxSlope > 0.001f ? ApproachRampProfile.LengthFor(delta, maxSlope) : 60f;
+        var available = BridgeElevationPlanner.MeasureRampLength(network, spline, abutmentStation, forward);
+        var rampLen = MathF.Min(MathF.Max(needed, 10f), MathF.Min(available, 150f));
+        if (rampLen <= 1f) return 0; // junction-boxed — leave the seam to the junction harmonizer
+
+        var pinnedCount = 0;
+        foreach (var cs in sections)
+        {
+            if (cs.IsExcluded) continue;
+            if (cs.PinnedElevation.HasValue) continue; // junction/deck/dip pins win
+
+            var d = forward ? cs.DistanceAlongSpline - abutmentStation : abutmentStation - cs.DistanceAlongSpline;
+            if (d <= 0.01f || d >= rampLen) continue;
+
+            var baseZ = DipBaseZ(cs, earlyElevation, heightMap, metersPerPixel);
+            if (float.IsNaN(baseZ)) continue;
+
+            var u = d / rampLen; // 0 at the abutment → 1 at the ramp end
+            var w = ApproachRampProfile.Weight(u); // crest VC → constant-grade tangent → sag VC
+            cs.PinnedElevation = baseZ + delta * w;
+            pinnedCount++;
+        }
+
+        return pinnedCount;
+    }
+
+    /// <summary>
+    ///     Doc 05 §4.2 — pre-smooth junction RAISE along each raised span's approach-ramp line (sparse mode).
+    ///     A junction is an agreement point: the post-solve raise must stop short of it because a late
+    ///     unilateral edit of one road steps the other contributors' seams. So the agreement is changed
+    ///     BEFORE smoothing instead: every non-roundabout junction whose corridor station falls inside the
+    ///     eased ramp run from a lifted abutment gets <c>HarmonizedElevation</c> re-pinned UP to the ramp
+    ///     line (capped at the deck-end Z) with <c>IsPinned = true</c> — the blender/harmonizer write sites
+    ///     all respect the pin, and ALL contributor roads (corridor and side roads) are solved to the new
+    ///     height. Estimate error is benign: the junction stays consistent for every road; the post-solve
+    ///     uniform raise tops up the exact typed budget. Returns the raised-junction set so the dip-well
+    ///     mirror (§4.3) never lowers a junction the bridge needs high (§4.4).
+    /// </summary>
+    internal static (int count, HashSet<NetworkJunction> raised) RaiseJunctionsAlongApproachRamps(
+        UnifiedRoadNetwork network,
+        BridgeElevationPlan plan,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        var raised = new HashSet<NetworkJunction>();
+        var count = 0;
+
+        foreach (var span in plan.Spans)
+        {
+            if (!span.IsRaised || span.Pins.Count == 0) continue;
+            var spline = network.GetSplineById(span.OwnerSplineId);
+            if (spline == null) continue;
+
+            var slope = BridgeRuleSystemOptions.NormalMaxSlopePercent(
+                BridgeRuleSystemOptions.ClassStepFor(spline.OsmRoadType)) / 100f;
+            var sections = network.GetCrossSectionsForSpline(spline.SplineId)
+                .OrderBy(c => c.DistanceAlongSpline).ToList();
+
+            var orderedPins = span.Pins.OrderBy(p => p.DistanceAlongSpline).ToList();
+            count += RaiseJunctionsOnRamp(network, spline, sections, span.StartDistance,
+                orderedPins[0].DeckZ, forward: false, slope, earlyElevation, heightMap, metersPerPixel, raised);
+            count += RaiseJunctionsOnRamp(network, spline, sections, span.EndDistance,
+                orderedPins[^1].DeckZ, forward: true, slope, earlyElevation, heightMap, metersPerPixel, raised);
+        }
+
+        return (count, raised);
+    }
+
+    /// <summary>One approach side of <see cref="RaiseJunctionsAlongApproachRamps"/>.</summary>
+    private static int RaiseJunctionsOnRamp(
+        UnifiedRoadNetwork network,
+        ParameterizedRoadSpline spline,
+        List<UnifiedCrossSection> sections,
+        float abutmentStation,
+        float deckEndZ,
+        bool forward,
+        float maxSlope,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel,
+        HashSet<NetworkJunction> raised)
+    {
+        // Natural-profile reference just outside the span (same anchor PinApproachRamp uses).
+        UnifiedCrossSection? abutment = null;
+        var bestGap = float.MaxValue;
+        foreach (var cs in sections)
+        {
+            var d = forward ? cs.DistanceAlongSpline - abutmentStation : abutmentStation - cs.DistanceAlongSpline;
+            if (d <= 0.01f) continue;
+            if (d < bestGap)
+            {
+                bestGap = d;
+                abutment = cs;
+            }
+        }
+
+        if (abutment == null) return 0;
+
+        var baseAtAbutment = DipBaseZ(abutment, earlyElevation, heightMap, metersPerPixel);
+        if (float.IsNaN(baseAtAbutment)) return 0;
+
+        var delta = deckEndZ - baseAtAbutment;
+        if (delta <= 0.05f) return 0; // only raises — a deck below the approach is not this pass's problem
+
+        // Ramp sizing mirrors PinApproachRamp — deliberately NOT junction-clamped (that's the point).
+        var rampLen = MathF.Min(MathF.Max(
+            maxSlope > 0.001f ? ApproachRampProfile.LengthFor(delta, maxSlope) : 60f, 10f), 150f);
+
+        var count = 0;
+        foreach (var junction in network.Junctions)
+        {
+            if (junction.Type == JunctionType.Roundabout) continue; // flat-ring machinery owns those
+
+            foreach (var contributor in junction.Contributors)
+            {
+                if (contributor.Spline.SplineId != spline.SplineId)
+                    continue;
+
+                var d = forward
+                    ? contributor.CrossSection.DistanceAlongSpline - abutmentStation
+                    : abutmentStation - contributor.CrossSection.DistanceAlongSpline;
+                if (d < -0.01f || d >= rampLen)
+                    continue;
+
+                var u = MathF.Max(d, 0f) / rampLen;
+                var w = ApproachRampProfile.Weight(u); // 1 at the abutment, 0 at the ramp end
+
+                var baseJ = !float.IsNaN(junction.HarmonizedElevation)
+                    ? junction.HarmonizedElevation
+                    : DipBaseZ(contributor.CrossSection, earlyElevation, heightMap, metersPerPixel);
+                if (float.IsNaN(baseJ))
+                    break;
+
+                var target = MathF.Min(baseJ + delta * w, deckEndZ);
+                var current = !float.IsNaN(junction.HarmonizedElevation) ? junction.HarmonizedElevation : baseJ;
+                if (target > current + 0.01f)
+                {
+                    // Doc 08 §5 D3: the raise is transplanted onto EVERY contributor road by the blender —
+                    // list them (id:priority) so the C2/C3 containment decisions are auditable per junction.
+                    var contribs = junction.Contributors
+                        .Select(c => c.Spline)
+                        .DistinctBy(s => s.SplineId)
+                        .OrderByDescending(s => s.Priority)
+                        .Select(s => $"{s.SplineId}:p{s.Priority}")
+                        .ToList();
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[BRIDGE-PLAN] junction-raise junction={junction.JunctionId} ({junction.Type}) " +
+                        $"spline={spline.SplineId} d={MathF.Max(d, 0f):F1}m z={current:F2}->{target:F2} " +
+                        $"(deckEnd={deckEndZ:F2}) contributors={contribs.Count}[{string.Join(",", contribs)}]");
+                    junction.HarmonizedElevation = target;
+                    junction.IsPinned = true;
+                    raised.Add(junction);
+                    count++;
+                }
+
+                // 2026-07-14 (junction-aware feather): stamp the junction's final agreement Z onto its
+                // corridor cross-section so the smoother's raw approach-ramp feather can anchor its
+                // descent to the SAME line the blender will enforce — otherwise the two disagree (the
+                // feather bases off the actual raw, this pass off the estimate) and the blender yanks
+                // the feathered climb down at the junction, notching the road right before the abutment.
+                if (junction.IsPinned && !float.IsNaN(junction.HarmonizedElevation))
+                    contributor.CrossSection.JunctionPinnedElevation = junction.HarmonizedElevation;
+
+                break; // one contributor on this spline is enough to place the junction on the ramp
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    ///     Doc 08 §7 C3 (step A) — on-deck junction pinning. The winningen regen showed the worst dams come
+    ///     from junctions that sit ON a raised span: the M1 ramp pass
+    ///     (<see cref="RaiseJunctionsAlongApproachRamps"/>) only walks the approach run OUTSIDE the span
+    ///     (d &lt; 0 is skipped), so an on-deck junction silently inherits deck Z through the blender. Every
+    ///     non-roundabout junction whose corridor station falls INSIDE a raised span is re-pinned UP to the
+    ///     deck line (nearest span pin Z) and joins the raised set — the inheritance becomes explicit,
+    ///     logged, and §4.4-protected against dip lowering. The side-road containment itself is POST-solve
+    ///     (<c>GradeSeparationResolver.FlattenSideRoadDams</c>): the first C3 cut pinned eased decay wells
+    ///     PRE-smooth off the A0 estimate, but on steep terrain the solver's legitimate profile sits up to
+    ///     ±8 m off the estimate and the pins fought it (winningen 2026-07-02 21:05: spline 83 −21 m /
+    ///     364 +24 m oscillation, len&gt;3m 7.9→11.1 km) — never hard-pin side roads to estimate-based
+    ///     absolute Z before smoothing.
+    /// </summary>
+    internal static int PinOnDeckJunctions(
+        UnifiedRoadNetwork network,
+        BridgeElevationPlan plan,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel,
+        HashSet<NetworkJunction> raisedJunctions)
+    {
+        // Doc 14 (a): at a junction that sits inside SEVERAL spans' footprints (a deck-deck merge —
+        // ramp landing mid-span on a trunk, j106/j103), the deck being LANDED ON owns the junction Z;
+        // the landing span's plan deckEnd cap must never overwrite it (135439: j106 24.90 → 34.53,
+        // a value ~9.6 m above BOTH final decks that then poisoned every HarmonizedElevation reader).
+        if (network.Splines.Any(s => s.Parameters.BridgeRules?.EnableDeckToDeckContinuity == true))
+            return PinOnDeckJunctionsWithAuthority(
+                network, plan, earlyElevation, heightMap, metersPerPixel, raisedJunctions);
+
+        var onDeck = 0;
+        foreach (var span in plan.Spans)
+        {
+            if (!span.IsRaised || span.Pins.Count == 0) continue;
+            var orderedPins = span.Pins.OrderBy(p => p.DistanceAlongSpline).ToList();
+
+            foreach (var junction in network.Junctions)
+            {
+                if (junction.Type == JunctionType.Roundabout) continue; // flat-ring machinery owns those
+
+                foreach (var contributor in junction.Contributors)
+                {
+                    if (contributor.Spline.SplineId != span.OwnerSplineId) continue;
+                    var s = contributor.CrossSection.DistanceAlongSpline;
+                    if (s < span.StartDistance - 0.01f || s > span.EndDistance + 0.01f) continue;
+
+                    var deckZ = NearestPinZ(orderedPins, s);
+                    var current = !float.IsNaN(junction.HarmonizedElevation)
+                        ? junction.HarmonizedElevation
+                        : DipBaseZ(contributor.CrossSection, earlyElevation, heightMap, metersPerPixel);
+                    if (float.IsNaN(current)) break;
+
+                    if (deckZ > current + 0.01f)
+                    {
+                        // Like junction-raise: the pin is transplanted onto EVERY contributor road by the
+                        // blender — list them so a side-road dam (Park Row mesa, doc 10 follow-up) can be
+                        // traced to the junction that lifted it.
+                        var contribs = junction.Contributors
+                            .Select(c => c.Spline)
+                            .DistinctBy(sp => sp.SplineId)
+                            .OrderByDescending(sp => sp.Priority)
+                            .Select(sp => $"{sp.SplineId}:p{sp.Priority}")
+                            .ToList();
+                        TerrainCreationLogger.Current?.InfoFileOnly(
+                            $"[BRIDGE-PLAN] junction-on-deck junction={junction.JunctionId} ({junction.Type}) " +
+                            $"spline={span.OwnerSplineId} span={span.SpanId} station={s:F1}m " +
+                            $"z={current:F2}->{deckZ:F2} " +
+                            $"contributors={contribs.Count}[{string.Join(",", contribs)}]");
+                        junction.HarmonizedElevation = deckZ;
+                        junction.IsPinned = true;
+                        junction.PlannedDeckElevation = deckZ;
+                        raisedJunctions.Add(junction);
+                        onDeck++;
+                    }
+
+                    break; // one corridor contributor places the junction on the deck
+                }
+            }
+        }
+
+        return onDeck;
+    }
+
+    /// <summary>
+    ///     Doc 14 (a) — <see cref="PinOnDeckJunctions"/> with a deck-deck AUTHORITY rule
+    ///     (<c>EnableDeckToDeckContinuity</c>). Junction-first instead of span-first: for each junction all
+    ///     containing span footprints are collected; the span the junction is INTERIOR to (the deck being
+    ///     landed on — it continues through) owns the junction Z, ties broken by owner priority then span
+    ///     length (mirroring <c>ComputeEqualPriorityJunctionElevation</c>'s "through road wins" doctrine).
+    ///     A junction on ONE span keeps the legacy raise-only semantics; on SEVERAL spans the authority
+    ///     deck's pin is written EXACTLY (may lower an earlier inflated value) and every landing span's
+    ///     plan deckEnd cap is suppressed — the 135439 j106 24.90→34.53 overwrite, whose phantom value
+    ///     poisoned every HarmonizedElevation reader (j103's 34.53→41.23 raise chain).
+    /// </summary>
+    private static int PinOnDeckJunctionsWithAuthority(
+        UnifiedRoadNetwork network,
+        BridgeElevationPlan plan,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel,
+        HashSet<NetworkJunction> raisedJunctions)
+    {
+        var orderedPinsBySpan = plan.Spans
+            .Where(s => s.Pins.Count > 0)
+            .ToDictionary(s => s, s => s.Pins.OrderBy(p => p.DistanceAlongSpline).ToList());
+
+        var onDeck = 0;
+        foreach (var junction in network.Junctions)
+        {
+            if (junction.Type == JunctionType.Roundabout) continue; // flat-ring machinery owns those
+
+            // Every span whose footprint contains this junction (one corridor contributor suffices).
+            var matches = new List<(SpanDeckPlan Span, JunctionContributor Contributor)>();
+            foreach (var span in plan.Spans)
+            {
+                foreach (var contributor in junction.Contributors)
+                {
+                    if (contributor.Spline.SplineId != span.OwnerSplineId) continue;
+                    var s = contributor.CrossSection.DistanceAlongSpline;
+                    if (s < span.StartDistance - 0.01f || s > span.EndDistance + 0.01f) continue;
+                    matches.Add((span, contributor));
+                    break;
+                }
+            }
+
+            if (matches.Count == 0) continue;
+
+            static bool IsInterior(SpanDeckPlan span, JunctionContributor c)
+            {
+                var s = c.CrossSection.DistanceAlongSpline;
+                return s > span.StartDistance + BridgeToBridgeContinuity.DeckEndEpsilonMeters &&
+                       s < span.EndDistance - BridgeToBridgeContinuity.DeckEndEpsilonMeters;
+            }
+
+            var authority = matches
+                .OrderByDescending(m => IsInterior(m.Span, m.Contributor))
+                .ThenByDescending(m => network.GetSplineById(m.Span.OwnerSplineId)?.Priority ?? 0)
+                .ThenByDescending(m => m.Span.EndDistance - m.Span.StartDistance)
+                .First();
+
+            var current = !float.IsNaN(junction.HarmonizedElevation)
+                ? junction.HarmonizedElevation
+                : DipBaseZ(authority.Contributor.CrossSection, earlyElevation, heightMap, metersPerPixel);
+            if (float.IsNaN(current)) continue;
+
+            // Landing spans (raised, would have written) are suppressed — log so a regen is auditable.
+            foreach (var (span, contributor) in matches)
+            {
+                if (ReferenceEquals(span, authority.Span)) continue;
+                if (!span.IsRaised || !orderedPinsBySpan.TryGetValue(span, out var landingPins)) continue;
+                var landingZ = NearestPinZ(landingPins, contributor.CrossSection.DistanceAlongSpline);
+                if (landingZ > current + 0.01f)
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[BRIDGE-PLAN] junction-on-deck junction={junction.JunctionId} ({junction.Type}) " +
+                        $"suppressed spline={span.OwnerSplineId} span={span.SpanId} z={landingZ:F2} " +
+                        $"(deck-deck authority: spline={authority.Span.OwnerSplineId} span={authority.Span.SpanId})");
+            }
+
+            // An un-raised authority deck follows the natural profile — the junction keeps its current
+            // agreement and the landing spans adapt to it in the profile solver (doc 14 §3b).
+            if (!authority.Span.IsRaised ||
+                !orderedPinsBySpan.TryGetValue(authority.Span, out var orderedPins))
+                continue;
+
+            var station = authority.Contributor.CrossSection.DistanceAlongSpline;
+            var deckZ = NearestPinZ(orderedPins, station);
+
+            // Single-span junction: legacy raise-only write. Deck-deck junction: the authority deck's
+            // pin is exact — it may LOWER a value an earlier landing-span pass or ramp raise inflated.
+            var write = matches.Count == 1
+                ? deckZ > current + 0.01f
+                : MathF.Abs(deckZ - current) > 0.01f;
+            if (!write) continue;
+
+            var contribs = junction.Contributors
+                .Select(c => c.Spline)
+                .DistinctBy(sp => sp.SplineId)
+                .OrderByDescending(sp => sp.Priority)
+                .Select(sp => $"{sp.SplineId}:p{sp.Priority}")
+                .ToList();
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"[BRIDGE-PLAN] junction-on-deck junction={junction.JunctionId} ({junction.Type}) " +
+                $"spline={authority.Span.OwnerSplineId} span={authority.Span.SpanId} station={station:F1}m " +
+                $"z={current:F2}->{deckZ:F2}" +
+                (matches.Count > 1 ? $" authority({matches.Count} decks)" : " ") +
+                $" contributors={contribs.Count}[{string.Join(",", contribs)}]");
+            junction.HarmonizedElevation = deckZ;
+            junction.IsPinned = true;
+            junction.PlannedDeckElevation = deckZ;
+            raisedJunctions.Add(junction);
+            onDeck++;
+        }
+
+        return onDeck;
+    }
+
+    /// <summary>Deck Z of the span pin nearest to <paramref name="station"/> (pins are ~section-dense).</summary>
+    private static float NearestPinZ(List<DeckPin> orderedPins, float station)
+    {
+        var best = orderedPins[0];
+        var bestD = MathF.Abs(best.DistanceAlongSpline - station);
+        foreach (var p in orderedPins)
+        {
+            var d = MathF.Abs(p.DistanceAlongSpline - station);
+            if (d < bestD)
+            {
+                bestD = d;
+                best = p;
+            }
+        }
+
+        return best.DeckZ;
+    }
+
+    /// <summary>
+    ///     A6 (V2 plan doc 01 — dip-as-pin, the centerpiece): pins the planned lower-road dips PRE-smooth as
+    ///     eased wells (<c>(1−u)²(1+2u)</c> weight, the resolver's well shape) on
+    ///     <see cref="UnifiedCrossSection.PinnedElevation"/>, mirroring the deck pin. The smoother then grows
+    ///     the dip ramps continuously and the pin-exemption masks (slope clamp, affine) cover the FULL well
+    ///     including the ramps. The demoted <c>GradeSeparationResolver.ApplyLowerRoadDips</c> must NOT drop
+    ///     <c>TargetElevation</c> a second time (verify-only — no double-dip).
+    ///
+    ///     <para>Per section the pin is <c>baseZ − dipDepth·w(u)</c>, where baseZ uses the planner's own
+    ///     elevation chain (TargetElevation → A0 early estimate → raw DEM) so the well bottom equals the
+    ///     plan's <c>LowerRoadTargetZ</c> by construction. The well half-length is the resolver's symmetric
+    ///     junction-safe clamp: min(ramp room on both sides, default dip ramp length); a junction-boxed
+    ///     crossing (no room) emits no pins — its deficit was already moved to the deck by A4's
+    ///     junction-in-sag rule. Sections already pinned (deck or junction) are skipped (P1-1: the bridge
+    ///     plan defers to existing pins). Excluded (structure) sections are never pinned.</para>
+    /// </summary>
+    internal static int ApplyLowerRoadDipPins(
+        UnifiedRoadNetwork network,
+        BridgeElevationPlan plan,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel,
+        bool widenRoomViaJunctions = false,
+        HashSet<NetworkJunction>? raisedJunctions = null)
+    {
+        var pinned = 0;
+
+        // Doc 28 Step C: each dip-decided underpass CLUSTER is pinned as ONE merged envelope well
+        // (first→last crossing + eased end ramps) BEFORE the per-crossing pass — three overlapping
+        // single wells with first-pin-wins semantics are exactly the winningen washboard. Handled
+        // crossings are excluded from the per-crossing loop below.
+        var clusterHandled = new HashSet<GradeSeparatedCrossing>();
+        foreach (var cluster in plan.UnderpassClusters)
+            pinned += PinUnderpassClusterWell(
+                network, plan, cluster, clusterHandled, earlyElevation, heightMap, metersPerPixel,
+                widenRoomViaJunctions, raisedJunctions);
+
+        foreach (var cp in plan.Crossings)
+        {
+            if (cp.Action is not (BridgeElevationAction.DipLowerRoad or BridgeElevationAction.Split))
+                continue;
+            if (cp.DipDepthMeters <= 0.001f || !cp.Crossing.HasLowerSpline)
+                continue;
+            if (clusterHandled.Contains(cp.Crossing))
+                continue;
+            var lower = network.GetSplineById(cp.Crossing.LowerSplineId);
+            if (lower == null)
+                continue;
+
+            var sections = network.GetCrossSectionsForSpline(lower.SplineId)
+                .OrderBy(c => c.DistanceAlongSpline).ToList();
+            if (sections.Count == 0)
+                continue;
+
+            var center = sections
+                .OrderBy(c => Vector2.DistanceSquared(c.CenterPoint, cp.Crossing.CrossingXY)).First();
+            var centerDist = center.DistanceAlongSpline;
+
+            // Symmetric well half-length. Legacy (dip-as-pin flag): junction-safe clamp — the well stops
+            // short of junctions. Sparse (doc 05 §4.3): junctions no longer clamp the well — only way ends
+            // and structure spans do; junctions inside the well are re-pinned DOWN to the well line below,
+            // so all their contributor roads follow continuously (the §8 room-widening mirror).
+            var roomJunctionClamped = MathF.Min(
+                BridgeElevationPlanner.MeasureRampLength(network, lower, centerDist, forward: false),
+                BridgeElevationPlanner.MeasureRampLength(network, lower, centerDist, forward: true));
+            var room = widenRoomViaJunctions
+                ? MathF.Min(
+                    BridgeElevationPlanner.MeasureRampLength(network, lower, centerDist, forward: false, ignoreJunctions: true),
+                    BridgeElevationPlanner.MeasureRampLength(network, lower, centerDist, forward: true, ignoreJunctions: true))
+                : roomJunctionClamped;
+            var effRamp = MathF.Min(room, Export.GradeSeparationResolver.DefaultDipRampLengthMeters);
+            if (effRamp <= 0.01f)
+            {
+                TerrainCreationLogger.Current?.Detail(
+                    $"[BRIDGE-PLAN] dip-as-pin: crossing on spline {lower.SplineId} at {centerDist:F1}m is " +
+                    "boxed (no ramp room) — no dip pins emitted");
+                continue;
+            }
+
+            if (widenRoomViaJunctions && roomJunctionClamped < effRamp - 0.01f)
+            {
+                var singleWellRamp = effRamp;
+                var singleWellDepth = cp.DipDepthMeters;
+                LowerJunctionsInWell(network, lower,
+                    (s, baseZ) => baseZ - singleWellDepth * UnderpassWellProfile.EasedWellWeight(
+                        MathF.Abs(s - centerDist) / singleWellRamp),
+                    centerDist - effRamp, centerDist + effRamp,
+                    raisedJunctions, earlyElevation, heightMap, metersPerPixel);
+            }
+
+            foreach (var cs in sections)
+            {
+                if (cs.IsExcluded) continue;
+                if (cs.PinnedElevation.HasValue) continue; // deck/junction pins win (P1-1)
+
+                var u = MathF.Abs(cs.DistanceAlongSpline - centerDist) / effRamp;
+                if (u >= 1f) continue;
+
+                var baseZ = DipBaseZ(cs, earlyElevation, heightMap, metersPerPixel);
+                if (float.IsNaN(baseZ)) continue;
+
+                var w = (1f - u) * (1f - u) * (1f + 2f * u); // 1 at centre, 0 with zero slope at the edge
+                cs.PinnedElevation = baseZ - cp.DipDepthMeters * w;
+                pinned++;
+            }
+        }
+
+        return pinned;
+    }
+
+    /// <summary>
+    ///     Doc 28 Step C: pins ONE merged envelope well for a dip-decided underpass cluster — interior
+    ///     depth follows the per-crossing dip targets between first and last crossing
+    ///     (<see cref="UnderpassWellProfile"/>), eased to natural grade over the end ramps. All the
+    ///     cluster's dip crossings are added to <paramref name="handled"/> so the per-crossing pass skips
+    ///     them (a merged well and three overlapping singles must never both fire). Falls back to the
+    ///     per-crossing wells (returns 0, nothing marked handled) when fewer than two member dips were
+    ///     planned, when an end is junction-boxed, or — legacy dip-as-pin mode only — when a junction sits
+    ///     INSIDE the cluster (the merged well would override it; sparse mode instead re-pins it DOWN via
+    ///     <see cref="LowerJunctionsInWell"/>, doc 05 §4.3).
+    /// </summary>
+    private static int PinUnderpassClusterWell(
+        UnifiedRoadNetwork network,
+        BridgeElevationPlan plan,
+        UnderpassClusterPlan cluster,
+        HashSet<GradeSeparatedCrossing> handled,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel,
+        bool widenRoomViaJunctions,
+        HashSet<NetworkJunction>? raisedJunctions)
+    {
+        var lower = network.GetSplineById(cluster.LowerSplineId);
+        if (lower == null)
+            return 0;
+
+        var sections = network.GetCrossSectionsForSpline(lower.SplineId)
+            .OrderBy(c => c.DistanceAlongSpline).ToList();
+        if (sections.Count == 0)
+            return 0;
+
+        // The cluster's planned dips with their exact stations on the lower road (the plan may have
+        // reconciled some members to AlreadyClears against a raised deck — those need no well). TargetZ
+        // is the absolute clearance elevation under that deck (well base − planned dip).
+        var memberSet = new HashSet<GradeSeparatedCrossing>(cluster.Crossings);
+        var points = new List<(GradeSeparatedCrossing Crossing, float Station, float Depth, float TargetZ)>();
+        foreach (var cp in plan.Crossings)
+        {
+            if (!memberSet.Contains(cp.Crossing))
+                continue;
+            if (cp.Action is not (BridgeElevationAction.DipLowerRoad or BridgeElevationAction.Split))
+                continue;
+            if (cp.DipDepthMeters <= 0.001f)
+                continue;
+
+            var center = sections
+                .OrderBy(c => Vector2.DistanceSquared(c.CenterPoint, cp.Crossing.CrossingXY)).First();
+            var centerBase = DipBaseZ(center, earlyElevation, heightMap, metersPerPixel);
+            if (float.IsNaN(centerBase))
+                continue;
+            points.Add((cp.Crossing, center.DistanceAlongSpline, cp.DipDepthMeters,
+                centerBase - cp.DipDepthMeters));
+        }
+
+        if (points.Count < 2)
+            return 0; // one (or no) dip left — the single-crossing well is the right shape
+
+        points.Sort((a, b) => a.Station.CompareTo(b.Station));
+        var sFirst = points[0].Station;
+        var sLast = points[^1].Station;
+
+        // End-ramp room: same clamp chain as the single well — junction-safe in legacy dip-as-pin mode,
+        // way-end/structure-span-only in sparse mode (junctions inside the run are re-pinned down instead).
+        // The DESIRED length is depth-aware (§3.3 class slope) so a deep well recovers at a drivable grade
+        // instead of the flat 60 m default's ~15 % V-sag under the last deck.
+        float Room(float station, bool forward) => BridgeElevationPlanner.MeasureRampLength(
+            network, lower, station, forward, ignoreJunctions: widenRoomViaJunctions);
+        var desiredBack = UnderpassWellProfile.ClassRampLengthMeters(
+            points[0].Depth, lower.OsmRoadType, Export.GradeSeparationResolver.DefaultDipRampLengthMeters);
+        var desiredFwd = UnderpassWellProfile.ClassRampLengthMeters(
+            points[^1].Depth, lower.OsmRoadType, Export.GradeSeparationResolver.DefaultDipRampLengthMeters);
+        var rampBack = MathF.Min(Room(sFirst, forward: false), desiredBack);
+        var rampFwd = MathF.Min(Room(sLast, forward: true), desiredFwd);
+        if (rampBack <= 0.01f || rampFwd <= 0.01f)
+        {
+            TerrainCreationLogger.Current?.Detail(
+                $"[BRIDGE-PLAN] coherent underpass on spline {lower.SplineId} " +
+                $"[{sFirst:F1},{sLast:F1}]m is boxed at an end (no ramp room) — " +
+                "falling back to per-crossing wells");
+            return 0;
+        }
+
+        if (!widenRoomViaJunctions && HasJunctionOnSplineBetween(network, lower.SplineId, sFirst, sLast))
+        {
+            TerrainCreationLogger.Current?.Detail(
+                $"[BRIDGE-PLAN] coherent underpass on spline {lower.SplineId} " +
+                $"[{sFirst:F1},{sLast:F1}]m contains a junction — " +
+                "falling back to junction-clamped per-crossing wells (legacy dip-as-pin mode)");
+            return 0;
+        }
+
+        // Absolute-Z targets (winningen render 2026-07-02 #2): the well interior is an engineered curve
+        // through the crossing targets — the wiggly estimate base must not leak into the hard-pinned
+        // well bottom, so it is sampled ONLY at the crossing stations (and blended back in on the ramps).
+        var profile = new UnderpassWellProfile(
+            points.Select(p => (p.Station, p.TargetZ)).ToList(), rampBack, rampFwd);
+
+        // Sparse mode (doc 05 §4.3): junctions anywhere inside the well — end ramps AND interior — are
+        // re-pinned DOWN to the well line so their contributor roads follow the underpass continuously.
+        if (widenRoomViaJunctions)
+            LowerJunctionsInWell(network, lower, profile.ZAt, profile.RangeStart, profile.RangeEnd,
+                raisedJunctions, earlyElevation, heightMap, metersPerPixel);
+
+        var pinned = 0;
+        foreach (var cs in sections)
+        {
+            if (cs.IsExcluded) continue;
+            if (cs.PinnedElevation.HasValue) continue; // deck/junction pins win (P1-1)
+
+            var station = cs.DistanceAlongSpline;
+            if (station <= profile.RangeStart || station >= profile.RangeEnd) continue;
+
+            var baseZ = DipBaseZ(cs, earlyElevation, heightMap, metersPerPixel);
+            if (float.IsNaN(baseZ)) continue;
+
+            var z = profile.ZAt(station, baseZ);
+            if (z >= baseZ - 1e-3f) continue; // no drop here — leave the natural profile unpinned
+
+            cs.PinnedElevation = z;
+            pinned++;
+        }
+
+        foreach (var p in points)
+            handled.Add(p.Crossing);
+
+        TerrainCreationLogger.Current?.Detail(
+            $"[BRIDGE-PLAN] coherent underpass well: lower={lower.SplineId} " +
+            $"span=[{sFirst:F1},{sLast:F1}]m ramps={rampBack:F1}/{rampFwd:F1}m " +
+            $"crossings={points.Count} maxDip={points.Max(p => p.Depth):F2}m sections={pinned}");
+        return pinned;
+    }
+
+    /// <summary>True when any junction has a contributor on <paramref name="splineId"/> whose station lies
+    /// strictly between <paramref name="startStation"/> and <paramref name="endStation"/>. KEEP IN SYNC
+    /// with <c>GradeSeparationResolver.HasJunctionOnSplineBetween</c> — both gate the same doc-28
+    /// merged-well-vs-per-crossing fallback on their respective application paths (pin vs post-solve);
+    /// diverging bounds would make the two paths shape the same cluster differently.</summary>
+    private static bool HasJunctionOnSplineBetween(
+        UnifiedRoadNetwork network, int splineId, float startStation, float endStation)
+    {
+        foreach (var junction in network.Junctions)
+        foreach (var contributor in junction.Contributors)
+        {
+            if (contributor.Spline.SplineId != splineId)
+                continue;
+            var s = contributor.CrossSection.DistanceAlongSpline;
+            if (s > startStation + 0.01f && s < endStation - 0.01f)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Doc 05 §4.3 — pre-smooth junction LOWER along a dip well (the mirror of
+    ///     <see cref="RaiseJunctionsAlongApproachRamps"/>): when a junction sits inside the well's range on
+    ///     the lower road, it no longer clamps the well — instead its
+    ///     <c>HarmonizedElevation</c> is re-pinned DOWN to the well line (<paramref name="zAt"/> maps
+    ///     (station, naturalZ) → well Z: the single-crossing eased well or a doc-28 cluster envelope) so all its contributor roads are
+    ///     solved to the dip continuously. §4.4 conflict rule: a junction the bridge raised for an approach
+    ///     ramp is never lowered (clearance is mandatory; the dip's residual is reconciled post-solve).
+    /// </summary>
+    private static void LowerJunctionsInWell(
+        UnifiedRoadNetwork network,
+        ParameterizedRoadSpline lower,
+        Func<float, float, float> zAt,
+        float rangeStart,
+        float rangeEnd,
+        HashSet<NetworkJunction>? raisedJunctions,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        foreach (var junction in network.Junctions)
+        {
+            if (junction.Type == JunctionType.Roundabout) continue; // flat-ring machinery owns those
+
+            foreach (var contributor in junction.Contributors)
+            {
+                if (contributor.Spline.SplineId != lower.SplineId)
+                    continue;
+
+                var station = contributor.CrossSection.DistanceAlongSpline;
+                if (station <= rangeStart || station >= rangeEnd)
+                    continue;
+
+                if (raisedJunctions != null && raisedJunctions.Contains(junction))
+                {
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[BRIDGE-PLAN] dip junction-lower CONFLICT junction={junction.JunctionId} " +
+                        $"spline={lower.SplineId} — junction was raised for a bridge approach, " +
+                        "dip residual left to the post-solve verify (doc 05 §4.4)");
+                    break;
+                }
+
+                var baseJ = !float.IsNaN(junction.HarmonizedElevation)
+                    ? junction.HarmonizedElevation
+                    : DipBaseZ(contributor.CrossSection, earlyElevation, heightMap, metersPerPixel);
+                if (float.IsNaN(baseJ))
+                    break;
+
+                var target = zAt(station, baseJ);
+                var current = !float.IsNaN(junction.HarmonizedElevation) ? junction.HarmonizedElevation : baseJ;
+                if (target < current - 0.01f)
+                {
+                    TerrainCreationLogger.Current?.InfoFileOnly(
+                        $"[BRIDGE-PLAN] dip junction-lower junction={junction.JunctionId} ({junction.Type}) " +
+                        $"spline={lower.SplineId} station={station:F1}m z={current:F2}->{target:F2}");
+                    junction.HarmonizedElevation = target;
+                    junction.IsPinned = true;
+                }
+
+                break; // one contributor on the lower road places the junction in the well
+            }
+        }
+    }
+
+    /// <summary>The planner's elevation chain for a dip-pin base: solved TargetElevation → A0 early
+    /// estimate → raw DEM (same order as <c>BridgeElevationPlanner.SectionZ</c>).</summary>
+    private static float DipBaseZ(
+        UnifiedCrossSection cs,
+        Func<UnifiedCrossSection, float>? earlyElevation,
+        float[,] heightMap,
+        float metersPerPixel)
+    {
+        if (!float.IsNaN(cs.TargetElevation) && !float.IsInfinity(cs.TargetElevation))
+            return cs.TargetElevation;
+
+        if (earlyElevation != null)
+        {
+            var early = earlyElevation(cs);
+            if (!float.IsNaN(early) && !float.IsInfinity(early))
+                return early;
+        }
+
+        if (metersPerPixel <= 0f)
+            return float.NaN;
+        var w = heightMap.GetLength(1);
+        var h = heightMap.GetLength(0);
+        var px = Math.Clamp((int)(cs.CenterPoint.X / metersPerPixel), 0, w - 1);
+        var py = Math.Clamp((int)(cs.CenterPoint.Y / metersPerPixel), 0, h - 1);
+        return heightMap[py, px];
+    }
+
+    internal static void MarkStructureExclusions(
+        IEnumerable<ParameterizedRoadSpline> splines,
+        Dictionary<int, List<UnifiedCrossSection>> crossSectionsBySpline,
+        IReadOnlyList<NetworkJunction>? junctions = null)
+    {
+        var allSplines = splines as IReadOnlyList<ParameterizedRoadSpline> ?? splines.ToList();
+
+        // Doc 13: mark span ends that continue onto another deck BEFORE shrinking exclusions —
+        // such ends get NO overlap zone (and no tongue / excavator exemption downstream).
+        // Doc 14: the junctions (detected in Phase 1.8, so available here) let the detection resolve
+        // junction-driven landings the radius test misses and record WHERE each end lands.
+        BridgeToBridgeContinuity.MarkContinuationEnds(allSplines, crossSectionsBySpline, junctions);
+
+        foreach (var spline in allSplines)
+        {
+            var parameters = spline.Parameters;
+
+            if (parameters.MergeStructuresIntoCorridor)
+            {
+                if (spline.StructureSegments is not { Count: > 0 }) continue;
+                if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var spanCs)) continue;
+
+                foreach (var seg in spline.StructureSegments)
+                {
+                    var excludeSeg = (seg.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
+                                     (seg.IsTunnel && parameters.ExcludeTunnelsFromTerrain);
+                    if (!excludeSeg) continue;
+
+                    // Doc 06 v2 (render #14, user: "leave a smaller piece out than the bridge"): shrink the
+                    // TERRAIN exclusion — not the span — by the abutment overlap, so the first/last few
+                    // meters of a sparse-mode bridge span stay ORDINARY stamped road: smoothed, blended and
+                    // material-painted by the normal pipeline (the post-solve raw tongue read as rough bare
+                    // terrain). The deck mesh still covers the full span (StructureSpanId is range-wide) and
+                    // the excavator's overlap exemption drops these cells a hair below the deck surface.
+                    // Clamped to a third of the span so a short bridge keeps a real excluded middle.
+                    var bridgeRules = parameters.BridgeRules;
+                    var overlap = seg.IsBridge && bridgeRules?.EnableSparseDeckConstraints == true
+                        ? MathF.Min(MathF.Max(0f, bridgeRules.AbutmentOverlapMeters),
+                            MathF.Max(0f, (seg.EndDistance - seg.StartDistance) / 3f))
+                        : 0f;
+
+                    // Tunnel plan Phase 2c: portal-apron shrink — the first/last PortalApronMeters of a
+                    // tunnel span stay ORDINARY stamped road, so the ground road runs INTO the portal on
+                    // real terrain and the floor mesh takes over at the apron end with identical Z.
+                    var tunnelRules = parameters.TunnelRules;
+                    if (seg.IsTunnel && tunnelRules?.EnablePortalAprons == true)
+                        overlap = MathF.Min(MathF.Max(0f, tunnelRules.PortalApronMeters),
+                            MathF.Max(0f, (seg.EndDistance - seg.StartDistance) / 3f));
+
+                    // Doc 13: a bridge-to-bridge continuation end keeps the FULL exclusion — its 3 m
+                    // would otherwise be stamped as ordinary road at deck Z and Phase 4 would blend a
+                    // ground-to-deck embankment pillar under a mid-air deck corner.
+                    var overlapStart = seg.StartContinuesOntoDeck ? 0f : overlap;
+                    var overlapEnd = seg.EndContinuesOntoDeck ? 0f : overlap;
+
+                    var spanId = seg.SpanId;
+                    var marked = 0;
+                    foreach (var c in spanCs)
+                    {
+                        if (c.DistanceAlongSpline < seg.StartDistance ||
+                            c.DistanceAlongSpline > seg.EndDistance)
+                            continue;
+                        c.StructureSpanId = spanId;
+                        c.StructureSpanType = seg.Type;
+                        if (c.DistanceAlongSpline >= seg.StartDistance + overlapStart &&
+                            c.DistanceAlongSpline <= seg.EndDistance - overlapEnd)
+                        {
+                            c.IsExcluded = true;
+                            marked++;
+                        }
+                    }
+
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Marked {(seg.IsBridge ? "bridge" : "tunnel")} span {spanId} on spline {spline.SplineId} " +
+                        $"[{seg.StartDistance:F1},{seg.EndDistance:F1}]m as excluded ({marked} cross-sections) — " +
+                        $"elevation still computed for span profiling");
+                }
+            }
+            else if ((spline.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
+                     (spline.IsTunnel && parameters.ExcludeTunnelsFromTerrain))
+            {
+                if (crossSectionsBySpline.TryGetValue(spline.SplineId, out var cs))
+                {
+                    foreach (var c in cs)
+                        c.IsExcluded = true;
+
+                    TerrainCreationLogger.Current?.Detail(
+                        $"Marked {(spline.IsBridge ? "bridge" : "tunnel")} spline {spline.SplineId} " +
+                        $"as excluded from terrain ({cs.Count} cross-sections) — elevation still computed for ramp matching");
+                }
+            }
+        }
+    }
+
+    /// <summary>
     ///     Calculates target elevations for all cross-sections in the network.
     ///     Uses network-chained elevation filtering: splines are chained through the junction graph
     ///     into long elevation runs, filtered as continuous profiles, then written back to individual
@@ -1157,25 +2313,7 @@ public class UnifiedRoadSmoother
         // but DO NOT skip elevation computation — TargetElevation is virtual data for ramp generation.
         // IsExcluded=true means "don't modify terrain under bridges" — the heightmap stays at natural elevation.
         if (!reSmoothFromExisting)
-        {
-            foreach (var spline in network.Splines)
-            {
-                var parameters = spline.Parameters;
-                if ((spline.IsBridge && parameters.ExcludeBridgesFromTerrain) ||
-                    (spline.IsTunnel && parameters.ExcludeTunnelsFromTerrain))
-                {
-                    if (crossSectionsBySpline.TryGetValue(spline.SplineId, out var cs))
-                    {
-                        foreach (var c in cs)
-                            c.IsExcluded = true;
-
-                        TerrainCreationLogger.Current?.Detail(
-                            $"Marked {(spline.IsBridge ? "bridge" : "tunnel")} spline {spline.SplineId} " +
-                            $"as excluded from terrain ({cs.Count} cross-sections) — elevation still computed for ramp matching");
-                    }
-                }
-            }
-        }
+            MarkStructureExclusions(network.Splines, crossSectionsBySpline, network.Junctions);
 
         var bridgeMissingContinuationConnectors = network.Splines
             .Any(s => s.Parameters.EnableContinuationConnectorElevationBridging);
@@ -1291,14 +2429,15 @@ public class UnifiedRoadSmoother
                     _preCorrectionElevations[(c.OwnerSplineId, c.LocalIndex)] = c.TargetElevation;
             }
 
-            var affineTargets = BuildEndpointTargetLookup(network);
+            var (affineTargets, decayEndpoints) = BuildEndpointTargetLookup(network);
 
             foreach (var spline in network.Splines)
             {
                 if (!crossSectionsBySpline.TryGetValue(spline.SplineId, out var crossSections))
                     continue;
 
-                ApplyAffineLeveling(crossSections, spline.SplineId, affineTargets);
+                ApplyAffineLeveling(crossSections, spline.SplineId, affineTargets,
+                    decayEndpoints, spline.OsmRoadType);
             }
         }
 
@@ -1437,10 +2576,17 @@ public class UnifiedRoadSmoother
     ///     through road fall back to the mean of the terminating ends.
     ///     Roundabouts/mid-crossings/continuations are left to their own handlers.
     /// </summary>
-    private static Dictionary<(int splineId, bool isStart), float> BuildEndpointTargetLookup(
+    private static (Dictionary<(int splineId, bool isStart), float> targets,
+        HashSet<(int splineId, bool isStart)> decayEndpoints) BuildEndpointTargetLookup(
         UnifiedRoadNetwork network)
     {
         var targets = new Dictionary<(int, bool), float>();
+        var decayEndpoints = new HashSet<(int, bool)>();
+
+        // Doc 09 C2: when any spline opts in, also decay at A0-inflated junctions that are not in
+        // BridgeRaisedJunctions (e.g. approach-ramp junctions that inherited bridge elevation).
+        var anchorEnabled = network.Splines.Any(s =>
+            s.Parameters.BridgeRules?.EnableNaturalProfileAnchor == true);
 
         foreach (var junction in network.Junctions)
         {
@@ -1458,15 +2604,22 @@ public class UnifiedRoadSmoother
             // the road profiles agree. Overrides the pin on this no-blend path.
             junction.HarmonizedElevation = target;
 
+            // Doc 08 §7 C3: bridge-raised junctions get a DECAYED affine correction on their
+            // terminating side roads (class-slope run) instead of the full-length tilt.
+            // Doc 09 C2: extend the same decay to any A0-inflated junction when the flag is on.
+            var decays = network.BridgeRaisedJunctions.Contains(junction)
+                         || (anchorEnabled && IsJunctionElevationInflated(network, junction, target));
+
             var endpoints = junction.Contributors.Where(c => c.IsEndpoint).ToList();
             foreach (var c in endpoints)
             {
                 var key = (c.Spline.SplineId, c.IsSplineStart);
                 if (!targets.ContainsKey(key)) targets[key] = target;
+                if (decays) decayEndpoints.Add(key);
             }
         }
 
-        return targets;
+        return (targets, decayEndpoints);
     }
 
     /// <summary>
@@ -1566,12 +2719,29 @@ public class UnifiedRoadSmoother
         const float convergenceMeters = 0.01f;
         var splinesLeveled = 0;
 
+        // §3 divergence guard, part 2: re-application across passes must be ABSOLUTE, not cumulative.
+        // ApplyAffineLeveling adds the endpoint error onto the CURRENT elevations; when a pinned run
+        // keeps the endpoint from reaching its target the error never shrinks, and 8 passes stack 8 full
+        // corrections into the unpinned body (Manhattan spline 157: 8 × +14,9 m = the +113,75 m dam at
+        // bridge_2101591116). Snapshot each terminating spline the first time it is leveled and restore
+        // that baseline before every re-application — pass k then yields baseline + correction(k), so
+        // the loop converges to a bounded fixed point instead of accumulating.
+        var baselines = new Dictionary<int, float[]>();
+
+        // Doc 09 C2: when any spline opts in, also decay at A0-inflated junctions that are not in
+        // BridgeRaisedJunctions. Computed once — does not change between passes.
+        var anchorEnabled = network.Splines.Any(s =>
+            s.Parameters.BridgeRules?.EnableNaturalProfileAnchor == true);
+
         for (var pass = 0; pass < maxPasses; pass++)
         {
             // Pass 1: recompute each eligible junction's Z from the CURRENT through-road elevations,
             // pin HarmonizedElevation to it, and collect the terminating-endpoint targets. Mirrors
-            // BuildEndpointTargetLookup's junction filter + endpoint selection.
+            // BuildEndpointTargetLookup's junction filter + endpoint selection (incl. the doc 08 §7 C3
+            // decay flag for bridge-raised junctions — this pass re-runs the affine up to 8×, so it
+            // would re-tilt the side roads full-length if it didn't decay too).
             var targets = new Dictionary<(int splineId, bool isStart), float>();
+            var decayEndpoints = new HashSet<(int splineId, bool isStart)>();
             var maxHarmonizedChange = 0f;
             foreach (var junction in network.Junctions)
             {
@@ -1591,10 +2761,14 @@ public class UnifiedRoadSmoother
                         maxHarmonizedChange, MathF.Abs(settled - junction.HarmonizedElevation));
                 junction.HarmonizedElevation = settled; // closes the junction-fill bump
 
+                // Doc 08 §7 C3 / Doc 09 C2: extend decay to any A0-inflated junction when flag is on.
+                var decays = network.BridgeRaisedJunctions.Contains(junction)
+                             || (anchorEnabled && IsJunctionElevationInflated(network, junction, settled));
                 foreach (var c in junction.Contributors.Where(c => c.IsEndpoint))
                 {
                     var key = (c.Spline.SplineId, c.IsSplineStart);
                     if (!targets.ContainsKey(key)) targets[key] = settled;
+                    if (decays) decayEndpoints.Add(key);
                 }
             }
 
@@ -1607,8 +2781,21 @@ public class UnifiedRoadSmoother
             foreach (var (splineId, _) in targets.Keys)
             {
                 if (!leveled.Add(splineId)) continue; // one Apply call handles both ends of a spline
-                if (crossSectionsBySpline.TryGetValue(splineId, out var sections))
-                    ApplyAffineLeveling(sections, splineId, targets);
+                if (!crossSectionsBySpline.TryGetValue(splineId, out var sections)) continue;
+
+                var ordered = sections.OrderBy(s => s.LocalIndex).ToList();
+                if (baselines.TryGetValue(splineId, out var baseline))
+                {
+                    for (var i = 0; i < ordered.Count; i++)
+                        ordered[i].TargetElevation = baseline[i];
+                }
+                else
+                {
+                    baselines[splineId] = ordered.Select(s => s.TargetElevation).ToArray();
+                }
+
+                ApplyAffineLeveling(sections, splineId, targets, decayEndpoints,
+                    network.GetSplineById(splineId)?.OsmRoadType);
             }
             splinesLeveled = leveled.Count;
 
@@ -1729,22 +2916,45 @@ public class UnifiedRoadSmoother
     }
 
     /// <summary>
-    ///     §-ramp no-blend connector grade ease. After §3 (flush centerline Z) and §4 (banking match), a
-    ///     STEEP terminating connector still arrives at the seam at its own constant grade while the through
-    ///     road is near-level — a grade discontinuity (kink) at the seam that renders as an artifact and
-    ///     lets the connector pull on the main road's edge. This fits a local end-weld curve on the connector
-    ///     centerline over a short ramp zone from the seam: tangent to the through surface at the seam
-    ///     (grade <c>g_seam</c> = directional derivative of the through plane along the connector tangent →
-    ///     "plain"/co-planar connection), then fades the grade correction back to zero at the zone
-    ///     end. The seam Z (§3), the far-junction Z, and every cross-section beyond the weld zone stay FIXED;
-    ///     this is intentionally an end-weld only, not a full-body regrade. Length (<see cref="JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters" />,
-    ///     clamped to a fraction of the connector length) is the only knob. Returns the number of connectors
-    ///     eased.
+    ///     Seam-weld transition rate used to SIZE the weld: L = gradeBreak / this. 0.0025 = 0.25 percentage
+    ///     points per meter nominal — a 13 pp break gets a ≥ 52 m weld (before the connector-length caps).
+    ///     The Hermite h10 basis concentrates the grade change ~4× near the edge, so the worst-case local
+    ///     rate is ≈ 1 pp/m ⇒ ~2 m/s² vertical acceleration at 50 km/h. This is a transition-LENGTH rule,
+    ///     not a grade clamp: the connector's own grade beyond the weld is never limited.
+    /// </summary>
+    internal const float ConnectorWeldGradeChangePerMeter = 0.0025f;
+
+    /// <summary>
+    ///     §-ramp no-blend connector grade ease — seam-aware (2026-07-19 junction-edge-step fix; franco
+    ///     J#450/#444/#1248, OSM node 282534733). After §3 (flush centerline Z at the junction CENTER) and
+    ///     §4 (banking match), a terminating connector's solved profile leaves the junction center at its
+    ///     own body grade. The first <c>primaryHalfWidth</c> meters of that profile are hidden UNDER the
+    ///     through road's painted surface, so at the through-road EDGE — where the connector's own pixels
+    ///     begin — it sits ≈ <c>(g_body − g_plane)·halfWidth</c> off the through surface: a Z-step Phase 4
+    ///     renders as a short 30–45 % scarp. Two-zone repair per connector end:
+    ///     <para>
+    ///         APRON <c>[0, halfWidth]</c> — the centerline is projected onto the through road's tilted
+    ///         surface plane (co-planar crossing of the footprint; restores the old T-snap flat zone; §4
+    ///         has already banked the edges onto the same plane). The §3 seam Z is preserved exactly via a
+    ///         linearly fading mouth-delta term.
+    ///     </para>
+    ///     <para>
+    ///         WELD <c>(halfWidth, halfWidth+L]</c> — smoothstep blend from the plane (value AND grade)
+    ///         back onto the untouched natural profile: C1 at the edge and at the zone end. L is sized
+    ///         adaptively so the grade break is absorbed at ≤ <see cref="ConnectorWeldGradeChangePerMeter" />
+    ///         per meter; <see cref="JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters" /> is
+    ///         the MINIMUM length (0 still disables the pass). Capped to a fraction of the connector length
+    ///         past the apron and to half the connector, so the far junction can never move and opposite
+    ///         ends of a short connector can never overlap.
+    ///     </para>
+    ///     The walk outward stops at the first pinned/soft (bridge deck / dip well) cross-section — the
+    ///     repair never fights a deck pin. Returns the number of connector ends eased.
     /// </summary>
     internal static int EaseConnectorGradeToThroughSurface(UnifiedRoadNetwork network)
     {
-        const float fracCap = 0.25f;       // L never exceeds this fraction of the connector length
-        const float minGradeDelta = 1e-4f; // grade already ≈ co-planar with the through surface → no-op
+        const float fracCap = 0.25f;       // weld cap: fraction of the connector length past the apron
+        const float minGradeDelta = 1e-4f; // grade break below this AND …
+        const float minEdgeStepMeters = 0.02f; // … edge residual below this → already co-planar, no-op
         const float epsilon = 1e-3f;
 
         var crossSectionsBySpline = network.CrossSections
@@ -1776,6 +2986,7 @@ public class UnifiedRoadSmoother
                 ? JunctionSurfaceCalculator.CalculateLocalSlope(primarySections, primaryIdx)
                 : 0f;
             if (float.IsNaN(primarySlope)) primarySlope = 0f;
+            var primaryHalfWidth = MathF.Max(primaryCS.SurfaceWidth / 2f, 0f);
 
             foreach (var term in junction.Contributors)
             {
@@ -1794,78 +3005,154 @@ public class UnifiedRoadSmoother
                 var zFar = farCS.TargetElevation;
                 if (float.IsNaN(zSeam) || float.IsNaN(zFar)) continue;
 
-                // s = distance from the seam, increasing INTO the connector body.
+                // s = distance from the seam (junction center), increasing INTO the connector body.
                 var seamDist = seamCS.DistanceAlongSpline;
                 var d = MathF.Abs(farCS.DistanceAlongSpline - seamDist);
-                if (d < epsilon) continue;
+                var hw = primaryHalfWidth;
+                if (d <= hw + epsilon) continue; // junction-boxed: connector ends inside the footprint
 
-                // Connector's current near-seam grade. The weld is an additive local correction on top of
-                // the already-settled profile, so samples beyond the weld remain exactly untouched.
-                var nearBodyCS = sections
-                    .Where(cs => MathF.Abs(cs.DistanceAlongSpline - seamDist) > epsilon)
+                // Walk outward from the seam in s-order so the apron/weld stop cleanly at pins.
+                var ordered = sections
+                    .Where(cs => !float.IsNaN(cs.TargetElevation))
                     .OrderBy(cs => MathF.Abs(cs.DistanceAlongSpline - seamDist))
-                    .FirstOrDefault();
-                if (nearBodyCS == null || float.IsNaN(nearBodyCS.TargetElevation)) continue;
-                var nearS = MathF.Abs(nearBodyCS.DistanceAlongSpline - seamDist);
-                if (nearS < epsilon) continue;
-                var gNatural = (nearBodyCS.TargetElevation - zSeam) / nearS;
+                    .ToList();
+                if (ordered.Count < 2) continue;
+
+                // Through-surface plane elevation at a connector cross-section.
+                // GetPrimarySurfaceElevation is exact plane math (centerline + lateral·sin(bank) +
+                // longitudinal·slope), so evaluating it a few meters past the apron for the weld blend is
+                // well-defined; the smoothstep weight kills it long before the through road's plan
+                // curvature matters.
+                float PlaneAt(UnifiedCrossSection cs) =>
+                    JunctionSurfaceCalculator.GetPrimarySurfaceElevation(
+                        cs.CenterPoint, primaryCS, primarySlope);
+
+                // §3 pinned the mouth to the settled junction Z, which can differ from the plane sample at
+                // the mouth position by a few cm (junction pos vs primary CS station). Fade that delta out
+                // across the apron: the seam keeps EXACTLY §3's Z (the junction-fill disk and residual
+                // diagnostics key on it) while the apron end lands exactly on the plane.
+                var mouthDelta = zSeam - PlaneAt(seamCS);
 
                 // Into-body unit tangent at the seam (points away from the junction).
                 var intoBody = term.IsSplineStart ? seamCS.TangentDirection : -seamCS.TangentDirection;
                 var tLen = intoBody.Length();
                 if (tLen > epsilon) intoBody /= tLen;
 
-                // g_seam = grade the connector must have at the seam to be co-planar ("plain") with the
-                // through surface = directional derivative of the through tilted plane along the connector's
+                // g_seam = grade the connector must hold to be co-planar ("plain") with the through
+                // surface = directional derivative of the through tilted plane along the connector's
                 // into-body tangent: throughSlope·(into·T) + sin(throughBank)·(into·N).
                 var gSeam = primarySlope * Vector2.Dot(intoBody, primaryCS.TangentDirection)
                             + MathF.Sin(primaryCS.BankAngleRadians)
                             * Vector2.Dot(intoBody, primaryCS.NormalDirection);
 
-                if (MathF.Abs(gNatural - gSeam) < minGradeDelta) continue; // already smooth → nothing to ease
+                // Natural grade + plane residual at the through-road EDGE — measured from the first
+                // cross-sections PAST the apron (the first meters of connector the player actually sees;
+                // the old near-seam secant sat inside the footprint and under-reported the break).
+                UnifiedCrossSection? edge0 = null, edge1 = null;
+                foreach (var cs in ordered)
+                {
+                    var s = MathF.Abs(cs.DistanceAlongSpline - seamDist);
+                    if (s <= hw + epsilon) continue;
+                    if (edge0 == null) { edge0 = cs; continue; }
+                    edge1 = cs;
+                    break;
+                }
+                if (edge0 == null) continue; // no cross-section outside the footprint
 
-                // Clamp the ramp so it can never reach (and move) the far junction.
-                var l = MathF.Min(rampLen, fracCap * d);
+                var sEdge0 = MathF.Abs(edge0.DistanceAlongSpline - seamDist);
+                float gNatural;
+                if (edge1 != null)
+                {
+                    var sEdge1 = MathF.Abs(edge1.DistanceAlongSpline - seamDist);
+                    gNatural = (edge1.TargetElevation - edge0.TargetElevation)
+                               / MathF.Max(sEdge1 - sEdge0, epsilon);
+                }
+                else
+                {
+                    gNatural = (zFar - edge0.TargetElevation) / MathF.Max(d - sEdge0, epsilon);
+                }
+
+                // Value gap between the through plane and the natural profile AT the apron boundary
+                // (s = hw): natural back-extrapolated from the first cross-section past the apron, plane
+                // evaluated at the connector centerline point hw meters into the body. This is the Z-step
+                // the player would see at the road edge — the artifact this pass removes.
+                var natAtEdge = edge0.TargetElevation - gNatural * (sEdge0 - hw);
+                var edgePoint = seamCS.CenterPoint + intoBody * hw;
+                var planeAtEdge = JunctionSurfaceCalculator.GetPrimarySurfaceElevation(
+                    edgePoint, primaryCS, primarySlope);
+                var deltaAtEdge = planeAtEdge - natAtEdge;
+
+                var gradeDelta = MathF.Abs(gNatural - gSeam);
+                var edgeStep = MathF.Abs(deltaAtEdge);
+                if (gradeDelta < minGradeDelta && edgeStep < minEdgeStepMeters)
+                    continue; // already co-planar at the edge → nothing to ease
+
+                // Adaptive weld length: absorb the grade break at ≤ ConnectorWeldGradeChangePerMeter per
+                // meter; the knob is the MINIMUM. Capped so the weld can never reach the far junction and
+                // opposite ends of a short connector can never overlap. A connector too short for any weld
+                // is left untouched (short-spline constraint propagation owns that case).
+                var l = MathF.Max(rampLen, gradeDelta / ConnectorWeldGradeChangePerMeter);
+                l = MathF.Min(l, fracCap * (d - hw));
+                l = MathF.Min(l, 0.5f * d - hw);
                 if (l < epsilon) continue;
 
-                var gradeCorrection = gSeam - gNatural;
-
-                // [NO-BLEND RAMP] diagnostic (gated by EmitNoBlendDiagnostics). Logs the connector's natural
-                // grade, the through-surface seam grade it eases to, the (clamped) weld length, and the maximum
-                // local elevation correction. The body beyond L is not regraded.
+                // [NO-BLEND RAMP] diagnostic (gated by EmitNoBlendDiagnostics). Logs the edge-anchored
+                // geometry: apron half-width, the edge residual the apron removes, the grades being welded,
+                // and the adaptive weld length.
                 if (EmitNoBlendDiagnostics)
                 {
                     var seamOsm = (term.IsSplineStart ? term.Spline.StartOsmNodeId : term.Spline.EndOsmNodeId)
                         ?.ToString() ?? "none";
-                    var maxLocalDz = 4f * MathF.Abs(gradeCorrection) * l / 27f;
                     TerrainCreationLogger.Current?.Detail(
                         $"[NO-BLEND RAMP] J#{junction.JunctionId} node={seamOsm} spline={term.Spline.SplineId} " +
-                        $"len={d:F1}m g_natural={gNatural:+0.000;-0.000} g_seam={gSeam:+0.000;-0.000} " +
-                        $"L={l:F1}m maxLocalDz={maxLocalDz:F3}m body=kept " +
+                        $"len={d:F1}m hw={hw:F1}m edgeStep={edgeStep:F3}m " +
+                        $"g_natural={gNatural:+0.000;-0.000} g_seam={gSeam:+0.000;-0.000} L={l:F1}m " +
                         $"zSeam={zSeam:F2} (kept) zFar={zFar:F2} (kept)");
                 }
 
-                foreach (var cs in sections)
+                var applied = false;
+                foreach (var cs in ordered)
                 {
                     var s = MathF.Abs(cs.DistanceAlongSpline - seamDist);
-                    if (s > l) continue;
+                    if (s > hw + l + epsilon) break;
+                    if (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue)
+                        break; // never fight a bridge deck/dip pin — truncate the repair here
 
-                    // Local end-weld correction on top of the existing profile:
-                    //   dz(0)=0, dz'(0)=g_seam-g_natural, dz(L)=0, dz'(L)=0.
-                    // This changes only the last L meters and rejoins the untouched body with matching grade.
-                    var x = s / l;
-                    var z = cs.TargetElevation + gradeCorrection * s * (1f - x) * (1f - x);
+                    float z;
+                    if (s <= hw)
+                    {
+                        // APRON: co-planar with the through surface across its painted footprint; §3 seam Z
+                        // preserved exactly by the fading mouth delta (at s=0 this yields zSeam verbatim).
+                        z = hw > epsilon
+                            ? PlaneAt(cs) + mouthDelta * (1f - s / hw)
+                            : cs.TargetElevation;
+                    }
+                    else
+                    {
+                        // WELD: Hermite correction on top of the natural profile. h00 decays the edge
+                        // Z-gap (value 1 / slope 0 at the edge → 0/0 at the zone end); h10·L injects the
+                        // grade break (slope 1 at the edge → 0/0 at the end). Together: z = plane and
+                        // dz/ds = g_seam at the apron boundary, z = natural and dz/ds = g_natural at the
+                        // zone end — C1 at both boundaries, correction bounded by the edge gap itself.
+                        var u = (s - hw) / l;
+                        var oneMinusU = 1f - u;
+                        var h00 = (1f + 2f * u) * oneMinusU * oneMinusU;
+                        var h10 = u * oneMinusU * oneMinusU;
+                        z = cs.TargetElevation + deltaAtEdge * h00 + (gSeam - gNatural) * l * h10;
+                    }
+
+                    if (MathF.Abs(z - cs.TargetElevation) > 1e-5f) applied = true;
                     cs.TargetElevation = z;
 
-                    // Re-derive the edges around the moved centerline using the (§4-set) banking — banking is
-                    // preserved, only the centerline profile is eased.
+                    // Re-derive the edges around the moved centerline using the (§4-set) banking — banking
+                    // is preserved, only the centerline profile moves.
                     var halfW = cs.EffectiveRoadWidth / 2f;
                     var bankDelta = halfW * MathF.Sin(cs.BankAngleRadians);
                     cs.LeftEdgeElevation = z - bankDelta;
                     cs.RightEdgeElevation = z + bankDelta;
                 }
 
-                eased++;
+                if (applied) eased++;
             }
         }
 
@@ -1908,10 +3195,68 @@ public class UnifiedRoadSmoother
         return reconciled;
     }
 
+    /// <summary>Bridge-raised affine corrections below this magnitude keep the legacy full-length spread.</summary>
+    private const float AffineDecayMinErrorMeters = 1.5f;
+
+    /// <summary>Bounds on the eased decay run of a bridge-raised affine correction (doc 08 §7 C3).</summary>
+    private const float AffineDecayMinRunMeters = 60f;
+
+    private const float AffineDecayMaxRunMeters = 300f;
+
+    /// <summary>
+    ///     Doc 08 §7 C3: class-slope-sized decay run for a bridge-raised endpoint correction — the road
+    ///     sheds the lift at (roughly) its class's normal slope, within common-sense bounds.
+    /// </summary>
+    private static float AffineDecayRunMeters(float errorMeters, string? osmRoadType)
+    {
+        var slope = BridgeRuleSystemOptions.NormalMaxSlopePercent(
+            BridgeRuleSystemOptions.ClassStepFor(osmRoadType)) / 100f;
+        var run = slope > 1e-4f ? MathF.Abs(errorMeters) / slope : AffineDecayMaxRunMeters;
+        return Math.Clamp(run, AffineDecayMinRunMeters, AffineDecayMaxRunMeters);
+    }
+
+    /// <summary>
+    ///     Doc 09 C1: the junction's natural (A0) elevation = mean of its contributors' early-elevation
+    ///     estimates at the junction. NaN when the estimate is unavailable or no contributor is covered.
+    /// </summary>
+    internal static float JunctionA0Elevation(UnifiedRoadNetwork network, NetworkJunction junction)
+    {
+        var est = network.EarlyElevationEstimate;
+        if (est == null) return float.NaN;
+
+        var sum = 0f;
+        var count = 0;
+        foreach (var c in junction.Contributors)
+            if (est.TryGetValue(c.CrossSection.Index, out var z) && !float.IsNaN(z))
+            {
+                sum += z;
+                count++;
+            }
+
+        return count > 0 ? sum / count : float.NaN;
+    }
+
+    /// <summary>
+    ///     Doc 09 C1/C2: a junction is elevation-inflated when its solved Z sits ≥
+    ///     <see cref="AffineDecayMinErrorMeters"/> above its A0 natural elevation — i.e. bridge elevation
+    ///     has been transplanted onto it. Such junctions get the class-slope affine decay (C2) even when
+    ///     they are not in <see cref="UnifiedRoadNetwork.BridgeRaisedJunctions"/> (the gap that let a
+    ///     side road's endpoint tilt full-length). NaN A0 ⇒ false (never decay on missing data).
+    /// </summary>
+    internal static bool IsJunctionElevationInflated(
+        UnifiedRoadNetwork network, NetworkJunction junction, float junctionZ)
+    {
+        if (float.IsNaN(junctionZ)) return false;
+        var a0 = JunctionA0Elevation(network, junction);
+        return !float.IsNaN(a0) && junctionZ - a0 >= AffineDecayMinErrorMeters;
+    }
+
     private static void ApplyAffineLeveling(
         List<UnifiedCrossSection> sections,
         int splineId,
-        Dictionary<(int splineId, bool isStart), float> targets)
+        Dictionary<(int splineId, bool isStart), float> targets,
+        HashSet<(int splineId, bool isStart)>? decayEndpoints = null,
+        string? osmRoadType = null)
     {
         if (sections.Count == 0) return;
 
@@ -1923,16 +3268,149 @@ public class UnifiedRoadSmoother
         var n = ordered.Count;
         var elev = new float[n];
         var dist = new float[n];
+        bool[]? pinned = null;
         for (var i = 0; i < n; i++)
         {
             elev[i] = ordered[i].TargetElevation;
             dist[i] = ordered[i].DistanceAlongSpline;
+            if (ordered[i].PinnedElevation.HasValue)
+                (pinned ??= new bool[n])[i] = true;
         }
 
-        AffineJunctionLeveler.Apply(elev, dist, targetStart, targetEnd);
+        // §3 divergence guard (Manhattan spline 157, +113,75 m dam / bridge_2101591116 walls): when the
+        // junction endpoint itself sits on/inside a pinned run (dip-pinned street under a crossing
+        // bridge), the D6 pin-weight exemption below zeroes the correction AT the endpoint — the junction
+        // target is unreachable by construction, the per-pass error never shrinks, and each retarget pass
+        // re-adds the FULL correction onto the unpinned mid-body (8 × +14,9 m). A pin-locked endpoint
+        // keeps its pinned profile; the junction-vs-pin conflict is logged for the containment work.
+        if (pinned != null && (targetStart.HasValue || targetEnd.HasValue))
+        {
+            var pinWeights = BuildAffinePinWeights(dist, pinned);
+            if (targetStart.HasValue && !float.IsNaN(elev[0]) &&
+                pinWeights[0] < AffineEndpointPinLockWeight)
+            {
+                TerrainCreationLogger.Current?.Detail(
+                    $"[BRIDGE-PLAN] affine-skip spline={splineId} ({osmRoadType ?? "?"}) start: " +
+                    $"endpoint pin-locked (w={pinWeights[0]:F2}), e={targetStart.Value - elev[0]:+0.00;-0.00}m " +
+                    "unreachable — pinned profile kept");
+                targetStart = null;
+            }
+
+            if (targetEnd.HasValue && !float.IsNaN(elev[n - 1]) &&
+                pinWeights[n - 1] < AffineEndpointPinLockWeight)
+            {
+                TerrainCreationLogger.Current?.Detail(
+                    $"[BRIDGE-PLAN] affine-skip spline={splineId} ({osmRoadType ?? "?"}) end: " +
+                    $"endpoint pin-locked (w={pinWeights[n - 1]:F2}), e={targetEnd.Value - elev[n - 1]:+0.00;-0.00}m " +
+                    "unreachable — pinned profile kept");
+                targetEnd = null;
+            }
+
+            if (targetStart == null && targetEnd == null) return;
+        }
+
+        // Doc 08 §7 C3: at a bridge-raised junction the endpoint error is metres, not centimetres —
+        // decay that end's correction over a class-slope run instead of tilting the whole road into an
+        // embankment. Small errors keep the legacy full-length spread (imperceptible by design).
+        float? decayStart = null;
+        float? decayEnd = null;
+        if (decayEndpoints != null)
+        {
+            if (targetStart.HasValue && decayEndpoints.Contains((splineId, true)) &&
+                !float.IsNaN(elev[0]) &&
+                MathF.Abs(targetStart.Value - elev[0]) >= AffineDecayMinErrorMeters)
+                decayStart = AffineDecayRunMeters(targetStart.Value - elev[0], osmRoadType);
+            if (targetEnd.HasValue && decayEndpoints.Contains((splineId, false)) &&
+                !float.IsNaN(elev[n - 1]) &&
+                MathF.Abs(targetEnd.Value - elev[n - 1]) >= AffineDecayMinErrorMeters)
+                decayEnd = AffineDecayRunMeters(targetEnd.Value - elev[n - 1], osmRoadType);
+
+            if (decayStart.HasValue || decayEnd.HasValue)
+                TerrainCreationLogger.Current?.Detail(
+                    $"[BRIDGE-PLAN] affine-decay spline={splineId} ({osmRoadType ?? "?"})" +
+                    (decayStart.HasValue
+                        ? $" start(e={targetStart!.Value - elev[0]:+0.00;-0.00}m L={decayStart.Value:F0}m)"
+                        : "") +
+                    (decayEnd.HasValue
+                        ? $" end(e={targetEnd!.Value - elev[n - 1]:+0.00;-0.00}m L={decayEnd.Value:F0}m)"
+                        : ""));
+        }
+
+        ApplyAffineLevelingCore(elev, dist, pinned, targetStart, targetEnd, decayStart, decayEnd);
 
         for (var i = 0; i < n; i++)
             ordered[i].TargetElevation = elev[i];
+    }
+
+    /// <summary>
+    ///     Affine endpoint leveling with the D6 bridge-deck-pin exemption (plan doc 14 §7 step 3), in place on
+    ///     <paramref name="elev" />. The affine leveler adds a per-distance endpoint-error correction to EVERY
+    ///     sample, which would tilt a pinned deck off its pin. So the correction is blended to zero across
+    ///     <see cref="AffinePinBlendMeters" /> approaching each pinned run — 0 on the pin (deck held exactly),
+    ///     full strength on the open road — so the ramp eases into the held deck with no step. With
+    ///     <paramref name="pinned" /> null this is exactly <see cref="AffineJunctionLeveler.Apply" /> (the
+    ///     non-bridge path, byte-identical). Internal for unit testing.
+    /// </summary>
+    internal static void ApplyAffineLevelingCore(
+        float[] elev, float[] dist, bool[]? pinned, float? targetStart, float? targetEnd,
+        float? decayLengthStart = null, float? decayLengthEnd = null)
+    {
+        var n = elev.Length;
+        float[]? pre = pinned != null ? (float[])elev.Clone() : null;
+
+        AffineJunctionLeveler.Apply(elev, dist, targetStart, targetEnd, decayLengthStart, decayLengthEnd);
+
+        if (pinned == null || pre == null) return;
+
+        var weights = BuildAffinePinWeights(dist, pinned);
+        for (var i = 0; i < n; i++)
+        {
+            if (float.IsNaN(pre[i]) || float.IsNaN(elev[i])) continue;
+            // pre[i] is the pre-affine value (hard-held to the pin on deck sections); scale only the correction.
+            elev[i] = pre[i] + (elev[i] - pre[i]) * weights[i];
+        }
+    }
+
+    /// <summary>
+    /// Per-section weight (0..1) scaling the affine endpoint correction near pinned bridge-deck sections (D6,
+    /// plan doc 14 §7 step 3): 0 on a pin (keep the deck), smoothstepping up to 1 once <see cref="AffinePinBlendMeters"/>
+    /// away from the nearest pin (full affine on the open road). Computed with a two-pass distance transform over
+    /// arc-length so multiple pinned runs are each blended. Internal for unit testing.
+    /// </summary>
+    internal static float[] BuildAffinePinWeights(float[] dist, bool[] pinned)
+    {
+        var n = dist.Length;
+
+        // Distance (m) to the nearest pinned section, via forward then backward sweep over arc-length.
+        var d = new float[n];
+        var prev = float.PositiveInfinity;
+        var prevStation = n > 0 ? dist[0] : 0f;
+        for (var i = 0; i < n; i++)
+        {
+            if (pinned[i]) prev = 0f;
+            else if (!float.IsPositiveInfinity(prev)) prev += dist[i] - prevStation;
+            d[i] = prev;
+            prevStation = dist[i];
+        }
+
+        var next = float.PositiveInfinity;
+        var nextStation = n > 0 ? dist[n - 1] : 0f;
+        for (var i = n - 1; i >= 0; i--)
+        {
+            if (pinned[i]) next = 0f;
+            else if (!float.IsPositiveInfinity(next)) next += nextStation - dist[i];
+            d[i] = MathF.Min(d[i], next);
+            nextStation = dist[i];
+        }
+
+        var w = new float[n];
+        for (var i = 0; i < n; i++)
+        {
+            var t = Math.Clamp(d[i] / AffinePinBlendMeters, 0f, 1f);
+            w[i] = t * t * (3f - 2f * t); // smoothstep 0→1
+        }
+
+        return w;
     }
 
     /// <summary>

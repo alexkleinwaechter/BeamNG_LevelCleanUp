@@ -156,6 +156,15 @@ public static class TerrainValidator
             result.Warnings.Add("Size > 8192 may cause memory issues");
         }
         
+        // Index 255 is the terrain-hole sentinel (TerrainHoleCutter.HoleMaterialIndex): a material at
+        // that index would silently serialize as holes. Usable material indices are 0..254.
+        if (parameters.Materials != null && parameters.Materials.Count > Processing.TerrainHoleCutter.HoleMaterialIndex)
+        {
+            result.Warnings.Add(
+                $"{parameters.Materials.Count} materials exceed the usable range of 255 " +
+                $"(index 255 is reserved for terrain holes) - materials beyond index 254 will not render correctly");
+        }
+
         // Warning if no layer images provided
         if (parameters.Materials != null)
         {

@@ -70,12 +70,8 @@ public class NetworkJunctionHarmonizer
             return result;
         }
 
-        // Store network reference and build cross-section lookup for slope calculations
+        // Store network reference; the cross-section lookup is built after junctions are known.
         _currentNetwork = network;
-        _crossSectionsBySpline = network.CrossSections
-            .Where(cs => !cs.IsExcluded)
-            .GroupBy(cs => cs.OwnerSplineId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.DistanceAlongSpline).ToList());
 
         perfLog?.LogSection("NetworkJunctionHarmonizer");
         TerrainLogger.Info("=== UNIFIED NETWORK JUNCTION HARMONIZATION ===");
@@ -161,6 +157,8 @@ public class NetworkJunctionHarmonizer
             return result;
         }
 
+        _crossSectionsBySpline = BuildCrossSectionLookupForHarmonization(network, junctions);
+
         // Step 2: Sort by priority (handle highest-priority junctions first)
         var sortedJunctions = junctions.OrderByDescending(j => j.MaxPriority).ToList();
 
@@ -193,6 +191,51 @@ public class NetworkJunctionHarmonizer
         return network.CrossSections
             .Where(cs => !cs.IsExcluded && !float.IsNaN(cs.TargetElevation))
             .ToDictionary(cs => cs.Index, cs => cs.TargetElevation);
+    }
+
+    private static Dictionary<int, List<UnifiedCrossSection>> BuildCrossSectionLookupForHarmonization(
+        UnifiedRoadNetwork network,
+        IReadOnlyCollection<NetworkJunction> junctions)
+    {
+        var connectedBridgeSplineIds = GetGeneratedBridgeSplinesWithConnectedEndpoints(junctions);
+
+        return network.CrossSections
+            .Where(cs => !cs.IsExcluded || connectedBridgeSplineIds.Contains(cs.OwnerSplineId))
+            .GroupBy(cs => cs.OwnerSplineId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(cs => cs.DistanceAlongSpline).ToList());
+    }
+
+    private static HashSet<int> GetGeneratedBridgeSplinesWithConnectedEndpoints(
+        IReadOnlyCollection<NetworkJunction> junctions)
+    {
+        var bridgeSplineIds = new HashSet<int>();
+
+        foreach (var junction in junctions)
+        {
+            if (junction.IsExcluded)
+                continue;
+
+            var connectsMultipleSplines = junction.Contributors
+                .Select(c => c.Spline.SplineId)
+                .Distinct()
+                .Skip(1)
+                .Any();
+            if (!connectsMultipleSplines)
+                continue;
+
+            foreach (var contributor in junction.Contributors)
+            {
+                var spline = contributor.Spline;
+                // Merged-corridor mode (plan doc 11, Phase 5): a bridge is an interior arc-range of a corridor,
+                // not a spline endpoint, so this whole-spline special-case is moot — and skipping it avoids
+                // wrongly excluding a corridor's (road) endpoint just because its merge-base way was the bridge.
+                if (contributor.IsEndpoint && spline.IsBridge && spline.Parameters.ExcludeBridgesFromTerrain
+                    && !spline.Parameters.MergeStructuresIntoCorridor)
+                    bridgeSplineIds.Add(spline.SplineId);
+            }
+        }
+
+        return bridgeSplineIds;
     }
 
     /// <summary>

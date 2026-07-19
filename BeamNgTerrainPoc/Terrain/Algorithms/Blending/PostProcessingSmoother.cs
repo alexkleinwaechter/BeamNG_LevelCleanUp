@@ -299,35 +299,79 @@ public class PostProcessingSmoother
             }
         }
         
-        // Also check for T-junctions (endpoint of one spline near middle of another)
+        // Also check for T-junctions (endpoint of one spline near middle of another).
+        // A spatial grid over cross-sections replaces the previous full scan of ALL cross-sections
+        // per endpoint (O(endpoints × totalCS) — seconds-to-minutes on ~1M-section networks).
+        // The original loop took the FIRST in-radius cross-section in global list order, so the grid
+        // stores each section's global ordinal and we pick the minimum ordinal — identical result.
+        var cellSize = MathF.Max(JunctionOverlapRadiusMeters, 1f);
+        var csGrid = new Dictionary<(int, int), List<(int Ordinal, UnifiedCrossSection Cs)>>();
+        for (var ordinal = 0; ordinal < network.CrossSections.Count; ordinal++)
+        {
+            var cs = network.CrossSections[ordinal];
+            if (cs.IsExcluded)
+                continue;
+
+            var key = ((int)MathF.Floor(cs.CenterPoint.X / cellSize), (int)MathF.Floor(cs.CenterPoint.Y / cellSize));
+            if (!csGrid.TryGetValue(key, out var cell))
+            {
+                cell = [];
+                csGrid[key] = cell;
+            }
+
+            cell.Add((ordinal, cs));
+        }
+
         foreach (var spline in network.Splines.Where(s => s.Parameters.EnablePostProcessingSmoothing))
         {
             var splineGroup = splineToGroup.GetValueOrDefault(spline.SplineId, -1);
-            
-            // Check this spline's endpoints against all cross-sections of other splines
+
+            // Check this spline's endpoints against nearby cross-sections of other splines
             foreach (var endpoint in new[] { spline.StartPoint, spline.EndPoint })
             {
-                foreach (var cs in network.CrossSections.Where(c => 
-                    c.OwnerSplineId != spline.SplineId && 
-                    !c.IsExcluded &&
-                    splineToGroup.GetValueOrDefault(c.OwnerSplineId, -2) != splineGroup))
+                var bestOrdinal = int.MaxValue;
+                UnifiedCrossSection? bestCs = null;
+
+                var minCellX = (int)MathF.Floor((endpoint.X - JunctionOverlapRadiusMeters) / cellSize);
+                var maxCellX = (int)MathF.Floor((endpoint.X + JunctionOverlapRadiusMeters) / cellSize);
+                var minCellY = (int)MathF.Floor((endpoint.Y - JunctionOverlapRadiusMeters) / cellSize);
+                var maxCellY = (int)MathF.Floor((endpoint.Y + JunctionOverlapRadiusMeters) / cellSize);
+
+                for (var cx = minCellX; cx <= maxCellX; cx++)
+                for (var cy = minCellY; cy <= maxCellY; cy++)
                 {
-                    var dist = Vector2.Distance(endpoint, cs.CenterPoint);
-                    if (dist <= JunctionOverlapRadiusMeters)
+                    if (!csGrid.TryGetValue((cx, cy), out var cell))
+                        continue;
+
+                    foreach (var (ordinal, cs) in cell)
                     {
-                        // T-junction found - avoid duplicates
-                        if (!junctions.Any(j => 
-                            (j.Item1 == spline.SplineId && j.Item2 == cs.OwnerSplineId) ||
-                            (j.Item1 == cs.OwnerSplineId && j.Item2 == spline.SplineId)))
-                        {
-                            junctions.Add((spline.SplineId, cs.OwnerSplineId, cs.CenterPoint));
-                        }
-                        break; // Found a junction for this endpoint, move on
+                        if (ordinal >= bestOrdinal)
+                            continue;
+                        if (cs.OwnerSplineId == spline.SplineId)
+                            continue;
+                        if (splineToGroup.GetValueOrDefault(cs.OwnerSplineId, -2) == splineGroup)
+                            continue;
+                        if (Vector2.Distance(endpoint, cs.CenterPoint) > JunctionOverlapRadiusMeters)
+                            continue;
+
+                        bestOrdinal = ordinal;
+                        bestCs = cs;
+                    }
+                }
+
+                if (bestCs != null)
+                {
+                    // T-junction found - avoid duplicates
+                    if (!junctions.Any(j =>
+                        (j.Item1 == spline.SplineId && j.Item2 == bestCs.OwnerSplineId) ||
+                        (j.Item1 == bestCs.OwnerSplineId && j.Item2 == spline.SplineId)))
+                    {
+                        junctions.Add((spline.SplineId, bestCs.OwnerSplineId, bestCs.CenterPoint));
                     }
                 }
             }
         }
-        
+
         return junctions;
     }
     
@@ -448,9 +492,10 @@ public class PostProcessingSmoother
         
         if (relevantCrossSections.Count == 0)
             return mask;
-        
-        // For each relevant cross-section, mark pixels within maxDistance
-        foreach (var cs in relevantCrossSections)
+
+        // For each relevant cross-section, mark pixels within maxDistance.
+        // Parallel: concurrent writes only ever set the same value (true), which is benign for bool[,].
+        Parallel.ForEach(relevantCrossSections, cs =>
         {
             // Calculate bounding box around the cross-section
             var halfWidth = cs.EffectiveRoadWidth / 2.0f + maxDistance;
@@ -478,8 +523,8 @@ public class PostProcessingSmoother
                     mask[y, x] = true;
                 }
             }
-        }
-        
+        });
+
         return mask;
     }
     
@@ -518,60 +563,69 @@ public class PostProcessingSmoother
         var tempMap = new float[height, width];
         var smoothedPixels = 0;
 
+        // Both passes read one array and write a different one, so rows are fully independent —
+        // safe to parallelize without changing any per-pixel result.
+
         // --- Pass 1: Horizontal (read from heightMap, write to tempMap) ---
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
+        Parallel.For(0, height, y =>
         {
-            if (!mask[y, x])
+            for (var x = 0; x < width; x++)
             {
-                tempMap[y, x] = heightMap[y, x];
-                continue;
-            }
-
-            var sum = 0f;
-            var weightSum = 0f;
-
-            for (var k = -radius; k <= radius; k++)
-            {
-                var nx = x + k;
-                if (nx >= 0 && nx < width)
+                if (!mask[y, x])
                 {
-                    var weight = kernel1D[k + radius];
-                    sum += heightMap[y, nx] * weight;
-                    weightSum += weight;
+                    tempMap[y, x] = heightMap[y, x];
+                    continue;
                 }
-            }
 
-            tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
-        }
+                var sum = 0f;
+                var weightSum = 0f;
+
+                for (var k = -radius; k <= radius; k++)
+                {
+                    var nx = x + k;
+                    if (nx >= 0 && nx < width)
+                    {
+                        var weight = kernel1D[k + radius];
+                        sum += heightMap[y, nx] * weight;
+                        weightSum += weight;
+                    }
+                }
+
+                tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
+            }
+        });
 
         // --- Pass 2: Vertical (read from tempMap, write back to heightMap) ---
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
+        Parallel.For(0, height, () => 0, (y, _, localCount) =>
         {
-            if (!mask[y, x])
+            for (var x = 0; x < width; x++)
             {
-                // heightMap[y, x] already has the original value; no action needed
-                continue;
-            }
-
-            var sum = 0f;
-            var weightSum = 0f;
-
-            for (var k = -radius; k <= radius; k++)
-            {
-                var ny = y + k;
-                if (ny >= 0 && ny < height)
+                if (!mask[y, x])
                 {
-                    var weight = kernel1D[k + radius];
-                    sum += tempMap[ny, x] * weight;
-                    weightSum += weight;
+                    // heightMap[y, x] already has the original value; no action needed
+                    continue;
                 }
+
+                var sum = 0f;
+                var weightSum = 0f;
+
+                for (var k = -radius; k <= radius; k++)
+                {
+                    var ny = y + k;
+                    if (ny >= 0 && ny < height)
+                    {
+                        var weight = kernel1D[k + radius];
+                        sum += tempMap[ny, x] * weight;
+                        weightSum += weight;
+                    }
+                }
+
+                heightMap[y, x] = weightSum > 0 ? sum / weightSum : tempMap[y, x];
+                localCount++;
             }
 
-            heightMap[y, x] = weightSum > 0 ? sum / weightSum : tempMap[y, x];
-            smoothedPixels++;
-        }
+            return localCount;
+        }, localCount => Interlocked.Add(ref smoothedPixels, localCount));
 
         TerrainCreationLogger.Current?.Detail($"Gaussian smoothed {smoothedPixels:N0} pixels (separable 2-pass)");
     }
@@ -612,39 +666,46 @@ public class PostProcessingSmoother
         var tempMap = new float[height, width];
         var smoothedPixels = 0;
 
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
+        // Pass 1 only reads heightMap and writes tempMap; rows are independent — safe to parallelize.
+        Parallel.For(0, height, () => 0, (y, _, localCount) =>
         {
-            if (!mask[y, x])
-                continue;
-
-            var sum = 0f;
-            var count = 0;
-
-            for (var ky = -radius; ky <= radius; ky++)
-            for (var kx = -radius; kx <= radius; kx++)
+            for (var x = 0; x < width; x++)
             {
-                var ny = y + ky;
-                var nx = x + kx;
+                if (!mask[y, x])
+                    continue;
 
-                if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                var sum = 0f;
+                var count = 0;
+
+                for (var ky = -radius; ky <= radius; ky++)
+                for (var kx = -radius; kx <= radius; kx++)
                 {
-                    sum += heightMap[ny, nx];
-                    count++;
+                    var ny = y + ky;
+                    var nx = x + kx;
+
+                    if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                    {
+                        sum += heightMap[ny, nx];
+                        count++;
+                    }
                 }
+
+                tempMap[y, x] = count > 0 ? sum / count : heightMap[y, x];
+                localCount++;
             }
 
-            tempMap[y, x] = count > 0 ? sum / count : heightMap[y, x];
-            smoothedPixels++;
-        }
+            return localCount;
+        }, localCount => Interlocked.Add(ref smoothedPixels, localCount));
 
         // Write back only the smoothed pixels, avoiding a full-array copy
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
+        Parallel.For(0, height, y =>
         {
-            if (mask[y, x])
-                heightMap[y, x] = tempMap[y, x];
-        }
+            for (var x = 0; x < width; x++)
+            {
+                if (mask[y, x])
+                    heightMap[y, x] = tempMap[y, x];
+            }
+        });
 
         TerrainCreationLogger.Current?.Detail($"Box smoothed {smoothedPixels:N0} pixels");
     }
@@ -663,49 +724,56 @@ public class PostProcessingSmoother
         var tempMap = new float[height, width];
         var smoothedPixels = 0;
 
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
+        // Pass 1 only reads heightMap and writes tempMap; rows are independent — safe to parallelize.
+        Parallel.For(0, height, () => 0, (y, _, localCount) =>
         {
-            if (!mask[y, x])
-                continue;
-
-            var centerValue = heightMap[y, x];
-            var sum = 0f;
-            var weightSum = 0f;
-
-            for (var ky = -radius; ky <= radius; ky++)
-            for (var kx = -radius; kx <= radius; kx++)
+            for (var x = 0; x < width; x++)
             {
-                var ny = y + ky;
-                var nx = x + kx;
+                if (!mask[y, x])
+                    continue;
 
-                if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                var centerValue = heightMap[y, x];
+                var sum = 0f;
+                var weightSum = 0f;
+
+                for (var ky = -radius; ky <= radius; ky++)
+                for (var kx = -radius; kx <= radius; kx++)
                 {
-                    var neighborValue = heightMap[ny, nx];
+                    var ny = y + ky;
+                    var nx = x + kx;
 
-                    float spatialDist = kx * kx + ky * ky;
-                    var spatialWeight = MathF.Exp(-spatialDist / (2f * sigmaSpatial * sigmaSpatial));
+                    if (ny >= 0 && ny < height && nx >= 0 && nx < width)
+                    {
+                        var neighborValue = heightMap[ny, nx];
 
-                    var valueDiff = centerValue - neighborValue;
-                    var rangeWeight = MathF.Exp(-(valueDiff * valueDiff) / (2f * sigmaRange * sigmaRange));
+                        float spatialDist = kx * kx + ky * ky;
+                        var spatialWeight = MathF.Exp(-spatialDist / (2f * sigmaSpatial * sigmaSpatial));
 
-                    var weight = spatialWeight * rangeWeight;
-                    sum += neighborValue * weight;
-                    weightSum += weight;
+                        var valueDiff = centerValue - neighborValue;
+                        var rangeWeight = MathF.Exp(-(valueDiff * valueDiff) / (2f * sigmaRange * sigmaRange));
+
+                        var weight = spatialWeight * rangeWeight;
+                        sum += neighborValue * weight;
+                        weightSum += weight;
+                    }
                 }
+
+                tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
+                localCount++;
             }
 
-            tempMap[y, x] = weightSum > 0 ? sum / weightSum : heightMap[y, x];
-            smoothedPixels++;
-        }
+            return localCount;
+        }, localCount => Interlocked.Add(ref smoothedPixels, localCount));
 
         // Write back only the smoothed pixels, avoiding a full-array copy
-        for (var y = 0; y < height; y++)
-        for (var x = 0; x < width; x++)
+        Parallel.For(0, height, y =>
         {
-            if (mask[y, x])
-                heightMap[y, x] = tempMap[y, x];
-        }
+            for (var x = 0; x < width; x++)
+            {
+                if (mask[y, x])
+                    heightMap[y, x] = tempMap[y, x];
+            }
+        });
 
         TerrainCreationLogger.Current?.Detail($"Bilateral smoothed {smoothedPixels:N0} pixels");
     }

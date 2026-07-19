@@ -41,6 +41,14 @@ public class MissionGroupCopier
     /// </summary>
     private readonly List<Asset> _mainLevelJsonAssets = new();
 
+    /// <summary>
+    ///     Maps gradient file paths as referenced in the source JSON to the filename they were
+    ///     copied to under art/skies in the target level. Only gradients that were actually
+    ///     copied appear here; game-root-relative paths (e.g. art/sky_gradients/default/...)
+    ///     resolve from the core game files, are never copied and never appear in this map.
+    /// </summary>
+    private readonly Dictionary<string, string> _copiedGradientTargets = new(StringComparer.OrdinalIgnoreCase);
+
     public MissionGroupCopier(
         List<Asset> missionGroupAssets,
         string sourceLevelPath,
@@ -605,6 +613,7 @@ public class MissionGroupCopier
                 Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
                 File.Copy(sourcePath, targetPath, true);
                 copiedFiles.Add(gradientFilePath);
+                _copiedGradientTargets[gradientFilePath] = Path.GetFileName(gradientFilePath);
 
                 PubSubChannel.SendMessage(PubSubMessageType.Info,
                     $"Copied gradient: {Path.GetFileName(gradientFilePath)}", true);
@@ -862,6 +871,11 @@ public class MissionGroupCopier
                         if (jsonDict == null)
                             continue;
 
+                        // Special handling for ScatterSky gradients - update to new location in art/skies.
+                        // Must run before UpdateAllPathFields so the values still match the
+                        // original source paths recorded during CopyGradientFile.
+                        HandleScatterSkyGradientFiles(jsonDict, className);
+
                         // Update path fields - replace source level name with target level name
                         UpdateAllPathFields(jsonDict, sourceLevelName, _targetLevelName);
 
@@ -978,6 +992,41 @@ public class MissionGroupCopier
         foreach (var field in pathFields)
         {
             UpdatePathField(jsonDict, field, sourceLevelName, targetLevelName);
+        }
+    }
+
+    /// <summary>
+    ///     Handles ScatterSky gradient file path updates. CopyGradientFile flattens copied
+    ///     gradients into art/skies, so references must be rewritten to that location.
+    ///     Gradients that were not copied (core game-root paths like
+    ///     art/sky_gradients/default/...) are left untouched - the game resolves them
+    ///     from its own content archives.
+    /// </summary>
+    private void HandleScatterSkyGradientFiles(Dictionary<string, JsonElement> jsonDict, string className)
+    {
+        if (!className.Equals("ScatterSky", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var gradientFields = new[]
+        {
+            "ambientScaleGradientFile", "colorizeGradientFile", "fogScaleGradientFile",
+            "nightFogGradientFile", "nightGradientFile", "sunScaleGradientFile"
+        };
+
+        foreach (var field in gradientFields)
+        {
+            if (!jsonDict.TryGetValue(field, out var element) || element.ValueKind != JsonValueKind.String)
+                continue;
+
+            var value = element.GetString();
+            if (string.IsNullOrEmpty(value) || !_copiedGradientTargets.TryGetValue(value, out var fileName))
+                continue;
+
+            var newPath = $"/levels/{_targetLevelName}/art/skies/{fileName}";
+            jsonDict[field] = JsonSerializer.SerializeToElement(newPath);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Updated ScatterSky {field}: {fileName}", true);
         }
     }
 

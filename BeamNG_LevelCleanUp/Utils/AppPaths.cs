@@ -70,6 +70,13 @@ public static class AppPaths
     public static string DecalRoadDefaultsPath => Path.Combine(SettingsFolder, "decalroad-defaults.json");
 
     /// <summary>
+    /// Snapshot of the hardcoded DecalRoad code defaults as of the last merge into the user file.
+    /// Used to distinguish user overrides from stale defaults when the code defaults change.
+    /// C:\Users\{username}\AppData\Local\BeamNG_LevelCleanUp\decalroad-defaults.baseline.json
+    /// </summary>
+    public static string DecalRoadDefaultsBaselinePath => Path.Combine(SettingsFolder, "decalroad-defaults.baseline.json");
+
+    /// <summary>
     /// Ensures all required directories exist.
     /// Call this at application startup.
     /// </summary>

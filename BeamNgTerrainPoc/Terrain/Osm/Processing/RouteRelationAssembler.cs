@@ -1,5 +1,7 @@
 using System.Numerics;
+using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
+using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
 
 namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
@@ -23,7 +25,14 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
 /// - Only merges ways that share a node at their connection point (not purely by order).
 ///   OSM relation member ordering is sometimes incorrect; node ID validation ensures
 ///   we only merge topologically connected consecutive members.
-/// - Respects anti-merge rules: junction nodes (valence >= 3) still block merging.
+/// - Junction valence is deliberately NOT checked — the relation order is authoritative for
+///   which two ways continue each other. The one exception: oneway U-turns (see below).
+/// - Oneway U-turn guard: a route relation contains BOTH carriageways of a dual carriageway,
+///   so blindly stitching consecutive members can close a hairpin loop through a carriageway
+///   tip node. Merges between two oneway pieces with deflection > 120° are rejected and
+///   logged as [MERGE-BLOCK] tier0. Oneway-ness is resolved per connecting ENDPOINT via lane
+///   segments, because a merged chain keeps only its base way's tags — a chain seeded from a
+///   bidirectional way must not hide the oneway carriageways merged into it.
 /// - Protected structure paths (bridges/tunnels) are already separated before this runs.
 /// - Ways not in any route relation pass through unchanged.
 /// - Ways in a route relation that can't be assembled (gaps, missing ways) also pass through.
@@ -58,13 +67,14 @@ internal static class RouteRelationAssembler
         // Step 2: Track which paths have been consumed by route relation assembly.
         var consumedWayIds = new HashSet<long>();
         var assembledPaths = new List<PathWithMetadata>();
+        var blockedLog = new List<string>();
         int totalAssembledChains = 0;
         int totalMergesPerformed = 0;
 
         // Step 3: For each route relation, try to assemble its member ways in order.
         foreach (var relation in routeRelations)
         {
-            var chainResults = AssembleRelationChains(relation, wayIdToPath, consumedWayIds);
+            var chainResults = AssembleRelationChains(relation, wayIdToPath, consumedWayIds, blockedLog);
 
             foreach (var chain in chainResults)
             {
@@ -103,6 +113,16 @@ internal static class RouteRelationAssembler
                 $"({routeRelations.Count} relation(s) checked, {paths.Count} paths unchanged)");
         }
 
+        if (blockedLog.Count > 0)
+        {
+            // File-only: Tier 0 runs before the TerrainCreationLogger session exists, so these
+            // queue up and land at the top of the session's Info log — never in the UI.
+            TerrainCreationLogger.InfoFileOnlyOrQueue(
+                $"[MERGE-BLOCK] tier0 route relation assembly rejected {blockedLog.Count} merge(s):");
+            foreach (var message in blockedLog)
+                TerrainCreationLogger.InfoFileOnlyOrQueue(message);
+        }
+
         return result;
     }
 
@@ -125,7 +145,8 @@ internal static class RouteRelationAssembler
     private static List<AssembledChain> AssembleRelationChains(
         RouteRelation relation,
         Dictionary<long, PathWithMetadata> wayIdToPath,
-        HashSet<long> alreadyConsumed)
+        HashSet<long> alreadyConsumed,
+        List<string> blockedLog)
     {
         var results = new List<AssembledChain>();
 
@@ -162,7 +183,7 @@ internal static class RouteRelationAssembler
                 //   "forward"  → way direction matches route direction (connect end→start)
                 //   "backward" → way direction is reversed (connect end→end)
                 //   ""         → unknown, try both orientations
-                var merged = TryMergeBySharedNode(chainPath, nextPath, nextRole);
+                var merged = TryMergeBySharedNode(chainPath, nextPath, nextRole, relation.RelationId, blockedLog);
                 if (merged == null)
                     break; // Can't connect — end this chain
 
@@ -182,15 +203,16 @@ internal static class RouteRelationAssembler
     /// Tries to merge two paths that share an OSM node ID at connecting endpoints.
     /// Uses the relation member role as a hint for which endpoint combination to try first,
     /// but falls back to checking all 4 combinations if the hinted one fails.
-    /// 
+    ///
     /// Unlike NodeBasedPathConnector.TryMergeByNodeId, this method does NOT check junction
     /// valence — the route relation provides explicit ordering that overrides the valence
     /// heuristic. If a route relation says two ways are consecutive, they should merge even
     /// if the connecting node is shared by 3+ ways (the route relation knows which two are
-    /// continuation partners).
+    /// continuation partners). The one exception is the oneway U-turn guard (see class doc).
     /// </summary>
     private static PathWithMetadata? TryMergeBySharedNode(
-        PathWithMetadata current, PathWithMetadata next, string role)
+        PathWithMetadata current, PathWithMetadata next, string role,
+        long relationId, List<string> blockedLog)
     {
         // Order endpoint checks based on role hint
         // "forward" → next way goes same direction → try current.End→next.Start first
@@ -200,32 +222,31 @@ internal static class RouteRelationAssembler
         if (role == "backward")
         {
             // Prefer End→End (next is reversed relative to route direction)
-            return TryEndToEnd(current, next)
-                ?? TryEndToStart(current, next)
-                ?? TryStartToEnd(current, next)
-                ?? TryStartToStart(current, next);
+            return TryEndToEnd(current, next, relationId, blockedLog)
+                ?? TryEndToStart(current, next, relationId, blockedLog)
+                ?? TryStartToEnd(current, next, relationId, blockedLog)
+                ?? TryStartToStart(current, next, relationId, blockedLog);
         }
 
         // Default (forward or empty): prefer End→Start
-        return TryEndToStart(current, next)
-            ?? TryEndToEnd(current, next)
-            ?? TryStartToEnd(current, next)
-            ?? TryStartToStart(current, next);
+        return TryEndToStart(current, next, relationId, blockedLog)
+            ?? TryEndToEnd(current, next, relationId, blockedLog)
+            ?? TryStartToEnd(current, next, relationId, blockedLog)
+            ?? TryStartToStart(current, next, relationId, blockedLog);
     }
 
     // ========================================================================================
     //  Merge Operations (check shared node ID, then merge geometry)
     // ========================================================================================
 
-    private static PathWithMetadata? TryEndToStart(PathWithMetadata path1, PathWithMetadata path2)
+    private static PathWithMetadata? TryEndToStart(
+        PathWithMetadata path1, PathWithMetadata path2, long relationId, List<string> blockedLog)
     {
         if (path1.EndNodeId.HasValue && path2.StartNodeId.HasValue &&
             path1.EndNodeId.Value == path2.StartNodeId.Value)
         {
-            // Reject U-turn on one-way divided roads (e.g. roundabout exit + entry)
-            if (AreBothOneway(path1, path2) &&
-                path1.Points.Count >= 2 && path2.Points.Count >= 2 &&
-                IsUturnAtConnection(path1.Points[^2], path1.Points[^1], path2.Points[1]))
+            if (IsBlockedOnewayUturn(path1, atEnd1: true, path2, atEnd2: false,
+                    relationId, path1.EndNodeId.Value, blockedLog))
                 return null;
 
             var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
@@ -240,20 +261,21 @@ internal static class RouteRelationAssembler
             UnionWayIds(result, path1, path2);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 path1.LaneSegments, path2.LaneSegments, path1.Points.Count - 1);
+            result.StructureSegments = StructureSegmentOps.MergeSegments(
+                path1.StructureSegments, path2.StructureSegments, path1.Points.Count - 1);
             return result;
         }
         return null;
     }
 
-    private static PathWithMetadata? TryEndToEnd(PathWithMetadata path1, PathWithMetadata path2)
+    private static PathWithMetadata? TryEndToEnd(
+        PathWithMetadata path1, PathWithMetadata path2, long relationId, List<string> blockedLog)
     {
         if (path1.EndNodeId.HasValue && path2.EndNodeId.HasValue &&
             path1.EndNodeId.Value == path2.EndNodeId.Value)
         {
-            // Reject U-turn on one-way divided roads
-            if (AreBothOneway(path1, path2) &&
-                path1.Points.Count >= 2 && path2.Points.Count >= 2 &&
-                IsUturnAtConnection(path1.Points[^2], path1.Points[^1], path2.Points[^2]))
+            if (IsBlockedOnewayUturn(path1, atEnd1: true, path2, atEnd2: true,
+                    relationId, path1.EndNodeId.Value, blockedLog))
                 return null;
 
             var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
@@ -270,20 +292,22 @@ internal static class RouteRelationAssembler
             var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 path1.LaneSegments, reversedSegs2, path1.Points.Count - 1);
+            var reversedStruct2 = StructureSegmentOps.ReverseSegments(path2.StructureSegments, path2.Points.Count);
+            result.StructureSegments = StructureSegmentOps.MergeSegments(
+                path1.StructureSegments, reversedStruct2, path1.Points.Count - 1);
             return result;
         }
         return null;
     }
 
-    private static PathWithMetadata? TryStartToEnd(PathWithMetadata path1, PathWithMetadata path2)
+    private static PathWithMetadata? TryStartToEnd(
+        PathWithMetadata path1, PathWithMetadata path2, long relationId, List<string> blockedLog)
     {
         if (path1.StartNodeId.HasValue && path2.EndNodeId.HasValue &&
             path1.StartNodeId.Value == path2.EndNodeId.Value)
         {
-            // Reject U-turn on one-way divided roads
-            if (AreBothOneway(path1, path2) &&
-                path2.Points.Count >= 2 && path1.Points.Count >= 2 &&
-                IsUturnAtConnection(path2.Points[^2], path2.Points[^1], path1.Points[1]))
+            if (IsBlockedOnewayUturn(path1, atEnd1: false, path2, atEnd2: true,
+                    relationId, path1.StartNodeId.Value, blockedLog))
                 return null;
 
             var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
@@ -298,20 +322,21 @@ internal static class RouteRelationAssembler
             UnionWayIds(result, path1, path2);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 path2.LaneSegments, path1.LaneSegments, path2.Points.Count - 1);
+            result.StructureSegments = StructureSegmentOps.MergeSegments(
+                path2.StructureSegments, path1.StructureSegments, path2.Points.Count - 1);
             return result;
         }
         return null;
     }
 
-    private static PathWithMetadata? TryStartToStart(PathWithMetadata path1, PathWithMetadata path2)
+    private static PathWithMetadata? TryStartToStart(
+        PathWithMetadata path1, PathWithMetadata path2, long relationId, List<string> blockedLog)
     {
         if (path1.StartNodeId.HasValue && path2.StartNodeId.HasValue &&
             path1.StartNodeId.Value == path2.StartNodeId.Value)
         {
-            // Reject U-turn on one-way divided roads
-            if (AreBothOneway(path1, path2) &&
-                path2.Points.Count >= 2 && path1.Points.Count >= 2 &&
-                IsUturnAtConnection(path2.Points[1], path2.Points[0], path1.Points[1]))
+            if (IsBlockedOnewayUturn(path1, atEnd1: false, path2, atEnd2: false,
+                    relationId, path1.StartNodeId.Value, blockedLog))
                 return null;
 
             var merged = new List<Vector2>(path1.Points.Count + path2.Points.Count - 1);
@@ -328,31 +353,41 @@ internal static class RouteRelationAssembler
             var reversedSegs2 = LaneSegmentOps.ReverseSegments(path2.LaneSegments, path2.Points.Count);
             result.LaneSegments = LaneSegmentOps.MergeSegments(
                 reversedSegs2, path1.LaneSegments, path2.Points.Count - 1);
+            var reversedStruct2 = StructureSegmentOps.ReverseSegments(path2.StructureSegments, path2.Points.Count);
+            result.StructureSegments = StructureSegmentOps.MergeSegments(
+                reversedStruct2, path1.StructureSegments, path2.Points.Count - 1);
             return result;
         }
         return null;
     }
 
     // ========================================================================================
-    //  U-turn Detection
+    //  Oneway U-turn Guard
     // ========================================================================================
 
     /// <summary>
-    /// Checks whether merging at a connection point would create a U-turn (sharp reversal).
-    /// 
-    /// Only called when both ways are one-way (see callers), which means a sharp reversal
-    /// indicates separate carriageways of a divided road (e.g. roundabout exit + entry sharing
-    /// a convergence node) rather than a hairpin curve on a mountain pass (which would be a
-    /// two-way road, so this check is skipped).
+    /// Rejects a relation-ordered merge that would U-turn (deflection > 120°) between two oneway
+    /// pieces — the dual-carriageway ring case: a route relation contains BOTH carriageways, so
+    /// blind stitching can close a hairpin loop through a carriageway tip node. A sharp reversal
+    /// between oneways is separate carriageways of a divided road, never a continuation (hairpin
+    /// switchbacks are bidirectional, so those merges stay allowed).
+    ///
+    /// Oneway-ness comes from <see cref="PathWithMetadata.IsOnewayAtEndpoint"/> (lane segments) —
+    /// merged chains keep only their base way's tags, so a chain seeded from a bidirectional way
+    /// would otherwise hide the oneway carriageway at its connecting end. Directions use the same
+    /// 30 m lookback as the connector, immune to short curved segments at rounded tips.
     /// </summary>
-    /// <param name="incomingPrev">The point before the connection on the incoming path.</param>
-    /// <param name="connectionPoint">The shared connection point.</param>
-    /// <param name="outgoingNext">The point after the connection on the outgoing path.</param>
-    /// <returns>True if the merge would create a U-turn (angle > ~135°), false otherwise.</returns>
-    private static bool IsUturnAtConnection(Vector2 incomingPrev, Vector2 connectionPoint, Vector2 outgoingNext)
+    private static bool IsBlockedOnewayUturn(
+        PathWithMetadata path1, bool atEnd1,
+        PathWithMetadata path2, bool atEnd2,
+        long relationId, long sharedNodeId, List<string> blockedLog)
     {
-        var dirIn = connectionPoint - incomingPrev;
-        var dirOut = outgoingNext - connectionPoint;
+        if (!path1.IsOnewayAtEndpoint(atEnd1) || !path2.IsOnewayAtEndpoint(atEnd2))
+            return false;
+
+        var connectionPoint = atEnd1 ? path1.Points[^1] : path1.Points[0];
+        var dirIn = connectionPoint - NodeBasedPathConnector.GetDirectionPoint(path1.Points, atEnd1);
+        var dirOut = NodeBasedPathConnector.GetDirectionPoint(path2.Points, atEnd2) - connectionPoint;
 
         // Degenerate segments (zero-length) — can't determine angle, allow merge
         float lenInSq = dirIn.LengthSquared();
@@ -360,33 +395,21 @@ internal static class RouteRelationAssembler
         if (lenInSq < 1e-8f || lenOutSq < 1e-8f)
             return false;
 
-        // Normalize and compute dot product
-        dirIn /= MathF.Sqrt(lenInSq);
-        dirOut /= MathF.Sqrt(lenOutSq);
-        float dot = Vector2.Dot(dirIn, dirOut);
+        float dot = Vector2.Dot(dirIn / MathF.Sqrt(lenInSq), dirOut / MathF.Sqrt(lenOutSq));
+        if (dot > NodeBasedPathConnector.OnewayUTurnDotThreshold)
+            return false;
 
-        // dot < -0.7 corresponds to angle > ~135° — a clear U-turn
-        return dot < -0.7f;
+        var deflection = MathF.Acos(Math.Clamp(dot, -1f, 1f)) * (180f / MathF.PI);
+        blockedLog.Add(
+            $"[MERGE-BLOCK] tier0 rel {relationId}: ways {path1.OsmWayId}+{path2.OsmWayId} " +
+            $"({path1.Tags.GetValueOrDefault("highway", "?")}) at node {sharedNodeId}: " +
+            $"deflection {deflection:F0}° (oneway U-turn, > 120°), chain broken");
+        return true;
     }
 
     // ========================================================================================
     //  Helpers
     // ========================================================================================
-
-    /// <summary>
-    /// Returns true if both paths have oneway=yes (or equivalent). One-way roads that reverse
-    /// direction at a shared node are separate carriageways of a divided road, not a hairpin.
-    /// </summary>
-    private static bool AreBothOneway(PathWithMetadata path1, PathWithMetadata path2)
-    {
-        return IsOneway(path1.Tags) && IsOneway(path2.Tags);
-    }
-
-    private static bool IsOneway(Dictionary<string, string> tags)
-    {
-        return tags.TryGetValue("oneway", out var value) &&
-               (value == "yes" || value == "true" || value == "1" || value == "-1");
-    }
 
     private static PathWithMetadata ClonePath(PathWithMetadata source)
     {
@@ -405,6 +428,7 @@ internal static class RouteRelationAssembler
         clone.LaneSegments = source.LaneSegments
             .Select(s => new LaneSegment { StartPointIndex = s.StartPointIndex, LaneInfo = s.LaneInfo })
             .ToList();
+        clone.StructureSegments = source.StructureSegments.Select(s => s.Clone()).ToList();
         return clone;
     }
 

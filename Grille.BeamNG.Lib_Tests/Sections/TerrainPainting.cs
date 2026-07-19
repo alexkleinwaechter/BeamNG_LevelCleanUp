@@ -12,8 +12,6 @@ namespace Grille.BeamNG.Lib_Tests.Sections;
 
 static class TerrainSection
 {
-    static string FileName = "terrain.ter";
-
     static string[] MaterialNames = ["Material0", "Material1"];
 
     public static void Run()

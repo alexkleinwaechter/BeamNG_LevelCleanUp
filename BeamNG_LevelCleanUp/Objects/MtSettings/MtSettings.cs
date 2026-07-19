@@ -168,6 +168,12 @@ public class MtBasecolorModeSettings
 
     [JsonPropertyName("OsmLayerBlendExceptions")]
     public List<MtOsmLayerBlendException> OsmLayerBlendExceptions { get; set; } = new();
+
+    [JsonPropertyName("LastBakeTerrainTimestampUtc")]
+    public DateTime? LastBakeTerrainTimestampUtc { get; set; }
+
+    [JsonPropertyName("LastBakeGeoRefSavedAtUtc")]
+    public DateTime? LastBakeGeoRefSavedAtUtc { get; set; }
 }
 
 public class MtOsmLayerBlendException
@@ -213,6 +219,9 @@ public class MtBasecolorOverlaySettings
 
     [JsonPropertyName("SelectedTileProvider")]
     public string SelectedTileProvider { get; set; } = string.Empty;
+
+    [JsonPropertyName("TileImageryDate")]
+    public string TileImageryDate { get; set; } = string.Empty;
 
     [JsonPropertyName("CachedTileImagePath")]
     public string CachedTileImagePath { get; set; } = string.Empty;

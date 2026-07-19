@@ -1,4 +1,5 @@
 @using System.Text.Json
+@using System.Text.Json.Nodes
 @using System.Text.Json.Serialization
 @using System.Text.RegularExpressions
 @using BeamNG_LevelCleanUp.Communication
@@ -687,6 +688,43 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.ExcludeBridgesFromTerrain = terrainOptions["excludeBridgesFromTerrain"]!.GetValue<bool>();
                 if (terrainOptions["excludeTunnelsFromTerrain"] != null)
                     result.ExcludeTunnelsFromTerrain = terrainOptions["excludeTunnelsFromTerrain"]!.GetValue<bool>();
+                // mergeStructuresIntoCorridor is no longer read: merged-corridor structures are
+                // always on (UI removed 2026-07); old presets that stored false are ignored.
+                if (terrainOptions["bridgeMaxSagBelowChordMeters"] != null)
+                    result.BridgeMaxSagBelowChordMeters = terrainOptions["bridgeMaxSagBelowChordMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckUndercutMeters"] != null)
+                    result.BridgeDeckUndercutMeters = terrainOptions["bridgeDeckUndercutMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckThicknessSpanRatio"] != null)
+                    result.BridgeDeckThicknessSpanRatio = terrainOptions["bridgeDeckThicknessSpanRatio"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckThicknessMinMeters"] != null)
+                    result.BridgeDeckThicknessMinMeters = terrainOptions["bridgeDeckThicknessMinMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeDeckThicknessMaxMeters"] != null)
+                    result.BridgeDeckThicknessMaxMeters = terrainOptions["bridgeDeckThicknessMaxMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeParapetHeightMeters"] != null)
+                    result.BridgeParapetHeightMeters = terrainOptions["bridgeParapetHeightMeters"]!.GetValue<float>();
+                if (terrainOptions["bridgeAbutmentDepthMeters"] != null)
+                    result.BridgeAbutmentDepthMeters = terrainOptions["bridgeAbutmentDepthMeters"]!.GetValue<float>();
+
+                // Bridge Rule System V2 (plan doc 01): whole options object for the TUNABLES (clearances,
+                // deck/pier dimensions, materials). The per-rule flags are no longer user-facing — the app
+                // always runs the full rule system — so they are forced back on after import, regardless of
+                // what an older preset stored. Case-insensitive because the node is routinely hand-edited.
+                if (terrainOptions["bridgeRules"] is JsonObject bridgeRulesNode)
+                {
+                    result.BridgeRules = bridgeRulesNode.Deserialize<BridgeRuleSystemOptions>(
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    result.BridgeRules?.EnableAllRules();
+                }
+
+                // Tunnel rule system (tunnel plan 2026-07-18): same discipline — tunables from the
+                // preset, flags forced back on (the app always runs the full tunnel system; old
+                // presets without the node simply keep the state defaults).
+                if (terrainOptions["tunnelRules"] is JsonObject tunnelRulesNode)
+                {
+                    result.TunnelRules = tunnelRulesNode.Deserialize<TunnelRuleSystemOptions>(
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    result.TunnelRules?.EnableAllRules();
+                }
 
                 var hydraulicErosion = terrainOptions["hydraulicErosion"];
                 if (hydraulicErosion != null)
@@ -1139,8 +1177,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 // No-blend tuning (Side-Road Transitions)
                 if (junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"] != null)
                     settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier = junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"]!.GetValue<float>();
-                if (junctionHarmonization["connectorGradeRampLengthMeters"] != null)
-                    settings.JunctionHarmonization.ConnectorGradeRampLengthMeters = junctionHarmonization["connectorGradeRampLengthMeters"]!.GetValue<float>();
+                // connectorGradeRampLengthMeters in old presets is deliberately ignored: the connector
+                // grade weld is always on and self-sizing (junction-edge-step fix must not be disabled).
                 // Roundabout settings
                 if (junctionHarmonization["enableRoundaboutDetection"] != null)
                     settings.JunctionHarmonization.EnableRoundaboutDetection = junctionHarmonization["enableRoundaboutDetection"]!.GetValue<bool>();
@@ -1254,9 +1292,9 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
                 // Endpoint tapering is auto-computed from road width - old preset values silently ignored
-                // No-blend tuning (Side-Road Transitions)
+                // No-blend tuning (Side-Road Transitions). The connector grade weld has no material
+                // setting anymore — always on, self-sizing.
                 material.BankingRunoffSurfaceWidthMultiplier = settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier;
-                material.ConnectorGradeRampLengthMeters = settings.JunctionHarmonization.ConnectorGradeRampLengthMeters;
                 // Roundabout settings
                 material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
                 material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;

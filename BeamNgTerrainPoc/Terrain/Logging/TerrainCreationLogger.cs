@@ -49,12 +49,44 @@ public sealed class TerrainCreationLogger : IDisposable
         Current = this;
 
         Info("Performance logging started");
+
+        // Drain file-only diagnostics queued before this session existed (e.g. the OSM
+        // spline-merge [MERGE-BLOCK] audit — spline creation runs before TerrainCreator
+        // opens the logging session).
+        while (_pendingFileOnly.TryDequeue(out var pending))
+            InfoFileOnly(pending);
     }
 
     /// <summary>
     ///     Gets the current active logger instance (for static access in algorithms).
     /// </summary>
     public static TerrainCreationLogger? Current { get; private set; }
+
+    /// <summary>
+    ///     File-only messages emitted while no logger session exists. Drained into the info log
+    ///     at the start of the next session. Bounded so an aborted run cannot grow it forever.
+    /// </summary>
+    private static readonly ConcurrentQueue<string> _pendingFileOnly = new();
+
+    /// <summary>
+    ///     Logs a file-only message to the current session, or queues it until the next session
+    ///     starts when none is active yet. Never forwarded to the UI — use for bulk diagnostics
+    ///     (e.g. the OSM spline-merge [MERGE-BLOCK] audit) that would spam the message panel.
+    /// </summary>
+    public static void InfoFileOnlyOrQueue(string message)
+    {
+        var current = Current;
+        if (current != null)
+        {
+            current.InfoFileOnly(message);
+            return;
+        }
+
+        _pendingFileOnly.Enqueue(message);
+        while (_pendingFileOnly.Count > 10_000 && _pendingFileOnly.TryDequeue(out _))
+        {
+        }
+    }
 
     /// <summary>
     ///     Writes final summary and closes log files.
@@ -92,8 +124,31 @@ public sealed class TerrainCreationLogger : IDisposable
     private StreamWriter CreateWriter(string suffix)
     {
         var path = Path.Combine(_logDirectory, $"Log_{_sessionId}_{suffix}.txt");
-        var writer = new StreamWriter(path, false) { AutoFlush = true };
+        // Buffered, NO AutoFlush: high-volume Detail/Info lines (100k+ per run) previously forced a
+        // synchronous disk flush per line, which measurably slowed the chatty pipeline phases.
+        // Durability is preserved by: immediate flush on Warning/Error, flush on every timing/section
+        // marker, a 2-second time-based flush for detail chatter, and Dispose.
+        var writer = new StreamWriter(path, false, new System.Text.UTF8Encoding(false), 1 << 16);
         return writer;
+    }
+
+    /// <summary>
+    ///     Stopwatch timestamp of the last info-writer flush (time-based flushing for chatty logs).
+    /// </summary>
+    private long _lastInfoFlushTimestamp;
+
+    /// <summary>
+    ///     Flush the info writer at most every 2 seconds for high-volume messages.
+    ///     Caller must hold <see cref="_fileLock" />.
+    /// </summary>
+    private void MaybeFlushInfoLocked()
+    {
+        var now = Stopwatch.GetTimestamp();
+        if (now - _lastInfoFlushTimestamp < Stopwatch.Frequency * 2)
+            return;
+
+        _lastInfoFlushTimestamp = now;
+        _infoWriter.Flush();
     }
 
     private void WriteHeader()
@@ -126,6 +181,7 @@ public sealed class TerrainCreationLogger : IDisposable
         lock (_fileLock)
         {
             _infoWriter.WriteLine(line);
+            MaybeFlushInfoLocked();
         }
 
         // Also forward to TerrainLogger for UI display
@@ -142,6 +198,7 @@ public sealed class TerrainCreationLogger : IDisposable
         lock (_fileLock)
         {
             _infoWriter.WriteLine(line);
+            MaybeFlushInfoLocked();
         }
         // NOT forwarded to TerrainLogger - file only
     }
@@ -157,6 +214,8 @@ public sealed class TerrainCreationLogger : IDisposable
         {
             _infoWriter.WriteLine(line);
             _timingWriter.WriteLine(line);
+            _infoWriter.Flush();
+            _timingWriter.Flush();
         }
         // NOT forwarded to TerrainLogger - file only
     }
@@ -170,6 +229,7 @@ public sealed class TerrainCreationLogger : IDisposable
         lock (_fileLock)
         {
             _warningWriter.WriteLine(line);
+            _warningWriter.Flush();
         }
 
         TerrainLogger.Warning(message);
@@ -185,6 +245,8 @@ public sealed class TerrainCreationLogger : IDisposable
         {
             _infoWriter.WriteLine(line);
             _errorWriter.WriteLine(line);
+            _infoWriter.Flush();
+            _errorWriter.Flush();
         }
 
         TerrainLogger.Error(message);
@@ -204,6 +266,8 @@ public sealed class TerrainCreationLogger : IDisposable
         {
             _infoWriter.WriteLine(line);
             _timingWriter.WriteLine(line);
+            _infoWriter.Flush();
+            _timingWriter.Flush();
         }
 
         return operationName;
@@ -230,6 +294,8 @@ public sealed class TerrainCreationLogger : IDisposable
         {
             _infoWriter.WriteLine(line);
             _timingWriter.WriteLine(line);
+            _infoWriter.Flush();
+            _timingWriter.Flush();
         }
 
         // Also log to UI if operation took more than 1 second
@@ -253,6 +319,8 @@ public sealed class TerrainCreationLogger : IDisposable
             {
                 _infoWriter.WriteLine(line);
                 _timingWriter.WriteLine(line);
+                _infoWriter.Flush();
+                _timingWriter.Flush();
             }
         }
         else
@@ -280,6 +348,7 @@ public sealed class TerrainCreationLogger : IDisposable
         lock (_fileLock)
         {
             _infoWriter.WriteLine(line);
+            MaybeFlushInfoLocked();
         }
         // NOT forwarded to TerrainLogger - file only
     }
@@ -300,6 +369,8 @@ public sealed class TerrainCreationLogger : IDisposable
         {
             _infoWriter.WriteLine(line);
             _timingWriter.WriteLine(line);
+            _infoWriter.Flush();
+            _timingWriter.Flush();
         }
     }
 
@@ -314,6 +385,8 @@ public sealed class TerrainCreationLogger : IDisposable
         {
             _infoWriter.WriteLine(line);
             _timingWriter.WriteLine(line);
+            _infoWriter.Flush();
+            _timingWriter.Flush();
         }
     }
 

@@ -116,7 +116,7 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Fragment>
     <Component Id="MainExeComponent" Guid="C3D4E5F6-A7B8-9012-C3D4-E5F6A7B89012" Directory="INSTALLFOLDER" Bitness="always64">
       <File Id="MainExecutable" 
-            Source="..\BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\BeamNG_LevelCleanUp.exe"
+            Source="..\BeamNG_LevelCleanUp\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish\BeamNG_LevelCleanUp.exe"
             KeyPath="yes" />
     </Component>
   </Fragment>
@@ -154,8 +154,8 @@ xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <!-- Harvest all files from the publish output (excluding the main exe which is defined separately) -->
   <Fragment>
     <ComponentGroup Id="AppComponents" Directory="INSTALLFOLDER">
-      <Files Include="..\BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\**">
-        <Exclude Files="..\BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\BeamNG_LevelCleanUp.exe" />
+      <Files Include="..\BeamNG_LevelCleanUp\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish\**">
+        <Exclude Files="..\BeamNG_LevelCleanUp\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish\BeamNG_LevelCleanUp.exe" />
       </Files>
     </ComponentGroup>
   </Fragment>

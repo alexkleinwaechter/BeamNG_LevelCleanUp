@@ -26,9 +26,13 @@ public static class RoadCorridorBuilder
         foreach (var spline in network.Splines)
         {
             // Skip structures only when exclusion is enabled — when disabled, bridges/tunnels
-            // get DecalRoad surfaces like regular roads (flat terrain representation)
-            if ((spline.IsBridge && spline.Parameters.ExcludeBridgesFromTerrain) ||
-                (spline.IsTunnel && spline.Parameters.ExcludeTunnelsFromTerrain))
+            // get DecalRoad surfaces like regular roads (flat terrain representation).
+            // Merged-corridor mode (plan doc 11, Phase 5): the structure is an arc-range of a corridor, so the
+            // corridor is NOT skipped whole — only the span sub-range sections are omitted (below), keeping the
+            // span out of the junction-overlap footprint (a deck doesn't overlap the road it flies over).
+            if (!spline.Parameters.MergeStructuresIntoCorridor &&
+                ((spline.IsBridge && spline.Parameters.ExcludeBridgesFromTerrain) ||
+                 (spline.IsTunnel && spline.Parameters.ExcludeTunnelsFromTerrain)))
                 continue;
 
             DecalRoadLayerSet? layerSet;
@@ -48,6 +52,9 @@ public static class RoadCorridorBuilder
                 continue;
 
             var crossSections = network.GetCrossSectionsForSpline(spline.SplineId).ToList();
+            // Merged-corridor mode: omit the bridge/tunnel span sections from the overlap-detection corridor.
+            if (spline.Parameters.MergeStructuresIntoCorridor)
+                crossSections = crossSections.Where(c => c.StructureSpanId < 0).ToList();
             if (crossSections.Count < 2)
                 continue;
 

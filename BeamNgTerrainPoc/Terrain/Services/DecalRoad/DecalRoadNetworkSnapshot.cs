@@ -10,7 +10,8 @@ namespace BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 /// </summary>
 public class DecalRoadNetworkSnapshot
 {
-    public const int FormatVersion = 3;
+    // v4: SplineSnapshot.IsLaterallyMerged (width profile must follow merged lane counts)
+    public const int FormatVersion = 4;
     public const string FileName = "network.bin";
     public const string SubFolder = "decalroad_data";
 
@@ -83,6 +84,7 @@ public class SplineSnapshot
     public Vector2 EndPoint { get; set; }
     public float TotalLengthMeters { get; set; }
     public bool IsRoundabout { get; set; }
+    public bool IsLaterallyMerged { get; set; }
     public List<LaneSegmentSnapshot>? LaneSegments { get; set; }
 
     public void WriteTo(BinaryWriter w)
@@ -103,6 +105,7 @@ public class SplineSnapshot
         w.Write(EndPoint.X); w.Write(EndPoint.Y);
         w.Write(TotalLengthMeters);
         w.Write(IsRoundabout);
+        w.Write(IsLaterallyMerged);
 
         var hasLaneSegments = LaneSegments != null;
         w.Write(hasLaneSegments);
@@ -133,6 +136,7 @@ public class SplineSnapshot
         s.EndPoint = new Vector2(r.ReadSingle(), r.ReadSingle());
         s.TotalLengthMeters = r.ReadSingle();
         s.IsRoundabout = r.ReadBoolean();
+        s.IsLaterallyMerged = r.ReadBoolean();
 
         if (r.ReadBoolean())
         {

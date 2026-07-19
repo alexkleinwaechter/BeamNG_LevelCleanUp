@@ -472,9 +472,9 @@ public partial class TerrainMaterialSettings
                     ["junctionDetectionRadiusMeters"] = Material.JunctionDetectionRadiusMeters,
                     ["junctionBlendDistanceMeters"] = Material.JunctionBlendDistanceMeters,
                     ["blendFunctionType"] = Material.JunctionBlendFunction.ToString(),
-                    // No-blend tuning (Side-Road Transitions)
+                    // No-blend tuning (Side-Road Transitions). The connector grade weld is NOT exported:
+                    // it is always on and self-sizing (adaptive length from the grade break) — no user knob.
                     ["bankingRunoffSurfaceWidthMultiplier"] = Material.BankingRunoffSurfaceWidthMultiplier,
-                    ["connectorGradeRampLengthMeters"] = Material.ConnectorGradeRampLengthMeters,
                     // Roundabout settings
                     ["enableRoundaboutDetection"] = Material.EnableRoundaboutDetection,
                     ["enableRoundaboutRoadTrimming"] = Material.EnableRoundaboutRoadTrimming,
@@ -647,9 +647,9 @@ public partial class TerrainMaterialSettings
                 if (junctionParams["bankingRunoffSurfaceWidthMultiplier"] != null)
                     Material.BankingRunoffSurfaceWidthMultiplier =
                         junctionParams["bankingRunoffSurfaceWidthMultiplier"]!.GetValue<float>();
-                if (junctionParams["connectorGradeRampLengthMeters"] != null)
-                    Material.ConnectorGradeRampLengthMeters =
-                        junctionParams["connectorGradeRampLengthMeters"]!.GetValue<float>();
+                // connectorGradeRampLengthMeters in old presets is deliberately IGNORED: the grade weld is
+                // always on with the library default minimum + adaptive sizing (a preset carrying 0 must not
+                // silently disable the junction-edge-step fix).
                 // Roundabout settings
                 if (junctionParams["enableRoundaboutDetection"] != null)
                     Material.EnableRoundaboutDetection =
@@ -856,12 +856,9 @@ public partial class TerrainMaterialSettings
         /// </summary>
         public float BankingRunoffSurfaceWidthMultiplier { get; set; } = 3.0f;
 
-        /// <summary>
-        ///     Length (m) of the connector grade ramp that eases a steep connector to the through road's
-        ///     surface at the seam. 0 = disabled. Maps to
-        ///     <see cref="JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters" />.
-        /// </summary>
-        public float ConnectorGradeRampLengthMeters { get; set; } = 6.0f;
+        // NOTE (2026-07-19): no ConnectorGradeRampLengthMeters here anymore — the connector grade weld is
+        // always on and self-sizing (JunctionHarmonizationParameters keeps the library default minimum;
+        // the adaptive length from the grade break does the tuning). Deliberately not a user setting.
 
         // ========================================
         // ROUNDABOUT SETTINGS
@@ -1071,11 +1068,10 @@ public partial class TerrainMaterialSettings
                 JunctionDetectionRadiusMeters = preset.JunctionHarmonizationParameters.JunctionDetectionRadiusMeters;
                 JunctionBlendDistanceMeters = preset.JunctionHarmonizationParameters.JunctionBlendDistanceMeters;
                 JunctionBlendFunction = preset.JunctionHarmonizationParameters.BlendFunctionType;
-                // No-blend tuning (Side-Road Transitions)
+                // No-blend tuning (Side-Road Transitions). ConnectorGradeRampLengthMeters is deliberately
+                // NOT taken from the preset — the grade weld is always on with the library default.
                 BankingRunoffSurfaceWidthMultiplier =
                     preset.JunctionHarmonizationParameters.BankingRunoffSurfaceWidthMultiplier;
-                ConnectorGradeRampLengthMeters =
-                    preset.JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters;
                 // Roundabout settings
                 EnableRoundaboutDetection = preset.JunctionHarmonizationParameters.EnableRoundaboutDetection;
                 EnableRoundaboutRoadTrimming = preset.JunctionHarmonizationParameters.EnableRoundaboutRoadTrimming;
@@ -1105,7 +1101,8 @@ public partial class TerrainMaterialSettings
         public RoadSmoothingParameters BuildRoadSmoothingParameters(string? debugOutputDirectory = null,
             float terrainBaseHeight = 0.0f,
             bool excludeBridgesFromTerrain = false,
-            bool excludeTunnelsFromTerrain = false)
+            bool excludeTunnelsFromTerrain = false,
+            bool mergeStructuresIntoCorridor = false)
         {
             // Create a subfolder for this material's debug output to avoid overwriting other materials' images
             string? materialDebugDirectory = null;
@@ -1152,6 +1149,7 @@ public partial class TerrainMaterialSettings
                 // Bridge/Tunnel exclusion
                 ExcludeBridgesFromTerrain = excludeBridgesFromTerrain,
                 ExcludeTunnelsFromTerrain = excludeTunnelsFromTerrain,
+                MergeStructuresIntoCorridor = mergeStructuresIntoCorridor,
 
                 // Debug - use material-specific subfolder, always export debug images
                 DebugOutputDirectory = materialDebugDirectory,
@@ -1191,9 +1189,10 @@ public partial class TerrainMaterialSettings
                 JunctionDetectionRadiusMeters = JunctionDetectionRadiusMeters,
                 JunctionBlendDistanceMeters = JunctionBlendDistanceMeters,
                 BlendFunctionType = JunctionBlendFunction,
-                // No-blend tuning (affine ThroughRoad path)
+                // No-blend tuning (affine ThroughRoad path). ConnectorGradeRampLengthMeters is not set:
+                // the library default (minimum weld length) always applies — the weld self-sizes from the
+                // grade break, so it is not a user setting.
                 BankingRunoffSurfaceWidthMultiplier = BankingRunoffSurfaceWidthMultiplier,
-                ConnectorGradeRampLengthMeters = ConnectorGradeRampLengthMeters,
                 // Roundabout settings
                 EnableRoundaboutDetection = EnableRoundaboutDetection,
                 EnableRoundaboutRoadTrimming = EnableRoundaboutRoadTrimming,

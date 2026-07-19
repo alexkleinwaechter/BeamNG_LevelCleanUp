@@ -127,7 +127,6 @@
     private string width, height;
     private List<GridFileListItem> BindingListDelete { get; set; } = new();
     private HashSet<GridFileListItem> _selectedItems = new();
-    private bool _fixed_Header = true;
     private MudExpansionPanels? FileSelect { get; set; }
     private string _searchString = string.Empty;
     private string _labelFileSummaryShrink { get; set; } = string.Empty;
@@ -304,8 +303,9 @@
                     .Select(x => new FileInfo(x)).ToList();
                 StateHasChanged();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
+                // Silently fail - vanilla levels are optional
             }
         }
     }
