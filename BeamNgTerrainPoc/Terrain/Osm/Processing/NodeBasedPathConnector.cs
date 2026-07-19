@@ -1,5 +1,6 @@
 using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Logging;
+using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Models.RoadGeometry;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
@@ -18,6 +19,10 @@ namespace BeamNgTerrainPoc.Terrain.Osm.Processing;
 ///     - At junction nodes, deflection angle must be below 90°. Junctions are detected via the
 ///       per-partition endpoint valence (>= 3) plus the optional cross-type global junction set
 ///       (see the Connect parameter doc) — rejections are logged as [MERGE-BLOCK].
+///     - At junction nodes, a pair whose road-class band is LOWER than the highest class meeting the
+///       node never chains through (cross-class chaining guard, see the junctionNodeMaxClass
+///       parameter doc) — minor streets terminate at a crossing with a major road instead of
+///       swallowing the junction into a MidSplineCrossing.
 ///     - Two oneway paths never merge with deflection above 120° (dual-carriageway throats and
 ///       ramp pairs; real hairpin switchbacks are bidirectional) — independent of junction
 ///       detection, which misses throats whose crossing ways were not downloaded.
@@ -70,13 +75,28 @@ internal static class NodeBasedPathConnector
     ///     <c>primary</c> road at one node merged into a hairpin because the primary lives in another
     ///     partition. Nodes in this set are always treated as junctions, enabling the &gt;90° deflection guard.
     /// </param>
+    /// <param name="junctionNodeMaxClass">
+    ///     Optional map: junction node ID → highest road-class band
+    ///     (<see cref="BridgeRuleSystemOptions.ClassStepFor" />) that CONTINUES THROUGH that node (interior
+    ///     node of a way, or ≥2 way-ends of the band — see
+    ///     <c>OsmGeometryProcessor.BuildJunctionNodeMaxContinuingClassMap</c>). Enables the cross-class
+    ///     chaining guard: a shared-node merge is refused when the merging pair's class band is LOWER than
+    ///     the node's max continuing band — two minor streets must not chain THROUGH a crossing that a
+    ///     higher-class road also continues through, because both roads continuous swallows the junction
+    ///     node into two spline interiors and degrades the crossing to a MidSplineCrossing (elevation nudge
+    ///     only, no junction surface → rendered hump). Broken there instead, the two arms terminate at the
+    ///     node and real junction detection gives the crossing the full T-snap/seam-weld surface machinery.
+    ///     Same-band crossings are unaffected, and a higher-class road that merely TERMINATES at the node
+    ///     never blocks (the lower road chaining through is the proper T-junction through road).
+    /// </param>
     /// <returns>Connected paths with preserved OSM metadata (tags, node IDs, way IDs).</returns>
     public static List<PathWithMetadata> Connect(
         List<PathWithMetadata> paths,
         float tolerance,
         IReadOnlyList<RouteRelation>? routeRelations = null,
         bool enforceLayerAntiMerge = false,
-        IReadOnlySet<long>? globalJunctionNodes = null)
+        IReadOnlySet<long>? globalJunctionNodes = null,
+        IReadOnlyDictionary<long, int>? junctionNodeMaxClass = null)
     {
         if (paths.Count <= 1)
             return paths.Select(ClonePath).ToList();
@@ -121,8 +141,13 @@ internal static class NodeBasedPathConnector
                 continue;
             }
 
+            // All paths in a partition share the same highway type, so the pair's class band for the
+            // cross-class guard is a per-partition constant.
+            var partitionClass = BridgeRuleSystemOptions.ClassStepFor(
+                groupKey == nullGroupKey ? null : groupKey);
+
             var merged = ConnectPartition(partition, tolerance, wayToRelations, enforceLayerAntiMerge,
-                globalJunctionNodes, blockedMerges,
+                globalJunctionNodes, junctionNodeMaxClass, partitionClass, blockedMerges,
                 out var mergeCount, out var sharedNodeMerges, out var proximityMerges,
                 out var relationBoostedMerges);
 
@@ -164,6 +189,8 @@ internal static class NodeBasedPathConnector
         Dictionary<long, HashSet<long>>? wayToRelations,
         bool enforceLayerAntiMerge,
         IReadOnlySet<long>? globalJunctionNodes,
+        IReadOnlyDictionary<long, int>? junctionNodeMaxClass,
+        int partitionClass,
         Dictionary<(long, long, long), string> blockedMerges,
         out int mergeCount,
         out int sharedNodeMerges,
@@ -194,7 +221,7 @@ internal static class NodeBasedPathConnector
         {
             var best = FindBestCandidateIndexed(pathById, grid, cellSize,
                 nodeValence, toleranceSq, wayToRelations, enforceLayerAntiMerge,
-                globalJunctionNodes, blockedMerges);
+                globalJunctionNodes, junctionNodeMaxClass, partitionClass, blockedMerges);
             if (best == null)
                 break;
 
@@ -247,6 +274,8 @@ internal static class NodeBasedPathConnector
         Dictionary<long, HashSet<long>>? wayToRelations,
         bool enforceLayerAntiMerge,
         IReadOnlySet<long>? globalJunctionNodes,
+        IReadOnlyDictionary<long, int>? junctionNodeMaxClass,
+        int partitionClass,
         Dictionary<(long, long, long), string> blockedMerges)
     {
         MergeCandidate? best = null;
@@ -293,7 +322,7 @@ internal static class NodeBasedPathConnector
                         endLookback[id1], p1.Points[^1], outgoingNext,
                         type == MergeType.EndToEnd, nodeValence, toleranceSq,
                         sharesRelation, wayToRelations, enforceLayerAntiMerge,
-                        globalJunctionNodes, blockedMerges,
+                        globalJunctionNodes, junctionNodeMaxClass, partitionClass, blockedMerges,
                         ref best, ref bestScore);
                 }
             }
@@ -325,7 +354,7 @@ internal static class NodeBasedPathConnector
                         incomingPrev, p1.Points[0], startLookforward[id1],
                         type == MergeType.StartToStart, nodeValence, toleranceSq,
                         sharesRelation, wayToRelations, enforceLayerAntiMerge,
-                        globalJunctionNodes, blockedMerges,
+                        globalJunctionNodes, junctionNodeMaxClass, partitionClass, blockedMerges,
                         ref best, ref bestScore);
                 }
             }
@@ -355,6 +384,8 @@ internal static class NodeBasedPathConnector
         Dictionary<long, HashSet<long>>? wayToRelations,
         bool enforceLayerAntiMerge,
         IReadOnlySet<long>? globalJunctionNodes,
+        IReadOnlyDictionary<long, int>? junctionNodeMaxClass,
+        int partitionClass,
         Dictionary<(long, long, long), string> blockedMerges,
         ref MergeCandidate? best,
         ref float bestScore)
@@ -423,6 +454,25 @@ internal static class NodeBasedPathConnector
         if (isJunction && dot <= 0f)
         {
             RecordBlockedMerge(blockedMerges, p1, p2, nodeId1!.Value, dot, "junction, > 90°");
+            return;
+        }
+
+        // Cross-class chaining guard: a pair of LOWER-class ways must not chain THROUGH a junction
+        // node that a higher-class road also CONTINUES through, no matter how straight the
+        // continuation. Both roads continuous swallows the node into two spline interiors — the
+        // crossing degrades to a MidSplineCrossing (elevation nudge only, no junction surface) and
+        // renders as a hump with an S-jog (node 5429248736: residential "Im Herrengarten"+
+        // "Wedenhofstraße" chained across tertiary "Maiweg"). Broken here, the two arms terminate
+        // at the node → real junction detection → the through road's T-snap + seam-weld machinery
+        // owns the crossing surface. Same-band pairs (incl. the dominant road itself) are
+        // unaffected, and a higher-class road that merely TERMINATES at the node never blocks —
+        // the lower pair chaining through is the proper T-junction through road there.
+        if (isJunction && junctionNodeMaxClass != null &&
+            junctionNodeMaxClass.TryGetValue(nodeId1!.Value, out var nodeMaxClass) &&
+            partitionClass < nodeMaxClass)
+        {
+            RecordBlockedMerge(blockedMerges, p1, p2, nodeId1.Value, dot,
+                $"class {partitionClass} < continuing class {nodeMaxClass} at junction");
             return;
         }
 

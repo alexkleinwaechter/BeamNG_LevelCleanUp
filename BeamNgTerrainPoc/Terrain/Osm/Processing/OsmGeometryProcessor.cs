@@ -894,11 +894,18 @@ public class OsmGeometryProcessor
             // The global junction set spans ALL highway types (endpoint and interior node references) —
             // the connector's per-partition valence map is blind to a junction whose through road has a
             // different type, which let ramp pairs merge into hairpins across their shared junction node.
+            // The per-node max CONTINUING road-class map powers the cross-class chaining guard: a
+            // lower-class pair (e.g. two residential streets) must not chain THROUGH a junction that a
+            // higher-class road also continues through — it must terminate there so the crossing becomes
+            // a real junction, not a MidSplineCrossing hump. A higher-class road that merely ENDS at the
+            // node does not block (the lower road chaining through is the proper T-junction through road).
             var globalJunctionNodes = BuildGlobalJunctionNodeSet(lineFeatures);
+            var junctionNodeMaxClass = BuildJunctionNodeMaxContinuingClassMap(lineFeatures, globalJunctionNodes);
             connectedPaths = regularPathsMeta.Count > 0
                 ? NodeBasedPathConnector.Connect(regularPathsMeta, endpointJoinToleranceMeters, routeRelations,
                     enforceLayerAntiMerge: mergeStructuresIntoCorridor,
-                    globalJunctionNodes: globalJunctionNodes)
+                    globalJunctionNodes: globalJunctionNodes,
+                    junctionNodeMaxClass: junctionNodeMaxClass)
                 : new List<PathWithMetadata>();
 
             Console.WriteLine($"After connecting regular paths: {connectedPaths.Count} connected paths (was {regularPathsMeta.Count})");
@@ -1097,6 +1104,79 @@ public class OsmGeometryProcessor
         }
 
         return junctions;
+    }
+
+    /// <summary>
+    /// For each global junction node, the highest road-class band
+    /// (<see cref="BridgeRuleSystemOptions.ClassStepFor"/>) that CONTINUES THROUGH the node — a band
+    /// continues when a way of that band has the node as an INTERIOR node, or when TWO OR MORE
+    /// way-ends of that band meet there (a road split at the node, e.g. the tertiary pair at node
+    /// 5429248736). A higher-class road that merely TERMINATES at the node (one way-end) does NOT
+    /// count: the lower road chaining through under a terminating higher arm is exactly what makes
+    /// the node a proper T-junction (continuous through + terminating arm), and blocking it would
+    /// split ongoing roads into endpoint splines at every side-road mouth of a higher class.
+    /// Used by <see cref="NodeBasedPathConnector"/>'s cross-class chaining guard: a pair of
+    /// LOWER-band ways must not chain through a junction a higher band also continues through —
+    /// both roads continuous swallows the node into two spline interiors, so the crossing degrades
+    /// to a MidSplineCrossing (elevation nudge only, no junction surface) and renders as a hump.
+    /// Internal for tests.
+    /// </summary>
+    internal static Dictionary<long, int> BuildJunctionNodeMaxContinuingClassMap(
+        List<OsmFeature> lineFeatures, HashSet<long> junctionNodes)
+    {
+        // Per junction node: bands with interior presence, and way-END counts per band.
+        var interiorBands = new Dictionary<long, HashSet<int>>();
+        var endCounts = new Dictionary<(long nodeId, int band), int>();
+
+        foreach (var feature in lineFeatures.Where(f => f.GeometryType == OsmGeometryType.LineString))
+        {
+            var nodeIds = feature.NodeIds;
+            if (nodeIds.Count < 2)
+                continue;
+
+            var cls = BridgeRuleSystemOptions.ClassStepFor(
+                feature.Tags.TryGetValue("highway", out var highway) ? highway : null);
+
+            for (var i = 0; i < nodeIds.Count; i++)
+            {
+                var nodeId = nodeIds[i];
+                if (!junctionNodes.Contains(nodeId))
+                    continue;
+
+                if (i == 0 || i == nodeIds.Count - 1)
+                {
+                    endCounts.TryGetValue((nodeId, cls), out var count);
+                    endCounts[(nodeId, cls)] = count + 1;
+                }
+                else
+                {
+                    if (!interiorBands.TryGetValue(nodeId, out var bands))
+                    {
+                        bands = new HashSet<int>();
+                        interiorBands[nodeId] = bands;
+                    }
+                    bands.Add(cls);
+                }
+            }
+        }
+
+        var maxContinuing = new Dictionary<long, int>();
+        foreach (var (nodeId, bands) in interiorBands)
+        foreach (var band in bands)
+        {
+            if (!maxContinuing.TryGetValue(nodeId, out var current) || band > current)
+                maxContinuing[nodeId] = band;
+        }
+
+        foreach (var ((nodeId, band), count) in endCounts)
+        {
+            if (count < 2)
+                continue; // a single way-end terminates at the node — not a continuation
+            if (!maxContinuing.TryGetValue(nodeId, out var current) || band > current)
+                maxContinuing[nodeId] = band;
+        }
+
+        return maxContinuing;
     }
 
     /// <summary>
