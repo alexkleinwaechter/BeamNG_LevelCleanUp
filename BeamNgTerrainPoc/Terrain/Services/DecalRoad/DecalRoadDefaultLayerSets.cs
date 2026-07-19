@@ -46,7 +46,8 @@ public static class DecalRoadDefaultLayerSets
             ["service"] = CreateAsphaltRoadSet("Service", 2, 2.75f, 1.5f, 0.0f),
             ["raceway"] = CreateAsphaltRoadSet("Raceway", 1, 5f, 3f, -0.8f),
             ["road"] = CreateAsphaltRoadSet("Road", 2, 3f, 1.5f, 0.0f),
-            ["track"] = CreateTrackSet("Track", 1, 2.5f, 1.0f, 0.0f),
+            ["track"] = CreateTrackSet("Track", 2, 2f, 1.0f, 0.0f),
+            ["path"] = CreateTrackSet("Track", 2, 2f, 1.0f, 0.0f),
             ["roundabout"] = CreateRoundaboutSet("Roundabout", 1, 3.5f, 2.0f, 0.0f)
         };
     }
