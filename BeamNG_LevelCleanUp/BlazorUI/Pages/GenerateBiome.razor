@@ -1,0 +1,440 @@
+@page "/GenerateBiome"
+@using BeamNG_LevelCleanUp.BlazorUI.Components
+@using BeamNG_LevelCleanUp.Communication
+@using BeamNG_LevelCleanUp.LogicBiome
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Objects.Biome
+@using MudBlazor
+
+<ErrorBoundary>
+    <ChildContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4 mb-8">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                <MudText Typo="Typo.h4">Generate Biome</MudText>
+                <MudSpacer />
+                <MudTooltip Text="Open Generate Biome guide">
+                    <MudIconButton Icon="@Icons.Material.Filled.Help" Color="Color.Primary" Variant="Variant.Outlined"
+                                   OnClick="OpenHelpDialog" />
+                </MudTooltip>
+            </MudStack>
+
+            <MudExpansionPanels>
+                <MudExpansionPanel Text="Select Unpacked Level Folder" Expanded="@(!HasLevel)">
+                    <FileSelectComponent OnFileSelected="OnFolderSelected"
+                                         SelectFolder="true"
+                                         Description="Select the unpacked level folder containing info.json">
+                    </FileSelectComponent>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
+            @if (HasBusyMessage)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4" />
+                <MudText Typo="Typo.body2" Class="mt-2">@_busyMessage</MudText>
+            }
+
+            @if (HasLevel)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mt-4 mb-3">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="flex-grow-1">
+                        @_context!.LevelName · Terrain size: @_context.TerrainSize px · @_context.MetersPerPixel m/px
+                        · Generated items: @TotalGeneratedItems.ToString("N0")
+                    </MudAlert>
+                    <MudButton OnClick="ResetPage" Color="Color.Warning" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Refresh" Disabled="@IsBusy">
+                        Reset
+                    </MudButton>
+                </MudStack>
+
+                @if (_staleReason != null)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">@_staleReason</MudAlert>
+                }
+
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+                    <MudButton OnClick="GenerateAll" Color="Color.Primary" Variant="Variant.Filled"
+                               StartIcon="@Icons.Material.Filled.Forest" Disabled="@(!CanGenerateAny)">
+                        @if (IsOperation(OperationGenerate))
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Generate All Layers
+                    </MudButton>
+                    <MudButton OnClick="SaveSettings" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Save" Disabled="@IsBusy">
+                        @if (IsOperation(OperationSaveSettings))
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Save Settings
+                    </MudButton>
+                    <MudSpacer />
+                    <MudButton OnClick="DeleteAllGenerated" Color="Color.Error" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.DeleteForever"
+                               Disabled="@(IsBusy || (TotalGeneratedItems == 0 && _context.OrphanedForestFileCount == 0))">
+                        @if (IsOperation(OperationDelete))
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        }
+                        Delete All Generated (@TotalGeneratedItems.ToString("N0"))
+                    </MudButton>
+                </MudStack>
+
+                <MudExpansionPanels MultiExpansion="true">
+                    <MudExpansionPanel>
+                        <TitleContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.Layers" />
+                                <MudText>Terrain Material Layers (@ConfiguredMaterialLayerCount configured)</MudText>
+                            </MudStack>
+                        </TitleContent>
+                        <ChildContent>
+                            <MudStack Spacing="2">
+                                @foreach (var material in _context.Materials)
+                                {
+                                    var layer = FindMaterialLayer(material.InternalName);
+                                    var manifestLayer = layer == null
+                                        ? null
+                                        : _context.Manifest.Layers.FirstOrDefault(l => l.LayerId == layer.LayerId);
+                                    <MudPaper Outlined="true" Class="pa-3">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                            <div style="@("display:flex;align-items:center;gap:8px;flex-grow:1;min-width:0;" + (layer != null ? "cursor:pointer;" : ""))"
+                                                 @onclick="@(() => ToggleMaterialExpanded(material.InternalName))">
+                                                <MudIcon Icon="@(layer == null
+                                                                   ? Icons.Material.Filled.ChevronRight
+                                                                   : IsMaterialExpanded(material.InternalName)
+                                                                       ? Icons.Material.Filled.ExpandLess
+                                                                       : Icons.Material.Filled.ExpandMore)"
+                                                         Size="Size.Small" Style="@(layer == null ? "opacity:0.25;" : null)" />
+                                                <MudTooltip Text="@GetMaterialStatusTooltip(layer)">
+                                                    <MudIcon Icon="@GetMaterialStatusIcon(layer)"
+                                                             Color="@GetMaterialStatusColor(layer)" Size="Size.Small" />
+                                                </MudTooltip>
+                                                <MudText Typo="Typo.body1"><b>@material.InternalName</b></MudText>
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                                         Color="@(material.PixelCount == 0 ? Color.Default : Color.Info)">
+                                                    @material.CoveragePercent.ToString("0.##") % · @material.PixelCount.ToString("N0") px
+                                                </MudChip>
+                                                @if (layer != null)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">
+                                                        @layer.Zones.Count zone(s)
+                                                    </MudChip>
+                                                }
+                                                @if (manifestLayer != null)
+                                                {
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">
+                                                        @manifestLayer.ItemCount.ToString("N0") items placed
+                                                    </MudChip>
+                                                }
+                                            </div>
+                                            @if (layer == null)
+                                            {
+                                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                           StartIcon="@Icons.Material.Filled.Add"
+                                                           OnClick="@(() => AddMaterialLayer(material.InternalName))"
+                                                           Disabled="@(IsBusy || material.PixelCount == 0)">
+                                                    Configure Zones
+                                                </MudButton>
+                                            }
+                                            else
+                                            {
+                                                <MudTooltip Text="Compute zone areas and item count estimates">
+                                                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                                                               StartIcon="@Icons.Material.Filled.Calculate"
+                                                               OnClick="@(() => ComputeEstimates(layer))" Disabled="@IsBusy">
+                                                        Estimates
+                                                    </MudButton>
+                                                </MudTooltip>
+                                                <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                                                           StartIcon="@Icons.Material.Filled.Forest"
+                                                           OnClick="@(() => GenerateLayer(layer))"
+                                                           Disabled="@(IsBusy || !LayerHasSelections(layer))">
+                                                    Generate
+                                                </MudButton>
+                                                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined"
+                                                           StartIcon="@Icons.Material.Filled.Delete"
+                                                           OnClick="@(() => DeleteLayerItems(layer))"
+                                                           Disabled="@(IsBusy || manifestLayer == null)">
+                                                    Delete Items
+                                                </MudButton>
+                                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                               OnClick="@(() => RemoveMaterialLayer(layer))" Disabled="@IsBusy" />
+                                            }
+                                        </MudStack>
+                                        @if (layer != null && IsMaterialExpanded(material.InternalName))
+                                        {
+                                            <MudDivider Class="my-2" />
+                                            <BiomeZoneEditor Layer="layer"
+                                                             Catalog="_context.Catalog"
+                                                             MetersPerPixel="_context.MetersPerPixel"
+                                                             ZonePixelCounts="@GetCachedZoneCounts(layer)"
+                                                             Disabled="@IsBusy"
+                                                             OnChanged="@StateHasChanged"
+                                                             OnStructureChanged="@(() => OnLayerStructureChanged(layer))" />
+                                        }
+                                    </MudPaper>
+                                }
+                            </MudStack>
+                        </ChildContent>
+                    </MudExpansionPanel>
+
+                    <MudExpansionPanel>
+                        <TitleContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.Public" />
+                                <MudText>OSM Layers (@ConfiguredOsmLayerCount configured)</MudText>
+                            </MudStack>
+                        </TitleContent>
+                        <ChildContent>
+                            @if (_context.OsmLayers.Count == 0)
+                            {
+                                <MudAlert Severity="Severity.Info" Dense="true">
+                                    No OSM mask PNGs were found (MT_TerrainGeneration\osm_layer\*.png or
+                                    MT_TerrainGeneration\*_osm_layer.png). Generate the terrain with OSM data first —
+                                    then trees can be placed on OSM features like forests, parks or farmland.
+                                </MudAlert>
+                            }
+                            else
+                            {
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                                    <MudSelect T="string" @bind-Value="_osmLayerToAdd" Label="Add OSM layer"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                               Style="min-width:340px;max-width:480px;" Disabled="@IsBusy">
+                                        @foreach (var info in AvailableOsmLayersToAdd)
+                                        {
+                                            <MudSelectItem Value="@info.Key">@info.DisplayName</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                    <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Outlined"
+                                               OnClick="AddOsmLayer"
+                                               Disabled="@(IsBusy || string.IsNullOrEmpty(_osmLayerToAdd))">
+                                        Add
+                                    </MudButton>
+                                </MudStack>
+
+                                <MudStack Spacing="2">
+                                    @foreach (var osmLayer in _context.Settings.OsmLayers.ToList())
+                                    {
+                                        var osmManifestLayer = _context.Manifest.Layers.FirstOrDefault(l => l.LayerId == osmLayer.LayerId);
+                                        var maskExists = OsmMaskExists(osmLayer.SourceKey);
+                                        <MudPaper Outlined="true" Class="pa-3">
+                                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                <div style="display:flex;align-items:center;gap:8px;flex-grow:1;min-width:0;cursor:pointer;"
+                                                     @onclick="@(() => ToggleOsmLayerExpanded(osmLayer))">
+                                                    <MudIcon Icon="@(IsOsmLayerExpanded(osmLayer)
+                                                                       ? Icons.Material.Filled.ExpandLess
+                                                                       : Icons.Material.Filled.ExpandMore)"
+                                                             Size="Size.Small" />
+                                                    <MudTooltip Text="@GetMaterialStatusTooltip(osmLayer)">
+                                                        <MudIcon Icon="@GetMaterialStatusIcon(osmLayer)"
+                                                                 Color="@GetMaterialStatusColor(osmLayer)" Size="Size.Small" />
+                                                    </MudTooltip>
+                                                    <MudTooltip Text="@osmLayer.SourceKey">
+                                                        <MudText Typo="Typo.body1"><b>@GetOsmDisplayName(osmLayer.SourceKey)</b></MudText>
+                                                    </MudTooltip>
+                                                    @if (!maskExists)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text">
+                                                            mask PNG missing
+                                                        </MudChip>
+                                                    }
+                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">
+                                                        @osmLayer.Zones.Count zone(s)
+                                                    </MudChip>
+                                                    @if (osmManifestLayer != null)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">
+                                                            @osmManifestLayer.ItemCount.ToString("N0") items placed
+                                                        </MudChip>
+                                                    }
+                                                </div>
+                                                <MudTooltip Text="Compute zone areas and item count estimates">
+                                                    <MudButton Size="Size.Small" Variant="Variant.Text"
+                                                               StartIcon="@Icons.Material.Filled.Calculate"
+                                                               OnClick="@(() => ComputeEstimates(osmLayer))"
+                                                               Disabled="@(IsBusy || !maskExists)">
+                                                        Estimates
+                                                    </MudButton>
+                                                </MudTooltip>
+                                                <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                                                           StartIcon="@Icons.Material.Filled.Forest"
+                                                           OnClick="@(() => GenerateLayer(osmLayer))"
+                                                           Disabled="@(IsBusy || !LayerHasSelections(osmLayer) || !maskExists)">
+                                                    Generate
+                                                </MudButton>
+                                                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined"
+                                                           StartIcon="@Icons.Material.Filled.Delete"
+                                                           OnClick="@(() => DeleteLayerItems(osmLayer))"
+                                                           Disabled="@(IsBusy || osmManifestLayer == null)">
+                                                    Delete Items
+                                                </MudButton>
+                                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                                               OnClick="@(() => RemoveOsmLayer(osmLayer))" Disabled="@IsBusy" />
+                                            </MudStack>
+                                            @if (IsOsmLayerExpanded(osmLayer))
+                                            {
+                                                <MudDivider Class="my-2" />
+                                                <BiomeZoneEditor Layer="osmLayer"
+                                                                 Catalog="_context.Catalog"
+                                                                 MetersPerPixel="_context.MetersPerPixel"
+                                                                 ZonePixelCounts="@GetCachedZoneCounts(osmLayer)"
+                                                                 Disabled="@IsBusy"
+                                                                 OnChanged="@StateHasChanged"
+                                                                 OnStructureChanged="@(() => OnLayerStructureChanged(osmLayer))" />
+                                            }
+                                        </MudPaper>
+                                    }
+                                </MudStack>
+                            }
+                        </ChildContent>
+                    </MudExpansionPanel>
+
+                    <MudExpansionPanel>
+                        <TitleContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.CleaningServices" />
+                                <MudText>Negative List — Cleanup (@NegativeListCount)</MudText>
+                            </MudStack>
+                        </TitleContent>
+                        <ChildContent>
+                            <MudText Typo="Typo.body2" Class="mb-2">
+                                Removes generated forest items standing on the selected layers (roads, parking areas,
+                                buildings, …). Runs automatically after every generation. Hand-placed items are only
+                                touched with the foreign-items option below.
+                            </MudText>
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+                                <MudSelect T="string" MultiSelection="true" Label="Terrain materials"
+                                           SelectedValues="@_context.Settings.NegativeList.MaterialInternalNames"
+                                           SelectedValuesChanged="@((IEnumerable<string> v) => SetNegativeMaterials(v))"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                           Style="min-width:280px;max-width:420px;" Disabled="@IsBusy">
+                                    @foreach (var material in _context.Materials)
+                                    {
+                                        <MudSelectItem Value="@material.InternalName">@material.InternalName</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudSelect T="string" MultiSelection="true" Label="OSM layers"
+                                           SelectedValues="@_context.Settings.NegativeList.OsmLayerKeys"
+                                           SelectedValuesChanged="@((IEnumerable<string> v) => SetNegativeOsmLayers(v))"
+                                           MultiSelectionTextFunc="@GetOsmSelectionText"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                                           Style="min-width:280px;max-width:420px;" Disabled="@(IsBusy || _context.OsmLayers.Count == 0)">
+                                    @foreach (var info in _context.OsmLayers)
+                                    {
+                                        <MudSelectItem Value="@info.Key">@info.DisplayName</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudNumericField T="double" Value="_context.Settings.NegativeList.BufferMeters"
+                                                 ValueChanged="@((double v) => _context.Settings.NegativeList.BufferMeters = Math.Max(v, 0))"
+                                                 Label="Buffer (m)" Min="0" Max="100" Step="0.5"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 Style="max-width:130px;" Disabled="@IsBusy" />
+                                <MudTooltip Text="Also removes items standing within this distance of a negative layer — catches trees leaning over a road edge">
+                                    <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" />
+                                </MudTooltip>
+                            </MudStack>
+
+                            @if (NegativeListCount > 0)
+                            {
+                                <MudStack Row="true" Spacing="1" Class="flex-wrap mt-2">
+                                    @foreach (var name in _context.Settings.NegativeList.MaterialInternalNames.ToList())
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Info"
+                                                 OnClose="@(() => RemoveNegativeMaterial(name))">@name</MudChip>
+                                    }
+                                    @foreach (var key in _context.Settings.NegativeList.OsmLayerKeys.ToList())
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Tertiary"
+                                                 OnClose="@(() => RemoveNegativeOsmLayer(key))">@GetOsmDisplayName(key)</MudChip>
+                                    }
+                                </MudStack>
+                            }
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2">
+                                <MudSwitch T="bool" Value="_context.Settings.NegativeList.IncludeForeignItems"
+                                           ValueChanged="@((bool v) => _context.Settings.NegativeList.IncludeForeignItems = v)"
+                                           Color="Color.Warning" Disabled="@IsBusy"
+                                           Label="Also remove foreign forest items (hand-placed / in-game biome tool) — asks for confirmation with the exact count" />
+                                <MudSpacer />
+                                <MudButton Color="Color.Secondary" Variant="Variant.Filled"
+                                           StartIcon="@Icons.Material.Filled.CleaningServices"
+                                           OnClick="CleanupNow" Disabled="@(IsBusy || NegativeListCount == 0)">
+                                    @if (IsOperation(OperationCleanup))
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                    }
+                                    Cleanup Now
+                                </MudButton>
+                            </MudStack>
+                        </ChildContent>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-4">
+                    <MudText Typo="Typo.body2">Global seed:</MudText>
+                    <MudNumericField T="int" Value="_context.Settings.GlobalSeed"
+                                     ValueChanged="@((int v) => _context.Settings.GlobalSeed = v)"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:160px;"
+                                     Disabled="@IsBusy" />
+                    <MudTooltip Text="Same seed + same settings + same terrain = identical forest on regeneration">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" />
+                    </MudTooltip>
+                    <MudText Typo="Typo.body2" Class="ml-4">Spacing factor:</MudText>
+                    <MudSlider T="double" Value="_context.Settings.SpacingFactor"
+                               ValueChanged="@((double v) => _context.Settings.SpacingFactor = v)"
+                               Min="0" Max="3" Step="0.1" Style="max-width:220px;" Disabled="@IsBusy">
+                        @_context.Settings.SpacingFactor.ToString("0.0")
+                    </MudSlider>
+                    <MudText Typo="Typo.body2" Class="ml-4">Max items per layer:</MudText>
+                    <MudNumericField T="long" Value="_context.Settings.MaxItemsPerLayer"
+                                     ValueChanged="@((long v) => _context.Settings.MaxItemsPerLayer = Math.Max(v, 10_000))"
+                                     Min="10000" Step="100000" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Style="max-width:180px;" Disabled="@IsBusy" />
+                    <MudTooltip Text="Pre-flight safety cap: a layer whose estimated item count exceeds this is refused before anything is written — guards against runaway densities producing gigabyte forest files">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" />
+                    </MudTooltip>
+                </MudStack>
+            }
+
+            <MudDrawer @bind-Open="@_openDrawer" Width="@_drawerWidth" Height="@_drawerHeight" Anchor="@_anchor"
+                       Elevation="1" Variant="DrawerVariant.Temporary">
+                <MudList T="string" ReadOnly="false" Dense="true" Gutters="true">
+                    @foreach (var item in (_showErrorLog ? _errors : _showWarningLog ? _warnings : _messages))
+                    {
+                        <MudListItem T="string" @key="@Guid.NewGuid()" Style="border-bottom:1px solid grey">
+                            <MudText Typo="Typo.body1">@item</MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudDrawer>
+
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-4">
+                @if (_errors.Any())
+                {
+                    <MudButton Color="Color.Error" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Error))" Size="Size.Small">Errors</MudButton>
+                }
+                @if (_warnings.Any())
+                {
+                    <MudButton Color="Color.Warning" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Warning))" Size="Size.Small">Warnings</MudButton>
+                }
+                @if (_messages.Any())
+                {
+                    <MudButton Color="Color.Info" OnClick="@(() => OpenDrawer(Anchor.Bottom, PubSubMessageType.Info))" Size="Size.Small">Messages</MudButton>
+                }
+                <MudSpacer />
+                @if (HasLevel)
+                {
+                    <MudButton OnClick="OpenLevelFolder" Variant="Variant.Text" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.FolderOpen" Size="Size.Small">
+                        Open Level Folder
+                    </MudButton>
+                }
+            </MudStack>
+        </MudContainer>
+    </ChildContent>
+    <ErrorContent>
+        <CustomErrorContent />
+    </ErrorContent>
+</ErrorBoundary>

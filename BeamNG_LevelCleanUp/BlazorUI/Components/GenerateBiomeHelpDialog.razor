@@ -1,0 +1,94 @@
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Help" Class="mr-2" />
+            Generate Biome Guide
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <div style="max-height: calc(100vh - 200px); overflow-y: auto; padding-right: 8px;">
+            <MudText Typo="Typo.body1" Class="mb-3">
+                Generate Biome places forest items (trees, bushes, rocks) at large scale into your level.
+                Placement regions come from the terrain material layers painted in the .ter file, or from
+                <b>OSM layers</b> — the mask images the terrain generator exported for OSM features like
+                forests, parks or farmland. Each layer is split into <b>zones</b> — distance bands measured
+                from the layer's border inward — and each zone selects which forest brushes and item types
+                grow there, with a density slider per item.
+            </MudText>
+
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+                The selected map folder is changed directly. Make a backup if you want to keep the old files.
+            </MudAlert>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">Workflow</MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">1. Select your unpacked level folder (the one containing info.json).</MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">2. Pick a terrain material and click <b>Configure Zones</b>.</MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                3. Add zones from the border inward — e.g. Zone 1 with 5 m depth as an empty keep-clear strip,
+                Zone 2 with 15 m of bushes and small trees, and an <b>Interior</b> zone with dense forest.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                4. Check brushes or single item types. The <b>density slider on the brush row</b> decides how full
+                the zone gets; the <b>weight sliders on the items</b> only set the species mix (they are normalized —
+                checking more items never multiplies the total). Weights default to the brush element's probability.
+                <b>Ctrl+Click</b> any slider to type an exact value.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">5. Click <b>Estimates</b> to preview zone areas and item counts.</MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">6. Click <b>Generate</b> — then load the level in BeamNG and inspect.</MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                7. <b>OSM layers</b> work the same way: pick a layer from the dropdown (e.g. "Landuse: forest"),
+                add zones and generate. The masks come from MT_TerrainGeneration — regenerate the terrain with
+                OSM data if the dropdown is empty.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                8. Put roads, parking areas and building layers on the <b>negative list</b> — generated items
+                standing on them are removed automatically after every generation (or via <b>Cleanup Now</b>).
+                The optional buffer also catches items leaning over the layer edge. Foreign items (hand-placed
+                or from the in-game biome tool) are only removed with the explicit warning option, after a
+                confirmation showing the exact count.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.h6" Color="Color.Primary" Class="mb-2">Good to know</MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                <b>Safe deletes:</b> every generated item is tracked in MT_Biome/manifest.json.
+                "Delete Items" and "Delete All Generated" remove exactly those items — forest items you placed
+                by hand in the World Editor are never touched.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                <b>Regeneration replaces:</b> generating a layer again first removes its previous items,
+                so you can tweak densities and regenerate freely.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                <b>Reproducible:</b> the global seed makes regeneration deterministic — same seed, same settings,
+                same terrain produces the identical forest.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                <b>Brush parameters are honored:</b> scale range, random rotation, sink depth, slope and elevation
+                limits from your forest brush elements apply during placement. Density sliders start at the
+                brush element's probability.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-1">
+                <b>Spacing factor</b> controls the minimum distance between items (based on each item type's radius).
+                0 disables spacing, higher values thin the forest out.
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                <b>Terrain changed?</b> If the .ter is repainted or re-generated after placing items, a warning
+                appears — regenerate the layers so trees sit on the ground again.
+            </MudText>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.body2" Class="mb-1" Style="opacity:0.8;">
+                Files written: forest/MT_biome_*.forest4.json (placements), MT_Biome/settings.json (your selections),
+                MT_Biome/manifest.json (delete ledger). A Forest scene object ("theForest") is created automatically
+                if the level has none — without it BeamNG renders no forest items.
+            </MudText>
+        </div>
+    </DialogContent>
+</MudDialog>

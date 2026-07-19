@@ -91,9 +91,10 @@ public class ForestBrushCopyScanner
     }
 
     /// <summary>
-    /// Parses the NDJSON format main.forestbrushes4.json file
+    /// Parses the NDJSON format main.forestbrushes4.json file.
+    /// Public static so other features (e.g. Generate Biome) can reuse the exact same parse rules.
     /// </summary>
-    private List<ForestBrushInfo> ParseForestBrushesNdjson(string filePath)
+    public static List<ForestBrushInfo> ParseForestBrushesNdjson(string filePath)
     {
         var brushes = new Dictionary<string, ForestBrushInfo>(StringComparer.OrdinalIgnoreCase);
         var elements = new List<(string parentName, ForestBrushElementInfo element)>();
@@ -269,7 +270,7 @@ public class ForestBrushCopyScanner
     /// <summary>
     /// Parses managedItemData.json to get ForestItemData definitions
     /// </summary>
-    private Dictionary<string, ForestItemDataInfo> ParseManagedItemData(string filePath)
+    public static Dictionary<string, ForestItemDataInfo> ParseManagedItemData(string filePath)
     {
         var result = new Dictionary<string, ForestItemDataInfo>(StringComparer.OrdinalIgnoreCase);
 
@@ -372,7 +373,7 @@ public class ForestBrushCopyScanner
     /// <summary>
     /// Finds the main.forestbrushes4.json file in a level
     /// </summary>
-    private string FindForestBrushesFile(string levelPath)
+    public static string FindForestBrushesFile(string levelPath)
     {
         // Try common locations
         var candidates = new[]
@@ -400,7 +401,7 @@ public class ForestBrushCopyScanner
     /// <summary>
     /// Finds the managedItemData.json file in a level
     /// </summary>
-    private string FindManagedItemDataFile(string levelPath)
+    public static string FindManagedItemDataFile(string levelPath)
     {
         // Try common locations
         var candidates = new[]

@@ -1,0 +1,359 @@
+@using BeamNG_LevelCleanUp.LogicBiome
+@using BeamNG_LevelCleanUp.Objects
+@using BeamNG_LevelCleanUp.Objects.Biome
+@using BeamNgTerrainPoc.Terrain.Biome
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+
+@* Zone repeater for one biome layer: ordered distance bands from the region border inward,
+   each with a brush/item-type tree (checkbox + density slider per item). *@
+
+<MudStack Spacing="2">
+    @for (var zoneIndex = 0; zoneIndex < Layer.Zones.Count; zoneIndex++)
+    {
+        var zi = zoneIndex;
+        var zone = Layer.Zones[zi];
+        <MudPaper Outlined="true" Class="pa-3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudChip T="string" Color="Color.Primary" Size="Size.Small">Zone @(zi + 1)</MudChip>
+                <MudText Typo="Typo.body2">@GetZoneRangeLabel(zi)</MudText>
+                <MudSpacer />
+                @if (!zone.IsInterior)
+                {
+                    <MudNumericField T="double" Value="zone.DepthMeters"
+                                     ValueChanged="@(async (double v) => { zone.DepthMeters = Math.Max(v, 0.5); await NotifyStructureChanged(); })"
+                                     Label="Depth (m)" Min="0.5" Step="1" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Style="max-width:130px;" Disabled="@Disabled" />
+                }
+                <MudTooltip Text="Interior zone: takes all remaining area (only the last zone can be interior)">
+                    <MudSwitch T="bool" Value="zone.IsInterior"
+                               ValueChanged="@(async (bool v) => { zone.IsInterior = v; await NotifyStructureChanged(); })"
+                               Color="Color.Primary" Label="Interior"
+                               Disabled="@(Disabled || zi != Layer.Zones.Count - 1)" />
+                </MudTooltip>
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
+                               OnClick="@(async () => await MoveZone(zi, -1))" Disabled="@(Disabled || zi == 0)" />
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
+                               OnClick="@(async () => await MoveZone(zi, 1))"
+                               Disabled="@(Disabled || zi == Layer.Zones.Count - 1 || Layer.Zones[zi + 1].IsInterior)" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(async () => { Layer.Zones.RemoveAt(zi); await NotifyStructureChanged(); })" Disabled="@Disabled" />
+            </MudStack>
+
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-1">
+                <MudNumericField T="double?" Value="zone.SlopeMinDeg"
+                                 ValueChanged="@(async (double? v) => { zone.SlopeMinDeg = v; await NotifyChanged(); })"
+                                 Label="Slope min (°)" Min="0" Max="90" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 Clearable="true" Style="max-width:150px;" Disabled="@Disabled" />
+                <MudNumericField T="double?" Value="zone.SlopeMaxDeg"
+                                 ValueChanged="@(async (double? v) => { zone.SlopeMaxDeg = v; await NotifyChanged(); })"
+                                 Label="Slope max (°)" Min="0" Max="90" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 Clearable="true" Style="max-width:150px;" Disabled="@Disabled" />
+                @if (ZonePixelCounts != null && zi < ZonePixelCounts.Length)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">
+                        @FormatArea(ZonePixelCounts[zi]) · est. @GetZoneEstimate(zi).ToString("N0") items
+                    </MudChip>
+                }
+            </MudStack>
+
+            @if (zone.Items.Count == 0)
+            {
+                <MudText Typo="Typo.caption" Class="mt-2" Style="opacity:0.7;">
+                    No items selected — this zone stays empty (keep-clear strip).
+                </MudText>
+            }
+
+            <MudDivider Class="my-2" />
+
+            @foreach (var brush in Catalog.Brushes)
+            {
+                var brushItems = BiomeBrushCatalog.GetBrushItemNames(brush).ToList();
+                if (brushItems.Count == 0) { continue; }
+                @RenderBrushGroup(zi, zone, brush.Name, string.IsNullOrEmpty(brush.InternalName) ? brush.Name : brush.InternalName, brushItems)
+            }
+            @if (Catalog.UnbrushedItemNames.Count > 0)
+            {
+                @RenderBrushGroup(zi, zone, string.Empty, "(Items without brush)", Catalog.UnbrushedItemNames)
+            }
+        </MudPaper>
+    }
+
+    <MudButton StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Outlined" Size="Size.Small"
+               OnClick="AddZone" Disabled="@Disabled">
+        Add Zone
+    </MudButton>
+</MudStack>
+
+@code {
+    [Parameter] public BiomeLayerSettings Layer { get; set; } = default!;
+    [Parameter] public BiomeBrushCatalog Catalog { get; set; } = default!;
+    [Parameter] public float MetersPerPixel { get; set; } = 1f;
+    [Parameter] public long[]? ZonePixelCounts { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>Any selection/density change.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+    /// <summary>Zone structure changed (depth/order/add/remove/interior) — cached band areas are stale.</summary>
+    [Parameter] public EventCallback OnStructureChanged { get; set; }
+
+    private const double MinChildDensity = 0.05;
+    private const double SliderStep = 0.05;
+    /// <summary>Brush-density slider cap: a physical fill fraction — denser than 50 % is never useful.</summary>
+    private const double DensityMax = BiomeSettings.MaxSliderPercent;
+    /// <summary>Item weights are relative shares of the brush's mix — they naturally read as 0–100 %.</summary>
+    private const double WeightMax = 100.0;
+
+    private readonly HashSet<string> _expandedGroups = new();
+    private string? _editingSliderKey;
+
+    /// <summary>
+    /// Density/weight input: a wide 0.05-step slider; Ctrl+Click swaps it for a number
+    /// field (auto-focused, Enter/Escape/blur returns to the slider). The max differs per
+    /// role: brush density caps at 50 %, mix weights run to 100 %.
+    /// </summary>
+    private RenderFragment DensityControl(string key, double value, Func<double, Task> setValue, string labelSuffix, double max) => __builder =>
+    {
+        <div title="Ctrl+Click to type an exact value" style="display:flex;align-items:center;min-width:340px;"
+             @onclick="@(e => OnDensityAreaClick(e, key))">
+            @if (_editingSliderKey == key)
+            {
+                <MudNumericField T="double" Value="value"
+                                 ValueChanged="@(async (double v) => await setValue(RoundToStep(v, max)))"
+                                 Min="0" Max="@max" Step="@SliderStep" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 Style="width:120px;" AutoFocus="true" Immediate="true"
+                                 Disabled="@Disabled"
+                                 OnBlur="@(_ => CloseDensityEditor())"
+                                 OnKeyDown="@(k => { if (k.Key is "Enter" or "Escape") CloseDensityEditor(); })" />
+                <MudText Typo="Typo.caption" Class="ml-1">%@labelSuffix</MudText>
+            }
+            else
+            {
+                <MudSlider T="double" Value="value" ValueChanged="@(async (double v) => await setValue(RoundToStep(v, max)))"
+                           Min="0" Max="@max" Step="@SliderStep" Style="width:320px;" Disabled="@Disabled">
+                    @value.ToString("0.##")%@labelSuffix
+                </MudSlider>
+            }
+        </div>
+    };
+
+    private void OnDensityAreaClick(MouseEventArgs e, string key)
+    {
+        if (e.CtrlKey && !Disabled)
+            _editingSliderKey = key;
+    }
+
+    private void CloseDensityEditor() => _editingSliderKey = null;
+
+    private static double RoundToStep(double value, double max) =>
+        Math.Clamp(Math.Round(value / SliderStep, MidpointRounding.AwayFromZero) * SliderStep, 0, max);
+
+    private RenderFragment RenderBrushGroup(int zoneIndex, BiomeZoneSettings zone, string brushName, string displayName, List<string> itemNames) => __builder =>
+    {
+        var groupKey = $"{zoneIndex}|{brushName}|{displayName}";
+        var expanded = _expandedGroups.Contains(groupKey);
+        var selectedCount = itemNames.Count(n => FindSelection(zone, brushName, n) != null);
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mt-1">
+            <MudIconButton Icon="@(expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                           Size="Size.Small" OnClick="@(() => ToggleExpanded(groupKey))" />
+            <MudCheckBox T="bool" Value="@(selectedCount == itemNames.Count && itemNames.Count > 0)"
+                         ValueChanged="@(async (bool v) => await ToggleBrush(zone, brushName, itemNames, v))"
+                         Dense="true" Disabled="@Disabled" />
+            <MudIcon Icon="@Icons.Material.Filled.Forest" Size="Size.Small" />
+            <MudText Typo="Typo.body2"><b>@displayName</b></MudText>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                     Color="@(selectedCount == 0 ? Color.Default : Color.Success)">
+                @selectedCount/@itemNames.Count
+            </MudChip>
+            @DensityControl(groupKey + "|__density", GetBrushDefault(zone, brushName),
+                v => SetBrushDefault(zone, brushName, v), " density", DensityMax)
+        </MudStack>
+
+        @if (expanded)
+        {
+            @foreach (var itemName in itemNames)
+            {
+                var selection = FindSelection(zone, brushName, itemName);
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="ml-10">
+                    <MudCheckBox T="bool" Value="@(selection != null)"
+                                 ValueChanged="@(async (bool v) => await ToggleItem(zone, brushName, itemName, v))"
+                                 Dense="true" Size="Size.Small" Disabled="@Disabled" />
+                    <MudText Typo="Typo.body2" Style="min-width:220px;">@itemName</MudText>
+                    @if (selection != null)
+                    {
+                        var itemKey = $"{groupKey}|{itemName}";
+                        @DensityControl(itemKey, selection.MixWeight,
+                            async v => { selection.MixWeight = v; await NotifyChanged(); }, " weight", WeightMax)
+                        @if (ZonePixelCounts != null && zoneIndex < ZonePixelCounts.Length)
+                        {
+                            var effective = GetEffectiveDensity(zone, brushName, itemName);
+                            <MudText Typo="Typo.caption" Style="opacity:0.8;">
+                                @effective.ToString("0.##")% ≈ @EstimateItemCount(zoneIndex, brushName, itemName, effective).ToString("N0")
+                            </MudText>
+                        }
+                    }
+                </MudStack>
+            }
+        }
+    };
+
+    private async Task AddZone()
+    {
+        // New zones insert before a trailing interior zone so the interior stays last.
+        var insertAt = Layer.Zones.Count > 0 && Layer.Zones[^1].IsInterior
+            ? Layer.Zones.Count - 1
+            : Layer.Zones.Count;
+        Layer.Zones.Insert(insertAt, new BiomeZoneSettings());
+        await NotifyStructureChanged();
+    }
+
+    private async Task MoveZone(int index, int direction)
+    {
+        var target = index + direction;
+        if (target < 0 || target >= Layer.Zones.Count)
+            return;
+        (Layer.Zones[index], Layer.Zones[target]) = (Layer.Zones[target], Layer.Zones[index]);
+        await NotifyStructureChanged();
+    }
+
+    private void ToggleExpanded(string key)
+    {
+        if (!_expandedGroups.Remove(key))
+            _expandedGroups.Add(key);
+    }
+
+    private static BiomeItemSelection? FindSelection(BiomeZoneSettings zone, string brushName, string itemName)
+    {
+        return zone.Items.FirstOrDefault(i =>
+            i.BrushName.Equals(brushName, StringComparison.OrdinalIgnoreCase) &&
+            i.ItemDataName.Equals(itemName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task ToggleBrush(BiomeZoneSettings zone, string brushName, List<string> itemNames, bool selected)
+    {
+        foreach (var itemName in itemNames)
+        {
+            var existing = FindSelection(zone, brushName, itemName);
+            if (selected && existing == null)
+            {
+                zone.Items.Add(CreateSelection(zone, brushName, itemName));
+            }
+            else if (!selected && existing != null)
+            {
+                zone.Items.Remove(existing);
+            }
+        }
+        await NotifyChanged();
+    }
+
+    private async Task ToggleItem(BiomeZoneSettings zone, string brushName, string itemName, bool selected)
+    {
+        var existing = FindSelection(zone, brushName, itemName);
+        if (selected && existing == null)
+        {
+            zone.Items.Add(CreateSelection(zone, brushName, itemName));
+        }
+        else if (!selected && existing != null)
+        {
+            zone.Items.Remove(existing);
+        }
+        await NotifyChanged();
+    }
+
+    private double GetBrushDefault(BiomeZoneSettings zone, string brushName) =>
+        zone.BrushDensityDefaults.TryGetValue(brushName, out var v)
+            ? v
+            : BiomeSettings.DefaultBrushDensityPercent;
+
+    /// <summary>Brush density slider: the total density for this brush's checked items.</summary>
+    private async Task SetBrushDefault(BiomeZoneSettings zone, string brushName, double value)
+    {
+        zone.BrushDensityDefaults[brushName] = RoundToStep(value, DensityMax);
+        await NotifyChanged();
+    }
+
+    /// <summary>
+    /// Effective density of one item: brush density × its weight share within the brush.
+    /// This is what the generator uses — weights are a mix, never additive densities.
+    /// </summary>
+    private double GetEffectiveDensity(BiomeZoneSettings zone, string brushName, string itemName)
+    {
+        var selection = FindSelection(zone, brushName, itemName);
+        if (selection == null || selection.MixWeight <= 0)
+            return 0;
+        var brushDensity = GetBrushDefault(zone, brushName);
+        if (brushDensity <= 0)
+            return 0;
+        var sumWeights = zone.Items
+            .Where(i => i.BrushName.Equals(brushName, StringComparison.OrdinalIgnoreCase) && i.MixWeight > 0)
+            .Sum(i => i.MixWeight);
+        return sumWeights <= 0 ? 0 : brushDensity * selection.MixWeight / sumWeights;
+    }
+
+    private BiomeItemSelection CreateSelection(BiomeZoneSettings zone, string brushName, string itemName)
+    {
+        // Default weight from the brush element's probability — the brush's intended mix.
+        var element = string.IsNullOrEmpty(brushName) ? null : Catalog.FindElement(brushName, itemName);
+        // Default weight from the brush element's probability (0..1 → 0..100 % mix share).
+        var weight = element?.Probability is { } p ? RoundToStep(Math.Clamp((double)p, 0.0, 1.0) * 100, WeightMax) : 50.0;
+        return new BiomeItemSelection
+        {
+            BrushName = brushName,
+            ItemDataName = itemName,
+            MixWeight = Math.Max(weight, MinChildDensity),
+        };
+    }
+
+    private string GetZoneRangeLabel(int zoneIndex)
+    {
+        var start = 0.0;
+        for (var i = 0; i < zoneIndex; i++)
+        {
+            if (!Layer.Zones[i].IsInterior)
+                start += Layer.Zones[i].DepthMeters;
+        }
+        var zone = Layer.Zones[zoneIndex];
+        return zone.IsInterior
+            ? $"interior (deeper than {start:0.#} m)"
+            : $"{start:0.#}–{start + zone.DepthMeters:0.#} m from border";
+    }
+
+    private long EstimateItemCount(int zoneIndex, string brushName, string itemName, double densityPercent)
+    {
+        if (ZonePixelCounts == null || zoneIndex >= ZonePixelCounts.Length)
+            return 0;
+        var radius = Catalog.ItemData.TryGetValue(itemName, out var itemData)
+            ? itemData.Radius ?? BiomeDensityModel.DefaultRadiusMeters
+            : BiomeDensityModel.DefaultRadiusMeters;
+        var element = string.IsNullOrEmpty(brushName) ? null : Catalog.FindElement(brushName, itemName);
+        var scaleMin = element?.ScaleMin ?? 0.8;
+        var scaleMax = Math.Max(element?.ScaleMax ?? 1.2, scaleMin);
+        return BiomeDensityModel.EstimateCount(
+            ZonePixelCounts[zoneIndex], MetersPerPixel, densityPercent, radius, scaleMin, scaleMax);
+    }
+
+    private long GetZoneEstimate(int zoneIndex)
+    {
+        if (zoneIndex >= Layer.Zones.Count)
+            return 0;
+        var zone = Layer.Zones[zoneIndex];
+        return zone.Items
+            .Where(i => i.MixWeight > 0)
+            .Sum(i => EstimateItemCount(zoneIndex, i.BrushName, i.ItemDataName,
+                GetEffectiveDensity(zone, i.BrushName, i.ItemDataName)));
+    }
+
+    private string FormatArea(long pixelCount)
+    {
+        var areaM2 = pixelCount * (double)MetersPerPixel * MetersPerPixel;
+        return areaM2 >= 10_000 ? $"{areaM2 / 10_000:0.#} ha" : $"{areaM2:0} m²";
+    }
+
+    private Task NotifyChanged() => OnChanged.InvokeAsync();
+
+    private async Task NotifyStructureChanged()
+    {
+        await OnStructureChanged.InvokeAsync();
+        await OnChanged.InvokeAsync();
+    }
+}
