@@ -702,9 +702,9 @@
                 ["junctionDetectionRadiusMeters"] = mat.JunctionDetectionRadiusMeters,
                 ["junctionBlendDistanceMeters"] = mat.JunctionBlendDistanceMeters,
                 ["blendFunctionType"] = mat.JunctionBlendFunction.ToString(),
-                // No-blend tuning (Side-Road Transitions)
+                // No-blend tuning (Side-Road Transitions). No connectorGradeRampLengthMeters:
+                // the connector grade weld is always on and self-sizing, not a preset setting.
                 ["bankingRunoffSurfaceWidthMultiplier"] = mat.BankingRunoffSurfaceWidthMultiplier,
-                ["connectorGradeRampLengthMeters"] = mat.ConnectorGradeRampLengthMeters,
                 // Roundabout settings
                 ["enableRoundaboutDetection"] = mat.EnableRoundaboutDetection,
                 ["enableRoundaboutRoadTrimming"] = mat.EnableRoundaboutRoadTrimming,

@@ -421,9 +421,10 @@ public class JunctionHarmonizationSettings
     public float EndpointTaperDistanceMeters { get; set; } = 30.0f;
     public float EndpointTerrainBlendStrength { get; set; } = 1f;
 
-    // No-blend tuning (Side-Road Transitions)
+    // No-blend tuning (Side-Road Transitions). No ConnectorGradeRampLengthMeters: the connector grade
+    // weld is always on and self-sizing (library default minimum + adaptive length); old preset values
+    // are deliberately ignored on import.
     public float BankingRunoffSurfaceWidthMultiplier { get; set; } = 3.0f;
-    public float ConnectorGradeRampLengthMeters { get; set; } = 6.0f;
 
     // Roundabout settings
     public bool EnableRoundaboutDetection { get; set; } = true;

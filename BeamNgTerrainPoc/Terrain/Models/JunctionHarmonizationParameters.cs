@@ -47,15 +47,21 @@ public class JunctionHarmonizationParameters
     public float BankingRunoffSurfaceWidthMultiplier { get; set; } = 3f;
 
     /// <summary>
-    ///     No-blend connector grade ramp — length (m) of the local end-weld curve that eases a
-    ///     terminating connector's longitudinal grade so that AT THE SEAM it is tangent to (co-planar with)
-    ///     the through road's surface, easing back to the connector's natural §3 grade by this distance.
-    ///     Used by <c>UnifiedRoadSmoother.EaseConnectorGradeToThroughSurface</c> on the affine ThroughRoad
-    ///     path, AFTER the §4 banking match. Removes the grade discontinuity (kink) where a steep connector
-    ///     meets a near-level main road. Clamped internally to a fraction of the connector length so the
-    ///     ramp can't reach the connector's far junction. The seam Z, far-junction Z, and connector body
-    ///     beyond this length stay fixed. Length is the ONLY knob. 0 = disabled. Exposed in the UI
-    ///     (Side-Road Transitions) + preset. Default 6.
+    ///     No-blend connector grade ramp — MINIMUM length (m) of the seam-aware weld that makes a
+    ///     terminating connector co-planar with the through road's surface where their painted surfaces
+    ///     actually meet (the through-road EDGE, not the junction center). Used by
+    ///     <c>UnifiedRoadSmoother.EaseConnectorGradeToThroughSurface</c> on the affine ThroughRoad path,
+    ///     AFTER the §4 banking match. The connector centerline follows the through surface plane across
+    ///     the through road's half-width (apron), then a C1 weld eases back onto the connector's natural
+    ///     §3 profile. The weld length is sized ADAPTIVELY from the grade break
+    ///     (<c>UnifiedRoadSmoother.ConnectorWeldGradeChangePerMeter</c>) — this knob only sets the floor, so
+    ///     steep junctions automatically get the longer transition they need (2026-07-19 junction-edge-step
+    ///     fix: the old fixed 6 m weld, anchored at the junction center, was consumed inside the through
+    ///     road's ~5 m half-width and left a 0.3–0.7 m step at the road edge). The seam Z, far-junction Z,
+    ///     and connector body beyond the weld stay fixed. 0 = disabled (library/test kill switch only).
+    ///     NOT exposed in the UI or presets (2026-07-19): the weld is always on and self-sizing — the app
+    ///     always runs with this default, and preset importers deliberately ignore old stored values.
+    ///     Default 6.
     /// </summary>
     public float ConnectorGradeRampLengthMeters { get; set; } = 6f;
 

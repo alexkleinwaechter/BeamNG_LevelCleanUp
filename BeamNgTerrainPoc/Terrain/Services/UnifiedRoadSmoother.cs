@@ -2916,22 +2916,45 @@ public class UnifiedRoadSmoother
     }
 
     /// <summary>
-    ///     §-ramp no-blend connector grade ease. After §3 (flush centerline Z) and §4 (banking match), a
-    ///     STEEP terminating connector still arrives at the seam at its own constant grade while the through
-    ///     road is near-level — a grade discontinuity (kink) at the seam that renders as an artifact and
-    ///     lets the connector pull on the main road's edge. This fits a local end-weld curve on the connector
-    ///     centerline over a short ramp zone from the seam: tangent to the through surface at the seam
-    ///     (grade <c>g_seam</c> = directional derivative of the through plane along the connector tangent →
-    ///     "plain"/co-planar connection), then fades the grade correction back to zero at the zone
-    ///     end. The seam Z (§3), the far-junction Z, and every cross-section beyond the weld zone stay FIXED;
-    ///     this is intentionally an end-weld only, not a full-body regrade. Length (<see cref="JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters" />,
-    ///     clamped to a fraction of the connector length) is the only knob. Returns the number of connectors
-    ///     eased.
+    ///     Seam-weld transition rate used to SIZE the weld: L = gradeBreak / this. 0.0025 = 0.25 percentage
+    ///     points per meter nominal — a 13 pp break gets a ≥ 52 m weld (before the connector-length caps).
+    ///     The Hermite h10 basis concentrates the grade change ~4× near the edge, so the worst-case local
+    ///     rate is ≈ 1 pp/m ⇒ ~2 m/s² vertical acceleration at 50 km/h. This is a transition-LENGTH rule,
+    ///     not a grade clamp: the connector's own grade beyond the weld is never limited.
+    /// </summary>
+    internal const float ConnectorWeldGradeChangePerMeter = 0.0025f;
+
+    /// <summary>
+    ///     §-ramp no-blend connector grade ease — seam-aware (2026-07-19 junction-edge-step fix; franco
+    ///     J#450/#444/#1248, OSM node 282534733). After §3 (flush centerline Z at the junction CENTER) and
+    ///     §4 (banking match), a terminating connector's solved profile leaves the junction center at its
+    ///     own body grade. The first <c>primaryHalfWidth</c> meters of that profile are hidden UNDER the
+    ///     through road's painted surface, so at the through-road EDGE — where the connector's own pixels
+    ///     begin — it sits ≈ <c>(g_body − g_plane)·halfWidth</c> off the through surface: a Z-step Phase 4
+    ///     renders as a short 30–45 % scarp. Two-zone repair per connector end:
+    ///     <para>
+    ///         APRON <c>[0, halfWidth]</c> — the centerline is projected onto the through road's tilted
+    ///         surface plane (co-planar crossing of the footprint; restores the old T-snap flat zone; §4
+    ///         has already banked the edges onto the same plane). The §3 seam Z is preserved exactly via a
+    ///         linearly fading mouth-delta term.
+    ///     </para>
+    ///     <para>
+    ///         WELD <c>(halfWidth, halfWidth+L]</c> — smoothstep blend from the plane (value AND grade)
+    ///         back onto the untouched natural profile: C1 at the edge and at the zone end. L is sized
+    ///         adaptively so the grade break is absorbed at ≤ <see cref="ConnectorWeldGradeChangePerMeter" />
+    ///         per meter; <see cref="JunctionHarmonizationParameters.ConnectorGradeRampLengthMeters" /> is
+    ///         the MINIMUM length (0 still disables the pass). Capped to a fraction of the connector length
+    ///         past the apron and to half the connector, so the far junction can never move and opposite
+    ///         ends of a short connector can never overlap.
+    ///     </para>
+    ///     The walk outward stops at the first pinned/soft (bridge deck / dip well) cross-section — the
+    ///     repair never fights a deck pin. Returns the number of connector ends eased.
     /// </summary>
     internal static int EaseConnectorGradeToThroughSurface(UnifiedRoadNetwork network)
     {
-        const float fracCap = 0.25f;       // L never exceeds this fraction of the connector length
-        const float minGradeDelta = 1e-4f; // grade already ≈ co-planar with the through surface → no-op
+        const float fracCap = 0.25f;       // weld cap: fraction of the connector length past the apron
+        const float minGradeDelta = 1e-4f; // grade break below this AND …
+        const float minEdgeStepMeters = 0.02f; // … edge residual below this → already co-planar, no-op
         const float epsilon = 1e-3f;
 
         var crossSectionsBySpline = network.CrossSections
@@ -2963,6 +2986,7 @@ public class UnifiedRoadSmoother
                 ? JunctionSurfaceCalculator.CalculateLocalSlope(primarySections, primaryIdx)
                 : 0f;
             if (float.IsNaN(primarySlope)) primarySlope = 0f;
+            var primaryHalfWidth = MathF.Max(primaryCS.SurfaceWidth / 2f, 0f);
 
             foreach (var term in junction.Contributors)
             {
@@ -2981,78 +3005,154 @@ public class UnifiedRoadSmoother
                 var zFar = farCS.TargetElevation;
                 if (float.IsNaN(zSeam) || float.IsNaN(zFar)) continue;
 
-                // s = distance from the seam, increasing INTO the connector body.
+                // s = distance from the seam (junction center), increasing INTO the connector body.
                 var seamDist = seamCS.DistanceAlongSpline;
                 var d = MathF.Abs(farCS.DistanceAlongSpline - seamDist);
-                if (d < epsilon) continue;
+                var hw = primaryHalfWidth;
+                if (d <= hw + epsilon) continue; // junction-boxed: connector ends inside the footprint
 
-                // Connector's current near-seam grade. The weld is an additive local correction on top of
-                // the already-settled profile, so samples beyond the weld remain exactly untouched.
-                var nearBodyCS = sections
-                    .Where(cs => MathF.Abs(cs.DistanceAlongSpline - seamDist) > epsilon)
+                // Walk outward from the seam in s-order so the apron/weld stop cleanly at pins.
+                var ordered = sections
+                    .Where(cs => !float.IsNaN(cs.TargetElevation))
                     .OrderBy(cs => MathF.Abs(cs.DistanceAlongSpline - seamDist))
-                    .FirstOrDefault();
-                if (nearBodyCS == null || float.IsNaN(nearBodyCS.TargetElevation)) continue;
-                var nearS = MathF.Abs(nearBodyCS.DistanceAlongSpline - seamDist);
-                if (nearS < epsilon) continue;
-                var gNatural = (nearBodyCS.TargetElevation - zSeam) / nearS;
+                    .ToList();
+                if (ordered.Count < 2) continue;
+
+                // Through-surface plane elevation at a connector cross-section.
+                // GetPrimarySurfaceElevation is exact plane math (centerline + lateral·sin(bank) +
+                // longitudinal·slope), so evaluating it a few meters past the apron for the weld blend is
+                // well-defined; the smoothstep weight kills it long before the through road's plan
+                // curvature matters.
+                float PlaneAt(UnifiedCrossSection cs) =>
+                    JunctionSurfaceCalculator.GetPrimarySurfaceElevation(
+                        cs.CenterPoint, primaryCS, primarySlope);
+
+                // §3 pinned the mouth to the settled junction Z, which can differ from the plane sample at
+                // the mouth position by a few cm (junction pos vs primary CS station). Fade that delta out
+                // across the apron: the seam keeps EXACTLY §3's Z (the junction-fill disk and residual
+                // diagnostics key on it) while the apron end lands exactly on the plane.
+                var mouthDelta = zSeam - PlaneAt(seamCS);
 
                 // Into-body unit tangent at the seam (points away from the junction).
                 var intoBody = term.IsSplineStart ? seamCS.TangentDirection : -seamCS.TangentDirection;
                 var tLen = intoBody.Length();
                 if (tLen > epsilon) intoBody /= tLen;
 
-                // g_seam = grade the connector must have at the seam to be co-planar ("plain") with the
-                // through surface = directional derivative of the through tilted plane along the connector's
+                // g_seam = grade the connector must hold to be co-planar ("plain") with the through
+                // surface = directional derivative of the through tilted plane along the connector's
                 // into-body tangent: throughSlope·(into·T) + sin(throughBank)·(into·N).
                 var gSeam = primarySlope * Vector2.Dot(intoBody, primaryCS.TangentDirection)
                             + MathF.Sin(primaryCS.BankAngleRadians)
                             * Vector2.Dot(intoBody, primaryCS.NormalDirection);
 
-                if (MathF.Abs(gNatural - gSeam) < minGradeDelta) continue; // already smooth → nothing to ease
+                // Natural grade + plane residual at the through-road EDGE — measured from the first
+                // cross-sections PAST the apron (the first meters of connector the player actually sees;
+                // the old near-seam secant sat inside the footprint and under-reported the break).
+                UnifiedCrossSection? edge0 = null, edge1 = null;
+                foreach (var cs in ordered)
+                {
+                    var s = MathF.Abs(cs.DistanceAlongSpline - seamDist);
+                    if (s <= hw + epsilon) continue;
+                    if (edge0 == null) { edge0 = cs; continue; }
+                    edge1 = cs;
+                    break;
+                }
+                if (edge0 == null) continue; // no cross-section outside the footprint
 
-                // Clamp the ramp so it can never reach (and move) the far junction.
-                var l = MathF.Min(rampLen, fracCap * d);
+                var sEdge0 = MathF.Abs(edge0.DistanceAlongSpline - seamDist);
+                float gNatural;
+                if (edge1 != null)
+                {
+                    var sEdge1 = MathF.Abs(edge1.DistanceAlongSpline - seamDist);
+                    gNatural = (edge1.TargetElevation - edge0.TargetElevation)
+                               / MathF.Max(sEdge1 - sEdge0, epsilon);
+                }
+                else
+                {
+                    gNatural = (zFar - edge0.TargetElevation) / MathF.Max(d - sEdge0, epsilon);
+                }
+
+                // Value gap between the through plane and the natural profile AT the apron boundary
+                // (s = hw): natural back-extrapolated from the first cross-section past the apron, plane
+                // evaluated at the connector centerline point hw meters into the body. This is the Z-step
+                // the player would see at the road edge — the artifact this pass removes.
+                var natAtEdge = edge0.TargetElevation - gNatural * (sEdge0 - hw);
+                var edgePoint = seamCS.CenterPoint + intoBody * hw;
+                var planeAtEdge = JunctionSurfaceCalculator.GetPrimarySurfaceElevation(
+                    edgePoint, primaryCS, primarySlope);
+                var deltaAtEdge = planeAtEdge - natAtEdge;
+
+                var gradeDelta = MathF.Abs(gNatural - gSeam);
+                var edgeStep = MathF.Abs(deltaAtEdge);
+                if (gradeDelta < minGradeDelta && edgeStep < minEdgeStepMeters)
+                    continue; // already co-planar at the edge → nothing to ease
+
+                // Adaptive weld length: absorb the grade break at ≤ ConnectorWeldGradeChangePerMeter per
+                // meter; the knob is the MINIMUM. Capped so the weld can never reach the far junction and
+                // opposite ends of a short connector can never overlap. A connector too short for any weld
+                // is left untouched (short-spline constraint propagation owns that case).
+                var l = MathF.Max(rampLen, gradeDelta / ConnectorWeldGradeChangePerMeter);
+                l = MathF.Min(l, fracCap * (d - hw));
+                l = MathF.Min(l, 0.5f * d - hw);
                 if (l < epsilon) continue;
 
-                var gradeCorrection = gSeam - gNatural;
-
-                // [NO-BLEND RAMP] diagnostic (gated by EmitNoBlendDiagnostics). Logs the connector's natural
-                // grade, the through-surface seam grade it eases to, the (clamped) weld length, and the maximum
-                // local elevation correction. The body beyond L is not regraded.
+                // [NO-BLEND RAMP] diagnostic (gated by EmitNoBlendDiagnostics). Logs the edge-anchored
+                // geometry: apron half-width, the edge residual the apron removes, the grades being welded,
+                // and the adaptive weld length.
                 if (EmitNoBlendDiagnostics)
                 {
                     var seamOsm = (term.IsSplineStart ? term.Spline.StartOsmNodeId : term.Spline.EndOsmNodeId)
                         ?.ToString() ?? "none";
-                    var maxLocalDz = 4f * MathF.Abs(gradeCorrection) * l / 27f;
                     TerrainCreationLogger.Current?.Detail(
                         $"[NO-BLEND RAMP] J#{junction.JunctionId} node={seamOsm} spline={term.Spline.SplineId} " +
-                        $"len={d:F1}m g_natural={gNatural:+0.000;-0.000} g_seam={gSeam:+0.000;-0.000} " +
-                        $"L={l:F1}m maxLocalDz={maxLocalDz:F3}m body=kept " +
+                        $"len={d:F1}m hw={hw:F1}m edgeStep={edgeStep:F3}m " +
+                        $"g_natural={gNatural:+0.000;-0.000} g_seam={gSeam:+0.000;-0.000} L={l:F1}m " +
                         $"zSeam={zSeam:F2} (kept) zFar={zFar:F2} (kept)");
                 }
 
-                foreach (var cs in sections)
+                var applied = false;
+                foreach (var cs in ordered)
                 {
                     var s = MathF.Abs(cs.DistanceAlongSpline - seamDist);
-                    if (s > l) continue;
+                    if (s > hw + l + epsilon) break;
+                    if (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue)
+                        break; // never fight a bridge deck/dip pin — truncate the repair here
 
-                    // Local end-weld correction on top of the existing profile:
-                    //   dz(0)=0, dz'(0)=g_seam-g_natural, dz(L)=0, dz'(L)=0.
-                    // This changes only the last L meters and rejoins the untouched body with matching grade.
-                    var x = s / l;
-                    var z = cs.TargetElevation + gradeCorrection * s * (1f - x) * (1f - x);
+                    float z;
+                    if (s <= hw)
+                    {
+                        // APRON: co-planar with the through surface across its painted footprint; §3 seam Z
+                        // preserved exactly by the fading mouth delta (at s=0 this yields zSeam verbatim).
+                        z = hw > epsilon
+                            ? PlaneAt(cs) + mouthDelta * (1f - s / hw)
+                            : cs.TargetElevation;
+                    }
+                    else
+                    {
+                        // WELD: Hermite correction on top of the natural profile. h00 decays the edge
+                        // Z-gap (value 1 / slope 0 at the edge → 0/0 at the zone end); h10·L injects the
+                        // grade break (slope 1 at the edge → 0/0 at the end). Together: z = plane and
+                        // dz/ds = g_seam at the apron boundary, z = natural and dz/ds = g_natural at the
+                        // zone end — C1 at both boundaries, correction bounded by the edge gap itself.
+                        var u = (s - hw) / l;
+                        var oneMinusU = 1f - u;
+                        var h00 = (1f + 2f * u) * oneMinusU * oneMinusU;
+                        var h10 = u * oneMinusU * oneMinusU;
+                        z = cs.TargetElevation + deltaAtEdge * h00 + (gSeam - gNatural) * l * h10;
+                    }
+
+                    if (MathF.Abs(z - cs.TargetElevation) > 1e-5f) applied = true;
                     cs.TargetElevation = z;
 
-                    // Re-derive the edges around the moved centerline using the (§4-set) banking — banking is
-                    // preserved, only the centerline profile is eased.
+                    // Re-derive the edges around the moved centerline using the (§4-set) banking — banking
+                    // is preserved, only the centerline profile moves.
                     var halfW = cs.EffectiveRoadWidth / 2f;
                     var bankDelta = halfW * MathF.Sin(cs.BankAngleRadians);
                     cs.LeftEdgeElevation = z - bankDelta;
                     cs.RightEdgeElevation = z + bankDelta;
                 }
 
-                eased++;
+                if (applied) eased++;
             }
         }
 

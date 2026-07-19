@@ -1177,8 +1177,8 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 // No-blend tuning (Side-Road Transitions)
                 if (junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"] != null)
                     settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier = junctionHarmonization["bankingRunoffSurfaceWidthMultiplier"]!.GetValue<float>();
-                if (junctionHarmonization["connectorGradeRampLengthMeters"] != null)
-                    settings.JunctionHarmonization.ConnectorGradeRampLengthMeters = junctionHarmonization["connectorGradeRampLengthMeters"]!.GetValue<float>();
+                // connectorGradeRampLengthMeters in old presets is deliberately ignored: the connector
+                // grade weld is always on and self-sizing (junction-edge-step fix must not be disabled).
                 // Roundabout settings
                 if (junctionHarmonization["enableRoundaboutDetection"] != null)
                     settings.JunctionHarmonization.EnableRoundaboutDetection = junctionHarmonization["enableRoundaboutDetection"]!.GetValue<bool>();
@@ -1292,9 +1292,9 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                 if (Enum.TryParse<JunctionBlendFunctionType>(settings.JunctionHarmonization.BlendFunctionType, out var junctionBlendType))
                     material.JunctionBlendFunction = junctionBlendType;
                 // Endpoint tapering is auto-computed from road width - old preset values silently ignored
-                // No-blend tuning (Side-Road Transitions)
+                // No-blend tuning (Side-Road Transitions). The connector grade weld has no material
+                // setting anymore — always on, self-sizing.
                 material.BankingRunoffSurfaceWidthMultiplier = settings.JunctionHarmonization.BankingRunoffSurfaceWidthMultiplier;
-                material.ConnectorGradeRampLengthMeters = settings.JunctionHarmonization.ConnectorGradeRampLengthMeters;
                 // Roundabout settings
                 material.EnableRoundaboutDetection = settings.JunctionHarmonization.EnableRoundaboutDetection;
                 material.EnableRoundaboutRoadTrimming = settings.JunctionHarmonization.EnableRoundaboutRoadTrimming;

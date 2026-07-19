@@ -958,8 +958,9 @@
                                                     Side-Road Transitions
                                                 </MudText>
                                                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-                                                    Fine-tunes how a side road eases into the main road where they meet —
-                                                    banking run-off and the steep-connector grade.
+                                                    Fine-tunes how a side road eases into the main road where they meet.
+                                                    The grade weld that makes a side road co-planar with the main road's
+                                                    surface sizes itself automatically from the grade difference.
                                                 </MudText>
                                                 <MudGrid Spacing="2">
                                                     <MudItem xs="12" sm="6">
@@ -977,20 +978,6 @@
                                                                     Larger = gentler superelevation runoff over a longer approach.
                                                                 </MudText>
                                                             </div>
-                                                        </div>
-                                                    </MudItem>
-                                                    <MudItem xs="12" sm="6">
-                                                        <div class="d-flex align-start gap-1">
-                                                            <MudNumericField T="float" @bind-Value="Material.ConnectorGradeRampLengthMeters"
-                                                                             Label="Connector grade ramp length (m)"
-                                                                             Variant="Variant.Outlined"
-                                                                             Min="0.0f" Max="25.0f" Step="1.0f"
-                                                                             Format="F0"
-                                                                             HelperText="Eases a steep connector to the main road at the seam. 0 = off"
-                                                                             Class="flex-grow-1" />
-                                                            <MudTooltip Text="Length of the closed-form parabola that removes the grade kink where a steep connector meets a near-level main road. Clamped internally to a fraction of the connector length. 0 disables the ramp.">
-                                                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
-                                                            </MudTooltip>
                                                         </div>
                                                     </MudItem>
                                                 </MudGrid>
