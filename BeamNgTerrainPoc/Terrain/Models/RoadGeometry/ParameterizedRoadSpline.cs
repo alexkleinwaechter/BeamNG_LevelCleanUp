@@ -224,6 +224,7 @@ public class ParameterizedRoadSpline
             "tertiary_link" => 58,
             "residential" => 55,
             "unclassified" => 50,
+            "road" => 48,
             "service" => 45,
             "living_street" => 40,
 

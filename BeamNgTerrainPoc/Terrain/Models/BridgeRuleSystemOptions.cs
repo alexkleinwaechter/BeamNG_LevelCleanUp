@@ -418,7 +418,7 @@ public class BridgeRuleSystemOptions
             "motorway" or "trunk" => 4,
             "primary" => 3,
             "secondary" or "tertiary" => 2,
-            "residential" or "unclassified" or "living_street" => 1,
+            "residential" or "unclassified" or "living_street" or "service" or "road" => 1,
             _ => 0,
         };
     }
