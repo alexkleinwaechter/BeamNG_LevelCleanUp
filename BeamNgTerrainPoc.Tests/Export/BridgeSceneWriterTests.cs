@@ -132,6 +132,6 @@ public class BridgeSceneWriterTests : IDisposable
 
         using var doc = JsonDocument.Parse(File.ReadAllText(materialsPath));
         // Only one material key total, not duplicated.
-        Assert.Equal(1, doc.RootElement.EnumerateObject().Count());
+        Assert.Single(doc.RootElement.EnumerateObject());
     }
 }

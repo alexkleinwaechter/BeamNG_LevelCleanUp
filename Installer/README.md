@@ -14,7 +14,7 @@ Using a WiX MSI installer solves this problem by:
 
 ## Prerequisites
 
-1. **.NET 9 SDK** - [Download](https://dotnet.microsoft.com/download/dotnet/9.0)
+1. **.NET 10 SDK** - [Download](https://dotnet.microsoft.com/download/dotnet/10.0)
 2. **WiX Toolset v4** - Install with:
    ```bash
    dotnet tool install --global wix
@@ -52,7 +52,7 @@ build-installer.cmd
 
 After successful build:
 - **MSI Installer**: `Installer\bin\Release\BeamNG_LevelCleanUp_Setup.msi`
-- **Published Application**: `BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\`
+- **Published Application**: `BeamNG_LevelCleanUp\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish\`
 
 ## Installation
 

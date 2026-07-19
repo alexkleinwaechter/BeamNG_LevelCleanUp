@@ -76,7 +76,8 @@ public class BridgeRuleSystemOptionsTests
     [InlineData("residential", 1)]
     [InlineData("unclassified", 1)]
     [InlineData("living_street", 1)]
-    [InlineData("service", 0)]
+    [InlineData("service", 1)]
+    [InlineData("road", 1)]
     [InlineData("track", 0)]
     [InlineData("footway", 0)]
     public void ClassStep_MatchesSpecBands(string cls, int expected)

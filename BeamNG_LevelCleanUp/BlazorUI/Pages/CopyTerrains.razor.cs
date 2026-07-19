@@ -21,7 +21,6 @@ public partial class CopyTerrains
 
     private readonly Func<FileInfo, string> converter = p => p?.Name;
     private Anchor _anchor;
-    private bool _fixed_Header = true;
     private bool _openDrawer;
     private string _searchString = string.Empty;
     private HashSet<GridFileListItem> _selectedItems = new();
@@ -1291,16 +1290,16 @@ public partial class CopyTerrains
                     .Select(x => new FileInfo(x)).ToList();
                 StateHasChanged();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
+                // Silently fail - vanilla levels are optional
             }
         }
     }
 
     public static DirectoryInfo GetExecutingDirectory()
     {
-        var location = new Uri(Assembly.GetEntryAssembly().GetName().CodeBase);
-        return new FileInfo(location.AbsolutePath).Directory;
+        return new DirectoryInfo(AppContext.BaseDirectory);
     }
 
     public void SetDefaultWorkingDirectory()

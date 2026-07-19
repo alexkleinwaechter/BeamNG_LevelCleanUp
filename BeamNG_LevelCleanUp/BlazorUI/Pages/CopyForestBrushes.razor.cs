@@ -1078,8 +1078,9 @@ public partial class CopyForestBrushes
                     .Select(x => new FileInfo(x)).ToList();
                 StateHasChanged();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
+                // Silently fail - vanilla levels are optional
             }
         }
     }

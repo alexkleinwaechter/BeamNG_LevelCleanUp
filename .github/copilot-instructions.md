@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**BeamNG_LevelCleanUp** is a Windows desktop application for BeamNG.drive modders and mapbuilders. It provides tools to manage, optimize, and transform BeamNG map files (levels). The application is built with .NET 9 using Windows Forms and Blazor WebView for the UI.
+**BeamNG_LevelCleanUp** is a Windows desktop application for BeamNG.drive modders and mapbuilders. It provides tools to manage, optimize, and transform BeamNG map files (levels). The application is built with .NET 10 using Windows Forms and Blazor WebView for the UI.
 
 ### Main Features
 
@@ -14,7 +14,7 @@
 
 ## Technology Stack
 
-- **Framework**: .NET 9 (net9.0-windows10.0.17763.0)
+- **Framework**: .NET 10 (net10.0-windows10.0.17763.0)
 - **UI**: Windows Forms hosting Blazor WebView
 - **Component Library**: MudBlazor v8
 - **Target Platform**: Windows only
@@ -45,7 +45,7 @@ BeamNG_LevelCleanUp.sln
 
 ### Prerequisites
 - **Windows OS** - This is a Windows-only application
-- **.NET 9 SDK** - Specified in `global.json`
+- **.NET 10 SDK** - Specified in `global.json`
 - **Microsoft WebView2 Runtime** - Required for Blazor WebView
 
 ### Building on Windows
@@ -189,7 +189,7 @@ var jsonContent = JsonUtils.ReadJsonFromFile(filePath);
 - Windows 11 and recent Windows 10 have it pre-installed
 
 ### Cross-Platform Building
-- Project targets `net9.0-windows10.0.17763.0`
+- Project targets `net10.0-windows10.0.17763.0`
 - Use `/p:EnableWindowsTargeting=true` for CI on Linux
 - Binary won't run but code can be analyzed/linted
 

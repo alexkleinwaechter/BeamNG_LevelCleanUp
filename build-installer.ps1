@@ -4,7 +4,7 @@
 # This script builds the application and creates the MSI installer
 # 
 # Prerequisites:
-#   - .NET 9 SDK
+#   - .NET 10 SDK
 #   - WiX Toolset v4 (will be installed automatically if missing)
 #
 # Usage: .\build-installer.ps1
@@ -59,7 +59,7 @@ Write-Host ""
 Write-Host "[3/4] Publishing application..." -ForegroundColor Yellow
 Write-Host "       Target: win-x64, Self-contained, NO SingleFile (required for GDAL)" -ForegroundColor Gray
 
-$publishDir = "BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
+$publishDir = "BeamNG_LevelCleanUp\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish"
 if (Test-Path $publishDir) {
     Write-Host "       Cleaning previous publish output..." -ForegroundColor Gray
     Remove-Item $publishDir -Recurse -Force

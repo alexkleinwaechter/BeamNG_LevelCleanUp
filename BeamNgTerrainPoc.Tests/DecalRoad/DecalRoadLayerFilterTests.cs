@@ -352,7 +352,7 @@ public class DecalRoadLayerFilterCompositionTests
             fullRange, distances, 10f, 30f, 20f, 50f, seed: 42);
 
         Assert.NotEmpty(patches);
-        Assert.True(patches.Any(p => p.Start < 100));
+        Assert.Contains(patches, p => p.Start < 100);
     }
 
     [Fact]

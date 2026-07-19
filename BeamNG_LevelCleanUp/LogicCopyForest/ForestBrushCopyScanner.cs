@@ -214,7 +214,7 @@ public class ForestBrushCopyScanner
                     }
                     // SimGroup (ForestBrushGroup) - just skip, we create our own when copying
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     parseFailureCount++;
                 }

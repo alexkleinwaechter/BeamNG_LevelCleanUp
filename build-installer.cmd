@@ -5,7 +5,7 @@ REM ============================================
 REM This script builds the application and creates the MSI installer
 REM 
 REM Prerequisites:
-REM   - .NET 9 SDK
+REM   - .NET 10 SDK
 REM   - WiX Toolset v4 (install with: dotnet tool install --global wix)
 REM
 REM Usage: build-installer.cmd
@@ -43,7 +43,7 @@ REM Step 3: Publish the main application
 echo.
 echo [3/4] Publishing application...
 echo        Target: win-x64, Self-contained, NO SingleFile (required for GDAL)
-set "PUBLISH_DIR=BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
+set "PUBLISH_DIR=BeamNG_LevelCleanUp\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish"
 if exist "%PUBLISH_DIR%" (
     echo        Cleaning previous publish output...
     rmdir /s /q "%PUBLISH_DIR%"
@@ -101,7 +101,7 @@ echo Build completed successfully!
 echo ============================================
 echo.
 echo Output files:
-echo   Application: BeamNG_LevelCleanUp\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish\
+echo   Application: BeamNG_LevelCleanUp\bin\Release\net10.0-windows10.0.17763.0\win-x64\publish\
 echo   Installer:   Installer\bin\Release\BeamNG_LevelCleanUp_Setup.msi
 echo.
 echo The MSI installer includes:

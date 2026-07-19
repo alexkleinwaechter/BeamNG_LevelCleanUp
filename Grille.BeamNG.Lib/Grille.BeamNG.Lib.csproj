@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net9</TargetFrameworks>
+		<TargetFrameworks>net10.0</TargetFrameworks>
 		<LangVersion>12</LangVersion>
 		<Nullable>enable</Nullable>
 		<RootNamespace>Grille.BeamNG</RootNamespace>

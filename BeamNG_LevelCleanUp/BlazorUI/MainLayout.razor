@@ -13,7 +13,7 @@
     </MudAppBar>
     <MudDrawer Open="_drawerOpen" Breakpoint="Breakpoint.Xs">
         <div class="sidebar">
-            <MudSwitch @bind-Checked="@_isDarkMode" Color="Color.Primary" Class="ma-4" T="bool" Label="Light/Dark Mode"/>
+            <MudSwitch @bind-Value="@_isDarkMode" Color="Color.Primary" Class="ma-4" T="bool" Label="Light/Dark Mode"/>
             <MyNavMenu/>
         </div>
     </MudDrawer>

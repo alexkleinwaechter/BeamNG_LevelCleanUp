@@ -430,8 +430,8 @@ public class BridgeRuleSystemOptions
         >= 4 => 4f, // motorway, trunk
         3 => 5f,    // primary
         2 => 6f,    // secondary, tertiary
-        1 => 8f,    // residential, unclassified
-        _ => 10f,   // service, track
+        1 => 8f,    // residential, unclassified, service
+        _ => 10f,   // track, footway
     };
 
     /// <summary>§3.3 absolute (fallback) max ramp gradient (%) per class step — R4 step 7 escalation.</summary>
