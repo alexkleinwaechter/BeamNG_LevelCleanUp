@@ -173,7 +173,7 @@ public class TerrainGenerationState
     /// <summary>
     ///     When true, nearby buildings are merged into combined DAE files to reduce draw calls.
     /// </summary>
-    public bool EnableBuildingClustering { get; set; }
+    public bool EnableBuildingClustering { get; set; } = true;
 
     /// <summary>
     ///     Grid cell size in meters for building clustering.
@@ -474,7 +474,7 @@ public class TerrainGenerationState
         CachedNetwork = null;
         CachedHeightMap = null;
         EnableBuildings = false;
-        EnableBuildingClustering = false;
+        EnableBuildingClustering = true;
         BuildingClusterCellSize = 128f;
         MaxBuildingLodLevel = 2;
         BuildingLodBias = 1.0f;

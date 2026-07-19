@@ -2208,10 +2208,12 @@ public partial class GenerateTerrain : IDisposable
 
             if (result.EnableBuildings.HasValue)
                 _enableBuildings = result.EnableBuildings.Value;
-            if (result.EnableBuildingClustering.HasValue)
-                _enableBuildingClustering = result.EnableBuildingClustering.Value;
             if (result.BuildingClusterCellSize.HasValue)
                 _buildingClusterCellSize = result.BuildingClusterCellSize.Value;
+            // Cell size is the single source of truth for clustering (0 = off). Presets saved
+            // while EnableBuildingClustering defaulted to false can carry flag=false with a
+            // non-zero cell size shown in the UI — derive instead of trusting the stored flag.
+            _enableBuildingClustering = _buildingClusterCellSize > 0;
             if (result.MaxBuildingLodLevel.HasValue)
                 _maxBuildingLodLevel = result.MaxBuildingLodLevel.Value;
             if (result.BuildingLodBias.HasValue)
