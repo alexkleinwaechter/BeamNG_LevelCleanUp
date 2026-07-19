@@ -98,6 +98,9 @@
             <MudLink Href="https://github.com/alexkleinwaechter/BeamNG_LevelCleanUp" Target="_blank" Color="Color.Primary">
                 <MudIcon Icon="@Icons.Custom.Brands.GitHub" Class="mr-1" Size="Size.Small" /> GitHub
             </MudLink>
+            <MudLink Href="https://ko-fi.com/saschakleinwachter" Target="_blank" Color="Color.Primary">
+                <MudIcon Icon="@Icons.Material.Filled.Coffee" Class="mr-1" Size="Size.Small" /> Buy me a coffee
+            </MudLink>
         </MudStack>
     </ChildContent>
     <ErrorContent>
@@ -133,6 +136,8 @@
 
     private readonly List<ToolInfo> _more =
     [
+        new("Generate Biome", "Large-scale forest placement from terrain materials and OSM layers", Icons.Material.Filled.Park, "/GenerateBiome", "#2e7d32"),
+        new("Basecolor Manager", "Manage terrain basecolor textures and rebake the merged basecolor map", Icons.Material.Filled.Palette, "/BasecolorManager", "#f06292"),
         new("Rename Map", "Change map name in filesystem and internal references", Icons.Material.Filled.DriveFileRenameOutline, "/RenameMap", "#9c27b0"),
         new("Copy Assets", "Copy decalroads, decals, and DAE assets between maps", Icons.Material.Filled.ContentCopy, "/CopyAssets", "#00bcd4"),
         new("Copy Terrain Materials", "Copy or replace terrain materials with groundcover support", Icons.Material.Filled.Layers, "/CopyTerrains", "#795548"),
