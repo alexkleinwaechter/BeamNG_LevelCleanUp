@@ -575,23 +575,8 @@ public partial class CopyTerrains
                 return;
             }
 
-            // Set working directory from the wizard state path
-            // Extract the working directory from the target path (remove /_unpacked/levels/targetLevelPath)
-            if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
-            {
-                var unpackedIndex = _levelPath.IndexOf("_unpacked", StringComparison.OrdinalIgnoreCase);
-                if (unpackedIndex > 0)
-                {
-                    ZipFileHandler.WorkingDirectory = _levelPath.Substring(0, unpackedIndex - 1);
-                }
-                else
-                {
-                    // Fallback: go up from levels folder
-                    var levelsParent = Directory.GetParent(_levelPath);
-                    if (levelsParent != null)
-                        ZipFileHandler.WorkingDirectory = Directory.GetParent(levelsParent.FullName)?.FullName;
-                }
-            }
+            // Wizard levels always live in the centralized temp folder
+            AppPaths.EnsureWorkingDirectory();
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Target level path: {_levelPath}");

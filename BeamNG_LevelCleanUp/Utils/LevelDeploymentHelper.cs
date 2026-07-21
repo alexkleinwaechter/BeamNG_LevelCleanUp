@@ -51,7 +51,9 @@ public static class LevelDeploymentHelper
         string? targetPath = null;
         await Task.Run(() =>
         {
-            ZipFileHandler.RemoveModInfo(unpackedBasePath);
+            // mod_info lives in the unpacked root, next to the "levels" folder
+            var unpackedRoot = Directory.GetParent(unpackedBasePath)?.FullName ?? unpackedBasePath;
+            ZipFileHandler.RemoveModInfo(unpackedRoot);
             targetPath = checker.CopyUnpackedToUserFolder();
         });
 

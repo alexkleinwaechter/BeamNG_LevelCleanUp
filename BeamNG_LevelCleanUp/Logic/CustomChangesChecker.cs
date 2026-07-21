@@ -83,7 +83,7 @@ internal class CustomChangesChecker
         if (userFolderPath == null)
             throw new DirectoryNotFoundException("Could not determine BeamNG user folder path.");
 
-        var sourcePath = Path.Combine(_unpackedPath, _levelName);
+        var sourcePath = ResolveLevelSourcePath();
         var targetPath = Path.Combine(userFolderPath, "levels", _levelName);
 
         if (!Directory.Exists(sourcePath))
@@ -121,6 +121,19 @@ internal class CustomChangesChecker
     internal string GetLevelFolderPathChanges()
     {
         return _levelFolderPathChanges;
+    }
+
+    /// <summary>
+    ///     Resolves the level folder below _unpackedPath. Tolerates callers passing the
+    ///     unpacked root instead of the "levels" directory containing the level folder.
+    /// </summary>
+    private string ResolveLevelSourcePath()
+    {
+        var sourcePath = Path.Combine(_unpackedPath, _levelName);
+        if (Directory.Exists(sourcePath)) return sourcePath;
+
+        var withLevels = Path.Combine(_unpackedPath, "levels", _levelName);
+        return Directory.Exists(withLevels) ? withLevels : sourcePath;
     }
 
     private void CopyDirectory(string sourceDir, string destinationDir)
