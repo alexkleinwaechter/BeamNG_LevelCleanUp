@@ -268,39 +268,43 @@ public class BridgeCoherentUnderpassTests
         var sections = network.GetCrossSectionsForSpline(under.SplineId)
             .OrderBy(c => c.DistanceAlongSpline).ToList();
 
-        float PinAt(float station)
+        // Road-272: relative drops, never hard pins.
+        Assert.All(sections, c => Assert.False(c.PinnedElevation.HasValue));
+
+        float DropAt(float station)
         {
             var cs = sections.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - station)).First();
-            Assert.True(cs.PinnedElevation.HasValue,
-                $"section at station {station} must be pinned into the underpass well");
-            return cs.PinnedElevation!.Value;
+            Assert.True(cs.SoftDipMeters.HasValue,
+                $"section at station {station} must carry the underpass well drop");
+            return cs.SoftDipMeters!.Value;
         }
 
         // Full depth at every crossing AND at interior stations between them — one continuous well bottom.
-        Assert.Equal(5f, PinAt(100f), 0.15f);
-        Assert.Equal(5f, PinAt(150f), 0.15f);
-        Assert.Equal(5f, PinAt(200f), 0.15f);
-        Assert.Equal(5f, PinAt(125f), 0.2f);
-        Assert.Equal(5f, PinAt(175f), 0.2f); // ← the anti-washboard assertion
+        Assert.Equal(5f, DropAt(100f), 0.15f);
+        Assert.Equal(5f, DropAt(150f), 0.15f);
+        Assert.Equal(5f, DropAt(200f), 0.15f);
+        Assert.Equal(5f, DropAt(125f), 0.2f);
+        Assert.Equal(5f, DropAt(175f), 0.2f); // ← the anti-washboard assertion
 
         // Eased ends beyond the cluster: the exit ramps are depth/class-sized (§3.3: primary 5 % → 100 m
         // desired for a 5 m well; the back side is junction-clamped to 98 m by the way-end junction).
-        // Half-way up each ramp (u=0.5 → w=0.5) ≈ 10 − 2.5.
-        Assert.Equal(7.5f, PinAt(51f), 0.3f);  // 100 − 98/2
-        Assert.Equal(7.5f, PinAt(250f), 0.3f); // 200 + 100/2
+        // Half-way up each ramp (u=0.5 → w=0.5) ≈ drop 2.5.
+        Assert.Equal(2.5f, DropAt(51f), 0.3f);  // 100 − 98/2
+        Assert.Equal(2.5f, DropAt(250f), 0.3f); // 200 + 100/2
 
         // Beyond the well ([2, 300] incl. ramps) the road is untouched.
         Assert.All(sections.Where(c => c.DistanceAlongSpline < 1.5f || c.DistanceAlongSpline > 301f),
-            c => Assert.False(c.PinnedElevation.HasValue));
+            c => Assert.False(c.SoftDipMeters.HasValue));
     }
 
     [Fact]
     public void DipPins_BaseEstimateNoiseMidCluster_DoesNotReachWellBottom()
     {
-        // Winningen render #2: dip pins ride the base elevation chain (estimate/DEM), which carries
-        // artifacts exactly under real interchanges — a depth-offset well reproduced every wiggle 1:1 in
-        // the HARD-pinned bottom where the smoother cannot fix it. The interior must be an engineered
-        // curve through the crossing targets, immune to base noise between them.
+        // Winningen render #2: the old absolute wells rode the base elevation chain (estimate/DEM), which
+        // carries artifacts exactly under real interchanges — a depth-offset well reproduced every wiggle
+        // 1:1 in the HARD-pinned bottom where the smoother cannot fix it. The interior must be an
+        // engineered curve through the crossing depths, immune to base noise between them — with the
+        // relative SoftDipMeters transport (road-272) the base cannot enter the emission AT ALL.
         var rules = GateOn();
         var (network, under) = BuildInterchange(rules, bridgeX: [150f, 200f, 250f]);
         var hm = RoadNetworkTestHelpers.CreateFlatHeightmap(512, 10f);
@@ -318,8 +322,8 @@ public class BridgeCoherentUnderpassTests
         Assert.NotEmpty(noisy);
         Assert.All(noisy, c =>
         {
-            Assert.True(c.PinnedElevation.HasValue);
-            Assert.Equal(5f, c.PinnedElevation!.Value, 0.1f); // engineered bottom — the +1 m hump is gone
+            Assert.True(c.SoftDipMeters.HasValue);
+            Assert.Equal(5f, c.SoftDipMeters!.Value, 0.1f); // engineered depth — the +1 m hump is gone
         });
     }
 

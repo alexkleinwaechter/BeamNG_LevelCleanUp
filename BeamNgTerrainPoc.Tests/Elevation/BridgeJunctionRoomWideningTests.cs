@@ -229,7 +229,7 @@ public class BridgeJunctionRoomWideningTests
 
         var at75 = network.GetCrossSectionsForSpline(lower.SplineId)
             .OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 75f)).First();
-        Assert.True(at75.PinnedElevation.HasValue,
+        Assert.True(at75.SoftDipMeters.HasValue,
             "the well must extend past the old junction clamp (18 m) once the junction is re-pinned");
     }
 
@@ -245,7 +245,7 @@ public class BridgeJunctionRoomWideningTests
         Assert.False(junction.IsPinned);
         var at75 = network.GetCrossSectionsForSpline(lower.SplineId)
             .OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 75f)).First();
-        Assert.False(at75.PinnedElevation.HasValue, "legacy well stays clamped to the junction room");
+        Assert.False(at75.SoftDipMeters.HasValue, "legacy well stays clamped to the junction room");
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using BeamNgTerrainPoc.Terrain.Algorithms.Banking;
 using BeamNgTerrainPoc.Terrain.Logging;
 using BeamNgTerrainPoc.Terrain.Models;
@@ -829,7 +829,7 @@ public class UnifiedJunctionProfileBlender
                 continue;
             if (float.IsNaN(cs.TargetElevation) || cs.IsRoundaboutBlended)
                 continue;
-            if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue))
+            if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue || cs.SoftDipMeters.HasValue))
                 continue; // A6: never fight a bridge deck/dip pin
 
             var totalWeight = 0f;
@@ -934,7 +934,7 @@ public class UnifiedJunctionProfileBlender
             var cs = network.GetCrossSectionByIndex(csIndex);
             if (cs == null || cs.IsRoundaboutBlended)
                 continue;
-            if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue))
+            if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue || cs.SoftDipMeters.HasValue))
                 continue; // A6: never fight a bridge deck/dip pin
 
             var totalWeight = influences.Sum(inf => inf.weight);
@@ -1053,7 +1053,7 @@ public class UnifiedJunctionProfileBlender
                 var cs = splineSections[i];
                 if (cs.IsRoundaboutBlended)
                     continue;
-                if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue))
+                if (respectPins && (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue || cs.SoftDipMeters.HasValue))
                     continue; // A6: never fight a bridge deck/dip pin
 
                 // Sample terrain at this cross-section's position

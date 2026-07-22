@@ -15,6 +15,12 @@ namespace BeamNgTerrainPoc.Terrain.Algorithms;
 /// bottom where the smoother is forbidden to fix it — the "kink mid-underpass" render. Inside the well the
 /// natural profile is only consulted as a never-raise clamp; it fades back in over the eased end ramps,
 /// which BLEND from the end target to the natural grade (<c>w·targetZ + (1−w)·naturalZ</c>).</para>
+///
+/// <para><b>Depth-space use (road-272 ramp-end humps, 2026-07-21):</b> the sparse-mode emitter
+/// (<c>UnifiedRoadSmoother.PinUnderpassClusterWell</c>) evaluates the same math with
+/// <c>TargetZ = −depth</c> and <c>naturalZ = 0</c>, turning <c>−ZAt(s, 0)</c> into a smooth relative DROP
+/// profile (engineered interior through the per-crossing depths, eased to zero on the ramps, coincident
+/// stations keep the deepest). The absolute-Z form above remains the resolver's post-solve active path.</para>
 /// </summary>
 internal sealed class UnderpassWellProfile
 {

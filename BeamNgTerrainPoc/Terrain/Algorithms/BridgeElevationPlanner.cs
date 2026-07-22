@@ -374,7 +374,15 @@ public static class BridgeElevationPlanner
             ? sparse && graded
                 ? BuildUniformSoftPins(span, ChordAt, obstacles, spanCrossings, SeparationFor)
                 : graded ? BuildGradedPins(span, ChordAt, lift) : BuildPins(span, deckZ)
-            : [];
+            : sparse && graded
+                // 2026-07-21 #3 (render: trunk deck SAGGED once the no-raise law un-raised its span): an
+                // UNRAISED sparse span still must not let the under-road valley into the filter input —
+                // the box window otherwise drags the deck down into the underpass (the render-#6 sink the
+                // soft shaping exists for; previously masked because the graded shares raised every
+                // clearance span). Dip-only spans have no raise/veto/split crossings ⇒ lift is 0 ⇒ these
+                // pins are the pure boundary chord, rise 0: deck level with its approaches, never above.
+                ? BuildUniformSoftPins(span, ChordAt, obstacles, spanCrossings, SeparationFor)
+                : [];
 
         // A5 carry: expose this span's pinned deck sections to later (lower-priority) spans as fixed
         // constraints. Un-raised decks need no carry — their sections keep TargetElevation, which the
@@ -452,6 +460,32 @@ public static class BridgeElevationPlanner
             var dp = BridgeRuleSystemOptions.ClassStepFor(ob.Crossing.UpperOsmClass) -
                      BridgeRuleSystemOptions.ClassStepFor(ob.Crossing.LowerOsmClass);
             var share = BridgeRuleSystemOptions.RaiseShareFor(dp);
+            if (share <= 0f)
+                // 2026-07-21 (bridge 675150484): Δp > 0 ⇒ zero raise share — degenerate to an HONEST pure
+                // dip, not a Split with a 0 m deck target: the span is then never marked raised, the
+                // uniform soft lift ignores the crossing, and the logs read "dip", which is what happens.
+                return new CrossingPlan
+                {
+                    Crossing = ob.Crossing,
+                    ObstacleZEstimate = ob.Z,
+                    Action = BridgeElevationAction.DipLowerRoad,
+                    LowerRoadTargetZ = ob.Z - deficit,
+                    DipDepthMeters = deficit,
+                    RequiredSeparationMeters = sep,
+                };
+
+            if (share >= 1f)
+                // Mirror (same session): Δp < 0 ⇒ the lower road outranks the bridge's road and must never
+                // be dipped — a pure raise veto, exactly like binary Rule 2.
+                return new CrossingPlan
+                {
+                    Crossing = ob.Crossing,
+                    ObstacleZEstimate = ob.Z,
+                    Action = BridgeElevationAction.RaiseBridgeVeto,
+                    DeckTargetZ = ob.Z + sep,
+                    RequiredSeparationMeters = sep,
+                };
+
             var raiseBy = share * deficit;
             var dipBy = deficit - raiseBy;
             return new CrossingPlan
@@ -759,7 +793,10 @@ public static class BridgeElevationPlanner
     /// rest on the deck anyway + warn (the deck must clear — the approach ramp ends up steeper than the
     /// absolute table value). Raise room comes from the SPAN approaches (<paramref name="raiseMaxNormal"/>/
     /// <paramref name="raiseMaxAbs"/>); dip room is measured on the lower road here. Junction-in-sag ⇒ the
-    /// lower ramp room is 0 ⇒ L_max = 0 (the whole deficit moves to the deck).
+    /// lower ramp room is 0 ⇒ L_max = 0 (the whole deficit moves to the deck) — LEGACY mode only: in
+    /// sparse mode junctions yield to the well (doc 05 §4.3) and the room ignores them. 2026-07-21 user
+    /// law: refills never cross party lines — a pure-dip plan's deck and a veto plan's road are off
+    /// limits; only the mandatory last resort may still put residue on the deck.
     /// </summary>
     private static CrossingPlan ApplyRampFeasibility(
         UnifiedRoadNetwork network, CrossingPlan plan, Obstacle ob, float approachDeckZ,
@@ -774,14 +811,21 @@ public static class BridgeElevationPlanner
             return plan;
 
         // Dip room on the lower road (0 for rail/water/synthetic/bridge decks — they are never lowered).
+        // 2026-07-21 (bridge 675150484, run 145158): in SPARSE mode junctions do NOT box the dip — the
+        // well executor measures its room with ignoreJunctions and re-pins junctions inside the well DOWN
+        // to the well line (doc 05 §4.3). Measuring junction-clamped room here made A4 believe 17 m of
+        // room existed where the executor had hundreds, and the "unachievable" remainder raised the deck.
         float dipMaxNormal = 0f, dipMaxAbs = 0f;
         if (ob.Crossing.LowerKind == BridgeObstacleKind.Road && ob.LowerSpline != null &&
             !ob.Crossing.LowerIsBridge)
         {
+            var junctionsYield = rules.EnableSparseDeckConstraints;
             var lowerStep = BridgeRuleSystemOptions.ClassStepFor(ob.Crossing.LowerOsmClass);
             var rampLen = MathF.Min(
-                MeasureRampLength(network, ob.LowerSpline, ob.LowerStation, forward: false),
-                MeasureRampLength(network, ob.LowerSpline, ob.LowerStation, forward: true));
+                MeasureRampLength(network, ob.LowerSpline, ob.LowerStation, forward: false,
+                    ignoreJunctions: junctionsYield),
+                MeasureRampLength(network, ob.LowerSpline, ob.LowerStation, forward: true,
+                    ignoreJunctions: junctionsYield));
             dipMaxNormal = MathF.Min(rules.MaxCutDepthMeters,
                 rampLen * BridgeRuleSystemOptions.NormalMaxSlopePercent(lowerStep) / 100f);
             dipMaxAbs = MathF.Min(rules.MaxCutDepthHardMeters,
@@ -791,19 +835,26 @@ public static class BridgeElevationPlanner
         var idealRaise = IsFinite(plan.DeckTargetZ) ? MathF.Max(0f, plan.DeckTargetZ - approachDeckZ) : 0f;
         var idealDip = MathF.Max(0f, plan.DipDepthMeters);
 
+        // User law 2026-07-21 (bridge 675150484): the rules already decided WHO moves — the feasibility
+        // escalation must not quietly re-assign deficit to the party the rules protected. A pure-dip
+        // plan's deck is not a refill source (it remains only the mandatory last resort below), and a
+        // veto plan's outranking road is never dipped at all.
+        var deckMayRefill = plan.Action is not BridgeElevationAction.DipLowerRoad;
+        var dipMayRefill = plan.Action is BridgeElevationAction.DipLowerRoad or BridgeElevationAction.Split;
+
         var raise = MathF.Min(idealRaise, raiseMaxNormal);
         var dip = MathF.Min(idealDip, dipMaxNormal);
         string? warning = null;
 
         var rem = deficit - raise - dip;
-        if (rem > Eps) // refill from normal-slope slack, raise first (keeps the through-road smoother)
+        if (rem > Eps && deckMayRefill) // refill from normal-slope slack, raise first (keeps the through-road smoother)
         {
             var extra = MathF.Min(rem, MathF.Max(0f, raiseMaxNormal - raise));
             raise += extra;
             rem -= extra;
         }
 
-        if (rem > Eps)
+        if (rem > Eps && dipMayRefill)
         {
             var extra = MathF.Min(rem, MathF.Max(0f, dipMaxNormal - dip));
             dip += extra;
@@ -812,12 +863,16 @@ public static class BridgeElevationPlanner
 
         if (rem > Eps) // escalation 1: absolute slopes + hard cut depth
         {
-            var extra = MathF.Min(rem, MathF.Max(0f, raiseMaxAbs - raise));
-            raise += extra;
-            rem -= extra;
-            if (rem > Eps)
+            if (deckMayRefill)
             {
-                extra = MathF.Min(rem, MathF.Max(0f, dipMaxAbs - dip));
+                var extra = MathF.Min(rem, MathF.Max(0f, raiseMaxAbs - raise));
+                raise += extra;
+                rem -= extra;
+            }
+
+            if (rem > Eps && dipMayRefill)
+            {
+                var extra = MathF.Min(rem, MathF.Max(0f, dipMaxAbs - dip));
                 dip += extra;
                 rem -= extra;
             }
@@ -841,9 +896,13 @@ public static class BridgeElevationPlanner
 
         if (rem > Eps)
         {
-            // Last resort: the deck must clear — take the rest on the raise and warn (over-steep ramp).
+            // Last resort: the deck must clear — take the rest on the raise and warn. For a pure-dip plan
+            // this is the ONLY way deficit ever reaches the deck (user law), and the raise may well be
+            // within the ramp slopes — word the warning accordingly.
             raise += rem;
-            warning = "infeasible within slope/cut limits - deck raised beyond absolute ramp slope";
+            warning = raise > raiseMaxAbs + Eps
+                ? "infeasible within slope/cut limits - deck raised beyond absolute ramp slope"
+                : "dip room/cut limits exhausted - remainder forced onto the deck";
         }
 
         return new CrossingPlan

@@ -446,15 +446,20 @@ public class BridgeRuleSystemOptions
 
     /// <summary>
     ///     §3.5: fraction of the remaining demand D taken by RAISING the deck, from
-    ///     Δp = stepUpper − stepLower. The more important road keeps its smooth profile:
-    ///     upper much more important (Δp ≥ +2) ⇒ raise only 20 %, the lower road absorbs 80 % by dipping.
+    ///     Δp = stepUpper − stepLower. The more important road keeps its smooth profile.
+    ///     2026-07-21 (ellernfromdrivertraining, bridge 675150484: trunk deck raised 20 % over a tertiary):
+    ///     ANY positive Δp now raises NOTHING — a bridge whose road outranks the crossing road must never
+    ///     leave its approach level; the lower road absorbs the full deficit by dipping (user law, the
+    ///     graded 20/35 % shares lifted every trunk span over minor roads). The planner degenerates such
+    ///     crossings to a pure <c>DipLowerRoad</c>. A4's room clamp remains the only path that can still
+    ///     move an unachievable dip share onto the deck (junction-boxed lower road — physically forced).
+    ///     Mirror (same session): Δp &lt; 0 raises EVERYTHING — an outranking lower road must never be
+    ///     dipped; the planner degenerates such crossings to a pure raise veto. Only Δp = 0 still splits.
     /// </summary>
     public static float RaiseShareFor(int priorityStepDelta) => priorityStepDelta switch
     {
-        >= 2 => 0.20f,
-        1 => 0.35f,
+        >= 1 => 0f,
         0 => 0.50f,
-        -1 => 0.65f,
-        _ => 0.80f,
+        _ => 1f,
     };
 }

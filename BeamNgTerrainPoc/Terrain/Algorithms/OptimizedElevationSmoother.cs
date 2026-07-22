@@ -724,6 +724,11 @@ public class OptimizedElevationSmoother : IHeightCalculator
         if (parameters?.TunnelRules?.EnableTunnelProfile == true)
             ApplyTunnelChordToRaw(chainCrossSections, rawElevations);
 
+        // Step 1.58 (road-272 ramp-end humps): soft dip wells are NOT authored into the raw — the filter
+        // solves the natural road and the wells are applied as per-section depressions post-filter
+        // (Step 2.6), so their depth rides the actual solved context instead of the A0 estimate.
+        var hasSoftDip = HasSoftDips(chainCrossSections);
+
         // Step 1.6 (Amendment 03 v2): soft approach ramps — feather the deck-end delta into the RAW input
         // outside each pinned/soft run, so the filter's output CLIMBS to the deck instead of stopping
         // half-way (doc 16 §3b abutment step) — soft runs included (2026-07-13), so the climb is the
@@ -743,12 +748,17 @@ public class OptimizedElevationSmoother : IHeightCalculator
         if (hasPins)
             HardHoldPins(chainCrossSections, smoothed);
 
+        // Step 2.6: apply the soft dip wells onto the solved profile — per-section subtraction, full
+        // engineered depth, downward-only by construction.
+        if (hasSoftDip)
+            ApplySoftDipWells(chainCrossSections, smoothed);
+
         // Step 3: Enforce max slope constraint on the full chain (no kinks at spline joints). Exempt the pinned
         // deck + its rising-ramp neighbourhood (§7 step 4) — clamping there would flatten the intentionally steep
         // approach ramp and pull the deck down (consistent with the no-grade-clamp stance).
         if (enableMaxSlopeConstraint)
             EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees,
-                hasPins ? BuildPinExemptMask(chainCrossSections, windowSize) : null);
+                hasPins || hasSoftDip ? BuildPinExemptMask(chainCrossSections, windowSize) : null);
 
         // Step 4: Assign final elevations
         for (var i = 0; i < chainCrossSections.Count; i++)
@@ -776,10 +786,14 @@ public class OptimizedElevationSmoother : IHeightCalculator
         var enableMaxSlopeConstraint = parameters?.EnableMaxSlopeConstraint ?? false;
         var roadMaxSlopeDegrees = parameters?.RoadMaxSlopeDegrees ?? 6.0f;
 
-        // Use existing TargetElevation as raw input
+        // Use existing TargetElevation as raw input. Soft dip wells are UN-DIPPED here (their drop added
+        // back): the previous iteration subtracted it post-filter, and re-filtering the dipped profile
+        // would otherwise accumulate the well or smear it into the approaches — the filter always solves
+        // the natural road, the well is re-applied after (road-272, see ApplySoftDipWells).
         var rawElevations = new float[chainCrossSections.Count];
         for (var i = 0; i < chainCrossSections.Count; i++)
-            rawElevations[i] = chainCrossSections[i].TargetElevation;
+            rawElevations[i] = chainCrossSections[i].TargetElevation +
+                               MathF.Max(0f, chainCrossSections[i].SoftDipMeters ?? 0f);
 
         // Re-apply bridge-deck pins each iteration (plan doc 14 §7 step 2) — without this the deck drifts back
         // toward terrain a little on every re-smooth pass.
@@ -793,6 +807,8 @@ public class OptimizedElevationSmoother : IHeightCalculator
         // same convergence argument as the bridge soft spans; see CalculateChainElevations Step 1.57).
         if (parameters?.TunnelRules?.EnableTunnelProfile == true)
             ApplyTunnelChordToRaw(chainCrossSections, rawElevations);
+
+        var hasSoftDip = HasSoftDips(chainCrossSections);
 
         // Amendment 03 v2: re-feather the soft approach ramps each iteration (soft runs included,
         // 2026-07-13). The raw base here is the PREVIOUS iteration's solved profile, so the ramp
@@ -808,10 +824,14 @@ public class OptimizedElevationSmoother : IHeightCalculator
         if (hasPins)
             HardHoldPins(chainCrossSections, smoothed);
 
+        // Re-apply the soft dip wells onto the re-solved profile (see CalculateChainElevations Step 2.6).
+        if (hasSoftDip)
+            ApplySoftDipWells(chainCrossSections, smoothed);
+
         // Enforce max slope constraint on the full chain
         if (enableMaxSlopeConstraint)
             EnforceMaxSlopeConstraint(smoothed, crossSectionSpacing, roadMaxSlopeDegrees,
-                hasPins ? BuildPinExemptMask(chainCrossSections, windowSize) : null);
+                hasPins || hasSoftDip ? BuildPinExemptMask(chainCrossSections, windowSize) : null);
 
         // Assign final elevations
         for (var i = 0; i < chainCrossSections.Count; i++)
@@ -928,6 +948,35 @@ public class OptimizedElevationSmoother : IHeightCalculator
         return any;
     }
 
+    /// <summary>True when any section in the chain carries a soft dip-well drop.</summary>
+    internal static bool HasSoftDips(List<UnifiedCrossSection> cs)
+    {
+        foreach (var c in cs)
+            if (c.SoftDipMeters is not null)
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Soft dip wells (ellern_gen road-272 ramp-end humps): subtracts each section's planned underpass
+    /// drop (<see cref="UnifiedCrossSection.SoftDipMeters"/>) from the SOLVED profile, AFTER the filter.
+    /// The well is deliberately NOT authored into the raw filter input — the filter solves the natural
+    /// (junction-blended) road as if no dip existed, and the well rides that solve as a pure per-section
+    /// depression: depth is exact relative to each section's own local context (no estimate base, no
+    /// boundary-chord for a lifted junction anchor to tilt the interior with), edges are C1 by the eased
+    /// drop's zero slope at both ends riding an already-smooth base, and subtraction can only ever move
+    /// the road DOWN — the road-272 invariant. The winningen requirement holds too: the base under the
+    /// engineered depth curve is the FILTERED road, so DEM/base wiggles cannot reach the well bottom.
+    /// Iterations stay exact because <c>ReSmoothChainFromExistingElevations</c> un-dips its raw input by
+    /// the same drops before re-filtering (the drop is re-applied here each pass — never accumulated).
+    /// </summary>
+    internal static void ApplySoftDipWells(List<UnifiedCrossSection> cs, float[] smoothed)
+    {
+        for (var i = 0; i < cs.Count; i++)
+            if (cs[i].SoftDipMeters is { } drop)
+                smoothed[i] -= MathF.Max(0f, drop);
+    }
+
     /// <summary>Soft approach ramps: slope used to size the feather length from the deck-end delta (5 %).</summary>
     private const float ApproachRampSlope = 0.05f;
 
@@ -974,9 +1023,11 @@ public class OptimizedElevationSmoother : IHeightCalculator
         }
     }
 
-    /// <summary>A section whose raw input is authored by a structure (hard deck/dip pin or soft deck shaping).</summary>
+    /// <summary>A section whose raw input is authored by a structure (hard deck pin, soft deck shaping or
+    /// soft dip well). Soft-dip runs are flush with their approaches by construction, so the feather
+    /// no-ops on their own boundaries — inclusion here only stops OTHER structures' feathers inside them.</summary>
     private static bool IsStructureSection(UnifiedCrossSection cs) =>
-        cs.PinnedElevation is not null || cs.SoftDeckRiseMeters is not null;
+        cs.PinnedElevation is not null || cs.SoftDeckRiseMeters is not null || cs.SoftDipMeters is not null;
 
     private static void FeatherOneSide(
         List<UnifiedCrossSection> cs, float[] raw, float spacing, int boundary, int dir)
@@ -1050,7 +1101,9 @@ public class OptimizedElevationSmoother : IHeightCalculator
         for (var i = 0; i < n; i++)
         {
             // v3: soft-shaped spans carry intentional clearance grades too — exempt them like hard pins.
-            if (cs[i].PinnedElevation is null && cs[i].SoftDeckRiseMeters is null) continue;
+            // Soft dip wells likewise: clamping their engineered descent would lift the well bottom.
+            if (cs[i].PinnedElevation is null && cs[i].SoftDeckRiseMeters is null &&
+                cs[i].SoftDipMeters is null) continue;
             mask ??= new bool[n];
             var lo = Math.Max(0, i - margin);
             var hi = Math.Min(n - 1, i + margin);

@@ -123,10 +123,11 @@ public class BridgeRampFeasibilityTests
     // ── Distribution under caps ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void DipCappedByMaxCut_RemainderMovesToDeck()
+    public void DipCappedByMaxCut_EscalatesIntoHardCut_DeckUntouched()
     {
-        // Motorway over residential (Δp +3 → ideal raise 0.6 / dip 2.4), but MaxCutDepth = 1.0 caps the dip;
-        // the remaining 1.4 m moves to the deck (raise room is ample): raise 2.0 / dip 1.0.
+        // Motorway over residential (Δp +3 → pure dip since 2026-07-21), MaxCutDepth = 1.0 caps the
+        // normal dip — the remainder must NOT move to the deck (user law): it escalates into the hard cut
+        // (default 6.0, ramp room 48 m × 10 % ≈ 4.8) and the full 3 m is dug.
         var rules = new BridgeRuleSystemOptions
         {
             EnablePriorityDistribution = true, EnableRampFeasibility = true, MaxCutDepthMeters = 1.0f,
@@ -136,18 +137,45 @@ public class BridgeRampFeasibilityTests
         var plan = BridgeElevationPlanner.Plan(network, options: NoTerrain());
 
         var crossing = Assert.Single(plan.Crossings);
+        Assert.Equal(BridgeElevationAction.DipLowerRoad, crossing.Action);
+        Assert.Equal(3f, crossing.DipDepthMeters, Tol);   // full deficit via hard-cut escalation
+        Assert.Equal(5f, crossing.LowerRoadTargetZ, Tol); // 8 − 3
+        Assert.False(Assert.Single(plan.Spans).IsRaised); // the deck never moved
+        Assert.NotNull(crossing.Warning);
+        Assert.Contains("absolute ramp slopes", crossing.Warning);
+    }
+
+    [Fact]
+    public void DipExhausted_ReducedClearance_ThenDeckAsLastResort()
+    {
+        // Both cut limits at 1.0 → the dip can only deliver 1 m of the 3 m deficit. User-law order: NO
+        // raise refill for a pure-dip plan — first shave the clearance (5 → 4.2, R4 step 7), then and only
+        // then force the final 1.2 m onto the deck (the mandatory last resort; raise room is ample so the
+        // ramp stays within slopes).
+        var rules = new BridgeRuleSystemOptions
+        {
+            EnablePriorityDistribution = true, EnableRampFeasibility = true,
+            MaxCutDepthMeters = 1.0f, MaxCutDepthHardMeters = 1.0f,
+        };
+        var (network, _, _) = BuildScenario("motorway", "residential", rules);
+
+        var plan = BridgeElevationPlanner.Plan(network, options: NoTerrain());
+
+        var crossing = Assert.Single(plan.Crossings);
         Assert.Equal(BridgeElevationAction.Split, crossing.Action);
-        Assert.Equal(12f, crossing.DeckTargetZ, Tol);     // 10 + 2.0
-        Assert.Equal(1f, crossing.DipDepthMeters, Tol);   // capped at MaxCutDepth
-        Assert.Equal(7f, crossing.LowerRoadTargetZ, Tol); // 8 − 1
-        Assert.Null(crossing.Warning);                    // normal-slope refill sufficed
+        Assert.Equal(1f, crossing.DipDepthMeters, Tol);             // hard cut limit
+        Assert.Equal(4.2f, crossing.RequiredSeparationMeters, Tol); // reduced clearance applied first
+        Assert.Equal(11.2f, crossing.DeckTargetZ, Tol);             // 10 + forced 1.2 — last resort only
+        Assert.NotNull(crossing.Warning);
+        Assert.Contains("forced onto the deck", crossing.Warning);
     }
 
     [Fact]
     public void JunctionInSag_LowerRoadNeverDipped_DeckTakesAll()
     {
-        // A junction sits ON the lower road at the crossing station → L_max = 0 (junction-in-sag rule):
-        // the whole 3 m deficit moves to the deck.
+        // LEGACY (non-sparse): a junction ON the lower road at the crossing station → L_max = 0
+        // (junction-in-sag rule). Pure-dip plan ⇒ no raise refill: the clearance is shaved first
+        // (5 → 4.2), then the remaining 2.2 m is forced onto the deck as the last resort.
         var rules = new BridgeRuleSystemOptions
         {
             EnablePriorityDistribution = true, EnableRampFeasibility = true,
@@ -159,8 +187,33 @@ public class BridgeRampFeasibilityTests
 
         var crossing = Assert.Single(plan.Crossings);
         Assert.Equal(BridgeElevationAction.RaiseBridgeVeto, crossing.Action);
-        Assert.Equal(13f, crossing.DeckTargetZ, Tol); // 8 + 5 — all on the deck
+        Assert.Equal(12.2f, crossing.DeckTargetZ, Tol); // 8 + 4.2 reduced clearance — all on the deck
+        Assert.Equal(4.2f, crossing.RequiredSeparationMeters, Tol);
         Assert.Equal(0f, crossing.DipDepthMeters, Tol);
+    }
+
+    [Fact]
+    public void JunctionInSag_SparseMode_DipsThroughTheJunction()
+    {
+        // SPARSE (the app's mode; ellernfromdrivertraining bridge 675150484, run 145158): the dip-well
+        // executor re-pins junctions inside the well DOWN to the well line (doc 05 §4.3), so junctions do
+        // not box the dip. A4's room measurement must agree — the junction at the crossing station is
+        // ignored, the way-end room (≈48 m) carries the full 3 m dip, and the deck NEVER rises.
+        var rules = new BridgeRuleSystemOptions
+        {
+            EnablePriorityDistribution = true, EnableRampFeasibility = true,
+            EnableSparseDeckConstraints = true,
+        };
+        var (network, _, under) = BuildScenario("motorway", "residential", rules);
+        AddManualJunction(network, under, station: 50f);
+
+        var plan = BridgeElevationPlanner.Plan(network, options: NoTerrain());
+
+        var crossing = Assert.Single(plan.Crossings);
+        Assert.Equal(BridgeElevationAction.DipLowerRoad, crossing.Action);
+        Assert.Equal(3f, crossing.DipDepthMeters, Tol);
+        Assert.Equal(5f, crossing.LowerRoadTargetZ, Tol);
+        Assert.False(Assert.Single(plan.Spans).IsRaised);
     }
 
     [Fact]
@@ -191,7 +244,8 @@ public class BridgeRampFeasibilityTests
     [Fact]
     public void FeasibilityOff_SharesUnclamped()
     {
-        // Same MaxCutDepth, but the feasibility flag is OFF → the ideal §3.5 shares stand (dip 2.4 > cut limit).
+        // Same MaxCutDepth, but the feasibility flag is OFF → the ideal §3.5 outcome stands unclamped
+        // (full 3 m dip > cut limit; Δp > 0 ⇒ zero raise share since 2026-07-21, bridge 675150484).
         var rules = new BridgeRuleSystemOptions
         {
             EnablePriorityDistribution = true, MaxCutDepthMeters = 1.0f,
@@ -200,7 +254,7 @@ public class BridgeRampFeasibilityTests
 
         var plan = BridgeElevationPlanner.Plan(network, options: NoTerrain());
 
-        Assert.Equal(2.4f, Assert.Single(plan.Crossings).DipDepthMeters, Tol);
+        Assert.Equal(3f, Assert.Single(plan.Crossings).DipDepthMeters, Tol);
     }
 
     // ── Rule-1 infeasible → dip lower-priority under-road (spec 2026-07-01) ───────────────────────────────
