@@ -50,34 +50,35 @@ public class BridgePriorityDistributionTests
         new();
 
     [Fact]
-    public void MotorwayOverResidential_RaisesLittle_DipsMost()
+    public void MotorwayOverResidential_NeverRaises_FullDip()
     {
-        // Δp = step(motorway 4) − step(residential 1) = +3 → r = 0.20: deck +0.6 (→10.6), road dips 2.4 (→5.6).
+        // Δp = step(motorway 4) − step(residential 1) = +3 → r = 0 (2026-07-21, bridge 675150484): the
+        // deck of the more important road NEVER leaves its approach level — an honest pure dip of the
+        // full 3 m deficit (→5), the span is not marked raised.
         var (network, _) = BuildScenario("motorway", "residential", 10000, 5500, distribute: true);
 
         var plan = BridgeElevationPlanner.Plan(network, options: NoTerrain());
 
         var crossing = Assert.Single(plan.Crossings);
-        Assert.Equal(BridgeElevationAction.Split, crossing.Action);
-        Assert.Equal(10.6f, crossing.DeckTargetZ, Tol);
-        Assert.Equal(2.4f, crossing.DipDepthMeters, Tol);
-        Assert.Equal(5.6f, crossing.LowerRoadTargetZ, Tol);
-        Assert.Equal(10.6f, Assert.Single(plan.Spans).RequiredDeckZ, Tol);
+        Assert.Equal(BridgeElevationAction.DipLowerRoad, crossing.Action);
+        Assert.Equal(3f, crossing.DipDepthMeters, Tol);
+        Assert.Equal(5f, crossing.LowerRoadTargetZ, Tol);
+        Assert.False(Assert.Single(plan.Spans).IsRaised);
     }
 
     [Fact]
-    public void ResidentialBridgeOverMotorway_RaisesMost_DipsLittle()
+    public void ResidentialBridgeOverMotorway_NeverDipsTheMotorway_FullRaise()
     {
-        // Δp = step(residential 1) − step(motorway 4) = −3 → r = 0.80: deck +2.4 (→12.4), road dips 0.6 (→7.4).
+        // Δp = step(residential 1) − step(motorway 4) = −3 → r = 1 (2026-07-21 mirror law): the outranking
+        // lower road must never dip — a pure raise veto lifts the deck the full deficit (→13 = 8 + C 5).
         var (network, _) = BuildScenario("residential", "motorway", 5500, 10000, distribute: true);
 
         var plan = BridgeElevationPlanner.Plan(network, options: NoTerrain());
 
         var crossing = Assert.Single(plan.Crossings);
-        Assert.Equal(BridgeElevationAction.Split, crossing.Action);
-        Assert.Equal(12.4f, crossing.DeckTargetZ, Tol);
-        Assert.Equal(0.6f, crossing.DipDepthMeters, Tol);
-        Assert.Equal(7.4f, crossing.LowerRoadTargetZ, Tol);
+        Assert.Equal(BridgeElevationAction.RaiseBridgeVeto, crossing.Action);
+        Assert.Equal(13f, crossing.DeckTargetZ, Tol);
+        Assert.Equal(0f, crossing.DipDepthMeters, Tol);
     }
 
     [Fact]

@@ -133,21 +133,8 @@ public partial class CopyAssets
                 return;
             }
 
-            // Set working directory
-            if (string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
-            {
-                var unpackedIndex = _levelPath.IndexOf("_unpacked", StringComparison.OrdinalIgnoreCase);
-                if (unpackedIndex > 0)
-                {
-                    ZipFileHandler.WorkingDirectory = _levelPath.Substring(0, unpackedIndex - 1);
-                }
-                else
-                {
-                    var levelsParent = Directory.GetParent(_levelPath);
-                    if (levelsParent != null)
-                        ZipFileHandler.WorkingDirectory = Directory.GetParent(levelsParent.FullName)?.FullName;
-                }
-            }
+            // Wizard levels always live in the centralized temp folder
+            AppPaths.EnsureWorkingDirectory();
 
             _initialWorkingDirectory = ZipFileHandler.WorkingDirectory;
 

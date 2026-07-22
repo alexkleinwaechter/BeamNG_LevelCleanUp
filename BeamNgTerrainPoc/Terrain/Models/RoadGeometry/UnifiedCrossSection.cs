@@ -90,6 +90,21 @@ public class UnifiedCrossSection
     public float? SoftDeckRiseMeters { get; set; }
 
     /// <summary>
+    ///     2026-07-21 (ellern_gen road-272 ramp-end humps): SOFT dip-well shaping for sparse mode — the
+    ///     underpass DROP (m, ≥0) this lower-road section owes below the local road line, from the planned
+    ///     eased well (single-crossing or doc-28 cluster envelope). Deliberately RELATIVE — the depth-space
+    ///     mirror of <see cref="SoftDeckRiseMeters"/>: the old absolute wells were hard-pinned off the A0
+    ///     estimate base, and wherever the solved road ran below that estimate the near-zero-drop ramp ends
+    ///     HELD THE ROAD UP at the estimate line (upward kinks ~60 m either side of the deck). The smoother
+    ///     instead solves the natural road with the well REMOVED from the filter input and subtracts the
+    ///     drop from the solved profile afterwards (<c>OptimizedElevationSmoother.ApplySoftDipWells</c>;
+    ///     re-smooth iterations un-dip their raw first — never accumulated). Depth is therefore exact
+    ///     relative to each section's own solved context, estimate offsets cannot reach the road, and the
+    ///     well can ONLY deepen the road, never lift it. Null ⇒ none.
+    /// </summary>
+    public float? SoftDipMeters { get; set; }
+
+    /// <summary>
     ///     2026-07-14 (junction-aware approach feather): the final agreement Z of a PINNED junction whose
     ///     corridor contributor is this cross-section, stamped by the doc-05 §4.2 junction-raise pass
     ///     (<c>UnifiedRoadSmoother.RaiseJunctionsAlongApproachRamps</c>). The smoother's raw approach-ramp

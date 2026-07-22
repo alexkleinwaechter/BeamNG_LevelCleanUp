@@ -11,10 +11,12 @@ namespace BeamNgTerrainPoc.Tests.Elevation;
 /// <summary>
 /// Sparse-mode lower-road dip wells (plan doc 01, review R-1; formerly the standalone dip-as-pin flag,
 /// now owned unconditionally by <c>EnableSparseDeckConstraints</c>). The planned lower-road dips are
-/// emitted PRE-smooth as pinned eased wells (FULL well incl. ramps, so the pin-exemption masks cover it);
-/// the smoother solves the dip continuously; the junction blender is pin-aware (no tug-of-war); and the
-/// demoted <c>GradeSeparationResolver.ApplyLowerRoadDips</c> never drops <c>TargetElevation</c> a second
-/// time (no double-dip).
+/// emitted PRE-smooth as SOFT eased wells — relative <c>SoftDipMeters</c> drops (road-272 ramp-end humps,
+/// 2026-07-21; formerly absolute <c>PinnedElevation</c> off the estimate base, which held the near-zero
+/// ramp ends UP wherever the solved road ran below the estimate). The smoother anchors the well on the
+/// actual approaches and solves the dip continuously; the junction blender is well-aware (no tug-of-war);
+/// and the demoted <c>GradeSeparationResolver.ApplyLowerRoadDips</c> never drops <c>TargetElevation</c> a
+/// second time (no double-dip).
 /// </summary>
 public class BridgeLowerRoadDipPinTests
 {
@@ -53,7 +55,7 @@ public class BridgeLowerRoadDipPinTests
     }
 
     [Fact]
-    public void DipPins_PinTheFullEasedWell_BottomAtPlannedTarget()
+    public void DipPins_EmitTheFullEasedWell_AsRelativeSoftDrops()
     {
         var (network, _, under) = BuildDipScenario();
         var hm = RoadNetworkTestHelpers.CreateFlatHeightmap(512, 8f);
@@ -71,21 +73,25 @@ public class BridgeLowerRoadDipPinTests
         var sections = network.GetCrossSectionsForSpline(under.SplineId)
             .OrderBy(c => c.DistanceAlongSpline).ToList();
 
-        // Well bottom = the planned dip target (baseZ 8 − depth 3).
+        // Road-272: the emission is the relative DROP, never an absolute Z off the estimate base —
+        // and never a hard pin.
+        Assert.All(sections, c => Assert.False(c.PinnedElevation.HasValue));
+
+        // Well bottom = the full planned depth.
         var center = sections.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 50f)).First();
-        Assert.True(center.PinnedElevation.HasValue);
-        Assert.Equal(5f, center.PinnedElevation!.Value, Tol);
+        Assert.True(center.SoftDipMeters.HasValue);
+        Assert.Equal(3f, center.SoftDipMeters!.Value, Tol);
 
-        // Half-way up the ramp (u = 0.5 → w = 0.5): 8 − 1.5 = 6.5. Half-length 48 → 24 m from the centre.
+        // Half-way up the ramp (u = 0.5 → w = 0.5): drop 1.5. Half-length 48 → 24 m from the centre.
         var mid = sections.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - (50f + 24f))).First();
-        Assert.True(mid.PinnedElevation.HasValue);
-        Assert.Equal(6.5f, mid.PinnedElevation!.Value, 0.15f);
+        Assert.True(mid.SoftDipMeters.HasValue);
+        Assert.Equal(1.5f, mid.SoftDipMeters!.Value, 0.15f);
 
-        // Beyond the well (u ≥ 1) nothing is pinned — but the RAMPS inside it are (full-well coverage).
+        // Beyond the well (u ≥ 1) nothing is emitted — but the RAMPS inside it are (full-well coverage).
         Assert.All(sections.Where(c => MathF.Abs(c.DistanceAlongSpline - 50f) >= 49f),
-            c => Assert.False(c.PinnedElevation.HasValue));
+            c => Assert.False(c.SoftDipMeters.HasValue));
         Assert.Contains(sections, c =>
-            MathF.Abs(c.DistanceAlongSpline - 50f) is > 30f and < 40f && c.PinnedElevation.HasValue);
+            MathF.Abs(c.DistanceAlongSpline - 50f) is > 30f and < 40f && c.SoftDipMeters.HasValue);
     }
 
     // ── THE survival test: 3 smoother iterations WITH junction harmonization ON and a junction blend
@@ -108,9 +114,9 @@ public class BridgeLowerRoadDipPinTests
 
         var network = RoadNetworkTestHelpers.BuildNetworkWithJunctions(roadA, roadB);
 
-        // The pinned dip well on road A: centre at station 200, depth 3 from the z=8 base, half-length 42
-        // → well spans [158, 242]; the junction at station 250 is OUTSIDE the well (post-A4 reality) but
-        // its blend radius reaches the shoulder.
+        // The soft dip well on road A: centre at station 200, depth 3, half-length 42 → well spans
+        // [158, 242]; the junction at station 250 is OUTSIDE the well (post-A4 reality) but its blend
+        // radius reaches the shoulder. Relative drops (road-272): the base Z never enters the emission.
         var roadACs = network.GetCrossSectionsForSpline(roadA.SplineId)
             .OrderBy(c => c.DistanceAlongSpline).ToList();
         foreach (var cs in roadACs)
@@ -118,7 +124,8 @@ public class BridgeLowerRoadDipPinTests
             var u = MathF.Abs(cs.DistanceAlongSpline - 200f) / 42f;
             if (u >= 1f) continue;
             var w = (1f - u) * (1f - u) * (1f + 2f * u);
-            cs.PinnedElevation = 8f - 3f * w;
+            if (3f * w <= 1e-3f) continue;
+            cs.SoftDipMeters = 3f * w;
         }
 
         var prms = new RoadSmoothingParameters
@@ -168,20 +175,40 @@ public class BridgeLowerRoadDipPinTests
     [Fact]
     public void DipWell_SurvivesThreeIterations_WithJunctionHarmonizationOn()
     {
+        // Soft-well survival contract (R-1.1, road-272 edition). The well is applied as a post-filter
+        // per-section depression of the SOLVED base, so the z=12 junction blend can neither overwrite the
+        // well sections (blender respect) nor tilt the well interior through its filter base at 50 m
+        // distance — and re-smooth iterations un-dip their input first, so nothing accumulates or erodes.
+        var (network2, roadACs2, prms2) = BuildWellWithNearbyCrossing();
+        var hm2 = RoadNetworkTestHelpers.CreateFlatHeightmap(512, 8f);
+        RunIterationsWithJunctionBlend(network2, hm2, prms2, iterations: 2);
+        var bottomAfter2 = roadACs2.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 200f))
+            .First().TargetElevation;
+
         var (network, roadACs, prms) = BuildWellWithNearbyCrossing();
         var hm = RoadNetworkTestHelpers.CreateFlatHeightmap(512, 8f);
-
         RunIterationsWithJunctionBlend(network, hm, prms, iterations: 3);
 
-        // Every pinned section of the well — bottom AND ramps — still sits exactly on its pin.
-        var pinnedSections = roadACs.Where(c => c.PinnedElevation.HasValue).ToList();
-        Assert.NotEmpty(pinnedSections);
-        Assert.All(pinnedSections, c =>
-            Assert.Equal(c.PinnedElevation!.Value, c.TargetElevation, 0.02f));
+        var wellSections = roadACs.Where(c => c.SoftDipMeters.HasValue).ToList();
+        Assert.NotEmpty(wellSections);
 
-        // The well bottom is the full 3 m dip — no V-flattening, no shoulder kink from the blend.
+        // The well bottom is the full 3 m dip — the junction pull cannot lift it.
         var bottom = roadACs.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 200f)).First();
         Assert.Equal(5f, bottom.TargetElevation, Tol);
+
+        // THE survival property: iteration 3 changes nothing vs iteration 2 — no progressive erosion.
+        Assert.Equal(bottomAfter2, bottom.TargetElevation, 0.05f);
+
+        // Left half of the well (the junction blend zone is on the right): never above the natural 8 —
+        // the road-272 invariant, a dip well must only ever move the road DOWN.
+        Assert.All(wellSections.Where(c => c.DistanceAlongSpline <= 200f),
+            c => Assert.True(c.TargetElevation <= 8f + Tol,
+                $"well section at {c.DistanceAlongSpline:F0} m lifted to {c.TargetElevation:F2} (> natural 8)"));
+
+        // Mid-ramp shape retained (station 179, u=0.5 → drop 1.5): the eased descent survives the filter,
+        // no V-flattening.
+        var midRamp = roadACs.OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 179f)).First();
+        Assert.Equal(6.5f, midRamp.TargetElevation, 0.15f);
     }
 
     // ── No-double-dip: the demoted resolver is verify-only ───────────────────────────────────────────────

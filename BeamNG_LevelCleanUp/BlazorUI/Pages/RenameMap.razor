@@ -473,7 +473,9 @@
         {
             try
             {
-                var path = ZipFileHandler.GetLastUnpackedPath();
+                // _levelPath is the "levels" directory containing the (renamed) level folder,
+                // which is what CopyToLevelsFolder expects (GetLastUnpackedPath returns the _unpacked root)
+                var path = _levelPath;
 
                 _staticSnackbar = Snackbar.Add("Copy level to BeamNG levels in userfolder. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
 

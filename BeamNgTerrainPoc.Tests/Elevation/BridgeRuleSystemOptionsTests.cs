@@ -139,13 +139,13 @@ public class BridgeRuleSystemOptionsTests
     // ---- §3.5 priority shares --------------------------------------------------------------------------------
 
     [Theory]
-    [InlineData(3, 0.20f)]
-    [InlineData(2, 0.20f)]  // upper much more important → raise little, lower road absorbs 80 %
-    [InlineData(1, 0.35f)]
+    [InlineData(3, 0f)]  // 2026-07-21 (bridge 675150484): upper more important → deck NEVER raises,
+    [InlineData(2, 0f)]  // the lower road absorbs the full deficit (pure dip; the A4 last resort is the
+    [InlineData(1, 0f)]  // only remaining path that may force residue onto the deck)
     [InlineData(0, 0.50f)]
-    [InlineData(-1, 0.65f)]
-    [InlineData(-2, 0.80f)] // lower much more important → bridge absorbs 80 % by raising
-    [InlineData(-3, 0.80f)]
+    [InlineData(-1, 1f)] // mirror (same session): outranking lower road NEVER dips —
+    [InlineData(-2, 1f)] // the bridge absorbs the full deficit by raising (pure veto)
+    [InlineData(-3, 1f)]
     public void RaiseShare_MatchesSpecTable(int deltaP, float expected)
     {
         Assert.Equal(expected, BridgeRuleSystemOptions.RaiseShareFor(deltaP), 3);

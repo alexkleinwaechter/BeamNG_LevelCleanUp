@@ -1277,8 +1277,11 @@ public class UnifiedRoadSmoother
         var raisedSpans = 0;
         foreach (var span in plan.Spans)
         {
-            if (!span.IsRaised) continue;
-            raisedSpans++;
+            // 2026-07-21 #3: UNRAISED sparse spans now carry zero-rise chord pins (planner) — without
+            // them the under-road valley enters the filter input and the deck sags into the underpass
+            // (previously masked: the graded shares raised every clearance span). Legacy unraised spans
+            // have no pins, so the hard-pin path below is raised-only as before.
+            if (span.IsRaised) raisedSpans++;
             foreach (var pin in span.Pins)
             {
                 if (sparse)
@@ -1332,12 +1335,15 @@ public class UnifiedRoadSmoother
                 network.BridgeRaisedJunctions.Add(j);
         }
 
-        // Sparse dip wells: after the deck pins, pin each planned lower-road dip as a FULL eased well
+        // Sparse dip wells: after the deck pins, emit each planned lower-road dip as a FULL eased well
         // (including its ramps) so the smoother solves the dip continuously — and so the slope-clamp
-        // pin exemption covers the whole well, not just its bottom (review R-1.3). Deck and junction
-        // pins win over dip pins (P1-1). Paired with the resolver demotion in GradeSeparationResolver so
-        // the late carve never double-dips. NOTE: these are HARD PinnedElevation wells off the estimate
-        // base — the diagnostic, not the keeper (A = soft constraint).
+        // exemption covers the whole well, not just its bottom (review R-1.3). Deck and junction
+        // pins win over dip wells (P1-1). Paired with the resolver demotion in GradeSeparationResolver so
+        // the late carve never double-dips. 2026-07-21 (road-272 ramp-end humps): the wells are now SOFT
+        // relative drops (SoftDipMeters) — the long-promised "A = soft constraint" keeper. The old HARD
+        // PinnedElevation wells were absolute Z off the A0 estimate base, and wherever the solved road ran
+        // below that estimate the near-zero-drop ramp ends held the road UP at the estimate line (upward
+        // kinks ~60 m either side of the deck, rising toward it).
         // Doc 05 §4.3 (sparse): the well is no longer junction-clamped — junctions inside it are re-pinned
         // DOWN to the well line instead (the §8 mirror of the approach raise).
         var dipPinnedSections = 0;
@@ -1353,7 +1359,7 @@ public class UnifiedRoadSmoother
                 ? $"softPinnedSections={softPinnedSections} junctionRaises={junctionRaises} " +
                   $"onDeckJunctionPins={onDeckJunctionPins} "
                 : "") +
-            $"approachRampPins={rampPinnedSections} dipPinnedSections={dipPinnedSections} " +
+            $"approachRampPins={rampPinnedSections} dipWellSections={dipPinnedSections} " +
             $"crossings={plan.Crossings.Count} railWater={syntheticCrossings}" +
             (sparse ? " mode=sparse-soft" : ""));
 
@@ -1838,20 +1844,22 @@ public class UnifiedRoadSmoother
     }
 
     /// <summary>
-    ///     A6 (V2 plan doc 01 — dip-as-pin, the centerpiece): pins the planned lower-road dips PRE-smooth as
-    ///     eased wells (<c>(1−u)²(1+2u)</c> weight, the resolver's well shape) on
-    ///     <see cref="UnifiedCrossSection.PinnedElevation"/>, mirroring the deck pin. The smoother then grows
-    ///     the dip ramps continuously and the pin-exemption masks (slope clamp, affine) cover the FULL well
-    ///     including the ramps. The demoted <c>GradeSeparationResolver.ApplyLowerRoadDips</c> must NOT drop
+    ///     A6 (V2 plan doc 01 — dip-as-pin, the centerpiece): emits the planned lower-road dips PRE-smooth as
+    ///     eased wells (<c>(1−u)²(1+2u)</c> weight, the resolver's well shape). The smoother then solves the
+    ///     dip continuously and the exemption masks (slope clamp) cover the FULL well including the ramps.
+    ///     The demoted <c>GradeSeparationResolver.ApplyLowerRoadDips</c> must NOT drop
     ///     <c>TargetElevation</c> a second time (verify-only — no double-dip).
     ///
-    ///     <para>Per section the pin is <c>baseZ − dipDepth·w(u)</c>, where baseZ uses the planner's own
-    ///     elevation chain (TargetElevation → A0 early estimate → raw DEM) so the well bottom equals the
-    ///     plan's <c>LowerRoadTargetZ</c> by construction. The well half-length is the resolver's symmetric
+    ///     <para>2026-07-21 (road-272 ramp-end humps): per section the emission is the relative DROP
+    ///     <c>dipDepth·w(u)</c> on <see cref="UnifiedCrossSection.SoftDipMeters"/> — NOT an absolute
+    ///     <c>baseZ − dipDepth·w(u)</c> pin off the planner's estimate chain. The smoother applies the
+    ///     drop to the SOLVED profile post-filter (<c>OptimizedElevationSmoother.ApplySoftDipWells</c>),
+    ///     so an estimate that sits above the solved road can no longer hold the near-zero-drop ramp ends
+    ///     UP (the upward kinks flanking bridge 675150484). The well half-length is the resolver's symmetric
     ///     junction-safe clamp: min(ramp room on both sides, default dip ramp length); a junction-boxed
-    ///     crossing (no room) emits no pins — its deficit was already moved to the deck by A4's
+    ///     crossing (no room) emits no well — its deficit was already moved to the deck by A4's
     ///     junction-in-sag rule. Sections already pinned (deck or junction) are skipped (P1-1: the bridge
-    ///     plan defers to existing pins). Excluded (structure) sections are never pinned.</para>
+    ///     plan defers to existing pins). Excluded (structure) sections are never touched.</para>
     /// </summary>
     internal static int ApplyLowerRoadDipPins(
         UnifiedRoadNetwork network,
@@ -1931,15 +1939,19 @@ public class UnifiedRoadSmoother
             {
                 if (cs.IsExcluded) continue;
                 if (cs.PinnedElevation.HasValue) continue; // deck/junction pins win (P1-1)
+                if (cs.SoftDipMeters.HasValue) continue; // first well wins (doc 28 overlap semantics)
 
                 var u = MathF.Abs(cs.DistanceAlongSpline - centerDist) / effRamp;
                 if (u >= 1f) continue;
 
-                var baseZ = DipBaseZ(cs, earlyElevation, heightMap, metersPerPixel);
-                if (float.IsNaN(baseZ)) continue;
-
                 var w = (1f - u) * (1f - u) * (1f + 2f * u); // 1 at centre, 0 with zero slope at the edge
-                cs.PinnedElevation = baseZ - cp.DipDepthMeters * w;
+                var drop = cp.DipDepthMeters * w;
+                if (drop <= 1e-3f) continue;
+
+                // Road-272 fix: transport the DROP, not an absolute Z off the estimate base — the smoother
+                // subtracts it from the SOLVED profile post-filter (ApplySoftDipWells), so estimate
+                // offsets cannot hold the ramp ends up above the road.
+                cs.SoftDipMeters = drop;
                 pinned++;
             }
         }
@@ -1948,9 +1960,10 @@ public class UnifiedRoadSmoother
     }
 
     /// <summary>
-    ///     Doc 28 Step C: pins ONE merged envelope well for a dip-decided underpass cluster — interior
+    ///     Doc 28 Step C: emits ONE merged envelope well for a dip-decided underpass cluster — interior
     ///     depth follows the per-crossing dip targets between first and last crossing
-    ///     (<see cref="UnderpassWellProfile"/>), eased to natural grade over the end ramps. All the
+    ///     (<see cref="UnderpassWellProfile"/> evaluated in DEPTH space, transported as relative
+    ///     <see cref="UnifiedCrossSection.SoftDipMeters"/> drops), eased to zero over the end ramps. All the
     ///     cluster's dip crossings are added to <paramref name="handled"/> so the per-crossing pass skips
     ///     them (a merged well and three overlapping singles must never both fire). Falls back to the
     ///     per-crossing wells (returns 0, nothing marked handled) when fewer than two member dips were
@@ -1979,10 +1992,9 @@ public class UnifiedRoadSmoother
             return 0;
 
         // The cluster's planned dips with their exact stations on the lower road (the plan may have
-        // reconciled some members to AlreadyClears against a raised deck — those need no well). TargetZ
-        // is the absolute clearance elevation under that deck (well base − planned dip).
+        // reconciled some members to AlreadyClears against a raised deck — those need no well).
         var memberSet = new HashSet<GradeSeparatedCrossing>(cluster.Crossings);
-        var points = new List<(GradeSeparatedCrossing Crossing, float Station, float Depth, float TargetZ)>();
+        var points = new List<(GradeSeparatedCrossing Crossing, float Station, float Depth)>();
         foreach (var cp in plan.Crossings)
         {
             if (!memberSet.Contains(cp.Crossing))
@@ -1994,11 +2006,7 @@ public class UnifiedRoadSmoother
 
             var center = sections
                 .OrderBy(c => Vector2.DistanceSquared(c.CenterPoint, cp.Crossing.CrossingXY)).First();
-            var centerBase = DipBaseZ(center, earlyElevation, heightMap, metersPerPixel);
-            if (float.IsNaN(centerBase))
-                continue;
-            points.Add((cp.Crossing, center.DistanceAlongSpline, cp.DipDepthMeters,
-                centerBase - cp.DipDepthMeters));
+            points.Add((cp.Crossing, center.DistanceAlongSpline, cp.DipDepthMeters));
         }
 
         if (points.Count < 2)
@@ -2038,16 +2046,22 @@ public class UnifiedRoadSmoother
             return 0;
         }
 
-        // Absolute-Z targets (winningen render 2026-07-02 #2): the well interior is an engineered curve
-        // through the crossing targets — the wiggly estimate base must not leak into the hard-pinned
-        // well bottom, so it is sampled ONLY at the crossing stations (and blended back in on the ramps).
+        // DEPTH-space envelope (road-272 ramp-end humps, ex "Absolute-Z targets" winningen render
+        // 2026-07-02 #2): the well interior stays an engineered curve — smoothstep through the per-crossing
+        // DEPTHS, eased to zero over the end ramps — but it is transported as a RELATIVE drop
+        // (SoftDipMeters), not as absolute Z off the estimate base. The winningen requirement (no wiggly
+        // base in the well bottom) still holds: the drop rides the FILTERED solved road, not raw DEM.
+        // The estimate offsets that held the old hard-pinned ramp ends UP above the solved road are gone.
         var profile = new UnderpassWellProfile(
-            points.Select(p => (p.Station, p.TargetZ)).ToList(), rampBack, rampFwd);
+            points.Select(p => (p.Station, -p.Depth)).ToList(), rampBack, rampFwd);
+        float DropAt(float station) => MathF.Max(0f, -profile.ZAt(station, 0f));
 
         // Sparse mode (doc 05 §4.3): junctions anywhere inside the well — end ramps AND interior — are
         // re-pinned DOWN to the well line so their contributor roads follow the underpass continuously.
+        // Relative like the sections: each junction drops off its OWN harmonized baseline.
         if (widenRoomViaJunctions)
-            LowerJunctionsInWell(network, lower, profile.ZAt, profile.RangeStart, profile.RangeEnd,
+            LowerJunctionsInWell(network, lower, (s, baseZ) => baseZ - DropAt(s),
+                profile.RangeStart, profile.RangeEnd,
                 raisedJunctions, earlyElevation, heightMap, metersPerPixel);
 
         var pinned = 0;
@@ -2055,17 +2069,15 @@ public class UnifiedRoadSmoother
         {
             if (cs.IsExcluded) continue;
             if (cs.PinnedElevation.HasValue) continue; // deck/junction pins win (P1-1)
+            if (cs.SoftDipMeters.HasValue) continue; // first well wins (doc 28 overlap semantics)
 
             var station = cs.DistanceAlongSpline;
             if (station <= profile.RangeStart || station >= profile.RangeEnd) continue;
 
-            var baseZ = DipBaseZ(cs, earlyElevation, heightMap, metersPerPixel);
-            if (float.IsNaN(baseZ)) continue;
+            var drop = DropAt(station);
+            if (drop <= 1e-3f) continue; // no drop here — leave the natural profile untouched
 
-            var z = profile.ZAt(station, baseZ);
-            if (z >= baseZ - 1e-3f) continue; // no drop here — leave the natural profile unpinned
-
-            cs.PinnedElevation = z;
+            cs.SoftDipMeters = drop;
             pinned++;
         }
 
@@ -3115,8 +3127,9 @@ public class UnifiedRoadSmoother
                 {
                     var s = MathF.Abs(cs.DistanceAlongSpline - seamDist);
                     if (s > hw + l + epsilon) break;
-                    if (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue)
-                        break; // never fight a bridge deck/dip pin — truncate the repair here
+                    if (cs.PinnedElevation.HasValue || cs.SoftDeckRiseMeters.HasValue ||
+                        cs.SoftDipMeters.HasValue)
+                        break; // never fight a bridge deck/dip well — truncate the repair here
 
                     float z;
                     if (s <= hw)
@@ -3279,7 +3292,9 @@ public class UnifiedRoadSmoother
 
         // §3 divergence guard (Manhattan spline 157, +113,75 m dam / bridge_2101591116 walls): when the
         // junction endpoint itself sits on/inside a pinned run (dip-pinned street under a crossing
-        // bridge), the D6 pin-weight exemption below zeroes the correction AT the endpoint — the junction
+        // bridge; since 2026-07-21 dip wells are SOFT SoftDipMeters drops — only DECK pins reach here,
+        // and wells simply ride the affine correction instead), the D6 pin-weight exemption below zeroes
+        // the correction AT the endpoint — the junction
         // target is unreachable by construction, the per-pass error never shrinks, and each retarget pass
         // re-adds the FULL correction onto the unpinned mid-body (8 × +14,9 m). A pin-locked endpoint
         // keeps its pinned profile; the junction-vs-pin conflict is logged for the containment work.

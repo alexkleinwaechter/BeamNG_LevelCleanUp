@@ -578,8 +578,8 @@ public class BridgeSparseFloorConstraintTests
 
         var lowerMid = network.GetCrossSectionsForSpline(2)
             .OrderBy(c => MathF.Abs(c.DistanceAlongSpline - 50f)).First();
-        Assert.True(lowerMid.PinnedElevation.HasValue, "the crossing section must be pinned");
-        Assert.Equal(8f, lowerMid.PinnedElevation!.Value, 0.001f);
+        Assert.True(lowerMid.SoftDipMeters.HasValue, "the crossing section must carry the well drop");
+        Assert.Equal(1f, lowerMid.SoftDipMeters!.Value, 0.001f); // relative: the full planned dip depth
 
         // 2) The post-solve resolver is verify-only in sparse mode now — it records the dip but must NEVER
         //    actively re-drop TargetElevation (that late re-carve is what stepped the dip edges).
