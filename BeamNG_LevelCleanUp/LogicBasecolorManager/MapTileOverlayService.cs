@@ -23,7 +23,8 @@ public class MapTileOverlayService
 
     public static IReadOnlyList<MapTileProvider> Providers { get; } =
     [
-        new("OSM", "osm", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+        // OSM tile usage policy allows at most 2 parallel connections.
+        new("OSM", "osm", "https://tile.openstreetmap.org/{z}/{x}/{y}.png", MaxParallelDownloads: 2),
         new("Google Roadmap", "google-roadmap", "https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}"),
         new("Google Terrain", "google-terrain", "https://mt0.google.com/vt/lyrs=p&hl=en&x={x}&y={y}&z={z}"),
         new("Google Satelite Only", "google-satelite-only", "https://mt0.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}"),
@@ -152,10 +153,14 @@ public class MapTileOverlayService
         var fallbackTileCount = 0;
         var cachePath = GetCachePath(tileRoot, provider, normalizedDate);
         using var mosaic = new Image<Rgba32>((maxTileX - minTileX + 1) * TileSize, (maxTileY - minTileY + 1) * TileSize);
-        for (var y = minTileY; y <= maxTileY; y++)
-        for (var x = minTileX; x <= maxTileX; x++)
+
+        // Downloads run in parallel (bounded per provider); compositing stays on this
+        // thread because ImageSharp images are not safe for concurrent mutation.
+        var inFlight = new Queue<(int X, int Y, Task<LoadedTile> Tile)>();
+        async Task DrawOldestInFlightTileAsync()
         {
-            using var tile = await LoadTileAsync(cachePath, requestProvider, zoom, x, y);
+            var (x, y, tileTask) = inFlight.Dequeue();
+            using var tile = await tileTask;
             if (tile.UsedFallback)
                 fallbackTileCount++;
 
@@ -163,6 +168,18 @@ public class MapTileOverlayService
             var destY = (y - minTileY) * TileSize;
             mosaic.Mutate(ctx => ctx.DrawImage(tile.Image, new SixLabors.ImageSharp.Point(destX, destY), 1f));
         }
+
+        var maxParallelDownloads = Math.Max(1, requestProvider.MaxParallelDownloads);
+        for (var y = minTileY; y <= maxTileY; y++)
+        for (var x = minTileX; x <= maxTileX; x++)
+        {
+            inFlight.Enqueue((x, y, LoadTileAsync(cachePath, requestProvider, zoom, x, y)));
+            if (inFlight.Count >= maxParallelDownloads)
+                await DrawOldestInFlightTileAsync();
+        }
+
+        while (inFlight.Count > 0)
+            await DrawOldestInFlightTileAsync();
 
         if (fallbackTileCount > 0)
         {
@@ -606,7 +623,12 @@ public class MapTileOverlayService
     }
 }
 
-public sealed record MapTileProvider(string Name, string Slug, string UrlTemplate, bool SupportsHistoricalDate = false)
+public sealed record MapTileProvider(
+    string Name,
+    string Slug,
+    string UrlTemplate,
+    bool SupportsHistoricalDate = false,
+    int MaxParallelDownloads = 8)
 {
     public string FinalImageName => Slug + "-terrain-warp-v2.png";
 }
