@@ -19,8 +19,9 @@ public sealed class BridgeDeckTrim
 
     /// <summary>
     /// Per-station suppression of the LEFT parapet (same indexing as the cross-section list): true =
-    /// this station's left edge lies ON another deck's surface (inside its plan footprint AND
-    /// vertically coplanar — stacked decks whose footprints merely cross keep their walls). A parapet
+    /// this station's left edge lies ON a drivable surface — another deck's footprint or a ground
+    /// road's flattened band, vertically coplanar; stacked decks and roads a full clearance below
+    /// keep their walls. A parapet
     /// segment is dropped when EITHER of its two stations is suppressed; every surviving run whose end
     /// is an interior mask boundary is closed with a vertical cap face. Null ⇒ full-length parapet
     /// (legacy).
