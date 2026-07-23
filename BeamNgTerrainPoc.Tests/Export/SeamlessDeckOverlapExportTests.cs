@@ -231,6 +231,152 @@ public class SeamlessDeckOverlapExportTests
     }
 
     [Fact]
+    public void WallOverCoplanarGroundRoad_Opens_GradeSeparatedRoadKeepsWall()
+    {
+        // loerrach render 2026-07-23 (bridge_28570394 at bridge_914252310's abutment): the ramp's
+        // first stations stand over the trunk's AT-GRADE motorway past the abutment — no span
+        // projection can see it (past the partner span's end), so the deck-footprint test kept a
+        // wall standing ON the road. A parapet must never stand on ANY drivable surface: edges over
+        // a coplanar ground road (solved cross-section band) open, roads a full clearance below the
+        // deck (grade-separated) keep the wall.
+        var (coplanar, coplanarBase) = ExportDeckOverGroundRoad(groundRoadZ: 24f);
+        Assert.True(coplanar.Vertices < coplanarBase.Vertices,
+            $"wall over the coplanar ground road must open, {coplanarBase.Vertices} → {coplanar.Vertices}");
+
+        var (separated, separatedBase) = ExportDeckOverGroundRoad(groundRoadZ: 18f);
+        Assert.Equal(separatedBase.Vertices, separated.Vertices);
+        Assert.Equal(separatedBase.Triangles, separated.Triangles);
+    }
+
+    /// <summary>One 8 m deck span (stations 100..300 along y=100, z=24) beside an at-grade road at
+    /// y=106 (band y∈[102,110] ⇒ the deck's left edge y=104 is 2 m inside it) at
+    /// <paramref name="groundRoadZ"/>. Returns the deck exported with the flag on and the flag-off
+    /// baseline.</summary>
+    private static (BridgeDeckExportItem On, BridgeDeckExportItem Off) ExportDeckOverGroundRoad(
+        float groundRoadZ)
+    {
+        BridgeDeckExportItem Export(bool overlapOn)
+        {
+            var rules = new BridgeRuleSystemOptions
+            {
+                EnableBridgeToBridgeAbutmentSuppression = true,
+                EnableDeckToDeckContinuity = true,
+                EnableSeamlessDeckOverlap = overlapOn,
+            };
+
+            var seg = new StructureSegment
+            {
+                Type = StructureType.Bridge, StartDistance = 100f, EndDistance = 300f,
+                OsmWayIds = { 800001L }
+            };
+            var deckSpline = RoadNetworkTestHelpers.CreateParameterizedSpline(
+                RampId, new Vector2(0, 100), new Vector2(400, 100), priority: 10000,
+                mergeStructuresIntoCorridor: true, structureSegments: [seg]);
+            deckSpline.Parameters.BridgeRules = rules;
+
+            var groundSpline = RoadNetworkTestHelpers.CreateParameterizedSpline(
+                TrunkId, new Vector2(0, 106), new Vector2(400, 106), priority: 6000);
+
+            var network = new UnifiedRoadNetwork();
+            RoadNetworkTestHelpers.AddSplineWithCrossSections(network, deckSpline);
+            foreach (var cs in RoadNetworkTestHelpers.AddSplineWithCrossSections(network, groundSpline))
+                cs.TargetElevation = groundRoadZ;
+
+            var stations = new List<BridgeStation>();
+            for (var d = 100f; d <= 300f; d += 5f)
+                stations.Add(new BridgeStation
+                {
+                    Center = new Vector2(d, 100f),
+                    Normal = new Vector2(0f, -1f),
+                    Tangent = new Vector2(1f, 0f),
+                    Width = 8f,
+                    CenterZ = 24f, LeftEdgeZ = 24f, RightEdgeZ = 24f,
+                    DistanceAlongSpline = d
+                });
+            network.BridgeSpans.Add(new BridgeSpanSnapshot
+            {
+                SplineId = RampId, SpanId = seg.SpanId, OsmWayIds = { 800001L }, Stations = stations
+            });
+
+            var dir = Path.Combine(Path.GetTempPath(), "deckground_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var result = new BridgeDeckDaeExporter().Export(
+                    network, dir, terrainSizePixels: 512, metersPerPixel: 1f, terrainBaseHeight: 0f);
+                Assert.True(result.Success);
+                return Assert.Single(result.Decks);
+            }
+            finally
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            }
+        }
+
+        return (Export(overlapOn: true), Export(overlapOn: false));
+    }
+
+    [Fact]
+    public void ParallelSeparateDecks_KeepFacingWalls_DespiteTouchingCorridors()
+    {
+        // Two coplanar decks 12 m apart (edge gap 4 m) with 8 m smoothing margins: each deck's facing
+        // edge stands inside the OTHER's smoothing corridor, but the plan footprints never overlap —
+        // no shared roadway, so the corridor widening must not apply. Opening the facing walls would
+        // strip both decks toward the gap between two separate structures.
+        var (a1, b1) = ExportDecks(BuildParallelNetwork(overlapOn: false));
+        var (a2, b2) = ExportDecks(BuildParallelNetwork(overlapOn: true));
+
+        Assert.Equal(a1.Vertices, a2.Vertices);
+        Assert.Equal(a1.Triangles, a2.Triangles);
+        Assert.Equal(b1.Vertices, b2.Vertices);
+        Assert.Equal(b1.Triangles, b2.Triangles);
+    }
+
+    /// <summary>Two parallel, coplanar 8 m decks along X with centerlines 12 m apart, both with an
+    /// 8 m smoothing margin — corridors overlap the facing edges, footprints never touch.</summary>
+    private static UnifiedRoadNetwork BuildParallelNetwork(bool overlapOn)
+    {
+        var rules = new BridgeRuleSystemOptions
+        {
+            EnableBridgeToBridgeAbutmentSuppression = true,
+            EnableDeckToDeckContinuity = true,
+            EnableSeamlessDeckOverlap = overlapOn,
+        };
+
+        var network = new UnifiedRoadNetwork();
+        foreach (var (splineId, y, wayId) in new[] { (RampId, 100f, 700001L), (TrunkId, 112f, 700002L) })
+        {
+            var seg = new StructureSegment
+            {
+                Type = StructureType.Bridge, StartDistance = 100f, EndDistance = 300f, OsmWayIds = { wayId }
+            };
+            var spline = RoadNetworkTestHelpers.CreateParameterizedSpline(
+                splineId, new Vector2(0, y), new Vector2(400, y), priority: 10000,
+                mergeStructuresIntoCorridor: true, structureSegments: [seg]);
+            spline.Parameters.BridgeRules = rules;
+            spline.Parameters.TerrainAffectedRangeMeters = 8f;
+            RoadNetworkTestHelpers.AddSplineWithCrossSections(network, spline);
+
+            var stations = new List<BridgeStation>();
+            for (var d = 100f; d <= 300f; d += 5f)
+                stations.Add(new BridgeStation
+                {
+                    Center = new Vector2(d, y),
+                    Normal = new Vector2(0f, -1f),
+                    Tangent = new Vector2(1f, 0f),
+                    Width = 8f,
+                    CenterZ = 24f, LeftEdgeZ = 24f, RightEdgeZ = 24f,
+                    DistanceAlongSpline = d
+                });
+            network.BridgeSpans.Add(new BridgeSpanSnapshot
+            {
+                SplineId = splineId, SpanId = seg.SpanId, OsmWayIds = { wayId }, Stations = stations
+            });
+        }
+
+        return network;
+    }
+
+    [Fact]
     public void CoplanarOverlap_OpensParapets_WithoutRequiringALandingPair()
     {
         // Manhattan render 2026-07-07 (first screenshot): walls still crossed same-level roadways

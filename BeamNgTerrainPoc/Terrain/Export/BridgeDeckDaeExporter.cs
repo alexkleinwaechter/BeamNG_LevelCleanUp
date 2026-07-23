@@ -33,9 +33,10 @@ public class BridgeDeckDaeExporter
     public const string DefaultMaterialName = "building_concrete"; //bridge_deck_placeholder
 
     /// <summary>
-    /// Doc 15 (b): a parapet station is suppressed only when its edge point lies INSIDE the partner
-    /// deck footprint by at least this much (m) — merely touching footprints (butt joints) keep their
-    /// parapets.
+    /// Doc 15 (b): a parapet station is suppressed only when its edge point lies INSIDE a drivable
+    /// surface (partner deck footprint, or a ground road's flattened band) by at least this much (m)
+    /// — merely touching footprints (butt joints, decks running exactly alongside a road edge) keeps
+    /// the parapets.
     /// </summary>
     private const float ParapetInsideEpsilonMeters = 0.05f;
 
@@ -205,6 +206,9 @@ public class BridgeDeckDaeExporter
         ExtendLandedEndsOntoPartnerDecks(network);
 
         Dictionary<BridgeSpanSnapshot, (Vector2 Min, Vector2 Max)>? spanBounds = null;
+        // Every spline's at-grade road surface, for the "a wall must never stand on a drivable
+        // surface" parapet test — built once, only when a span actually computes a trim.
+        var groundSurfaces = new Lazy<GroundSurfaceIndex>(() => GroundSurfaceIndex.Build(network));
         var warnedNoHeightMap = false;
         // Shared across all spans: every plan probes every partner span (§3b.4 + footprint
         // validation) — built here, AFTER the stations are final.
@@ -230,7 +234,8 @@ public class BridgeDeckDaeExporter
             // computed in terrain coordinates from the FINAL snapshots (masks index 1:1 into the
             // converted cross-sections). Null unless EnableSeamlessDeckOverlap is on.
             spanBounds ??= network.BridgeSpans.ToDictionary(s => s, ComputeSpanBounds);
-            var trim = ComputeDeckTrim(network, span, spanBounds, profile.ParapetHeightMeters);
+            var trim = ComputeDeckTrim(network, span, spanBounds, profile.ParapetHeightMeters,
+                groundSurfaces);
 
             var mesh = new BridgeDeckMeshBuilder()
                 .Build(crossSections, profile, $"BridgeDeck_{span.SpanId}", materialName, trim);
@@ -716,15 +721,21 @@ public class BridgeDeckDaeExporter
     /// landing graph (Manhattan render 2026-07-07: landing-pair gating both over-opened — a pair's
     /// footprints also overlap where the decks cross at DIFFERENT layers — and under-opened — two
     /// ramps conformed onto the same trunk share a roadway without being a pair); stacked decks are
-    /// excluded by elevation, coplanar overlaps open regardless of who landed on whom. Null (legacy
-    /// mesh) unless <c>EnableSeamlessDeckOverlap</c> + <c>EnableDeckToDeckContinuity</c> are on for
-    /// the owning spline.
+    /// excluded by elevation, coplanar overlaps open regardless of who landed on whom. The same rule
+    /// is applied against every spline's AT-GRADE road surface (<see cref="GroundSurfaceIndex"/>): a
+    /// wall must never stand on ANY drivable surface, and a deck edge over a coplanar ground road —
+    /// e.g. the partner corridor's at-grade continuation past its abutment, which no span projection
+    /// can see — is exactly that (loerrach render 2026-07-23, bridge_28570394's wall standing on the
+    /// motorway past bridge_914252310's end). Graded embankment STRIPS between nearby decks are NOT
+    /// road surface — walls guarding a deck edge over such a gap stay. Null (legacy mesh) unless
+    /// <c>EnableSeamlessDeckOverlap</c> + <c>EnableDeckToDeckContinuity</c> are on for the owning spline.
     /// </summary>
     private static BridgeDeckTrim? ComputeDeckTrim(
         UnifiedRoadNetwork network,
         BridgeSpanSnapshot span,
         IReadOnlyDictionary<BridgeSpanSnapshot, (Vector2 Min, Vector2 Max)> spanBounds,
-        float parapetHeightMeters)
+        float parapetHeightMeters,
+        Lazy<GroundSurfaceIndex> groundSurfaces)
     {
         var spline = network.GetSplineById(span.SplineId);
         var rules = spline?.Parameters.BridgeRules;
@@ -739,54 +750,74 @@ public class BridgeDeckDaeExporter
 
         // Same-spline spans are consecutive pieces of one corridor (chain-continuous butt joints),
         // never an overlap partner; everything else is prefiltered by bounds only.
-        bool[]? left = null, right = null;
         var bounds = spanBounds[span];
         var partners = network.BridgeSpans
             .Where(other => other.SplineId != span.SplineId &&
                             other.Stations.Count >= 2 &&
                             BoundsOverlap(bounds, spanBounds[other]))
             .ToList();
-        if (partners.Count > 0)
+
+        var n = span.Stations.Count;
+        var left = new bool[n];
+        var right = new bool[n];
+        var leftGround = new bool[n];
+        var rightGround = new bool[n];
+        var leftMissDz = new float?[n];
+        var rightMissDz = new float?[n];
+        var ground = groundSurfaces.Value;
+        for (var i = 0; i < n; i++)
         {
-            var n = span.Stations.Count;
-            left = new bool[n];
-            right = new bool[n];
-            for (var i = 0; i < n; i++)
+            var st = span.Stations[i];
+            var normal = SafeNormalize(st.Normal);
+            var half = st.Width / 2f;
+            var leftPt = st.Center - normal * half;
+            var rightPt = st.Center + normal * half;
+
+            foreach (var other in partners)
             {
-                var st = span.Stations[i];
-                var normal = SafeNormalize(st.Normal);
-                var half = st.Width / 2f;
-                var leftPt = st.Center - normal * half;
-                var rightPt = st.Center + normal * half;
-                foreach (var other in partners)
-                {
-                    var otherBounds = spanBounds[other];
-                    left[i] = left[i] ||
-                        IsOnDeckSurface(other, otherBounds, leftPt, st.LeftEdgeZ, aboveWindowMeters);
-                    right[i] = right[i] ||
-                        IsOnDeckSurface(other, otherBounds, rightPt, st.RightEdgeZ, aboveWindowMeters);
-                    if (left[i] && right[i])
-                        break;
-                }
+                if (left[i] && right[i])
+                    break;
+                var otherBounds = spanBounds[other];
+                if (!left[i])
+                    ClassifyParapetStation(other, otherBounds, leftPt, st.LeftEdgeZ,
+                        aboveWindowMeters, ref left[i], ref leftMissDz[i]);
+                if (!right[i])
+                    ClassifyParapetStation(other, otherBounds, rightPt, st.RightEdgeZ,
+                        aboveWindowMeters, ref right[i], ref rightMissDz[i]);
             }
 
-            if (!left.Any(x => x))
-                left = null;
-            if (!right.Any(x => x))
-                right = null;
+            if (!left[i])
+            {
+                ground.Probe(leftPt, st.LeftEdgeZ, span.SplineId, aboveWindowMeters,
+                    ref leftGround[i], ref leftMissDz[i]);
+                left[i] |= leftGround[i];
+            }
+
+            if (!right[i])
+            {
+                ground.Probe(rightPt, st.RightEdgeZ, span.SplineId, aboveWindowMeters,
+                    ref rightGround[i], ref rightMissDz[i]);
+                right[i] |= rightGround[i];
+            }
         }
+
+        LogParapetTrim(span, "left", left, leftMissDz, leftGround.Count(x => x));
+        LogParapetTrim(span, "right", right, rightMissDz, rightGround.Count(x => x));
+
+        var leftMask = left.Any(x => x) ? left : null;
+        var rightMask = right.Any(x => x) ? right : null;
 
         var suppressStart = seg?.StartContinuesOntoDeck == true;
         var suppressEnd = seg?.EndContinuesOntoDeck == true;
-        if (!suppressStart && !suppressEnd && left == null && right == null)
+        if (!suppressStart && !suppressEnd && leftMask == null && rightMask == null)
             return null;
 
         return new BridgeDeckTrim
         {
             SuppressStartStamp = suppressStart,
             SuppressEndStamp = suppressEnd,
-            LeftParapetSuppressed = left,
-            RightParapetSuppressed = right,
+            LeftParapetSuppressed = leftMask,
+            RightParapetSuppressed = rightMask,
         };
     }
 
@@ -812,34 +843,87 @@ public class BridgeDeckDaeExporter
         a.Min.X <= b.Max.X && a.Max.X >= b.Min.X && a.Min.Y <= b.Max.Y && a.Max.Y >= b.Min.Y;
 
     /// <summary>
-    /// Doc 15 (b): whether a point (with its surface elevation) lies ON — or its parapet would
-    /// PIERCE — a span's deck surface: strictly inside the plan footprint (nearest-segment distance
-    /// under the local half-width minus <see cref="ParapetInsideEpsilonMeters"/>, projections
-    /// clamped past the deck ends rejected) AND vertically within the asymmetric Z window against
-    /// the deck surface interpolated at the projection (station-lerped center Z + lateral lerp
-    /// toward the banked edge Z): partner surface at most
+    /// One parapet edge-point probe against one partner span: sets <paramref name="suppressed"/> when
+    /// the point lies ON the partner's deck surface — strictly inside the plan footprint
+    /// (<see cref="TryProjectOntoSpan"/>) AND within the asymmetric Z window: partner surface at most
     /// <see cref="ParapetCoplanarToleranceMeters"/> BELOW the edge (coplanar merge), or at most
     /// <paramref name="aboveWindowMeters"/> (parapet height + tolerance) ABOVE it (the merge
     /// transition zone, where a kept wall pierces the upper roadway). The Z test is what keeps full
     /// parapets on stacked decks whose plan footprints merely cross — genuine crossings clear the
-    /// window by design (road clearance ≫ parapet height).
+    /// window by design (road clearance ≫ parapet height). When only the Z window fails, the
+    /// smallest |dz| across partners is recorded in <paramref name="missDz"/> for the
+    /// <c>[BRIDGE-MESH]</c> diagnostics — the borderline walls to look at when a render still shows
+    /// a wall crossing a roadway.
     /// </summary>
-    private static bool IsOnDeckSurface(
-        BridgeSpanSnapshot span, (Vector2 Min, Vector2 Max) bounds, Vector2 point, float pointZ,
-        float aboveWindowMeters)
+    private static void ClassifyParapetStation(
+        BridgeSpanSnapshot partner, (Vector2 Min, Vector2 Max) bounds, Vector2 point, float pointZ,
+        float aboveWindowMeters, ref bool suppressed, ref float? missDz)
     {
         if (point.X < bounds.Min.X || point.X > bounds.Max.X ||
             point.Y < bounds.Min.Y || point.Y > bounds.Max.Y)
-            return false;
+            return;
 
-        if (!TryProjectOntoSpan(span, point, out var surfaceZ))
-            return false;
+        if (!TryProjectOntoSpan(partner, point, out var surfaceZ))
+            return;
 
-        // dz > 0: edge above the partner surface (we are the upper deck — keep the wall beyond the
-        // coplanar tolerance). dz < 0: partner surface above the edge — suppress while the wall
-        // would still reach into/through that roadway.
         var dz = pointZ - surfaceZ;
-        return dz <= ParapetCoplanarToleranceMeters && -dz <= aboveWindowMeters;
+        if (dz <= ParapetCoplanarToleranceMeters && -dz <= aboveWindowMeters)
+            suppressed = true;
+        else if (missDz == null || MathF.Abs(dz) < MathF.Abs(missDz.Value))
+            missDz = dz;
+    }
+
+    /// <summary>File-only trim diagnostics for one span side: the suppressed station ranges (with the
+    /// ground-road share), and the kept-but-borderline ranges (in a partner's or a ground road's plan
+    /// footprint, rejected only by the Z window).</summary>
+    private static void LogParapetTrim(
+        BridgeSpanSnapshot span, string side, bool[] mask, float?[] missDz, int viaGroundRoad)
+    {
+        var suppressed = mask.Count(x => x);
+        if (suppressed > 0)
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"[BRIDGE-MESH] parapet trim span={span.SpanId} {side}: {suppressed}/{mask.Length} " +
+                $"station(s) suppressed ({viaGroundRoad} via ground road) " +
+                $"@ s={DescribeRanges(mask, span.Stations)}");
+
+        var miss = new bool[mask.Length];
+        float minDz = float.MaxValue, maxDz = float.MinValue;
+        for (var i = 0; i < mask.Length; i++)
+        {
+            if (mask[i] || missDz[i] == null)
+                continue;
+            miss[i] = true;
+            minDz = MathF.Min(minDz, missDz[i]!.Value);
+            maxDz = MathF.Max(maxDz, missDz[i]!.Value);
+        }
+
+        if (miss.Any(x => x))
+            TerrainCreationLogger.Current?.InfoFileOnly(
+                $"[BRIDGE-MESH] parapet keep (Z-window) span={span.SpanId} {side}: in a deck/road " +
+                $"plan footprint but outside the Z window @ s={DescribeRanges(miss, span.Stations)} " +
+                $"dz={minDz:+0.00;-0.00}..{maxDz:+0.00;-0.00}m");
+    }
+
+    /// <summary>Contiguous true-runs of a station mask as arc-length ranges, e.g. "8,1..14,6m, 25,1..31,6m".</summary>
+    private static string DescribeRanges(bool[] mask, List<BridgeStation> stations)
+    {
+        var parts = new List<string>();
+        for (var i = 0; i < mask.Length;)
+        {
+            if (!mask[i])
+            {
+                i++;
+                continue;
+            }
+
+            var j = i;
+            while (j + 1 < mask.Length && mask[j + 1])
+                j++;
+            parts.Add($"{stations[i].DistanceAlongSpline:F1}..{stations[j].DistanceAlongSpline:F1}m");
+            i = j + 1;
+        }
+
+        return string.Join(", ", parts);
     }
 
     /// <summary>
@@ -900,6 +984,131 @@ public class BridgeDeckDaeExporter
     {
         var lenSq = v.LengthSquared();
         return lenSq > 1e-12f ? v / MathF.Sqrt(lenSq) : Vector2.Zero;
+    }
+
+    /// <summary>
+    /// Spatial hash grid over every spline's AT-GRADE road surface: the flattened
+    /// <see cref="UnifiedCrossSection.EffectiveRoadWidth"/> band at the solved
+    /// <see cref="UnifiedCrossSection.TargetElevation"/>, from all non-excluded cross-sections
+    /// (excluded = bridge/tunnel spans — decks are covered by the span-snapshot footprint test).
+    /// Complements the deck test in <see cref="ComputeDeckTrim"/>: a parapet must never stand on ANY
+    /// drivable surface, and a deck edge over a coplanar ground road — e.g. a partner corridor's
+    /// at-grade continuation past its abutment, invisible to span projections — is exactly that
+    /// (loerrach render 2026-07-23, bridge_28570394's wall on the motorway past bridge_914252310's
+    /// end). Same terrain-local, pre-base-height Z frame as <see cref="BridgeStation"/>. The owning
+    /// spline is excluded per query: a span's own approach continues its own corridor, and junction
+    /// width flares there must not strip the wall back from the abutment.
+    /// </summary>
+    private sealed class GroundSurfaceIndex
+    {
+        private const float CellSizeMeters = 20f;
+
+        /// <summary>Consecutive same-spline sections farther apart than this (m) do not form a
+        /// surface segment (defensive: ordering hiccups, degenerate splines).</summary>
+        private const float MaxSegmentLengthMeters = 5f;
+
+        private readonly Dictionary<(int X, int Y), List<Segment>> _grid = new();
+
+        private readonly record struct Segment(
+            Vector2 A, Vector2 B, float ZA, float ZB, float HalfWidthA, float HalfWidthB, int SplineId);
+
+        public static GroundSurfaceIndex Build(UnifiedRoadNetwork network)
+        {
+            var index = new GroundSurfaceIndex();
+            var segments = 0;
+            foreach (var spline in network.Splines)
+            {
+                UnifiedCrossSection? prev = null;
+                foreach (var cs in network.GetCrossSectionsForSpline(spline.SplineId)
+                             .OrderBy(cs => cs.LocalIndex))
+                {
+                    var usable = !cs.IsExcluded &&
+                                 !float.IsNaN(cs.TargetElevation) &&
+                                 cs.EffectiveRoadWidth > 0f;
+                    if (usable && prev != null &&
+                        Vector2.DistanceSquared(prev.CenterPoint, cs.CenterPoint) <=
+                        MaxSegmentLengthMeters * MaxSegmentLengthMeters)
+                    {
+                        index.Add(new Segment(
+                            prev.CenterPoint, cs.CenterPoint,
+                            prev.TargetElevation, cs.TargetElevation,
+                            prev.EffectiveRoadWidth / 2f, cs.EffectiveRoadWidth / 2f,
+                            spline.SplineId));
+                        segments++;
+                    }
+
+                    prev = usable ? cs : null;
+                }
+            }
+
+            TerrainCreationLogger.Current?.Detail(
+                $"[BRIDGE-MESH] ground-surface index: {segments} road segment(s) " +
+                $"from {network.Splines.Count} spline(s)");
+            return index;
+        }
+
+        private void Add(Segment seg)
+        {
+            var halfW = MathF.Max(seg.HalfWidthA, seg.HalfWidthB);
+            var min = Vector2.Min(seg.A, seg.B) - new Vector2(halfW);
+            var max = Vector2.Max(seg.A, seg.B) + new Vector2(halfW);
+            for (var cx = (int)MathF.Floor(min.X / CellSizeMeters);
+                 cx <= (int)MathF.Floor(max.X / CellSizeMeters); cx++)
+            for (var cy = (int)MathF.Floor(min.Y / CellSizeMeters);
+                 cy <= (int)MathF.Floor(max.Y / CellSizeMeters); cy++)
+            {
+                if (!_grid.TryGetValue((cx, cy), out var list))
+                    _grid[(cx, cy)] = list = [];
+                list.Add(seg);
+            }
+        }
+
+        /// <summary>
+        /// One parapet edge-point probe against the ground surfaces: sets
+        /// <paramref name="suppressed"/> when the point lies strictly inside a road band
+        /// (interpolated half-width minus <see cref="ParapetInsideEpsilonMeters"/>) whose surface Z
+        /// is within the same asymmetric window the deck test uses (at most
+        /// <see cref="ParapetCoplanarToleranceMeters"/> below the edge, at most
+        /// <paramref name="aboveWindowMeters"/> above it). Grade-separated roads a full clearance
+        /// below the deck stay outside the window and keep the wall. When only the Z window fails,
+        /// the smallest |dz| is recorded in <paramref name="missDz"/> for the diagnostics.
+        /// </summary>
+        public void Probe(
+            Vector2 point, float pointZ, int excludeSplineId, float aboveWindowMeters,
+            ref bool suppressed, ref float? missDz)
+        {
+            var key = ((int)MathF.Floor(point.X / CellSizeMeters),
+                       (int)MathF.Floor(point.Y / CellSizeMeters));
+            if (!_grid.TryGetValue(key, out var segments))
+                return;
+
+            foreach (var seg in segments)
+            {
+                if (seg.SplineId == excludeSplineId)
+                    continue;
+
+                var ab = seg.B - seg.A;
+                var lenSq = ab.LengthSquared();
+                if (lenSq < 1e-8f)
+                    continue;
+                var t = Math.Clamp(Vector2.Dot(point - seg.A, ab) / lenSq, 0f, 1f);
+                var inset = seg.HalfWidthA + (seg.HalfWidthB - seg.HalfWidthA) * t -
+                            ParapetInsideEpsilonMeters;
+                if (inset <= 0f ||
+                    Vector2.DistanceSquared(point, seg.A + ab * t) > inset * inset)
+                    continue;
+
+                var dz = pointZ - (seg.ZA + (seg.ZB - seg.ZA) * t);
+                if (dz <= ParapetCoplanarToleranceMeters && -dz <= aboveWindowMeters)
+                {
+                    suppressed = true;
+                    return;
+                }
+
+                if (missDz == null || MathF.Abs(dz) < MathF.Abs(missDz.Value))
+                    missDz = dz;
+            }
+        }
     }
 }
 
