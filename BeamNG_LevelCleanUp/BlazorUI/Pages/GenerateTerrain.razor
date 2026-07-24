@@ -521,6 +521,28 @@
                             Expand each material to configure layer maps and road smoothing.
                         </MudText>
 
+                        <div class="d-flex align-center gap-2 mb-1">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                                       OnClick="AutoAssignOsmDataToMaterials"
+                                       Disabled="@(_isAutoAssigningOsm || EffectiveBoundingBox == null)">
+                                @(_isAutoAssigningOsm ? "Assigning OSM data..." : "Auto assign OpenStreetMap data to materials")
+                            </MudButton>
+                            @if (_isAutoAssigningOsm)
+                            {
+                                <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="Color.Secondary" />
+                            }
+                            <MudTooltip Text="@($"Matches material names (asphalt, dirt, forest, grass, ...) against OSM road and landuse types, selects the OSM shapes and applies road smoothing presets. The rule matrix is editable: {BeamNG_LevelCleanUp.BlazorUI.Services.OsmAutoAssign.OsmMaterialAutoAssignConfigStore.ConfigFilePath}")">
+                                <MudIcon Icon="@Icons.Material.Filled.Help" Size="Size.Small" Color="Color.Secondary" />
+                            </MudTooltip>
+                        </div>
+                        <MudText Typo="Typo.caption" Color="@(EffectiveBoundingBox == null ? Color.Warning : Color.Secondary)" Class="mb-3 d-block">
+                            @(EffectiveBoundingBox == null
+                                ? "Requires a GeoTIFF heightmap source with geographic coordinates."
+                                : "Assigns OSM roads to asphalt/dirt materials (with road smoothing presets), landuse/natural areas to matching materials, and reorders the list: base grass first, road materials last.")
+                        </MudText>
+
                         <MudDropContainer T="TerrainMaterialItemExtended"
                                           @ref="_dropContainer"
                                           Items="@_terrainMaterials"
@@ -1421,7 +1443,7 @@
                                                      @bind-Value="_hydraulicErosionIterations"
                                                      Label="Iterations"
                                                      Variant="Variant.Outlined"
-                                                     Min="1" Max="1000000" Step="1000"
+                                                     Min="1" Max="10000000" Step="1000"
                                                      HelperText="More iterations increase detail and processing time" />
                                 </MudItem>
 
