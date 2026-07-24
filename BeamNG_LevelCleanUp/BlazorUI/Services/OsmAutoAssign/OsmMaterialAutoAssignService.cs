@@ -91,6 +91,11 @@ public class OsmMaterialAutoAssignService
             return result;
         }
 
+        // Re-runs must be idempotent: clear previous auto-assignments from every rule-matched
+        // material before re-deriving them, otherwise a material that loses its tier on the
+        // re-run keeps its stale road assignment while another material gains one.
+        ResetPreviousAutoAssignments(config, materials);
+
         // Materials claimed by a rule in this run — later rules must not touch them.
         var claimedMaterials = new HashSet<TerrainMaterialItemExtended>();
         // Feature ids already assigned — the same OSM way/polygon must never end up in two materials.
@@ -118,6 +123,39 @@ public class OsmMaterialAutoAssignService
     // ========================================
 
     /// <summary>
+    ///     Clears assignments from previous runs on every rule-matched material so pressing the
+    ///     button repeatedly yields the identical result. Materials with a manual PNG layer map
+    ///     and materials no rule matches are left untouched.
+    /// </summary>
+    private static void ResetPreviousAutoAssignments(
+        OsmMaterialAutoAssignConfig config,
+        List<TerrainMaterialItemExtended> materials)
+    {
+        foreach (var material in materials)
+        {
+            if (material.LayerSourceType == LayerSourceType.PngFile &&
+                !string.IsNullOrEmpty(material.LayerMapPath))
+                continue;
+
+            var matchesRoadRule = config.RoadRules.Any(r => r.MatchesMaterialName(material.InternalName));
+            var matchesPolygonRule = config.PolygonRules.Any(r => r.MatchesMaterialName(material.InternalName));
+
+            if (!matchesRoadRule && !matchesPolygonRule)
+                continue;
+
+            material.SelectedOsmFeatures = null;
+            if (material.LayerSourceType == LayerSourceType.OsmFeatures)
+                material.LayerSourceType = LayerSourceType.None;
+
+            if (matchesRoadRule)
+            {
+                material.IsRoadMaterial = false;
+                material.EnableRoadPainting = false;
+            }
+        }
+    }
+
+    /// <summary>
     ///     Picks the base (index 0) material: among the name matches the one with the lowest
     ///     numeric suffix wins (grass &lt; grass1 &lt; grass2 ...). Returns null when ordering
     ///     is disabled or nothing matches.
@@ -134,7 +172,7 @@ public class OsmMaterialAutoAssignService
         var candidates = materials
             .Where(m => rule.MatchesMaterialName(m.InternalName))
             .OrderBy(m => ExtractFirstNumber(m.InternalName))
-            .ThenBy(m => m.Order)
+            .ThenBy(m => m.InternalName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         if (candidates.Count == 0)
@@ -424,8 +462,11 @@ public class OsmMaterialAutoAssignService
     // ========================================
 
     /// <summary>
-    ///     Materials matching the rule by name, in list order, minus already-claimed materials and
-    ///     materials with a manually configured PNG layer map (never clobber those).
+    ///     Materials matching the rule by name, minus already-claimed materials and materials
+    ///     with a manually configured PNG layer map (never clobber those). Sorted by numeric
+    ///     name suffix then name (asphalt &lt; asphalt2) — deliberately NOT by list position,
+    ///     which the previous run's auto-ordering changed; position-based tiers would swap
+    ///     materials on every repeated button press.
     /// </summary>
     private static List<TerrainMaterialItemExtended> GetEligibleMaterials(
         MaterialNameRule rule,
@@ -436,7 +477,8 @@ public class OsmMaterialAutoAssignService
         var matched = materials
             .Where(m => rule.MatchesMaterialName(m.InternalName))
             .Where(m => !claimedMaterials.Contains(m))
-            .OrderBy(m => m.Order)
+            .OrderBy(m => ExtractFirstNumber(m.InternalName))
+            .ThenBy(m => m.InternalName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var pngProtected = matched

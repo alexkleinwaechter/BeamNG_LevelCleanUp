@@ -135,7 +135,7 @@ public class OsmMaterialAutoAssignConfig
                 },
                 // The lowest-numbered grass material becomes the base material (index 0, no
                 // features needed — see Ordering.BaseMaterial). The REMAINING grass materials
-                // are used for heath, scrub and meadow, in material order.
+                // are used for heath, scrub and meadow, in numeric name order.
                 new PolygonMaterialRule
                 {
                     Name = "Heath",
@@ -332,8 +332,10 @@ public class RoadMaterialRule : MaterialNameRule
 
     /// <summary>
     ///     Assignments used when TWO OR MORE materials match this rule.
-    ///     Entry N is applied to the Nth matching material (in material list order).
-    ///     Matching materials beyond the number of entries stay unassigned.
+    ///     Entry N is applied to the Nth matching material, sorted by numeric name suffix
+    ///     (asphalt before asphalt2) so repeated runs map tiers identically regardless of
+    ///     the current list position. Matching materials beyond the number of entries stay
+    ///     unassigned.
     /// </summary>
     public List<RoadTypeAssignment> MultiMaterialAssignments { get; set; } = new();
 }
@@ -375,8 +377,9 @@ public class PolygonMaterialRule : MaterialNameRule
     public List<OsmTypeReference> OsmTypes { get; set; } = new();
 
     /// <summary>
-    ///     How many matching materials may receive this rule's features (in material list order).
-    ///     Default 1 — assigning the same polygons to several materials would paint them twice.
+    ///     How many matching materials may receive this rule's features (in numeric name order,
+    ///     grass2 before grass3). Default 1 — assigning the same polygons to several materials
+    ///     would paint them twice.
     /// </summary>
     public int MaxMaterials { get; set; } = 1;
 }
