@@ -7,15 +7,15 @@ public class HydraulicErosionSettings
 {
     public bool Enabled { get; set; }
     public int IterationCount { get; set; } = 1_000_000;
-    public int ErosionRadius { get; set; } = 3;
-    public float Inertia { get; set; } = 0.05f;
-    public float SedimentCapacityFactor { get; set; } = 4.0f;
+    public int ErosionRadius { get; set; } = 4;
+    public float Inertia { get; set; } = 0.3f;
+    public float SedimentCapacityFactor { get; set; } = 8.0f;
     public float MinSedimentCapacity { get; set; } = 0.01f;
-    public float ErodeSpeed { get; set; } = 0.3f;
-    public float DepositSpeed { get; set; } = 0.3f;
-    public float EvaporateSpeed { get; set; } = 0.01f;
-    public float Gravity { get; set; } = 4.0f;
-    public int MaxDropletLifetime { get; set; } = 30;
+    public float ErodeSpeed { get; set; } = 0.7f;
+    public float DepositSpeed { get; set; } = 0.2f;
+    public float EvaporateSpeed { get; set; } = 0.02f;
+    public float Gravity { get; set; } = 10.0f;
+    public int MaxDropletLifetime { get; set; } = 64;
     public float InitialWaterVolume { get; set; } = 1.0f;
     public float InitialSpeed { get; set; } = 1.0f;
     public int RandomSeed { get; set; } = 12345;
