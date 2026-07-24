@@ -2,6 +2,7 @@
 using System.Diagnostics.CodeAnalysis;
 using BeamNG_LevelCleanUp.BlazorUI.Components;
 using BeamNG_LevelCleanUp.BlazorUI.Services;
+using BeamNG_LevelCleanUp.BlazorUI.Services.OsmAutoAssign;
 using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
@@ -45,6 +46,7 @@ public partial class GenerateTerrain : IDisposable
     private readonly ElevationImportService _elevationImportService = new();
     private readonly GeoTiffMetadataService _geoTiffService = new();
     private readonly TerrainMaterialService _materialService = new();
+    private readonly OsmMaterialAutoAssignService _osmAutoAssignService = new();
 
     // ========================================
     // STATE (delegates to TerrainGenerationState)
@@ -70,6 +72,7 @@ public partial class GenerateTerrain : IDisposable
 
     // Analysis state
     private bool _isAnalyzing;
+    private bool _isAutoAssigningOsm;
     private bool _isReducingGeoTiff;
     private bool _openDrawer;
 
@@ -2417,6 +2420,51 @@ public partial class GenerateTerrain : IDisposable
     private void OnMaterialSettingsChanged(TerrainMaterialSettings.TerrainMaterialItemExtended material)
     {
         StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Auto-assigns OSM features and road presets to the terrain materials based on the
+    ///     user-editable rule matrix (see <see cref="OsmMaterialAutoAssignService" />).
+    /// </summary>
+    private async Task AutoAssignOsmDataToMaterials()
+    {
+        var boundingBox = EffectiveBoundingBox;
+        if (boundingBox == null || _isAutoAssigningOsm) return;
+
+        _isAutoAssigningOsm = true;
+        StateHasChanged();
+        try
+        {
+            var result = await Task.Run(() =>
+                _osmAutoAssignService.AutoAssignAsync(_terrainMaterials, boundingBox));
+
+            foreach (var entry in result.Assignments)
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"OSM auto-assign: {entry}");
+            foreach (var orderingChange in result.OrderingChanges)
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"OSM auto-assign: {orderingChange}");
+            foreach (var warning in result.Warnings)
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, $"OSM auto-assign: {warning}");
+
+            if (result.Assignments.Count > 0)
+                Snackbar.Add(
+                    $"Assigned OSM data to {result.Assignments.Count} material(s). See messages for details.",
+                    Severity.Success);
+            else
+                Snackbar.Add(
+                    "No materials could be auto-assigned. Check the messages log for details.",
+                    Severity.Warning);
+
+            _dropContainer?.Refresh();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"OSM auto-assign failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isAutoAssigningOsm = false;
+            StateHasChanged();
+        }
     }
 
     private async Task OpenBuildingFeatureSelector()

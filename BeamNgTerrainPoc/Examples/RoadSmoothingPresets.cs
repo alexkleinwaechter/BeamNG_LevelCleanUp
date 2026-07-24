@@ -78,7 +78,7 @@ public static class RoadSmoothingPresets
             // Spline fitting
 
             // Very strong elevation smoothing
-            SmoothingWindowSize = 601,
+            SmoothingWindowSize = 301,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -139,7 +139,7 @@ public static class RoadSmoothingPresets
             // Spline fitting - balanced
 
             // Strong elevation smoothing
-            SmoothingWindowSize = 401,
+            SmoothingWindowSize = 251,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,
@@ -200,7 +200,7 @@ public static class RoadSmoothingPresets
             // Tighter spline fitting for curves
 
             // Moderate elevation smoothing
-            SmoothingWindowSize = 401,
+            SmoothingWindowSize = 201,
             UseButterworthFilter = true,
             ButterworthFilterOrder = 4,
             GlobalLevelingStrength = 0.0f,

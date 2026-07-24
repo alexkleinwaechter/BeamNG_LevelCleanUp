@@ -1,0 +1,270 @@
+Extracted material entries from BeamNG level archives
+===============================================
+Cliff.zip | material_key=BeachSand | material_name=BeachSand | internalName=BeachSand
+Cliff.zip | material_key=Concrete | material_name=Concrete | internalName=Concrete
+Cliff.zip | material_key=Concrete2 | material_name=Concrete2 | internalName=Concrete2
+Cliff.zip | material_key=Forest | material_name=Forest | internalName=Forest
+Cliff.zip | material_key=Grass | material_name=Grass | internalName=Grass
+Cliff.zip | material_key=Grass2 | material_name=Grass2 | internalName=Grass2
+Cliff.zip | material_key=Rock | material_name=Rock | internalName=Rock
+Cliff.zip | material_key=Rock2 | material_name=Rock2 | internalName=Rock2
+Cliff.zip | material_key=RockyDirt | material_name=RockyDirt | internalName=RockyDirt
+Cliff.zip | material_key=dirt_grass | material_name=dirt_grass | internalName=dirt_grass
+Cliff.zip | material_key=forest_floor | material_name=forest_floor | internalName=forest_floor
+Cliff.zip | material_key=grass1 | material_name=grass1 | internalName=grass1
+Cliff.zip | material_key=grass1-dry | material_name=grass1-dry | internalName=grass1-dry
+Cliff.zip | material_key=sand | material_name=sand | internalName=sand
+GridMap.zip | material_key=Asphalt-ac348aaa-080f-4d49-92db-d79fdfad5f73 | material_name=Asphalt-ac348aaa-080f-4d49-92db-d79fdfad5f73 | internalName=Asphalt
+GridMap.zip | material_key=BeachSand-337aab39-2270-481c-b31c-34fc9f440235 | material_name=BeachSand-337aab39-2270-481c-b31c-34fc9f440235 | internalName=BeachSand
+GridMap.zip | material_key=Grass-a8517239-7693-4a46-9981-777a7969a536 | material_name=Grass-a8517239-7693-4a46-9981-777a7969a536 | internalName=Grass
+GridMap.zip | material_key=Grid-1811d687-21cf-4e52-a8f8-31e1d4db597e | material_name=Grid-1811d687-21cf-4e52-a8f8-31e1d4db597e | internalName=Grid
+GridMap.zip | material_key=Ice-fc10ebb4-1e5e-42a1-99c7-923a5c5fe19f | material_name=Ice-fc10ebb4-1e5e-42a1-99c7-923a5c5fe19f | internalName=Ice
+GridMap.zip | material_key=Mud-cd718471-ec62-4e82-996d-84b520ff8eb4 | material_name=Mud-cd718471-ec62-4e82-996d-84b520ff8eb4 | internalName=Mud
+GridMap.zip | material_key=Rock-e21aeb19-4623-43ad-8dab-663aaebfae11 | material_name=Rock-e21aeb19-4623-43ad-8dab-663aaebfae11 | internalName=Rock
+GridMap.zip | material_key=RockyDirt-3eb7bc0f-dc33-4fe6-a315-073816aebc53 | material_name=RockyDirt-3eb7bc0f-dc33-4fe6-a315-073816aebc53 | internalName=RockyDirt
+GridMap.zip | material_key=asphalt_prepped-0f3dd613-85c9-4a31-8c8e-dcf211d8b1dc | material_name=asphalt_prepped-0f3dd613-85c9-4a31-8c8e-dcf211d8b1dc | internalName=asphalt_prepped
+Industrial.zip | material_key=BeachSand-e66ba53b-10fd-4dbd-8395-53b8168944aa | material_name=BeachSand-e66ba53b-10fd-4dbd-8395-53b8168944aa | internalName=BeachSand
+Industrial.zip | material_key=Concrete-64602e13-69d8-46a2-b4f9-8d2ff4cde74c | material_name=Concrete-64602e13-69d8-46a2-b4f9-8d2ff4cde74c | internalName=Concrete
+Industrial.zip | material_key=Forest-3e3945cf-e797-4998-9fad-03c78967316e | material_name=Forest-3e3945cf-e797-4998-9fad-03c78967316e | internalName=Forest
+Industrial.zip | material_key=Grass-41600512-db8d-429f-9bf9-f12e88d1f6ac | material_name=Grass-41600512-db8d-429f-9bf9-f12e88d1f6ac | internalName=Grass
+Industrial.zip | material_key=Grass2-26acdede-6d1e-4606-97c5-ff299d1dedd6 | material_name=Grass2-26acdede-6d1e-4606-97c5-ff299d1dedd6 | internalName=Grass2
+Industrial.zip | material_key=Grass3-ded05d83-d652-46d8-b931-a0f84cf29e34 | material_name=Grass3-ded05d83-d652-46d8-b931-a0f84cf29e34 | internalName=Grass3
+Industrial.zip | material_key=Gravel-f72ce222-b198-40ea-acb3-4a726348a3c0 | material_name=Gravel-f72ce222-b198-40ea-acb3-4a726348a3c0 | internalName=Gravel
+Industrial.zip | material_key=Mud-5602597f-55c3-4a33-8cfb-3770dbba86fa | material_name=Mud-5602597f-55c3-4a33-8cfb-3770dbba86fa | internalName=Mud
+Industrial.zip | material_key=Rock-a641bc61-43df-4924-b215-d6f0f7d87d31 | material_name=Rock-a641bc61-43df-4924-b215-d6f0f7d87d31 | internalName=Rock
+Industrial.zip | material_key=RockyDirt-52208b9f-4a4f-4476-b9c7-7ca31bf6b6f7 | material_name=RockyDirt-52208b9f-4a4f-4476-b9c7-7ca31bf6b6f7 | internalName=RockyDirt
+Industrial.zip | material_key=dirt-fb3b540e-f039-4c1f-8f6e-56f0d4eaa140 | material_name=dirt-fb3b540e-f039-4c1f-8f6e-56f0d4eaa140 | internalName=dirt
+Industrial.zip | material_key=dirt_grass-d5ac8be9-09dd-422e-881c-fd253451ca2e | material_name=dirt_grass-d5ac8be9-09dd-422e-881c-fd253451ca2e | internalName=dirt_grass
+Industrial.zip | material_key=dirt_loose-2bf75ff1-44eb-4a5e-b8cc-f0a9f29c79b2 | material_name=dirt_loose-2bf75ff1-44eb-4a5e-b8cc-f0a9f29c79b2 | internalName=dirt_loose
+Industrial.zip | material_key=dirt_rocky_large-f2ce1231-0384-4c93-90e5-84723074a5ba | material_name=dirt_rocky_large-f2ce1231-0384-4c93-90e5-84723074a5ba | internalName=dirt_rocky_large
+Industrial.zip | material_key=forest_floor-6a122bde-afef-48cc-8234-c0390113b01b | material_name=forest_floor-6a122bde-afef-48cc-8234-c0390113b01b | internalName=forest_floor
+Industrial.zip | material_key=groundmodel_asphalt1-9ece8aee-e688-49b6-9606-f0a87ae38649 | material_name=groundmodel_asphalt1-9ece8aee-e688-49b6-9606-f0a87ae38649 | internalName=groundmodel_asphalt1
+Industrial.zip | material_key=industrialTerrainMaterialTextureSet | material_name=industrialTerrainMaterialTextureSet | internalName=industrialTerrainMaterialTextureSet
+Utah.zip | material_key=GRAVEL-1d2009d8-d8af-4a4b-83ef-5bf13706becb | material_name=GRAVEL-1d2009d8-d8af-4a4b-83ef-5bf13706becb | internalName=GRAVEL
+Utah.zip | material_key=Grass-9ee14ba8-c41c-42fd-a4e9-56b93dbb4e6f | material_name=Grass-9ee14ba8-c41c-42fd-a4e9-56b93dbb4e6f | internalName=Grass
+Utah.zip | material_key=Grass2-9dde8edb-be4e-4bde-8852-6f8d04129a7e | material_name=Grass2-9dde8edb-be4e-4bde-8852-6f8d04129a7e | internalName=Grass2
+Utah.zip | material_key=Grass3-ea68aa0d-efad-45a1-896e-590f41f8fd58 | material_name=Grass3-ea68aa0d-efad-45a1-896e-590f41f8fd58 | internalName=Grass3
+Utah.zip | material_key=Rock-4fefdb78-94ad-4710-ba68-312bbc116415 | material_name=Rock-4fefdb78-94ad-4710-ba68-312bbc116415 | internalName=Rock
+Utah.zip | material_key=UtahTerrainTextureSet | material_name=UtahTerrainTextureSet | internalName=UtahTerrainTextureSet
+Utah.zip | material_key=dirt_grass-2e645206-0dd3-4f32-aaca-64d80185cff2 | material_name=dirt_grass-2e645206-0dd3-4f32-aaca-64d80185cff2 | internalName=dirt_grass
+Utah.zip | material_key=dirt_loose-0da3bd79-dbda-4730-87da-49b8fa43e4de | material_name=dirt_loose-0da3bd79-dbda-4730-87da-49b8fa43e4de | internalName=dirt_loose
+Utah.zip | material_key=dirt_loose_dusty-376501ed-8dba-4168-b742-ab692881f00e | material_name=dirt_loose_dusty-376501ed-8dba-4168-b742-ab692881f00e | internalName=dirt_loose_dusty
+Utah.zip | material_key=dirt_rocky-84da1e4a-c47b-45b2-8d20-0864a8491fa8 | material_name=dirt_rocky-84da1e4a-c47b-45b2-8d20-0864a8491fa8 | internalName=dirt_rocky
+Utah.zip | material_key=dirt_rocky_large-0f4832ca-83e9-46a0-8d4c-fad4cf8d2484 | material_name=dirt_rocky_large-0f4832ca-83e9-46a0-8d4c-fad4cf8d2484 | internalName=dirt_rocky_large
+Utah.zip | material_key=dirt_sandy-c54ad9c9-5b4b-4fe7-8656-b0632fa13ad7 | material_name=dirt_sandy-c54ad9c9-5b4b-4fe7-8656-b0632fa13ad7 | internalName=dirt_sandy
+Utah.zip | material_key=groundmodel_asphalt1-32744080-f7b2-4f74-b107-6dd6411df5f4 | material_name=groundmodel_asphalt1-32744080-f7b2-4f74-b107-6dd6411df5f4 | internalName=groundmodel_asphalt1
+Utah.zip | material_key=sand-ea13f929-1987-4f6e-9bab-13360c99206f | material_name=sand-ea13f929-1987-4f6e-9bab-13360c99206f | internalName=sand
+automation_test_track.zip | material_key=Rock_cliff-3630cc2d-5f2f-43f3-8ab7-77f2b0ab3ea9 | material_name=Rock_cliff-3630cc2d-5f2f-43f3-8ab7-77f2b0ab3ea9 | internalName=Rock_cliff
+automation_test_track.zip | material_key=Sand-6c7b422f-4a76-4556-bced-aa768ab85e4c | material_name=Sand-6c7b422f-4a76-4556-bced-aa768ab85e4c | internalName=Sand
+automation_test_track.zip | material_key=automation_test_track_TerrainMaterialTextureSet | material_name=automation_test_track_TerrainMaterialTextureSet | internalName=automation_test_track_TerrainMaterialTextureSet
+automation_test_track.zip | material_key=concrete-56c2bb74-4b92-429b-b638-c11c51423525 | material_name=concrete-56c2bb74-4b92-429b-b638-c11c51423525 | internalName=concrete
+automation_test_track.zip | material_key=dirt_dusty-1341fcf6-19d9-4571-9722-f8c5f04150ec | material_name=dirt_dusty-1341fcf6-19d9-4571-9722-f8c5f04150ec | internalName=dirt_dusty
+automation_test_track.zip | material_key=dirt_grass-91b98994-1e7a-44b9-8203-13b18e434ec1 | material_name=dirt_grass-91b98994-1e7a-44b9-8203-13b18e434ec1 | internalName=dirt_grass
+automation_test_track.zip | material_key=dirt_loose-c8ca1113-043b-4c68-bfe7-b2a5cfc99438 | material_name=dirt_loose-c8ca1113-043b-4c68-bfe7-b2a5cfc99438 | internalName=dirt_loose
+automation_test_track.zip | material_key=forest-1f385ba1-8f0a-4af6-9c39-a1b4c4ade4c0 | material_name=forest-1f385ba1-8f0a-4af6-9c39-a1b4c4ade4c0 | internalName=forest
+automation_test_track.zip | material_key=grass-c6cd7928-0c0a-43e2-aa22-6531746b15d6 | material_name=grass-c6cd7928-0c0a-43e2-aa22-6531746b15d6 | internalName=grass
+automation_test_track.zip | material_key=grass2-8ea09f7f-452b-4856-9466-65ab8940e432 | material_name=grass2-8ea09f7f-452b-4856-9466-65ab8940e432 | internalName=grass2
+automation_test_track.zip | material_key=grass3-f82c9498-d455-49d7-9792-485dca7beebb | material_name=grass3-f82c9498-d455-49d7-9792-485dca7beebb | internalName=grass3
+automation_test_track.zip | material_key=grass4-37d3c587-ffb9-48b0-a758-8de2f97b1ba7 | material_name=grass4-37d3c587-ffb9-48b0-a758-8de2f97b1ba7 | internalName=grass4
+automation_test_track.zip | material_key=groundmodel_asphalt1-9a9ecfd0-78d5-4872-8010-8fea288e9e4d | material_name=groundmodel_asphalt1-9a9ecfd0-78d5-4872-8010-8fea288e9e4d | internalName=groundmodel_asphalt1
+automation_test_track.zip | material_key=ice-55b18e31-18ce-4e6b-a6eb-aa61da928640 | material_name=ice-55b18e31-18ce-4e6b-a6eb-aa61da928640 | internalName=ice
+automation_test_track.zip | material_key=mud-8a855fdc-eed7-4ea4-a3a0-c71c6dafa8a3 | material_name=mud-8a855fdc-eed7-4ea4-a3a0-c71c6dafa8a3 | internalName=mud
+automation_test_track.zip | material_key=snow-1c050ff9-7133-43ff-9937-ea016a74a725 | material_name=snow-1c050ff9-7133-43ff-9937-ea016a74a725 | internalName=snow
+autotest.zip | material_key=Asphalt-9b287577-d795-446d-9738-383a74b79efb | material_name=Asphalt-9b287577-d795-446d-9738-383a74b79efb | internalName=Asphalt
+autotest.zip | material_key=BeachSand-4f548b5d-2be6-4511-bbb9-1a644d258296 | material_name=BeachSand-4f548b5d-2be6-4511-bbb9-1a644d258296 | internalName=BeachSand
+autotest.zip | material_key=Grass-c8126a4a-b84e-428d-ab27-e8f0680818e6 | material_name=Grass-c8126a4a-b84e-428d-ab27-e8f0680818e6 | internalName=Grass
+autotest.zip | material_key=RockyDirt-1c152b3d-6ad8-4a76-ac18-867f3611aa96 | material_name=RockyDirt-1c152b3d-6ad8-4a76-ac18-867f3611aa96 | internalName=RockyDirt
+derby.zip | material_key=Concrete-ef981df5-bee8-473a-8021-f4608112b35d | material_name=Concrete-ef981df5-bee8-473a-8021-f4608112b35d | internalName=Concrete
+derby.zip | material_key=Grass-ade8cc4d-92a3-4955-9b24-c6cc609aea71 | material_name=Grass-ade8cc4d-92a3-4955-9b24-c6cc609aea71 | internalName=Grass
+derby.zip | material_key=Grass2-1dc1c7c0-bb3e-401a-94eb-1ce45e1f024f | material_name=Grass2-1dc1c7c0-bb3e-401a-94eb-1ce45e1f024f | internalName=Grass2
+derby.zip | material_key=Mud-9104ec0a-9206-4278-b5e4-13a74f898256 | material_name=Mud-9104ec0a-9206-4278-b5e4-13a74f898256 | internalName=Mud
+derby.zip | material_key=RockyDirt-47409d5e-bbd8-438f-99a5-e0a3a4c1b243 | material_name=RockyDirt-47409d5e-bbd8-438f-99a5-e0a3a4c1b243 | internalName=RockyDirt
+derby.zip | material_key=derbyTerrainMaterialTextureSet | material_name=derbyTerrainMaterialTextureSet | internalName=derbyTerrainMaterialTextureSet
+derby.zip | material_key=dirt_dusty-302a930b-6838-4e76-b883-6912ca629e54 | material_name=dirt_dusty-302a930b-6838-4e76-b883-6912ca629e54 | internalName=dirt_dusty
+derby.zip | material_key=dirt_grass-b7074885-f068-45bb-a526-6d9465bd75a7 | material_name=dirt_grass-b7074885-f068-45bb-a526-6d9465bd75a7 | internalName=dirt_grass
+derby.zip | material_key=forest_floor-96e86b8f-6daf-4e6e-a141-73aefcf9ffb1 | material_name=forest_floor-96e86b8f-6daf-4e6e-a141-73aefcf9ffb1 | internalName=forest_floor
+derby.zip | material_key=groundmodel_asphalt1-ab15f2d6-3a74-4010-b841-f6745d6f739a | material_name=groundmodel_asphalt1-ab15f2d6-3a74-4010-b841-f6745d6f739a | internalName=groundmodel_asphalt1
+driver_training.zip | material_key=Asphalt-07cb1034-51ed-468a-96ff-dd15b02d3eae | material_name=Asphalt-07cb1034-51ed-468a-96ff-dd15b02d3eae | internalName=Asphalt
+driver_training.zip | material_key=Asphalt_wet-dbe7f3ca-0c94-4b1b-bb0f-a5ac0ff7998e | material_name=Asphalt_wet-dbe7f3ca-0c94-4b1b-bb0f-a5ac0ff7998e | internalName=Asphalt_wet
+driver_training.zip | material_key=Concrete-4646e614-d974-4aa5-9dbd-7eca735155fc | material_name=Concrete-4646e614-d974-4aa5-9dbd-7eca735155fc | internalName=Concrete
+driver_training.zip | material_key=Forest-352eb35e-2617-48cc-b9d8-e1f0f6d75968 | material_name=Forest-352eb35e-2617-48cc-b9d8-e1f0f6d75968 | internalName=Forest
+driver_training.zip | material_key=Grass-28130f29-d211-4168-9a76-6cbc4c7488ed | material_name=Grass-28130f29-d211-4168-9a76-6cbc4c7488ed | internalName=Grass
+driver_training.zip | material_key=Grass2-6b4b4623-926a-4b36-b376-50cbd3ecff3c | material_name=Grass2-6b4b4623-926a-4b36-b376-50cbd3ecff3c | internalName=Grass2
+driver_training.zip | material_key=Grass3-4546d4eb-cf29-4342-afa2-ede924fc5c0d | material_name=Grass3-4546d4eb-cf29-4342-afa2-ede924fc5c0d | internalName=Grass3
+driver_training.zip | material_key=Grass4-92035535-d8d7-40bc-a32c-45ca6371cc93 | material_name=Grass4-92035535-d8d7-40bc-a32c-45ca6371cc93 | internalName=Grass4
+driver_training.zip | material_key=Mud-5778034c-512e-490d-b60d-8c47fd3793e8 | material_name=Mud-5778034c-512e-490d-b60d-8c47fd3793e8 | internalName=Mud
+driver_training.zip | material_key=Rock_cliff-c65becf8-4b02-40f8-bb99-24f2b4f0d133 | material_name=Rock_cliff-c65becf8-4b02-40f8-bb99-24f2b4f0d133 | internalName=Rock_cliff
+driver_training.zip | material_key=dirt_grass-229b20be-c4cd-4962-851d-6588267ea8e6 | material_name=dirt_grass-229b20be-c4cd-4962-851d-6588267ea8e6 | internalName=dirt_grass
+driver_training.zip | material_key=dirt_loose-29128289-be4e-4ece-9e70-423377476b8e | material_name=dirt_loose-29128289-be4e-4ece-9e70-423377476b8e | internalName=dirt_loose
+driver_training.zip | material_key=driver_training_v2TerrainMaterialTextureSet | material_name=driver_training_v2TerrainMaterialTextureSet | internalName=driver_training_v2TerrainMaterialTextureSet
+east_coast_usa.zip | material_key=Dirt-da8e638c-5f6c-4542-8bb6-aae7d6232074 | material_name=Dirt-da8e638c-5f6c-4542-8bb6-aae7d6232074 | internalName=Dirt
+east_coast_usa.zip | material_key=Forest-3af05f17-3005-4330-a0a0-ebe2f8dd33f8 | material_name=Forest-3af05f17-3005-4330-a0a0-ebe2f8dd33f8 | internalName=Forest
+east_coast_usa.zip | material_key=Grass-b278fb81-7a48-4903-9f51-2a0dfc8bdcf9 | material_name=Grass-b278fb81-7a48-4903-9f51-2a0dfc8bdcf9 | internalName=Grass
+east_coast_usa.zip | material_key=Grass2-83bd1e61-7f2b-4192-bd43-a921298e0813 | material_name=Grass2-83bd1e61-7f2b-4192-bd43-a921298e0813 | internalName=Grass2
+east_coast_usa.zip | material_key=Grass3-68bcab70-38f4-4f1c-9f3b-60f1c0d6f2ab | material_name=Grass3-68bcab70-38f4-4f1c-9f3b-60f1c0d6f2ab | internalName=Grass3
+east_coast_usa.zip | material_key=Grass4-c98f3f4c-3f81-4211-8d6a-5e007c8e60ab | material_name=Grass4-c98f3f4c-3f81-4211-8d6a-5e007c8e60ab | internalName=Grass4
+east_coast_usa.zip | material_key=Mud-02f839d3-c911-44c9-8d3d-5ebd1e3bd9cc | material_name=Mud-02f839d3-c911-44c9-8d3d-5ebd1e3bd9cc | internalName=Mud
+east_coast_usa.zip | material_key=ROCK-ea79d794-f667-4a56-b307-5432e0e98d62 | material_name=ROCK-ea79d794-f667-4a56-b307-5432e0e98d62 | internalName=ROCK
+east_coast_usa.zip | material_key=RockyDirt-5d718b80-3fe3-4f36-9abb-6cb8367c238f | material_name=RockyDirt-5d718b80-3fe3-4f36-9abb-6cb8367c238f | internalName=RockyDirt
+east_coast_usa.zip | material_key=asphalt-43497811-81f1-4272-8c60-04cf66cd598c | material_name=asphalt-43497811-81f1-4272-8c60-04cf66cd598c | internalName=asphalt
+east_coast_usa.zip | material_key=asphalt2-0293b416-2804-45c2-82aa-0726b623d639 | material_name=asphalt2-0293b416-2804-45c2-82aa-0726b623d639 | internalName=asphalt2
+east_coast_usa.zip | material_key=dirt_grass-612c6d1d-0601-43bb-9be7-1001ca17957c | material_name=dirt_grass-612c6d1d-0601-43bb-9be7-1001ca17957c | internalName=dirt_grass
+east_coast_usa.zip | material_key=east_coast_usaTerrainMaterialTextureSet | material_name=east_coast_usaTerrainMaterialTextureSet | internalName=east_coast_usaTerrainMaterialTextureSet
+east_coast_usa.zip | material_key=forest_floor-208a796b-af10-493a-aeb9-eb2bfd276636 | material_name=forest_floor-208a796b-af10-493a-aeb9-eb2bfd276636 | internalName=forest_floor
+east_coast_usa.zip | material_key=groundmodel_asphalt1-dc79eb3a-90df-49a8-9814-4773f2049bad | material_name=groundmodel_asphalt1-dc79eb3a-90df-49a8-9814-4773f2049bad | internalName=GROUNDMODEL_ASPHALT1
+east_coast_usa.zip | material_key=rocks_large-343fdacf-4296-4b6b-89ee-f939e9876ba3 | material_name=rocks_large-343fdacf-4296-4b6b-89ee-f939e9876ba3 | internalName=rocks_large
+glow_city.zip | material_key=test-845e8fa3-c7e8-42de-8f20-d5b19ee935b4 | material_name=test-845e8fa3-c7e8-42de-8f20-d5b19ee935b4 | internalName=test
+gridmap_v2.zip | material_key=Asphalt-e72d9e60-60c5-40e7-a447-273955b221c6 | material_name=Asphalt-e72d9e60-60c5-40e7-a447-273955b221c6 | internalName=Asphalt
+gridmap_v2.zip | material_key=BeachSand-ce1629b6-eee3-4235-a128-a0d18db55fdd | material_name=BeachSand-ce1629b6-eee3-4235-a128-a0d18db55fdd | internalName=BeachSand
+gridmap_v2.zip | material_key=Concrete-838e26b7-c3c4-478e-920f-e70c0269a049 | material_name=Concrete-838e26b7-c3c4-478e-920f-e70c0269a049 | internalName=Concrete
+gridmap_v2.zip | material_key=Dirt-4ac90ae6-75b3-42b9-8a23-0c29d4a921b6 | material_name=Dirt-4ac90ae6-75b3-42b9-8a23-0c29d4a921b6 | internalName=Dirt
+gridmap_v2.zip | material_key=Grass-c2267fe8-dfcc-419a-9227-bbee09484f00 | material_name=Grass-c2267fe8-dfcc-419a-9227-bbee09484f00 | internalName=Grass
+gridmap_v2.zip | material_key=Grass2-9dde8edb-be4e-4bde-8852-6f8d04129a7e | material_name=Grass2-9dde8edb-be4e-4bde-8852-6f8d04129a7e | internalName=Grass2
+gridmap_v2.zip | material_key=Mud-8b47aa83-80a1-4496-a325-1ab7736c2e8a | material_name=Mud-8b47aa83-80a1-4496-a325-1ab7736c2e8a | internalName=Mud
+gridmap_v2.zip | material_key=Rock-14e5a686-a732-4df0-9623-e713a214cde5 | material_name=Rock-14e5a686-a732-4df0-9623-e713a214cde5 | internalName=Rock
+gridmap_v2.zip | material_key=gridmap_v2TerrainMaterialTextureSet | material_name=gridmap_v2TerrainMaterialTextureSet | internalName=gridmap_v2TerrainMaterialTextureSet
+hirochi_raceway.zip | material_key=Asphalt-07cb1034-51ed-468a-96ff-dd15b02d3eae | material_name=Asphalt-07cb1034-51ed-468a-96ff-dd15b02d3eae | internalName=Asphalt
+hirochi_raceway.zip | material_key=BeachSand-3b1e752d-ff71-4c33-a0d9-7fe16b2c0d00 | material_name=BeachSand-3b1e752d-ff71-4c33-a0d9-7fe16b2c0d00 | internalName=BeachSand
+hirochi_raceway.zip | material_key=Forest-3154b5b8-1f89-4851-8621-ac46f5aa9073 | material_name=Forest-3154b5b8-1f89-4851-8621-ac46f5aa9073 | internalName=Forest
+hirochi_raceway.zip | material_key=Grass-82b0909f-0916-4e5c-941b-36c8b0c07e28 | material_name=Grass-82b0909f-0916-4e5c-941b-36c8b0c07e28 | internalName=Grass
+hirochi_raceway.zip | material_key=Grass2-c33a2132-8c61-4f11-a966-db2413af38b0 | material_name=Grass2-c33a2132-8c61-4f11-a966-db2413af38b0 | internalName=Grass2
+hirochi_raceway.zip | material_key=Grass3-f03bc4fe-6f4d-442f-a6b0-43ac4063b93a | material_name=Grass3-f03bc4fe-6f4d-442f-a6b0-43ac4063b93a | internalName=Grass3
+hirochi_raceway.zip | material_key=HirochiTerrainTextureSet | material_name=HirochiTerrainTextureSet | internalName=HirochiTerrainTextureSet
+hirochi_raceway.zip | material_key=Mud-13fb5eb1-6016-4e8b-8889-9399fcde26cb | material_name=Mud-13fb5eb1-6016-4e8b-8889-9399fcde26cb | internalName=Mud
+hirochi_raceway.zip | material_key=ROCK-b792bbf9-c13c-4b55-bc61-0f67dcc34252 | material_name=ROCK-b792bbf9-c13c-4b55-bc61-0f67dcc34252 | internalName=ROCK
+hirochi_raceway.zip | material_key=dirt-943d3ab2-934d-4981-a364-baced99052b4 | material_name=dirt-943d3ab2-934d-4981-a364-baced99052b4 | internalName=dirt
+hirochi_raceway.zip | material_key=dirt_grass-0c54c00a-9c5c-4630-b07e-cb8df76bf1ce | material_name=dirt_grass-0c54c00a-9c5c-4630-b07e-cb8df76bf1ce | internalName=dirt_grass
+hirochi_raceway.zip | material_key=forest_floor-47c285b8-8670-408e-a393-39625216d958 | material_name=forest_floor-47c285b8-8670-408e-a393-39625216d958 | internalName=forest_floor
+italy.zip | material_key=BeachSand-a4cbb0c9-c66e-44eb-a04a-147eff1af7b8 | material_name=BeachSand-a4cbb0c9-c66e-44eb-a04a-147eff1af7b8 | internalName=BeachSand
+italy.zip | material_key=Grass-f6233419-d0a0-4399-9a5e-55953ed05693 | material_name=Grass-f6233419-d0a0-4399-9a5e-55953ed05693 | internalName=Grass
+italy.zip | material_key=Grass2-684557ac-f564-407e-8316-e948bb59ba30 | material_name=Grass2-684557ac-f564-407e-8316-e948bb59ba30 | internalName=Grass2
+italy.zip | material_key=Grass3-86a6d1d8-ba67-48fb-b4e4-008dd34855b6 | material_name=Grass3-86a6d1d8-ba67-48fb-b4e4-008dd34855b6 | internalName=Grass3
+italy.zip | material_key=Grass4-5fef16c1-6565-439f-8c07-b37460a0fe7e | material_name=Grass4-5fef16c1-6565-439f-8c07-b37460a0fe7e | internalName=Grass4
+italy.zip | material_key=Rock-5945b8b0-e21d-43cc-a2c1-b386a887bfa1 | material_name=Rock-5945b8b0-e21d-43cc-a2c1-b386a887bfa1 | internalName=Rock
+italy.zip | material_key=RockyDirt-152ca6e4-5e06-48a1-bcec-979e39f49816 | material_name=RockyDirt-152ca6e4-5e06-48a1-bcec-979e39f49816 | internalName=RockyDirt
+italy.zip | material_key=asphalt-6e2bfb0e-e63c-45c5-bd1f-40964decabe4 | material_name=asphalt-6e2bfb0e-e63c-45c5-bd1f-40964decabe4 | internalName=asphalt
+italy.zip | material_key=asphalt2-25015e53-a91c-4f76-9b61-c8cdeaa45a55 | material_name=asphalt2-25015e53-a91c-4f76-9b61-c8cdeaa45a55 | internalName=asphalt2
+italy.zip | material_key=dirt_loose-a92cebc4-f471-4735-b2c7-4ba42b16af50 | material_name=dirt_loose-a92cebc4-f471-4735-b2c7-4ba42b16af50 | internalName=dirt_loose
+italy.zip | material_key=dirt_loose_dusty-dc5dfaae-c38d-4bf1-bba1-fc9df2fc8945 | material_name=dirt_loose_dusty-dc5dfaae-c38d-4bf1-bba1-fc9df2fc8945 | internalName=dirt_loose_dusty
+italy.zip | material_key=forest_floor-ae3935fe-e6e5-48f5-bcfe-250fec0fade7 | material_name=forest_floor-ae3935fe-e6e5-48f5-bcfe-250fec0fade7 | internalName=forest_floor
+italy.zip | material_key=groundmodel_asphalt1-3150e255-36aa-4fc3-93e1-ddd6772d1fd5 | material_name=groundmodel_asphalt1-3150e255-36aa-4fc3-93e1-ddd6772d1fd5 | internalName=groundmodel_asphalt1
+italy.zip | material_key=groundmodel_asphalt_old-324e9a05-1cc8-45a9-a621-1c306f42b525 | material_name=groundmodel_asphalt_old-324e9a05-1cc8-45a9-a621-1c306f42b525 | internalName=groundmodel_asphalt_old
+italy.zip | material_key=italyTerrainMaterialTextureSet | material_name=italyTerrainMaterialTextureSet | internalName=italyTerrainMaterialTextureSet
+italy.zip | material_key=marble | material_name=marble | internalName=marble
+johnson_valley.zip | material_key=Dirt-0da3bd79-dbda-4730-87da-49b8fa43e4de | material_name=Dirt-0da3bd79-dbda-4730-87da-49b8fa43e4de | internalName=Dirt
+johnson_valley.zip | material_key=Grass-9ee14ba8-c41c-42fd-a4e9-56b93dbb4e6f | material_name=Grass-9ee14ba8-c41c-42fd-a4e9-56b93dbb4e6f | internalName=Grass
+johnson_valley.zip | material_key=Grass2-9dde8edb-be4e-4bde-8852-6f8d04129a7e | material_name=Grass2-9dde8edb-be4e-4bde-8852-6f8d04129a7e | internalName=Grass2
+johnson_valley.zip | material_key=asphalt-f3f8eafd-622f-4946-964e-cdacd16f7a28 | material_name=asphalt-f3f8eafd-622f-4946-964e-cdacd16f7a28 | internalName=asphalt
+johnson_valley.zip | material_key=asphalt2-4280a15d-057f-4790-a250-54f392612030 | material_name=asphalt2-4280a15d-057f-4790-a250-54f392612030 | internalName=asphalt2
+johnson_valley.zip | material_key=dirt_grass-2e645206-0dd3-4f32-aaca-64d80185cff2 | material_name=dirt_grass-2e645206-0dd3-4f32-aaca-64d80185cff2 | internalName=dirt_grass
+johnson_valley.zip | material_key=dirt_loose-0c3dc8ee-7361-4fd3-a781-5cb5ddd5634b | material_name=dirt_loose-0c3dc8ee-7361-4fd3-a781-5cb5ddd5634b | internalName=dirt_loose
+johnson_valley.zip | material_key=dirt_loose_dusty-376501ed-8dba-4168-b742-ab692881f00e | material_name=dirt_loose_dusty-376501ed-8dba-4168-b742-ab692881f00e | internalName=dirt_loose_dusty
+johnson_valley.zip | material_key=dirt_rocky-361e0db6-8309-48ef-a7db-83213848f45e | material_name=dirt_rocky-361e0db6-8309-48ef-a7db-83213848f45e | internalName=dirt_rocky
+johnson_valley.zip | material_key=dirt_rocky_large-0f4832ca-83e9-46a0-8d4c-fad4cf8d2484 | material_name=dirt_rocky_large-0f4832ca-83e9-46a0-8d4c-fad4cf8d2484 | internalName=dirt_rocky_large
+johnson_valley.zip | material_key=dirt_sandy-c54ad9c9-5b4b-4fe7-8656-b0632fa13ad7 | material_name=dirt_sandy-c54ad9c9-5b4b-4fe7-8656-b0632fa13ad7 | internalName=dirt_sandy
+johnson_valley.zip | material_key=groundmodel_asphalt1-32744080-f7b2-4f74-b107-6dd6411df5f4 | material_name=groundmodel_asphalt1-32744080-f7b2-4f74-b107-6dd6411df5f4 | internalName=groundmodel_asphalt1
+johnson_valley.zip | material_key=johnson_valleyTerrainMaterialTextureSet | material_name=johnson_valleyTerrainMaterialTextureSet | internalName=johnson_valleyTerrainMaterialTextureSet
+johnson_valley.zip | material_key=rockydirt-6f8da061-85d6-4757-a5d2-2e48e209422e | material_name=rockydirt-6f8da061-85d6-4757-a5d2-2e48e209422e | internalName=rockydirt
+johnson_valley.zip | material_key=sand-8a03fd8e-628a-4c4d-9829-ad6c87bf7390 | material_name=sand-8a03fd8e-628a-4c4d-9829-ad6c87bf7390 | internalName=sand
+jungle_rock_island.zip | material_key=BeachSand-3301ba93-466c-487c-996b-e51287ff5ea4 | material_name=BeachSand-3301ba93-466c-487c-996b-e51287ff5ea4 | internalName=BeachSand
+jungle_rock_island.zip | material_key=Concrete-5c54444b-ca03-4c79-aa02-eceb8568cd75 | material_name=Concrete-5c54444b-ca03-4c79-aa02-eceb8568cd75 | internalName=Concrete
+jungle_rock_island.zip | material_key=Dirt-a44148b9-7fb6-45cc-8eb6-6761e7846b6c | material_name=Dirt-a44148b9-7fb6-45cc-8eb6-6761e7846b6c | internalName=Dirt
+jungle_rock_island.zip | material_key=Forest-05ac89eb-832f-4140-9d7f-870a059a2691 | material_name=Forest-05ac89eb-832f-4140-9d7f-870a059a2691 | internalName=Forest
+jungle_rock_island.zip | material_key=Grass-92298009-e453-4b68-b3f3-99f018066d47 | material_name=Grass-92298009-e453-4b68-b3f3-99f018066d47 | internalName=Grass
+jungle_rock_island.zip | material_key=Grass2-1cbd397c-0225-443c-a644-2ad86cbb6ee9 | material_name=Grass2-1cbd397c-0225-443c-a644-2ad86cbb6ee9 | internalName=Grass2
+jungle_rock_island.zip | material_key=JRITerrainTextureSet | material_name=JRITerrainTextureSet | internalName=JRITerrainTextureSet
+jungle_rock_island.zip | material_key=Mud-5602597f-55c3-4a33-8cfb-3770dbba86fa | material_name=Mud-5602597f-55c3-4a33-8cfb-3770dbba86fa | internalName=Mud
+jungle_rock_island.zip | material_key=Pebbles-1a2894d5-129e-4f2f-b311-ff240965862c | material_name=Pebbles-1a2894d5-129e-4f2f-b311-ff240965862c | internalName=Pebbles
+jungle_rock_island.zip | material_key=Rock-bb771e0a-1dbd-4ee1-9c4e-ae778946decc | material_name=Rock-bb771e0a-1dbd-4ee1-9c4e-ae778946decc | internalName=Rock
+jungle_rock_island.zip | material_key=Rock_cliff-afa2d2ab-7f3f-4194-a73c-128e1b62108a | material_name=Rock_cliff-afa2d2ab-7f3f-4194-a73c-128e1b62108a | internalName=Rock_cliff
+jungle_rock_island.zip | material_key=dirt_loose-8e501e5e-205a-4c52-9e06-2416a0cfb9a8 | material_name=dirt_loose-8e501e5e-205a-4c52-9e06-2416a0cfb9a8 | internalName=dirt_loose
+jungle_rock_island.zip | material_key=dirt_rocky_large-0f6ca092-c788-489b-aeeb-8283266a88a0 | material_name=dirt_rocky_large-0f6ca092-c788-489b-aeeb-8283266a88a0 | internalName=dirt_rocky_large
+jungle_rock_island.zip | material_key=forest_floor-a1bd2cff-2513-43cc-850a-0b364aa45c9e | material_name=forest_floor-a1bd2cff-2513-43cc-850a-0b364aa45c9e | internalName=forest_floor
+jungle_rock_island.zip | material_key=gravel_wet-57812c1c-ac9c-4465-be35-76a90d08c222 | material_name=gravel_wet-57812c1c-ac9c-4465-be35-76a90d08c222 | internalName=gravel_wet
+jungle_rock_island.zip | material_key=groundmodel_asphalt1-4fa85c6d-b815-4c52-8170-2c38b6d29fae | material_name=groundmodel_asphalt1-4fa85c6d-b815-4c52-8170-2c38b6d29fae | internalName=groundmodel_asphalt1
+small_island.zip | material_key=BeachSand-ce1629b6-eee3-4235-a128-a0d18db55fdd | material_name=BeachSand-ce1629b6-eee3-4235-a128-a0d18db55fdd | internalName=BeachSand
+small_island.zip | material_key=Concrete-6c08d6b7-0120-468e-a778-2af66c12c779 | material_name=Concrete-6c08d6b7-0120-468e-a778-2af66c12c779 | internalName=Concrete
+small_island.zip | material_key=Grass-b5d49fe1-c62f-4c01-977f-1d9e60ea5d21 | material_name=Grass-b5d49fe1-c62f-4c01-977f-1d9e60ea5d21 | internalName=Grass
+small_island.zip | material_key=Grass2-51578125-e9fd-4c64-9def-0eadd6df3a07 | material_name=Grass2-51578125-e9fd-4c64-9def-0eadd6df3a07 | internalName=Grass2
+small_island.zip | material_key=Mud-9b23ec82-4404-40c9-82b5-cf76c785e80b | material_name=Mud-9b23ec82-4404-40c9-82b5-cf76c785e80b | internalName=Mud
+small_island.zip | material_key=Rock-ea79d794-f667-4a56-b307-5432e0e98d62 | material_name=Rock-ea79d794-f667-4a56-b307-5432e0e98d62 | internalName=Rock
+small_island.zip | material_key=RockyDirt-b46acab1-705b-48dc-86af-e9dfbfca0f3e | material_name=RockyDirt-b46acab1-705b-48dc-86af-e9dfbfca0f3e | internalName=RockyDirt
+small_island.zip | material_key=SmallIslandTerrainTextureSet | material_name=SmallIslandTerrainTextureSet | internalName=SmallIslandTerrainTextureSet
+small_island.zip | material_key=dirt_dusty-c1be0333-ac26-4078-9d5f-35b804501c40 | material_name=dirt_dusty-c1be0333-ac26-4078-9d5f-35b804501c40 | internalName=dirt_dusty
+small_island.zip | material_key=dirt_grass-5e8ec884-b679-48f8-89f5-d37e94e9f6e6 | material_name=dirt_grass-5e8ec884-b679-48f8-89f5-d37e94e9f6e6 | internalName=dirt_grass
+small_island.zip | material_key=dirt_loose-8e501e5e-205a-4c52-9e06-2416a0cfb9a8 | material_name=dirt_loose-8e501e5e-205a-4c52-9e06-2416a0cfb9a8 | internalName=dirt_loose
+small_island.zip | material_key=dirt_rocky_large-bd1ecb5b-5f51-4856-aca2-077c94a12464 | material_name=dirt_rocky_large-bd1ecb5b-5f51-4856-aca2-077c94a12464 | internalName=dirt_rocky_large
+small_island.zip | material_key=groundmodel_asphalt1-63be3906-fd08-4df0-9876-85e652d03221 | material_name=groundmodel_asphalt1-63be3906-fd08-4df0-9876-85e652d03221 | internalName=groundmodel_asphalt1
+smallgrid.zip | material_key=test-ae3f8ff5-bef8-49f4-aa84-90f0f8d6da0e | material_name=test-ae3f8ff5-bef8-49f4-aa84-90f0f8d6da0e | internalName=test
+template.zip | material_key=BeachSand-53659627-ac50-4812-ab11-19b5872dd312 | material_name=BeachSand-53659627-ac50-4812-ab11-19b5872dd312 | internalName=BeachSand
+template.zip | material_key=Grass-c2267fe8-dfcc-419a-9227-bbee09484f00 | material_name=Grass-c2267fe8-dfcc-419a-9227-bbee09484f00 | internalName=Grass
+west_coast_usa.zip | material_key=Asphalt-dc643310-5b8f-49e3-b218-950a4c3e02d6 | material_name=Asphalt-dc643310-5b8f-49e3-b218-950a4c3e02d6 | internalName=Asphalt
+west_coast_usa.zip | material_key=BeachSand-a49964df-ad6c-42ae-a30d-69999af0d715 | material_name=BeachSand-a49964df-ad6c-42ae-a30d-69999af0d715 | internalName=BeachSand
+west_coast_usa.zip | material_key=Forest-9cd4833c-ca4d-4563-8c47-c7481f416954 | material_name=Forest-9cd4833c-ca4d-4563-8c47-c7481f416954 | internalName=Forest
+west_coast_usa.zip | material_key=Rock_cliff-7d66957c-1683-4347-9d23-7fd86a849c0c | material_name=Rock_cliff-7d66957c-1683-4347-9d23-7fd86a849c0c | internalName=Rock_cliff
+west_coast_usa.zip | material_key=asphalt_prepped-1b7d410d-8ac3-4a55-bbed-f8fe5490ef4f | material_name=asphalt_prepped-1b7d410d-8ac3-4a55-bbed-f8fe5490ef4f | internalName=asphalt_prepped
+west_coast_usa.zip | material_key=dirt-07214cf7-350c-4cfa-a4d1-3c98bae7a650 | material_name=dirt-07214cf7-350c-4cfa-a4d1-3c98bae7a650 | internalName=dirt
+west_coast_usa.zip | material_key=dirt_grass-158d8344-64ee-49bc-b883-e8fe39153ae5 | material_name=dirt_grass-158d8344-64ee-49bc-b883-e8fe39153ae5 | internalName=dirt_grass
+west_coast_usa.zip | material_key=dirt_loose-653d03ab-55f8-4b23-be82-63ab05bd87a5 | material_name=dirt_loose-653d03ab-55f8-4b23-be82-63ab05bd87a5 | internalName=dirt_loose
+west_coast_usa.zip | material_key=grass-ed220e70-afa1-4796-8ce8-7ab7ff61be74 | material_name=grass-ed220e70-afa1-4796-8ce8-7ab7ff61be74 | internalName=grass
+west_coast_usa.zip | material_key=grass2 | material_name=grass2 | internalName=grass2
+west_coast_usa.zip | material_key=grass2-abcb7417-4f6c-4d53-a226-1af7167d9c76 | material_name=grass2-abcb7417-4f6c-4d53-a226-1af7167d9c76 | internalName=grass2
+west_coast_usa.zip | material_key=gravel-bc0b8033-91be-4bba-af73-56e502ed4377 | material_name=gravel-bc0b8033-91be-4bba-af73-56e502ed4377 | internalName=gravel
+west_coast_usa.zip | material_key=west_coast_usaTerrainMaterialTextureSet | material_name=west_coast_usaTerrainMaterialTextureSet | internalName=west_coast_usaTerrainMaterialTextureSet
+
+Distinct internalName values (sorted):
+Asphalt
+Asphalt_wet
+BeachSand
+Concrete
+Concrete2
+Dirt
+Forest
+GRAVEL
+GROUNDMODEL_ASPHALT1
+Grass
+Grass2
+Grass3
+Grass4
+Gravel
+Grid
+Ice
+Mud
+Pebbles
+ROCK
+Rock
+Rock2
+Rock_cliff
+RockyDirt
+Sand
+asphalt
+asphalt2
+asphalt_prepped
+concrete
+dirt
+dirt_dusty
+dirt_grass
+dirt_loose
+dirt_loose_dusty
+dirt_rocky
+dirt_rocky_large
+dirt_sandy
+forest
+forest_floor
+grass
+grass1
+grass1-dry
+grass2
+grass3
+grass4
+gravel
+gravel_wet
+groundmodel_asphalt1
+groundmodel_asphalt_old
+ice
+marble
+mud
+rocks_large
+rockydirt
+sand
+snow
