@@ -5,7 +5,8 @@ if (args.Length < 2)
     Console.WriteLine("Usage: meta4downloader <path-to-meta4-file> <target-directory> [max-concurrent-downloads]");
     Console.WriteLine();
     Console.WriteLine("Arguments:");
-    Console.WriteLine("  <path-to-meta4-file>  Path to the .meta4 XML file");
+    Console.WriteLine("  <path-to-meta4-file>  Path to a .meta4/.metalink XML file (RFC 5854; size/hash optional)");
+    Console.WriteLine("                              or a plain text file with URLs (line-, comma- or semicolon-separated)");
     Console.WriteLine("  <target-directory>          Directory where files will be downloaded");
     Console.WriteLine("  [max-concurrent-downloads]  Maximum number of files to download simultaneously (default: 4)");
     return 1;
@@ -55,9 +56,11 @@ Console.WriteLine($"Creating target directory: {targetDirectory}");
     Console.WriteLine($"Max concurrent downloads: {maxConcurrentDownloads}");
     Console.WriteLine();
 
-    // Calculate total size
+    // Calculate total size (metalink size elements are optional)
     var totalSize = files.Sum(f => f.Size);
-    Console.WriteLine($"Total download size: {FormatBytes(totalSize)}");
+    Console.WriteLine(totalSize > 0
+        ? $"Total download size: {FormatBytes(totalSize)}"
+        : "Total download size: unknown (no sizes declared)");
     Console.WriteLine();
     Console.WriteLine("Starting downloads...");
     Console.WriteLine();

@@ -86,8 +86,10 @@ public class BiomeGenerationResult
     public int LayersGenerated { get; set; }
     public int ItemsPlaced { get; set; }
     public int ItemsRemovedBeforeRegenerate { get; set; }
-    /// <summary>Layers refused (over cap, missing material/mask, invalid zones) — details in the log.</summary>
+    /// <summary>Layers refused (over cap, missing material/mask, invalid zones).</summary>
     public int LayersSkipped { get; set; }
+    /// <summary>One human-readable reason per skipped layer — shown directly in the snackbar.</summary>
+    public List<string> SkipReasons { get; } = new();
     /// <summary>Items removed again by the automatic negative-list cleanup after generation.</summary>
     public int ItemsRemovedByCleanup { get; set; }
 }
@@ -240,9 +242,13 @@ public class BiomeService
                 context.Terrain.MaterialData, materialIndex, context.TerrainSize, context.MetersPerPixel, bands);
         }
 
-        var mask = TryLoadOsmMask(context, layer.SourceKey, $"Layer '{layer.SourceKey}'");
+        var mask = TryLoadOsmMask(context, layer.SourceKey, out var maskFailReason);
         if (mask == null)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Layer '{layer.SourceKey}': {maskFailReason}");
             return new long[layer.Zones.Count];
+        }
         return BiomeZoneBander.ComputeZoneCounts(mask, context.TerrainSize, context.MetersPerPixel, bands);
     }
 
@@ -261,19 +267,19 @@ public class BiomeService
 
             if (layer.Zones.Count == 0)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Layer '{layer.SourceKey}': no zones configured — skipped.");
-                result.LayersSkipped++;
+                SkipLayer(result, PubSubMessageType.Info,
+                    $"'{layer.SourceKey}': no zones configured.");
                 continue;
             }
 
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 $"Layer '{layer.SourceKey}': computing zone bands...");
 
-            var zonePixels = ComputeLayerZonePixels(context, layer);
+            var zonePixels = ComputeLayerZonePixels(context, layer, out var zoneSkipReason);
             if (zonePixels == null)
             {
-                result.LayersSkipped++;
+                SkipLayer(result, PubSubMessageType.Warning,
+                    zoneSkipReason ?? $"'{layer.SourceKey}': zone bands could not be computed.");
                 continue;
             }
 
@@ -292,11 +298,10 @@ public class BiomeService
             }
             if (estimatedTotal > context.Settings.MaxItemsPerLayer)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Error,
-                    $"Layer '{layer.SourceKey}': estimated {estimatedTotal:N0} items exceeds the limit of " +
-                    $"{context.Settings.MaxItemsPerLayer:N0} — not generated. Lower the brush density or " +
-                    "shrink the zones (MaxItemsPerLayer in MT_Biome/settings.json raises the limit).");
-                result.LayersSkipped++;
+                SkipLayer(result, PubSubMessageType.Error,
+                    $"'{layer.SourceKey}': estimated {estimatedTotal:N0} items exceeds the limit of " +
+                    $"{context.Settings.MaxItemsPerLayer:N0}. Lower the brush density or shrink the zones " +
+                    "(MaxItemsPerLayer in MT_Biome/settings.json raises the limit).");
                 continue;
             }
 
@@ -390,11 +395,16 @@ public class BiomeService
         {
             PubSubChannel.SendMessage(PubSubMessageType.Info,
                 "Running negative-list cleanup on the generated items...");
-            var mask = BuildNegativeMask(context);
+            var mask = BuildNegativeMask(context, out var cleanupFailReason);
             if (mask != null)
             {
                 result.ItemsRemovedByCleanup =
                     RemoveTrackedItemsOnMask(context, mask, cancellationToken).ItemsRemoved;
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Automatic negative-list cleanup did not run: {cleanupFailReason}");
             }
         }
 
@@ -411,24 +421,22 @@ public class BiomeService
     /// empty or produced no usable mask (reason already sent to the log). The session
     /// carries the mask for the optional foreign-item follow-up.
     /// </summary>
-    public BiomeCleanupSession? RunNegativeListCleanup(
+    public (BiomeCleanupSession? Session, string? FailReason) RunNegativeListCleanup(
         BiomeLevelContext context, CancellationToken cancellationToken = default)
     {
         if (!context.Settings.NegativeList.HasEntries)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                "The negative list is empty — nothing to clean up.");
-            return null;
+            return (null, "The negative list is empty — nothing to clean up.");
         }
 
-        var mask = BuildNegativeMask(context);
+        var mask = BuildNegativeMask(context, out var maskFailReason);
         if (mask == null)
-            return null;
+            return (null, maskFailReason);
 
         var result = RemoveTrackedItemsOnMask(context, mask, cancellationToken);
         BiomeManifestStore.Save(context.LevelPath, context.Manifest);
         context.Settings.Save(context.LevelPath);
-        return new BiomeCleanupSession { Mask = mask, TrackedResult = result };
+        return (new BiomeCleanupSession { Mask = mask, TrackedResult = result }, null);
     }
 
     /// <summary>
@@ -487,15 +495,18 @@ public class BiomeService
     }
 
     /// <summary>
-    /// Combined negative mask (materials OR OSM layers, buffer-expanded), or null when
-    /// nothing usable is selected — reasons go to the log.
+    /// Combined negative mask (materials OR OSM layers, buffer-expanded), or null with a
+    /// reason in <paramref name="failReason"/>. Per-entry load problems are logged as
+    /// warnings; the overall failure reason is returned so the UI can show it directly.
     /// </summary>
-    private static bool[]? BuildNegativeMask(BiomeLevelContext context)
+    private static bool[]? BuildNegativeMask(BiomeLevelContext context, out string? failReason)
     {
+        failReason = null;
         var negative = context.Settings.NegativeList;
         var size = context.TerrainSize;
         var mask = new bool[size * size];
         var sources = 0;
+        var entryProblems = new List<string>();
 
         foreach (var materialName in negative.MaterialInternalNames)
         {
@@ -506,24 +517,31 @@ public class BiomeService
             }
             else
             {
+                var problem = $"terrain material '{materialName}' not found in the .ter file";
+                entryProblems.Add(problem);
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"Negative list: terrain material '{materialName}' not found in the .ter file — ignored.");
+                    $"Negative list: {problem} — ignored.");
             }
         }
 
         foreach (var key in negative.OsmLayerKeys)
         {
-            var osmMask = TryLoadOsmMask(context, key, "Negative list");
+            var osmMask = TryLoadOsmMask(context, key, out var maskFailReason);
             if (osmMask == null)
-                continue; // already warned
+            {
+                entryProblems.Add(maskFailReason!.TrimEnd('.'));
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    $"Negative list: {maskFailReason}");
+                continue;
+            }
             BiomeCleanupMask.OrMask(mask, osmMask);
             sources++;
         }
 
         if (sources == 0)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                "Negative list: none of the selected layers could be loaded — cleanup skipped.");
+            failReason = "None of the selected negative-list layers could be loaded: " +
+                         string.Join("; ", entryProblems) + ".";
             return null;
         }
 
@@ -531,8 +549,7 @@ public class BiomeService
 
         if (BiomeCleanupMask.CountSet(mask) == 0)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Info,
-                "Negative list: the selected layers cover no terrain pixels — nothing to clean up.");
+            failReason = "The selected negative-list layers cover no terrain pixels — nothing to clean up.";
             return null;
         }
 
@@ -617,10 +634,13 @@ public class BiomeService
 
     /// <summary>
     /// Zone pixel index lists for one layer (terrain material or OSM mask region), or
-    /// null when the layer cannot be generated — the reason is already in the log.
+    /// null with a "'{layer}': ..." reason in <paramref name="skipReason"/> — the caller
+    /// logs it AND surfaces it in the UI (snackbar), so nothing is logged here.
     /// </summary>
-    private static List<int[]>? ComputeLayerZonePixels(BiomeLevelContext context, BiomeLayerSettings layer)
+    private static List<int[]>? ComputeLayerZonePixels(
+        BiomeLevelContext context, BiomeLayerSettings layer, out string? skipReason)
     {
+        skipReason = null;
         var bands = layer.Zones
             .Select(z => new BiomeZoneBandDefinition(z.DepthMeters, z.IsInterior))
             .ToList();
@@ -631,47 +651,47 @@ public class BiomeService
             {
                 if (!context.MaterialIndexByName.TryGetValue(layer.SourceKey, out var materialIndex))
                 {
-                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                        $"Layer '{layer.SourceKey}': terrain material not found in the .ter file — skipped.");
+                    skipReason = $"'{layer.SourceKey}': terrain material not found in the .ter file.";
                     return null;
                 }
                 return BiomeZoneBander.ComputeZonePixels(
                     context.Terrain.MaterialData, materialIndex, context.TerrainSize, context.MetersPerPixel, bands);
             }
 
-            var mask = TryLoadOsmMask(context, layer.SourceKey, $"Layer '{layer.SourceKey}'");
+            var mask = TryLoadOsmMask(context, layer.SourceKey, out var maskFailReason);
             if (mask == null)
+            {
+                skipReason = $"'{layer.SourceKey}': {maskFailReason}";
                 return null;
+            }
             if (BiomeOsmMaskLoader.CountInRegion(mask) == 0)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    $"Layer '{layer.SourceKey}': the OSM mask has no white pixels — nothing to place, skipped.");
+                skipReason = $"'{layer.SourceKey}': the OSM mask has no white pixels — nothing to place.";
                 return null;
             }
             return BiomeZoneBander.ComputeZonePixels(mask, context.TerrainSize, context.MetersPerPixel, bands);
         }
         catch (ArgumentException ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"Layer '{layer.SourceKey}': invalid zone configuration ({ex.Message}) — skipped.");
+            skipReason = $"'{layer.SourceKey}': invalid zone configuration ({ex.Message}).";
             return null;
         }
     }
 
     /// <summary>
     /// Loads one OSM mask PNG into terrain space (Y-flipped, holes subtracted), or null
-    /// when it is missing, mismatched or unreadable — a warning prefixed with
-    /// <paramref name="contextLabel"/> is sent.
+    /// with a plain-language reason in <paramref name="failReason"/> — callers decide
+    /// where to surface it (log, snackbar, or both).
     /// </summary>
-    private static bool[]? TryLoadOsmMask(BiomeLevelContext context, string key, string contextLabel)
+    private static bool[]? TryLoadOsmMask(BiomeLevelContext context, string key, out string? failReason)
     {
+        failReason = null;
         var info = context.OsmLayers.FirstOrDefault(o =>
             o.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
         if (info == null || !File.Exists(info.FilePath))
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"{contextLabel}: OSM mask '{key}.png' was not found under MT_TerrainGeneration — skipped. " +
-                "Re-select the level folder to refresh the available OSM layers.");
+            failReason = $"OSM mask '{key}.png' was not found under MT_TerrainGeneration. " +
+                         "Re-select the level folder to refresh the available OSM layers.";
             return null;
         }
 
@@ -682,8 +702,7 @@ public class BiomeService
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                $"{contextLabel}: could not load OSM mask '{Path.GetFileName(info.FilePath)}' ({ex.Message}) — skipped.");
+            failReason = $"could not load OSM mask '{Path.GetFileName(info.FilePath)}' ({ex.Message}).";
             return null;
         }
 
@@ -691,7 +710,7 @@ public class BiomeService
         if (holePixels > 0)
         {
             PubSubChannel.SendMessage(PubSubMessageType.Info,
-                $"{contextLabel}: {holePixels:N0} terrain-hole pixel(s) removed from the OSM mask.");
+                $"OSM mask '{key}': {holePixels:N0} terrain-hole pixel(s) removed.");
         }
         return mask;
     }
@@ -781,6 +800,13 @@ public class BiomeService
         var category = char.ToUpperInvariant(tokens[0][0]) + tokens[0][1..];
         var rest = string.Join(' ', tokens.Skip(1));
         return rest.Length > 0 ? $"{category}: {rest}{suffix}" : category + suffix;
+    }
+
+    private static void SkipLayer(BiomeGenerationResult result, PubSubMessageType messageType, string reason)
+    {
+        result.LayersSkipped++;
+        result.SkipReasons.Add(reason);
+        PubSubChannel.SendMessage(messageType, $"Layer {reason} — skipped.");
     }
 
     /// <summary>Deletes generated items for the given layer ids, or ALL generated items when null.</summary>

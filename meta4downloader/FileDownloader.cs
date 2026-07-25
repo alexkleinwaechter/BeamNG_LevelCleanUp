@@ -15,7 +15,7 @@ public class FileDownloader : IDisposable
         _targetDirectory = targetDirectory;
         _httpClient = new HttpClient
         {
-     Timeout = TimeSpan.FromMinutes(30)
+            Timeout = TimeSpan.FromMinutes(30)
         };
     }
 
@@ -23,154 +23,185 @@ public class FileDownloader : IDisposable
     {
         var targetPath = Path.Combine(_targetDirectory, file.Name);
 
-   // Check if file already exists and is valid
-  if (File.Exists(targetPath))
+        if (file.Urls.Count == 0)
         {
-      // Quick file size check first (avoid hash calculation if size doesn't match)
- var fileInfo = new FileInfo(targetPath);
-            if (fileInfo.Length != file.Size)
-  {
-         // Size mismatch, delete and re-download
-     File.Delete(targetPath);
-       }
-       else
-    {
-      // Size matches, now verify hash
-       var existingHash = await CalculateSha256Async(targetPath);
-       if (existingHash.Equals(file.Sha256Hash, StringComparison.OrdinalIgnoreCase))
- {
-         progress?.Report(new DownloadProgress
-         {
-           FileName = file.Name,
-     Status = "Skipped (already exists with valid hash)",
-  IsComplete = true
-     });
-      return true;
-          }
+            progress?.Report(new DownloadProgress
+            {
+                FileName = file.Name,
+                Status = "No download URL available",
+                IsComplete = true,
+                HasError = true
+            });
+            return false;
+        }
 
-     // File exists but hash doesn't match, delete and re-download
-        File.Delete(targetPath);
-         }
+        // Check if file already exists and is valid.
+        // Size and hash are optional in metalink files - only verify what we know.
+        if (File.Exists(targetPath))
+        {
+            if (await IsExistingFileValidAsync(targetPath, file))
+            {
+                progress?.Report(new DownloadProgress
+                {
+                    FileName = file.Name,
+                    Status = "Skipped (already exists)",
+                    IsComplete = true
+                });
+                return true;
+            }
+
+            File.Delete(targetPath);
         }
 
         try
         {
- progress?.Report(new DownloadProgress
+            progress?.Report(new DownloadProgress
             {
-      FileName = file.Name,
-        Status = "Downloading...",
-     TotalBytes = file.Size
-       });
-
-            await DownloadFileSingleThreadedAsync(file, targetPath, progress);
-
-            progress?.Report(new DownloadProgress
-         {
-     FileName = file.Name,
- Status = "Verifying hash...",
-         BytesDownloaded = file.Size,
- TotalBytes = file.Size
-  });
-
-            // Verify hash (file is now closed and can be read)
-            var downloadedHash = await CalculateSha256Async(targetPath);
-
-            if (!downloadedHash.Equals(file.Sha256Hash, StringComparison.OrdinalIgnoreCase))
-       {
-      progress?.Report(new DownloadProgress
-      {
-      FileName = file.Name,
-     Status = $"Hash mismatch! Expected: {file.Sha256Hash}, Got: {downloadedHash}",
-         IsComplete = true,
-       HasError = true
- });
-  File.Delete(targetPath);
-    return false;
-        }
-
-            progress?.Report(new DownloadProgress
-      {
                 FileName = file.Name,
-        Status = "Complete",
-     BytesDownloaded = file.Size,
-        TotalBytes = file.Size,
-  IsComplete = true
+                Status = "Downloading...",
+                TotalBytes = file.Size
             });
 
-       return true;
+            var bytesDownloaded = await DownloadFileSingleThreadedAsync(file, targetPath, progress);
+
+            // Verify hash only when the metalink provided one
+            if (!string.IsNullOrEmpty(file.Sha256Hash))
+            {
+                progress?.Report(new DownloadProgress
+                {
+                    FileName = file.Name,
+                    Status = "Verifying hash...",
+                    BytesDownloaded = bytesDownloaded,
+                    TotalBytes = bytesDownloaded
+                });
+
+                var downloadedHash = await CalculateSha256Async(targetPath);
+
+                if (!downloadedHash.Equals(file.Sha256Hash, StringComparison.OrdinalIgnoreCase))
+                {
+                    progress?.Report(new DownloadProgress
+                    {
+                        FileName = file.Name,
+                        Status = $"Hash mismatch! Expected: {file.Sha256Hash}, Got: {downloadedHash}",
+                        IsComplete = true,
+                        HasError = true
+                    });
+                    File.Delete(targetPath);
+                    return false;
+                }
+            }
+
+            progress?.Report(new DownloadProgress
+            {
+                FileName = file.Name,
+                Status = "Complete",
+                BytesDownloaded = bytesDownloaded,
+                TotalBytes = bytesDownloaded,
+                IsComplete = true
+            });
+
+            return true;
         }
-     catch (Exception ex)
+        catch (Exception ex)
         {
             progress?.Report(new DownloadProgress
-      {
-      FileName = file.Name,
-     Status = $"Error: {ex.Message}",
-          IsComplete = true,
-     HasError = true
-     });
+            {
+                FileName = file.Name,
+                Status = $"Error: {ex.Message}",
+                IsComplete = true,
+                HasError = true
+            });
 
-        if (File.Exists(targetPath))
-       {
-       File.Delete(targetPath);
- }
+            if (File.Exists(targetPath))
+            {
+                File.Delete(targetPath);
+            }
 
             return false;
         }
     }
 
-    private async Task DownloadFileSingleThreadedAsync(Meta4File file, string targetPath, IProgress<DownloadProgress>? progress)
+    private static async Task<bool> IsExistingFileValidAsync(string targetPath, Meta4File file)
     {
-        const int maxRetries = 3;
-  
-     for (int retry = 0; retry < maxRetries; retry++)
+        var fileInfo = new FileInfo(targetPath);
+
+        // Quick file size check first (avoid hash calculation if size doesn't match)
+        if (file.Size > 0 && fileInfo.Length != file.Size)
         {
-     try
-  {
-           using var response = await _httpClient.GetAsync(file.Url, HttpCompletionOption.ResponseHeadersRead);
-    response.EnsureSuccessStatusCode();
-
-     long totalBytesRead = 0;
-
-     // Download to file with proper stream disposal
-        {
-   await using var contentStream = await response.Content.ReadAsStreamAsync();
-       // Use 64KB buffer for better performance
-        await using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true);
-
-   var buffer = new byte[65536];
-    int bytesRead;
-
-    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-          {
-  await fileStream.WriteAsync(buffer, 0, bytesRead);
-           totalBytesRead += bytesRead;
-
-        progress?.Report(new DownloadProgress
-     {
-         FileName = file.Name,
-   Status = "Downloading...",
-             BytesDownloaded = totalBytesRead,
-            TotalBytes = file.Size
-      });
-       }
- } // Streams are disposed here
-           
-     // Success - break out of retry loop
-        break;
- }
-       catch (Exception ex) when (retry < maxRetries - 1 && 
-      (ex is IOException || ex is HttpRequestException || ex is TaskCanceledException))
-    {
-         // Wait before retry with exponential backoff
-    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, retry)));
-          
-          // Delete partial file if exists
-  if (File.Exists(targetPath))
-  {
-        try { File.Delete(targetPath); } catch { }
-       }
-  }
+            return false;
         }
+
+        if (!string.IsNullOrEmpty(file.Sha256Hash))
+        {
+            var existingHash = await CalculateSha256Async(targetPath);
+            return existingHash.Equals(file.Sha256Hash, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // No hash to verify against - accept any non-empty existing file
+        return fileInfo.Length > 0;
+    }
+
+    private async Task<long> DownloadFileSingleThreadedAsync(Meta4File file, string targetPath, IProgress<DownloadProgress>? progress)
+    {
+        var maxAttempts = Math.Max(3, file.Urls.Count);
+        long totalBytesRead = 0;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            // Rotate through mirror URLs across attempts
+            var url = file.Urls[attempt % file.Urls.Count];
+
+            try
+            {
+                using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                // Prefer the declared metalink size, fall back to Content-Length for progress reporting
+                var totalBytes = file.Size > 0 ? file.Size : (response.Content.Headers.ContentLength ?? 0);
+                totalBytesRead = 0;
+
+                // Download to file with proper stream disposal
+                {
+                    await using var contentStream = await response.Content.ReadAsStreamAsync();
+                    // Use 64KB buffer for better performance
+                    await using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, true);
+
+                    var buffer = new byte[65536];
+                    int bytesRead;
+
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer, 0, bytesRead);
+                        totalBytesRead += bytesRead;
+
+                        progress?.Report(new DownloadProgress
+                        {
+                            FileName = file.Name,
+                            Status = "Downloading...",
+                            BytesDownloaded = totalBytesRead,
+                            TotalBytes = totalBytes
+                        });
+                    }
+                } // Streams are disposed here
+
+                // Success - break out of retry loop
+                return totalBytesRead;
+            }
+            catch (Exception ex) when (attempt < maxAttempts - 1 &&
+                (ex is IOException || ex is HttpRequestException || ex is TaskCanceledException))
+            {
+                // Wait before retry with exponential backoff
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+
+                // Delete partial file if exists
+                if (File.Exists(targetPath))
+                {
+                    try { File.Delete(targetPath); } catch { }
+                }
+            }
+        }
+
+        return totalBytesRead;
     }
 
     private static async Task<string> CalculateSha256Async(string filePath)
@@ -190,7 +221,7 @@ public class FileDownloader : IDisposable
 
 public class DownloadProgress
 {
- public string FileName { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public long BytesDownloaded { get; set; }
     public long TotalBytes { get; set; }

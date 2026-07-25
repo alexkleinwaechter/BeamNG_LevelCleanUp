@@ -195,13 +195,22 @@ public class OsmMaterialAutoAssignConfig
                 },
                 new PolygonMaterialRule
                 {
+                    Name = "Water",
+                    MaterialNameContains = { "rocks_large" },
+                    OsmTypes =
+                    {
+                        new OsmTypeReference { Category = "natural", SubCategory = "water" },
+                        new OsmTypeReference { Category = "natural", SubCategory = "scree" },
+                    }
+                },                
+                new PolygonMaterialRule
+                {
                     Name = "Rock",
                     MaterialNameContains = { "rock" },
-                    MaterialNameExcludes = { "dirt" },
+                    MaterialNameExcludes = { "dirt", "rocks_large" },
                     OsmTypes =
                     {
                         new OsmTypeReference { Category = "natural", SubCategory = "bare_rock" },
-                        new OsmTypeReference { Category = "natural", SubCategory = "scree" },
                         new OsmTypeReference { Category = "natural", SubCategory = "rock" }
                     }
                 },
