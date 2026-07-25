@@ -122,6 +122,13 @@ public class TerrainCreationParameters
     public int XyzEpsgCode { get; set; } = 25832;
 
     /// <summary>
+    ///     Optional EPSG code override for GeoTiffPath / GeoTiffDirectory sources whose embedded CRS
+    ///     cannot be resolved (e.g. an engineering CRS carrying only a citation name like "Lambert 93").
+    ///     Null = use the CRS embedded in the file(s).
+    /// </summary>
+    public int? GeoTiffEpsgOverride { get; set; }
+
+    /// <summary>
     ///     Geographic bounding box of the terrain.
     ///     Automatically populated when importing from GeoTIFF.
     ///     Can be used for OSM Overpass API queries to fetch roads, buildings, etc.

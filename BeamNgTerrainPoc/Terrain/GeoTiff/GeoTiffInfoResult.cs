@@ -56,9 +56,16 @@ public class GeoTiffInfoResult
     public double? MaxElevation { get; init; }
 
     /// <summary>
+    /// Whether the WGS84 bounding box could not be derived from the file's CRS metadata
+    /// (missing CRS, engineering/local CRS with only a citation name, or failed transformation).
+    /// When true, the user should supply the EPSG code manually.
+    /// </summary>
+    public bool NeedsEpsgOverride { get; init; }
+
+    /// <summary>
     /// Whether the GeoTIFF is in a geographic (lat/lon) coordinate system.
     /// </summary>
-    public bool IsGeographic => Wgs84BoundingBox != null && 
+    public bool IsGeographic => Wgs84BoundingBox != null &&
                                  BoundingBox.MinLongitude == Wgs84BoundingBox.MinLongitude;
 
     /// <summary>
@@ -124,7 +131,7 @@ public class GeoTiffInfoResult
     /// Gets a description of the GeoTIFF's real-world size based on its native DEM resolution.
     /// </summary>
     /// <param name="targetTerrainSize">Unused. Kept for API compatibility.</param>
-    /// <returns>Human-readable size description (e.g., "2.0 km × 2.0 km")</returns>
+    /// <returns>Human-readable size description (e.g., "2.0 km ï¿½ 2.0 km")</returns>
     public string? GetRealWorldSizeDescription(int targetTerrainSize = 0)
     {
         var mpp = CalculateMetersPerPixel();
@@ -135,9 +142,9 @@ public class GeoTiffInfoResult
         var totalHeightMeters = mpp.Value * Height;
 
         if (totalWidthMeters >= 1000 || totalHeightMeters >= 1000)
-            return $"{totalWidthMeters / 1000:F1} km × {totalHeightMeters / 1000:F1} km";
+            return $"{totalWidthMeters / 1000:F1} km ï¿½ {totalHeightMeters / 1000:F1} km";
         else
-            return $"{totalWidthMeters:F0} m × {totalHeightMeters:F0} m";
+            return $"{totalWidthMeters:F0} m ï¿½ {totalHeightMeters:F0} m";
     }
 
     /// <summary>

@@ -15,18 +15,20 @@ public class GeoTiffMetadataService
     /// <summary>
     ///     Reads GeoTIFF metadata from a single file.
     /// </summary>
-    public async Task<GeoTiffMetadataResult> ReadFromFileAsync(string geoTiffPath)
+    /// <param name="geoTiffPath">Path to the GeoTIFF file</param>
+    /// <param name="epsgOverride">Optional EPSG code to use instead of the file's embedded CRS</param>
+    public async Task<GeoTiffMetadataResult> ReadFromFileAsync(string geoTiffPath, int? epsgOverride = null)
     {
         return await Task.Run(() =>
         {
             var reader = new GeoTiffReader();
 
             // Validate first
-            var validationResult = reader.ValidateGeoTiff(geoTiffPath);
+            var validationResult = reader.ValidateGeoTiff(geoTiffPath, epsgOverride);
             LogValidationResult(validationResult);
 
             // Read extended info
-            var info = reader.GetGeoTiffInfoExtended(geoTiffPath);
+            var info = reader.GetGeoTiffInfoExtended(geoTiffPath, epsgOverride);
             var suggestedTerrainSize = GetNearestPowerOfTwo(Math.Max(info.Width, info.Height));
 
             LogMetadataInfo(info, suggestedTerrainSize);
@@ -45,7 +47,8 @@ public class GeoTiffMetadataService
                 SuggestedTerrainSize = suggestedTerrainSize,
                 CanFetchOsmData = validationResult.CanFetchOsmData,
                 OsmBlockedReason = validationResult.OsmBlockedReason,
-                ValidationResult = validationResult
+                ValidationResult = validationResult,
+                NeedsEpsgOverride = info.NeedsEpsgOverride
             };
         });
     }
@@ -53,7 +56,11 @@ public class GeoTiffMetadataService
     /// <summary>
     ///     Reads GeoTIFF metadata from a directory of tiles.
     /// </summary>
-    public async Task<GeoTiffMetadataResult> ReadFromDirectoryAsync(string geoTiffDirectory, IProgress<string>? progress = null)
+    /// <param name="geoTiffDirectory">Directory containing GeoTIFF tiles</param>
+    /// <param name="progress">Optional progress reporter for UI feedback</param>
+    /// <param name="epsgOverride">Optional EPSG code to use instead of the tiles' embedded CRS</param>
+    public async Task<GeoTiffMetadataResult> ReadFromDirectoryAsync(string geoTiffDirectory,
+        IProgress<string>? progress = null, int? epsgOverride = null)
     {
         return await Task.Run(() =>
         {
@@ -62,7 +69,7 @@ public class GeoTiffMetadataService
             GeoTiffDirectoryInfoResult dirInfo;
             try
             {
-                dirInfo = reader.GetGeoTiffDirectoryInfoExtended(geoTiffDirectory, progress);
+                dirInfo = reader.GetGeoTiffDirectoryInfoExtended(geoTiffDirectory, progress, epsgOverride);
             }
             catch (InvalidOperationException ex)
             {
@@ -107,7 +114,8 @@ public class GeoTiffMetadataService
                 CanFetchOsmData = dirInfo.CanFetchOsmData,
                 OsmBlockedReason = dirInfo.OsmBlockedReason,
                 ValidationResult = dirInfo.ValidationResult,
-                TileBounds = tileBounds
+                TileBounds = tileBounds,
+                NeedsEpsgOverride = dirInfo.NeedsEpsgOverride
             };
         });
     }
@@ -179,7 +187,8 @@ public class GeoTiffMetadataService
         var inputFiles = Directory.GetFiles(sourceDirectory)
             .Where(f => f.EndsWith(".tif", StringComparison.OrdinalIgnoreCase) ||
                         f.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase) ||
-                        f.EndsWith(".geotiff", StringComparison.OrdinalIgnoreCase))
+                        f.EndsWith(".geotiff", StringComparison.OrdinalIgnoreCase) ||
+                        f.EndsWith(".asc", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f)
             .ToArray();
 
@@ -282,16 +291,18 @@ public class GeoTiffMetadataService
     /// </summary>
     public async Task<string> CombineAndCropDirectAsync(
         string sourceDirectory,
-        int offsetX, int offsetY, int cropWidth, int cropHeight)
+        int offsetX, int offsetY, int cropWidth, int cropHeight,
+        int? epsgOverride = null)
     {
         var inputFiles = Directory.GetFiles(sourceDirectory)
             .Where(f => f.EndsWith(".tif", StringComparison.OrdinalIgnoreCase) ||
                         f.EndsWith(".tiff", StringComparison.OrdinalIgnoreCase) ||
-                        f.EndsWith(".geotiff", StringComparison.OrdinalIgnoreCase))
+                        f.EndsWith(".geotiff", StringComparison.OrdinalIgnoreCase) ||
+                        f.EndsWith(".asc", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f)
             .ToArray();
 
-        return await CombineAndCropDirectAsync(inputFiles, offsetX, offsetY, cropWidth, cropHeight);
+        return await CombineAndCropDirectAsync(inputFiles, offsetX, offsetY, cropWidth, cropHeight, epsgOverride);
     }
 
     /// <summary>
@@ -299,7 +310,8 @@ public class GeoTiffMetadataService
     /// </summary>
     public async Task<string> CombineAndCropDirectAsync(
         string[] inputFiles,
-        int offsetX, int offsetY, int cropWidth, int cropHeight)
+        int offsetX, int offsetY, int cropWidth, int cropHeight,
+        int? epsgOverride = null)
     {
         var outputPath = Path.Combine(Path.GetTempPath(), $"cropped_geotiff_{Guid.NewGuid():N}.tif");
 
@@ -308,9 +320,13 @@ public class GeoTiffMetadataService
 
         await Task.Run(() =>
         {
+            var overrideProjection = epsgOverride.HasValue
+                ? GeoTiffReader.GetProjectionWktFromEpsg(epsgOverride.Value)
+                : null;
+
             var combiner = new GeoTiffCombiner();
             combiner.CombineAndCropDirect(inputFiles.ToList(), outputPath,
-                offsetX, offsetY, cropWidth, cropHeight);
+                offsetX, offsetY, cropWidth, cropHeight, overrideProjection);
         });
 
         var fileSize = new FileInfo(outputPath).Length / (1024.0 * 1024.0);
@@ -352,9 +368,11 @@ public class GeoTiffMetadataService
     /// <param name="offsetY">Y offset in pixels from the top edge</param>
     /// <param name="cropWidth">Width of the crop region in pixels</param>
     /// <param name="cropHeight">Height of the crop region in pixels</param>
+    /// <param name="epsgOverride">Optional EPSG code to write instead of the source's embedded CRS</param>
     /// <returns>Path to the cropped GeoTIFF temp file</returns>
     public async Task<string> CropGeoTiffToFileAsync(
-        string sourceGeoTiffPath, int offsetX, int offsetY, int cropWidth, int cropHeight)
+        string sourceGeoTiffPath, int offsetX, int offsetY, int cropWidth, int cropHeight,
+        int? epsgOverride = null)
     {
         var outputPath = Path.Combine(Path.GetTempPath(), $"cropped_geotiff_{Guid.NewGuid():N}.tif");
 
@@ -372,7 +390,9 @@ public class GeoTiffMetadataService
             var sourceGeoTransform = new double[6];
             sourceDataset.GetGeoTransform(sourceGeoTransform);
 
-            var projection = sourceDataset.GetProjection();
+            var projection = epsgOverride.HasValue
+                ? GeoTiffReader.GetProjectionWktFromEpsg(epsgOverride.Value)
+                : sourceDataset.GetProjection();
             var bandCount = sourceDataset.RasterCount;
             var dataType = sourceDataset.GetRasterBand(1).DataType;
 
@@ -394,12 +414,20 @@ public class GeoTiffMetadataService
 
             if (!string.IsNullOrEmpty(projection))
                 outputDataset.SetProjection(projection);
+            else
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Reduced GeoTIFF gets NO projection - the source file has no embedded CRS and no EPSG override was provided.");
 
-            // Copy each band from the crop region
+            // Copy each band from the crop region (preserving the nodata value — losing it would
+            // turn nodata pixels like RGE ALTI's -99999 sea areas into "real" elevations)
             for (var bandIndex = 1; bandIndex <= bandCount; bandIndex++)
             {
                 var inputBand = sourceDataset.GetRasterBand(bandIndex);
                 var outputBand = outputDataset.GetRasterBand(bandIndex);
+
+                inputBand.GetNoDataValue(out var nodataValue, out var hasNodata);
+                if (hasNodata != 0)
+                    outputBand.SetNoDataValue(nodataValue);
 
                 var buffer = new double[cropWidth * cropHeight];
                 inputBand.ReadRaster(offsetX, offsetY, cropWidth, cropHeight,
@@ -416,6 +444,20 @@ public class GeoTiffMetadataService
             $"GeoTIFF reduced to {cropWidth}x{cropHeight}px ({fileSize:F1} MB)");
 
         return outputPath;
+    }
+
+    /// <summary>
+    ///     Reads only the embedded projection WKT of a raster file.
+    ///     Returns null/empty when the file carries no CRS information.
+    /// </summary>
+    public async Task<string?> GetProjectionAsync(string geoTiffPath)
+    {
+        return await Task.Run(() =>
+        {
+            GeoTiffReader.InitializeGdal();
+            using var dataset = Gdal.Open(geoTiffPath, Access.GA_ReadOnly);
+            return dataset?.GetProjection();
+        });
     }
 
     /// <summary>
@@ -640,5 +682,11 @@ public class GeoTiffMetadataService
         public string? OsmBlockedReason { get; init; }
         public GeoTiffValidationResult? ValidationResult { get; init; }
         public List<TileBoundsInfo>? TileBounds { get; init; }
+
+        /// <summary>
+        ///     Whether the WGS84 bounding box could not be derived from the source's CRS metadata.
+        ///     When true, the user should supply an EPSG code manually.
+        /// </summary>
+        public bool NeedsEpsgOverride { get; init; }
     }
 }

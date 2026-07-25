@@ -104,6 +104,7 @@
                                        XyzPath="@_state.XyzPath"
                                        XyzFilePaths="@_state.XyzFilePaths"
                                        XyzEpsgCode="@_xyzEpsgCode"
+                                       GeoTiffEpsgOverride="@_state.GeoTiffEpsgOverride"
                                        CachedCombinedGeoTiffPath="@_cachedCombinedGeoTiffPath"
                                        UpdateTerrainBlock="@_updateTerrainBlock"
                                        EnableCrossMaterialHarmonization="@_enableCrossMaterialHarmonization"
@@ -191,7 +192,7 @@
                                             <strong>Select Folder:</strong> Import all elevation tiles from a directory.
                                         </MudText>
                                         <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
-                                            Supported formats: GeoTIFF (.tif, .tiff), XYZ ASCII (.xyz, .txt), PNG heightmap (.png), ZIP archive (.zip)
+                                            Supported formats: GeoTIFF (.tif, .tiff), ESRI ASCII Grid (.asc), XYZ ASCII (.xyz, .txt), PNG heightmap (.png), ZIP archive (.zip)
                                         </MudText>
                                     </MudPaper>
                                 }
@@ -250,7 +251,7 @@
                                             </MudButton>
                                         </div>
 
-                                        @* XYZ EPSG Code Input *@
+                                        @* EPSG Code Input — XYZ files (no embedded CRS) and GeoTIFFs whose embedded CRS is unusable *@
                                         @if (_elevationImportResult.NeedsEpsgCode)
                                         {
                                             <MudDivider Class="my-3" />

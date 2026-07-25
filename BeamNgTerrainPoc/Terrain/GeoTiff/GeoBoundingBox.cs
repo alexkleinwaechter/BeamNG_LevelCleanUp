@@ -175,14 +175,26 @@ public class GeoBoundingBox
     /// </summary>
     /// <param name="projectedBbox">The bounding box in the source projection.</param>
     /// <param name="sourceProjectionWkt">The WKT string of the source projection.</param>
+    /// <param name="quiet">
+    ///     When true, failures go to the file log only (no UI error). Use for per-tile calls in
+    ///     bulk scans — a single bad tile among thousands must not flood the UI; the combined
+    ///     result decides whether the user is asked to act.
+    /// </param>
     /// <returns>A new bounding box in WGS84 coordinates, or null if transformation failed.</returns>
-    public static GeoBoundingBox? TransformToWgs84(GeoBoundingBox projectedBbox, string sourceProjectionWkt)
+    public static GeoBoundingBox? TransformToWgs84(GeoBoundingBox projectedBbox, string sourceProjectionWkt,
+        bool quiet = false)
     {
         if (string.IsNullOrEmpty(sourceProjectionWkt))
         {
-            TerrainLogger.Warning("Cannot transform coordinates: source projection is empty");
+            if (quiet)
+                TerrainCreationLogger.InfoFileOnlyOrQueue("Cannot transform coordinates: source projection is empty");
+            else
+                TerrainLogger.Warning("Cannot transform coordinates: source projection is empty");
             return null;
         }
+
+        // ImportFromWkt(ref ...) consumes/mutates the string — keep the original for logging
+        var originalWkt = sourceProjectionWkt;
 
         try
         {
@@ -236,7 +248,11 @@ public class GeoBoundingBox
             // Validate the result
             if (!transformedBbox.IsValidWgs84)
             {
-                TerrainLogger.Warning($"Transformed coordinates are outside valid WGS84 range: {transformedBbox}");
+                if (quiet)
+                    TerrainCreationLogger.InfoFileOnlyOrQueue(
+                        $"Transformed coordinates are outside valid WGS84 range: {transformedBbox}");
+                else
+                    TerrainLogger.Warning($"Transformed coordinates are outside valid WGS84 range: {transformedBbox}");
                 return null;
             }
 
@@ -244,9 +260,30 @@ public class GeoBoundingBox
         }
         catch (Exception ex)
         {
-            TerrainLogger.Error($"Coordinate transformation failed: {ex.Message}");
+            // PROJ error messages embed the full CRS definition (PROJJSON) — far too long for a
+            // snackbar. Show a short, actionable message and put the full details in the log file.
+            if (!quiet)
+            {
+                if (ex.Message.Contains("Cannot find coordinate operations", StringComparison.OrdinalIgnoreCase))
+                    TerrainLogger.Error(
+                        "Coordinate transformation failed: no operation exists from the file's coordinate system " +
+                        "to WGS84 — the CRS definition is incomplete (engineering/local CRS). " +
+                        "Enter the EPSG code manually. Full details are in the elevation import log.");
+                else
+                    TerrainLogger.Error(
+                        $"Coordinate transformation failed: {Truncate(ex.Message, 200)} " +
+                        "(full details in the elevation import log)");
+            }
+
+            TerrainCreationLogger.InfoFileOnlyOrQueue($"Coordinate transformation failure: {ex.Message}");
+            TerrainCreationLogger.InfoFileOnlyOrQueue($"Source projection WKT: {originalWkt}");
             return null;
         }
+    }
+
+    private static string Truncate(string text, int maxLength)
+    {
+        return text.Length <= maxLength ? text : text[..maxLength] + "…";
     }
 
     /// <summary>

@@ -92,6 +92,47 @@ public static class AppPaths
         if (cleanupOnStartup)
         {
             CleanupTempFoldersQuietly();
+            CleanupStaleGeoTiffWorkFiles();
+        }
+    }
+
+    /// <summary>
+    /// Deletes GeoTIFF work files this app writes to the system temp folder (reduce/combine
+    /// outputs like cropped_geotiff_{guid}.tif). They are referenced only by in-memory page
+    /// state, so files from previous sessions are orphans that accumulate gigabytes — but
+    /// keep anything younger than a day in case a second app instance is running.
+    /// </summary>
+    private static void CleanupStaleGeoTiffWorkFiles()
+    {
+        try
+        {
+            var cutoff = DateTime.UtcNow.AddHours(-24);
+            var tempDir = Path.GetTempPath();
+
+            foreach (var pattern in new[] { "cropped_geotiff_*.tif", "combined_*.tif" })
+            foreach (var file in Directory.EnumerateFiles(tempDir, pattern))
+            {
+                try
+                {
+                    // Only touch our own GUID-named work files (cropped_geotiff_<32 hex>,
+                    // combined_<32 hex>, combined_xyz_<32 hex>)
+                    var name = Path.GetFileNameWithoutExtension(file);
+                    var guidPart = name[(name.LastIndexOf('_') + 1)..];
+                    if (guidPart.Length != 32 || !guidPart.All(Uri.IsHexDigit))
+                        continue;
+
+                    if (File.GetLastWriteTimeUtc(file) < cutoff)
+                        File.Delete(file);
+                }
+                catch
+                {
+                    // Locked or already gone - ignore
+                }
+            }
+        }
+        catch
+        {
+            // Cleanup must never block startup
         }
     }
 

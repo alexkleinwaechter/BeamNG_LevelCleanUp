@@ -1100,9 +1100,10 @@ public partial class GenerateTerrain : IDisposable
             GeoTiffMetadataService.GeoTiffMetadataResult? result = null;
 
             if (!string.IsNullOrEmpty(_geoTiffPath) && File.Exists(_geoTiffPath))
-                result = await _geoTiffService.ReadFromFileAsync(_geoTiffPath);
+                result = await _geoTiffService.ReadFromFileAsync(_geoTiffPath, _state.GeoTiffEpsgOverride);
             else if (!string.IsNullOrEmpty(_geoTiffDirectory) && Directory.Exists(_geoTiffDirectory))
-                result = await _geoTiffService.ReadFromDirectoryAsync(_geoTiffDirectory, tileProgress);
+                result = await _geoTiffService.ReadFromDirectoryAsync(_geoTiffDirectory, tileProgress,
+                    _state.GeoTiffEpsgOverride);
             else if (_state.XyzFilePaths is { Length: > 1 })
                 result = await _geoTiffService.ReadFromXyzFilesAsync(_state.XyzFilePaths, _xyzEpsgCode, tileProgress);
             else if (_state.XyzFilePaths is { Length: 1 })
@@ -1152,10 +1153,30 @@ public partial class GenerateTerrain : IDisposable
             // Log scale information
             LogScaleInformation(result);
 
+            // GeoTIFF with unresolvable CRS: surface the EPSG input (same field the XYZ flow uses)
+            var isGeoTiffSource = _heightmapSourceType is HeightmapSourceType.GeoTiffFile
+                or HeightmapSourceType.GeoTiffDirectory;
+            if (isGeoTiffSource && _elevationImportResult != null &&
+                (result.NeedsEpsgOverride || _state.GeoTiffEpsgOverride.HasValue))
+            {
+                _elevationImportResult.NeedsEpsgCode = true;
+                if (_state.GeoTiffEpsgOverride.HasValue)
+                    _xyzEpsgCode = _state.GeoTiffEpsgOverride.Value;
+            }
+
             var formatLabel = _heightmapSourceType == HeightmapSourceType.XyzFile ? "XYZ" : "GeoTIFF";
-            finalMessage = $"{formatLabel} loaded: {result.OriginalWidth}×{result.OriginalHeight}px, " +
-                           $"elevation {_geoTiffMinElevation:F0}m – {_geoTiffMaxElevation:F0}m";
-            finalSeverity = Severity.Success;
+            if (isGeoTiffSource && result.NeedsEpsgOverride)
+            {
+                finalMessage = "The file's coordinate system could not be resolved. " +
+                               "Enter its EPSG code manually (e.g. 2154 for RGF93 / Lambert-93) to enable OSM features.";
+                finalSeverity = Severity.Warning;
+            }
+            else
+            {
+                finalMessage = $"{formatLabel} loaded: {result.OriginalWidth}×{result.OriginalHeight}px, " +
+                               $"elevation {_geoTiffMinElevation:F0}m – {_geoTiffMaxElevation:F0}m";
+                finalSeverity = Severity.Success;
+            }
         }
         catch (Exception ex)
         {
@@ -1264,8 +1285,9 @@ public partial class GenerateTerrain : IDisposable
         {
             using var dialog = new OpenFileDialog();
             dialog.Filter =
-                "Elevation Files (*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.png;*.zip)|*.tif;*.tiff;*.geotiff;*.xyz;*.txt;*.png;*.zip|" +
+                "Elevation Files (*.tif;*.tiff;*.geotiff;*.asc;*.xyz;*.txt;*.png;*.zip)|*.tif;*.tiff;*.geotiff;*.asc;*.xyz;*.txt;*.png;*.zip|" +
                 "GeoTIFF (*.tif;*.tiff;*.geotiff)|*.tif;*.tiff;*.geotiff|" +
+                "ESRI ASCII Grid (*.asc)|*.asc|" +
                 "XYZ ASCII (*.xyz;*.txt)|*.xyz;*.txt|" +
                 "PNG Heightmap (*.png)|*.png|" +
                 "ZIP Archive (*.zip)|*.zip|" +
@@ -1370,6 +1392,7 @@ public partial class GenerateTerrain : IDisposable
         _geoTiffPath = null;
         _geoTiffDirectory = null;
         _state.XyzPath = null;
+        _state.GeoTiffEpsgOverride = null;
 
         // Set source type and paths based on detected format
         switch (result.SourceType)
@@ -1382,11 +1405,13 @@ public partial class GenerateTerrain : IDisposable
             case ElevationSourceType.GeoTiffSingle:
                 _heightmapSourceType = HeightmapSourceType.GeoTiffFile;
                 _geoTiffPath = result.ResolvedGeoTiffPath;
+                ApplyGeoTiffEpsgFromImport(result);
                 break;
 
             case ElevationSourceType.GeoTiffMultiple:
                 _heightmapSourceType = HeightmapSourceType.GeoTiffDirectory;
                 _geoTiffDirectory = result.ResolvedGeoTiffDirectory;
+                ApplyGeoTiffEpsgFromImport(result);
                 break;
 
             case ElevationSourceType.XyzFile:
@@ -1420,13 +1445,31 @@ public partial class GenerateTerrain : IDisposable
         var message = result.SourceType switch
         {
             ElevationSourceType.Png => $"PNG heightmap loaded: {result.FileNames[0]}",
-            ElevationSourceType.GeoTiffSingle => $"GeoTIFF loaded: {result.FileNames[0]}",
-            ElevationSourceType.GeoTiffMultiple => $"GeoTIFF tiles loaded: {result.FileCount} files",
+            ElevationSourceType.GeoTiffSingle => result.DetectedEpsgCode.HasValue
+                ? $"GeoTIFF loaded: {result.FileNames[0]} (EPSG:{result.DetectedEpsgCode} auto-detected)"
+                : $"GeoTIFF loaded: {result.FileNames[0]}",
+            ElevationSourceType.GeoTiffMultiple => result.DetectedEpsgCode.HasValue
+                ? $"GeoTIFF tiles loaded: {result.FileCount} files (EPSG:{result.DetectedEpsgCode} auto-detected)"
+                : $"GeoTIFF tiles loaded: {result.FileCount} files",
             ElevationSourceType.XyzFile => $"XYZ file loaded: {result.FileNames[0]} (EPSG:{result.EpsgCode})",
             ElevationSourceType.XyzMultiple => $"XYZ tiles loaded: {result.FileCount} files (EPSG:{result.EpsgCode})",
             _ => "Elevation data loaded"
         };
         Snackbar.Add(message, Severity.Success);
+    }
+
+    /// <summary>
+    ///     Applies the EPSG code from a GeoTIFF import whose embedded CRS was unusable:
+    ///     an auto-detected (or previously entered) code becomes the active override used by
+    ///     metadata reads and terrain generation.
+    /// </summary>
+    private void ApplyGeoTiffEpsgFromImport(ElevationImportResult result)
+    {
+        if (result.NeedsEpsgCode && result.EpsgCode > 0)
+        {
+            _state.GeoTiffEpsgOverride = result.EpsgCode;
+            _xyzEpsgCode = result.EpsgCode;
+        }
     }
 
     /// <summary>
@@ -1462,6 +1505,7 @@ public partial class GenerateTerrain : IDisposable
         _geoTiffDirectory = null;
         _state.XyzPath = null;
         _state.XyzFilePaths = null;
+        _state.GeoTiffEpsgOverride = null;
 
         // Clear geo metadata
         ClearGeoMetadata();
@@ -1492,6 +1536,12 @@ public partial class GenerateTerrain : IDisposable
         {
             // Update the import result's EPSG code
             _elevationImportResult.EpsgCode = _xyzEpsgCode;
+
+            // GeoTIFF with unresolvable CRS: remember the override so metadata reads and
+            // terrain generation use it in place of the file's embedded CRS
+            if (_elevationImportResult.SourceType is ElevationSourceType.GeoTiffSingle
+                or ElevationSourceType.GeoTiffMultiple)
+                _state.GeoTiffEpsgOverride = _xyzEpsgCode;
 
             // Re-read metadata with new EPSG
             var updatedResult =
@@ -1544,6 +1594,7 @@ public partial class GenerateTerrain : IDisposable
     {
         return _xyzEpsgCode switch
         {
+            2154 => "RGF93 / Lambert-93 (France)",
             25832 => "ETRS89 / UTM zone 32N (Germany)",
             25833 => "ETRS89 / UTM zone 33N (Eastern Germany)",
             32632 => "WGS 84 / UTM zone 32N",
@@ -1625,15 +1676,27 @@ public partial class GenerateTerrain : IDisposable
         {
             string croppedPath;
 
+            // File-only diagnostics (drained into the next import/generation log): which branch
+            // ran and whether the EPSG override was still set at reduce time — needed to diagnose
+            // reduced files that come out without a CRS.
+            TerrainCreationLogger.InfoFileOnlyOrQueue(
+                $"[REDUCE] start: sourceType={_heightmapSourceType}, " +
+                $"epsgOverride={(_state.GeoTiffEpsgOverride?.ToString() ?? "none")}, " +
+                $"cropOffset=({_cropResult.OffsetX},{_cropResult.OffsetY}), " +
+                $"cropSize={_cropResult.CropWidth}x{_cropResult.CropHeight}");
+
             if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
             {
                 // Single file: crop directly
                 if (string.IsNullOrEmpty(_geoTiffPath) || !File.Exists(_geoTiffPath))
                     return;
+                TerrainCreationLogger.InfoFileOnlyOrQueue(
+                    $"[REDUCE] branch=single-file, source={_geoTiffPath}");
                 croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
                     _geoTiffPath,
                     _cropResult.OffsetX, _cropResult.OffsetY,
-                    _cropResult.CropWidth, _cropResult.CropHeight);
+                    _cropResult.CropWidth, _cropResult.CropHeight,
+                    _state.GeoTiffEpsgOverride);
             }
             else if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
             {
@@ -1644,15 +1707,26 @@ public partial class GenerateTerrain : IDisposable
                 // Filter to only overlapping tiles if bounds are available
                 var filteredTiles = FilterOverlappingTiles(_cropResult);
                 if (filteredTiles != null)
+                {
+                    TerrainCreationLogger.InfoFileOnlyOrQueue(
+                        $"[REDUCE] branch=directory-filtered, tiles={filteredTiles.Value.Files.Length}, " +
+                        $"dir={_geoTiffDirectory}");
                     croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
                         filteredTiles.Value.Files,
                         filteredTiles.Value.OffsetX, filteredTiles.Value.OffsetY,
-                        _cropResult.CropWidth, _cropResult.CropHeight);
+                        _cropResult.CropWidth, _cropResult.CropHeight,
+                        _state.GeoTiffEpsgOverride);
+                }
                 else
+                {
+                    TerrainCreationLogger.InfoFileOnlyOrQueue(
+                        $"[REDUCE] branch=directory-full, dir={_geoTiffDirectory}");
                     croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
                         _geoTiffDirectory,
                         _cropResult.OffsetX, _cropResult.OffsetY,
-                        _cropResult.CropWidth, _cropResult.CropHeight);
+                        _cropResult.CropWidth, _cropResult.CropHeight,
+                        _state.GeoTiffEpsgOverride);
+                }
             }
             else if (_heightmapSourceType == HeightmapSourceType.XyzFile)
             {
@@ -1661,20 +1735,30 @@ public partial class GenerateTerrain : IDisposable
                     // Multi-XYZ: filter to overlapping tiles, then combine and crop
                     var filteredXyz = FilterOverlappingTiles(_cropResult);
                     if (filteredXyz != null)
+                    {
+                        TerrainCreationLogger.InfoFileOnlyOrQueue(
+                            $"[REDUCE] branch=xyz-filtered, tiles={filteredXyz.Value.Files.Length}, epsg={_xyzEpsgCode}");
                         croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
                             filteredXyz.Value.Files, _xyzEpsgCode,
                             filteredXyz.Value.OffsetX, filteredXyz.Value.OffsetY,
                             _cropResult.CropWidth, _cropResult.CropHeight);
+                    }
                     else
+                    {
+                        TerrainCreationLogger.InfoFileOnlyOrQueue(
+                            $"[REDUCE] branch=xyz-all, tiles={_state.XyzFilePaths.Length}, epsg={_xyzEpsgCode}");
                         croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
                             _state.XyzFilePaths, _xyzEpsgCode,
                             _cropResult.OffsetX, _cropResult.OffsetY,
                             _cropResult.CropWidth, _cropResult.CropHeight);
+                    }
                 }
                 else if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
                          File.Exists(_cachedCombinedGeoTiffPath))
                 {
                     // Single XYZ already converted: crop the cached file
+                    TerrainCreationLogger.InfoFileOnlyOrQueue(
+                        $"[REDUCE] branch=xyz-cached, source={_cachedCombinedGeoTiffPath}");
                     croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
                         _cachedCombinedGeoTiffPath,
                         _cropResult.OffsetX, _cropResult.OffsetY,
@@ -1683,6 +1767,8 @@ public partial class GenerateTerrain : IDisposable
                 else if (!string.IsNullOrEmpty(_state.XyzPath))
                 {
                     // Single XYZ, no cached GeoTIFF — combine-and-crop directly
+                    TerrainCreationLogger.InfoFileOnlyOrQueue(
+                        $"[REDUCE] branch=xyz-single, source={_state.XyzPath}, epsg={_xyzEpsgCode}");
                     croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
                         new[] { _state.XyzPath }, _xyzEpsgCode,
                         _cropResult.OffsetX, _cropResult.OffsetY,
@@ -1714,6 +1800,13 @@ public partial class GenerateTerrain : IDisposable
                 }
             }
 
+            // Verify the reduced file actually carries a CRS before treating it as self-contained
+            var reducedProjection = await _geoTiffService.GetProjectionAsync(croppedPath);
+            var reducedHasCrs = !string.IsNullOrEmpty(reducedProjection);
+            var crsSummary = !reducedHasCrs ? "NONE"
+                : reducedProjection!.Length > 160 ? reducedProjection[..160] + "..." : reducedProjection;
+            TerrainCreationLogger.InfoFileOnlyOrQueue($"[REDUCE] output={croppedPath}, CRS={crsSummary}");
+
             // Switch to GeoTiffFile source type (simplifies entire downstream chain)
             _heightmapSourceType = HeightmapSourceType.GeoTiffFile;
             _geoTiffPath = croppedPath;
@@ -1723,6 +1816,22 @@ public partial class GenerateTerrain : IDisposable
             _state.XyzFilePaths = null;
             _tileBoundsInfo = null;
             _cachedFilteredXyzFiles = null;
+
+            if (reducedHasCrs)
+            {
+                // The reduced file was written with the corrected CRS embedded, so the override
+                // is no longer needed for downstream reads
+                _state.GeoTiffEpsgOverride = null;
+            }
+            else
+            {
+                var crsWarning = _state.GeoTiffEpsgOverride.HasValue
+                    ? $"Reduced GeoTIFF has no CRS embedded - keeping EPSG:{_state.GeoTiffEpsgOverride} override active."
+                    : "Reduced GeoTIFF has no CRS embedded and no EPSG override is set - enter an EPSG code before generating.";
+                Snackbar.Add(crsWarning, Severity.Warning);
+                PubSubChannel.SendMessage(PubSubMessageType.Warning, crsWarning);
+                TerrainCreationLogger.InfoFileOnlyOrQueue($"[REDUCE] WARNING: {crsWarning}");
+            }
 
             // Reset crop result - the file IS the crop now
             _cropResult = null;
@@ -1739,7 +1848,11 @@ public partial class GenerateTerrain : IDisposable
                     FormatLabel = "GeoTIFF (reduced)",
                     ResolvedGeoTiffPath = croppedPath,
                     ResolvedGeoTiffDirectory = null,
-                    NeedsEpsgCode = false
+                    // A CRS-less reduced file still needs the EPSG field so the user can
+                    // set/correct the override that downstream reads will apply
+                    NeedsEpsgCode = !reducedHasCrs,
+                    DetectedEpsgCode = reducedHasCrs ? null : _state.GeoTiffEpsgOverride,
+                    EpsgCode = reducedHasCrs ? 0 : _state.GeoTiffEpsgOverride ?? 0
                 };
             }
 
@@ -2017,6 +2130,10 @@ public partial class GenerateTerrain : IDisposable
             if (result.HeightmapSourceType.HasValue)
                 _heightmapSourceType = result.HeightmapSourceType.Value;
 
+            // Apply the GeoTIFF EPSG override BEFORE reading metadata so files with unusable
+            // embedded CRS (e.g. "Lambert 93" engineering CRS) resolve their WGS84 bbox
+            _state.GeoTiffEpsgOverride = result.GeoTiffEpsgOverride;
+
             // Apply terrain size BEFORE reading GeoTIFF (needed for crop calculations)
             if (result.TerrainSize.HasValue)
                 _terrainSize = result.TerrainSize.Value;
@@ -2110,6 +2227,9 @@ public partial class GenerateTerrain : IDisposable
 
                 var dirFiles = Directory.Exists(result.GeoTiffDirectory)
                     ? Directory.GetFiles(result.GeoTiffDirectory, "*.tif*")
+                        .Concat(Directory.GetFiles(result.GeoTiffDirectory, "*.asc"))
+                        .OrderBy(f => f)
+                        .ToArray()
                     : [];
                 _elevationImportResult = new ElevationImportResult
                 {

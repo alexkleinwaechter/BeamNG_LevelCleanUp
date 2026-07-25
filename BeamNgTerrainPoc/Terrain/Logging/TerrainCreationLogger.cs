@@ -20,14 +20,21 @@ public sealed class TerrainCreationLogger : IDisposable
     private readonly Stopwatch _sessionStopwatch;
     private readonly StreamWriter _timingWriter;
     private readonly StreamWriter _warningWriter;
+    private readonly TerrainCreationLogger? _previousCurrent;
     private bool _disposed;
+
+    /// <summary>
+    ///     Full path of this session's Info log file (the main log users should open).
+    /// </summary>
+    public string InfoLogPath { get; }
 
     /// <summary>
     ///     Creates a new terrain creation logger that writes to the specified directory.
     /// </summary>
     /// <param name="logDirectory">Directory to write log files to</param>
     /// <param name="sessionName">Optional session name for log file prefix</param>
-    public TerrainCreationLogger(string logDirectory, string sessionName = "TerrainGen")
+    /// <param name="quietStart">When true, the session-start message goes to file only (no UI snackbar)</param>
+    public TerrainCreationLogger(string logDirectory, string sessionName = "TerrainGen", bool quietStart = false)
     {
         _logDirectory = logDirectory;
         _sessionId = $"{sessionName}_{DateTime.Now:yyyyMMdd_HHmmss}";
@@ -41,14 +48,20 @@ public sealed class TerrainCreationLogger : IDisposable
         _warningWriter = CreateWriter("Warnings");
         _errorWriter = CreateWriter("Errors");
         _timingWriter = CreateWriter("Timing");
+        InfoLogPath = Path.Combine(_logDirectory, $"Log_{_sessionId}_Info.txt");
 
         // Write header
         WriteHeader();
 
-        // Set as current instance for static access
+        // Set as current instance for static access (remember the previous one so short-lived
+        // sessions, e.g. elevation import, can restore it on dispose)
+        _previousCurrent = Current;
         Current = this;
 
-        Info("Performance logging started");
+        if (quietStart)
+            InfoFileOnly("Logging started");
+        else
+            Info("Performance logging started");
 
         // Drain file-only diagnostics queued before this session existed (e.g. the OSM
         // spline-merge [MERGE-BLOCK] audit — spline creation runs before TerrainCreator
@@ -76,10 +89,17 @@ public sealed class TerrainCreationLogger : IDisposable
     public static void InfoFileOnlyOrQueue(string message)
     {
         var current = Current;
-        if (current != null)
+        if (current != null && !current._disposed)
         {
-            current.InfoFileOnly(message);
-            return;
+            try
+            {
+                current.InfoFileOnly(message);
+                return;
+            }
+            catch
+            {
+                // Fall through to queueing (e.g. writer already closed)
+            }
         }
 
         _pendingFileOnly.Enqueue(message);
@@ -118,7 +138,7 @@ public sealed class TerrainCreationLogger : IDisposable
         }
 
         if (Current == this)
-            Current = null;
+            Current = _previousCurrent;
     }
 
     private StreamWriter CreateWriter(string suffix)

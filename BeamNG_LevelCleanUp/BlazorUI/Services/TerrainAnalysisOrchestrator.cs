@@ -483,9 +483,10 @@ public class TerrainAnalysisOrchestrator
                     state.CropResult.OffsetX,
                     state.CropResult.OffsetY,
                     state.CropResult.CropWidth,
-                    state.CropResult.CropHeight);
+                    state.CropResult.CropHeight,
+                    state.GeoTiffEpsgOverride);
             else
-                result = reader.ReadGeoTiff(state.GeoTiffPath, state.TerrainSize);
+                result = reader.ReadGeoTiff(state.GeoTiffPath, state.TerrainSize, state.GeoTiffEpsgOverride);
 
             return ConvertImageToHeightMap(result.HeightmapImage, result.MinElevation, result.MaxElevation);
         });
@@ -510,7 +511,8 @@ public class TerrainAnalysisOrchestrator
                 tempCroppedPath = await service.CombineAndCropDirectAsync(
                     state.GeoTiffDirectory,
                     state.CropResult.OffsetX, state.CropResult.OffsetY,
-                    state.CropResult.CropWidth, state.CropResult.CropHeight);
+                    state.CropResult.CropWidth, state.CropResult.CropHeight,
+                    state.GeoTiffEpsgOverride);
                 geoTiffPath = tempCroppedPath;
             }
             else
@@ -518,7 +520,10 @@ public class TerrainAnalysisOrchestrator
                 // No crop — must combine all tiles
                 var combiner = new GeoTiffCombiner();
                 var tempPath = Path.Combine(Path.GetTempPath(), $"combined_{Guid.NewGuid():N}.tif");
-                await combiner.CombineGeoTiffsAsync(state.GeoTiffDirectory, tempPath);
+                var overrideProjection = state.GeoTiffEpsgOverride.HasValue
+                    ? GeoTiffReader.GetProjectionWktFromEpsg(state.GeoTiffEpsgOverride.Value)
+                    : null;
+                await combiner.CombineGeoTiffsAsync(state.GeoTiffDirectory, tempPath, overrideProjection);
                 geoTiffPath = tempPath;
             }
         }

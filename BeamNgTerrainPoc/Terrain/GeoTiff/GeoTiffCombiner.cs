@@ -10,9 +10,9 @@ namespace BeamNgTerrainPoc.Terrain.GeoTiff;
 public class GeoTiffCombiner
 {
     /// <summary>
-    ///     Supported GeoTIFF file extensions.
+    ///     Supported raster tile extensions (GeoTIFF + ESRI ASCII Grid, both GDAL-readable).
     /// </summary>
-    private static readonly string[] SupportedExtensions = [".tif", ".tiff", ".geotiff"];
+    private static readonly string[] SupportedExtensions = [".tif", ".tiff", ".geotiff", ".asc"];
 
     private readonly GeoTiffReader _reader = new();
 
@@ -21,8 +21,10 @@ public class GeoTiffCombiner
     /// </summary>
     /// <param name="inputDirectory">Directory containing GeoTIFF tiles</param>
     /// <param name="outputPath">Path for the combined output file</param>
+    /// <param name="overrideProjection">Optional projection WKT to write instead of the tiles' embedded CRS</param>
     /// <returns>Bounding box of the combined terrain</returns>
-    public async Task<GeoBoundingBox> CombineGeoTiffsAsync(string inputDirectory, string outputPath)
+    public async Task<GeoBoundingBox> CombineGeoTiffsAsync(string inputDirectory, string outputPath,
+        string? overrideProjection = null)
     {
         if (!Directory.Exists(inputDirectory))
             throw new DirectoryNotFoundException($"Input directory not found: {inputDirectory}");
@@ -41,12 +43,22 @@ public class GeoTiffCombiner
         {
             TerrainLogger.Info("Single file found, copying directly");
             File.Copy(inputFiles[0], outputPath, true);
+
+            // Stamp the override projection into the copy so downstream reads resolve the CRS
+            if (!string.IsNullOrEmpty(overrideProjection))
+            {
+                GeoTiffReader.InitializeGdal();
+                using var copiedDataset = Gdal.Open(outputPath, Access.GA_Update);
+                copiedDataset?.SetProjection(overrideProjection);
+                copiedDataset?.FlushCache();
+            }
+
             var info = _reader.GetGeoTiffInfo(outputPath);
             return info.BoundingBox;
         }
 
         // Combine multiple files
-        return await Task.Run(() => CombineFilesInternal(inputFiles, outputPath));
+        return await Task.Run(() => CombineFilesInternal(inputFiles, outputPath, overrideProjection));
     }
 
     /// <summary>
@@ -156,6 +168,8 @@ public class GeoTiffCombiner
         string? projection = null;
         var dataType = DataType.GDT_Unknown;
         var bandCount = 0;
+        double nodataValue = 0;
+        var hasNodata = 0;
 
         // Enable suppressed logging for bulk operations
         var previousSuppressState = TerrainLogger.SuppressDetailedLogging;
@@ -189,6 +203,7 @@ public class GeoTiffCombiner
                     projection = overrideProjection ?? dataset.GetProjection();
                     bandCount = dataset.RasterCount;
                     dataType = dataset.GetRasterBand(1).DataType;
+                    dataset.GetRasterBand(1).GetNoDataValue(out nodataValue, out hasNodata);
                 }
                 else
                 {
@@ -247,6 +262,13 @@ public class GeoTiffCombiner
 
             if (!string.IsNullOrEmpty(projection))
                 outputDataset.SetProjection(projection);
+
+            // Preserve the nodata flag so copied nodata pixels stay recognizable.
+            // No Fill() here: the combined output can be huge (a whole département) and filling
+            // would materialize every block; uncovered gaps keep reading as 0 (existing behavior).
+            if (hasNodata != 0)
+                for (var bandIndex = 1; bandIndex <= bandCount; bandIndex++)
+                    outputDataset.GetRasterBand(bandIndex).SetNoDataValue(nodataValue);
 
             // Second pass: copy data from each tile
             TerrainLogger.Info($"Copying {inputFiles.Count} tiles to combined image...");
@@ -535,9 +557,11 @@ public class GeoTiffCombiner
     /// <param name="cropOffsetY">Y offset in combined-image pixels</param>
     /// <param name="cropWidth">Width of the crop region in pixels</param>
     /// <param name="cropHeight">Height of the crop region in pixels</param>
+    /// <param name="overrideProjection">Optional projection WKT to write instead of the tiles' embedded CRS</param>
     public void CombineAndCropDirect(
         List<string> inputFiles, string outputPath,
-        int cropOffsetX, int cropOffsetY, int cropWidth, int cropHeight)
+        int cropOffsetX, int cropOffsetY, int cropWidth, int cropHeight,
+        string? overrideProjection = null)
     {
         GeoTiffReader.InitializeGdal();
 
@@ -552,6 +576,8 @@ public class GeoTiffCombiner
         string? projection = null;
         var dataType = DataType.GDT_Unknown;
         var bandCount = 0;
+        double nodataValue = 0;
+        var hasNodata = 0;
 
         foreach (var file in inputFiles)
         {
@@ -564,9 +590,10 @@ public class GeoTiffCombiner
             {
                 pixelSizeX = Math.Abs(geoTransform[1]);
                 pixelSizeY = Math.Abs(geoTransform[5]);
-                projection = dataset.GetProjection();
+                projection = overrideProjection ?? dataset.GetProjection();
                 bandCount = dataset.RasterCount;
                 dataType = dataset.GetRasterBand(1).DataType;
+                dataset.GetRasterBand(1).GetNoDataValue(out nodataValue, out hasNodata);
             }
 
             var tileMinX = geoTransform[0];
@@ -582,6 +609,12 @@ public class GeoTiffCombiner
 
         if (pixelSizeX == 0)
             throw new InvalidOperationException("No valid GeoTIFF files found.");
+
+        if (!string.IsNullOrEmpty(overrideProjection))
+            TerrainLogger.Info("Direct crop: writing EPSG override projection into the output");
+        else if (string.IsNullOrEmpty(projection))
+            TerrainLogger.Warning(
+                "Direct crop: tiles carry no embedded CRS and no EPSG override is set - output will have NO projection.");
 
         // Compute the crop region's geographic origin
         var cropOriginX = minX + cropOffsetX * pixelSizeX;
@@ -603,6 +636,16 @@ public class GeoTiffCombiner
 
         if (!string.IsNullOrEmpty(projection))
             outputDataset.SetProjection(projection);
+
+        // Preserve the nodata flag and pre-fill the (bounded, crop-sized) output with nodata so
+        // areas no tile covers read as nodata instead of elevation 0
+        if (hasNodata != 0)
+            for (var bandIndex = 1; bandIndex <= bandCount; bandIndex++)
+            {
+                var outputBand = outputDataset.GetRasterBand(bandIndex);
+                outputBand.SetNoDataValue(nodataValue);
+                outputBand.Fill(nodataValue, 0);
+            }
 
         // Second pass: only read tiles that overlap the crop region
         var skippedTiles = 0;
@@ -690,13 +733,15 @@ public class GeoTiffCombiner
     public async Task<GeoTiffImportResult> CombineAndImportAsync(
         string inputDirectory,
         int? targetSize = null,
-        string? tempDirectory = null)
+        string? tempDirectory = null,
+        int? epsgOverride = null)
     {
         return await CombineAndImportAsync(
             inputDirectory,
             targetSize,
             null, null, null, null,
-            tempDirectory);
+            tempDirectory,
+            epsgOverride);
     }
 
     /// <summary>
@@ -710,6 +755,7 @@ public class GeoTiffCombiner
     /// <param name="cropWidth">Width of the cropped region in pixels</param>
     /// <param name="cropHeight">Height of the cropped region in pixels</param>
     /// <param name="tempDirectory">Directory for temporary files (optional, uses system temp if null)</param>
+    /// <param name="epsgOverride">Optional EPSG code to use instead of the tiles' embedded CRS</param>
     /// <returns>Import result with combined (and optionally cropped) heightmap and bounding box</returns>
     public async Task<GeoTiffImportResult> CombineAndImportAsync(
         string inputDirectory,
@@ -718,14 +764,21 @@ public class GeoTiffCombiner
         int? cropOffsetY,
         int? cropWidth,
         int? cropHeight,
-        string? tempDirectory = null)
+        string? tempDirectory = null,
+        int? epsgOverride = null)
     {
         tempDirectory ??= Path.GetTempPath();
         var combinedPath = Path.Combine(tempDirectory, $"combined_{Guid.NewGuid():N}.tif");
 
         try
         {
-            await CombineGeoTiffsAsync(inputDirectory, combinedPath);
+            var overrideProjection = epsgOverride.HasValue
+                ? GeoTiffReader.GetProjectionWktFromEpsg(epsgOverride.Value)
+                : null;
+
+            // The combined file gets the override projection embedded, so the read-back below
+            // resolves the CRS without needing the override again.
+            await CombineGeoTiffsAsync(inputDirectory, combinedPath, overrideProjection);
 
             // Apply cropping to the combined result if specified
             var shouldCrop = cropOffsetX.HasValue && cropOffsetY.HasValue &&

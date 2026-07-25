@@ -223,6 +223,13 @@ public class TerrainGenerationState
     public int? XyzDetectedEpsg { get; set; }
 
     /// <summary>
+    ///     Optional EPSG override for GeoTIFF sources whose embedded CRS cannot be resolved
+    ///     (e.g. an engineering CRS carrying only a citation name like "Lambert 93").
+    ///     Null = use the CRS embedded in the file(s).
+    /// </summary>
+    public int? GeoTiffEpsgOverride { get; set; }
+
+    /// <summary>
     ///     Per-tile bounding boxes for filtering tiles before combine operations.
     ///     Populated during GeoTIFF/XYZ metadata import.
     /// </summary>
@@ -487,6 +494,7 @@ public class TerrainGenerationState
         XyzFilePaths = null;
         XyzEpsgCode = 25832;
         XyzDetectedEpsg = null;
+        GeoTiffEpsgOverride = null;
         CropAnchor = CropAnchor.Center;
         CropResult = null;
         CanFetchOsmData = false;

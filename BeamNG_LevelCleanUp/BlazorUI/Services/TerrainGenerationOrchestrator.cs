@@ -1122,10 +1122,12 @@ public class TerrainGenerationOrchestrator
 
             case HeightmapSourceType.GeoTiffFile:
                 parameters.GeoTiffPath = state.GeoTiffPath;
+                parameters.GeoTiffEpsgOverride = state.GeoTiffEpsgOverride;
                 ApplyCropSettings(state, parameters);
                 break;
 
             case HeightmapSourceType.GeoTiffDirectory:
+                parameters.GeoTiffEpsgOverride = state.GeoTiffEpsgOverride;
                 if (!string.IsNullOrEmpty(state.CachedCombinedGeoTiffPath) &&
                     File.Exists(state.CachedCombinedGeoTiffPath))
                 {
@@ -1150,7 +1152,8 @@ public class TerrainGenerationOrchestrator
                         var croppedPath = await service.CombineAndCropDirectAsync(
                             files,
                             offsetX, offsetY,
-                            state.CropResult.CropWidth, state.CropResult.CropHeight);
+                            state.CropResult.CropWidth, state.CropResult.CropHeight,
+                            state.GeoTiffEpsgOverride);
                         parameters.GeoTiffPath = croppedPath;
                     }
                     else
@@ -1158,7 +1161,8 @@ public class TerrainGenerationOrchestrator
                         var croppedPath = await service.CombineAndCropDirectAsync(
                             state.GeoTiffDirectory,
                             state.CropResult.OffsetX, state.CropResult.OffsetY,
-                            state.CropResult.CropWidth, state.CropResult.CropHeight);
+                            state.CropResult.CropWidth, state.CropResult.CropHeight,
+                            state.GeoTiffEpsgOverride);
                         parameters.GeoTiffPath = croppedPath;
                     }
                     // Crop already applied — don't pass crop offsets again
