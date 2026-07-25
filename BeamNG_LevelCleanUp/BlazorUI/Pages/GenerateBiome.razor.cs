@@ -95,7 +95,11 @@ public partial class GenerateBiome
             if (!result.Success)
             {
                 if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                {
                     PubSubChannel.SendMessage(PubSubMessageType.Error, result.ErrorMessage);
+                    Snackbar.Add(result.ErrorMessage, Severity.Error,
+                        options => options.RequireInteraction = true);
+                }
                 return;
             }
 
@@ -310,23 +314,30 @@ public partial class GenerateBiome
 
             if (result.LayersGenerated == 0)
             {
+                // The reasons belong IN the snackbar — never point the user at another log.
                 Snackbar.Add(
-                    result.LayersSkipped > 0
-                        ? $"No layers were generated — {result.LayersSkipped} layer(s) were skipped. Check the Errors/Warnings log below."
-                        : "No layers were generated.",
-                    Severity.Error);
+                    BuildSnackbarMarkup("No layers were generated.", result.SkipReasons),
+                    Severity.Error,
+                    options => options.RequireInteraction = true);
             }
             else
             {
-                var skippedNote = result.LayersSkipped > 0
-                    ? $" {result.LayersSkipped} layer(s) skipped — see log."
-                    : string.Empty;
                 var cleanupNote = result.ItemsRemovedByCleanup > 0
                     ? $" Negative-list cleanup removed {result.ItemsRemovedByCleanup:N0} of them again."
                     : string.Empty;
-                Snackbar.Add(
-                    $"Generated {result.ItemsPlaced:N0} forest item(s) across {result.LayersGenerated} layer(s).{cleanupNote}{skippedNote}",
-                    result.LayersSkipped > 0 ? Severity.Warning : Severity.Success);
+                var headline =
+                    $"Generated {result.ItemsPlaced:N0} forest item(s) across {result.LayersGenerated} layer(s).{cleanupNote}";
+                if (result.SkipReasons.Count > 0)
+                {
+                    Snackbar.Add(
+                        BuildSnackbarMarkup($"{headline} Skipped {result.LayersSkipped} layer(s):", result.SkipReasons),
+                        Severity.Warning,
+                        options => options.VisibleStateDuration = 15000);
+                }
+                else
+                {
+                    Snackbar.Add(headline, Severity.Success);
+                }
             }
         });
     }
@@ -428,10 +439,14 @@ public partial class GenerateBiome
         BiomeCleanupSession? session = null;
         await RunBusyOperation(OperationCleanup, "Running negative-list cleanup...", async () =>
         {
-            session = await Task.Run(() => _service.RunNegativeListCleanup(_context));
+            var (cleanupSession, failReason) = await Task.Run(() => _service.RunNegativeListCleanup(_context));
+            session = cleanupSession;
             if (session == null)
             {
-                Snackbar.Add("Cleanup did not run — see the Warnings/Messages log below.", Severity.Warning);
+                Snackbar.Add(
+                    $"Cleanup did not run: {failReason ?? "unknown reason."}",
+                    Severity.Warning,
+                    options => options.VisibleStateDuration = 12000);
                 return;
             }
             Snackbar.Add(
@@ -537,8 +552,11 @@ public partial class GenerateBiome
         }
         catch (Exception ex)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Error,
-                ex.InnerException != null ? $"{ex.Message} {ex.InnerException.Message}" : ex.Message);
+            var errorMessage = ex.InnerException != null
+                ? $"{ex.Message} {ex.InnerException.Message}"
+                : ex.Message;
+            PubSubChannel.SendMessage(PubSubMessageType.Error, errorMessage);
+            Snackbar.Add(errorMessage, Severity.Error, options => options.RequireInteraction = true);
         }
         finally
         {
@@ -546,6 +564,21 @@ public partial class GenerateBiome
             ClearBusyOperation();
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    /// Headline plus bulleted detail lines as snackbar markup (details are HTML-encoded).
+    /// Used to put skip/failure reasons directly into the snackbar instead of pointing
+    /// the user at the message log.
+    /// </summary>
+    private static MarkupString BuildSnackbarMarkup(string headline, IReadOnlyCollection<string> details)
+    {
+        var encodedHeadline = System.Net.WebUtility.HtmlEncode(headline);
+        if (details.Count == 0)
+            return new MarkupString(encodedHeadline);
+
+        var lines = details.Select(d => "• " + System.Net.WebUtility.HtmlEncode(d));
+        return new MarkupString(encodedHeadline + "<br/>" + string.Join("<br/>", lines));
     }
 
     private bool IsOperation(string operation)
