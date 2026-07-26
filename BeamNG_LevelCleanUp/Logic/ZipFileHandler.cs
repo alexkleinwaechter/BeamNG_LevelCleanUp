@@ -88,7 +88,9 @@ public static class ZipFileHandler
         var fi = new FileInfo(filePath);
         if (fi.Exists)
         {
-            retVal = Path.Join(fi.Directory.FullName, relativeTarget);
+            // Always extract into the working directory. The selected zip stays untouched
+            // at its original location and must never be copied or moved into the temp folder.
+            retVal = Path.Join(WorkingDirectory, relativeTarget);
             if (isCopyFrom)
             {
                 _lastCopyFromUnpackedZip = filePath;
@@ -135,23 +137,8 @@ public static class ZipFileHandler
             _lastCopyFromUnpackedPath = null; // Reset after cleanup
         }
 
-        //if (!string.IsNullOrEmpty(_lastUnpackedZip))
-        //{
-        //    var deleteFile = new FileInfo(_lastUnpackedZip);
-        //    if (deleteFile.Exists)
-        //    {
-        //        File.Delete(_lastUnpackedZip);
-        //    }
-        //}
-
-        //if (!string.IsNullOrEmpty(_lastCopyFromUnpackedZip))
-        //{
-        //    var deleteFile = new FileInfo(_lastCopyFromUnpackedZip);
-        //    if (deleteFile.Exists)
-        //    {
-        //        File.Delete(_lastCopyFromUnpackedZip);
-        //    }
-        //}
+        // NEVER delete _lastUnpackedZip or _lastCopyFromUnpackedZip here: they point to the
+        // user's ORIGINAL zip files at their original location, not to temp copies.
     }
 
     public static string GetLastUnpackedPath()
@@ -168,12 +155,94 @@ public static class ZipFileHandler
         bool searchLevelParent = false)
     {
         var fileName = $"{levelName}_deploy_{DateTime.Now.ToString("yyMMdd")}.zip";
-        var targetDir = new DirectoryInfo(filePath).Parent.FullName;
+        var targetDir = GetDeploymentTargetDirectory(filePath);
         var targetPath = Path.Join(targetDir, fileName);
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Compressing Deploymentfile at {targetPath}");
         if (File.Exists(targetPath)) File.Delete(targetPath);
         ZipFile.CreateFromDirectory(filePath, targetPath, compressionLevel, false, Encoding.UTF8);
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Deploymentfile created at {targetPath}");
+    }
+
+    /// <summary>
+    /// Builds a deployment zip for a level that is edited in place (folder mode).
+    /// Zips only the level folder itself (entries "levels/&lt;name&gt;/...") so sibling content
+    /// in the user's folder (_copyFrom extraction, source zips, older deployment files,
+    /// other levels) is not included. The deployment file is written next to the levels
+    /// structure, i.e. into the folder the user selected.
+    /// </summary>
+    public static void BuildDeploymentFileFromFolder(string levelPath, string levelName, CompressionLevel compressionLevel)
+    {
+        var levelDir = new DirectoryInfo(levelPath);
+        if (!levelDir.Exists)
+            throw new Exception($"Level folder not found: {levelPath}");
+
+        var parent = levelDir.Parent;
+        var targetDir = parent != null && parent.Name.Equals("levels", StringComparison.OrdinalIgnoreCase)
+            ? (parent.Parent ?? parent).FullName
+            : (parent ?? levelDir).FullName;
+
+        var fileName = $"{levelName}_deploy_{DateTime.Now.ToString("yyMMdd")}.zip";
+        var targetPath = Path.Join(targetDir, fileName);
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Compressing Deploymentfile at {targetPath}");
+        if (File.Exists(targetPath)) File.Delete(targetPath);
+
+        using (var archive = ZipFile.Open(targetPath, ZipArchiveMode.Create, Encoding.UTF8))
+        {
+            foreach (var file in Directory.EnumerateFiles(levelDir.FullName, "*", SearchOption.AllDirectories))
+            {
+                if (file.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
+                var relative = Path.GetRelativePath(levelDir.FullName, file).Replace('\\', '/');
+                archive.CreateEntryFromFile(file, $"levels/{levelDir.Name}/{relative}", compressionLevel);
+            }
+        }
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info, $"Deploymentfile created at {targetPath}");
+    }
+
+    /// <summary>
+    /// Resolves where the deployment zip is written. When the folder being zipped is the
+    /// unpacked working copy of the last selected level zip, the deployment file goes next
+    /// to that original zip - never into the temp folder, which is wiped on startup.
+    /// Falls back to the parent of the zipped folder (legacy behavior) when there is no
+    /// source zip (e.g. Create Level wizard) or the source lies inside the game installation.
+    /// </summary>
+    private static string GetDeploymentTargetDirectory(string zippedPath)
+    {
+        var fallback = new DirectoryInfo(zippedPath).Parent.FullName;
+        try
+        {
+            if (string.IsNullOrEmpty(_lastUnpackedZip) || string.IsNullOrEmpty(_lastUnpackedPath))
+                return fallback;
+
+            var zippedFull = Path.GetFullPath(zippedPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var unpackedFull = Path.GetFullPath(_lastUnpackedPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!zippedFull.Equals(unpackedFull, StringComparison.OrdinalIgnoreCase))
+                return fallback;
+
+            var sourceDir = Path.GetDirectoryName(Path.GetFullPath(_lastUnpackedZip));
+            if (string.IsNullOrEmpty(sourceDir) || !Directory.Exists(sourceDir))
+                return fallback;
+
+            // Never write deployment files into the game installation (the game would mount them)
+            var installDir = Steam.BeamInstallDir;
+            if (!string.IsNullOrEmpty(installDir))
+            {
+                var installFull = Path.GetFullPath(installDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (sourceDir.Equals(installFull, StringComparison.OrdinalIgnoreCase) ||
+                    sourceDir.StartsWith(installFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                        $"Source zip lies inside the game installation. Writing the deployment file to {fallback} instead.");
+                    return fallback;
+                }
+            }
+
+            return sourceDir;
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 
     private static Encoding DetectZipEncoding(string zipPath)

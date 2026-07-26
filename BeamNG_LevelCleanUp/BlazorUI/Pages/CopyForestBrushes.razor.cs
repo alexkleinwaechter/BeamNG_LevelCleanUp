@@ -62,6 +62,7 @@ public partial class CopyForestBrushes
     private string _lastCopiedSourceName { get; set; }
     private bool _showWizardSourceSelection { get; set; }
     private bool _isSelectingAnotherSource { get; set; }
+    private bool _isFolderMode { get; set; }
     private string _initialWorkingDirectory { get; set; }
 
     /// <summary>
@@ -115,6 +116,7 @@ public partial class CopyForestBrushes
         _showDeployButton = false;
         _vanillaLevelSourceSelected = null;
         _vanillaLevelTargetSelected = null;
+        _isFolderMode = false;
         // Reset to centralized working directory instead of null
         AppPaths.EnsureWorkingDirectory();
         _selectedItems = new HashSet<GridFileListItem>();
@@ -195,14 +197,7 @@ public partial class CopyForestBrushes
         InitializeVariables();
         _isLoadingMap = true;
         _initialWorkingDirectory = ZipFileHandler.WorkingDirectory;
-        
-        // Copy file to centralized working directory if not already there
-        var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
-        if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
-        {
-            File.Copy(file, targetFile, true);
-        }
-        
+
         await Task.Run(() =>
         {
             try
@@ -210,7 +205,7 @@ public partial class CopyForestBrushes
                 _unzipSnackbarCopyFrom = Snackbar.Add("Unzipping source level...", Severity.Normal,
                     config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPathCopyFrom =
-                    ZipFileHandler.ExtractToDirectory(targetFile, "_copyFrom", true);
+                    ZipFileHandler.ExtractToDirectory(file, "_copyFrom", true);
                 Reader = new BeamFileReader(_levelPathCopyFrom, null);
                 _levelNameCopyFrom = Reader.GetLevelName();
                 Snackbar.Add("Unzipping source level finished", Severity.Success);
@@ -241,17 +236,13 @@ public partial class CopyForestBrushes
             _staticSnackbar = Snackbar.Add("Extracting new source level...", Severity.Normal,
                 config => { config.VisibleStateDuration = int.MaxValue; });
 
-            var fileInWorkingDir = Path.Join(_initialWorkingDirectory, Path.GetFileName(filePath));
-            if (!filePath.Equals(fileInWorkingDir, StringComparison.OrdinalIgnoreCase))
-                File.Copy(filePath, fileInWorkingDir, true);
-
             var copyFromPath = Path.Join(_initialWorkingDirectory, "_copyFrom");
             if (Directory.Exists(copyFromPath))
                 Directory.Delete(copyFromPath, true);
 
             await Task.Run(() =>
             {
-                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(fileInWorkingDir, "_copyFrom", true);
+                _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(filePath, "_copyFrom", true);
                 var tempReader = new BeamFileReader(_levelPathCopyFrom, null);
                 _levelNameCopyFrom = tempReader.GetLevelName();
             });
@@ -335,31 +326,12 @@ public partial class CopyForestBrushes
     protected async Task FileSelected(string file, bool isFolder)
     {
         _isLoadingMap = true;
+        _isFolderMode = isFolder;
 
         if (isFolder)
         {
             // Direct folder mode - work in place, set working directory to the folder
             ZipFileHandler.WorkingDirectory = file;
-        }
-        else
-        {
-            // ZIP mode - copy to centralized temp folder if needed
-            var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
-            if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Copy target level to {ZipFileHandler.WorkingDirectory} ...");
-                try
-                {
-                    File.Copy(file, targetFile, true);
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, "Copy target level finished");
-                }
-                catch (Exception ex)
-                {
-                    PubSubChannel.SendMessage(PubSubMessageType.Error,
-                        $"Error copy target level to working directory: {ex.Message}");
-                }
-            }
         }
 
         await Task.Run(() =>
@@ -369,9 +341,7 @@ public partial class CopyForestBrushes
                 _staticSnackbar = Snackbar.Add("Unzipping target level...", Severity.Normal,
                     config => { config.VisibleStateDuration = int.MaxValue; });
                 if (!isFolder)
-                    _levelPath =
-                        ZipFileHandler.ExtractToDirectory(
-                            Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file)), "_unpacked");
+                    _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
                 else
                     _levelPath = ZipFileHandler.GetNamePath(file);
 
@@ -762,18 +732,6 @@ public partial class CopyForestBrushes
             _staticSnackbar = Snackbar.Add("Extracting new source level...", Severity.Normal,
                 config => { config.VisibleStateDuration = int.MaxValue; });
 
-            var fileInWorkingDir = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(filePath));
-
-            var sourceDir = Path.GetFullPath(Path.GetDirectoryName(filePath) ?? "");
-            var workingDir = Path.GetFullPath(ZipFileHandler.WorkingDirectory ?? "");
-
-            if (!sourceDir.Equals(workingDir, StringComparison.OrdinalIgnoreCase))
-            {
-                PubSubChannel.SendMessage(PubSubMessageType.Info,
-                    $"Copying source level to working directory: {ZipFileHandler.WorkingDirectory}");
-                File.Copy(filePath, fileInWorkingDir, true);
-            }
-
             var copyFromPath = Path.Join(ZipFileHandler.WorkingDirectory, "_copyFrom");
             if (Directory.Exists(copyFromPath))
             {
@@ -784,7 +742,7 @@ public partial class CopyForestBrushes
             await Task.Run(() =>
             {
                 _levelPathCopyFrom = ZipFileHandler.ExtractToDirectory(
-                    fileInWorkingDir,
+                    filePath,
                     "_copyFrom",
                     true);
 
@@ -1038,14 +996,18 @@ public partial class CopyForestBrushes
 
     private async Task ZipAndDeploy()
     {
-        var path = string.Empty;
         if (!string.IsNullOrEmpty(_levelPath))
             try
             {
-                path = ZipFileHandler.GetLastUnpackedPath();
                 _staticSnackbar = Snackbar.Add("Zipping the deployment file. Please be patient.", Severity.Normal,
                     config => { config.VisibleStateDuration = int.MaxValue; });
-                await Task.Run(() => { ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel); });
+                await Task.Run(() =>
+                {
+                    if (_isFolderMode)
+                        ZipFileHandler.BuildDeploymentFileFromFolder(_levelPath, _levelName, _compressionLevel);
+                    else
+                        ZipFileHandler.BuildDeploymentFile(ZipFileHandler.GetLastUnpackedPath(), _levelName, _compressionLevel);
+                });
                 Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)

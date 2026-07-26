@@ -173,19 +173,12 @@
         Reader = null;
         _vanillaLevelSourceSelected = null;
 
-        // Copy file to centralized working directory if not already there
-        var targetFile = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(file));
-        if (!file.Equals(targetFile, StringComparison.OrdinalIgnoreCase))
-        {
-            File.Copy(file, targetFile, true);
-        }
-
         await Task.Run(() =>
         {
             try
             {
                 _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-                _levelPath = ZipFileHandler.ExtractToDirectory(targetFile, "_unpacked");
+                _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
                 Snackbar.Add("Unzipping finished", Severity.Success);
                 Snackbar.Remove(_staticSnackbar);
             }

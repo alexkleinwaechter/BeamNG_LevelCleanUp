@@ -148,21 +148,10 @@ public partial class CreateLevel
                 SetDefaultWorkingDirectory();
                 CleanupWorkingDirectories();
 
-                // 2. Copy source file to working directory if needed
-                var sourceFile = _sourceZipPath;
-                if (ZipFileHandler.WorkingDirectory != Path.GetDirectoryName(sourceFile))
-                {
-                    PubSubChannel.SendMessage(PubSubMessageType.Info,
-                        $"Copying source level to working directory...");
-                    var target = Path.Join(ZipFileHandler.WorkingDirectory, Path.GetFileName(sourceFile));
-                    File.Copy(sourceFile, target, true);
-                    sourceFile = target;
-                    PubSubChannel.SendMessage(PubSubMessageType.Info, "Source level copied");
-                }
-
-                // 3. Extract source level
+                // 2. Extract source level (extraction goes into the working directory,
+                //    the selected zip stays untouched at its original location)
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "Extracting source level...");
-                _sourceLevelPath = ZipFileHandler.ExtractToDirectory(sourceFile, "_copyFrom", true);
+                _sourceLevelPath = ZipFileHandler.ExtractToDirectory(_sourceZipPath, "_copyFrom", true);
                 _reader = new BeamFileReader(_sourceLevelPath, null);
                 var resolvedName = _reader.GetLevelName();
                 if (!string.IsNullOrEmpty(resolvedName))
