@@ -3,6 +3,7 @@ using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Utils;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
+using BeamNgTerrainPoc.Terrain.Logging;
 
 namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 
@@ -13,13 +14,93 @@ namespace BeamNG_LevelCleanUp.BlazorUI.Services;
 /// </summary>
 public class ElevationImportService
 {
-    private static readonly string[] GeoTiffExtensions = [".tif", ".tiff", ".geotiff"];
+    // .asc (ESRI ASCII Grid) is deliberately in the GDAL-raster list, NOT the XYZ list:
+    // it is a header + raster rows, which GDAL's AAIGrid driver reads natively (incl. .prj
+    // sidecar CRS), while the XYZ line scanner would mis-parse it as X Y Z points.
+    private static readonly string[] GeoTiffExtensions = [".tif", ".tiff", ".geotiff", ".asc"];
     private static readonly string[] XyzExtensions = [".xyz", ".txt"];
     private static readonly string[] PngExtensions = [".png"];
     private static readonly string[] ZipExtensions = [".zip"];
 
     private readonly GeoTiffMetadataService _metadataService = new();
     private string? _tempExtractionPath;
+
+    /// <summary>
+    ///     File-log session for one elevation import. Creates a TerrainCreationLogger session
+    ///     (Log_ElevationImport_*_Info.txt in the app logs folder) and mirrors every TerrainLogger
+    ///     message into it while active, so full CRS/validation diagnostics land in the file even
+    ///     though the UI only shows shortened messages. Announces the log path in the UI when
+    ///     warnings or errors were captured.
+    /// </summary>
+    private sealed class ImportLogSession : IDisposable
+    {
+        private readonly TerrainCreationLogger? _logger;
+        private readonly TerrainLogHandler? _previousHandler;
+        private bool _hadIssues;
+
+        public ImportLogSession(string description, IEnumerable<string>? sourcePaths)
+        {
+            try
+            {
+                _logger = new TerrainCreationLogger(AppPaths.LogsFolder, "ElevationImport", quietStart: true);
+            }
+            catch
+            {
+                // Logging must never block the import
+                _logger = null;
+                return;
+            }
+
+            _logger.InfoFileOnly(description);
+            if (sourcePaths != null)
+            {
+                // Cap the listing — tile folders can hold thousands of files
+                const int maxListedSources = 50;
+                var listed = 0;
+                var total = 0;
+                foreach (var path in sourcePaths)
+                {
+                    total++;
+                    if (listed < maxListedSources)
+                    {
+                        _logger.InfoFileOnly($"  Source: {path}");
+                        listed++;
+                    }
+                }
+
+                if (total > maxListedSources)
+                    _logger.InfoFileOnly($"  ... and {total - maxListedSources} more file(s)");
+            }
+
+            _previousHandler = TerrainLogger.GetCurrentHandler();
+            var logger = _logger;
+            var previousHandler = _previousHandler;
+            TerrainLogger.SetLogHandler((level, message) =>
+            {
+                previousHandler?.Invoke(level, message);
+
+                if (level != TerrainLogLevel.Info)
+                    _hadIssues = true;
+
+                logger.InfoFileOnly(level == TerrainLogLevel.Info
+                    ? message
+                    : $"{level.ToString().ToUpperInvariant()}: {message}");
+            });
+        }
+
+        public void Dispose()
+        {
+            if (_logger == null)
+                return;
+
+            TerrainLogger.SetLogHandler(_previousHandler);
+            var logPath = _logger.InfoLogPath;
+            _logger.Dispose();
+
+            if (_hadIssues)
+                PubSubChannel.SendMessage(PubSubMessageType.Info, $"Elevation import log: {logPath}");
+        }
+    }
 
     /// <summary>
     ///     Imports elevation data from one or more selected files.
@@ -29,6 +110,9 @@ public class ElevationImportService
     {
         if (filePaths.Length == 0)
             throw new ArgumentException("No files selected.");
+
+        using var importLog = new ImportLogSession(
+            $"=== Elevation import: {filePaths.Length} selected file(s) ===", filePaths);
 
         // Check for ZIP files first — extract and treat contents as the real input
         var resolvedPaths = new List<string>();
@@ -68,6 +152,9 @@ public class ElevationImportService
         if (!Directory.Exists(folderPath))
             throw new DirectoryNotFoundException($"Folder not found: {folderPath}");
 
+        using var importLog = new ImportLogSession(
+            $"=== Elevation import from folder: {folderPath} ===", null);
+
         var supportedFiles = ScanDirectoryForSupportedFiles(folderPath);
 
         if (supportedFiles.Length == 0)
@@ -82,16 +169,22 @@ public class ElevationImportService
         // Prefer GeoTIFF tiles if found (existing behavior)
         if (geoTiffs.Length > 0 && xyzFiles.Length == 0)
         {
+            WarnIfRgeAltiSupplements(geoTiffs);
+
             // Use the existing directory-based tile reading
-            var metadata = await _metadataService.ReadFromDirectoryAsync(folderPath);
+            var rawMetadata = await _metadataService.ReadFromDirectoryAsync(folderPath);
+            var (metadata, detectedEpsg) = TryAutoDetectGeoTiffEpsg(rawMetadata);
             return new ElevationImportResult
             {
                 SourceType = ElevationSourceType.GeoTiffMultiple,
                 FilePaths = geoTiffs,
                 FileNames = geoTiffs.Select(Path.GetFileName).ToArray()!,
                 FileCount = geoTiffs.Length,
-                FormatLabel = "GeoTIFF",
+                FormatLabel = GetRasterFormatLabel(geoTiffs),
                 Metadata = metadata,
+                NeedsEpsgCode = metadata?.NeedsEpsgOverride == true || detectedEpsg.HasValue,
+                DetectedEpsgCode = detectedEpsg,
+                EpsgCode = detectedEpsg ?? 0,
                 ResolvedGeoTiffDirectory = folderPath
             };
         }
@@ -102,10 +195,118 @@ public class ElevationImportService
     }
 
     /// <summary>
-    ///     Re-reads metadata after the user changes the EPSG code (for XYZ files).
+    ///     When a GeoTIFF's embedded CRS could not be resolved, tries to auto-detect the real EPSG
+    ///     code (from the CRS citation name and the native coordinate range). On success the metadata
+    ///     is patched in place with a single bbox transform — deliberately NOT a re-read, because a
+    ///     tile folder can hold thousands of files and only the CRS-derived fields change. The page
+    ///     re-reads everything with the override applied afterwards anyway.
+    /// </summary>
+    /// <returns>The (possibly patched) metadata and the detected EPSG code (null when not detected).</returns>
+    private static (GeoTiffMetadataService.GeoTiffMetadataResult? Metadata, int? DetectedEpsg)
+        TryAutoDetectGeoTiffEpsg(GeoTiffMetadataService.GeoTiffMetadataResult? metadata)
+    {
+        if (metadata?.NeedsEpsgOverride != true)
+            return (metadata, null);
+
+        var detection = metadata.NativeBoundingBox != null
+            ? EpsgAutoDetector.Detect(metadata.ProjectionWkt, metadata.NativeBoundingBox)
+            : null;
+
+        if (detection == null)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                "The GeoTIFF's coordinate system could not be resolved (missing or incomplete CRS metadata). " +
+                "Enter the EPSG code of the file's coordinate system manually (e.g. 2154 for RGF93 / Lambert-93).");
+            return (metadata, null);
+        }
+
+        PubSubChannel.SendMessage(PubSubMessageType.Info,
+            $"Auto-detected EPSG:{detection.EpsgCode} ({detection.Description}) - {detection.Reason}. " +
+            "Please verify the code before generating.");
+
+        return (ApplyEpsgToMetadata(metadata, detection.EpsgCode, detection.Description), detection.EpsgCode);
+    }
+
+    /// <summary>
+    ///     Rebuilds a metadata result with an EPSG override applied: WGS84 bounding box,
+    ///     projection and OSM availability are recomputed from the existing native bounding box
+    ///     (one coordinate transform, no file access — important for folders with thousands of tiles).
+    /// </summary>
+    private static GeoTiffMetadataService.GeoTiffMetadataResult ApplyEpsgToMetadata(
+        GeoTiffMetadataService.GeoTiffMetadataResult metadata,
+        int epsgCode,
+        string? projectionName = null)
+    {
+        try
+        {
+            var overrideWkt = GeoTiffReader.GetProjectionWktFromEpsg(epsgCode);
+            var wgs84 = metadata.NativeBoundingBox != null
+                ? GeoBoundingBox.TransformToWgs84(metadata.NativeBoundingBox, overrideWkt)
+                : null;
+            var canFetchOsm = wgs84?.IsValidWgs84 == true;
+
+            return new GeoTiffMetadataService.GeoTiffMetadataResult
+            {
+                Wgs84BoundingBox = wgs84,
+                NativeBoundingBox = metadata.NativeBoundingBox,
+                ProjectionName = projectionName ?? $"EPSG:{epsgCode}",
+                ProjectionWkt = overrideWkt,
+                GeoTransform = metadata.GeoTransform,
+                OriginalWidth = metadata.OriginalWidth,
+                OriginalHeight = metadata.OriginalHeight,
+                MinElevation = metadata.MinElevation,
+                MaxElevation = metadata.MaxElevation,
+                SuggestedTerrainSize = metadata.SuggestedTerrainSize,
+                CanFetchOsmData = canFetchOsm,
+                OsmBlockedReason = canFetchOsm
+                    ? null
+                    : "Could not determine WGS84 coordinates - coordinate transformation failed.",
+                ValidationResult = metadata.ValidationResult,
+                TileBounds = metadata.TileBounds,
+                NeedsEpsgOverride = wgs84 == null
+            };
+        }
+        catch
+        {
+            return metadata;
+        }
+    }
+
+    /// <summary>
+    ///     Re-reads metadata after the user changes the EPSG code (XYZ files, or GeoTIFF files
+    ///     whose embedded CRS could not be resolved).
     /// </summary>
     public async Task<ElevationImportResult> ReloadWithEpsgAsync(ElevationImportResult previous, int epsgCode)
     {
+        using var importLog = new ImportLogSession(
+            $"=== Elevation metadata reload with EPSG:{epsgCode} ===", previous.FilePaths);
+
+        // GeoTIFF with unresolvable CRS: patch the metadata in place with the new EPSG code.
+        // Deliberately NOT a re-read — a tile folder can hold thousands of files, and the page
+        // performs a full metadata read with the override applied right after this call.
+        if (previous.SourceType is ElevationSourceType.GeoTiffSingle or ElevationSourceType.GeoTiffMultiple)
+        {
+            if (!previous.NeedsEpsgCode || previous.Metadata == null)
+                return previous;
+
+            return new ElevationImportResult
+            {
+                SourceType = previous.SourceType,
+                FilePaths = previous.FilePaths,
+                FileNames = previous.FileNames,
+                FileCount = previous.FileCount,
+                FormatLabel = previous.FormatLabel,
+                Metadata = ApplyEpsgToMetadata(previous.Metadata, epsgCode),
+                NeedsEpsgCode = true,
+                DetectedEpsgCode = previous.DetectedEpsgCode,
+                EpsgCode = epsgCode,
+                TempExtractionPath = previous.TempExtractionPath,
+                WasExtractedFromZip = previous.WasExtractedFromZip,
+                ResolvedGeoTiffPath = previous.ResolvedGeoTiffPath,
+                ResolvedGeoTiffDirectory = previous.ResolvedGeoTiffDirectory
+            };
+        }
+
         if (previous.SourceType != ElevationSourceType.XyzFile &&
             previous.SourceType != ElevationSourceType.XyzMultiple)
             return previous;
@@ -215,19 +416,25 @@ public class ElevationImportService
         // GeoTIFF
         if (geoTiffs.Length > 0)
         {
+            WarnIfRgeAltiSupplements(geoTiffs);
+
             GeoTiffMetadataService.GeoTiffMetadataResult? metadata;
 
             if (geoTiffs.Length == 1)
             {
                 metadata = await _metadataService.ReadFromFileAsync(geoTiffs[0]);
+                var (singleMeta, singleDetectedEpsg) = TryAutoDetectGeoTiffEpsg(metadata);
                 return new ElevationImportResult
                 {
                     SourceType = ElevationSourceType.GeoTiffSingle,
                     FilePaths = geoTiffs,
                     FileNames = geoTiffs.Select(Path.GetFileName).ToArray()!,
                     FileCount = 1,
-                    FormatLabel = "GeoTIFF",
-                    Metadata = metadata,
+                    FormatLabel = GetRasterFormatLabel(geoTiffs),
+                    Metadata = singleMeta,
+                    NeedsEpsgCode = singleMeta?.NeedsEpsgOverride == true || singleDetectedEpsg.HasValue,
+                    DetectedEpsgCode = singleDetectedEpsg,
+                    EpsgCode = singleDetectedEpsg ?? 0,
                     TempExtractionPath = tempExtractionPath,
                     WasExtractedFromZip = wasZip,
                     ResolvedGeoTiffPath = geoTiffs[0]
@@ -237,14 +444,18 @@ public class ElevationImportService
             // Multiple GeoTIFF tiles — use directory of the first file, or temp extraction path
             var tileDirectory = tempExtractionPath ?? Path.GetDirectoryName(geoTiffs[0])!;
             metadata = await _metadataService.ReadFromDirectoryAsync(tileDirectory);
+            var (multiMeta, multiDetectedEpsg) = TryAutoDetectGeoTiffEpsg(metadata);
             return new ElevationImportResult
             {
                 SourceType = ElevationSourceType.GeoTiffMultiple,
                 FilePaths = geoTiffs,
                 FileNames = geoTiffs.Select(Path.GetFileName).ToArray()!,
                 FileCount = geoTiffs.Length,
-                FormatLabel = "GeoTIFF",
-                Metadata = metadata,
+                FormatLabel = GetRasterFormatLabel(geoTiffs),
+                Metadata = multiMeta,
+                NeedsEpsgCode = multiMeta?.NeedsEpsgOverride == true || multiDetectedEpsg.HasValue,
+                DetectedEpsgCode = multiDetectedEpsg,
+                EpsgCode = multiDetectedEpsg ?? 0,
                 TempExtractionPath = tempExtractionPath,
                 WasExtractedFromZip = wasZip,
                 ResolvedGeoTiffDirectory = tileDirectory
@@ -362,6 +573,42 @@ public class ElevationImportService
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         return GeoTiffExtensions.Contains(ext);
+    }
+
+    /// <summary>
+    ///     Warns when the selection contains IGN RGE ALTI quality-supplement rasters
+    ///     (_DST_ = distance to nearest measurement, _SRC_ = data source classification).
+    ///     Those are NOT elevation — combining them with or instead of the *_MNT_* DEM tiles
+    ///     produces nonsense heights (typically a 0–255 range).
+    /// </summary>
+    private static void WarnIfRgeAltiSupplements(IReadOnlyCollection<string> rasterFiles)
+    {
+        var supplementCount = rasterFiles.Count(f =>
+        {
+            var name = Path.GetFileName(f);
+            return name.Contains("_DST_", StringComparison.OrdinalIgnoreCase) ||
+                   name.Contains("_SRC_", StringComparison.OrdinalIgnoreCase);
+        });
+
+        if (supplementCount == 0)
+            return;
+
+        PubSubChannel.SendMessage(PubSubMessageType.Warning,
+            $"{supplementCount} of {rasterFiles.Count} selected tiles look like IGN RGE ALTI quality supplements " +
+            "(_DST_/_SRC_), which contain measurement metadata, NOT elevation. " +
+            "Import only the *_MNT_* tiles (the actual DEM folder) to get correct heights.");
+    }
+
+    /// <summary>
+    ///     Display label for GDAL-raster imports: distinguishes ESRI ASCII Grid (.asc) from GeoTIFF.
+    /// </summary>
+    private static string GetRasterFormatLabel(IReadOnlyCollection<string> files)
+    {
+        var ascCount = files.Count(f =>
+            Path.GetExtension(f).Equals(".asc", StringComparison.OrdinalIgnoreCase));
+
+        if (ascCount == 0) return "GeoTIFF";
+        return ascCount == files.Count ? "ASCII Grid (ESRI)" : "GeoTIFF + ASCII Grid";
     }
 
     private static bool IsXyzFile(string path)

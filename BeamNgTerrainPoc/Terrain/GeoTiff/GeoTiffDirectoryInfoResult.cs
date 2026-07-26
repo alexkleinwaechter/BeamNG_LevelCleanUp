@@ -90,6 +90,13 @@ public class GeoTiffDirectoryInfoResult
     public List<string> Warnings { get; init; } = [];
 
     /// <summary>
+    /// Whether the combined WGS84 bounding box could not be derived from the tiles' CRS metadata
+    /// (missing CRS, engineering/local CRS with only a citation name, or failed transformation).
+    /// When true, the user should supply the EPSG code manually.
+    /// </summary>
+    public bool NeedsEpsgOverride { get; init; }
+
+    /// <summary>
     /// Whether the tiles are in a geographic (lat/lon) coordinate system.
     /// </summary>
     public bool IsGeographic => Wgs84BoundingBox != null &&

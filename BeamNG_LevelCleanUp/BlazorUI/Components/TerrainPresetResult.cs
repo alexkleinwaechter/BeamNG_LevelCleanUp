@@ -82,6 +82,7 @@ public class TerrainPresetResult
     ///     EPSG code for XYZ coordinate system (when HeightmapSourceType is XyzFile).
     /// </summary>
     public int? XyzEpsgCode { get; set; }
+    public int? GeoTiffEpsgOverride { get; set; }
 
     // ========== NEW: Terrain Generation Options ==========
 

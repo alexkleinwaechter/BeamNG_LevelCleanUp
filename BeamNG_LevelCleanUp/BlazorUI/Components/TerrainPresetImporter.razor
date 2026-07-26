@@ -557,6 +557,9 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.HeightmapSourceType = sourceType;
                 }
 
+                // EPSG override for GeoTIFFs whose embedded CRS is unusable
+                result.GeoTiffEpsgOverride = heightmapSource["geoTiffEpsgOverride"]?.GetValue<int>();
+
                 // PORTABLE PRESET: First try to load the exported GeoTIFF from the preset folder
                 // The exporter saves the GeoTIFF file to the preset folder for portability
                 var exportedGeoTiffFileName = heightmapSource["exportedGeoTiffFileName"]?.GetValue<string>();

@@ -113,10 +113,14 @@ public class GeoTiffReader
     ///     Optional target size to resize the heightmap to (must be power of 2).
     ///     If null, the original size is kept.
     /// </param>
+    /// <param name="epsgOverride">
+    ///     Optional EPSG code to use instead of the file's embedded CRS.
+    ///     Use when the embedded CRS is unusable (e.g. engineering CRS with only a citation name).
+    /// </param>
     /// <returns>Import result containing heightmap image and bounding box</returns>
-    public GeoTiffImportResult ReadGeoTiff(string geoTiffPath, int? targetSize = null)
+    public GeoTiffImportResult ReadGeoTiff(string geoTiffPath, int? targetSize = null, int? epsgOverride = null)
     {
-        return ReadGeoTiff(geoTiffPath, targetSize, null, null, null, null);
+        return ReadGeoTiff(geoTiffPath, targetSize, null, null, null, null, epsgOverride);
     }
 
     /// <summary>
@@ -128,6 +132,7 @@ public class GeoTiffReader
     /// <param name="cropOffsetY">Y offset in pixels from the top edge (null = no crop)</param>
     /// <param name="cropWidth">Width of the cropped region in pixels</param>
     /// <param name="cropHeight">Height of the cropped region in pixels</param>
+    /// <param name="epsgOverride">Optional EPSG code to use instead of the file's embedded CRS</param>
     /// <returns>Import result containing heightmap image and bounding box</returns>
     public GeoTiffImportResult ReadGeoTiff(
         string geoTiffPath,
@@ -135,7 +140,8 @@ public class GeoTiffReader
         int? cropOffsetX,
         int? cropOffsetY,
         int? cropWidth,
-        int? cropHeight)
+        int? cropHeight,
+        int? epsgOverride = null)
     {
         if (!File.Exists(geoTiffPath))
             throw new FileNotFoundException($"GeoTIFF file not found: {geoTiffPath}");
@@ -147,6 +153,8 @@ public class GeoTiffReader
         using var dataset = Gdal.Open(geoTiffPath, Access.GA_ReadOnly);
         if (dataset == null)
             throw new InvalidOperationException($"Failed to open GeoTIFF: {geoTiffPath}");
+
+        var overrideProjection = GetOverrideProjectionWkt(epsgOverride);
 
         // Check if cropping is requested
         var shouldCrop = cropOffsetX.HasValue && cropOffsetY.HasValue &&
@@ -161,9 +169,24 @@ public class GeoTiffReader
                 cropOffsetX!.Value,
                 cropOffsetY!.Value,
                 cropWidth!.Value,
-                cropHeight!.Value);
+                cropHeight!.Value,
+                overrideProjection);
 
-        return ReadFromDataset(dataset, geoTiffPath, targetSize);
+        return ReadFromDataset(dataset, geoTiffPath, targetSize, overrideProjection);
+    }
+
+    /// <summary>
+    ///     Converts an optional EPSG override code to a projection WKT, logging the substitution.
+    ///     Returns null when no override is requested.
+    /// </summary>
+    private static string? GetOverrideProjectionWkt(int? epsgOverride)
+    {
+        if (!epsgOverride.HasValue)
+            return null;
+
+        var wkt = GetProjectionWktFromEpsg(epsgOverride.Value);
+        TerrainLogger.Info($"Using EPSG:{epsgOverride.Value} override instead of the file's embedded CRS");
+        return wkt;
     }
 
     /// <summary>
@@ -715,8 +738,9 @@ public class GeoTiffReader
     ///     Gets extended information about a GeoTIFF file including WGS84 bounding box.
     /// </summary>
     /// <param name="geoTiffPath">Path to the GeoTIFF file</param>
+    /// <param name="epsgOverride">Optional EPSG code to use instead of the file's embedded CRS</param>
     /// <returns>Extended info including both native and WGS84 bounding boxes</returns>
-    public GeoTiffInfoResult GetGeoTiffInfoExtended(string geoTiffPath)
+    public GeoTiffInfoResult GetGeoTiffInfoExtended(string geoTiffPath, int? epsgOverride = null)
     {
         if (!File.Exists(geoTiffPath))
             throw new FileNotFoundException($"GeoTIFF file not found: {geoTiffPath}");
@@ -740,8 +764,8 @@ public class GeoTiffReader
 
         var boundingBox = new GeoBoundingBox(minX, minY, maxX, maxY);
 
-        // Get projection and transform to WGS84 if needed
-        var projection = dataset.GetProjection();
+        // Get projection (override replaces unusable embedded CRS) and transform to WGS84 if needed
+        var projection = GetOverrideProjectionWkt(epsgOverride) ?? dataset.GetProjection();
         GeoBoundingBox? wgs84BoundingBox = null;
 
         if (!string.IsNullOrEmpty(projection))
@@ -797,7 +821,8 @@ public class GeoTiffReader
             Projection = projection,
             GeoTransform = geoTransform,
             MinElevation = minElevation,
-            MaxElevation = maxElevation
+            MaxElevation = maxElevation,
+            NeedsEpsgOverride = wgs84BoundingBox == null
         };
     }
 
@@ -936,18 +961,23 @@ public class GeoTiffReader
     /// </summary>
     /// <param name="directoryPath">Directory containing GeoTIFF tiles</param>
     /// <param name="progress">Optional progress reporter for UI feedback (e.g., "Reading tile 10 / 50")</param>
+    /// <param name="epsgOverride">Optional EPSG code to use instead of the tiles' embedded CRS</param>
     /// <returns>Combined info with total dimensions, bounding box, validation result, etc.</returns>
-    public GeoTiffDirectoryInfoResult GetGeoTiffDirectoryInfoExtended(string directoryPath, IProgress<string>? progress = null)
+    public GeoTiffDirectoryInfoResult GetGeoTiffDirectoryInfoExtended(string directoryPath,
+        IProgress<string>? progress = null, int? epsgOverride = null)
     {
         if (!Directory.Exists(directoryPath))
             throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
 
         InitializeGdal();
 
-        // Find all GeoTIFF files
+        var overrideProjection = GetOverrideProjectionWkt(epsgOverride);
+
+        // Find all GDAL-readable raster tiles (GeoTIFF + ESRI ASCII Grid)
         var tiffFiles = Directory.GetFiles(directoryPath, "*.tif", SearchOption.TopDirectoryOnly)
             .Concat(Directory.GetFiles(directoryPath, "*.tiff", SearchOption.TopDirectoryOnly))
             .Concat(Directory.GetFiles(directoryPath, "*.geotiff", SearchOption.TopDirectoryOnly))
+            .Concat(Directory.GetFiles(directoryPath, "*.asc", SearchOption.TopDirectoryOnly))
             .Distinct()
             .OrderBy(f => f)
             .ToList();
@@ -955,7 +985,7 @@ public class GeoTiffReader
         if (tiffFiles.Count == 0)
             throw new InvalidOperationException(
                 $"No GeoTIFF files found in '{directoryPath}'. " +
-                "Supported extensions: .tif, .tiff, .geotiff");
+                "Supported extensions: .tif, .tiff, .geotiff, .asc");
 
         TerrainLogger.Info($"Analyzing {tiffFiles.Count} GeoTIFF tile(s) in directory using parallel processing...");
 
@@ -978,7 +1008,7 @@ public class GeoTiffReader
             {
                 try
                 {
-                    tileResults[i] = (tiffFiles[i], GetGeoTiffInfoExtendedQuiet(tiffFiles[i]), null);
+                    tileResults[i] = (tiffFiles[i], GetGeoTiffInfoExtendedQuiet(tiffFiles[i], overrideProjection), null);
                 }
                 catch (Exception ex)
                 {
@@ -1019,7 +1049,7 @@ public class GeoTiffReader
 
                 if (firstProjection == null)
                 {
-                    validationResult = ValidateGeoTiff(path);
+                    validationResult = ValidateGeoTiff(path, epsgOverride);
                     firstProjection = tileInfo.Projection;
                     firstProjectionName = tileInfo.ProjectionName;
 
@@ -1155,7 +1185,8 @@ public class GeoTiffReader
                 ValidationResult = validationResult,
                 CanFetchOsmData = canFetchOsm,
                 OsmBlockedReason = osmBlockedReason,
-                Warnings = warnings
+                Warnings = warnings,
+                NeedsEpsgOverride = wgs84BoundingBox == null
             };
         }
         finally
@@ -1169,7 +1200,7 @@ public class GeoTiffReader
     ///     Gets extended information about a GeoTIFF file without logging to UI.
     ///     Used internally for bulk tile analysis to avoid UI spam.
     /// </summary>
-    private GeoTiffInfoResult GetGeoTiffInfoExtendedQuiet(string geoTiffPath)
+    private GeoTiffInfoResult GetGeoTiffInfoExtendedQuiet(string geoTiffPath, string? overrideProjection = null)
     {
         if (!File.Exists(geoTiffPath))
             throw new FileNotFoundException($"GeoTIFF file not found: {geoTiffPath}");
@@ -1193,8 +1224,10 @@ public class GeoTiffReader
 
         var boundingBox = new GeoBoundingBox(minX, minY, maxX, maxY);
 
-        // Get projection and transform to WGS84 if needed
-        var projection = dataset.GetProjection();
+        // Get projection (use override if provided) and transform to WGS84 if needed.
+        // quiet: per-tile transform failures in bulk scans go to the file log only — the
+        // combined directory result decides whether the user is asked to act.
+        var projection = overrideProjection ?? dataset.GetProjection();
         GeoBoundingBox? wgs84BoundingBox = null;
 
         if (!string.IsNullOrEmpty(projection))
@@ -1202,7 +1235,7 @@ public class GeoTiffReader
             if (GeoBoundingBox.IsWgs84Projection(projection))
                 wgs84BoundingBox = boundingBox;
             else
-                wgs84BoundingBox = GeoBoundingBox.TransformToWgs84(boundingBox, projection);
+                wgs84BoundingBox = GeoBoundingBox.TransformToWgs84(boundingBox, projection, quiet: true);
         }
         else
         {
@@ -1234,7 +1267,8 @@ public class GeoTiffReader
             Projection = projection,
             GeoTransform = geoTransform,
             MinElevation = minElevation,
-            MaxElevation = maxElevation
+            MaxElevation = maxElevation,
+            NeedsEpsgOverride = wgs84BoundingBox == null
         };
     }
 
@@ -1544,8 +1578,9 @@ public class GeoTiffReader
     /// <summary>
     ///     Constructs a projection WKT string from an EPSG code using GDAL's SpatialReference.
     /// </summary>
-    private static string GetProjectionWktFromEpsg(int epsgCode)
+    public static string GetProjectionWktFromEpsg(int epsgCode)
     {
+        InitializeGdal();
         var srs = new SpatialReference(null);
         if (srs.ImportFromEPSG(epsgCode) != 0)
             throw new ArgumentException($"Invalid or unsupported EPSG code: {epsgCode}");
@@ -1618,7 +1653,8 @@ public class GeoTiffReader
             Projection = projection,
             GeoTransform = geoTransform,
             MinElevation = minElevation,
-            MaxElevation = maxElevation
+            MaxElevation = maxElevation,
+            NeedsEpsgOverride = wgs84BoundingBox == null
         };
     }
 
@@ -1627,8 +1663,9 @@ public class GeoTiffReader
     ///     This performs comprehensive checks and returns detailed diagnostic information.
     /// </summary>
     /// <param name="geoTiffPath">Path to the GeoTIFF file</param>
+    /// <param name="epsgOverride">Optional EPSG code to use instead of the file's embedded CRS</param>
     /// <returns>Validation result with errors, warnings, and diagnostic info</returns>
-    public GeoTiffValidationResult ValidateGeoTiff(string geoTiffPath)
+    public GeoTiffValidationResult ValidateGeoTiff(string geoTiffPath, int? epsgOverride = null)
     {
         var diagnostics = new List<string>();
         var warnings = new List<string>();
@@ -1667,8 +1704,13 @@ public class GeoTiffReader
             var nativeBbox = new GeoBoundingBox(minX, minY, maxX, maxY);
             diagnostics.Add($"Native bounding box: MinX={minX:F2}, MinY={minY:F2}, MaxX={maxX:F2}, MaxY={maxY:F2}");
 
-            // Get and analyze projection
+            // Get and analyze projection (override replaces the embedded CRS if requested)
             var projection = dataset.GetProjection();
+            if (epsgOverride.HasValue)
+            {
+                projection = GetProjectionWktFromEpsg(epsgOverride.Value);
+                diagnostics.Add($"Using EPSG:{epsgOverride.Value} override instead of the embedded CRS");
+            }
             var projectionName = "Unknown";
             var isProjectedCrs = false;
             GeoBoundingBox? wgs84Bbox = null;
@@ -1779,6 +1821,17 @@ public class GeoTiffReader
                                 diagnostics.Add(
                                     "The file may actually be in a projected CRS (like UTM) with wrong metadata.");
                             }
+                        }
+                        else
+                        {
+                            // Neither projected nor geographic: engineering/local CRS. The file only carries
+                            // a CRS name (e.g. "Lambert 93") without an EPSG code or projection parameters,
+                            // so no transformation to WGS84 exists.
+                            errors.Add(
+                                $"The embedded CRS '{projectionName}' is an engineering/local coordinate system - " +
+                                "the file is missing its real CRS definition (no EPSG code or projection parameters). " +
+                                "Provide the EPSG code manually (e.g. 2154 for RGF93 / Lambert-93).");
+                            diagnostics.Add("CRS is neither projected nor geographic - cannot transform to WGS84.");
                         }
                     }
                     else

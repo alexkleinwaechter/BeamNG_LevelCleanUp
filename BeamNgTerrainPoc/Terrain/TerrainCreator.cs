@@ -950,11 +950,13 @@ public class TerrainCreator
                 parameters.CropOffsetX,
                 parameters.CropOffsetY,
                 parameters.CropWidth,
-                parameters.CropHeight));
+                parameters.CropHeight,
+                parameters.GeoTiffEpsgOverride));
         }
         else
         {
-            result = await Task.Run(() => reader.ReadGeoTiff(geoTiffPath, parameters.Size));
+            result = await Task.Run(() =>
+                reader.ReadGeoTiff(geoTiffPath, parameters.Size, parameters.GeoTiffEpsgOverride));
         }
 
         // Populate parameters with geo-metadata
@@ -1014,16 +1016,18 @@ public class TerrainCreator
                 $"size {parameters.CropWidth}x{parameters.CropHeight}");
             
             result = await combiner.CombineAndImportAsync(
-                geoTiffDirectory, 
+                geoTiffDirectory,
                 parameters.Size,
                 parameters.CropOffsetX,
                 parameters.CropOffsetY,
                 parameters.CropWidth,
-                parameters.CropHeight);
+                parameters.CropHeight,
+                epsgOverride: parameters.GeoTiffEpsgOverride);
         }
         else
         {
-            result = await combiner.CombineAndImportAsync(geoTiffDirectory, parameters.Size);
+            result = await combiner.CombineAndImportAsync(geoTiffDirectory, parameters.Size,
+                epsgOverride: parameters.GeoTiffEpsgOverride);
         }
 
         // Populate parameters with geo-metadata

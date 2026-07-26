@@ -33,8 +33,10 @@ public class ElevationImportResult
     /// </summary>
     public GeoTiffMetadataService.GeoTiffMetadataResult? Metadata { get; init; }
 
-    // XYZ-specific
-    public bool NeedsEpsgCode { get; init; }
+    // EPSG handling: always true for XYZ (no embedded CRS); true for GeoTIFF only when the
+    // embedded CRS is unusable and the user must supply an EPSG code manually.
+    // Settable because the page flips it when late metadata reads reveal an unresolvable CRS.
+    public bool NeedsEpsgCode { get; set; }
     public int? DetectedEpsgCode { get; init; }
     public int EpsgCode { get; set; }
 

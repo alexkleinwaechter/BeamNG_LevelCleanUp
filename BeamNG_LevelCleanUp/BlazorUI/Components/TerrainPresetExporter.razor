@@ -1,6 +1,7 @@
 @using System.Text.Json
 @using System.Text.Json.Nodes
 @using System.Text.Json.Serialization
+@using BeamNG_LevelCleanUp.BlazorUI.Services
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
@@ -65,6 +66,7 @@
     [Parameter] public string? XyzPath { get; set; }
     [Parameter] public string[]? XyzFilePaths { get; set; }
     [Parameter] public int XyzEpsgCode { get; set; }
+    [Parameter] public int? GeoTiffEpsgOverride { get; set; }
     [Parameter] public string? CachedCombinedGeoTiffPath { get; set; }
     [Parameter] public bool UpdateTerrainBlock { get; set; } = true;
     [Parameter] public bool EnableCrossMaterialHarmonization { get; set; }
@@ -252,13 +254,15 @@
         {
             var geoTiffExportName = Path.GetFileName(GeoTiffPath);
             var targetGeoTiffPath = Path.Combine(exportFolder, geoTiffExportName);
-            
+
             // Only copy if source and target are different files
             if (!string.Equals(Path.GetFullPath(GeoTiffPath), Path.GetFullPath(targetGeoTiffPath), StringComparison.OrdinalIgnoreCase))
             {
                 CopyFileWithRetry(GeoTiffPath, targetGeoTiffPath);
                 // GeoTIFF source exported - detail not needed in UI
             }
+
+            await WarnIfExportedHeightmapLacksCrs(targetGeoTiffPath);
         }
         else if (HeightmapSourceType == HeightmapSourceType.GeoTiffDirectory && !string.IsNullOrEmpty(GeoTiffDirectory) && Directory.Exists(GeoTiffDirectory))
         {
@@ -275,6 +279,8 @@
                     CopyFileWithRetry(combinedGeoTiffPath, targetCombinedPath);
                     // Combined GeoTIFF exported - detail not needed in UI
                 }
+
+                await WarnIfExportedHeightmapLacksCrs(targetCombinedPath);
             }
             else
             {
@@ -287,6 +293,7 @@
                     Directory.CreateDirectory(tilesExportFolder);
                     var tiffFiles = Directory.GetFiles(GeoTiffDirectory, "*.tif", SearchOption.TopDirectoryOnly)
                         .Concat(Directory.GetFiles(GeoTiffDirectory, "*.tiff", SearchOption.TopDirectoryOnly))
+                        .Concat(Directory.GetFiles(GeoTiffDirectory, "*.asc", SearchOption.TopDirectoryOnly))
                         .Distinct();
                     var tileCount = 0;
                     foreach (var tiffFile in tiffFiles)
@@ -337,6 +344,9 @@
                         $"Converted {xyzInputFiles.Length} XYZ file(s) to GeoTIFF for preset portability");
                 }
             }
+
+            if (File.Exists(targetConvertedPath))
+                await WarnIfExportedHeightmapLacksCrs(targetConvertedPath);
         }
 
         // ========================================
@@ -564,6 +574,11 @@
             ["originalGeoTiffPath"] = GeoTiffPath,
             ["originalGeoTiffDirectory"] = GeoTiffDirectory
         };
+
+        // EPSG override for GeoTIFFs whose embedded CRS is unusable (needed again on import
+        // because the exported file carries the same broken CRS metadata)
+        if (GeoTiffEpsgOverride.HasValue)
+            source["geoTiffEpsgOverride"] = GeoTiffEpsgOverride.Value;
 
         // Store XYZ-specific metadata for reference and fallback
         if (HeightmapSourceType == HeightmapSourceType.XyzFile)
@@ -810,6 +825,40 @@
         
         // If we get here, all retries failed - throw the last exception
         throw lastException ?? new IOException($"Failed to copy {sourcePath} to {targetPath} after {maxRetries} retries");
+    }
+
+    /// <summary>
+    /// Verifies the heightmap file just placed into the preset folder carries a CRS.
+    /// A preset whose heightmap has neither an embedded projection nor a stored EPSG
+    /// override is guaranteed to fail at generation time - surface that at export time
+    /// instead of letting the broken file travel with the preset.
+    /// </summary>
+    private async Task WarnIfExportedHeightmapLacksCrs(string exportedPath)
+    {
+        try
+        {
+            var projection = await new GeoTiffMetadataService().GetProjectionAsync(exportedPath);
+            if (!string.IsNullOrEmpty(projection))
+                return;
+
+            if (GeoTiffEpsgOverride.HasValue)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    $"Preset heightmap '{Path.GetFileName(exportedPath)}' has no embedded CRS; " +
+                    $"the stored EPSG:{GeoTiffEpsgOverride} override will be applied on import.");
+                return;
+            }
+
+            var msg = $"Preset heightmap '{Path.GetFileName(exportedPath)}' has NO coordinate system and " +
+                      "no EPSG override is stored - this preset will fail to generate. Re-import the source " +
+                      "elevation data (or enter its EPSG code) and export the preset again.";
+            Snackbar.Add(msg, Severity.Error);
+            PubSubChannel.SendMessage(PubSubMessageType.Error, msg);
+        }
+        catch
+        {
+            // The health check must never block preset export
+        }
     }
 
     /// <summary>

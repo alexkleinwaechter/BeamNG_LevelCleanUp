@@ -26,7 +26,7 @@ public static class TerrainLogger
 {
     private static TerrainLogHandler? _logHandler;
     private static readonly object _lock = new();
-    
+
     /// <summary>
     /// When true, suppresses detailed per-item logging for bulk operations.
     /// Only summary and progress messages will be sent to the UI handler.
