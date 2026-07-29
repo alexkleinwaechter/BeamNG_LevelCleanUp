@@ -35,6 +35,17 @@ public class TerrainGenerationState
     public bool UpdateTerrainBlock { get; set; } = true;
     public bool EnableCrossMaterialHarmonization { get; set; } = true;
     public HydraulicErosionSettings HydraulicErosion { get; set; } = new();
+    public BackdropSettings Backdrop { get; set; } = new();
+    public TexturingSettings Texturing { get; set; } = new();
+
+    /// <summary>
+    ///     The texturing mode that actually applies: an enabled backdrop forces BaseColor Mode
+    ///     (the backdrop is pure satellite imagery — the terrain must match it), otherwise the
+    ///     user's own <see cref="TexturingSettings.Mode"/> choice. Derived, never mutates
+    ///     <see cref="Texturing"/>, so disabling the backdrop returns to the user's choice.
+    /// </summary>
+    public TerrainTexturingMode EffectiveTexturingMode =>
+        Backdrop.Enabled ? TerrainTexturingMode.BaseColorMode : Texturing.Mode;
 
     /// <summary>
     ///     When true, flips the material processing order for road network building.
@@ -475,6 +486,8 @@ public class TerrainGenerationState
         BridgeRules = BridgeRuleSystemOptions.CreateWithAllRulesEnabled();
         TunnelRules = TunnelRuleSystemOptions.CreateWithAllRulesEnabled();
         HydraulicErosion = new HydraulicErosionSettings();
+        Backdrop = new BackdropSettings();
+        Texturing = new TexturingSettings();
         FlipMaterialProcessingOrder = false;
         EnableDecalRoads = true;
         DecalRoadSettings = null;

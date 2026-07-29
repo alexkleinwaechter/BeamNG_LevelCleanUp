@@ -27,6 +27,9 @@ public class MtSettings
     [JsonPropertyName("GeoReferenceSettings")]
     public MtGeoReferenceSettings GeoReferenceSettings { get; set; } = new();
 
+    [JsonPropertyName("BackdropSettings")]
+    public MtBackdropSettings? BackdropSettings { get; set; }
+
     public static MtSettings? Load(string levelRoot)
     {
         try
@@ -44,8 +47,28 @@ public class MtSettings
         }
     }
 
-    public void Save(string levelRoot)
+    /// <summary>
+    /// Whole-file overwrite, called from multiple pages (BasecolorManager, GenerateTerrain,
+    /// CopyTerrains, ...). Cross-page stale-settings hazard: an in-memory <see cref="MtSettings"/>
+    /// loaded/created before a backdrop existed (or generated later from another page in the same
+    /// session) has <see cref="BackdropSettings"/> == null, even though the on-disk file may already
+    /// carry a real chunk registry — writing this object as-is would silently orphan it. Unless
+    /// <paramref name="dropBackdropSettings"/> is set (the explicit removal path), the on-disk block
+    /// is grafted onto this object first so the write preserves it and this instance stays consistent
+    /// with what lands on disk.
+    /// </summary>
+    public void Save(string levelRoot, bool dropBackdropSettings = false)
     {
+        if (BackdropSettings == null && !dropBackdropSettings)
+        {
+            // Cheap: only reads when we have nothing in memory to lose. Load() already swallows
+            // read/parse failures and returns null, so a corrupt disk file just means we write
+            // what's in memory - never breaks Save().
+            var onDisk = Load(levelRoot);
+            if (onDisk?.BackdropSettings != null)
+                BackdropSettings = onDisk.BackdropSettings;
+        }
+
         var settingsPath = GetSettingsPath(levelRoot);
         var json = JsonSerializer.Serialize(this, CreateSerializerOptions());
         File.WriteAllText(settingsPath, json);
@@ -294,4 +317,41 @@ public class MtTerrainMaterialSetting
             BaseColorOverlayBlend = Math.Clamp(BaseColorOverlayBlend, 0.0, 1.0)
         };
     }
+}
+
+public class MtBackdropSettings
+{
+    [JsonPropertyName("Enabled")] public bool Enabled { get; set; }
+    [JsonPropertyName("MinLongitude")] public double MinLongitude { get; set; }
+    [JsonPropertyName("MinLatitude")] public double MinLatitude { get; set; }
+    [JsonPropertyName("MaxLongitude")] public double MaxLongitude { get; set; }
+    [JsonPropertyName("MaxLatitude")] public double MaxLatitude { get; set; }
+    [JsonPropertyName("SourceGeoTransform")] public double[] SourceGeoTransform { get; set; } = [];
+    [JsonPropertyName("ProjectionWkt")] public string ProjectionWkt { get; set; } = string.Empty;
+    [JsonPropertyName("TerrainMetersPerPixel")] public double TerrainMetersPerPixel { get; set; }
+    [JsonPropertyName("EdgeBandMeters")] public double EdgeBandMeters { get; set; }
+    [JsonPropertyName("Chunks")] public List<MtBackdropChunk> Chunks { get; set; } = new();
+    /// <summary>Whether the baked chunk DAEs carry collision meshes (null = pre-toggle bake, which
+    /// always had collision). Lets a future staleness/info line say "baked without collision".</summary>
+    [JsonPropertyName("HasCollision")] public bool? HasCollision { get; set; }
+    [JsonPropertyName("LastBakeUtc")] public DateTime? LastBakeUtc { get; set; }                 // mesh generation
+    [JsonPropertyName("LastTextureBakeUtc")] public DateTime? LastTextureBakeUtc { get; set; }   // texture bake
+    [JsonPropertyName("LastBakeProvider")] public string LastBakeProvider { get; set; } = string.Empty;
+    [JsonPropertyName("LastBakeImageryDate")] public string LastBakeImageryDate { get; set; } = string.Empty;
+}
+
+public class MtBackdropChunk
+{
+    [JsonPropertyName("Cx")] public int Cx { get; set; }
+    [JsonPropertyName("Cy")] public int Cy { get; set; }
+    [JsonPropertyName("MinLongitude")] public double MinLongitude { get; set; }
+    [JsonPropertyName("MinLatitude")] public double MinLatitude { get; set; }
+    [JsonPropertyName("MaxLongitude")] public double MaxLongitude { get; set; }
+    [JsonPropertyName("MaxLatitude")] public double MaxLatitude { get; set; }
+    [JsonPropertyName("SourceRectX")] public double SourceRectX { get; set; }
+    [JsonPropertyName("SourceRectY")] public double SourceRectY { get; set; }
+    [JsonPropertyName("SourceRectWidth")] public double SourceRectWidth { get; set; }
+    [JsonPropertyName("SourceRectHeight")] public double SourceRectHeight { get; set; }
+    [JsonPropertyName("TextureFile")] public string TextureFile { get; set; } = string.Empty;
+    [JsonPropertyName("TextureSize")] public int TextureSize { get; set; }
 }

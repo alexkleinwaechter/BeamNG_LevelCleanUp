@@ -6,9 +6,11 @@ using BeamNG_LevelCleanUp.BlazorUI.Services.OsmAutoAssign;
 using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.Logic;
+using BeamNG_LevelCleanUp.LogicBasecolorManager;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNG_LevelCleanUp.Objects.MtSettings;
 using BeamNG_LevelCleanUp.Utils;
+using BeamNgTerrainPoc.Terrain.Backdrop;
 using BeamNgTerrainPoc.Terrain.Export;
 using BeamNgTerrainPoc.Terrain.GeoTiff;
 using BeamNgTerrainPoc.Terrain.Logging;
@@ -78,6 +80,11 @@ public partial class GenerateTerrain : IDisposable
 
     // Pending crop settings from preset import (applied after GeoTIFF metadata is loaded)
     private (int offsetX, int offsetY)? _pendingCropOffsets;
+
+    // Pending backdrop selection rect from preset import (spec §5, Task 19): same source-pixel
+    // fragility as crop offsets — the CropAnchorSelector recenters when it receives new GeoTIFF
+    // dimensions, so the rect is applied after the selector is rendered, mirroring _pendingCropOffsets.
+    private SelectionRect? _pendingBackdropRect;
     private TerrainPresetExporter? _presetExporter;
     private TerrainPresetImporter? _presetImporter;
     private bool _showErrorLog;
@@ -88,6 +95,9 @@ public partial class GenerateTerrain : IDisposable
     private volatile bool _suppressSnackbars;
 
     private Snackbar? _terrainGenerationSnackbar;
+
+    // Backdrop generation (spec §5, Task 18): last computed cost estimate, shown by BackdropSettingsPanel.
+    private BackdropEstimateDisplay? _backdropEstimate;
 
     // ========================================
     // WIZARD MODE PROPERTIES
@@ -1661,8 +1671,12 @@ public partial class GenerateTerrain : IDisposable
     }
 
     /// <summary>
-    ///     Reduces the GeoTIFF to the current crop selection, creating a smaller file.
-    ///     After reduction, the source type switches to GeoTiffFile and crop offsets reset to zero.
+    ///     Reduces the GeoTIFF to the current selection, creating a smaller file. The reduce
+    ///     window is the UNION of the terrain crop rect and the backdrop rect when backdrop
+    ///     generation is enabled — reducing to the terrain rect alone cut away the entire
+    ///     backdrop ring's elevation data (kattenesbackdrop 2026-07-29: skipped/edge-extended
+    ///     backdrop chunks after a reduce). Afterwards both selections are rebased into the
+    ///     reduced raster via the same pending-rect mechanism preset import uses.
     /// </summary>
     private async Task ReduceGeoTiffToCropAsync()
     {
@@ -1676,6 +1690,23 @@ public partial class GenerateTerrain : IDisposable
         {
             string croppedPath;
 
+            // Reduce window: terrain crop, unioned with the backdrop rect when one is active.
+            var window = BuildReduceWindow(_cropResult);
+            var includesBackdrop = window.OffsetX != _cropResult.OffsetX ||
+                                   window.OffsetY != _cropResult.OffsetY ||
+                                   window.CropWidth != _cropResult.CropWidth ||
+                                   window.CropHeight != _cropResult.CropHeight;
+
+            // Rebased positions inside the reduced raster, captured BEFORE any state changes.
+            var terrainOffsetInWindow = (X: _cropResult.OffsetX - window.OffsetX,
+                                         Y: _cropResult.OffsetY - window.OffsetY);
+            SelectionRect? backdropInWindow = _state.Backdrop is { Enabled: true, HasSelection: true }
+                ? new SelectionRect(
+                    _state.Backdrop.OffsetX - window.OffsetX,
+                    _state.Backdrop.OffsetY - window.OffsetY,
+                    _state.Backdrop.Width, _state.Backdrop.Height)
+                : null;
+
             // File-only diagnostics (drained into the next import/generation log): which branch
             // ran and whether the EPSG override was still set at reduce time — needed to diagnose
             // reduced files that come out without a CRS.
@@ -1683,7 +1714,9 @@ public partial class GenerateTerrain : IDisposable
                 $"[REDUCE] start: sourceType={_heightmapSourceType}, " +
                 $"epsgOverride={(_state.GeoTiffEpsgOverride?.ToString() ?? "none")}, " +
                 $"cropOffset=({_cropResult.OffsetX},{_cropResult.OffsetY}), " +
-                $"cropSize={_cropResult.CropWidth}x{_cropResult.CropHeight}");
+                $"cropSize={_cropResult.CropWidth}x{_cropResult.CropHeight}, " +
+                $"window=({window.OffsetX},{window.OffsetY}) {window.CropWidth}x{window.CropHeight}, " +
+                $"includesBackdrop={includesBackdrop}");
 
             if (_heightmapSourceType == HeightmapSourceType.GeoTiffFile)
             {
@@ -1694,8 +1727,8 @@ public partial class GenerateTerrain : IDisposable
                     $"[REDUCE] branch=single-file, source={_geoTiffPath}");
                 croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
                     _geoTiffPath,
-                    _cropResult.OffsetX, _cropResult.OffsetY,
-                    _cropResult.CropWidth, _cropResult.CropHeight,
+                    window.OffsetX, window.OffsetY,
+                    window.CropWidth, window.CropHeight,
                     _state.GeoTiffEpsgOverride);
             }
             else if (_heightmapSourceType == HeightmapSourceType.GeoTiffDirectory)
@@ -1705,7 +1738,7 @@ public partial class GenerateTerrain : IDisposable
                     return;
 
                 // Filter to only overlapping tiles if bounds are available
-                var filteredTiles = FilterOverlappingTiles(_cropResult);
+                var filteredTiles = FilterOverlappingTiles(window);
                 if (filteredTiles != null)
                 {
                     TerrainCreationLogger.InfoFileOnlyOrQueue(
@@ -1714,7 +1747,7 @@ public partial class GenerateTerrain : IDisposable
                     croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
                         filteredTiles.Value.Files,
                         filteredTiles.Value.OffsetX, filteredTiles.Value.OffsetY,
-                        _cropResult.CropWidth, _cropResult.CropHeight,
+                        window.CropWidth, window.CropHeight,
                         _state.GeoTiffEpsgOverride);
                 }
                 else
@@ -1723,8 +1756,8 @@ public partial class GenerateTerrain : IDisposable
                         $"[REDUCE] branch=directory-full, dir={_geoTiffDirectory}");
                     croppedPath = await _geoTiffService.CombineAndCropDirectAsync(
                         _geoTiffDirectory,
-                        _cropResult.OffsetX, _cropResult.OffsetY,
-                        _cropResult.CropWidth, _cropResult.CropHeight,
+                        window.OffsetX, window.OffsetY,
+                        window.CropWidth, window.CropHeight,
                         _state.GeoTiffEpsgOverride);
                 }
             }
@@ -1733,7 +1766,7 @@ public partial class GenerateTerrain : IDisposable
                 if (_state.XyzFilePaths is { Length: > 1 })
                 {
                     // Multi-XYZ: filter to overlapping tiles, then combine and crop
-                    var filteredXyz = FilterOverlappingTiles(_cropResult);
+                    var filteredXyz = FilterOverlappingTiles(window);
                     if (filteredXyz != null)
                     {
                         TerrainCreationLogger.InfoFileOnlyOrQueue(
@@ -1741,7 +1774,7 @@ public partial class GenerateTerrain : IDisposable
                         croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
                             filteredXyz.Value.Files, _xyzEpsgCode,
                             filteredXyz.Value.OffsetX, filteredXyz.Value.OffsetY,
-                            _cropResult.CropWidth, _cropResult.CropHeight);
+                            window.CropWidth, window.CropHeight);
                     }
                     else
                     {
@@ -1749,8 +1782,8 @@ public partial class GenerateTerrain : IDisposable
                             $"[REDUCE] branch=xyz-all, tiles={_state.XyzFilePaths.Length}, epsg={_xyzEpsgCode}");
                         croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
                             _state.XyzFilePaths, _xyzEpsgCode,
-                            _cropResult.OffsetX, _cropResult.OffsetY,
-                            _cropResult.CropWidth, _cropResult.CropHeight);
+                            window.OffsetX, window.OffsetY,
+                            window.CropWidth, window.CropHeight);
                     }
                 }
                 else if (!string.IsNullOrEmpty(_cachedCombinedGeoTiffPath) &&
@@ -1761,8 +1794,8 @@ public partial class GenerateTerrain : IDisposable
                         $"[REDUCE] branch=xyz-cached, source={_cachedCombinedGeoTiffPath}");
                     croppedPath = await _geoTiffService.CropGeoTiffToFileAsync(
                         _cachedCombinedGeoTiffPath,
-                        _cropResult.OffsetX, _cropResult.OffsetY,
-                        _cropResult.CropWidth, _cropResult.CropHeight);
+                        window.OffsetX, window.OffsetY,
+                        window.CropWidth, window.CropHeight);
                 }
                 else if (!string.IsNullOrEmpty(_state.XyzPath))
                 {
@@ -1771,8 +1804,8 @@ public partial class GenerateTerrain : IDisposable
                         $"[REDUCE] branch=xyz-single, source={_state.XyzPath}, epsg={_xyzEpsgCode}");
                     croppedPath = await _geoTiffService.CombineXyzAndCropDirectAsync(
                         new[] { _state.XyzPath }, _xyzEpsgCode,
-                        _cropResult.OffsetX, _cropResult.OffsetY,
-                        _cropResult.CropWidth, _cropResult.CropHeight);
+                        window.OffsetX, window.OffsetY,
+                        window.CropWidth, window.CropHeight);
                 }
                 else
                 {
@@ -1833,8 +1866,27 @@ public partial class GenerateTerrain : IDisposable
                 TerrainCreationLogger.InfoFileOnlyOrQueue($"[REDUCE] WARNING: {crsWarning}");
             }
 
-            // Reset crop result - the file IS the crop now
+            // Reset crop result — when the window was terrain-only, the file IS the crop now.
+            // With a backdrop overhang the terrain crop lives INSIDE the reduced file at the
+            // rebased offsets; both selections are re-applied via the pending-rect mechanism
+            // below (the selector's change callbacks rebuild _cropResult and _state.Backdrop).
             _cropResult = null;
+            if (includesBackdrop)
+                _pendingCropOffsets = (terrainOffsetInWindow.X, terrainOffsetInWindow.Y);
+            if (backdropInWindow is { } rebasedBackdropRect)
+            {
+                _pendingBackdropRect = rebasedBackdropRect;
+            }
+            else if (_state.Backdrop.HasSelection)
+            {
+                // Disabled-but-present backdrop selection: its source-pixel coords are meaningless
+                // in the reduced raster — clear it instead of leaving a stale rect behind.
+                _state.Backdrop.OffsetX = 0;
+                _state.Backdrop.OffsetY = 0;
+                _state.Backdrop.Width = 0;
+                _state.Backdrop.Height = 0;
+                _state.Backdrop.BoundingBox = null;
+            }
 
             // Update the elevation import result to reflect single-file state
             if (_elevationImportResult != null)
@@ -1859,8 +1911,19 @@ public partial class GenerateTerrain : IDisposable
             // Re-read metadata from the cropped file (updates bbox, dimensions, elevation, etc.)
             await ReadGeoTiffMetadata(syncMetersPerPixel: false);
 
+            // Re-apply the rebased selections once the selector has re-rendered with the new
+            // dimensions — same deferred mechanism (and delay) as preset import.
+            if (_pendingCropOffsets.HasValue || _pendingBackdropRect is not null)
+            {
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(100);
+                await ApplyPendingCropOffsets();
+            }
+
             Snackbar.Add(
-                $"GeoTIFF reduced to {_geoTiffOriginalWidth}x{_geoTiffOriginalHeight}px",
+                includesBackdrop
+                    ? $"GeoTIFF reduced to {_geoTiffOriginalWidth}x{_geoTiffOriginalHeight}px (terrain + backdrop selection kept)"
+                    : $"GeoTIFF reduced to {_geoTiffOriginalWidth}x{_geoTiffOriginalHeight}px",
                 Severity.Success);
         }
         catch (Exception ex)
@@ -1874,6 +1937,40 @@ public partial class GenerateTerrain : IDisposable
             _isReducingGeoTiff = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    ///     The pixel window "Reduce to selection" must keep: the terrain crop rect, unioned with
+    ///     the backdrop rect when backdrop generation is enabled with a selection (the backdrop
+    ///     ring needs its elevation data too), clamped to the source raster.
+    /// </summary>
+    private CropResult BuildReduceWindow(CropResult crop)
+    {
+        if (_state.Backdrop is not { Enabled: true, HasSelection: true })
+            return crop;
+
+        var minX = Math.Min(crop.OffsetX, _state.Backdrop.OffsetX);
+        var minY = Math.Min(crop.OffsetY, _state.Backdrop.OffsetY);
+        var maxX = Math.Max(crop.OffsetX + crop.CropWidth, _state.Backdrop.OffsetX + _state.Backdrop.Width);
+        var maxY = Math.Max(crop.OffsetY + crop.CropHeight, _state.Backdrop.OffsetY + _state.Backdrop.Height);
+
+        // Clamp to the source raster (the selector already constrains both rects — belt and braces).
+        minX = Math.Max(0, minX);
+        minY = Math.Max(0, minY);
+        if (_geoTiffOriginalWidth > 0)
+            maxX = Math.Min(maxX, _geoTiffOriginalWidth);
+        if (_geoTiffOriginalHeight > 0)
+            maxY = Math.Min(maxY, _geoTiffOriginalHeight);
+
+        return new CropResult
+        {
+            OffsetX = minX,
+            OffsetY = minY,
+            CropWidth = maxX - minX,
+            CropHeight = maxY - minY,
+            TargetSize = crop.TargetSize,
+            NeedsCropping = true
+        };
     }
 
     /// <summary>
@@ -2157,6 +2254,64 @@ public partial class GenerateTerrain : IDisposable
                 _pendingCropOffsets = null;
             }
 
+            // Apply backdrop settings (spec §5, Task 19). Scalars apply directly to state; the
+            // rect uses the same deferred pattern as _pendingCropOffsets above (the
+            // CropAnchorSelector recenters when it receives new GeoTIFF dimensions).
+            if (result.BackdropEnabled.HasValue)
+                _state.Backdrop.Enabled = result.BackdropEnabled.Value;
+            if (result.BackdropEdgeBandMeters.HasValue)
+                _state.Backdrop.EdgeBandMeters = result.BackdropEdgeBandMeters.Value;
+            if (result.BackdropMaxVerticalErrorNearMeters.HasValue)
+                _state.Backdrop.MaxVerticalErrorNearMeters = result.BackdropMaxVerticalErrorNearMeters.Value;
+            if (result.BackdropMaxVerticalErrorFarMeters.HasValue)
+                _state.Backdrop.MaxVerticalErrorFarMeters = result.BackdropMaxVerticalErrorFarMeters.Value;
+            if (result.BackdropChunkTargetMeters.HasValue)
+                _state.Backdrop.ChunkTargetMeters = result.BackdropChunkTargetMeters.Value;
+            if (result.BackdropTexelDensityNearMPerPx.HasValue)
+                _state.Backdrop.TexelDensityNearMPerPx = result.BackdropTexelDensityNearMPerPx.Value;
+            if (result.BackdropMaxChunkTextureSize.HasValue)
+                _state.Backdrop.MaxChunkTextureSize = result.BackdropMaxChunkTextureSize.Value;
+            if (result.BackdropMaxFarRasterDimension.HasValue)
+                _state.Backdrop.MaxFarRasterDimension = result.BackdropMaxFarRasterDimension.Value;
+            if (result.BackdropSeamSkirt.HasValue)
+                _state.Backdrop.SeamSkirt = result.BackdropSeamSkirt.Value;
+            if (result.BackdropCollisionMesh.HasValue)
+                _state.Backdrop.CollisionMesh = result.BackdropCollisionMesh.Value;
+
+            // Guard (doc 06 follow-up): presets silently override the app's backdrop mesh
+            // defaults — a pre-2026-07-28 preset's heavy tolerances produced a 1.4 GB backdrop
+            // that hung level load. Name anything heavier than the current defaults; the cost
+            // estimate additionally auto-runs once the deferred rect is applied.
+            WarnAboutHeavyBackdropPresetValues();
+
+            // Apply texturing mode settings (backdrop follow-up doc 06). Absent in old presets —
+            // nullable fields leave the PaintMode/100% defaults untouched.
+            if (result.TexturingMode.HasValue)
+                _state.Texturing.Mode = result.TexturingMode.Value;
+            if (result.TexturingNonRoadOverlayBlendPercent.HasValue)
+                _state.Texturing.NonRoadOverlayBlendPercent =
+                    Math.Clamp(result.TexturingNonRoadOverlayBlendPercent.Value, 0, 100);
+
+            // Store pending backdrop rect (will be applied after GeoTIFF metadata is loaded and
+            // the CropAnchorSelector component is rendered) - same reasoning as crop offsets above.
+            if (result.BackdropOffsetX.HasValue && result.BackdropOffsetY.HasValue &&
+                result.BackdropWidth.HasValue && result.BackdropHeight.HasValue &&
+                result.BackdropWidth.Value > 0 && result.BackdropHeight.Value > 0)
+            {
+                _pendingBackdropRect = new SelectionRect(
+                    result.BackdropOffsetX.Value, result.BackdropOffsetY.Value,
+                    result.BackdropWidth.Value, result.BackdropHeight.Value);
+
+                // Log to file only - technical preset import detail
+                Console.WriteLine(
+                    $"Preset contains backdrop rect: offset ({result.BackdropOffsetX}, {result.BackdropOffsetY}), " +
+                    $"size {result.BackdropWidth}x{result.BackdropHeight} - will apply after GeoTIFF loads");
+            }
+            else
+            {
+                _pendingBackdropRect = null;
+            }
+
             // Synthesize ElevationImportResult for the summary card display
             if (result.HeightmapSourceType == HeightmapSourceType.Png &&
                 !string.IsNullOrEmpty(_heightmapPath))
@@ -2375,9 +2530,9 @@ public partial class GenerateTerrain : IDisposable
             // Trigger UI refresh
             await InvokeAsync(StateHasChanged);
 
-            // If GeoTIFF was loaded and we have pending crop offsets, apply them now
-            // We need to wait for the UI to render the CropAnchorSelector first
-            if (geoTiffLoaded && _pendingCropOffsets.HasValue)
+            // If GeoTIFF was loaded and we have pending crop offsets and/or a pending backdrop
+            // rect, apply them now. We need to wait for the UI to render the CropAnchorSelector first.
+            if (geoTiffLoaded && (_pendingCropOffsets.HasValue || _pendingBackdropRect is not null))
             {
                 // Use a small delay to ensure the CropAnchorSelector component is rendered
                 await Task.Delay(100);
@@ -2397,29 +2552,43 @@ public partial class GenerateTerrain : IDisposable
     }
 
     /// <summary>
-    ///     Applies pending crop offsets that were stored during preset import.
-    ///     This should be called after the CropAnchorSelector component is rendered.
+    ///     Applies pending crop offsets and/or a pending backdrop rect that were stored during
+    ///     preset import. This should be called after the CropAnchorSelector component is rendered.
+    ///     Each part is independent — a preset with a backdrop rect but no crop offsets (or vice
+    ///     versa) must still apply the part it has (spec §11, Task 19 gate extension).
     /// </summary>
     private async Task ApplyPendingCropOffsets()
     {
-        if (!_pendingCropOffsets.HasValue)
-            return;
-
-        var (offsetX, offsetY) = _pendingCropOffsets.Value;
-        _pendingCropOffsets = null;
-
-        if (_cropAnchorSelector != null)
+        if (_pendingCropOffsets.HasValue)
         {
-            // Log to file only - technical detail
-            Console.WriteLine($"Applying restored crop offsets: ({offsetX}, {offsetY})");
+            var (offsetX, offsetY) = _pendingCropOffsets.Value;
+            _pendingCropOffsets = null;
 
-            await _cropAnchorSelector.SetCropOffsetsAsync(offsetX, offsetY);
+            if (_cropAnchorSelector != null)
+            {
+                // Log to file only - technical detail
+                Console.WriteLine($"Applying restored crop offsets: ({offsetX}, {offsetY})");
+
+                await _cropAnchorSelector.SetCropOffsetsAsync(offsetX, offsetY);
+            }
+            else
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "Could not apply crop offsets - CropAnchorSelector component not available yet. " +
+                    "You may need to manually adjust the crop position.");
+            }
         }
-        else
+
+        if (_pendingBackdropRect is { } backdropRect && _cropAnchorSelector != null)
         {
-            PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                "Could not apply crop offsets - CropAnchorSelector component not available yet. " +
-                "You may need to manually adjust the crop position.");
+            await _cropAnchorSelector.SetBackdropSelectionAsync(backdropRect);
+            _pendingBackdropRect = null;
+
+            // Guard (doc 06 follow-up): surface the cost of preset-imported backdrop settings
+            // immediately instead of waiting for a manual "Update estimate" click — a heavy
+            // preset has produced a 1.4 GB backdrop that hung level load.
+            if (_state.Backdrop.Enabled && _state.Backdrop.HasSelection)
+                await UpdateBackdropEstimate();
         }
     }
 
@@ -2739,6 +2908,10 @@ public partial class GenerateTerrain : IDisposable
                 _generationOrchestrator.WriteGenerationLogs(_state);
 
                 SaveGeoReferenceSettingsAfterGeneration();
+
+                // BaseColor Mode automation (backdrop follow-up doc 06) — needs the georef block
+                // saved above; no-op in Paint Mode.
+                await RunBasecolorAutomationAsync().ConfigureAwait(false);
 
                 generationSucceeded = true;
                 finalSuccessMessage = $"Terrain generated successfully: {GetOutputPath()}";
@@ -3163,6 +3336,211 @@ public partial class GenerateTerrain : IDisposable
         }
     }
 
+    // ========================================
+    // TERRAIN TEXTURING MODE (backdrop follow-up doc 06)
+    // ========================================
+
+    private async Task OnTexturingSettingsChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    ///     Post-generation BaseColor Mode automation: no-op in Paint Mode (the pre-existing
+    ///     behavior stays untouched); in BaseColor Mode (user choice, or forced by an enabled
+    ///     backdrop) downloads the satellite overlay, pins road-smoothing/road-painting materials
+    ///     to overlay blend 0 and activates BaseColor Mode. Must run AFTER
+    ///     <see cref="SaveGeoReferenceSettingsAfterGeneration"/> — the tile fetch reads the georef
+    ///     block from MT_settings.json. Warn-only: never fails the generation run.
+    /// </summary>
+    private async Task RunBasecolorAutomationAsync()
+    {
+        if (_state.EffectiveTexturingMode != TerrainTexturingMode.BaseColorMode)
+            return;
+
+        try
+        {
+            await new BasecolorAutoApplyService().ApplyAsync(_state).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"[BASECOLOR-AUTO] Terrain generation succeeded, but BaseColor Mode automation failed: {ex.Message}");
+        }
+    }
+
+    // ========================================
+    // BACKDROP GENERATION (spec §5, Task 18)
+    // ========================================
+
+    private SelectionRect? BackdropSelectionFromState() => _state.Backdrop.HasSelection
+        ? new SelectionRect(_state.Backdrop.OffsetX, _state.Backdrop.OffsetY, _state.Backdrop.Width, _state.Backdrop.Height)
+        : null;
+
+    private async Task OnBackdropSelectionChanged(SelectionRect r)
+    {
+        _state.Backdrop.OffsetX = r.OffsetX;
+        _state.Backdrop.OffsetY = r.OffsetY;
+        _state.Backdrop.Width = r.Width;
+        _state.Backdrop.Height = r.Height;
+        _state.Backdrop.BoundingBox = SelectionGeometry.PixelRectToBoundingBox(
+            _geoBoundingBox, _geoTiffOriginalWidth, _geoTiffOriginalHeight, r.OffsetX, r.OffsetY, r.Width, r.Height);
+        _backdropEstimate = null; // stale after the selection moved (spec §5)
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnBackdropSettingsChanged()
+    {
+        _backdropEstimate = null; // stale after a tunable changed (spec §5)
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RegenerateBackdrop()
+    {
+        if (_isGenerating || _isAnalyzing) return;
+        _isGenerating = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var success = await new BackdropOrchestrator().RegenerateStandaloneAsync(_state);
+            if (success)
+                await InvokeAsync(() => Snackbar.Add("Backdrop re-generated successfully", Severity.Success));
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            await InvokeAsync(() => Snackbar.Add($"Backdrop generation failed: {ex.Message}", Severity.Error));
+        }
+        finally
+        {
+            _isGenerating = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RemoveBackdrop()
+    {
+        if (_isGenerating || _isAnalyzing) return;
+        _isGenerating = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            await Task.Run(() => BackdropOrchestrator.RemoveBackdrop(_state.WorkingDirectory));
+            await InvokeAsync(() => Snackbar.Add("Backdrop removed", Severity.Success));
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            await InvokeAsync(() => Snackbar.Add($"Backdrop removal failed: {ex.Message}", Severity.Error));
+        }
+        finally
+        {
+            _isGenerating = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task UpdateBackdropEstimate()
+    {
+        if (_isGenerating || _isAnalyzing) return;
+        _isGenerating = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _backdropEstimate = await Task.Run(BuildBackdropEstimate);
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+            await InvokeAsync(() => Snackbar.Add($"Backdrop estimate failed: {ex.Message}", Severity.Error));
+        }
+        finally
+        {
+            _isGenerating = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>
+    ///     Names every preset-imported backdrop tunable that is heavier (more triangles, larger
+    ///     textures) than the current app defaults. Presets restore their stored values by design,
+    ///     but that silently resurrects the pre-2026-07-28 heavy defaults — which produced a
+    ///     1.4 GB backdrop that hung BeamNG's level load. Notice only, values stay as imported.
+    /// </summary>
+    private void WarnAboutHeavyBackdropPresetValues()
+    {
+        if (!_state.Backdrop.Enabled)
+            return;
+
+        var defaults = new BackdropSettings();
+        var heavy = new List<string>();
+        if (_state.Backdrop.MaxVerticalErrorNearMeters < defaults.MaxVerticalErrorNearMeters)
+            heavy.Add($"near error {_state.Backdrop.MaxVerticalErrorNearMeters} m (default {defaults.MaxVerticalErrorNearMeters})");
+        if (_state.Backdrop.MaxVerticalErrorFarMeters < defaults.MaxVerticalErrorFarMeters)
+            heavy.Add($"far error {_state.Backdrop.MaxVerticalErrorFarMeters} m (default {defaults.MaxVerticalErrorFarMeters})");
+        if (_state.Backdrop.EdgeBandMeters > defaults.EdgeBandMeters)
+            heavy.Add($"edge band {_state.Backdrop.EdgeBandMeters} m (default {defaults.EdgeBandMeters})");
+        // 20% slack: legacy presets legitimately carry the old 2000 m target (default is now the
+        // dyadic-friendly 2048) — only meaningfully smaller chunks are worth a warning.
+        if (_state.Backdrop.ChunkTargetMeters < defaults.ChunkTargetMeters * 0.8)
+            heavy.Add($"chunk size {_state.Backdrop.ChunkTargetMeters} m (default {defaults.ChunkTargetMeters})");
+        if (_state.Backdrop.TexelDensityNearMPerPx < defaults.TexelDensityNearMPerPx)
+            heavy.Add($"texel density {_state.Backdrop.TexelDensityNearMPerPx} m/px (default {defaults.TexelDensityNearMPerPx})");
+        if (_state.Backdrop.MaxChunkTextureSize > defaults.MaxChunkTextureSize)
+            heavy.Add($"max chunk texture {_state.Backdrop.MaxChunkTextureSize} (default {defaults.MaxChunkTextureSize})");
+        if (_state.Backdrop.MaxFarRasterDimension > defaults.MaxFarRasterDimension)
+            heavy.Add($"far raster cap {_state.Backdrop.MaxFarRasterDimension} (default {defaults.MaxFarRasterDimension})");
+
+        if (heavy.Count == 0)
+            return;
+
+        var message = "Preset applied backdrop settings heavier than the current defaults: " +
+                      string.Join(", ", heavy) +
+                      ". Check the backdrop estimate before generating — oversized backdrops can hang level loading in BeamNG.";
+        Snackbar.Add(message, Severity.Warning, config => config.VisibleStateDuration = 20000);
+        PubSubChannel.SendMessage(PubSubMessageType.Warning, $"[BACKDROP] {message}");
+    }
+
+    /// <summary>
+    ///     Composes the cost estimate: mesh/texture numbers from the core <see cref="BackdropGenerator"/>
+    ///     (same parameter builder the real generation run uses, spec §5) plus a tile-download count
+    ///     minus tiles already cached on disk for the provider/zoom the overlay service would pick.
+    /// </summary>
+    private BackdropEstimateDisplay BuildBackdropEstimate()
+    {
+        var parameters = BackdropOrchestrator.BuildParameters(_state, null);
+        var estimate = new BackdropGenerator().Estimate(parameters);
+        var bounds = _state.Backdrop.BoundingBox;
+        var tileCount = bounds != null ? MapTileOverlayService.CountTilesForBounds(bounds, _state.MetersPerPixel) : 0;
+        var cachedCount = bounds != null ? CountCachedBackdropTiles(bounds) : 0;
+
+        return new BackdropEstimateDisplay(estimate.EstimatedTriangles, estimate.TextureMemoryBytes,
+            Math.Max(0, tileCount - cachedCount), estimate.ChunkCount);
+    }
+
+    /// <summary>
+    ///     Counts already-downloaded tiles under the shared MT_Tiles cache for the same provider/date/zoom
+    ///     a backdrop bake would use (mirrors <c>BackdropTextureBaker</c>'s provider/date resolution and
+    ///     routes through <see cref="MapTileOverlayService.GetProviderCacheDirectory"/> so date-suffixed
+    ///     providers, e.g. ArcGIS Wayback, resolve the SAME extra path segment the writer uses), so the
+    ///     estimate's tile-download count reflects only what still needs fetching.
+    /// </summary>
+    private int CountCachedBackdropTiles(GeoBoundingBox bounds)
+    {
+        var overlay = MtSettings.Load(_state.WorkingDirectory)?.BasecolorModeSettings.OverlaySettings;
+        var providerName = string.IsNullOrWhiteSpace(overlay?.SelectedTileProvider)
+            ? "Google Satelite Only" : overlay.SelectedTileProvider;
+        var imageryDate = string.IsNullOrWhiteSpace(overlay?.TileImageryDate) ? null : overlay.TileImageryDate;
+        var zoom = MapTileOverlayService.ChooseZoomForBounds(bounds, _state.MetersPerPixel);
+        var cacheDir = MapTileOverlayService.GetProviderCacheDirectory(
+            _state.WorkingDirectory, providerName, imageryDate, zoom);
+
+        return Directory.Exists(cacheDir) ? Directory.GetFiles(cacheDir, "*.img", SearchOption.AllDirectories).Length : 0;
+    }
+
     private void OpenWorkingDirectory()
     {
         if (!string.IsNullOrEmpty(_workingDirectory)) Process.Start("explorer.exe", _workingDirectory);
@@ -3418,6 +3796,12 @@ public partial class GenerateTerrain : IDisposable
 
                 // Write log files
                 _generationOrchestrator.WriteGenerationLogs(_state);
+
+                // This entry point historically skipped the georef save (gap) — the BaseColor
+                // automation below needs it on disk, and saving it here also fixes tile fetching
+                // for a later manual Basecolor Manager session after an analysis-driven run.
+                SaveGeoReferenceSettingsAfterGeneration();
+                await RunBasecolorAutomationAsync().ConfigureAwait(false);
 
                 // Clear analysis state after successful generation
                 _analysisState.Reset();

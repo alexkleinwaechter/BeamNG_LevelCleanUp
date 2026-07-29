@@ -222,6 +222,13 @@ public class TerrainGenerationOrchestrator
                 state.CachedHeightMap = terrainParameters.OutputHeightMap;
             }
 
+            // Backdrop generation (optional stage — failure never fails the terrain run, spec §11)
+            if (success && state.Backdrop.Enabled &&
+                terrainParameters?.OutputHeightMap is { } backdropHeightMap)
+            {
+                await new BackdropOrchestrator().GenerateAsync(state, backdropHeightMap).ConfigureAwait(false);
+            }
+
             // Fire-and-forget memory cleanup — runs in background so UI gets result immediately.
             // OSM memory cache can hold 100-200MB+ of deserialized query results per run.
             // LOH compaction returns fragmented large arrays to the OS.

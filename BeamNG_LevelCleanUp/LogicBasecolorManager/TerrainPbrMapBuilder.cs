@@ -348,6 +348,14 @@ public class TerrainPbrMapBuilder
         return image;
     }
 
+    /// <summary>4-arg entry so the backdrop baker reuses the exact terrain adjustment math (spec §10).</summary>
+    internal static void ApplyOverlayAdjustments(Image<Rgba32> image,
+        double brightness, double contrast, double saturation)
+    {
+        ApplyOverlayAdjustments(image, new BasecolorOverlayOptions(
+            string.Empty, 1.0, Array.Empty<BasecolorMaskBlendExceptionOptions>(), brightness, contrast, saturation));
+    }
+
     private static void ApplyOverlayAdjustments(Image<Rgba32> image, BasecolorOverlayOptions overlayOptions)
     {
         var brightness = Math.Clamp(overlayOptions.Brightness, -1.0, 1.0);

@@ -1,0 +1,63 @@
+@using BeamNG_LevelCleanUp.BlazorUI.State
+
+<MudPaper Class="pa-4 mt-4" Elevation="2">
+    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _expanded = !_expanded)">
+        <MudIcon Icon="@Icons.Material.Filled.Texture" Class="mr-2" />
+        <MudText Typo="Typo.h6">Terrain Texturing Mode</MudText>
+        <MudSpacer />
+        <MudIcon Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+    </div>
+    <MudCollapse Expanded="_expanded">
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 mb-2">
+            How the generated terrain gets its textures. Paint Mode keeps the classic in-game layer
+            painting. BaseColor Mode downloads satellite imagery after generation and bakes it into
+            merged terrain textures via the Basecolor Manager.
+        </MudText>
+
+        <div class="d-flex align-center gap-1">
+            <MudRadioGroup T="TerrainTexturingMode" Value="@EffectiveMode" ValueChanged="OnModeChanged">
+                <MudRadio Value="TerrainTexturingMode.PaintMode" Color="Color.Primary"
+                          Disabled="@(Disabled || ForceBaseColor)">
+                    Paint Mode (default)
+                </MudRadio>
+                <MudRadio Value="TerrainTexturingMode.BaseColorMode" Color="Color.Primary"
+                          Disabled="@(Disabled || ForceBaseColor)">
+                    BaseColor Mode (satellite imagery)
+                </MudRadio>
+            </MudRadioGroup>
+            <HelpAdornment TooltipText="Paint Mode: the terrain uses per-material detail textures painted by layer, exactly as before. BaseColor Mode: after generation the satellite photos for your map area are downloaded automatically and baked into the terrain colors — roads stay clean because their materials are excluded from the satellite overlay." />
+        </div>
+
+        @if (ForceBaseColor)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                Backdrop generation is enabled — BaseColor Mode is required so the terrain matches the
+                satellite-textured backdrop. Disable the backdrop to choose Paint Mode again.
+            </MudAlert>
+        }
+
+        <div style="@FieldStyle">
+            <MudGrid Spacing="3" Class="mt-1">
+                <MudItem xs="12" sm="8" md="6">
+                    <div class="d-flex align-start gap-1">
+                        <div class="flex-grow-1">
+                            <MudText Typo="Typo.body2">
+                                Satellite blend, non-road materials: @Settings.NonRoadOverlayBlendPercent%
+                            </MudText>
+                            <MudSlider T="int" @bind-Value="Settings.NonRoadOverlayBlendPercent"
+                                       @bind-Value:after="NotifyChanged"
+                                       Min="0" Max="100" Step="5" Disabled="@Disabled" />
+                        </div>
+                        <HelpAdornment TooltipText="How strongly the satellite photo tints materials that are NOT part of your road system. 100% = pure satellite look (matches the backdrop). Materials selected for road smoothing or road painting are always kept at 0% so no satellite pixels bleed into the roads." />
+                    </div>
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                After a successful generation this will automatically: download the satellite tiles for
+                the terrain, set the overlay blend of all road-smoothing/road-painting materials to 0%,
+                and activate BaseColor Mode. Fine-tuning remains available in the Basecolor Manager.
+            </MudText>
+        </div>
+    </MudCollapse>
+</MudPaper>

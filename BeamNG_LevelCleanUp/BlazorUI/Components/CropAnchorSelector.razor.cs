@@ -34,6 +34,24 @@ public partial class CropAnchorSelector
     private float _mapOpacity = 0.85f;
     private ElementReference _minimapElement;
 
+    // Backdrop selection box state (spec §5)
+    private SelectionRect? _backdropRect;
+    private BackdropHandle? _backdropDragHandle;
+    private SelectionRect? _backdropDragStartRect;
+    private double _backdropDragStartX;
+    private double _backdropDragStartY;
+    private bool _needsBackdropNotification;
+
+    /// <summary>
+    ///     Edge/corner handles rendered around the backdrop box (Body is the box itself, dragged via
+    ///     its own mousedown handler — not part of this list).
+    /// </summary>
+    private static readonly BackdropHandle[] BackdropHandles =
+    [
+        BackdropHandle.N, BackdropHandle.S, BackdropHandle.E, BackdropHandle.W,
+        BackdropHandle.NE, BackdropHandle.NW, BackdropHandle.SE, BackdropHandle.SW
+    ];
+
     // Flag to track if we need to fire event after render
     private bool _needsEventNotification;
     private GeoBoundingBox? _previousBoundingBox;
@@ -130,6 +148,28 @@ public partial class CropAnchorSelector
     /// </summary>
     [Parameter]
     public EventCallback<CropAnchor> SelectedAnchorChanged { get; set; }
+
+    /// <summary>
+    ///     Enables the backdrop selection box (spec §5). Default-off: when false, nothing renders and
+    ///     the terrain box drag/resize flows are entirely unaffected.
+    /// </summary>
+    [Parameter]
+    public bool BackdropEnabled { get; set; }
+
+    /// <summary>
+    ///     The backdrop selection rect (in source pixels). Used as the seed value on enable/initial
+    ///     load; live drag state is kept in the internal <c>_backdropRect</c> field and reported back
+    ///     via <see cref="BackdropSelectionChanged" /> — see also <see cref="SetBackdropSelectionAsync" />
+    ///     for imperative updates (preset restore).
+    /// </summary>
+    [Parameter]
+    public SelectionRect? BackdropSelection { get; set; }
+
+    /// <summary>
+    ///     Callback when the backdrop selection rect changes (drag end).
+    /// </summary>
+    [Parameter]
+    public EventCallback<SelectionRect> BackdropSelectionChanged { get; set; }
 
     /// <summary>
     ///     The selection width in source pixels, calculated from terrain size and scale factors.
@@ -230,6 +270,30 @@ public partial class CropAnchorSelector
             // Just recalculate bounding box for any other changes
             RecalculateSelectionBoundingBox();
         }
+
+        // Backdrop box (spec §5): initialize the first time it's enabled and still empty (covers
+        // both "enabled after the GeoTIFF was already loaded" and "enabled before load, then the
+        // GeoTIFF arrives" — the emptiness check makes this naturally idempotent, so no separate
+        // "just flipped" edge tracking is needed), otherwise keep it live-clamped against the
+        // (possibly just-changed) terrain rect. Runs after every branch above so a "recenter" from
+        // any of them (new GeoTIFF, selection size change) is covered uniformly.
+        if (OriginalWidth > 0 && OriginalHeight > 0)
+        {
+            var backdropIsEmpty = _backdropRect is not { Width: > 0, Height: > 0 };
+
+            if (BackdropEnabled && backdropIsEmpty)
+            {
+                var seed = BackdropSelection is { Width: > 0, Height: > 0 } sel
+                    ? sel
+                    : SelectionGeometry.DefaultBackdropRect(TerrainRect(), OriginalWidth, OriginalHeight);
+                _backdropRect = SelectionGeometry.ClampBackdropRect(seed, TerrainRect(), OriginalWidth, OriginalHeight);
+                _needsBackdropNotification = true;
+            }
+            else
+            {
+                ReclampBackdropRect();
+            }
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -241,6 +305,12 @@ public partial class CropAnchorSelector
             _needsEventNotification = false;
             await NotifyCropResultChanged();
         }
+
+        if (_needsBackdropNotification && _backdropRect is { } bd)
+        {
+            _needsBackdropNotification = false;
+            await BackdropSelectionChanged.InvokeAsync(bd);
+        }
     }
 
     /// <summary>
@@ -251,32 +321,34 @@ public partial class CropAnchorSelector
     {
         ClampOffsets();
         RecalculateSelectionBoundingBox();
+        ReclampBackdropRect();
         await NotifyCropResultChanged();
         StateHasChanged();
     }
 
     /// <summary>
-    ///     Calculates how many source pixels we need to select based on:
-    ///     - Target terrain size (e.g., 2048 px)
-    ///     - Target meters per pixel (e.g., 1.0 m/px = 2048m terrain)
-    ///     - Source native pixel size (e.g., 30 m/px)
-    ///     Formula: selectionPixels = (targetSize * metersPerPixel) / nativePixelSize
-    ///     Example: (2048 * 1.0) / 30 = 68 source pixels needed
+    ///     The current terrain selection rect in source pixels — the containment target for the
+    ///     backdrop box (spec §5).
     /// </summary>
-    private int CalculateSelectionSizePixels()
+    private SelectionRect TerrainRect() => new(CropOffsetX, CropOffsetY, SelectionWidthPixels, SelectionHeightPixels);
+
+    /// <summary>
+    ///     Re-clamps the backdrop box against the current terrain rect + mosaic bounds. A no-op when
+    ///     the backdrop box hasn't been initialized yet (feature disabled or not yet enabled).
+    /// </summary>
+    private void ReclampBackdropRect()
     {
-        if (NativePixelSizeMeters <= 0)
-            return TargetSize; // Fallback to 1:1 if no native size
-
-        // Calculate how many meters the target terrain represents
-        var targetMeters = TargetSize * MetersPerPixel;
-
-        // Calculate how many source pixels that corresponds to
-        var selectionPixels = (int)Math.Ceiling(targetMeters / NativePixelSizeMeters);
-
-        // Clamp to source dimensions
-        return Math.Min(selectionPixels, Math.Min(OriginalWidth, OriginalHeight));
+        if (_backdropRect is not { } bd) return;
+        _backdropRect = SelectionGeometry.ClampBackdropRect(bd, TerrainRect(), OriginalWidth, OriginalHeight);
     }
+
+    /// <summary>
+    ///     Calculates how many source pixels we need to select. Delegates to
+    ///     <see cref="SelectionGeometry.CalculateSelectionSizePixels" /> (spec §5 de-duplication).
+    /// </summary>
+    private int CalculateSelectionSizePixels() =>
+        SelectionGeometry.CalculateSelectionSizePixels(TargetSize, MetersPerPixel, NativePixelSizeMeters,
+            OriginalWidth, OriginalHeight);
 
     /// <summary>
     ///     Centers the selection in the source image.
@@ -294,48 +366,24 @@ public partial class CropAnchorSelector
     }
 
     /// <summary>
-    ///     Ensures offsets don't go out of bounds.
+    ///     Ensures offsets don't go out of bounds. Delegates to
+    ///     <see cref="SelectionGeometry.ClampOffsets" /> (spec §5 de-duplication).
     /// </summary>
     private void ClampOffsets()
     {
-        var selW = SelectionWidthPixels;
-        var selH = SelectionHeightPixels;
-
-        CropOffsetX = Math.Max(0, Math.Min(CropOffsetX, OriginalWidth - selW));
-        CropOffsetY = Math.Max(0, Math.Min(CropOffsetY, OriginalHeight - selH));
+        (CropOffsetX, CropOffsetY) = SelectionGeometry.ClampOffsets(
+            CropOffsetX, CropOffsetY, SelectionWidthPixels, SelectionHeightPixels, OriginalWidth, OriginalHeight);
     }
 
     /// <summary>
-    ///     Recalculates the geographic bounding box for the current selection.
+    ///     Recalculates the geographic bounding box for the current selection. Delegates to
+    ///     <see cref="SelectionGeometry.PixelRectToBoundingBox" /> (spec §5 de-duplication).
     /// </summary>
     private void RecalculateSelectionBoundingBox()
     {
-        if (OriginalBoundingBox is not { } bbox || OriginalWidth <= 0 || OriginalHeight <= 0)
-        {
-            _selectionBoundingBox = null;
-            return;
-        }
-
-        var selW = SelectionWidthPixels;
-        var selH = SelectionHeightPixels;
-
-        // Calculate the fraction of the original image that we're selecting
-        var leftFraction = (double)CropOffsetX / OriginalWidth;
-        var rightFraction = (double)(CropOffsetX + selW) / OriginalWidth;
-        var topFraction = (double)CropOffsetY / OriginalHeight;
-        var bottomFraction = (double)(CropOffsetY + selH) / OriginalHeight;
-
-        // Calculate new bounding box coordinates
-        var lonRange = bbox.MaxLongitude - bbox.MinLongitude;
-        var latRange = bbox.MaxLatitude - bbox.MinLatitude;
-
-        var newMinLon = bbox.MinLongitude + lonRange * leftFraction;
-        var newMaxLon = bbox.MinLongitude + lonRange * rightFraction;
-        // Latitude: top of image = max latitude, so we subtract from max
-        var newMaxLat = bbox.MaxLatitude - latRange * topFraction;
-        var newMinLat = bbox.MaxLatitude - latRange * bottomFraction;
-
-        _selectionBoundingBox = new GeoBoundingBox(newMinLon, newMinLat, newMaxLon, newMaxLat);
+        _selectionBoundingBox = SelectionGeometry.PixelRectToBoundingBox(
+            OriginalBoundingBox, OriginalWidth, OriginalHeight, CropOffsetX, CropOffsetY,
+            SelectionWidthPixels, SelectionHeightPixels);
     }
 
     #region Mouse Drag Handling
@@ -351,6 +399,25 @@ public partial class CropAnchorSelector
 
     private async Task OnMinimapMouseMove(MouseEventArgs e)
     {
+        // Backdrop box drag takes priority: its mousedown handlers stopPropagation so this only
+        // fires when a backdrop handle/body drag is in progress (mutually exclusive with the
+        // terrain box drag below, which starts from the minimap-source's own mousedown).
+        if (_backdropDragHandle is { } handle && _backdropDragStartRect is { } startRect)
+        {
+            var backdropDeltaX = e.ClientX - _backdropDragStartX;
+            var backdropDeltaY = e.ClientY - _backdropDragStartY;
+
+            var backdropBaseScale = GetMinimapScale();
+            var (backdropSourceDeltaX, backdropSourceDeltaY) =
+                SelectionGeometry.ScreenDeltaToSourceDelta(backdropDeltaX, backdropDeltaY, backdropBaseScale, _minimapZoomLevel);
+
+            _backdropRect = SelectionGeometry.ResizeBackdropRect(startRect, handle,
+                backdropSourceDeltaX, backdropSourceDeltaY, TerrainRect(), OriginalWidth, OriginalHeight);
+
+            StateHasChanged();
+            return;
+        }
+
         if (!_isDragging) return;
 
         // Calculate movement in screen pixels
@@ -360,9 +427,8 @@ public partial class CropAnchorSelector
         // Convert screen pixels to source pixels, accounting for zoom
         // When zoomed in, the effective scale is larger (pixels represent less source area)
         var baseScale = GetMinimapScale();
-        var effectiveScale = baseScale * _minimapZoomLevel;
-        var sourcePixelDeltaX = (int)(deltaX / effectiveScale);
-        var sourcePixelDeltaY = (int)(deltaY / effectiveScale);
+        var (sourcePixelDeltaX, sourcePixelDeltaY) =
+            SelectionGeometry.ScreenDeltaToSourceDelta(deltaX, deltaY, baseScale, _minimapZoomLevel);
 
         // Update offsets
         CropOffsetX = _dragStartOffsetX + sourcePixelDeltaX;
@@ -370,12 +436,22 @@ public partial class CropAnchorSelector
 
         ClampOffsets();
         RecalculateSelectionBoundingBox();
+        // Terrain box moved: keep the backdrop box's containment live (it may get pushed/squeezed).
+        ReclampBackdropRect();
 
         StateHasChanged();
     }
 
     private async Task OnMinimapMouseUp(MouseEventArgs e)
     {
+        if (_backdropDragHandle != null)
+        {
+            _backdropDragHandle = null;
+            _backdropDragStartRect = null;
+            if (_backdropRect is { } bd) await BackdropSelectionChanged.InvokeAsync(bd);
+            return;
+        }
+
         if (_isDragging)
         {
             _isDragging = false;
@@ -385,11 +461,34 @@ public partial class CropAnchorSelector
 
     private async Task OnMinimapMouseLeave(MouseEventArgs e)
     {
+        if (_backdropDragHandle != null)
+        {
+            _backdropDragHandle = null;
+            _backdropDragStartRect = null;
+            if (_backdropRect is { } bd) await BackdropSelectionChanged.InvokeAsync(bd);
+            return;
+        }
+
         if (_isDragging)
         {
             _isDragging = false;
             await NotifyCropResultChanged();
         }
+    }
+
+    /// <summary>
+    ///     Starts a backdrop box drag (body move or edge/corner resize). Mirrors
+    ///     <see cref="OnMinimapMouseDown" />; the handle identifies which border(s), if any, are
+    ///     dragged (spec §5).
+    /// </summary>
+    private void OnBackdropMouseDown(MouseEventArgs e, BackdropHandle handle)
+    {
+        if (_backdropRect is not { } bd) return;
+
+        _backdropDragHandle = handle;
+        _backdropDragStartRect = bd;
+        _backdropDragStartX = e.ClientX;
+        _backdropDragStartY = e.ClientY;
     }
 
     #endregion
@@ -554,62 +653,55 @@ public partial class CropAnchorSelector
     /// <summary>
     /// Calculates the selection style accounting for zoom and pan state.
     /// When zoomed, the selection rectangle position/size must account for the visible portion.
-    /// 
-    /// COORDINATE SYSTEM NOTE:
-    /// - ViewCenter uses geographic convention: Y=0 is south (bottom), Y=1 is north (top)
-    /// - Pixel coordinates use screen convention: Y=0 is top, Y=OriginalHeight is bottom
-    /// - Therefore we must INVERT the Y axis when converting ViewCenter.Y to pixel coordinates
+    /// Delegates to <see cref="SelectionGeometry.ComputeBoxRect" />/<see cref="SelectionGeometry.ToCssStyle" />
+    /// (spec §5 de-duplication).
     /// </summary>
     private string GetSelectionStyleWithZoom(double baseScale, float zoomLevel, (float X, float Y) viewCenter, int displayWidth, int displayHeight)
     {
-        var selW = SelectionWidthPixels;
-        var selH = SelectionHeightPixels;
+        var rect = SelectionGeometry.ComputeBoxRect(
+            CropOffsetX, CropOffsetY, SelectionWidthPixels, SelectionHeightPixels,
+            baseScale, zoomLevel, viewCenter, OriginalWidth, OriginalHeight, displayWidth, displayHeight);
+        return SelectionGeometry.ToCssStyle(rect);
+    }
 
-        // If not zoomed, use simple calculation
-        if (zoomLevel <= 1.01f)
+    /// <summary>
+    ///     Calculates the on-screen rect for the backdrop box, accounting for minimap zoom/pan state
+    ///     (spec §5). Null when the backdrop box isn't initialized or falls outside the visible area.
+    /// </summary>
+    private (double Left, double Top, double Width, double Height)? GetBackdropBoxRect()
+    {
+        if (_backdropRect is not { } bd) return null;
+
+        return SelectionGeometry.ComputeBoxRect(
+            bd.OffsetX, bd.OffsetY, bd.Width, bd.Height,
+            GetMinimapScale(), _minimapZoomLevel, _minimapViewCenter,
+            OriginalWidth, OriginalHeight, GetMinimapDisplayWidth(), GetMinimapDisplayHeight());
+    }
+
+    /// <summary>
+    ///     Inline CSS position (left/top only — width/height come from the .backdrop-handle CSS
+    ///     class) for one backdrop resize handle, placed at the corresponding corner/edge midpoint of
+    ///     the backdrop box, offset by half the handle size so it's centered on the border.
+    /// </summary>
+    private string GetBackdropHandleStyle(BackdropHandle handle)
+    {
+        if (GetBackdropBoxRect() is not { } r) return "display: none;";
+
+        var (x, y) = handle switch
         {
-            var simpleDisplayWidth = Math.Max(10, (int)(selW * baseScale));
-            var simpleDisplayHeight = Math.Max(10, (int)(selH * baseScale));
-            var simpleDisplayLeft = (int)(CropOffsetX * baseScale);
-            var simpleDisplayTop = (int)(CropOffsetY * baseScale);
-            return $"width: {simpleDisplayWidth}px; height: {simpleDisplayHeight}px; left: {simpleDisplayLeft}px; top: {simpleDisplayTop}px;";
-        }
+            BackdropHandle.N => (r.Left + r.Width / 2, r.Top),
+            BackdropHandle.S => (r.Left + r.Width / 2, r.Top + r.Height),
+            BackdropHandle.E => (r.Left + r.Width, r.Top + r.Height / 2),
+            BackdropHandle.W => (r.Left, r.Top + r.Height / 2),
+            BackdropHandle.NE => (r.Left + r.Width, r.Top),
+            BackdropHandle.NW => (r.Left, r.Top),
+            BackdropHandle.SE => (r.Left + r.Width, r.Top + r.Height),
+            BackdropHandle.SW => (r.Left, r.Top + r.Height),
+            _ => (r.Left, r.Top)
+        };
 
-        // When zoomed, calculate visible portion in source pixels
-        var visibleSourceWidth = OriginalWidth / zoomLevel;
-        var visibleSourceHeight = OriginalHeight / zoomLevel;
-
-        // Calculate the center of visible area in source pixels
-        // X: ViewCenter.X = 0 -> left (pixel 0), ViewCenter.X = 1 -> right (pixel OriginalWidth)
-        var visibleCenterX = OriginalWidth * viewCenter.X;
-        // Y: ViewCenter.Y = 0 -> south/bottom (pixel OriginalHeight), ViewCenter.Y = 1 -> north/top (pixel 0)
-        // We need to INVERT the Y axis: pixelY = OriginalHeight * (1 - ViewCenter.Y)
-        var visibleCenterY = OriginalHeight * (1.0f - viewCenter.Y);
-        
-        var visibleLeft = visibleCenterX - visibleSourceWidth / 2;
-        var visibleTop = visibleCenterY - visibleSourceHeight / 2;
-
-        // Calculate selection position relative to visible area
-        var relativeLeft = CropOffsetX - visibleLeft;
-        var relativeTop = CropOffsetY - visibleTop;
-
-        // Scale from visible source area to display pixels
-        var scaleX = displayWidth / visibleSourceWidth;
-        var scaleY = displayHeight / visibleSourceHeight;
-
-        var displayLeft = (int)(relativeLeft * scaleX);
-        var displayTop = (int)(relativeTop * scaleY);
-        var scaledWidth = Math.Max(10, (int)(selW * scaleX));
-        var scaledHeight = Math.Max(10, (int)(selH * scaleY));
-
-        // Check if selection is visible (intersects with display area)
-        if (displayLeft + scaledWidth < 0 || displayLeft > displayWidth ||
-            displayTop + scaledHeight < 0 || displayTop > displayHeight)
-        {
-            return "display: none;"; // Selection is outside visible area
-        }
-
-        return $"width: {scaledWidth}px; height: {scaledHeight}px; left: {displayLeft}px; top: {displayTop}px;";
+        const double halfHandleSize = 5;
+        return $"left: {x - halfHandleSize}px; top: {y - halfHandleSize}px;";
     }
 
     #endregion
@@ -631,7 +723,9 @@ public partial class CropAnchorSelector
             { x => x.NativePixelSizeMeters, NativePixelSizeMeters },
             { x => x.OriginalBoundingBox, OriginalBoundingBox },
             { x => x.InitialOffsetX, CropOffsetX },
-            { x => x.InitialOffsetY, CropOffsetY }
+            { x => x.InitialOffsetY, CropOffsetY },
+            { x => x.BackdropEnabled, BackdropEnabled },
+            { x => x.BackdropSelection, _backdropRect }
         };
 
         var options = new DialogOptions
@@ -675,6 +769,18 @@ public partial class CropAnchorSelector
             CropOffsetY = cropResult.OffsetY;
             ClampOffsets();
             RecalculateSelectionBoundingBox();
+
+            // Apply the backdrop box the dialog returned (spec §5 dialog round-trip)
+            if (BackdropEnabled && cropResult.BackdropSelection is { } bdSel)
+            {
+                _backdropRect = SelectionGeometry.ClampBackdropRect(bdSel, TerrainRect(), OriginalWidth, OriginalHeight);
+                await BackdropSelectionChanged.InvokeAsync(_backdropRect);
+            }
+            else
+            {
+                ReclampBackdropRect();
+            }
+
             await NotifyCropResultChanged();
             StateHasChanged();
         }
@@ -703,8 +809,26 @@ public partial class CropAnchorSelector
         CropOffsetY = offsetY;
         ClampOffsets();
         RecalculateSelectionBoundingBox();
+        // Terrain box moved: keep the backdrop box's containment live (spec §5).
+        ReclampBackdropRect();
 
         if (notifyChange) await NotifyCropResultChanged();
+
+        StateHasChanged();
+    }
+
+    /// <summary>
+    ///     Sets the backdrop selection rect programmatically from a preset import (spec §5, Task 19).
+    ///     Mirrors <see cref="SetCropOffsetsAsync" />. The rect is clamped against the current terrain
+    ///     rect + mosaic bounds before being applied.
+    /// </summary>
+    /// <param name="rect">The backdrop rect to apply, in source pixels.</param>
+    /// <param name="notifyChange">If true, fires the BackdropSelectionChanged event</param>
+    public async Task SetBackdropSelectionAsync(SelectionRect rect, bool notifyChange = true)
+    {
+        _backdropRect = SelectionGeometry.ClampBackdropRect(rect, TerrainRect(), OriginalWidth, OriginalHeight);
+
+        if (notifyChange) await BackdropSelectionChanged.InvokeAsync(_backdropRect);
 
         StateHasChanged();
     }

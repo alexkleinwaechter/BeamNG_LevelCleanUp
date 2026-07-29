@@ -1,0 +1,144 @@
+<MudPaper Class="pa-4 mt-4" Elevation="2">
+    <div class="d-flex align-center cursor-pointer" @onclick="@(() => _expanded = !_expanded)">
+        <MudIcon Icon="@Icons.Material.Filled.Landscape" Class="mr-2" />
+        <MudText Typo="Typo.h6">Backdrop (Experimental)</MudText>
+        <MudSpacer />
+        <MudIcon Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+    </div>
+    <MudCollapse Expanded="_expanded">
+        @if (!HasGeoTiffSource)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                Backdrop generation needs a GeoTIFF elevation source and is not available for PNG heightmaps.
+            </MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 mb-2">
+                Extends satellite-textured terrain beyond the playable area for a distant, non-drivable backdrop.
+                Drag the outer selection box in the GeoTIFF selector above to choose its extent.
+            </MudText>
+
+            <div class="d-flex align-center gap-1">
+                <MudSwitch T="bool" @bind-Value="Settings.Enabled" @bind-Value:after="NotifyChanged"
+                           Label="Generate Backdrop" Color="Color.Primary" Disabled="@Disabled" />
+                <HelpAdornment TooltipText="Adds a wide ring of scenery around your playable map, built from the surrounding elevation data and covered with satellite photos. When off, nothing extra is generated." />
+            </div>
+
+            <MudGrid Spacing="3" Class="mt-1" Style="@FieldStyle">
+                <MudItem xs="12" sm="6" md="4">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField T="double" @bind-Value="Settings.EdgeBandMeters" @bind-Value:after="NotifyChanged"
+                                         Label="Edge Band (m)" Variant="Variant.Text" Disabled="@Disabled"
+                                         Min="0.0" Max="1000.0" Step="10.0" Class="flex-grow-1"
+                                         HelperText="Width of the blended transition band at the terrain edge" />
+                        <HelpAdornment TooltipText="Width of the high-detail strip right at the map border. In this strip the backdrop follows the terrain closely, so you can drive from the map onto the backdrop without bumps." />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField T="double" @bind-Value="Settings.MaxVerticalErrorNearMeters" @bind-Value:after="NotifyChanged"
+                                         Label="Max Vertical Error, Near (m)" Variant="Variant.Text" Disabled="@Disabled"
+                                         Min="0.1" Max="50.0" Step="0.1" Class="flex-grow-1"
+                                         HelperText="Mesh simplification tolerance near the terrain edge" />
+                        <HelpAdornment TooltipText="How far the backdrop surface may deviate from the real elevation close to the map. Smaller value = more accurate ground, but more triangles." />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField T="double" @bind-Value="Settings.MaxVerticalErrorFarMeters" @bind-Value:after="NotifyChanged"
+                                         Label="Max Vertical Error, Far (m)" Variant="Variant.Text" Disabled="@Disabled"
+                                         Min="0.1" Max="50.0" Step="0.1" Class="flex-grow-1"
+                                         HelperText="Mesh simplification tolerance far from the terrain edge" />
+                        <HelpAdornment TooltipText="How far the backdrop surface may deviate from the real elevation at the outer rim. Bigger value = simpler mesh — far away nobody notices the difference." />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField T="double" @bind-Value="Settings.ChunkTargetMeters" @bind-Value:after="NotifyChanged"
+                                         Label="Chunk Size (m)" Variant="Variant.Text" Disabled="@Disabled"
+                                         Min="256.0" Max="8192.0" Step="256.0" Class="flex-grow-1"
+                                         HelperText="Target size of each exported backdrop chunk" />
+                        <HelpAdornment TooltipText="The backdrop is cut into square pieces of roughly this size. Each piece becomes one mesh file with one satellite texture." />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <div class="d-flex align-start gap-1">
+                        <MudNumericField T="double" @bind-Value="Settings.TexelDensityNearMPerPx" @bind-Value:after="NotifyChanged"
+                                         Label="Texel Density (m/px)" Variant="Variant.Text" Disabled="@Disabled"
+                                         Min="0.25" Max="16.0" Step="0.25" Class="flex-grow-1"
+                                         HelperText="Baked texture resolution near the terrain edge" />
+                        <HelpAdornment TooltipText="How sharp the satellite photo is near the map: meters of ground per texture pixel. Smaller value = sharper picture, but larger textures and more tile downloads." />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <div class="d-flex align-start gap-1">
+                        <MudSelect T="int" @bind-Value="Settings.MaxChunkTextureSize" @bind-Value:after="NotifyChanged"
+                                   Label="Max Chunk Texture" Variant="Variant.Text" Disabled="@Disabled" Class="flex-grow-1">
+                            <MudSelectItem Value="512">512</MudSelectItem>
+                            <MudSelectItem Value="1024">1024</MudSelectItem>
+                            <MudSelectItem Value="2048">2048</MudSelectItem>
+                            <MudSelectItem Value="4096">4096</MudSelectItem>
+                        </MudSelect>
+                        <HelpAdornment TooltipText="Largest allowed image size (in pixels) for one piece's satellite texture. Higher = sharper backdrop, but more video memory and disk space." />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <div class="d-flex align-start gap-1">
+                        <MudSelect T="int" @bind-Value="Settings.MaxFarRasterDimension" @bind-Value:after="NotifyChanged"
+                                   Label="Far Raster Cap" Variant="Variant.Text" Disabled="@Disabled" Class="flex-grow-1">
+                            <MudSelectItem Value="2048">2048</MudSelectItem>
+                            <MudSelectItem Value="4096">4096</MudSelectItem>
+                            <MudSelectItem Value="8192">8192</MudSelectItem>
+                            <MudSelectItem Value="16384">16384</MudSelectItem>
+                        </MudSelect>
+                        <HelpAdornment TooltipText="Memory guard: the elevation data of the surroundings is loaded at most at this resolution. Lower it if generation uses too much RAM; raise it for more height detail far away." />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4" Class="d-flex align-center">
+                    <MudSwitch T="bool" @bind-Value="Settings.SeamSkirt" @bind-Value:after="NotifyChanged"
+                               Label="Seam Skirt" Color="Color.Primary" Disabled="@Disabled" />
+                    <HelpAdornment TooltipText="Adds a small hidden apron along the map border that closes tiny gaps between terrain and backdrop. Costs almost nothing — leave it on." />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4" Class="d-flex align-center">
+                    <MudSwitch T="bool" @bind-Value="Settings.CollisionMesh" @bind-Value:after="NotifyChanged"
+                               Label="Collision Mesh" Color="Color.Primary" Disabled="@Disabled" />
+                    <HelpAdornment TooltipText="Lets you drive on the backdrop. The game builds the collision from the visible mesh, so this costs no extra disk space — but switching it off makes the level load faster. Off, you fall through if you drive onto the backdrop." />
+                </MudItem>
+            </MudGrid>
+
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                For a seamless look at the terrain edge, use a high satellite overlay blend in the BaseColor
+                Manager — the backdrop is pure satellite imagery.
+            </MudAlert>
+
+            @if (Estimate != null)
+            {
+                <MudAlert Severity="@Estimate.Severity" Dense="true" Class="mt-2">
+                    ≈ @Estimate.Triangles.ToString("N0") triangles,
+                    @((Estimate.TextureBytes / (1024.0 * 1024.0)).ToString("N0")) MB textures (uncompressed upper bound),
+                    @Estimate.TileCount.ToString("N0") tile downloads, @Estimate.ChunkCount chunks
+                </MudAlert>
+            }
+
+            <div class="d-flex align-center gap-2 mt-3">
+                <MudTooltip Text="Calculates how many triangles, how much texture memory and how many tile downloads the current settings would produce — without generating anything.">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@OnUpdateEstimate" Disabled="@Disabled">
+                        Update estimate
+                    </MudButton>
+                </MudTooltip>
+                <MudTooltip Text="Rebuilds only the backdrop (meshes and textures) with the current settings. The terrain itself is not touched. Needs a generated terrain and a backdrop selection.">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@OnRegenerateBackdrop"
+                               Disabled="@(!CanRegenerate || Disabled)">
+                        Regenerate Backdrop
+                    </MudButton>
+                </MudTooltip>
+                <MudTooltip Text="Deletes the backdrop meshes, textures and scene entries from the level. The terrain stays as it is. Asks for confirmation first.">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ConfirmRemoveBackdrop" Disabled="@Disabled">
+                        Remove Backdrop
+                    </MudButton>
+                </MudTooltip>
+            </div>
+        }
+    </MudCollapse>
+</MudPaper>

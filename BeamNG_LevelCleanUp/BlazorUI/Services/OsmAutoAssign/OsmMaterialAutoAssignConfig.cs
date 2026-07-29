@@ -64,7 +64,7 @@ public class OsmMaterialAutoAssignConfig
                             "secondary", "secondary_link",
                             "tertiary", "tertiary_link",
                             "residential", "living_street", "road", "service",
-                            "raceway"
+                            "raceway", "unclassified"
                         }
                     },
                     // Two or more asphalt materials: split into a highway tier and a rural tier.
@@ -92,7 +92,7 @@ public class OsmMaterialAutoAssignConfig
                             {
                                 "secondary", "secondary_link",
                                 "tertiary", "tertiary_link",
-                                "residential", "living_street", "road", "service"
+                                "residential", "living_street", "road", "service", "unclassified"
                             }
                         }
                     }

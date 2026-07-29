@@ -137,10 +137,25 @@
                         <!-- Selection rectangle -->
                         <div class="minimap-selection @(_isDragging ? "dragging" : "")"
                              style="@GetSelectionStyle()">
-                            <MudIcon Icon="@Icons.Material.Filled.OpenWith" 
-                                     Size="Size.Small" 
+                            <MudIcon Icon="@Icons.Material.Filled.OpenWith"
+                                     Size="Size.Small"
                                      Style="color: white; opacity: 0.8;" />
                         </div>
+                        <!-- Backdrop selection box (spec §5) -->
+                        @if (BackdropEnabled && _backdropRect is { } bd)
+                        {
+                            <div class="backdrop-selection" style="@SelectionGeometry.ToCssStyle(GetBackdropBoxRect())"
+                                 @onmousedown="e => OnBackdropMouseDown(e, BackdropHandle.Body)"
+                                 @onmousedown:stopPropagation>
+                            </div>
+                            @foreach (var handle in BackdropHandles)
+                            {
+                                <div class="backdrop-handle backdrop-handle-@handle.ToString().ToLowerInvariant()"
+                                     style="@GetBackdropHandleStyle(handle)"
+                                     @onmousedown="e => OnBackdropMouseDown(e, handle)"
+                                     @onmousedown:stopPropagation></div>
+                            }
+                        }
                         <!-- Grid overlay for reference -->
                         <div class="minimap-grid"></div>
                     </div>
@@ -225,16 +240,43 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background-image: 
+        background-image:
             linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
             linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
         background-size: 25% 25%;
         pointer-events: none;
         z-index: 5;
     }
-    
+
+    .backdrop-selection {
+        position: absolute;
+        border: 2px dashed var(--mud-palette-secondary);
+        background: transparent;
+        cursor: move;
+        z-index: 9;
+        pointer-events: auto;
+    }
+
+    .backdrop-handle {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: var(--mud-palette-secondary);
+        border: 1px solid white;
+        z-index: 11;
+    }
+
+    .backdrop-handle-n { cursor: n-resize; }
+    .backdrop-handle-s { cursor: s-resize; }
+    .backdrop-handle-e { cursor: e-resize; }
+    .backdrop-handle-w { cursor: w-resize; }
+    .backdrop-handle-ne { cursor: ne-resize; }
+    .backdrop-handle-nw { cursor: nw-resize; }
+    .backdrop-handle-se { cursor: se-resize; }
+    .backdrop-handle-sw { cursor: sw-resize; }
+
     .text-center {
         text-align: center;
     }
-    
+
 </style>
