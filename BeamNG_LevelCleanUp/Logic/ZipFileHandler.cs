@@ -146,6 +146,46 @@ public static class ZipFileHandler
         return _lastUnpackedPath;
     }
 
+    /// <summary>
+    /// Re-extracts the last selected copy-source zip to its original extraction folder.
+    /// The copy pages only store paths into the extracted source level and re-read the files
+    /// at copy time - but the extraction under temp can vanish mid-session (app startup wipes
+    /// temp, the Create Level wizard cleans it, the other copy pages re-extract their own
+    /// source into the same _copyFrom folder). This restores the extraction so an already
+    /// scanned selection can still be copied.
+    /// </summary>
+    /// <returns>True if the source zip is known, still exists and was re-extracted.</returns>
+    public static bool TryRestoreCopyFromExtraction()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_lastCopyFromUnpackedZip) || string.IsNullOrEmpty(_lastCopyFromUnpackedPath))
+                return false;
+
+            var zipFile = new FileInfo(_lastCopyFromUnpackedZip);
+            if (!zipFile.Exists)
+                return false;
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Extracted source level is missing - restoring it from {zipFile.Name}...");
+
+            var encoding = DetectZipEncoding(zipFile.FullName);
+            ZipFile.ExtractToDirectory(zipFile.FullName, _lastCopyFromUnpackedPath, encoding, true);
+            // Same normalization as the original extraction (moves the level under a levels\ folder if needed)
+            GetLevelPath(_lastCopyFromUnpackedPath);
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"Source level restored to {_lastCopyFromUnpackedPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                $"Could not restore the extracted source level: {ex.Message}");
+            return false;
+        }
+    }
+
     public static string GetLastUnpackedCopyFromPath()
     {
         return _lastCopyFromUnpackedPath;

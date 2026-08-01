@@ -113,13 +113,15 @@ public class AssetCopy
         }
     }
 
-    public void Copy()
+    public void Copy(CopyResultSummary? summary = null)
     {
+        summary ??= new CopyResultSummary();
+
         // Collect all terrain materials first for batch processing
         var terrainMaterials = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.Terrain).ToList();
         var forestBrushes = _assetsToCopy.Where(x => x.CopyAssetType == CopyAssetType.ForestBrush).ToList();
-        var otherAssets = _assetsToCopy.Where(x => 
-            x.CopyAssetType != CopyAssetType.Terrain && 
+        var otherAssets = _assetsToCopy.Where(x =>
+            x.CopyAssetType != CopyAssetType.Terrain &&
             x.CopyAssetType != CopyAssetType.ForestBrush).ToList();
 
         // Group other assets by type for potential batch processing
@@ -127,61 +129,88 @@ public class AssetCopy
         var decals = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Decal).ToList();
         var daeFiles = otherAssets.Where(x => x.CopyAssetType == CopyAssetType.Dae).ToList();
 
-        // Copy roads in batch mode
-        if (roads.Any())
+        // Replace-mode terrain items perform one operation per selected target material
+        var totalPlannedOperations = roads.Count + decals.Count + daeFiles.Count + forestBrushes.Count
+                                     + terrainMaterials.Sum(t => t.IsReplaceMode
+                                         ? t.ReplaceTargetMaterialNames.Count(n => !string.IsNullOrEmpty(n))
+                                         : 1);
+
+        try
         {
-            _materialCopier.BeginBatch();
-            foreach (var item in roads)
+            // Copy roads in batch mode
+            if (roads.Any())
             {
-                stopFaultyFile = !CopyRoad(item);
+                _materialCopier.BeginBatch();
+                foreach (var item in roads)
+                {
+                    var success = CopyRoad(item);
+                    summary.Track(success, item.Name);
+                    stopFaultyFile = !success;
+                    if (stopFaultyFile) break;
+                }
+
+                _materialCopier.EndBatch();
+
+                if (stopFaultyFile) return;
+            }
+
+            // Copy decals in batch mode
+            if (decals.Any())
+            {
+                _materialCopier.BeginBatch();
+                foreach (var item in decals)
+                {
+                    CopyManagedDecal(item);
+                    var success = CopyDecal(item);
+                    summary.Track(success, item.Name);
+                    stopFaultyFile = !success;
+                    if (stopFaultyFile) break;
+                }
+
+                _materialCopier.EndBatch();
+
+                if (stopFaultyFile) return;
+            }
+
+            // Copy DAE files (non-batch for now as they use MaterialCopier internally)
+            foreach (var item in daeFiles)
+            {
+                var success = CopyDae(item);
+                summary.Track(success, item.Name);
+                stopFaultyFile = !success;
                 if (stopFaultyFile) break;
             }
 
-            _materialCopier.EndBatch();
+            if (stopFaultyFile) return;
+
+            // Now process all terrain materials in batch (with groundcover collection)
+            if (terrainMaterials.Any()) stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials, summary);
 
             if (stopFaultyFile) return;
-        }
 
-        // Copy decals in batch mode
-        if (decals.Any())
-        {
-            _materialCopier.BeginBatch();
-            foreach (var item in decals)
+            // Process forest brushes
+            if (forestBrushes.Any())
             {
-                CopyManagedDecal(item);
-                stopFaultyFile = !CopyDecal(item);
-                if (stopFaultyFile) break;
+                var success = CopyForestBrushes(forestBrushes);
+                foreach (var brush in forestBrushes) summary.Track(success, brush.Name);
+                stopFaultyFile = !success;
             }
-
-            _materialCopier.EndBatch();
-
-            if (stopFaultyFile) return;
         }
-
-        // Copy DAE files (non-batch for now as they use MaterialCopier internally)
-        foreach (var item in daeFiles)
+        finally
         {
-            stopFaultyFile = !CopyDae(item);
-            if (stopFaultyFile) break;
+            summary.Skipped = Math.Max(0, totalPlannedOperations - summary.Succeeded - summary.Failed);
+
+            if (!summary.HasFailures)
+                PubSubChannel.SendMessage(PubSubMessageType.Info,
+                    "Done! Assets copied. Build your deployment file now.");
+            else
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                    $"Copy finished with problems: {summary.Succeeded} succeeded, {summary.Failed} failed" +
+                    (summary.Skipped > 0 ? $", {summary.Skipped} skipped" : string.Empty) +
+                    (summary.FailedItems.Any() ? $". Failed: {string.Join(", ", summary.FailedItems)}" : "."));
+
+            stopFaultyFile = false;
         }
-
-        if (stopFaultyFile) return;
-
-        // Now process all terrain materials in batch (with groundcover collection)
-        if (terrainMaterials.Any()) stopFaultyFile = !CopyTerrainMaterialsBatch(terrainMaterials);
-
-        if (stopFaultyFile) return;
-
-        // Process forest brushes
-        if (forestBrushes.Any())
-        {
-            stopFaultyFile = !CopyForestBrushes(forestBrushes);
-        }
-
-        if (!stopFaultyFile)
-            PubSubChannel.SendMessage(PubSubMessageType.Info, "Done! Assets copied. Build your deployment file now.");
-
-        stopFaultyFile = false;
     }
 
     private bool CopyRoad(CopyAsset item)
@@ -226,7 +255,7 @@ public class AssetCopy
     /// <summary>
     ///     Processes terrain materials - routes to copier or replacer based on ReplaceTargetMaterialNames
     /// </summary>
-    private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials)
+    private bool CopyTerrainMaterialsBatch(List<CopyAsset> terrainMaterials, CopyResultSummary summary)
     {
         // Get the target materials.json file path from the first terrain material
         // All terrain materials should have the same target path
@@ -293,7 +322,9 @@ public class AssetCopy
                 ReplaceTargetMaterialName = targetMaterialName // Set single target for backward compatibility
             };
 
-            if (!_terrainMaterialReplacer.Replace(singleReplaceItem))
+            var replaceSuccess = _terrainMaterialReplacer.Replace(singleReplaceItem);
+            summary.Track(replaceSuccess, $"{item.Name} -> {targetMaterialName}");
+            if (!replaceSuccess)
                 PubSubChannel.SendMessage(PubSubMessageType.Warning,
                     $"Failed to replace material '{targetMaterialName}'. Skipping.");
             // Continue with other replacements, don't fail entire batch
@@ -304,8 +335,12 @@ public class AssetCopy
 
         // Process additions (new materials)
         foreach (var item in materialsToAdd)
-            if (!_terrainMaterialCopier.Copy(item))
+        {
+            var addSuccess = _terrainMaterialCopier.Copy(item);
+            summary.Track(addSuccess, item.Name);
+            if (!addSuccess)
                 return false;
+        }
 
         // Write all collected groundcovers ONCE at the end
         if (materialsToAdd.Any()) _groundCoverCopier.WriteAllGroundCovers();
