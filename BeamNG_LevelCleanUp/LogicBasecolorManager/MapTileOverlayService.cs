@@ -41,7 +41,7 @@ public class MapTileOverlayService
 
         var tileRoot = Path.Join(levelPath, "MT_Tiles");
         var finalPath = Path.Join(tileRoot, GetFinalImageName(provider, normalizedDate));
-        var cachePath = GetCachePath(tileRoot, provider, normalizedDate);
+        var cachePath = GetCachePath(Path.Join(tileRoot, "cache"), provider, normalizedDate);
         return File.Exists(finalPath) || Directory.Exists(cachePath);
     }
 
@@ -68,7 +68,7 @@ public class MapTileOverlayService
 
         var tileRoot = Path.Join(levelPath, "MT_Tiles");
         var finalPath = Path.Join(tileRoot, GetFinalImageName(provider, normalizedDate));
-        var cachePath = GetCachePath(tileRoot, provider, normalizedDate);
+        var cachePath = GetCachePath(Path.Join(tileRoot, "cache"), provider, normalizedDate);
         var deletedItems = 0;
 
         if (File.Exists(finalPath))
@@ -91,6 +91,11 @@ public class MapTileOverlayService
         return new MapTileCacheClearResult(cacheLabel, deletedItems);
     }
 
+    /// <summary>
+    /// Legacy entry point for the terrain overlay: builds an <see cref="OverlayRequest"/> from the
+    /// saved terrain georeference settings and delegates to <see cref="EnsureOverlayImageAsync(OverlayRequest)"/>.
+    /// Kept so existing call sites (BasecolorManager) compile untouched.
+    /// </summary>
     public async Task<MapTileOverlayResult> EnsureOverlayImageAsync(
         string levelPath,
         MtGeoReferenceSettings geoReferenceSettings,
@@ -102,12 +107,52 @@ public class MapTileOverlayService
         if (!TryNormalizeImageryDate(provider, imageryDate, out var normalizedDate))
             throw new InvalidOperationException($"Select a valid imagery date for {provider.Name} before fetching.");
 
-        var tileRoot = Path.Join(levelPath, "MT_Tiles");
-        Directory.CreateDirectory(tileRoot);
+        // OverlayRequest has no HasGeoReference concept (a raw bbox request doesn't need one) — this
+        // is the one entry point that does, so the full old MtGeoReferenceSettings validation
+        // (including the HasGeoReference flag) still needs to run here before delegating.
+        if (!HasUsableGeoReference(geoReferenceSettings))
+            throw new InvalidOperationException("The level does not have usable WGS84 georeference settings for map tile fetching.");
 
-        var finalImageName = GetFinalImageName(provider, normalizedDate);
-        var finalPath = Path.Join(tileRoot, finalImageName);
-        var fingerprintJson = BuildWarpFingerprintJson(geoReferenceSettings, outputSize);
+        var tileRoot = Path.Join(levelPath, "MT_Tiles");
+        var request = new OverlayRequest(
+            Wgs84Bounds: new GeoBoundingBox(
+                geoReferenceSettings.TerrainMinLongitude,
+                geoReferenceSettings.TerrainMinLatitude,
+                geoReferenceSettings.TerrainMaxLongitude,
+                geoReferenceSettings.TerrainMaxLatitude),
+            MetersPerPixel: geoReferenceSettings.TerrainMetersPerPixel,
+            NativeGeoTransform: CanWarpFromNativeGeoReference(geoReferenceSettings) ? geoReferenceSettings.SourceGeoTransform : null,
+            NativeRasterWidth: geoReferenceSettings.SourceRasterWidth,
+            NativeRasterHeight: geoReferenceSettings.SourceRasterHeight,
+            ProjectionWkt: geoReferenceSettings.ProjectionWkt,
+            OutputSize: outputSize,
+            OutputPath: Path.Join(tileRoot, GetFinalImageName(provider, normalizedDate)),
+            TileCacheRoot: Path.Join(tileRoot, "cache"),
+            ProviderName: providerName,
+            ImageryDate: imageryDate);
+
+        return await EnsureOverlayImageAsync(request);
+    }
+
+    /// <summary>
+    /// Fetches (or reuses) a map tile overlay for an arbitrary WGS84 bounding box, warping it to
+    /// either the box's linear extent (bbox-only) or a native raster's geotransform when supplied.
+    /// This is the shared machinery behind both the terrain overlay (see the legacy overload above)
+    /// and the backdrop texture baker.
+    /// </summary>
+    public async Task<MapTileOverlayResult> EnsureOverlayImageAsync(OverlayRequest request)
+    {
+        var provider = ResolveProvider(request.ProviderName);
+        if (!TryNormalizeImageryDate(provider, request.ImageryDate, out var normalizedDate))
+            throw new InvalidOperationException($"Select a valid imagery date for {provider.Name} before fetching.");
+
+        var outputDirectory = Path.GetDirectoryName(request.OutputPath);
+        if (!string.IsNullOrEmpty(outputDirectory))
+            Directory.CreateDirectory(outputDirectory);
+
+        var finalPath = request.OutputPath;
+        var finalImageName = Path.GetFileName(finalPath);
+        var fingerprintJson = BuildWarpFingerprintJson(request);
         if (File.Exists(finalPath))
         {
             if (WarpFingerprintMatches(finalPath, fingerprintJson))
@@ -136,22 +181,16 @@ public class MapTileOverlayService
             PubSubChannel.SendMessage(PubSubMessageType.Info, releaseMessage);
         }
 
-        ValidateGeoReference(geoReferenceSettings);
-        var zoom = ChooseZoom(geoReferenceSettings.TerrainCenterLatitude, geoReferenceSettings.TerrainMetersPerPixel);
-        var northWest = LonLatToTile(geoReferenceSettings.TerrainMinLongitude, geoReferenceSettings.TerrainMaxLatitude, zoom);
-        var southEast = LonLatToTile(geoReferenceSettings.TerrainMaxLongitude, geoReferenceSettings.TerrainMinLatitude, zoom);
-
-        var minTileX = Math.Min(northWest.X, southEast.X);
-        var maxTileX = Math.Max(northWest.X, southEast.X);
-        var minTileY = Math.Min(northWest.Y, southEast.Y);
-        var maxTileY = Math.Max(northWest.Y, southEast.Y);
+        ValidateRequestBounds(request);
+        var zoom = ChooseZoom(request.Wgs84Bounds.Center.Latitude, request.MetersPerPixel);
+        var (minTileX, maxTileX, minTileY, maxTileY) = GetTileSpan(request.Wgs84Bounds, zoom);
         var tileCount = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
 
         PubSubChannel.SendMessage(PubSubMessageType.Info,
             $"Fetching {provider.Name} overlay at zoom {zoom} ({tileCount} tiles). Existing cached tiles are reused.");
 
         var fallbackTileCount = 0;
-        var cachePath = GetCachePath(tileRoot, provider, normalizedDate);
+        var cachePath = GetCachePath(request.TileCacheRoot, provider, normalizedDate);
         using var mosaic = new Image<Rgba32>((maxTileX - minTileX + 1) * TileSize, (maxTileY - minTileY + 1) * TileSize);
 
         // Downloads run in parallel (bounded per provider); compositing stays on this
@@ -193,13 +232,13 @@ public class MapTileOverlayService
                 $"{provider.Name} did not return any map tiles for this area. Check the georeference bounds, try another provider, or clear the cache and retry later.");
         }
 
-        var west = LonLatToWorldPixel(geoReferenceSettings.TerrainMinLongitude, geoReferenceSettings.TerrainMaxLatitude, zoom);
-        var east = LonLatToWorldPixel(geoReferenceSettings.TerrainMaxLongitude, geoReferenceSettings.TerrainMinLatitude, zoom);
+        var west = LonLatToWorldPixel(request.Wgs84Bounds.MinLongitude, request.Wgs84Bounds.MaxLatitude, zoom);
+        var east = LonLatToWorldPixel(request.Wgs84Bounds.MaxLongitude, request.Wgs84Bounds.MinLatitude, zoom);
         var mosaicOriginX = minTileX * TileSize;
         var mosaicOriginY = minTileY * TileSize;
-        using var output = CanWarpFromNativeGeoReference(geoReferenceSettings)
-            ? CreateWarpedOverlay(mosaic, geoReferenceSettings, zoom, mosaicOriginX, mosaicOriginY, outputSize)
-            : CreateBoundingBoxOverlay(mosaic, west, east, mosaicOriginX, mosaicOriginY, outputSize);
+        using var output = CanWarpFromNativeGeoReference(request)
+            ? CreateWarpedOverlay(mosaic, request, zoom, mosaicOriginX, mosaicOriginY, request.OutputSize)
+            : CreateBoundingBoxOverlay(mosaic, west, east, mosaicOriginX, mosaicOriginY, request.OutputSize);
         if (File.Exists(finalPath))
             File.Delete(finalPath);
         output.SaveAsPng(finalPath);
@@ -211,6 +250,46 @@ public class MapTileOverlayService
             provider.Name,
             normalizedDate,
             waybackRelease?.ReleaseDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Counts the tiles a fetch for <paramref name="bounds"/> would need at the zoom level
+    /// <see cref="ChooseZoom"/> picks for <paramref name="metersPerPixel"/>. Used by the cost
+    /// estimator before committing to a download.
+    /// </summary>
+    public static int CountTilesForBounds(GeoBoundingBox bounds, double metersPerPixel)
+    {
+        var zoom = ChooseZoom(bounds.Center.Latitude, metersPerPixel);
+        var (minTileX, maxTileX, minTileY, maxTileY) = GetTileSpan(bounds, zoom);
+        return (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
+    }
+
+    /// <summary>
+    /// Public wrapper around the private <see cref="ChooseZoom"/> zoom-selection math, for callers
+    /// that need to know which on-disk cache folder (<c>.../cache/{slug}/{zoom}/...</c>) a fetch for
+    /// <paramref name="bounds"/> would use without performing one — e.g. the backdrop cost estimator,
+    /// which counts already-cached tiles at that zoom before subtracting them from a download estimate.
+    /// </summary>
+    public static int ChooseZoomForBounds(GeoBoundingBox bounds, double metersPerPixel) =>
+        ChooseZoom(bounds.Center.Latitude, metersPerPixel);
+
+    /// <summary>
+    /// Resolves the on-disk tile cache directory a fetch for <paramref name="providerName"/> /
+    /// <paramref name="imageryDate"/> at <paramref name="zoom"/> would read/write, routing through the
+    /// SAME <see cref="GetCachePath"/> + <see cref="TryNormalizeImageryDate"/> logic
+    /// <see cref="EnsureOverlayImageAsync(OverlayRequest)"/> uses — so date-suffixed providers (e.g.
+    /// ArcGIS Wayback) get the correct extra <c>{date}</c> path segment instead of a caller re-deriving
+    /// (and potentially under-nesting) the layout itself. Used by the backdrop cost estimator to count
+    /// already-cached tiles before subtracting them from a download estimate. An unparsable/missing
+    /// <paramref name="imageryDate"/> for a date-supporting provider falls back to the non-dated path
+    /// (a safe under-count — <c>Directory.Exists</c> simply returns false — rather than throwing).
+    /// </summary>
+    public static string GetProviderCacheDirectory(string levelPath, string providerName, string? imageryDate, int zoom)
+    {
+        var provider = ResolveProvider(providerName);
+        TryNormalizeImageryDate(provider, imageryDate, out var normalizedDate);
+        var cacheRoot = Path.Join(levelPath, "MT_Tiles", "cache");
+        return Path.Join(GetCachePath(cacheRoot, provider, normalizedDate), zoom.ToString(CultureInfo.InvariantCulture));
     }
 
     public static bool HasUsableGeoReference(MtGeoReferenceSettings settings)
@@ -228,6 +307,14 @@ public class MapTileOverlayService
                settings.SourceRasterWidth > 0 &&
                settings.SourceRasterHeight > 0 &&
                !string.IsNullOrWhiteSpace(settings.ProjectionWkt);
+    }
+
+    private static bool CanWarpFromNativeGeoReference(OverlayRequest request)
+    {
+        return request.NativeGeoTransform is { Length: 6 } &&
+               request.NativeRasterWidth > 0 &&
+               request.NativeRasterHeight > 0 &&
+               !string.IsNullOrWhiteSpace(request.ProjectionWkt);
     }
 
     private static Image<Rgba32> CreateBoundingBoxOverlay(
@@ -249,7 +336,7 @@ public class MapTileOverlayService
 
     private static Image<Rgba32> CreateWarpedOverlay(
         Image<Rgba32> mosaic,
-        MtGeoReferenceSettings settings,
+        OverlayRequest request,
         int zoom,
         int mosaicOriginX,
         int mosaicOriginY,
@@ -257,11 +344,11 @@ public class MapTileOverlayService
     {
         GeoTiffReader.InitializeGdal();
 
-        using var nativeToWgs84 = CreateNativeToWgs84Transformation(settings.ProjectionWkt);
+        using var nativeToWgs84 = CreateNativeToWgs84Transformation(request.ProjectionWkt!);
         using var output = new Image<Rgba32>(outputSize, outputSize);
-        var geoTransform = settings.SourceGeoTransform;
-        var sourceWidth = settings.SourceRasterWidth;
-        var sourceHeight = settings.SourceRasterHeight;
+        var geoTransform = request.NativeGeoTransform!;
+        var sourceWidth = request.NativeRasterWidth;
+        var sourceHeight = request.NativeRasterHeight;
 
         for (var y = 0; y < outputSize; y++)
         for (var x = 0; x < outputSize; x++)
@@ -426,6 +513,21 @@ public class MapTileOverlayService
             (int)Math.Floor(worldPixel.Y / TileSize));
     }
 
+    /// <summary>
+    /// Computes the inclusive tile-index span covering <paramref name="bounds"/> at zoom
+    /// <paramref name="zoom"/>. Shared by the fetch loop and <see cref="CountTilesForBounds"/>.
+    /// </summary>
+    private static (int MinTileX, int MaxTileX, int MinTileY, int MaxTileY) GetTileSpan(GeoBoundingBox bounds, int zoom)
+    {
+        var northWest = LonLatToTile(bounds.MinLongitude, bounds.MaxLatitude, zoom);
+        var southEast = LonLatToTile(bounds.MaxLongitude, bounds.MinLatitude, zoom);
+        return (
+            Math.Min(northWest.X, southEast.X),
+            Math.Max(northWest.X, southEast.X),
+            Math.Min(northWest.Y, southEast.Y),
+            Math.Max(northWest.Y, southEast.Y));
+    }
+
     private static PixelCoordinate LonLatToWorldPixel(double longitude, double latitude, int z)
     {
         var clampedLatitude = Math.Clamp(latitude, -WebMercatorMaxLatitude, WebMercatorMaxLatitude);
@@ -468,30 +570,41 @@ public class MapTileOverlayService
             : provider.FinalImageName;
     }
 
-    private static string GetCachePath(string tileRoot, MapTileProvider provider, string? normalizedDate)
+    /// <summary>
+    /// Resolves the on-disk tile cache folder for a provider/date under a given cache root.
+    /// <paramref name="cacheRoot"/> is already the full "…/MT_Tiles/cache" path (shared across
+    /// terrain and backdrop requests); callers derive it from the level path.
+    /// </summary>
+    private static string GetCachePath(string cacheRoot, MapTileProvider provider, string? normalizedDate)
     {
-        var providerCache = Path.Join(tileRoot, "cache", provider.Slug);
+        var providerCache = Path.Join(cacheRoot, provider.Slug);
         return provider.SupportsHistoricalDate ? Path.Join(providerCache, normalizedDate!) : providerCache;
     }
 
     private static string GetWarpFingerprintPath(string finalPath) => finalPath + ".meta.json";
 
-    private static string BuildWarpFingerprintJson(MtGeoReferenceSettings settings, int outputSize)
+    private static string BuildWarpFingerprintJson(OverlayRequest request)
     {
+        var bounds = request.Wgs84Bounds;
         var fingerprint = new WarpFingerprint(
             1,
-            settings.TerrainMinLongitude,
-            settings.TerrainMinLatitude,
-            settings.TerrainMaxLongitude,
-            settings.TerrainMaxLatitude,
-            settings.TerrainCenterLatitude,
-            settings.TerrainMetersPerPixel,
-            settings.SourceGeoTransform ?? [],
-            settings.SourceRasterWidth,
-            settings.SourceRasterHeight,
-            settings.ProjectionWkt ?? string.Empty,
-            outputSize);
-        return JsonSerializer.Serialize(fingerprint);
+            bounds.MinLongitude,
+            bounds.MinLatitude,
+            bounds.MaxLongitude,
+            bounds.MaxLatitude,
+            bounds.Center.Latitude,
+            request.MetersPerPixel,
+            request.NativeGeoTransform ?? [],
+            request.NativeRasterWidth,
+            request.NativeRasterHeight,
+            request.ProjectionWkt ?? string.Empty,
+            request.OutputSize);
+        var json = JsonSerializer.Serialize(fingerprint);
+
+        // ExtraFingerprint (e.g. an adjustment hash) is intentionally NOT a WarpFingerprint field:
+        // adding a field would change the serialized JSON for every overlay, including terrain
+        // overlays that must keep byte-identical sidecars. Append it only when present.
+        return string.IsNullOrEmpty(request.ExtraFingerprint) ? json : json + "|" + request.ExtraFingerprint;
     }
 
     private static bool WarpFingerprintMatches(string finalPath, string expectedFingerprintJson)
@@ -574,9 +687,24 @@ public class MapTileOverlayService
         }
     }
 
-    private static void ValidateGeoReference(MtGeoReferenceSettings settings)
+    /// <summary>
+    /// Sanity-checks the request's WGS84 bounds and derived center latitude before the fetch
+    /// commits to a zoom level. Mirrors <see cref="HasUsableGeoReference"/>'s geometry checks
+    /// (min &lt; max, center within Web Mercator range) without the settings-specific
+    /// <c>HasGeoReference</c> flag — a raw bbox request has no such flag. The terrain legacy
+    /// overload already checks <see cref="HasUsableGeoReference"/> (flag included) itself before
+    /// building a request; a future backdrop caller is expected to do the equivalent check against
+    /// its own "is georeferenced" state before calling this generic overload.
+    /// </summary>
+    private static void ValidateRequestBounds(OverlayRequest request)
     {
-        if (!HasUsableGeoReference(settings))
+        var bounds = request.Wgs84Bounds;
+        var centerLatitude = bounds.Center.Latitude;
+        var isUsable = bounds.MinLongitude < bounds.MaxLongitude &&
+                       bounds.MinLatitude < bounds.MaxLatitude &&
+                       centerLatitude >= -WebMercatorMaxLatitude &&
+                       centerLatitude <= WebMercatorMaxLatitude;
+        if (!isUsable)
             throw new InvalidOperationException("The level does not have usable WGS84 georeference settings for map tile fetching.");
     }
 
@@ -622,6 +750,42 @@ public class MapTileOverlayService
         }
     }
 }
+
+/// <summary>
+/// Describes a map tile overlay fetch for an arbitrary WGS84 bounding box. Both the legacy
+/// terrain overlay adapter and the backdrop texture baker build one of these and call
+/// <see cref="MapTileOverlayService.EnsureOverlayImageAsync(OverlayRequest)"/>.
+/// </summary>
+/// <param name="Wgs84Bounds">The area to cover, in WGS84 degrees.</param>
+/// <param name="MetersPerPixel">Drives <c>ChooseZoom</c>; center latitude comes from <see cref="Wgs84Bounds"/>.Center.</param>
+/// <param name="NativeGeoTransform">Native raster geotransform for pixel-accurate warping; null selects the bbox-only linear warp (spec §10).</param>
+/// <param name="NativeRasterWidth">Native raster width in pixels, paired with <see cref="NativeGeoTransform"/>.</param>
+/// <param name="NativeRasterHeight">Native raster height in pixels, paired with <see cref="NativeGeoTransform"/>.</param>
+/// <param name="ProjectionWkt">Native raster projection WKT; required alongside <see cref="NativeGeoTransform"/> for the native warp path.</param>
+/// <param name="OutputSize">Square output size in pixels (power of two).</param>
+/// <param name="OutputPath">Full path of the final PNG.</param>
+/// <param name="TileCacheRoot">Raw tile cache root, e.g. "{level}\MT_Tiles\cache" — shared with the terrain overlay.</param>
+/// <param name="ProviderName">Map tile provider name (see <see cref="MapTileOverlayService.Providers"/>).</param>
+/// <param name="ImageryDate">Requested imagery date for providers that support historical dates.</param>
+/// <param name="ExtraFingerprint">
+/// Extra cache-invalidation input (e.g. an adjustment hash) appended to the warp fingerprint so a
+/// change forces a rebuild from the tile cache. Not a <c>WarpFingerprint</c> record field — adding
+/// a field there would change the serialized JSON for every overlay, including terrain overlays
+/// that must keep byte-identical sidecars.
+/// </param>
+public sealed record OverlayRequest(
+    GeoBoundingBox Wgs84Bounds,
+    double MetersPerPixel,
+    double[]? NativeGeoTransform,
+    int NativeRasterWidth,
+    int NativeRasterHeight,
+    string? ProjectionWkt,
+    int OutputSize,
+    string OutputPath,
+    string TileCacheRoot,
+    string ProviderName,
+    string? ImageryDate,
+    string? ExtraFingerprint = null);
 
 public sealed record MapTileProvider(
     string Name,

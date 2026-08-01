@@ -1,3 +1,4 @@
+using BeamNG_LevelCleanUp.BlazorUI.State;
 using BeamNgTerrainPoc.Terrain.Models;
 using BeamNgTerrainPoc.Terrain.Models.DecalRoad;
 using BeamNgTerrainPoc.Terrain.Osm.Models;
@@ -266,6 +267,93 @@ public class TerrainPresetResult
     ///     Key: Material internal name, Value: Layer source settings including OSM features.
     /// </summary>
     public Dictionary<string, MaterialLayerSettings>? MaterialLayerSettings { get; set; }
+
+    // ========== NEW: Backdrop Settings (spec §5, Task 19) ==========
+    // All nullable: absent in the preset (pre-backdrop preset) means "don't touch state" — the
+    // page keeps BackdropSettings at its defaults (Enabled=false).
+
+    /// <summary>
+    ///     Whether backdrop generation is enabled.
+    /// </summary>
+    public bool? BackdropEnabled { get; set; }
+
+    /// <summary>
+    ///     Backdrop selection rect X offset, in combined-GeoTIFF source pixels.
+    /// </summary>
+    public int? BackdropOffsetX { get; set; }
+
+    /// <summary>
+    ///     Backdrop selection rect Y offset, in combined-GeoTIFF source pixels.
+    /// </summary>
+    public int? BackdropOffsetY { get; set; }
+
+    /// <summary>
+    ///     Backdrop selection rect width, in combined-GeoTIFF source pixels.
+    /// </summary>
+    public int? BackdropWidth { get; set; }
+
+    /// <summary>
+    ///     Backdrop selection rect height, in combined-GeoTIFF source pixels.
+    /// </summary>
+    public int? BackdropHeight { get; set; }
+
+    /// <summary>
+    ///     Width (meters) of the near edge band around the terrain rect.
+    /// </summary>
+    public double? BackdropEdgeBandMeters { get; set; }
+
+    /// <summary>
+    ///     Maximum allowed vertical error (meters) near the terrain.
+    /// </summary>
+    public double? BackdropMaxVerticalErrorNearMeters { get; set; }
+
+    /// <summary>
+    ///     Maximum allowed vertical error (meters) far from the terrain.
+    /// </summary>
+    public double? BackdropMaxVerticalErrorFarMeters { get; set; }
+
+    /// <summary>
+    ///     Target chunk size in meters for the backdrop mesh grid.
+    /// </summary>
+    public double? BackdropChunkTargetMeters { get; set; }
+
+    /// <summary>
+    ///     Texel density (meters per pixel) for the near backdrop texture.
+    /// </summary>
+    public double? BackdropTexelDensityNearMPerPx { get; set; }
+
+    /// <summary>
+    ///     Maximum chunk texture size in pixels.
+    /// </summary>
+    public int? BackdropMaxChunkTextureSize { get; set; }
+
+    /// <summary>
+    ///     Maximum far raster dimension in pixels.
+    /// </summary>
+    public int? BackdropMaxFarRasterDimension { get; set; }
+
+    /// <summary>
+    ///     Whether the seam skirt (crack-filler geometry facing the terrain) is enabled.
+    /// </summary>
+    public bool? BackdropSeamSkirt { get; set; }
+
+    /// <summary>
+    ///     Whether the backdrop chunk DAEs carry a physics collision mesh (drivable backdrop).
+    /// </summary>
+    public bool? BackdropCollisionMesh { get; set; }
+
+    // ========== Texturing mode settings (backdrop follow-up doc 06) ==========
+    // Nullable: absent in the preset (pre-texturing preset) means "don't touch state defaults".
+
+    /// <summary>
+    ///     The user's texturing mode choice (Paint Mode vs BaseColor Mode).
+    /// </summary>
+    public TerrainTexturingMode? TexturingMode { get; set; }
+
+    /// <summary>
+    ///     Satellite overlay blend (percent) for materials not selected for road smoothing/painting.
+    /// </summary>
+    public int? TexturingNonRoadOverlayBlendPercent { get; set; }
 }
 
 /// <summary>

@@ -85,7 +85,7 @@ public partial class BasecolorManager
                                                   _levelPath,
                                                   _settings.BasecolorModeSettings.OverlaySettings.SelectedTileProvider,
                                                   _settings.BasecolorModeSettings.OverlaySettings.TileImageryDate);
-    private bool HasActiveBasecolorOverlay => !string.IsNullOrWhiteSpace(GetActiveBasecolorOverlayPath()) && File.Exists(GetActiveBasecolorOverlayPath());
+    private bool HasActiveBasecolorOverlay => BasecolorManagerService.HasActiveBasecolorOverlay(_settings);
     private int GlobalOverlayBlendPercent => (int)Math.Round(Math.Clamp(_settings.BasecolorModeSettings.OverlaySettings.GlobalBlend, 0.0, 1.0) * 100.0);
     private int OverlayBrightnessPercent => ToSignedPercent(_settings.BasecolorModeSettings.OverlaySettings.Brightness);
     private int OverlayContrastPercent => ToSignedPercent(_settings.BasecolorModeSettings.OverlaySettings.Contrast);
@@ -172,33 +172,41 @@ public partial class BasecolorManager
                     SyncBasecolorMaterialsFromPaintMode();
                 else
                     UpdateSettingsFromMaterialLists();
-
-                ApplyBaseColorModeCore();
             });
+
+            await ApplyBaseColorModeCore();
             UpdateBakeStaleness();
         });
     }
 
-    private void ApplyBaseColorModeCore()
+    private async Task ApplyBaseColorModeCore()
     {
         if (_terrain == null)
             return;
 
-        _baseColorModeApplier.Apply(
-            _levelPath,
-            _levelName,
-            _materialsJsonPath,
-            _terrainFilePath,
-            _terrain,
-            _basecolorMaterials,
-            _settings,
-            _settings.BasecolorModeSettings.GenerateHeight,
-            _settings.BasecolorModeSettings.NormalStrength,
-            _settings.BasecolorModeSettings.AoRadius,
-            _settings.BasecolorModeSettings.AoIntensity,
-            BasecolorManagerService.CreateOverlayOptions(_settings),
-            BasecolorManagerService.CreateMaterialBorderBlendOptions(_settings));
-        _previewDataUri = _service.BuildPreview(_terrain, _basecolorMaterials, _settings);
+        var terrain = _terrain;
+        await Task.Run(() =>
+        {
+            _baseColorModeApplier.Apply(
+                _levelPath,
+                _levelName,
+                _materialsJsonPath,
+                _terrainFilePath,
+                terrain,
+                _basecolorMaterials,
+                _settings,
+                _settings.BasecolorModeSettings.GenerateHeight,
+                _settings.BasecolorModeSettings.NormalStrength,
+                _settings.BasecolorModeSettings.AoRadius,
+                _settings.BasecolorModeSettings.AoIntensity,
+                BasecolorManagerService.CreateOverlayOptions(_settings),
+                BasecolorManagerService.CreateMaterialBorderBlendOptions(_settings));
+            _previewDataUri = _service.BuildPreview(terrain, _basecolorMaterials, _settings);
+        });
+
+        // Backdrop chunk textures are baked from the same shared tile cache as the merged BaseColor
+        // maps, so every BaseColor bake keeps them in sync (spec §10). No-op on levels without a backdrop.
+        await _service.RebakeBackdropTexturesAsync(_levelPath, _settings);
     }
 
     private async Task ResetAndRebakeBaseColorMode()
@@ -208,48 +216,53 @@ public partial class BasecolorManager
 
         await RunBusyOperation(OperationResetRebake, "Restoring Paint Mode and rebaking BaseColor maps...", async () =>
         {
-            // Step 1+2: restore the per-material Paint Mode textures on freshly loaded terrain layers,
-            // so a failure later in the pipeline leaves the level in the known-good layered state.
-            await Task.Run(() =>
+            var inputs = new ResetRebakeInputs(
+                _levelPath, _levelName, _materialsJsonPath, _terrainFilePath,
+                _paintMaterials, _basecolorMaterials, _settings)
             {
-                ReloadTerrainFromDisk();
-                UpdateSettingsFromMaterialLists();
-                _paintModeApplier.Apply(_levelPath, _levelName, _materialsJsonPath, _paintMaterials, _settings);
-            });
+                // Mirrors ReloadTerrainFromDisk()'s old silent-keep-current-terrain fallback for a
+                // blank/vanished .ter path - see ResetRebakeInputs.FallbackTerrain.
+                FallbackTerrain = _terrain
+            };
 
-            // Step 3: refresh the tile overlay; a warp that no longer matches the georeference or
-            // terrain size is rebuilt from the raw tile cache.
-            var overlaySettings = _settings.BasecolorModeSettings.OverlaySettings;
-            if (overlaySettings.UseTileProvider && HasGeoReference &&
-                !string.IsNullOrWhiteSpace(overlaySettings.SelectedTileProvider) &&
-                (!SelectedTileProviderSupportsHistoricalDate || SelectedTileImageryDate.HasValue))
-            {
-                var overlayResult = await _tileOverlayService.EnsureOverlayImageAsync(
-                    _levelPath,
-                    _settings.GeoReferenceSettings,
-                    overlaySettings.SelectedTileProvider,
-                    _terrainSize,
-                    overlaySettings.TileImageryDate);
-                overlaySettings.CachedTileImagePath = overlayResult.ImagePath;
-            }
+            var result = await _service.ResetAndRebakeAsync(inputs, RefreshTileOverlayForResetAndRebakeAsync);
 
-            // Step 4: bake the BaseColor maps from the fresh state.
-            await Task.Run(() =>
-            {
-                if (PaintModeHasUsableMaterialSettings())
-                    SyncBasecolorMaterialsFromPaintMode();
-                else
-                    UpdateSettingsFromMaterialLists();
-
-                if (HasActiveBasecolorOverlay)
-                    EnsureDefaultOverlayBlend();
-
-                ApplyBaseColorModeCore();
-            });
+            _terrain = result.Terrain;
+            _terrainSize = result.TerrainSize;
+            // Atomic reference swap (not an in-place mutation) - see SyncBasecolorMaterialsFromPaintMode's
+            // doc comment for why this list must never be structurally edited while the page can render it.
+            _basecolorMaterials = result.BasecolorMaterials;
+            _previewDataUri = await Task.Run(() => _service.BuildPreview(_terrain, _basecolorMaterials, _settings));
 
             UpdateBakeStaleness();
             Snackbar.Add("BaseColor Mode was reset and rebaked from the current terrain.", Severity.Success);
         });
+    }
+
+    /// <summary>
+    /// Step 3 of Reset &amp; Rebake: refresh the tile overlay; a warp that no longer matches the
+    /// georeference or terrain size is rebuilt from the raw tile cache. Kept page-side (passed into
+    /// <see cref="BasecolorManagerService.ResetAndRebakeAsync"/> as a callback) because it needs
+    /// page-computed provider/date properties. Uses <c>_settings.BasecolorModeSettings.MergedTextureSize</c>
+    /// rather than the page's own <c>_terrainSize</c> field: the service already reloaded the terrain
+    /// from disk (step 1+2, run before this callback) and stamped the fresh size there, while
+    /// <c>_terrainSize</c> itself is not reassigned until the whole Reset &amp; Rebake call returns.
+    /// </summary>
+    private async Task RefreshTileOverlayForResetAndRebakeAsync()
+    {
+        var overlaySettings = _settings.BasecolorModeSettings.OverlaySettings;
+        if (overlaySettings.UseTileProvider && HasGeoReference &&
+            !string.IsNullOrWhiteSpace(overlaySettings.SelectedTileProvider) &&
+            (!SelectedTileProviderSupportsHistoricalDate || SelectedTileImageryDate.HasValue))
+        {
+            var overlayResult = await _tileOverlayService.EnsureOverlayImageAsync(
+                _levelPath,
+                _settings.GeoReferenceSettings,
+                overlaySettings.SelectedTileProvider,
+                _settings.BasecolorModeSettings.MergedTextureSize,
+                overlaySettings.TileImageryDate);
+            overlaySettings.CachedTileImagePath = overlayResult.ImagePath;
+        }
     }
 
     private async Task AutoAttachOverlayAfterLoadAsync()
@@ -336,6 +349,19 @@ public partial class BasecolorManager
             reasons.Add("the terrain georeference changed");
         }
 
+        var backdrop = _settings.BackdropSettings;
+        if (backdrop is { Enabled: true })
+        {
+            var overlay = _settings.BasecolorModeSettings.OverlaySettings;
+            var providerChanged = !string.Equals(backdrop.LastBakeProvider, overlay.SelectedTileProvider, StringComparison.Ordinal)
+                               || !string.Equals(backdrop.LastBakeImageryDate, overlay.TileImageryDate ?? string.Empty, StringComparison.Ordinal);
+            var geoRefNewer = backdrop.LastTextureBakeUtc.HasValue &&
+                              _settings.GeoReferenceSettings != null &&
+                              _settings.GeoReferenceSettings.SavedAtUtc > backdrop.LastTextureBakeUtc.Value;
+            if (providerChanged || geoRefNewer)
+                reasons.Add("the backdrop textures no longer match the provider or georeference");
+        }
+
         return reasons.Count == 0
             ? null
             : $"Since the last BaseColor bake {string.Join(" and ", reasons)}.";
@@ -349,20 +375,10 @@ public partial class BasecolorManager
 
     private void SyncBasecolorMaterialsFromPaintMode()
     {
-        var existingOverlayBlends = _basecolorMaterials.ToDictionary(GetMaterialKey, x => x.BaseColorOverlayBlend, StringComparer.OrdinalIgnoreCase);
-        _basecolorMaterials = _paintMaterials
-            .Select(MtTerrainMaterialSetting.FromCopyAsset)
-            .Select(x => x.ToCopyAsset())
-            .ToList();
-        foreach (var material in _basecolorMaterials)
-        {
-            if (existingOverlayBlends.TryGetValue(GetMaterialKey(material), out var blend))
-                material.BaseColorOverlayBlend = blend;
-        }
-
-        _settings.BasecolorModeSettings.Materials = _basecolorMaterials
-            .Select(MtTerrainMaterialSetting.FromCopyAsset)
-            .ToList();
+        // Atomic reference swap - see BasecolorManagerService.SyncBasecolorMaterialsFromPaintMode's doc
+        // comment: it returns a new list rather than mutating _basecolorMaterials in place, since this
+        // can run on a background thread (Task.Run) while a MudTable renders the field live.
+        _basecolorMaterials = BasecolorManagerService.SyncBasecolorMaterialsFromPaintMode(_paintMaterials, _basecolorMaterials, _settings);
     }
 
     private async Task SaveSettings()
@@ -615,13 +631,7 @@ public partial class BasecolorManager
 
     private void UpdateSettingsFromMaterialLists()
     {
-        _settings.BasecolorModeSettings.OsmLayerBlendExceptions ??= new List<MtOsmLayerBlendException>();
-        _settings.PaintModeSettings.Materials = _paintMaterials
-            .Select(MtTerrainMaterialSetting.FromCopyAsset)
-            .ToList();
-        _settings.BasecolorModeSettings.Materials = _basecolorMaterials
-            .Select(MtTerrainMaterialSetting.FromCopyAsset)
-            .ToList();
+        BasecolorManagerService.UpdateSettingsFromMaterialLists(_settings, _paintMaterials, _basecolorMaterials);
     }
 
     private void EnsureOverlayDefaults()
@@ -834,15 +844,7 @@ public partial class BasecolorManager
     private void EnsureDefaultOverlayBlend()
     {
         EnsureOverlayDefaults();
-        if (_basecolorMaterials.Any(x => x.BaseColorOverlayBlend > 0))
-            return;
-
-        // The renderer only honors the per-material blends; the global slider merely copies its
-        // value into them. GlobalBlend can be > 0 from a previous session while all material
-        // blends are 0 (they reset whenever basecolor materials are re-synced from Paint Mode) —
-        // re-apply it, otherwise the fetched overlay is invisible in preview and bake.
-        var globalPercent = (int)Math.Round(Math.Clamp(_settings.BasecolorModeSettings.OverlaySettings.GlobalBlend, 0.0, 1.0) * 100.0);
-        ApplyGlobalOverlayBlend(globalPercent > 0 ? globalPercent : 50);
+        BasecolorManagerService.EnsureDefaultOverlayBlend(_settings, _basecolorMaterials);
     }
 
     private static bool IsSameMaterial(CopyAsset source, CopyAsset target)
@@ -859,14 +861,6 @@ public partial class BasecolorManager
                left.Equals(right, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetMaterialKey(CopyAsset asset)
-    {
-        return asset.TerrainMaterialInternalName
-               ?? asset.TerrainMaterialName
-               ?? asset.Name
-               ?? asset.Identifier.ToString();
-    }
-
     private static int GetMaterialOverlayBlendPercent(CopyAsset asset)
     {
         return (int)Math.Round(Math.Clamp(asset.BaseColorOverlayBlend, 0.0, 1.0) * 100.0);
@@ -874,10 +868,7 @@ public partial class BasecolorManager
 
     private string GetActiveBasecolorOverlayPath()
     {
-        var overlaySettings = _settings.BasecolorModeSettings.OverlaySettings;
-        return overlaySettings.UseTileProvider
-            ? overlaySettings.CachedTileImagePath
-            : overlaySettings.SelectedImagePath;
+        return BasecolorManagerService.GetActiveBasecolorOverlayPath(_settings);
     }
 
     private static int ToSignedPercent(double value)

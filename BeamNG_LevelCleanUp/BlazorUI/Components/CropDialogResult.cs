@@ -35,4 +35,10 @@ public class CropDialogResult
     /// This is recalculated based on the selection position within the original image.
     /// </summary>
     public GeoBoundingBox? SelectionBoundingBox { get; init; }
+
+    /// <summary>
+    /// The backdrop selection rect (in source pixels), if the backdrop feature was enabled.
+    /// Null when the backdrop box was not enabled/initialized for this dialog session.
+    /// </summary>
+    public SelectionRect? BackdropSelection { get; init; }
 }

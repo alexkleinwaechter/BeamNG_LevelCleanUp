@@ -65,6 +65,47 @@
                                   Style="width: 130px; font-size: 0.8rem;"
                                   Placeholder="0.3340155" />
                 }
+                @if (BackdropEnabled && OriginalBoundingBox != null)
+                {
+                    <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Backdrop:</MudText>
+                    <MudTextField T="string"
+                                  Value="_backdropSouthStr"
+                                  ValueChanged="OnBackdropSouthChanged"
+                                  Label="S (Lat)"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="51.2867602" />
+                    <MudTextField T="string"
+                                  Value="_backdropWestStr"
+                                  ValueChanged="OnBackdropWestChanged"
+                                  Label="W (Lon)"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="-0.5103751" />
+                    <MudTextField T="string"
+                                  Value="_backdropNorthStr"
+                                  ValueChanged="OnBackdropNorthChanged"
+                                  Label="N (Lat)"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="51.6918741" />
+                    <MudTextField T="string"
+                                  Value="_backdropEastStr"
+                                  ValueChanged="OnBackdropEastChanged"
+                                  Label="E (Lon)"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Immediate="false"
+                                  Style="width: 130px; font-size: 0.8rem;"
+                                  Placeholder="0.3340155" />
+                }
             </MudStack>
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                 @if (_selectionBoundingBox != null)
@@ -153,7 +194,7 @@
                                                   Opacity="@_mapOpacity"
                                                   ShowAttribution="false"
                                                   EnableScrollZoom="true"
-                                                  EnablePanning="@(!_isMouseOverSelection && !_isDragging)"
+                                                  EnablePanning="@(!_isMouseOverSelection && !_isDragging && !_isMouseOverBackdrop && _backdropDragHandle is null)"
                                                   ZoomLevel="@_zoomLevel"
                                                   ZoomLevelChanged="@OnZoomChanged"
                                                   ViewCenter="@_viewCenter"
@@ -167,11 +208,29 @@
                         @* Selection rectangle *@
                         <div class="crop-selection @(_isDragging ? "dragging" : "") @(_isMouseOverSelection ? "hover" : "")"
                              style="@GetSelectionStyle(); pointer-events: none;">
-                            <MudIcon Icon="@Icons.Material.Filled.OpenWith" 
-                                     Size="Size.Large" 
+                            <MudIcon Icon="@Icons.Material.Filled.OpenWith"
+                                     Size="Size.Large"
                                      Style="color: white; opacity: 0.9;" />
                         </div>
-                        
+
+                        @* Backdrop selection box (spec §5). Purely visual here — pointer-events:none,
+                           NO mousedown handlers. This dialog's drag model is math-based (OnMouseDown
+                           hit-tests offsetX/offsetY), unlike the selector's element-based model: since
+                           the backdrop box always contains the terrain box, an element with
+                           pointer-events:auto sitting on top would intercept every click inside the
+                           terrain box and make terrain dragging impossible. See OnMouseDown's doc
+                           comment for the hit-test priority order. *@
+                        @if (BackdropEnabled && _backdropRect is { } bd)
+                        {
+                            <div class="crop-backdrop-selection" style="@SelectionGeometry.ToCssStyle(GetBackdropBoxRect())">
+                            </div>
+                            @foreach (var handle in BackdropHandles)
+                            {
+                                <div class="crop-backdrop-handle crop-backdrop-handle-@handle.ToString().ToLowerInvariant()"
+                                     style="@GetBackdropHandleStyle(handle)"></div>
+                            }
+                        }
+
                         @* Grid overlay *@
                         <div class="crop-grid"></div>
                     </div>
@@ -274,14 +333,49 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background-image: 
+        background-image:
             linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
             linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px);
         background-size: 12.5% 12.5%;
         pointer-events: none;
         z-index: 5;
     }
-    
+
+    /* Backdrop box is purely visual in this dialog (pointer-events: none) - its hit-testing is
+       done in code (OnMouseDown/HitTestBackdropHandle/IsMouseOverBackdrop), not via the DOM, because
+       an interactive element here would always sit on top of the terrain box (backdrop contains
+       terrain by construction) and break terrain dragging. Named crop-backdrop-* (not backdrop-* as
+       in the selector) because these component style blocks are NOT CSS-isolated (no razor.css
+       sibling file) - the same class name would leak this pointer-events:none override into the
+       selector's pointer-events:auto rule for identically-named elements rendered elsewhere on the
+       page. */
+    .crop-backdrop-selection {
+        position: absolute;
+        border: 2px dashed var(--mud-palette-secondary);
+        background: transparent;
+        z-index: 9;
+        pointer-events: none;
+    }
+
+    .crop-backdrop-handle {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: var(--mud-palette-secondary);
+        border: 1px solid white;
+        z-index: 11;
+        pointer-events: none;
+    }
+
+    .crop-backdrop-handle-n { cursor: n-resize; }
+    .crop-backdrop-handle-s { cursor: s-resize; }
+    .crop-backdrop-handle-e { cursor: e-resize; }
+    .crop-backdrop-handle-w { cursor: w-resize; }
+    .crop-backdrop-handle-ne { cursor: ne-resize; }
+    .crop-backdrop-handle-nw { cursor: nw-resize; }
+    .crop-backdrop-handle-se { cursor: se-resize; }
+    .crop-backdrop-handle-sw { cursor: sw-resize; }
+
     .crop-dialog-footer {
         flex-shrink: 0;
         background: rgba(0, 0, 0, 0.3);

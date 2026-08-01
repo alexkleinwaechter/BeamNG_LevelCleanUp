@@ -2,6 +2,7 @@
 @using System.Text.Json.Nodes
 @using System.Text.Json.Serialization
 @using BeamNG_LevelCleanUp.BlazorUI.Services
+@using BeamNG_LevelCleanUp.BlazorUI.State
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
@@ -99,6 +100,8 @@
     [Parameter] public string? GeoTiffProjectionName { get; set; }
     [Parameter] public float NativePixelSizeMeters { get; set; }
     [Parameter] public DecalRoadSettings? DecalRoadSettings { get; set; }
+    [Parameter] public BackdropSettings? Backdrop { get; set; }
+    [Parameter] public TexturingSettings? Texturing { get; set; }
     [Parameter] public Func<bool>? OnRequestMaterialReorder { get; set; }
 
     public string? LastExportPath { get; private set; }
@@ -520,6 +523,30 @@
                 ["originalHeight"] = GeoTiffOriginalHeight,
                 ["projectionName"] = GeoTiffProjectionName,
                 ["nativePixelSizeMeters"] = NativePixelSizeMeters
+            },
+            // Backdrop generation (spec §5, Task 19): scalars + rect, source-pixel selection.
+            ["backdropSettings"] = Backdrop == null ? null : new JsonObject
+            {
+                ["enabled"] = Backdrop.Enabled,
+                ["offsetX"] = Backdrop.OffsetX,
+                ["offsetY"] = Backdrop.OffsetY,
+                ["width"] = Backdrop.Width,
+                ["height"] = Backdrop.Height,
+                ["edgeBandMeters"] = Backdrop.EdgeBandMeters,
+                ["maxVerticalErrorNearMeters"] = Backdrop.MaxVerticalErrorNearMeters,
+                ["maxVerticalErrorFarMeters"] = Backdrop.MaxVerticalErrorFarMeters,
+                ["chunkTargetMeters"] = Backdrop.ChunkTargetMeters,
+                ["texelDensityNearMPerPx"] = Backdrop.TexelDensityNearMPerPx,
+                ["maxChunkTextureSize"] = Backdrop.MaxChunkTextureSize,
+                ["maxFarRasterDimension"] = Backdrop.MaxFarRasterDimension,
+                ["seamSkirt"] = Backdrop.SeamSkirt,
+                ["collisionMesh"] = Backdrop.CollisionMesh
+            },
+            // Texturing mode (backdrop follow-up doc 06): Paint vs BaseColor + non-road blend.
+            ["texturingSettings"] = Texturing == null ? null : new JsonObject
+            {
+                ["mode"] = Texturing.Mode.ToString(),
+                ["nonRoadOverlayBlendPercent"] = Texturing.NonRoadOverlayBlendPercent
             }
         };
         

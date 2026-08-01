@@ -137,6 +137,8 @@
                                        GeoTiffProjectionName="@_geoTiffProjectionName"
                                        NativePixelSizeMeters="@GetNativePixelSizeAverage()"
                                        DecalRoadSettings="@_state.DecalRoadSettings"
+                                       Backdrop="@_state.Backdrop"
+                                       Texturing="@_state.Texturing"
                                        OnRequestMaterialReorder="HandleMaterialReorderRequest"
                                        Class="mt-4" />
 
@@ -415,7 +417,10 @@
                                                         SelectedAnchor="@_cropAnchor"
                                                         SelectedAnchorChanged="OnCropAnchorChanged"
                                                         OriginalBoundingBox="@_geoBoundingBox"
-                                                        CropResultChanged="OnCropResultChanged" />
+                                                        CropResultChanged="OnCropResultChanged"
+                                                        BackdropEnabled="@_state.Backdrop.Enabled"
+                                                        BackdropSelection="@BackdropSelectionFromState()"
+                                                        BackdropSelectionChanged="OnBackdropSelectionChanged" />
                                     @if (_cropResult is { NeedsCropping: true })
                                     {
                                         <div class="d-flex align-center gap-2 mt-2">
@@ -1267,6 +1272,23 @@
                         </MudGrid>
                     </MudCollapse>
                 </MudPaper>
+
+                <!-- Section: Terrain Texturing Mode (Paint vs BaseColor, backdrop follow-up doc 06) -->
+                <TexturingModePanel Settings="@_state.Texturing"
+                                    SettingsChanged="OnTexturingSettingsChanged"
+                                    Disabled="@(_isGenerating || _isAnalyzing)"
+                                    ForceBaseColor="@_state.Backdrop.Enabled" />
+
+                <!-- Section: Backdrop (Experimental) -->
+                <BackdropSettingsPanel Settings="@_state.Backdrop"
+                                       SettingsChanged="OnBackdropSettingsChanged"
+                                       Disabled="@(_isGenerating || _isAnalyzing)"
+                                       CanRegenerate="@BackdropOrchestrator.CanRegenerate(_state)"
+                                       HasGeoTiffSource="@(_heightmapSourceType != HeightmapSourceType.Png)"
+                                       OnRegenerateBackdrop="RegenerateBackdrop"
+                                       OnRemoveBackdrop="RemoveBackdrop"
+                                       OnUpdateEstimate="UpdateBackdropEstimate"
+                                       Estimate="@_backdropEstimate" />
 
                 <!-- Section 5: Building Generation -->
                 <MudPaper Class="pa-4 mt-4" Elevation="2">

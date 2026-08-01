@@ -2,6 +2,7 @@
 @using System.Text.Json.Nodes
 @using System.Text.Json.Serialization
 @using System.Text.RegularExpressions
+@using BeamNG_LevelCleanUp.BlazorUI.State
 @using BeamNG_LevelCleanUp.Communication
 @using BeamNG_LevelCleanUp.Objects
 @using BeamNG_LevelCleanUp.Utils
@@ -797,6 +798,55 @@ public List<TerrainMaterialItemExtended> Materials { get; set; } = new();
                     result.CropWidth = cropSettings["width"]!.GetValue<int>();
                 if (cropSettings["height"] != null)
                     result.CropHeight = cropSettings["height"]!.GetValue<int>();
+            }
+
+            // Import backdrop settings (spec §5, Task 19). Absent node (pre-backdrop preset) leaves
+            // every result.Backdrop* field null, so OnPresetImported does not touch state defaults.
+            var backdropSettings = appSettings["backdropSettings"];
+            if (backdropSettings != null)
+            {
+                if (backdropSettings["enabled"] != null)
+                    result.BackdropEnabled = backdropSettings["enabled"]!.GetValue<bool>();
+                if (backdropSettings["offsetX"] != null)
+                    result.BackdropOffsetX = backdropSettings["offsetX"]!.GetValue<int>();
+                if (backdropSettings["offsetY"] != null)
+                    result.BackdropOffsetY = backdropSettings["offsetY"]!.GetValue<int>();
+                if (backdropSettings["width"] != null)
+                    result.BackdropWidth = backdropSettings["width"]!.GetValue<int>();
+                if (backdropSettings["height"] != null)
+                    result.BackdropHeight = backdropSettings["height"]!.GetValue<int>();
+                if (backdropSettings["edgeBandMeters"] != null)
+                    result.BackdropEdgeBandMeters = backdropSettings["edgeBandMeters"]!.GetValue<double>();
+                if (backdropSettings["maxVerticalErrorNearMeters"] != null)
+                    result.BackdropMaxVerticalErrorNearMeters = backdropSettings["maxVerticalErrorNearMeters"]!.GetValue<double>();
+                if (backdropSettings["maxVerticalErrorFarMeters"] != null)
+                    result.BackdropMaxVerticalErrorFarMeters = backdropSettings["maxVerticalErrorFarMeters"]!.GetValue<double>();
+                if (backdropSettings["chunkTargetMeters"] != null)
+                    result.BackdropChunkTargetMeters = backdropSettings["chunkTargetMeters"]!.GetValue<double>();
+                if (backdropSettings["texelDensityNearMPerPx"] != null)
+                    result.BackdropTexelDensityNearMPerPx = backdropSettings["texelDensityNearMPerPx"]!.GetValue<double>();
+                if (backdropSettings["maxChunkTextureSize"] != null)
+                    result.BackdropMaxChunkTextureSize = backdropSettings["maxChunkTextureSize"]!.GetValue<int>();
+                if (backdropSettings["maxFarRasterDimension"] != null)
+                    result.BackdropMaxFarRasterDimension = backdropSettings["maxFarRasterDimension"]!.GetValue<int>();
+                if (backdropSettings["seamSkirt"] != null)
+                    result.BackdropSeamSkirt = backdropSettings["seamSkirt"]!.GetValue<bool>();
+                if (backdropSettings["collisionMesh"] != null)
+                    result.BackdropCollisionMesh = backdropSettings["collisionMesh"]!.GetValue<bool>();
+            }
+
+            // Import texturing mode settings (backdrop follow-up doc 06). Absent node (older
+            // preset) leaves the result fields null, so OnPresetImported keeps state defaults.
+            var texturingSettings = appSettings["texturingSettings"];
+            if (texturingSettings != null)
+            {
+                var modeText = texturingSettings["mode"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(modeText) &&
+                    Enum.TryParse<TerrainTexturingMode>(modeText, ignoreCase: true, out var texturingMode))
+                    result.TexturingMode = texturingMode;
+                if (texturingSettings["nonRoadOverlayBlendPercent"] != null)
+                    result.TexturingNonRoadOverlayBlendPercent =
+                        texturingSettings["nonRoadOverlayBlendPercent"]!.GetValue<int>();
             }
 
             // Import GeoTIFF metadata
