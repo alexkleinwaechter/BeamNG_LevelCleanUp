@@ -1,11 +1,20 @@
 # BeamNG Tools for Mapbuilders
 Clean your map level from unused files before deployment
 
-Watch the tutorial videos:
+Watch the tutorial videos (latest first):
+
+[![Watch the video](https://img.youtube.com/vi/s_l4yESo8O0/0.jpg)](https://youtu.be/s_l4yESo8O0) 
+
+[![Watch the video](https://img.youtube.com/vi/Tu4dGKHss8Q/0.jpg)](https://youtu.be/Tu4dGKHss8Q) 
+
+[![Watch the video](https://img.youtube.com/vi/tk33N4nBGeY/0.jpg)](https://youtu.be/tk33N4nBGeY) 
 
 [![Watch the video](https://img.youtube.com/vi/tX4AfwVJY7s/0.jpg)](https://youtu.be/tX4AfwVJY7s) 
+
 [![Watch the video](https://img.youtube.com/vi/-M06aIGzuKk/0.jpg)](https://youtu.be/-M06aIGzuKk) 
+
 [![Watch the video](https://img.youtube.com/vi/OE02UEP8ups/0.jpg)](https://youtu.be/OE02UEP8ups) 
+
 [![Watch the video](https://img.youtube.com/vi/a4nC3N8aasI/0.jpg)](https://youtu.be/a4nC3N8aasI) 
 
 ## Features
