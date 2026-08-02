@@ -31,6 +31,10 @@
                                Color="Color.Primary" Label="Interior"
                                Disabled="@(Disabled || zi != Layer.Zones.Count - 1)" />
                 </MudTooltip>
+                <MudTooltip Text="Duplicate this zone — prefills a new zone with the same items, weights and settings">
+                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                                   OnClick="@(async () => await DuplicateZone(zi))" Disabled="@Disabled" />
+                </MudTooltip>
                 <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
                                OnClick="@(async () => await MoveZone(zi, -1))" Disabled="@(Disabled || zi == 0)" />
                 <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
@@ -204,6 +208,34 @@
             ? Layer.Zones.Count - 1
             : Layer.Zones.Count;
         Layer.Zones.Insert(insertAt, new BiomeZoneSettings());
+        await NotifyStructureChanged();
+    }
+
+    /// <summary>
+    /// Inserts a deep copy of the zone directly after it (before a trailing interior zone,
+    /// which must stay last). The copy is always a regular band — duplicating the interior
+    /// zone yields a band with the same selection that can then be given a depth.
+    /// </summary>
+    private async Task DuplicateZone(int index)
+    {
+        var source = Layer.Zones[index];
+        var copy = new BiomeZoneSettings
+        {
+            DepthMeters = source.DepthMeters,
+            IsInterior = false,
+            SlopeMinDeg = source.SlopeMinDeg,
+            SlopeMaxDeg = source.SlopeMaxDeg,
+            Items = source.Items.Select(i => new BiomeItemSelection
+            {
+                BrushName = i.BrushName,
+                ItemDataName = i.ItemDataName,
+                MixWeight = i.MixWeight,
+            }).ToList(),
+            BrushDensityDefaults = new Dictionary<string, double>(source.BrushDensityDefaults),
+        };
+
+        var insertAt = source.IsInterior ? index : index + 1;
+        Layer.Zones.Insert(insertAt, copy);
         await NotifyStructureChanged();
     }
 

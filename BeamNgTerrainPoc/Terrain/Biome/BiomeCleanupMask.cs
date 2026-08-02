@@ -70,16 +70,19 @@ public static class BiomeCleanupMask
     }
 
     /// <summary>
-    /// Tests whether a BeamNG world position (centered origin) lands on a set mask pixel.
-    /// Uses floor — the exact inverse of the sampler's (pixel + jitter∈[0,1))·mpp placement,
-    /// so every generated item maps back to the pixel it was sampled from. Positions outside
-    /// the terrain are never hits.
+    /// Tests whether a BeamNG world position lands on a set mask pixel. The terrain is
+    /// anchored at TerrainBlock.position — pixel (0,0) sits at (originX, originY) in world
+    /// space, the terrain is NOT necessarily centered. Uses floor — the exact inverse of the
+    /// sampler's origin + (pixel + jitter∈[0,1))·mpp placement, so every generated item maps
+    /// back to the pixel it was sampled from. Positions outside the terrain are never hits.
     /// </summary>
-    public static bool ContainsWorldPosition(bool[] mask, int size, float metersPerPixel, double worldX, double worldY)
+    public static bool ContainsWorldPosition(
+        bool[] mask, int size, float metersPerPixel,
+        double terrainOriginX, double terrainOriginY,
+        double worldX, double worldY)
     {
-        var halfSizeMeters = size / 2.0 * metersPerPixel;
-        var px = (int)Math.Floor((worldX + halfSizeMeters) / metersPerPixel);
-        var py = (int)Math.Floor((worldY + halfSizeMeters) / metersPerPixel);
+        var px = (int)Math.Floor((worldX - terrainOriginX) / metersPerPixel);
+        var py = (int)Math.Floor((worldY - terrainOriginY) / metersPerPixel);
         if (px < 0 || py < 0 || px >= size || py >= size)
         {
             return false;

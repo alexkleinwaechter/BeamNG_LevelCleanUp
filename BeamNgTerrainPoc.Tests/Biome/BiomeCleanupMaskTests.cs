@@ -76,15 +76,16 @@ public class BiomeCleanupMaskTests
     }
 
     [Theory]
-    [InlineData(32)]
-    [InlineData(33)] // odd size — half-size is fractional
-    public void ContainsWorldPosition_InvertsTheSamplerPlacement(int size)
+    [InlineData(32, -32f, -32f)]     // centered origin (-half at mpp 2)
+    [InlineData(33, -33f, -33f)]     // odd size — fractional half
+    [InlineData(32, -20f, -50f)]     // OFF-CENTER origin — the ellern_map squareSize-1.2 case
+    public void ContainsWorldPosition_InvertsTheSamplerPlacement(int size, float originX, float originY)
     {
         // The sampler places at (pixel + jitter∈[0,1)) · mpp in terrain space, the writer
-        // shifts by −half into world space. Every jitter inside the pixel must map back
-        // to exactly that pixel.
+        // shifts by TerrainBlock.position (the origin) into world space. Every jitter inside
+        // the pixel must map back to exactly that pixel — regardless of where the terrain
+        // is anchored (it is NOT necessarily centered).
         const float mpp = 2f;
-        var half = size / 2.0 * mpp;
         var mask = new bool[size * size];
         const int px = 7;
         const int py = 20;
@@ -92,15 +93,15 @@ public class BiomeCleanupMaskTests
 
         foreach (var jitter in new[] { 0.0, 0.5, 0.999 })
         {
-            var worldX = (px + jitter) * mpp - half;
-            var worldY = (py + jitter) * mpp - half;
-            Assert.True(BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, worldX, worldY),
+            var worldX = originX + (px + jitter) * mpp;
+            var worldY = originY + (py + jitter) * mpp;
+            Assert.True(BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, originX, originY, worldX, worldY),
                 $"jitter {jitter} escaped its pixel");
         }
 
         // The neighboring pixel's origin must NOT hit.
         Assert.False(BiomeCleanupMask.ContainsWorldPosition(
-            mask, size, mpp, (px + 1) * mpp - half, py * mpp - half));
+            mask, size, mpp, originX, originY, originX + (px + 1) * mpp, originY + py * mpp));
     }
 
     [Fact]
@@ -109,9 +110,11 @@ public class BiomeCleanupMaskTests
         var mask = new bool[Size * Size];
         Array.Fill(mask, true);
 
-        var half = Size / 2.0;
-        Assert.False(BiomeCleanupMask.ContainsWorldPosition(mask, Size, 1f, -half - 1, 0));
-        Assert.False(BiomeCleanupMask.ContainsWorldPosition(mask, Size, 1f, 0, half + 1));
+        const float originX = -10f;
+        const float originY = -20f;
+        Assert.False(BiomeCleanupMask.ContainsWorldPosition(mask, Size, 1f, originX, originY, originX - 1, originY));
+        Assert.False(BiomeCleanupMask.ContainsWorldPosition(mask, Size, 1f, originX, originY, originX, originY + Size + 1));
+        Assert.True(BiomeCleanupMask.ContainsWorldPosition(mask, Size, 1f, originX, originY, originX + 1, originY + 1));
     }
 
     [Fact]
@@ -163,7 +166,8 @@ public class BiomeCleanupMaskTests
         // world coordinates, the predicate joining the two.
         const int size = 16;
         const float mpp = 1f;
-        var half = size / 2.0 * mpp;
+        const float originX = -size / 2f;
+        const float originY = -size / 2f;
         var mask = new bool[size * size];
         for (var y = 0; y < size; y++)
         {
@@ -171,14 +175,14 @@ public class BiomeCleanupMaskTests
         }
 
         var onMask = string.Create(CultureInfo.InvariantCulture,
-            $$"""{"type":"oak","pos":[{{4.5 - half}},0.0,5.0],"scale":1.0}""");
+            $$"""{"type":"oak","pos":[{{originX + 4.5}},0.0,5.0],"scale":1.0}""");
         var offMask = string.Create(CultureInfo.InvariantCulture,
-            $$"""{"type":"oak","pos":[{{6.5 - half}},0.0,5.0],"scale":1.0}""");
+            $$"""{"type":"oak","pos":[{{originX + 6.5}},0.0,5.0],"scale":1.0}""");
 
         var kept = new List<string>();
         var removed = BiomeForestLineFilter.FilterLinesWhereStreaming(
             new[] { onMask, offMask },
-            (_, x, y, _, _) => BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, x, y),
+            (_, x, y, _, _) => BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, originX, originY, x, y),
             kept.Add);
 
         Assert.Equal(1, removed);
