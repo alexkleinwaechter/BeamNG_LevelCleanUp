@@ -1,7 +1,6 @@
 using System.Text.Json;
 using BeamNG_LevelCleanUp.Objects;
 using BeamNgTerrainPoc.Terrain.Biome;
-using BeamNgTerrainPoc.Terrain.Utils;
 
 namespace BeamNG_LevelCleanUp.LogicBiome;
 
@@ -16,8 +15,8 @@ public sealed class BiomeLayerForestWriter : IDisposable
 {
     private readonly string _levelPath;
     private readonly string _layerId;
-    private readonly int _terrainSizePixels;
-    private readonly float _metersPerPixel;
+    private readonly float _terrainOriginX;
+    private readonly float _terrainOriginY;
     private readonly string _forestAbsolutePath;
     private readonly JsonSerializerOptions _oneLineOptions = BeamJsonOptions.GetJsonSerializerOneLineOptions();
 
@@ -38,12 +37,14 @@ public sealed class BiomeLayerForestWriter : IDisposable
 
     public string ForestFileRelativePath { get; }
 
-    public BiomeLayerForestWriter(string levelPath, string sourceKey, string layerId, int terrainSizePixels, float metersPerPixel)
+    /// <param name="terrainOriginX">World X of terrain pixel (0,0) — TerrainBlock.position[0].</param>
+    /// <param name="terrainOriginY">World Y of terrain pixel (0,0) — TerrainBlock.position[1].</param>
+    public BiomeLayerForestWriter(string levelPath, string sourceKey, string layerId, float terrainOriginX, float terrainOriginY)
     {
         _levelPath = levelPath;
         _layerId = layerId;
-        _terrainSizePixels = terrainSizePixels;
-        _metersPerPixel = metersPerPixel;
+        _terrainOriginX = terrainOriginX;
+        _terrainOriginY = terrainOriginY;
 
         ForestFileRelativePath = BiomeForestWriter.GetForestFileRelativePath(sourceKey, layerId);
         _forestAbsolutePath = Path.Join(levelPath, ForestFileRelativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -58,17 +59,19 @@ public sealed class BiomeLayerForestWriter : IDisposable
 
     public void Write(BiomePlacement placement)
     {
-        var world = BeamNgCoordinateTransformer.TerrainToWorld(
-            placement.TerrainX, placement.TerrainY, placement.WorldZ,
-            _terrainSizePixels, _metersPerPixel);
+        // BeamNG world position = TerrainBlock.position + terrain-space meters. The terrain
+        // is anchored at its corner, NOT centered — see the squareSize-1.2 ellern_map bug.
+        var worldX = _terrainOriginX + placement.TerrainX;
+        var worldY = _terrainOriginY + placement.TerrainY;
+        var worldZ = placement.WorldZ;
 
         var cos = Math.Cos(placement.YawRadians);
         var sin = Math.Sin(placement.YawRadians);
 
         _forestItem.type = placement.TypeName;
-        _forestItem.pos[0] = world.X;
-        _forestItem.pos[1] = world.Y;
-        _forestItem.pos[2] = world.Z;
+        _forestItem.pos[0] = worldX;
+        _forestItem.pos[1] = worldY;
+        _forestItem.pos[2] = worldZ;
         _forestItem.rotationMatrix[0] = cos;
         _forestItem.rotationMatrix[1] = sin;
         _forestItem.rotationMatrix[3] = -sin;
@@ -77,9 +80,9 @@ public sealed class BiomeLayerForestWriter : IDisposable
         _forestWriter!.WriteLine(JsonSerializer.Serialize(_forestItem, _oneLineOptions));
 
         _record.Type = placement.TypeName;
-        _record.Pos[0] = world.X;
-        _record.Pos[1] = world.Y;
-        _record.Pos[2] = world.Z;
+        _record.Pos[0] = worldX;
+        _record.Pos[1] = worldY;
+        _record.Pos[2] = worldZ;
         _record.Scale = placement.Scale;
         _sidecarWriter!.WriteLine(JsonSerializer.Serialize(_record, _oneLineOptions));
 

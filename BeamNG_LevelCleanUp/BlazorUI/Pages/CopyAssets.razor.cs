@@ -209,13 +209,14 @@ public partial class CopyAssets
 
             var copyCount = _selectedItems.Count;
             var sourceName = _levelNameCopyFrom;
+            CopyResultSummary summary = null;
 
             try
             {
                 await Task.Run(() =>
                 {
                     var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                    Reader.DoCopyAssets(selected);
+                    summary = Reader.DoCopyAssets(selected);
                 });
 
                 Snackbar.Remove(_staticSnackbar);
@@ -229,13 +230,16 @@ public partial class CopyAssets
                 // Write all operation logs (info, warnings, errors) - also in wizard mode
                 Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
 
-                // UPDATE WIZARD STATE
-                UpdateWizardStateAfterCopy();
+                if (!summary.HasFailures)
+                {
+                    // UPDATE WIZARD STATE
+                    UpdateWizardStateAfterCopy();
 
-                _copyCompleted = true;
-                _copiedAssetsCount = copyCount;
-                _totalCopiedAssetsCount += copyCount;
-                _lastCopiedSourceName = sourceName;
+                    _copyCompleted = true;
+                    _copiedAssetsCount = copyCount;
+                    _totalCopiedAssetsCount += copyCount;
+                    _lastCopiedSourceName = sourceName;
+                }
             }
             finally
             {
@@ -247,10 +251,9 @@ public partial class CopyAssets
                 {
                     Snackbar.Clear();
 
-                    if (_copyCompleted)
-                    {
-                        Snackbar.Add($"Copied {copyCount} asset(s) from {sourceName} to {WizardState.LevelName} successfully!", Severity.Success);
-                    }
+                    if (summary != null)
+                        Snackbar.Add(summary.BuildUserMessage(copyCount, sourceName, "asset(s)"),
+                            summary.HasFailures ? Severity.Error : Severity.Success);
                 });
 
                 // 3. Re-enable snackbars for future interactions
@@ -1000,14 +1003,15 @@ public partial class CopyAssets
 
             var copyCount = _selectedItems.Count;
             var sourceName = _levelNameCopyFrom;
+            CopyResultSummary summary = null;
 
             try
             {
                 await Task.Run(() =>
                 {
                     var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                    Reader.DoCopyAssets(selected);
-                    _showDeployButton = true;
+                    summary = Reader.DoCopyAssets(selected);
+                    if (summary.Succeeded > 0) _showDeployButton = true;
                 });
                 Snackbar.Remove(_staticSnackbar);
 
@@ -1019,10 +1023,13 @@ public partial class CopyAssets
                 // Write all operation logs (info, warnings, errors)
                 Reader.WriteOperationLogs(_messages, _warnings, _errors, "AssetCopy");
 
-                // Set copy completed state
-                _copyCompleted = true;
-                _copiedAssetsCount = copyCount;
-                _lastCopiedSourceName = sourceName;
+                // Set copy completed state only when everything succeeded
+                if (!summary.HasFailures)
+                {
+                    _copyCompleted = true;
+                    _copiedAssetsCount = copyCount;
+                    _lastCopiedSourceName = sourceName;
+                }
             }
             finally
             {
@@ -1034,10 +1041,9 @@ public partial class CopyAssets
                 {
                     Snackbar.Clear();
 
-                    if (_copyCompleted)
-                    {
-                        Snackbar.Add($"Copied {copyCount} asset(s) from {sourceName} successfully!", Severity.Success);
-                    }
+                    if (summary != null)
+                        Snackbar.Add(summary.BuildUserMessage(copyCount, sourceName, "asset(s)"),
+                            summary.HasFailures ? Severity.Error : Severity.Success);
                 });
 
                 // 3. Re-enable snackbars for future interactions

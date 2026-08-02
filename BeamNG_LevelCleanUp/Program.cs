@@ -11,6 +11,9 @@ namespace BeamNG_LevelCleanUp;
 /// </summary>
 internal class Program6
 {
+    // Held for the whole process lifetime; released implicitly on exit.
+    private static Mutex _singleInstanceMutex;
+
     private readonly Form1 m_mainForm;
 
     private Program6()
@@ -25,6 +28,19 @@ internal class Program6
     [STAThread]
     private static void Main()
     {
+        // A second instance would wipe %LocalAppData%\BeamNG_LevelCleanUp\temp on startup
+        // (Form1 -> AppPaths.Initialize(true)) and thereby delete the extracted levels the
+        // running instance is working with - copy operations would then fail on missing
+        // source files. Allow only one instance per user session.
+        _singleInstanceMutex = new Mutex(true, @"Local\BeamNG_LevelCleanUp_SingleInstance", out var isFirstInstance);
+        if (!isFirstInstance)
+        {
+            MessageBox.Show(
+                "BeamNG Tools for Mapbuilders is already running. Please use the existing window.",
+                "Already running", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         // MudBlazor's input converters format with CurrentUICulture (Converters.DefaultCulture).
         // On a German OS that writes "4,7" into <input type="number">, which the browser rejects as
         // invalid — freshly created numeric fields then show an EMPTY input until blurred (the blur

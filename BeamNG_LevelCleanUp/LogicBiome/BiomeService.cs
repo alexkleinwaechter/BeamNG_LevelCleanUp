@@ -48,6 +48,10 @@ public class BiomeLevelContext
     public required TerrainV9Binary Terrain { get; init; }
     public required int TerrainSize { get; init; }
     public required float MetersPerPixel { get; init; }
+    /// <summary>World X of terrain pixel (0,0) — TerrainBlock.position[0]; the terrain is NOT necessarily centered.</summary>
+    public required float TerrainOriginX { get; init; }
+    /// <summary>World Y of terrain pixel (0,0) — TerrainBlock.position[1].</summary>
+    public required float TerrainOriginY { get; init; }
     public required float MaxHeight { get; init; }
     public required float TerrainBaseHeight { get; init; }
     /// <summary>.ter material name (== material internalName) → material byte index, case-insensitive.</summary>
@@ -142,22 +146,49 @@ public class BiomeService
 
             var levelName = new BeamFileReader(levelPath, null).GetLevelName();
 
-            var terFilePath = FindTerrainTerFile(levelPath);
+            var terrainBlock = ReadTerrainBlockParams(levelPath);
+            if (!terrainBlock.MaxHeight.HasValue)
+                return BiomeLoadResult.Fail(
+                    "No TerrainBlock with a maxHeight property was found in main/**/items.level.json — cannot compute tree elevations.");
+            if (!terrainBlock.SquareSize.HasValue)
+            {
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "TerrainBlock has no squareSize — assuming 1 meter per pixel.");
+            }
+
+            // The TerrainBlock's terrainFile is authoritative (levels can carry stale extra
+            // .ter files, e.g. ellern_map: terrain4.ter next to nothing named theTerrain.ter).
+            var terFilePath = ResolveTerrainFile(levelPath, terrainBlock.TerrainFile)
+                              ?? FindTerrainTerFile(levelPath);
             if (string.IsNullOrWhiteSpace(terFilePath))
                 return BiomeLoadResult.Fail("No .ter terrain file was found in the selected level.");
 
             var terrain = LayerMaskReader.ReadTerrainBinary(terFilePath);
             var terrainSize = checked((int)terrain.Size);
 
-            var (squareSize, maxHeight, baseHeight) = ReadTerrainBlockParams(levelPath);
-            if (!maxHeight.HasValue)
-                return BiomeLoadResult.Fail(
-                    "No TerrainBlock with a maxHeight property was found in main/**/items.level.json — cannot compute tree elevations.");
-            if (!squareSize.HasValue)
+            var metersPerPixel = terrainBlock.SquareSize ?? 1f;
+
+            // BeamNG anchors the terrain at TerrainBlock.position (world position of pixel
+            // 0,0 — the south-west corner), NOT at the world origin. Assuming a centered
+            // terrain shifted every tree on maps whose position is not exactly -size/2*mpp
+            // (ellern_map: squareSize 1.2 but position [-2048,-2048] -> 409.6 m offset,
+            // trees rendered outside the terrain).
+            float originX, originY;
+            if (terrainBlock.PositionX.HasValue && terrainBlock.PositionY.HasValue)
             {
-                PubSubChannel.SendMessage(PubSubMessageType.Warning,
-                    "TerrainBlock has no squareSize — assuming 1 meter per pixel.");
+                originX = terrainBlock.PositionX.Value;
+                originY = terrainBlock.PositionY.Value;
             }
+            else
+            {
+                originX = originY = -(terrainSize / 2f) * metersPerPixel;
+                PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                    "TerrainBlock has no position — assuming a centered terrain.");
+            }
+
+            PubSubChannel.SendMessage(PubSubMessageType.Info,
+                $"TerrainBlock: {Path.GetFileName(terFilePath)}, {terrainSize} px, {metersPerPixel} m/px, " +
+                $"origin ({originX}, {originY}), base height {terrainBlock.PositionZ ?? 0f}, maxHeight {terrainBlock.MaxHeight.Value}.");
 
             var materialIndexByName = new Dictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < terrain.MaterialNames.Length && i < 255; i++)
@@ -189,9 +220,11 @@ public class BiomeService
                     TerrainFilePath = terFilePath,
                     Terrain = terrain,
                     TerrainSize = terrainSize,
-                    MetersPerPixel = squareSize ?? 1f,
-                    MaxHeight = maxHeight.Value,
-                    TerrainBaseHeight = baseHeight ?? 0f,
+                    MetersPerPixel = metersPerPixel,
+                    MaxHeight = terrainBlock.MaxHeight.Value,
+                    TerrainBaseHeight = terrainBlock.PositionZ ?? 0f,
+                    TerrainOriginX = originX,
+                    TerrainOriginY = originY,
                     MaterialIndexByName = materialIndexByName,
                     Materials = materials,
                     OsmLayers = osmLayers,
@@ -316,7 +349,7 @@ public class BiomeService
             var seedBase = layer.SeedOverride ?? context.Settings.GlobalSeed;
 
             using var writer = new BiomeLayerForestWriter(
-                context.LevelPath, layer.SourceKey, layer.LayerId, context.TerrainSize, context.MetersPerPixel);
+                context.LevelPath, layer.SourceKey, layer.LayerId, context.TerrainOriginX, context.TerrainOriginY);
 
             for (var zoneIndex = 0; zoneIndex < layer.Zones.Count; zoneIndex++)
             {
@@ -490,8 +523,10 @@ public class BiomeService
     {
         var size = context.TerrainSize;
         var mpp = context.MetersPerPixel;
+        var originX = context.TerrainOriginX;
+        var originY = context.TerrainOriginY;
         var mask = session.Mask;
-        return (_, x, y, _, _) => BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, x, y);
+        return (_, x, y, _, _) => BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, originX, originY, x, y);
     }
 
     /// <summary>
@@ -567,6 +602,8 @@ public class BiomeService
         var result = new BiomeCleanupResult();
         var size = context.TerrainSize;
         var mpp = context.MetersPerPixel;
+        var originX = context.TerrainOriginX;
+        var originY = context.TerrainOriginY;
         var forestDir = Path.Join(context.LevelPath, "forest");
 
         foreach (var layer in context.Manifest.Layers.ToList())
@@ -579,7 +616,7 @@ public class BiomeService
             foreach (var item in items)
             {
                 if (item.Pos.Length >= 2 &&
-                    BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, item.Pos[0], item.Pos[1]))
+                    BiomeCleanupMask.ContainsWorldPosition(mask, size, mpp, originX, originY, item.Pos[0], item.Pos[1]))
                     remove.Add(item);
                 else
                     keep.Add(item);
@@ -1119,13 +1156,22 @@ public class BiomeService
         return list;
     }
 
-    private static (float? SquareSize, float? MaxHeight, float? BaseHeight) ReadTerrainBlockParams(string levelPath)
+    private sealed record TerrainBlockParams(
+        float? SquareSize,
+        float? MaxHeight,
+        float? PositionX,
+        float? PositionY,
+        float? PositionZ,
+        string? TerrainFile);
+
+    private static TerrainBlockParams ReadTerrainBlockParams(string levelPath)
     {
+        var empty = new TerrainBlockParams(null, null, null, null, null, null);
         try
         {
             var mainPath = Path.Join(levelPath, "main");
             if (!Directory.Exists(mainPath))
-                return (null, null, null);
+                return empty;
 
             foreach (var itemsFile in Directory.GetFiles(mainPath, "items.level.json", SearchOption.AllDirectories))
             {
@@ -1142,7 +1188,10 @@ public class BiomeService
 
                         float? squareSize = null;
                         float? maxHeight = null;
-                        float? baseHeight = null;
+                        float? positionX = null;
+                        float? positionY = null;
+                        float? positionZ = null;
+                        string? terrainFile = null;
                         if (doc.RootElement.TryGetProperty("squareSize", out var sq) &&
                             sq.ValueKind == JsonValueKind.Number)
                             squareSize = (float)sq.GetDouble();
@@ -1152,9 +1201,16 @@ public class BiomeService
                         if (doc.RootElement.TryGetProperty("position", out var pos) &&
                             pos.ValueKind == JsonValueKind.Array &&
                             pos.GetArrayLength() >= 3)
-                            baseHeight = (float)pos[2].GetDouble();
+                        {
+                            positionX = (float)pos[0].GetDouble();
+                            positionY = (float)pos[1].GetDouble();
+                            positionZ = (float)pos[2].GetDouble();
+                        }
+                        if (doc.RootElement.TryGetProperty("terrainFile", out var tf) &&
+                            tf.ValueKind == JsonValueKind.String)
+                            terrainFile = tf.GetString();
 
-                        return (squareSize, maxHeight, baseHeight);
+                        return new TerrainBlockParams(squareSize, maxHeight, positionX, positionY, positionZ, terrainFile);
                     }
                     catch (JsonException)
                     {
@@ -1169,7 +1225,34 @@ public class BiomeService
                 $"Could not read TerrainBlock parameters: {ex.Message}");
         }
 
-        return (null, null, null);
+        return empty;
+    }
+
+    /// <summary>
+    /// Resolves the TerrainBlock's terrainFile property (e.g. "/levels/x/terrain4.ter")
+    /// to an existing file in the level folder, or null.
+    /// </summary>
+    private static string? ResolveTerrainFile(string levelPath, string? terrainFileProperty)
+    {
+        if (string.IsNullOrWhiteSpace(terrainFileProperty))
+            return null;
+
+        var fileName = Path.GetFileName(terrainFileProperty.Replace('\\', '/').TrimEnd('/'));
+        if (string.IsNullOrWhiteSpace(fileName))
+            return null;
+
+        var direct = Path.Join(levelPath, fileName);
+        if (File.Exists(direct))
+            return direct;
+
+        try
+        {
+            return Directory.GetFiles(levelPath, fileName, SearchOption.AllDirectories).FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string? ValidateLevelFolder(string folder)

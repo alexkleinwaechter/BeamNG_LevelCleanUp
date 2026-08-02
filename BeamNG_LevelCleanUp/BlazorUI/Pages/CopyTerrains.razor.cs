@@ -605,10 +605,11 @@ public partial class CopyTerrains
             // Set wizard terrain size in PathResolver before copying
             if (WizardState != null) PathResolver.WizardTerrainSize = WizardState.TerrainSize;
 
+            CopyResultSummary summary = null;
             await Task.Run(() =>
             {
                 var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                Reader.DoCopyAssets(selected);
+                summary = Reader.DoCopyAssets(selected);
             });
 
             // Clear wizard terrain size after copying
@@ -622,7 +623,8 @@ public partial class CopyTerrains
             await InvokeAsync(() =>
             {
                 Snackbar.Clear();
-                Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
+                Snackbar.Add(summary.BuildUserMessage(copyCount, sourceName, "terrain material(s)"),
+                    summary.HasFailures ? Severity.Error : Severity.Success);
             });
 
             // Re-enable snackbars for future interactions
@@ -631,16 +633,19 @@ public partial class CopyTerrains
             // Write operation logs (info, warnings, errors)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");
 
-            // Update wizard state (accumulate materials)
-            UpdateWizardStateAfterCopy();
+            if (!summary.HasFailures)
+            {
+                // Update wizard state (accumulate materials)
+                UpdateWizardStateAfterCopy();
 
-            WriteWizardPaintModeSettings();
+                WriteWizardPaintModeSettings();
 
-            // Set copy completed state (don't navigate away)
-            _copyCompleted = true;
-            _copiedMaterialsCount = copyCount;
-            _totalCopiedMaterialsCount += copyCount;
-            _lastCopiedSourceName = sourceName;
+                // Set copy completed state (don't navigate away)
+                _copyCompleted = true;
+                _copiedMaterialsCount = copyCount;
+                _totalCopiedMaterialsCount += copyCount;
+                _lastCopiedSourceName = sourceName;
+            }
 
             // Refresh target terrain materials list (they may have changed)
             var namePath = ZipFileHandler.GetNamePath(_levelPath);
@@ -1161,11 +1166,12 @@ public partial class CopyTerrains
             var copyCount = _selectedItems.Count;
             var sourceName = _levelNameCopyFrom;
 
+            CopyResultSummary summary = null;
             await Task.Run(() =>
             {
                 var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                Reader.DoCopyAssets(selected);
-                _showDeployButton = true;
+                summary = Reader.DoCopyAssets(selected);
+                if (summary.Succeeded > 0) _showDeployButton = true;
             });
 
             // Suppress new snackbars from PubSub consumer
@@ -1176,7 +1182,8 @@ public partial class CopyTerrains
             await InvokeAsync(() =>
             {
                 Snackbar.Clear();
-                Snackbar.Add($"Successfully copied {copyCount} terrain material(s) from {sourceName}.", Severity.Success);
+                Snackbar.Add(summary.BuildUserMessage(copyCount, sourceName, "terrain material(s)"),
+                    summary.HasFailures ? Severity.Error : Severity.Success);
             });
 
             // Re-enable snackbars for future interactions
@@ -1185,10 +1192,13 @@ public partial class CopyTerrains
             // Write operation logs (info, warnings, errors)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "TerrainCopy");
 
-            // Set copy completed state
-            _copyCompleted = true;
-            _copiedMaterialsCount = copyCount;
-            _lastCopiedSourceName = sourceName;
+            // Set copy completed state only when everything succeeded
+            if (!summary.HasFailures)
+            {
+                _copyCompleted = true;
+                _copiedMaterialsCount = copyCount;
+                _lastCopiedSourceName = sourceName;
+            }
 
             // Refresh target terrain materials list (they may have changed)
             var namePath = ZipFileHandler.GetNamePath(_levelPath);

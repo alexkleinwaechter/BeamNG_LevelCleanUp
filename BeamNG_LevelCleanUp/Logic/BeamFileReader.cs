@@ -337,10 +337,68 @@ internal class BeamFileReader
         return nums == null || nums.Distinct().Count() == 1;
     }
 
-    internal void DoCopyAssets(List<Guid> identifiers)
+    internal CopyResultSummary DoCopyAssets(List<Guid> identifiers)
     {
+        var summary = new CopyResultSummary();
+        var selectedAssets = CopyAssets.Where(x => identifiers.Contains(x.Identifier)).ToList();
+
+        if (!selectedAssets.Any())
+        {
+            if (identifiers.Any())
+            {
+                summary.NothingMatched = true;
+                PubSubChannel.SendMessage(PubSubMessageType.Error,
+                    "None of the selected items match the scanned copy list anymore. " +
+                    "Please reload the source level and select again.");
+            }
+
+            return summary;
+        }
+
+        if (!EnsureCopySourceAvailable(selectedAssets, summary)) return summary;
+
         var assetCopy = new AssetCopy(identifiers, CopyAssets);
-        assetCopy.Copy();
+        assetCopy.Copy(summary);
+        return summary;
+    }
+
+    /// <summary>
+    ///     The copy list only stores paths into the extracted source level; the files are re-read
+    ///     at copy time. That extraction can vanish mid-session (app startup wipes the temp folder,
+    ///     the Create Level wizard cleans it, the other copy pages re-extract their own source into
+    ///     the same _copyFrom folder). Verify the source files are still there before copying and
+    ///     try to restore them from the original source zip if not.
+    /// </summary>
+    private bool EnsureCopySourceAvailable(List<CopyAsset> selectedAssets, CopyResultSummary summary)
+    {
+        if (CopySourceFilesExist(selectedAssets)) return true;
+
+        if (ZipFileHandler.TryRestoreCopyFromExtraction() && CopySourceFilesExist(selectedAssets))
+        {
+            summary.SourceRestored = true;
+            return true;
+        }
+
+        summary.SourceMissing = true;
+        PubSubChannel.SendMessage(PubSubMessageType.Error,
+            "The extracted source level is no longer available and could not be restored. " +
+            "Nothing was copied. Please select the source level again.");
+        return false;
+    }
+
+    private bool CopySourceFilesExist(List<CopyAsset> selectedAssets)
+    {
+        if (string.IsNullOrEmpty(_levelPathCopyFrom)) return true;
+
+        var sourceRoot = _levelNamePathCopyFrom ?? _levelPathCopyFrom;
+        if (!Directory.Exists(sourceRoot)) return false;
+
+        return selectedAssets
+            .SelectMany(asset => asset.Materials ?? Enumerable.Empty<MaterialJson>())
+            .Select(material => material.MatJsonFileLocation)
+            .Where(path => !string.IsNullOrEmpty(path))
+            .Distinct()
+            .All(File.Exists);
     }
 
     internal void ReadInfoJson()

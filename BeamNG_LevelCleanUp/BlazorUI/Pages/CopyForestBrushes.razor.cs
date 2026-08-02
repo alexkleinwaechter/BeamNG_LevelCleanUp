@@ -587,10 +587,11 @@ public partial class CopyForestBrushes
             var copyCount = _selectedItems.Count;
             var sourceName = _levelNameCopyFrom;
 
+            CopyResultSummary summary = null;
             await Task.Run(() =>
             {
                 var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                Reader.DoCopyAssets(selected);
+                summary = Reader.DoCopyAssets(selected);
             });
 
             // 1. Suppress new snackbars from PubSub consumer
@@ -601,7 +602,8 @@ public partial class CopyForestBrushes
             {
                 Snackbar.Remove(_staticSnackbar);
                 Snackbar.Clear();
-                Snackbar.Add($"Successfully copied {copyCount} forest brush(es) from {sourceName}.", Severity.Success);
+                Snackbar.Add(summary.BuildUserMessage(copyCount, sourceName, "forest brush(es)"),
+                    summary.HasFailures ? Severity.Error : Severity.Success);
             });
 
             // 3. Re-enable snackbars for future interactions
@@ -611,13 +613,16 @@ public partial class CopyForestBrushes
             // Write operation logs (even in wizard mode)
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "ForestBrushCopy");
 
-            // UPDATE WIZARD STATE
-            UpdateWizardStateAfterCopy();
+            if (!summary.HasFailures)
+            {
+                // UPDATE WIZARD STATE
+                UpdateWizardStateAfterCopy();
 
-            _copyCompleted = true;
-            _copiedBrushesCount = copyCount;
-            _totalCopiedBrushesCount += copyCount;
-            _lastCopiedSourceName = sourceName;
+                _copyCompleted = true;
+                _copiedBrushesCount = copyCount;
+                _totalCopiedBrushesCount += copyCount;
+                _lastCopiedSourceName = sourceName;
+            }
 
             StateHasChanged();
         }
@@ -961,11 +966,12 @@ public partial class CopyForestBrushes
             var copyCount = _selectedItems.Count;
             var sourceName = _levelNameCopyFrom;
 
+            CopyResultSummary summary = null;
             await Task.Run(() =>
             {
                 var selected = _selectedItems.Select(y => y.Identifier).ToList();
-                Reader.DoCopyAssets(selected);
-                _showDeployButton = true;
+                summary = Reader.DoCopyAssets(selected);
+                if (summary.Succeeded > 0) _showDeployButton = true;
             });
 
             // 1. Suppress new snackbars from PubSub consumer
@@ -976,7 +982,8 @@ public partial class CopyForestBrushes
             {
                 Snackbar.Remove(_staticSnackbar);
                 Snackbar.Clear();
-                Snackbar.Add($"Successfully copied {copyCount} forest brush(es) from {sourceName}.", Severity.Success);
+                Snackbar.Add(summary.BuildUserMessage(copyCount, sourceName, "forest brush(es)"),
+                    summary.HasFailures ? Severity.Error : Severity.Success);
             });
 
             // 3. Re-enable snackbars for future interactions
@@ -986,9 +993,12 @@ public partial class CopyForestBrushes
             // Write all logs (info, warnings, errors) using consistent naming
             Reader.WriteOperationLogs(_messages, _warnings, _errors, "ForestBrushCopy");
 
-            _copyCompleted = true;
-            _copiedBrushesCount = copyCount;
-            _lastCopiedSourceName = sourceName;
+            if (!summary.HasFailures)
+            {
+                _copyCompleted = true;
+                _copiedBrushesCount = copyCount;
+                _lastCopiedSourceName = sourceName;
+            }
 
             StateHasChanged();
         }
