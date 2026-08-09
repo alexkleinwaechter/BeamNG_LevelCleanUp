@@ -1,4 +1,5 @@
 ﻿using System.Collections.Specialized;
+using System.Text.Json;
 using BeamNG_LevelCleanUp.Communication;
 using BeamNG_LevelCleanUp.LogicConvertForest;
 using BeamNG_LevelCleanUp.LogicCopyAssets;
@@ -152,6 +153,7 @@ internal class BeamFileReader
         ReadAllDae();
         ReadCsFilesForGenericExclude();
         ReadLevelExtras();
+        ReadLinkFiles();
         ResolveUnusedAssetFiles();
         ResolveOrphanedFiles();
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Analyzing finished");
@@ -574,17 +576,49 @@ internal class BeamFileReader
             "scenarios", "quickrace", "buslines", "art\\cubemaps", "crawls", "perfRecordingCampaths", "camPaths",
             "dragstrips", "driftSpots", "gameplay", "stagedBuildings", "trafficCameras"
         };
+
+        // A mod can contain more than one level (older combined asphalt/dirt packages are
+        // a common example). Scan extras beneath every actual level root instead of only
+        // the last info.json found by the legacy single-level resolver.
+        var levelNamePaths = Directory.Exists(_levelPath)
+            ? Directory.EnumerateFiles(_levelPath, "info.json", SearchOption.AllDirectories)
+                .Select(Path.GetDirectoryName)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : new List<string>();
+
+        if (!levelNamePaths.Any() && !string.IsNullOrWhiteSpace(_levelNamePath))
+            levelNamePaths.Add(_levelNamePath);
+
+        foreach (var levelNamePath in levelNamePaths)
         foreach (var extra in extras)
         {
-            var dirInfo = new DirectoryInfo(Path.Join(_levelNamePath, extra));
+            var dirInfo = new DirectoryInfo(Path.Join(levelNamePath, extra));
             if (dirInfo != null && dirInfo.Exists)
             {
                 PubSubChannel.SendMessage(PubSubMessageType.Info, $"Read Level {extra}");
                 WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs);
+                WalkDirectoryTree(dirInfo, "*.prefab.json", ReadTypeEnum.ScanExtraPrefabs);
                 WalkDirectoryTree(dirInfo, "*.*", ReadTypeEnum.ExcludeAllFiles);
                 Console.WriteLine("Files with restricted access:");
                 foreach (var s in log) Console.WriteLine(s);
             }
+        }
+
+        // Since BeamNG 0.24, mission prefabs can live at the mod root under
+        // gameplay/missions rather than inside levels/<name>. Their TSStatic shapeName
+        // references must protect the corresponding level assets from Map Shrinker.
+        var modRoot = Directory.GetParent(_levelPath)?.FullName;
+        var sharedGameplay = string.IsNullOrWhiteSpace(modRoot)
+            ? null
+            : Path.Join(modRoot, "gameplay");
+        if (!string.IsNullOrWhiteSpace(sharedGameplay) && Directory.Exists(sharedGameplay))
+        {
+            var dirInfo = new DirectoryInfo(sharedGameplay);
+            PubSubChannel.SendMessage(PubSubMessageType.Info, "Read shared gameplay mission prefabs");
+            WalkDirectoryTree(dirInfo, "*.prefab", ReadTypeEnum.ScanExtraPrefabs);
+            WalkDirectoryTree(dirInfo, "*.prefab.json", ReadTypeEnum.ScanExtraPrefabs);
         }
     }
 
@@ -596,6 +630,18 @@ internal class BeamFileReader
             WalkDirectoryTree(dirInfo, "*.cs", ReadTypeEnum.ExcludeCsFiles);
             Console.WriteLine("Files with restricted access:");
             foreach (var s in log) Console.WriteLine(s);
+        }
+    }
+
+    internal void ReadLinkFiles()
+    {
+        var dirInfo = new DirectoryInfo(_levelPath);
+        if (dirInfo.Exists)
+        {
+            // Older combined maps use BeamNG .link files so a second level can reuse
+            // assets from the first. The linked target is a live dependency even when
+            // no materials.json in the source level references it directly.
+            WalkDirectoryTree(dirInfo, "*.link", ReadTypeEnum.LinkFile);
         }
     }
 
@@ -625,6 +671,7 @@ internal class BeamFileReader
             WalkDirectoryTree(dirInfo, "*.png", ReadTypeEnum.ImageFile);
             WalkDirectoryTree(dirInfo, "*.jpg", ReadTypeEnum.ImageFile);
             WalkDirectoryTree(dirInfo, "*.jpeg", ReadTypeEnum.ImageFile);
+            WalkDirectoryTree(dirInfo, "*.tga", ReadTypeEnum.ImageFile);
             WalkDirectoryTree(dirInfo, "*.ter", ReadTypeEnum.ImageFile);
 
             DeleteList = DeleteList.Where(x =>
@@ -638,8 +685,10 @@ internal class BeamFileReader
     {
         _dryRun = dryRun;
         PubSubChannel.SendMessage(PubSubMessageType.Info, "Delete files");
-        var materialScanner = new MaterialScanner(MaterialsJson, _levelPath, _levelNamePath);
-        materialScanner.RemoveDuplicates(true);
+        // Map Shrinker must only mutate files the user explicitly selected. Duplicate
+        // material names can be intentional in a combined multi-level mod; removing
+        // definitions here silently damaged the sibling level even though no material
+        // JSON was selected for deletion.
         var deleter = new FileDeleter(deleteList, _levelPath, "DeletedAssetFiles", _dryRun);
         deleter.Delete();
     }
@@ -1093,6 +1142,24 @@ internal class BeamFileReader
                     case ReadTypeEnum.ExcludeAllFiles:
                         ExcludeFiles.Add(fi.FullName);
                         break;
+                    case ReadTypeEnum.LinkFile:
+                        try
+                        {
+                            using var linkJson = JsonUtils.GetValidJsonDocumentFromFilePath(fi.FullName);
+                            if (linkJson.RootElement.ValueKind != JsonValueKind.Undefined &&
+                                linkJson.RootElement.TryGetProperty("path", out var linkPathElement))
+                            {
+                                var linkPath = linkPathElement.GetString();
+                                if (!string.IsNullOrWhiteSpace(linkPath))
+                                    ExcludeFiles.Add(PathResolver.ResolvePath(_levelPath, linkPath, false));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            PubSubChannel.SendMessage(PubSubMessageType.Warning,
+                                $"Could not read asset link {fi.FullName}: {ex.Message}", true);
+                        }
+                        break;
                     case ReadTypeEnum.ScanExtraPrefabs:
                         var prefabScanner = new PrefabScanner(Assets, _levelPath);
                         prefabScanner.AddPrefabDaeFiles(fi);
@@ -1273,7 +1340,8 @@ internal class BeamFileReader
         CopyTerrainMaterials = 21,
         FindTerrainMaterialFiles = 22,
         FindGroundCoverFiles = 23,
-        CopySourceMaterials = 24
+        CopySourceMaterials = 24,
+        LinkFile = 25
     }
 
     /// <summary>

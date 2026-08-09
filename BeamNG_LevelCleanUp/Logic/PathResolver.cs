@@ -55,8 +55,12 @@ internal static class PathResolver
     public static string DirectorySanitizer(string path)
     {
         return path
-            .Replace(@"levels\levels", "levels")
-            .Replace(@"levels\game:levels", "levels");
+            // BeamNG resource paths are case-insensitive on Windows. Older maps commonly
+            // use an upper-case "Levels/" prefix, so a case-sensitive replacement can
+            // incorrectly resolve it as <mod>\levels\Levels\... and make a referenced
+            // texture look orphaned to Map Shrinker.
+            .Replace(@"levels\levels", "levels", StringComparison.OrdinalIgnoreCase)
+            .Replace(@"levels\game:levels", "levels", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void WriteToLog(string line)

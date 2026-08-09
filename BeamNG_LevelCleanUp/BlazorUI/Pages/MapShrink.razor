@@ -88,7 +88,7 @@
             <MudStack Row="true" Justify="Justify.SpaceBetween">
                 @if (_selectedItems.Any())
                 {
-                    <MudButton @onclick="DeleteDialog" Color="Color.Primary">Delete Files</MudButton>
+                    <MudButton @onclick="DeleteDialog" Color="Color.Primary" Disabled="@_isBusy">Delete Files</MudButton>
                 }
                 @if (_errors.Any())
                 {
@@ -111,7 +111,7 @@
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.Optimal"/>
                         <MudSelectItem T="CompressionLevel" Value="CompressionLevel.SmallestSize"/>
                     </MudSelect>
-                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary">Build Zipfile</MudButton>
+                    <MudButton @onclick="ZipAndDeploy" Color="Color.Primary" Disabled="@_isBusy">Build Zipfile</MudButton>
                 }
             </MudStack>
             @if (!string.IsNullOrEmpty(ZipFileHandler.WorkingDirectory))
@@ -148,12 +148,16 @@
     private string _searchString = string.Empty;
     private string _labelFileSummaryShrink { get; set; } = string.Empty;
     private bool _showDeployButton { get; set; }
-    private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.Optimal;
+    private bool _isBusy { get; set; }
+    // Shrinker output should favor size. On older highly-compressed mods, .NET's
+    // Optimal mode can grow the deployment even after unused assets are removed.
+    private CompressionLevel _compressionLevel { get; set; } = CompressionLevel.SmallestSize;
     bool _showErrorLog { get; set; }
     bool _showWarningLog { get; set; }
     private List<FileInfo> _vanillaLevels { get; set; } = new();
     private FileInfo _vanillaLevelSourceSelected { get; set; }
     private string _beamInstallDir { get; set; }
+    private string _sourceArchiveName { get; set; }
 
     protected async Task FileSelected(string file)
     {
@@ -169,26 +173,40 @@
         _messages = new List<string>();
         _openDrawer = false;
         BindingListDelete = new List<GridFileListItem>();
+        _selectedItems = new HashSet<GridFileListItem>();
         _showDeployButton = false;
         Reader = null;
         _vanillaLevelSourceSelected = null;
+        _sourceArchiveName = Path.GetFileNameWithoutExtension(file);
 
-        await Task.Run(() =>
+        var extracted = false;
+        try
         {
-            try
+            _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal,
+                config => { config.VisibleStateDuration = int.MaxValue; });
+            await Task.Run(() =>
             {
-                _staticSnackbar = Snackbar.Add("Unzipping level...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 _levelPath = ZipFileHandler.ExtractToDirectory(file, "_unpacked");
+            });
+            extracted = !string.IsNullOrWhiteSpace(_levelPath) && Directory.Exists(_levelPath);
+            if (extracted)
                 Snackbar.Add("Unzipping finished", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+        }
+        finally
+        {
+            if (_staticSnackbar != null)
                 Snackbar.Remove(_staticSnackbar);
-            }
-            catch (Exception ex)
-            {
-                ShowException(ex);
-                _fileSelectDisabled = false;
-            }
-        });
-        await AnalyzeLevel();
+        }
+
+        if (extracted)
+            await AnalyzeLevel();
+        else
+            await FileSelect.ExpandAllAsync();
+
         _fileSelectDisabled = false;
     }
 
@@ -196,24 +214,45 @@
     {
         _fileSelectDisabled = true;
         _staticSnackbar = Snackbar.Add("Analyzing level. Please wait...", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
-        Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
-        await Task.Run(() =>
+        var analyzed = false;
+        try
         {
-            try
+            Reader = new BeamFileReader(_levelPath, _beamLogFilePath);
+            await Task.Run(() =>
             {
                 Reader.ReadAll();
                 _missingFiles = Reader.GetMissingFilesFromBeamLog();
-                _levelName = Reader.GetLevelName();
-            }
-            catch (Exception ex)
-            {
-                ShowException(ex);
-                _fileSelectDisabled = false;
-            }
-        });
+                // Combined mods may contain several levels. The legacy resolver returns
+                // whichever info.json it visited last, which can give the deployment ZIP
+                // an arbitrary child-level name. Preserve the selected archive's stable
+                // name for Map Shrinker output.
+                _levelName = string.IsNullOrWhiteSpace(_sourceArchiveName)
+                    ? Reader.GetLevelName()
+                    : _sourceArchiveName;
+            });
+            analyzed = true;
+        }
+        catch (Exception ex)
+        {
+            ShowException(ex);
+        }
+        finally
+        {
+            _fileSelectDisabled = false;
+            if (_staticSnackbar != null)
+                Snackbar.Remove(_staticSnackbar);
+        }
+
+        if (!analyzed)
+        {
+            BindingListDelete.Clear();
+            _selectedItems.Clear();
+            _showDeployButton = false;
+            await FileSelect.ExpandAllAsync();
+            return;
+        }
+
         FillDeleteList();
-        _fileSelectDisabled = false;
-        Snackbar.Remove(_staticSnackbar);
         var duplicateMaterialsPath = Reader.GetDuplicateMaterialsLogFilePath();
         if (!string.IsNullOrEmpty(duplicateMaterialsPath))
         {
@@ -343,6 +382,8 @@
 
     private async Task DeleteDialog()
     {
+        if (_isBusy || !_selectedItems.Any()) return;
+
         var options = new DialogOptions { CloseOnEscapeKey = true };
         var parameters = new DialogParameters();
         parameters.Add("ContentText", "Do you really want to delete these files? This process cannot be undone. Please always use a copy of your project with this tool!");
@@ -352,34 +393,56 @@
         var result = await dialog.Result;
         if (!result.Canceled)
         {
-            await Task.Run(() =>
+            var selected = _selectedItems
+                .Select(x => new FileInfo(x.FullName))
+                .ToList();
+            _isBusy = true;
+            try
             {
-                var selected = _selectedItems
-                    .Select(x => new FileInfo(x.FullName))
-                    .ToList();
-                Reader.DeleteFilesAndDeploy(selected, false);
-                BindingListDelete.RemoveAll(x => selected.Select(x => x.FullName).Contains(x.FullName));
+                await Task.Run(() => Reader.DeleteFilesAndDeploy(selected, false));
+                var deletedPaths = selected.Select(x => x.FullName)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                BindingListDelete.RemoveAll(x => deletedPaths.Contains(x.FullName));
+                _selectedItems.Clear();
                 _showDeployButton = true;
                 PubSubChannel.SendMessage(PubSubMessageType.Info, "You can build your deployment file now.");
-            });
+            }
+            catch (Exception ex)
+            {
+                ShowException(ex);
+            }
+            finally
+            {
+                _isBusy = false;
+            }
         }
     }
 
     private async Task ZipAndDeploy()
     {
+        if (_isBusy) return;
+
         var path = string.Empty;
         if (!string.IsNullOrEmpty(_levelPath))
         {
+            _isBusy = true;
             try
             {
                 path = ZipFileHandler.GetLastUnpackedPath();
+                if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+                    throw new DirectoryNotFoundException("The extracted level working copy is no longer available. Select the source ZIP again.");
                 _staticSnackbar = Snackbar.Add("Zipping the deployment file. Please be patient.", Severity.Normal, config => { config.VisibleStateDuration = int.MaxValue; });
                 await Task.Run(() => { ZipFileHandler.BuildDeploymentFile(path, _levelName, _compressionLevel); });
-                Snackbar.Remove(_staticSnackbar);
             }
             catch (Exception ex)
             {
                 ShowException(ex);
+            }
+            finally
+            {
+                if (_staticSnackbar != null)
+                    Snackbar.Remove(_staticSnackbar);
+                _isBusy = false;
             }
         }
     }

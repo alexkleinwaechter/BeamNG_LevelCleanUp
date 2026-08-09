@@ -356,8 +356,15 @@ public static class ZipFileHandler
 
     public static string GetLevelPath(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("A level folder path is required.", nameof(path));
+
+        // FindLevelRoot stores its result in a static field because this utility predates the
+        // current multi-page UI. Never allow a failed scan to reuse the root from a previously
+        // selected ZIP/folder.
+        _nameLevelPath = null;
         var dirInfo = new DirectoryInfo(path);
-        if (dirInfo != null)
+        if (dirInfo.Exists)
         {
             WalkDirectoryTree(dirInfo, "info.json", JobTypeEnum.FindLevelRoot);
             if (string.IsNullOrEmpty(_nameLevelPath))
@@ -372,19 +379,32 @@ public static class ZipFileHandler
 
             path = levelsDir.FullName;
         }
+        else
+        {
+            throw new DirectoryNotFoundException($"Level folder not found: {dirInfo.FullName}");
+        }
 
         return path;
     }
 
     public static string GetNamePath(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("A level folder path is required.", nameof(path));
+
+        // See GetLevelPath: a missing/invalid new selection must never resolve to a stale level.
+        _nameLevelPath = null;
         var dirInfo = new DirectoryInfo(path);
-        if (dirInfo != null)
+        if (dirInfo.Exists)
         {
             WalkDirectoryTree(dirInfo, "info.json", JobTypeEnum.FindLevelRoot);
             if (string.IsNullOrEmpty(_nameLevelPath))
                 throw new Exception($"Can't find level data in {dirInfo.FullName}");
             path = _nameLevelPath;
+        }
+        else
+        {
+            throw new DirectoryNotFoundException($"Level folder not found: {dirInfo.FullName}");
         }
 
         return path;
