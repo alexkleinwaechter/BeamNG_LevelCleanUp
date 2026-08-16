@@ -76,4 +76,68 @@ public class DecalRoadGeneratorTests
         Assert.Single(chunks);
         Assert.Equal(50, chunks[0].Count);
     }
+
+    [Fact]
+    public void RemoveUnsafeShortSegmentsDropsInteriorSubTwoMillimeterNode()
+    {
+        var nodes = new List<float[]>
+        {
+            new float[] { 0f, 0f, 0f, 4f },
+            new float[] { 0.00112f, 0f, 0f, 5f },
+            new float[] { 10f, 0f, 0f, 6f }
+        };
+
+        var removed = DecalRoadGenerator.RemoveUnsafeShortSegments(nodes);
+
+        Assert.Equal(1, removed);
+        Assert.Equal(2, nodes.Count);
+        Assert.Equal(0f, nodes[0][0]);
+        Assert.Equal(10f, nodes[1][0]);
+    }
+
+    [Fact]
+    public void RemoveUnsafeShortSegmentsPreservesFinalEndpoint()
+    {
+        var nodes = new List<float[]>
+        {
+            new float[] { 0f, 0f, 0f, 4f },
+            new float[] { 10f, 0f, 0f, 5f },
+            new float[] { 10.00104f, 0f, 0f, 6f }
+        };
+
+        var removed = DecalRoadGenerator.RemoveUnsafeShortSegments(nodes);
+
+        Assert.Equal(1, removed);
+        Assert.Equal(2, nodes.Count);
+        Assert.Equal(0f, nodes[0][0]);
+        Assert.Equal(10.00104f, nodes[1][0]);
+    }
+
+    [Fact]
+    public void RemoveUnsafeShortSegmentsKeepsExclusiveTwoMillimeterBoundary()
+    {
+        var nodes = new List<float[]>
+        {
+            new float[] { 0f, 0f, 0f, 4f },
+            new float[] { 0.002f, 0f, 0f, 5f },
+            new float[] { 1f, 0f, 0f, 6f }
+        };
+
+        Assert.Equal(0, DecalRoadGenerator.RemoveUnsafeShortSegments(nodes));
+        Assert.Equal(3, nodes.Count);
+    }
+
+    [Fact]
+    public void RemoveUnsafeShortSegmentsLeavesCollapsedRoadUnemittable()
+    {
+        var nodes = new List<float[]>
+        {
+            new float[] { 0f, 0f, 0f, 4f },
+            new float[] { 0.001f, 0f, 0f, 5f },
+            new float[] { 0.0015f, 0f, 0f, 6f }
+        };
+
+        Assert.Equal(2, DecalRoadGenerator.RemoveUnsafeShortSegments(nodes));
+        Assert.Single(nodes);
+    }
 }
