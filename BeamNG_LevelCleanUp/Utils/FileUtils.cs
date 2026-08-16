@@ -40,7 +40,7 @@ public static class FileUtils
     public static FileInfo ResolveImageFileName(string filePath)
     {
         //to Do: check if filepath has image extension, if not attach png
-        var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", "*.tga" };
+        var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", ".tga" };
         if (!imageextensions.Any(x => filePath.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
             filePath = filePath + ".dds";
 

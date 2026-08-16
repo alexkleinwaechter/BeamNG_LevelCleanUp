@@ -164,7 +164,7 @@ public class ObsoleteFileResolver
             {
                 var filePathEnd = fileParts[1];
                 //to Do: check if filepath has image extension, if not attach png
-                var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg" };
+                var imageextensions = new List<string> { ".dds", ".png", ".jpg", ".jpeg", ".tga" };
                 if (!imageextensions.Any(x => filePathEnd.EndsWith(x, StringComparison.OrdinalIgnoreCase)))
                     filePathEnd = filePathEnd + ".png";
                 retVal = ZipReader.FileExists(beamZip, filePathEnd);
@@ -189,6 +189,12 @@ public class ObsoleteFileResolver
                 if (!retVal)
                 {
                     filePathEnd = Path.ChangeExtension(filePathEnd, ".jpeg");
+                    retVal = ZipReader.FileExists(beamZip, filePathEnd);
+                }
+
+                if (!retVal)
+                {
+                    filePathEnd = Path.ChangeExtension(filePathEnd, ".tga");
                     retVal = ZipReader.FileExists(beamZip, filePathEnd);
                 }
             }

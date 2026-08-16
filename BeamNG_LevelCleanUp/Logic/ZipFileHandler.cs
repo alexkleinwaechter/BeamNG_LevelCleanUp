@@ -199,7 +199,18 @@ public static class ZipFileHandler
         var targetPath = Path.Join(targetDir, fileName);
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Compressing Deploymentfile at {targetPath}");
         if (File.Exists(targetPath)) File.Delete(targetPath);
-        ZipFile.CreateFromDirectory(filePath, targetPath, compressionLevel, false, Encoding.UTF8);
+
+        var root = Path.GetFullPath(filePath);
+        using (var archive = ZipFile.Open(targetPath, ZipArchiveMode.Create, Encoding.UTF8))
+        {
+            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+                if (IsDeploymentToolArtifact(relative)) continue;
+                archive.CreateEntryFromFile(file, relative, compressionLevel);
+            }
+        }
+
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Deploymentfile created at {targetPath}");
     }
 
@@ -232,11 +243,48 @@ public static class ZipFileHandler
             {
                 if (file.Equals(targetPath, StringComparison.OrdinalIgnoreCase)) continue;
                 var relative = Path.GetRelativePath(levelDir.FullName, file).Replace('\\', '/');
-                archive.CreateEntryFromFile(file, $"levels/{levelDir.Name}/{relative}", compressionLevel);
+                var entryName = $"levels/{levelDir.Name}/{relative}";
+                if (IsDeploymentToolArtifact(entryName)) continue;
+                archive.CreateEntryFromFile(file, entryName, compressionLevel);
             }
         }
 
         PubSubChannel.SendMessage(PubSubMessageType.Info, $"Deploymentfile created at {targetPath}");
+    }
+
+    /// <summary>
+    ///     Tool-generated reports can contain absolute local paths and may be written directly under
+    ///     <c>levels</c>, inside a level folder, or in nested terrain-generation log directories.
+    ///     Match path segments so wrapper-folder ZIP layouts are handled without dropping unrelated
+    ///     level documentation such as a user-authored README.txt.
+    /// </summary>
+    internal static bool IsDeploymentToolArtifact(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath)) return false;
+
+        var segments = relativePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var levelsIndex = Array.FindIndex(segments,
+            segment => segment.Equals("levels", StringComparison.OrdinalIgnoreCase));
+        if (levelsIndex < 0 || levelsIndex == segments.Length - 1) return false;
+
+        var fileName = segments[^1];
+        if (!fileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) return false;
+
+        if (segments.Skip(levelsIndex + 1).Take(segments.Length - levelsIndex - 2)
+            .Any(segment => segment.Equals("logs", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (fileName.StartsWith("Log_", StringComparison.OrdinalIgnoreCase) ||
+            fileName.StartsWith("DeletedAssetFiles", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return fileName.Equals("DuplicateMaterials.txt", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("MissingFilesFromBeamNgLog.txt", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("MaterialFilesNotFound.txt", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("DeletedTextureLinks.txt", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("DanglingMaterialReferences.txt", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("DegenerateDecalRoadsFixed.txt", StringComparison.OrdinalIgnoreCase) ||
+               fileName.Equals("PathResolverLog.txt", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -356,8 +404,15 @@ public static class ZipFileHandler
 
     public static string GetLevelPath(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("A level folder path is required.", nameof(path));
+
+        // FindLevelRoot stores its result in a static field because this utility predates the
+        // current multi-page UI. Never allow a failed scan to reuse the root from a previously
+        // selected ZIP/folder.
+        _nameLevelPath = null;
         var dirInfo = new DirectoryInfo(path);
-        if (dirInfo != null)
+        if (dirInfo.Exists)
         {
             WalkDirectoryTree(dirInfo, "info.json", JobTypeEnum.FindLevelRoot);
             if (string.IsNullOrEmpty(_nameLevelPath))
@@ -372,19 +427,32 @@ public static class ZipFileHandler
 
             path = levelsDir.FullName;
         }
+        else
+        {
+            throw new DirectoryNotFoundException($"Level folder not found: {dirInfo.FullName}");
+        }
 
         return path;
     }
 
     public static string GetNamePath(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("A level folder path is required.", nameof(path));
+
+        // See GetLevelPath: a missing/invalid new selection must never resolve to a stale level.
+        _nameLevelPath = null;
         var dirInfo = new DirectoryInfo(path);
-        if (dirInfo != null)
+        if (dirInfo.Exists)
         {
             WalkDirectoryTree(dirInfo, "info.json", JobTypeEnum.FindLevelRoot);
             if (string.IsNullOrEmpty(_nameLevelPath))
                 throw new Exception($"Can't find level data in {dirInfo.FullName}");
             path = _nameLevelPath;
+        }
+        else
+        {
+            throw new DirectoryNotFoundException($"Level folder not found: {dirInfo.FullName}");
         }
 
         return path;
