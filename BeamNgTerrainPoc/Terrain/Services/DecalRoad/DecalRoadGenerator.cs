@@ -16,6 +16,10 @@ namespace BeamNgTerrainPoc.Terrain.Services.DecalRoad;
 /// </summary>
 public class DecalRoadGenerator
 {
+    // BeamNG 0.39 packs local DecalRoad vertices onto a 0.9765625 mm grid. Consecutive
+    // XY nodes below grid * sqrt(2) can quantize to one cell and poison the render batch.
+    internal const float MinimumSafeNodeSpacingMeters = 0.002f;
+
     /// <summary>
     ///     Generate all DecalRoad objects for the given network.
     /// </summary>
@@ -489,10 +493,16 @@ public class DecalRoadGenerator
                 worldNodes.Add([worldPos.X, worldPos.Y, worldPos.Z, nodeWidths[i]]);
             }
 
+            var skippedShortNodes = RemoveUnsafeShortSegments(worldNodes);
+
             if (skippedNonFiniteNodes > 0)
                 TerrainCreationLogger.Current?.Detail(
                     $"DecalRoad {splineName}_{layer.Name}: skipped {skippedNonFiniteNodes} non-finite node(s) " +
                     "(degenerate spline geometry)");
+            if (skippedShortNodes > 0)
+                TerrainCreationLogger.Current?.Detail(
+                    $"DecalRoad {splineName}_{layer.Name}: skipped {skippedShortNodes} node(s) closer than " +
+                    $"{MinimumSafeNodeSpacingMeters * 1000:0.#} mm in XY (BeamNG render-safety guard)");
 
             if (worldNodes.Count < 2)
                 continue; // Not enough valid nodes for a DecalRoad — skip rather than emit broken JSON
@@ -575,6 +585,46 @@ public class DecalRoadGenerator
 
             results.Add(road);
         }
+    }
+
+    /// <summary>
+    ///     Removes interior nodes whose float32 XY distance from the previous retained node is below
+    ///     BeamNG's safe packing distance. The geometric endpoints are retained whenever they can form
+    ///     a valid road; if the entire road collapses below the threshold, one node remains and the caller
+    ///     skips emission. Processing the final endpoint to a fixpoint also handles cascading tail cases.
+    /// </summary>
+    internal static int RemoveUnsafeShortSegments(
+        List<float[]> nodes,
+        float minimumSpacingMeters = MinimumSafeNodeSpacingMeters)
+    {
+        if (nodes.Count < 2) return 0;
+        if (!float.IsFinite(minimumSpacingMeters) || minimumSpacingMeters <= 0)
+            throw new ArgumentOutOfRangeException(nameof(minimumSpacingMeters));
+
+        var originalCount = nodes.Count;
+        var retained = new List<float[]>(originalCount) { nodes[0] };
+        for (var i = 1; i < originalCount - 1; i++)
+        {
+            if (XyDistance(retained[^1], nodes[i]) >= minimumSpacingMeters)
+                retained.Add(nodes[i]);
+        }
+
+        var finalNode = nodes[^1];
+        while (retained.Count > 1 && XyDistance(retained[^1], finalNode) < minimumSpacingMeters)
+            retained.RemoveAt(retained.Count - 1);
+        if (XyDistance(retained[^1], finalNode) >= minimumSpacingMeters)
+            retained.Add(finalNode);
+
+        nodes.Clear();
+        nodes.AddRange(retained);
+        return originalCount - retained.Count;
+    }
+
+    private static float XyDistance(float[] left, float[] right)
+    {
+        var dx = right[0] - left[0];
+        var dy = right[1] - left[1];
+        return MathF.Sqrt(dx * dx + dy * dy);
     }
 
     /// <summary>
