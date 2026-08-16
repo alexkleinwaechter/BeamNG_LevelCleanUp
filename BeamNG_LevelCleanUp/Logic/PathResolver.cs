@@ -2,6 +2,12 @@
 
 internal static class PathResolver
 {
+    private static readonly System.Text.RegularExpressions.Regex DuplicateLevelsSegmentPattern = new(
+        @"(^|[\\/])levels[\\/](?:levels|game:levels)(?=([\\/]|$))",
+        System.Text.RegularExpressions.RegexOptions.Compiled |
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     public static string LevelNameCopyFrom;
     public static string LevelNamePathCopyFrom;
     public static string LevelName;
@@ -54,13 +60,9 @@ internal static class PathResolver
 
     public static string DirectorySanitizer(string path)
     {
-        return path
-            // BeamNG resource paths are case-insensitive on Windows. Older maps commonly
-            // use an upper-case "Levels/" prefix, so a case-sensitive replacement can
-            // incorrectly resolve it as <mod>\levels\Levels\... and make a referenced
-            // texture look orphaned to Map Shrinker.
-            .Replace(@"levels\levels", "levels", StringComparison.OrdinalIgnoreCase)
-            .Replace(@"levels\game:levels", "levels", StringComparison.OrdinalIgnoreCase);
+        // Collapse only complete path segments. A prefix replacement would corrupt valid level
+        // names such as Levels2 or LevelsvilleUSA and could make referenced assets look orphaned.
+        return DuplicateLevelsSegmentPattern.Replace(path, "$1levels");
     }
 
     private static void WriteToLog(string line)
